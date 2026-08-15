@@ -49,8 +49,9 @@ export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
+export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
-export read_module_fun_params, write_module_fun_params!
+export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
 export state_file, obj_meta_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings
@@ -58,7 +59,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expans
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export read_run_log, append_run_log!, run_log_path
+export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!

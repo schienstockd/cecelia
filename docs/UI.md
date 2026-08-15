@@ -48,6 +48,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
 | Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
+| A field whose value is user-invented but usually a REPEAT — an output name, an attribute value, a tag | `components/SuggestInput.vue` (task specs reach it via param type `valueNameInput` + a `namespace`) | a bare text input (no recall, and a typo silently creates a second thing), a `<select>` (you can never enter a new one), or a native `<datalist>` (see below) |
 | Filtering rows by their attributes | `components/AttrFilterPanel.vue` + `utils/attrFilter.ts` (`v-model` an `AttrFilterState`, `:rows` anything with an `attr` bag) | a second set of chip rows + Apply/Reset/Invert, or a per-page matching clause |
 | **ANY table of rows and columns** — pick one, pick many, or a plain list | `components/SelectionTable.vue` — `selectionMode` `single` (default, a radio) / `multi` (checkboxes, `v-model:selected`) / `none` (a list; `@row-click` is what a row means). Per-column `sortable`, `sortKey` for a formatted cell, `ellipsis` for a long one; `#cell-<key>` to render one cell yourself, `#actions` for row buttons | a `<select>` that hides the trade-off, or a hand-rolled `<table>` — four of those existed only because `multi`/`none` didn't, and none of them could sort or resize |
 | Sorting a list by a clicked header | `utils/sortRows.ts` — `sortRows(rows, valueOf, dir)` + `cycleSort`/`sortIconFor` | a per-table comparator, or an inline asc/desc/off cycle |
@@ -638,6 +639,56 @@ drop in a label-less `<CcToggle>` (see `PlotOptions`/`SummaryPanel` `.po-row`/`.
 staged as part of a form (image / channel / feature / measure pickers, "select all", per-row
 selection). A column of sliding switches reads worse and misuses the on/off affordance. So the rule
 is: **toggle = one immediate option; checkbox = selection from a list.** Don't hand-roll another.
+
+### Suggesting what you already use — `SuggestInput`
+
+`components/SuggestInput.vue` is the ONE control for a field whose value the user invents but
+usually repeats. Type freely; what already exists is offered **on focus, and narrowed as you type**.
+Callers today:
+
+| surface | offers | why it matters |
+|---|---|---|
+| task params (`valueNameInput` + `namespace`) | names in that namespace | re-running onto an existing label set vs creating a third one |
+| Metadata → *Assign value* | values already used for that attribute | attribute values are the **grouping axis**: a typo does not error, it invents a cohort group |
+| Movies → row tag editor | `tagsInUse` (`separator=","`) | matches what the bulk panel's `ChipSelect` already offered |
+
+Its twin is a strict `<select>` (`valueNameSelection` in a task spec), right where the value must
+already exist and wrong where a new one is legal — you could never enter it.
+
+**Not for a field whose value must be UNIQUE.** Population names, notebook names and model renames all
+reject a duplicate, so offering the existing ones suggests something guaranteed to fail. `markExisting`
+(an accent border when the text matches) is the affordance there, not a list.
+
+> **Do not "simplify" this back to a native `<datalist>`.** It is the obvious implementation and it
+> was the first one. A `<datalist>` popup is browser **chrome**: it renders at the browser's own UI
+> font (~16px), ignores every `--cc-*` token, and next to a `0.82rem` input the options are roughly
+> twice the size of the field they belong to. No selector reaches it — not a scoped rule, not a
+> global one. The escalation to a real popover was paid for by seeing it on screen, not anticipated.
+
+Built on `TeleportPopover`, so it inherits teleporting, positioning, theme tokens, outside-click and
+Escape, and owns only the list and the keys. Three behaviours worth knowing before changing it:
+
+- **Opens on focus, showing everything already in use.** It opened on typing at first, to keep an
+  untouched form clear of a popover nobody asked for — which gets the question backwards: *"what did I
+  call the other one?"* is exactly what you cannot answer if the list appears only once you can spell
+  it. Focus shows all (an empty query filters nothing), the first keystroke narrows, and a field with
+  no history opens nothing and behaves like a plain input.
+- **Nothing is highlighted after a keystroke** (`moveHighlight` returns `-1`). You are naming something
+  NEW until an arrow key says otherwise, so Enter must not silently accept a suggestion.
+- **Rows accept on `mousedown`, not `click`** — the input's `@blur` closes the popover first, so a
+  `click` handler would never fire.
+- **A multi-value field (`separator`) drops what is already in the box** (`withoutChosen`), so the
+  same tag cannot be added twice from the list and it gets shorter as you pick. The token at the
+  CARET is exempt — it is what you are typing, not something you chose.
+- **Accepting with Enter must not also fire the caller's own Enter handler.** Several callers commit
+  on Enter (the movie tag cell saves and closes; Metadata assigns the value), and a caller's listener
+  is a SIBLING on the same input — so `stopPropagation` does not reach it and `stopImmediatePropagation`
+  is required, plus a one-shot swallow of the following `keyup`. `v-bind="$attrs"` is therefore bound
+  LAST, so this component's listeners run first.
+- **`separator` makes it multi-value** (tags): suggestions complete the token at the caret, so
+  accepting one does not replace the tags already typed.
+- **It exposes `focus()`** — a `ref` to a component is not the `<input>`, so an inline-edit helper
+  calling `el.focus()` would silently do nothing.
 
 ### Selection chips / segmented controls — `ChipSelect`
 

@@ -12,6 +12,7 @@ import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import CcToggle from '../../components/CcToggle.vue'
+import SuggestInput from '../../components/SuggestInput.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 const { widthStyle, onResizeStart } =
@@ -47,6 +48,23 @@ const attrNames = computed(() => {
   return [...keys].sort()
 })
 
+
+// Values already in use for the SELECTED attribute, across the set.
+//
+// Assigning one is overwhelmingly a repeat — "MERTK" onto four images — and until now there was
+// nothing to repeat FROM: the field was bare text. That matters more than convenience, because an
+// attribute value is a grouping axis, and a typo does not error. `MERTk` silently becomes its own
+// cohort group in every cross-image comparison, which surfaces much later as a group of one.
+const valuesInUse = computed(() => {
+  const a = selectedAttr.value
+  if (!a) return []
+  const vals = new Set<string>()
+  for (const img of setImages.value) {
+    const v = img.attr?.[a]
+    if (typeof v === 'string' && v.trim() !== '') vals.add(v)
+  }
+  return [...vals].sort()
+})
 
 // ── Attr create/delete ─────────────────────────────────────────────────────────
 
@@ -358,10 +376,11 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <section class="panel-section" :class="{ disabled: attrDisabled }">
       <div class="section-title cc-eyebrow">Assign value</div>
       <div class="field-row">
-        <input class="field-input flex1" v-model="singleValue" placeholder="Value…"
+        <SuggestInput v-model="singleValue" :options="valuesInUse" mark-existing
+          input-class="field-input flex1" placeholder="Value…"
           :disabled="attrDisabled"
-          @keydown.enter="assignSingleValue"
-          v-tooltip.bottom="'Assign this value to the selected attribute for all target images'" />
+          :tip="'Assign this value to the selected attribute for all target images'"
+          @keydown.enter="assignSingleValue" />
         <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !singleValue"
           @click="assignSingleValue"
           v-tooltip.bottom="'Apply to selected images, or all images if none are selected'">

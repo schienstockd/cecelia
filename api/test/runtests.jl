@@ -2796,6 +2796,88 @@ end
 # is the part with a wrong answer available: an entry whose file is gone must disappear rather than
 # render a row that plays nothing, and an entry older than its file must be flagged rather than offer
 # a config that did not produce those bytes.
+# Params are remembered PER OUTPUT NAME, so naming `Tcell` again brings back Tcell's settings instead
+# of whatever ran last. `matched` is the load-bearing part of the response: it says the params came
+# from a by-name record rather than a fallback, and the form only REPLACES what the user is looking at
+# when it is true — otherwise switching to a brand-new name would stamp the previous run's params over
+# edits the user had just made.
+@testset "API: funparams by output name" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-funparams")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        save!(img)
+        fun = "segment.cellpose"
+
+        get_fp(; vn = "", iu = img.uid, ius = "") = begin
+            q = "projectUid=$(proj.uid)&fun=$(fun)&imageUid=$(iu)&setUid=$(s.uid)" *
+                (isempty(ius) ? "" : "&imageUids=$(ius)") *
+                (isempty(vn) ? "" : "&valueName=$(vn)")
+            st, body = api_task_fun_params(HTTP.Request("GET", "/api/tasks/funparams?$q"))
+            @test st == 200
+            JSON3.read(body)
+        end
+
+        # nothing banked at all
+        r = get_fp()
+        @test r.params === nothing && r.matched == false
+
+        write_module_fun_params!(img._dir, fun,
+            Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 8); value_name = "Tcell")
+        write_module_fun_params!(img._dir, fun,
+            Dict{String,Any}("outputValueName" => "Neutrophil", "cellDiameter" => 15);
+            value_name = "Neutrophil")
+
+        # each name gets ITS params, and says so
+        t = get_fp(vn = "Tcell")
+        @test t.matched == true && t.params.cellDiameter == 8
+        n = get_fp(vn = "Neutrophil")
+        @test n.matched == true && n.params.cellDiameter == 15
+
+        # a NEW name falls back to the last run — useful as a starting point, but `matched` is false so
+        # the form knows not to overwrite anything with it
+        m = get_fp(vn = "Macrophage")
+        @test m.matched == false && m.params.cellDiameter == 15
+
+        # no valueName at all behaves exactly as it did before this existed
+        @test get_fp().matched == false && get_fp().params.cellDiameter == 15
+
+        # by-name wins across BOTH levels before either flat blob: a set-level record for the name the
+        # user is actually naming beats the image's record of some other run
+        # both extra images added BEFORE anything is written to the SET dir: `add_image!` saves the
+        # set from its in-memory object, which would overwrite a `funParams` blob written to that
+        # file dir-based (that write is deliberately object-free — see `write_module_fun_params!`)
+        img2 = add_image!(s; name="img2"); save!(img2)
+        img3 = add_image!(s; name="img3"); save!(img3)
+        write_module_fun_params!(img2._dir, fun,
+            Dict{String,Any}("cellDiameter" => 99))                       # image flat only
+        write_module_fun_params!(s._dir, fun,
+            Dict{String,Any}("cellDiameter" => 7); value_name = "Tcell")  # set by-name
+        r2 = get_fp(vn = "Tcell", iu = img2.uid)
+        @test r2.matched == true && r2.params.cellDiameter == 7
+
+        # A BATCH: several images selected, so there is no driving image and `imageUid` is empty. The
+        # by-name answer still has to be found, because that is the normal way a segmentation is run —
+        # it lives on the images (and, for names predating the record, only in their run logs), never
+        # on the set. `imageUids` carries the whole selection for that question alone.
+        write_module_fun_params!(img3._dir, fun,
+            Dict{String,Any}("outputValueName" => "Bcell", "cellDiameter" => 21); value_name = "Bcell")
+        b = get_fp(vn = "Bcell", iu = "", ius = "$(img2.uid),$(img3.uid)")
+        @test b.matched == true && b.params.cellDiameter == 21
+        # …and it does not become a second way to answer the flat blob: with no name, the resolution is
+        # image → set exactly as before, which for a batch means the set
+        @test get_fp(iu = "", ius = "$(img2.uid),$(img3.uid)").params.cellDiameter == 7
+
+        @test api_task_fun_params(HTTP.Request("GET", "/api/tasks/funparams?fun=$fun"))[1] == 400
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: movie registry" begin
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
@@ -2858,6 +2940,26 @@ end
         st, body = _post(api_movies_delete, Dict("projectUid"=>uid, "names"=>["c.mp4", "ghost.mp4"]))
         @test st == 200 && JSON3.read(body).deleted == ["c.mp4"]
         @test !isfile(joinpath(mdir, "c.mp4"))
+
+        # ── the user's "name" suffix, banked so the next recording can offer it back
+        # It is NOT recoverable from the filename: that carries uid and attribute parts too, with
+        # nothing marking where the suffix begins, so parsing it back would mean encoding three
+        # recorders' naming conventions in a fourth place. Stored instead.
+        register_movie!(uid, "a.mp4"; produced_by = "viewer", suffix = "afCorrected")
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix == "afCorrected"
+
+        # The RAW suffix, not the `_sanitised` fragment that goes in the filename — offering `_af`
+        # back would re-prefix it to `__af` on the next recording.
+        @test !startswith(only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix, "_")
+
+        # A recorder that passes none leaves a banked one standing, like `imageUid`/`channels` — a
+        # re-record must not blank what the previous one knew.
+        register_movie!(uid, "a.mp4"; produced_by = "viewer")
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix == "afCorrected"
+
+        # A movie recorded before the field existed reports "", never `nothing` — the frontend filters
+        # blanks out of the suggestion list rather than rendering an empty row.
+        @test only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).suffix == ""
 
         # ── config banking + the stale rule
         register_movie!(uid, "b.mp4"; produced_by = "batch",

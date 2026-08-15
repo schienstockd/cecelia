@@ -1,5 +1,26 @@
 struct TrainFlowModel <: CciaTask end
 
+# `modelName` names into the model VAULT, which is global — shared across projects, not a property of
+# any image — so its suggestions cannot ride the image payload the way every other `valueNameInput`'s
+# do (VALUE_NAME_INPUT_PLAN → D6). They arrive as injected spec OPTIONS instead, the same runtime
+# enumeration hook `CoastalSegment` uses for its model picker, so a freshly trained model is offered
+# without a server restart.
+#
+# The param stays a `valueNameInput`, NOT a select: the whole point is naming a NEW model, and
+# training onto an existing name is the deliberate overwrite `flow_model_target(; overwrite)` guards.
+_needs_dynamic_options(::TrainFlowModel) = true
+
+function _inject_dynamic_options!(spec::Dict{String,Any}, ::TrainFlowModel)::Dict{String,Any}
+    params = get(spec, "params", nothing)
+    params isa AbstractVector || return spec
+    for p in params
+        p isa AbstractDict && string(get(p, "key", "")) == "modelName" || continue
+        # value == label: the user types the stem, so the suggestion IS what goes in the field
+        p["options"] = [Dict{String,Any}("label" => n, "value" => n) for n in flow_model_names()]
+    end
+    spec
+end
+
 """
     parse_temporal_scales(s) -> Vector{Int}
 

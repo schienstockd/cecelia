@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
-  resolveInitialParams } from './paramValues'
+  resolveInitialParams, valueNameOptions, imageNamesForField } from './paramValues'
 import type { TaskDef, ParamValues } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -318,5 +318,71 @@ describe('resolveInitialParams — a failed load must not reset the form', () =>
     expect(resolveInitialParams(def, stale, null)).toEqual({
       backgroundMethod: 'otsu', valueName: 'default',
     })
+  })
+})
+
+// ── the option LIST, not just which option is preselected ──────────────────────────────────────────
+// `preferredValueName` was the only thing covered here, so a change that emptied the list entirely
+// passed the whole suite: `field` omitted (which six task specs rely on) was collapsed to "no source"
+// and every version dropdown rendered blank, with no error anywhere.
+describe('valueNameOptions', () => {
+  const img = (over: Partial<Record<string, unknown>> = {}) => ({
+    uid: 'u', name: 'n', filepaths: { default: 'a.zarr', corrected: 'b.zarr' },
+    labels: { Tcell: ['t.zarr'] }, spatialGraphs: { pooled: 'p.h5ad' },
+    statsSuffixes: ['contacts'], clusterSuffixes: ['immune'], regionSuffixes: ['niches'],
+    ...over,
+  }) as never
+
+  it('an ABSENT field means image versions — the case most task JSON relies on', () => {
+    expect(valueNameOptions([img()], undefined)).toEqual(['default', 'corrected'])
+  })
+
+  it('reads the field it is given', () => {
+    expect(valueNameOptions([img()], 'labels')).toEqual(['Tcell'])
+    expect(valueNameOptions([img()], 'spatialGraphs')).toEqual(['pooled'])
+    expect(valueNameOptions([img()], 'statsSuffixes')).toEqual(['contacts'])
+    expect(valueNameOptions([img()], 'clusterSuffixes')).toEqual(['immune'])
+    expect(valueNameOptions([img()], 'regionSuffixes')).toEqual(['niches'])
+  })
+
+  it('NULL means there is no source at all — the only case that yields nothing', () => {
+    // a valueNameInput whose namespace has no image field (the global model vault)
+    expect(valueNameOptions([img()], null)).toEqual([])
+    // …and `undefined` must NOT behave like it
+    expect(valueNameOptions([img()], undefined)).not.toEqual([])
+  })
+
+  it('intersects across the selected images — a name only one has cannot be run', () => {
+    const a = img({ filepaths: { default: 'x', corrected: 'y' } })
+    const b = img({ filepaths: { default: 'x', smoothed: 'z' } })
+    expect(valueNameOptions([a, b], undefined)).toEqual(['default'])
+  })
+
+  it('offers "default" when nothing is selected yet', () => {
+    expect(valueNameOptions([], undefined)).toEqual(['default'])
+  })
+
+  it('unions extras (chain outputs, injected global options) without duplicating', () => {
+    expect(valueNameOptions([img()], undefined, ['cpCorrected', 'default']))
+      .toEqual(['default', 'corrected', 'cpCorrected'])
+    // extras still arrive when there is no image source — that is how a global namespace lists
+    expect(valueNameOptions([img()], null, ['flow.cyto'])).toEqual(['flow.cyto'])
+  })
+
+  it('tolerates an image missing the field entirely', () => {
+    expect(valueNameOptions([img({ labels: undefined })], 'labels')).toEqual([])
+    expect(valueNameOptions([img({ statsSuffixes: undefined })], 'statsSuffixes')).toEqual([])
+  })
+})
+
+describe('imageNamesForField', () => {
+  it('falls back to image versions for an unknown or absent field', () => {
+    const i = { filepaths: { default: 'a' } } as never
+    expect(imageNamesForField(i, undefined)).toEqual(['default'])
+    expect(imageNamesForField(i, 'nonsense')).toEqual(['default'])
+  })
+
+  it('answers ["default"] for an image with no filepaths at all', () => {
+    expect(imageNamesForField({} as never, undefined)).toEqual(['default'])
   })
 })

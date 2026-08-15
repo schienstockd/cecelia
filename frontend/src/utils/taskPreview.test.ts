@@ -5,6 +5,7 @@ import {
   paramsBlocker, hasAfCombination, previewValueName,
   warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
   type PreviewContext, type PreviewStatus, previewFailureLog } from './taskPreview'
+import type { TaskDef, ParamDef } from '../tasks/types'
 
 const ctx = (over: Partial<PreviewContext> = {}): PreviewContext => ({
   projectUid: 'p', imageUid: 'img1', valueName: 'A', funName: 'segment.cellpose',
@@ -128,20 +129,36 @@ describe('previewValueName — the layer belongs to the OUTPUT, not the input ve
   // `corrected` into label set `default` put `(corrected) Preview` on screen while `(default) Labels`
   // was never evicted — two masks stacked — and the finished run then looked for a `(default) Preview`
   // that did not exist, leaving the stale preview behind.
-  it('prefers outputValueName when the task has one', () => {
-    expect(previewValueName({ valueName: 'corrected', outputValueName: 'default' })).toBe('default')
+  // Which param carries the output name is now the DEF's business (`utils/taskOutput`), because six
+  // different keys can carry it — so these pass a def rather than relying on the key being spelled
+  // `outputValueName`. The behaviour asserted is unchanged.
+  const mkDef = (params: ParamDef[]): TaskDef =>
+    ({ fun_name: 'x.y', task: 'y', label: 'Y', category: 'x', env: [], params })
+  const segments = mkDef([{ key: 'outputValueName', label: 'n', type: 'valueNameInput',
+                            namespace: 'labels' }])
+  const noOutput = mkDef([{ key: 'valueName', label: 'v', type: 'valueNameSelection' }])
+
+  it('prefers the output name when the task has one', () => {
+    expect(previewValueName(segments, { valueName: 'corrected', outputValueName: 'default' }))
+      .toBe('default')
   })
 
   it('falls back to the input version for a task with no output name (AF correction)', () => {
-    expect(previewValueName({ valueName: 'corrected', afCombinations: {} })).toBe('corrected')
+    expect(previewValueName(noOutput, { valueName: 'corrected', afCombinations: {} }))
+      .toBe('corrected')
   })
 
   it('never yields an empty stem', () => {
-    expect(previewValueName(null)).toBe('default')
-    expect(previewValueName({})).toBe('default')
+    expect(previewValueName(noOutput, null)).toBe('default')
+    expect(previewValueName(noOutput, {})).toBe('default')
     // an unset text param arrives as '' rather than absent — that must not become "() Preview"
-    expect(previewValueName({ valueName: 'corrected', outputValueName: '' })).toBe('corrected')
-    expect(previewValueName({ outputValueName: 3 })).toBe('default')
+    expect(previewValueName(segments, { valueName: 'corrected', outputValueName: '' }))
+      .toBe('corrected')
+    expect(previewValueName(segments, { outputValueName: 3 })).toBe('default')
+  })
+
+  it('is "default" when the task def is unknown, rather than throwing', () => {
+    expect(previewValueName(undefined, { outputValueName: 'Tcell' })).toBe('default')
   })
 })
 

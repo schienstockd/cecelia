@@ -137,6 +137,48 @@ function img_spatial_graph_suffixes(img::CciaImage)::Vector{String}
     sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".h5ad")])
 end
 
+"""
+    img_stats_suffixes(img) -> Vector{String}
+
+The interaction-stats runs on this image — the `statsSuffix` values already used
+(`{img._dir}/spatialStats/{suffix}.json`). Listed from disk, the same convention as the neighbour
+graphs above; no ccid.json registration.
+
+`img_stats_dir`/`img_stats_path` own the path convention: the writer (`spatialAnalysis.neighbourStats`)
+and the reader (`ai/spatial.jl`) both joined `"spatialStats"` inline, which is two places to keep in
+step and was about to become three.
+"""
+img_stats_dir(img::CciaImage)::String = joinpath(img._dir, "spatialStats")
+img_stats_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_stats_dir(img), "$(suffix).json")
+function img_stats_suffixes(img::CciaImage)::Vector{String}
+    d = img_stats_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
+    img_cluster_suffixes(img[, value_name]; family = "clusters") -> Vector{String}
+
+The clustering runs recorded for one segmentation — the `valueNameSuffix` values already used.
+`family` is `"clusters"` (clustPops/clustTracks) or `"regions"` (clustRegions); a run of each can
+share a suffix without clobbering, so they are listed separately.
+
+**Image-owned accessor over the canonical sidecar reader, not a second reader.** The manifest
+(`{props}.clustfeatures.json`) has three historical layouts and `_clustfeatures_suffixes`
+(`gating/population_manager.jl`) is the one place that knows them — INVENTORY.md says so. What was
+missing was an accessor hanging off the IMAGE, like the graph/track/branch ones, so a caller does not
+have to know that a clustering run is addressed by a label-props path.
+
+Unlike its siblings this is per **(image, value_name)**: a clustering belongs to a segmentation, not
+to an image (VALUE_NAME_INPUT_PLAN → D6).
+"""
+function img_cluster_suffixes(img::CciaImage, value_name::AbstractString = "";
+                              family::AbstractString = "clusters")::Vector{String}
+    vn = isempty(value_name) ? resolve_value_name(img) : String(value_name)
+    sort!(collect(_clustfeatures_suffixes(img_label_props_path(img, vn); family = family)))
+end
+
 # Generic value_name checks over a versioned property field (default `label_props` = the segmentations).
 # It's just "does this versioned field carry this value_name" — reusable wherever a feature must know
 # whether an image has a given value_name before acting on it (e.g. copying gating across images).
@@ -472,38 +514,114 @@ end
 # on the set never has to load all of the set's images (`save!(::CciaSet)` cascades to every child).
 const FUN_PARAMS_META_KEY = "funParams"
 
-"""
-    read_module_fun_params(ccid_dir, fun) -> Dict | nothing
+# Params remembered PER OUTPUT NAME, alongside (never instead of) the flat last-run blob above.
+#
+# One blob per task is wrong the moment a task is run twice under different names: segmenting `Tcell`
+# and then `Neutrophil` left the form showing the Neutrophil settings, so re-running Tcell meant
+# re-entering every model parameter by hand. That is the problem this exists for.
+#
+# A SEPARATE meta key rather than nesting inside `funParams[fun]`, because the two answer different
+# questions and mixing them would make the flat blob ambiguous — is a key a param, or a name? Old
+# entries keep working untouched and there is no migration: a task/name pair with nothing banked falls
+# back to the flat blob, which is exactly today's behaviour.
+const FUN_PARAMS_BY_NAME_META_KEY = "funParamsByName"
 
-Last-used params for task `fun` stored in `<ccid_dir>/ccid.json` under `meta["funParams"]`, or
-`nothing` if absent. `ccid_dir` is an object metadata dir (`{proj}/1/{uid}/`) — image or set.
 """
-function read_module_fun_params(ccid_dir::String, fun::String)::Union{Dict{String,Any},Nothing}
+    read_module_fun_params(ccid_dir, fun; value_name = "") -> Dict | nothing
+
+Last-used params for task `fun` in `<ccid_dir>/ccid.json`, or `nothing` if absent. `ccid_dir` is an
+object metadata dir (`{proj}/1/{uid}/`) — image or set.
+
+With a `value_name`, prefers what was last run UNDER THAT NAME (`meta["funParamsByName"][fun][name]`)
+and falls back to the flat last-run blob (`meta["funParams"][fun]`). The fallback is the point: the
+first time a name is used there is nothing banked for it, and starting from the last run is a better
+default than the task's bare defaults — and is what the form did before this existed.
+"""
+function read_module_fun_params(ccid_dir::String, fun::String;
+                                value_name::AbstractString = "")::Union{Dict{String,Any},Nothing}
+    if !isempty(value_name)
+        hit = read_module_fun_params_by_name(ccid_dir, fun, value_name)
+        isnothing(hit) || return hit
+    end
+    meta = _read_meta(ccid_dir)
+    isnothing(meta) && return nothing
+    _fun_params_entry(get(meta, FUN_PARAMS_META_KEY, nothing), fun)
+end
+
+"""
+    read_module_fun_params_by_name(ccid_dir, fun, value_name) -> Dict | nothing
+
+ONLY what was last run under `value_name` — no fallback to the flat blob.
+
+Separate from the fallback-taking read above because the caller needs to tell the two apart. The form
+must REPLACE what the user is looking at when a name has params banked for it, and leave it alone when
+it does not: falling back there would quietly discard edits the user had just made, replacing them
+with the previous run's. "Nothing banked for this name" and "here are the previous run's params" are
+different answers and only one of them is safe to apply.
+
+Answers for names that PREDATE the by-name record too, by falling back to the run log
+(`run_log_params_for_output`) — which has always recorded every run's params, and from which the
+output name is recoverable. Without that this returns `nothing` for every existing project until each
+name is re-run once, which is the same as the feature not working. The by-name blob stays because it
+is exact and covers the SET dir (which keeps no run log); the log is the retroactive half.
+"""
+function read_module_fun_params_by_name(ccid_dir::String, fun::String,
+                                        value_name::AbstractString)::Union{Dict{String,Any},Nothing}
+    isempty(value_name) && return nothing
+    meta = _read_meta(ccid_dir)
+    if !isnothing(meta)
+        hit = _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
+                                String(value_name))
+        isnothing(hit) || return hit
+    end
+    run_log_params_for_output(ccid_dir, fun, value_name)
+end
+
+function _read_meta(ccid_dir::String)
     path = state_file(ccid_dir)
     isfile(path) || return nothing
-    raw  = JSON3.read(read(path, String), Dict{String,Any})
-    meta = get(raw, "meta", nothing)
-    meta isa AbstractDict || return nothing
-    fp = get(meta, FUN_PARAMS_META_KEY, nothing)
-    fp isa AbstractDict || return nothing
-    v = get(fp, fun, nothing)
+    meta = get(JSON3.read(read(path, String), Dict{String,Any}), "meta", nothing)
+    meta isa AbstractDict ? meta : nothing
+end
+
+# one level of `{key => Dict}` lookup, String-keyed (JSON3 hands back Symbols — CLAUDE.md)
+function _fun_params_entry(bag, key)::Union{Dict{String,Any},Nothing}
+    v = bag isa AbstractDict ? get(bag, key, nothing) : nothing
     v isa AbstractDict ? Dict{String,Any}(String(k) => vv for (k, vv) in v) : nothing
 end
 
 """
-    write_module_fun_params!(ccid_dir, fun, params)
+    write_module_fun_params!(ccid_dir, fun, params; value_name = "")
 
-Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.json`
-(`meta["funParams"][fun]`), preserving every other field. No-op if the file is absent.
+Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.json`, preserving every
+other field. No-op if the file is absent.
+
+Writes the flat blob (`meta["funParams"][fun]`) ALWAYS, and additionally under the output name when
+one is given (`meta["funParamsByName"][fun][name]`). Both, deliberately: the flat one is what a NEW
+name falls back to, so it has to keep tracking the most recent run whatever it was called.
 """
-function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict)
+function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict;
+                                  value_name::AbstractString = "")
     path = state_file(ccid_dir)
     isfile(path) || return nothing
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String), Dict{String,Any}))
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    fp   = Dict{String,Any}(String(k) => v for (k, v) in get(meta, FUN_PARAMS_META_KEY, Dict{String,Any}()))
-    fp[fun] = Dict{String,Any}(String(k) => v for (k, v) in params)
+    clean = Dict{String,Any}(String(k) => v for (k, v) in params)
+
+    fp = Dict{String,Any}(String(k) => v for (k, v) in get(meta, FUN_PARAMS_META_KEY, Dict{String,Any}()))
+    fp[fun] = clean
     meta[FUN_PARAMS_META_KEY] = fp
+
+    if !isempty(value_name)
+        byn = Dict{String,Any}(String(k) => v
+                               for (k, v) in get(meta, FUN_PARAMS_BY_NAME_META_KEY, Dict{String,Any}()))
+        per_fun = Dict{String,Any}(String(k) => v
+                                   for (k, v) in get(byn, fun, Dict{String,Any}()))
+        per_fun[String(value_name)] = clean
+        byn[fun] = per_fun
+        meta[FUN_PARAMS_BY_NAME_META_KEY] = byn
+    end
+
     raw["meta"] = meta
     write_json_atomic(path, raw)
     nothing

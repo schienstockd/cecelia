@@ -518,25 +518,58 @@ function api_custom_modules_reload(::Vector{UInt8})
 end
 
 # ── Task param memory (funParams) ─────────────────────────────────────────────
-# GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=
+# GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=&valueName=
 # Returns the last-used params for `fun`, resolved image → set → none (R parity). The frontend
 # passes imageUid only when exactly one image is selected (else the shared set-level default).
+#
+# `valueName` is the OUTPUT name the form is currently naming (e.g. the label set "Tcell"). Given one,
+# each level prefers what was last run under that name and falls back to that level's flat blob — so
+# picking an existing output restores ITS parameters, and a new name still starts from the last run
+# rather than from bare defaults. Optional: omit it and this behaves exactly as it did.
+#
+# `matched` says the params came from a BY-NAME record, not a fallback. The form uses it to decide
+# whether to replace what the user is looking at: switching to a name with params banked for it
+# should restore them, but a name with none must leave the form alone — applying the fallback there
+# would discard edits the user had just made.
+#
+# By-name wins across BOTH levels before either flat blob is considered: a set-level record for the
+# name the user is actually naming is a better answer than the image's record of some other run.
+#
+# `imageUids` (all selected) is asked ONLY the by-name question. `imageUid` is the single-selection
+# driving image, so with several selected the flat blob correctly resolves at the set — but the by-name
+# answer for a batch is on the images: a run under a name banks the same params on every image it ran
+# on, and the run log that backfills names from before that record existed is per-image and has no
+# set-level half. Without this, naming `Neutrophil` restored nothing whenever more than one image was
+# selected, which for segmentation is the normal case. The flat-blob resolution is untouched.
 function api_task_fun_params(req::HTTP.Request)
     q     = HTTP.queryparams(HTTP.URI(req.target))
     proj  = get(q, "projectUid", "")
     fun   = get(q, "fun", "")
     imgu  = get(q, "imageUid", "")
     setu  = get(q, "setUid", "")
+    vname = get(q, "valueName", "")
+    imgus = filter(!isempty, String.(split(get(q, "imageUids", ""), ',')))
     (isempty(proj) || isempty(fun)) &&
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
     proj_root = joinpath(projects_dir(), proj)
-    params = isempty(imgu) ? nothing :
-             Cecelia.read_module_fun_params(joinpath(proj_root, "1", imgu), fun)
-    if isnothing(params) && !isempty(setu)
-        params = Cecelia.read_module_fun_params(joinpath(proj_root, "1", setu), fun)
+    dir(u) = joinpath(proj_root, "1", u)
+
+    params, matched = nothing, false
+    if !isempty(vname)
+        for u in unique(filter(!isempty, [imgu; imgus; setu]))
+            params = Cecelia.read_module_fun_params_by_name(dir(u), fun, vname)
+            isnothing(params) || (matched = true; break)
+        end
     end
-    200, JSON3.write((; params = params))
+    if isnothing(params)
+        for u in (imgu, setu)
+            isempty(u) && continue
+            params = Cecelia.read_module_fun_params(dir(u), fun)
+            isnothing(params) || break
+        end
+    end
+    200, JSON3.write((; params = params, matched = matched))
 end
 
 # ── Resource pools ───────────────────────────────────────────────────────────
@@ -2563,6 +2596,15 @@ function _image_payload(img::CciaImage)
         # migrated project has tracks and no `tracking.*` entry), and `labels`/`label_props` look
         # identical tracked or not. One readdir per image, no HDF5 open.
         trackValueNames = img_track_value_names(img),
+        # Interaction-stats runs (spatialAnalysis.neighbourStats), keyed by run suffix — same listing
+        # convention as spatialGraphs above. Feeds the `stats` namespace of a `valueNameInput`.
+        statsSuffixes   = img_stats_suffixes(img),
+        # Clustering runs recorded for the ACTIVE segmentation, split by family so a `clusters.immune`
+        # and a `regions.immune` can coexist. Per (image, value_name) rather than per image — a
+        # clustering belongs to a segmentation (VALUE_NAME_INPUT_PLAN → D6) — so this is the active
+        # one's list; switching segmentation re-fetches the payload anyway.
+        clusterSuffixes = img_cluster_suffixes(img; family = "clusters"),
+        regionSuffixes  = img_cluster_suffixes(img; family = "regions"),
         attr            = img.attr,
         # Include/exclude in further processing (default true). Excluded images are greyed in the
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.

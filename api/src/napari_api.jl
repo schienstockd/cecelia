@@ -1441,6 +1441,7 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
                 # shown channels are banked PER ENTRY rather than left to the shared config.
                 register_movie!(project_uid, basename(path);
                                 produced_by = "batch", image_uid = uid, channels = chan_names,
+                                suffix = suffix,
                                 config = movie_config, config_kind = "look")
                 ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
             end
@@ -1577,7 +1578,7 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                 String[]
             register_movie!(project_uid, basename(path);
                             produced_by = animation ? "animation" : "viewer",
-                            image_uid = image_uid, channels = shown,
+                            image_uid = image_uid, channels = shown, suffix = suffix,
                             config = movie_config, config_kind = animation ? "keyframes" : "look")
             merge!(result, Dict{String,Any}("frames" => frames,
                                             "sizeX" => get(resp, "sizeX", nothing),

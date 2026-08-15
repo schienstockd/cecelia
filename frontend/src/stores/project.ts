@@ -39,6 +39,12 @@ export interface CciaImage {
   // img_track_value_names). THE local answer to "is this image tracked": the run log is not (a
   // migrated project carries tracks with no `tracking.*` entry), and `labels` reads the same either way.
   trackValueNames?: string[]
+  // Run suffixes for the namespaces a `valueNameInput` can suggest from (VALUE_NAME_INPUT_PLAN).
+  // Plain arrays, not versioned dicts: these are listed from disk / a sidecar manifest, never
+  // registered in ccid.json, so there is no `_active` to carry.
+  statsSuffixes?: string[]      // spatialAnalysis.neighbourStats runs
+  clusterSuffixes?: string[]    // clustPops / clustTracks runs, for the ACTIVE segmentation
+  regionSuffixes?: string[]     // clustRegions runs, same segmentation, separate family
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)

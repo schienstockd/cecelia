@@ -195,6 +195,38 @@ read-modify-write (same idiom a task uses to register its output `filepath`), **
 remembering a param blob on the set never has to load all its images. `CciaSet.meta` carries the
 same `funParams` key.
 
+### `meta["funParamsByName"]` — remembered per OUTPUT name
+
+`{ "<fun_name>": { "<output name>": { …params… } } }` — what was last run under each output name, so
+re-running a segmentation as `Tcell` restores Tcell's settings instead of whatever ran last. Written
+alongside (never instead of) `funParams`, which keeps tracking the most recent run because that is
+what a NEW name falls back to.
+
+A **separate key** on purpose: nesting per-name blobs inside `funParams[fun]` would make that map
+ambiguous about whether a key is a param or a name, and every existing entry would need migrating.
+Nothing migrates — a task/name pair with nothing banked reads through to the flat blob, which is
+exactly the pre-existing behaviour.
+
+`read_module_fun_params(ccid_dir, fun; value_name)` takes that fallback;
+`read_module_fun_params_by_name(ccid_dir, fun, value_name)` deliberately does NOT, because the caller
+has to tell "nothing banked for this name" apart from "here is the last run" — only one of them is
+safe to stamp over a form the user has been editing. See `docs/MODULES.md` → *Remembered PER OUTPUT
+NAME, too*.
+
+**A name with nothing banked is answered from the run log.** This key only ever fills from the run
+that writes it, so on a project segmented before it existed *every* name read as "nothing banked" and
+the form restored nothing — the feature was live and did nothing, and nobody re-runs six
+segmentations to seed it. `runlog.json` has always recorded each run's params, and a run's output
+name is recoverable from them (`task_output_name`, via the spec's `namespace`), so
+`run_log_params_for_output(ccid_dir, fun, value_name)` (`app/src/run_log.jl`) answers for the
+history. This key stays because it is the exact answer and is the only one the **set** dir has (a set
+keeps no run log) — an index over the log, not a second copy of the truth.
+
+**Only a run that finished `"done"` counts**, so the two halves of the feature name the same set: the
+picker offers what EXISTS in the namespace, and a failed or in-flight run wrote nothing there. The
+reverse (a name in the picker with nothing to restore — written by another task, or by a run older
+than `RUN_LOG_CAP`) is the harmless direction: `matched` is false and the form is left alone.
+
 ---
 
 ## Versioned fields

@@ -518,6 +518,41 @@ suite detector fails a handler that skips them:
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }
 ```
 
+**`valueNameInput`** — the INPUT-side twin's opposite: the name this task **writes under**. Free text
+with the names already in that namespace offered (an `<input>` + native `<datalist>`), so re-running
+onto an existing output is a pick and naming a new one is still just typing. Declare the **namespace**,
+not the field — the field the suggestions come from follows from it, so a spec never states it twice:
+```json
+{ "key": "outputValueName", "label": "Name", "type": "valueNameInput", "namespace": "labels", "default": "default" }
+```
+
+Namespaces: `filepaths`, `labels`, `spatialGraphs`, `tracks`, `branches`, `clusters`, `regions`,
+`stats`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
+which is not uniform:
+
+| scope | namespaces | source |
+|---|---|---|
+| per image | `filepaths`, `labels`, `spatialGraphs`, `stats` | the image payload (`consumerField` names the field) |
+| per (image, value_name) | `clusters`, `regions` | the payload, for the ACTIVE segmentation — a clustering belongs to a segmentation, not an image |
+| **global** | `models` | injected spec `options` (`_inject_dynamic_options!`), because the model vault is not a property of any image |
+| not wired | `tracks`, `branches`, `obsCols` | renders as a plain input — no suggestions, everything else still works |
+
+`obsCols` is deliberately not wired: listing obs columns means opening the `.h5ad` on every form
+render, for the two least-used tasks. See `docs/TODO.md` → *Value-name input — the one namespace left
+out*.
+
+> **Use it for every param that names an output, whatever the key is called.** Eleven params across
+> six spellings do (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`, `colName`,
+> `modelName`) — the keys stay, because they name five genuinely different storage shapes and one
+> shared name would make the handlers lie. The `namespace` is what makes them one concept, and it is
+> what `utils/taskOutput.taskOutput` reads to answer "what does this task write" for the chain
+> whiteboard, the preview layer stem and the param suggestions — **one rule, three callers**. Adding a
+> fourth place that sniffs for a particular key is the bug this replaced.
+
+Unlike `text`, the value is validated (`app/src/tasks/task.jl`): non-empty, no path separator. It
+becomes a filename stem, a dict key or a column suffix, so `a/b` would silently write elsewhere. Dots
+are allowed — real names use them (`flow.cyto`).
+
 **`chipSelect`** — multi-pick from a fixed set, rendered as `ChipSelect` chips rather than a
 dropdown or a comma-separated text field. `options` plus a **list** `default`; `validate_params`
 checks each element against `options`, exactly as it does for `select`.
@@ -804,6 +839,16 @@ end
 
 No `.py` script for the composite — the steps' Python scripts are reused.
 
+**Adding a task trait? Give it a `::CompositeTask` method.** A composite's steps run through
+`_run_task` directly and are never consulted as tasks in their own right, so whatever the composite
+answers *is* the answer — and a missing method is silent, looking exactly like "the feature doesn't
+work for this task". The list lives on `CompositeTask` in `app/src/tasks/task.jl`
+(`task_requires_axes`, `_section_keys`, `live_outputs`, `task_previewable`, `preview_params`,
+`task_output_name`). It has caught people twice: the live preview shipped broken, and params-per-output-name
+banked nothing for any segmentation started from a module page — both because the page runs
+`segment.cellposeMeasure`, not `segment.cellpose`. Neither showed up in the frontend, because
+`api_task_definitions` merges a composite's step params before the frontend ever sees them.
+
 ### When to use composite vs a new standalone task
 
 Use composite when two or more tasks are naturally sequential and share no new logic. Write a standalone task when the combined operation has meaningful optimisations that compositing would lose (e.g., holding an intermediate array in memory across steps to avoid a write-then-read cycle).
@@ -931,6 +976,41 @@ halves are hidden by a CSS rule rather than a per-element guard: `docs/UI.md` �
   it once the project arrived. The fetch is therefore watched on **`projectUid` as well as** fun and
   set — a re-run when the uid appears is what makes the `null` answer recoverable rather than a form
   stuck empty.
+
+#### Remembered PER OUTPUT NAME, too
+
+One blob per task is wrong the moment a task runs twice under different names. Segmenting `Tcell` and
+then `Neutrophil` left the form showing Neutrophil's settings, so re-running `Tcell` meant re-entering
+every model parameter by hand — the reason `valueNameInput` exists at all.
+
+Params are therefore ALSO banked under the output name the run wrote, in a **separate** meta key
+(`meta["funParamsByName"]["<fun>"]["<name>"]`) — separate rather than nested inside `funParams[fun]`,
+which would make that blob ambiguous about whether a key is a param or a name. Old entries keep
+working untouched; there is no migration.
+
+- **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
+  `namespace` declaration, because six different keys can carry it. It is the Julia twin of
+  `utils/taskOutput.taskOutput`, pinned against the same specs by *task_output_name agrees with the
+  frontend rule* — they cannot call each other, so the specs are the contract (same arrangement as
+  the calibration writers).
+- **The flat blob still tracks the most recent run**, whatever it was called, because that is what a
+  NEW name falls back to. Starting from the last run beats starting from bare task defaults.
+- **A name that predates the record is answered from the run log.** A key that only fills from the
+  run that writes it is empty on every project that already exists, so the feature shipped restoring
+  nothing at all. `run_log_params_for_output` recovers it from `runlog.json`, which has always kept
+  each run's params — newest **successful** run of that name wins, so the names that restore are the
+  names the picker offers. Details: `docs/OBJECTMODEL.md` → *`meta["funParamsByName"]`*.
+- **`matched` decides whether the form is replaced.** `GET …/funparams` answers `{params, matched}`;
+  `matched` means the params came from a by-name record rather than the fallback. `TaskRunner` only
+  overwrites the form when it is true — applying the fallback would stamp the previous run's params
+  over edits the user had just made, which is the same failure the `null` rule above exists to stop.
+- **Restored on COMMIT, never per keystroke.** `ParamRenderer` emits `commit` when a `valueNameInput`
+  is finished (blur, or picking a suggestion — `SuggestInput` dispatches a native `change` on accept),
+  not on `update:modelValue`. Typing toward `Tcell2` passes through `Tcell`, and swapping every other
+  field mid-word would be worse than not having the feature.
+- **The name the user just typed is kept.** A restored record carries the output name it was saved
+  with; `onParamCommit` writes the committed value back over it, because silently rewriting the field
+  someone just typed in is never right.
 
 Whiteboard chain nodes are unaffected — their params live in the per-project chain template, not in
 `funParams`.

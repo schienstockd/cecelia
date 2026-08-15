@@ -21,6 +21,7 @@ import { useInlineEdit } from '../composables/useInlineEdit'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import SuggestInput from '../components/SuggestInput.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import BaseModal from '../components/BaseModal.vue'
@@ -573,12 +574,15 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 
               <!-- Tags in the row too, for the same reason -->
               <template #cell-tagText="{ row }">
-                <!-- `list` gives the row editor the same "pick what already exists" the modal does,
-                     without a popover inside a table cell. -->
-                <input v-if="isTagging(row.name)" :ref="focusTagInput" v-model="tagDraft"
-                       class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
-                       list="mov-tags-in-use"
-                       v-tooltip.right="'Enter to save, Esc to cancel'"
+                <!-- The row editor offers the tags already in use, like the bulk panel's ChipSelect
+                     does. `separator` scopes the suggestion to the tag being typed, so accepting one
+                     does not replace the tags already in the box. This was a native <datalist>, whose
+                     popup is browser chrome — ~16px options over a 2xs input; TeleportPopover
+                     teleports to <body>, so a table cell does not clip it either. -->
+                <SuggestInput v-if="isTagging(row.name)" :ref="focusTagInput"
+                       v-model="tagDraft" :options="tagsInUse" separator=","
+                       input-class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
+                       :tip="'Enter to save, Esc to cancel'"
                        @click.stop @keyup.enter="saveTags(row)" @keyup.esc="cancelTags"
                        @blur="saveTags(row)" />
                 <span v-else class="mov-tags" @click.stop="beginTags(row)"
@@ -589,9 +593,6 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
               </template>
             </SelectionTable>
             </div>
-            <datalist id="mov-tags-in-use">
-              <option v-for="t in tagsInUse" :key="t" :value="t" />
-            </datalist>
           </div>
         </div>
       </CollapsiblePanel>

@@ -427,14 +427,21 @@ end
 
 # Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).
 # Dir-based (no object load) — see write_module_fun_params! in app/src/model/image.jl.
+#
+# Also banked under the OUTPUT NAME this run wrote (`Cecelia.task_output_name`, which reads the spec's
+# `namespace` — the name lives under six different keys depending on the task). That is what lets the
+# form restore Tcell's parameters when you pick Tcell, instead of showing whatever ran last. `""` for a
+# task that names no output, and then only the flat blob is written, exactly as before.
 function _remember_fun_params(proj_root::String, fun::String, params::Dict{String,Any},
                               image_uid::String, image_uids::Vector{String}, set_uid::String)
     uids = !isempty(image_uids) ? image_uids : (isempty(image_uid) ? String[] : [image_uid])
     try
+        vn = Cecelia.task_output_name(fun, params)
         for u in uids
-            write_module_fun_params!(joinpath(proj_root, "1", u), fun, params)
+            write_module_fun_params!(joinpath(proj_root, "1", u), fun, params; value_name = vn)
         end
-        isempty(set_uid) || write_module_fun_params!(joinpath(proj_root, "1", set_uid), fun, params)
+        isempty(set_uid) ||
+            write_module_fun_params!(joinpath(proj_root, "1", set_uid), fun, params; value_name = vn)
     catch ex
         @warn "Could not persist funParams" fun exception=ex   # best-effort; never block the run
     end

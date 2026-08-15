@@ -26,9 +26,15 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { useNapariStatus } from '../composables/useNapariStatus'
+import { useMovieSuffixes } from '../composables/useMovieSuffixes'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
+
+// Suffixes already used in this project, offered in the recorder's "name" field. Lazily fetched and
+// cached across the three recorder panels — see composables/useMovieSuffixes.ts.
+const { suffixes: movieSuffixes, ensure: ensureMovieSuffixes } = useMovieSuffixes()
+watch(() => projectMeta.current?.uid ?? '', (uid: string) => { void ensureMovieSuffixes(uid) }, { immediate: true })
 const settings     = useSettingsStore()
 const ws           = useWsStore()
 const log          = useLogStore()
@@ -854,7 +860,7 @@ onUnmounted(() => {
                                 v-model:layout="compareLayout"
                                 v-model:contrast="compareContrast" />
           <MovieOptionsButton class="opt-btn">
-            <MovieOutputControls v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
+            <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="napariImage?.sizeZ" v-model:show3D="show3D"

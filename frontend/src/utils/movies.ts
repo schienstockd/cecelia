@@ -19,6 +19,10 @@ export interface MovieEntry {
   producedBy?: string    // 'viewer' | 'animation' | 'batch' — written by the recorder, not the user
   imageUid?: string      // which image it was recorded from; '' when the registry cannot say
   channels?: string[]    // the channels the movie SHOWS (recorder-banked, image order)
+  suffix?: string        // the user's "name" addition for this recording, RAW (not the `_sanitised`
+                         // fragment in the filename). Recorder-banked so the next recording can offer
+                         // it back — it is not recoverable from the filename, which also carries uid
+                         // and attribute parts with no marker saying which is which.
   hasConfig?: boolean    // a saved generation config exists (fetched on demand, not in the list)
   configKind?: string    // 'look' | 'keyframes' (Decision 7)
   configStale?: boolean  // the file was re-recorded after the config was saved (Decision 5)
@@ -281,4 +285,21 @@ export function anchoredScroll(
     left: axis(before.w, after.w, vp.w, focal.x, scroll.left),
     top:  axis(before.h, after.h, vp.h, focal.y, scroll.top),
   }
+}
+
+/**
+ * The distinct `name` suffixes already used in this project, for the recorder's suggestion list.
+ *
+ * Registry-backed, deliberately: the suffix sits in the filename beside uid and attribute parts with
+ * nothing marking where one ends, so recovering it by parsing would mean encoding three recorders'
+ * naming conventions in a fourth place — and a wrong guess offers nonsense. Movies recorded before the
+ * field existed simply contribute nothing.
+ */
+export function movieSuffixesInUse(movies: MovieEntry[]): string[] {
+  const out = new Set<string>()
+  for (const m of movies) {
+    const s = (m.suffix ?? '').trim()
+    if (s) out.add(s)
+  }
+  return [...out].sort()
 }

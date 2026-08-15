@@ -43,6 +43,26 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Value-name input — the one namespace left out
+
+Design + locked decisions: [`docs/todo/VALUE_NAME_INPUT_PLAN.md`](todo/VALUE_NAME_INPUT_PLAN.md).
+Phases 1-3 have shipped: 9 of the 11 output-naming params declare a `namespace`, offer the names
+already in use, and remember their params per name.
+
+**`obsCols` was deliberately left out** — `colName` on `behaviour.hmmStates` and
+`behaviour.hmmTransitions` is still bare text. Every other namespace lists from `ccid.json`, one
+`readdir` or a small sidecar; this one would have to open the `.h5ad` to read its obs columns, on
+every form render, for the two least-used tasks in the app.
+
+To do it anyway: add an obs-column accessor behind the same lazy fetch the pop pickers use (NOT the
+image payload), then flip the two specs to `valueNameInput` + `namespace: "obsCols"`. The param recall
+follows for free — it keys off `task_output_name`, which already reads the declaration.
+
+Also still open, and separate: **the Metadata "new attribute name" field**. `createAttr` rejects an
+existing name, so offering the existing ones would suggest guaranteed failures. The useful version
+merges the existing-attribute `<select>` with the create-input into one control — a real interaction
+change, not a drop-in.
+
 ### Per-notebook reset (re-run a notebook on new data without killing the Pluto server)
 Pluto has no filesystem watcher, so a notebook keeps rendering **stale data with no visible sign**
 after a pipeline task rewrites its inputs. The `DATA_STAMP` convention

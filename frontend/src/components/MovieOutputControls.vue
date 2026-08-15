@@ -14,6 +14,7 @@
 import { computed } from 'vue'
 import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
 import { useFieldDraft } from '../composables/useFieldDraft'
+import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 const props = defineProps<{
@@ -23,6 +24,9 @@ const props = defineProps<{
   // appended to the filename; a movie is named after the IMAGE, so this is what keeps a recording of
   // the corrected version from overwriting one of the raw import
   suffix: string
+  // suffixes already used in this project, offered as you type (`useMovieSuffixes`). Optional: omit
+  // it and the field is exactly the plain input it was.
+  suffixOptions?: string[]
   // what napari would record at right now (GET /api/napari/status), for the placeholder
   canvasX?: number | null
   canvasY?: number | null
@@ -126,8 +130,11 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
 
     <span class="cc-row-group mo-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Added to the file name'">name</span>
-      <input type="text" class="cc-input-2xs mo-txt" v-model="suffixDraft" placeholder="suffix"
-             v-tooltip.bottom="'Added to the file name; keeps versions apart'"
+      <!-- Offers the suffixes already used in this project (registry-banked, `useMovieSuffixes`), so
+           the label that keeps two recordings of one image apart is a pick rather than a re-type. -->
+      <SuggestInput v-model="suffixDraft" :options="suffixOptions ?? []"
+             input-class="cc-input-2xs mo-txt" placeholder="suffix"
+             :tip="'Added to the file name; keeps versions apart'"
              @change="$emit('update:suffix', suffixDraft)" />
     </span>
 

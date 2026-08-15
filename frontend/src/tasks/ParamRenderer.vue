@@ -12,9 +12,11 @@ import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContex
          type AdvisorParam } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
+import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
-import { isChosenValueName, preferredValueName } from './paramValues'
+import { isChosenValueName, preferredValueName, valueNameOptions } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -38,6 +40,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: unknown): void
+  // A `valueNameInput` the user has FINISHED entering — blur, or picking a suggestion (SuggestInput
+  // dispatches a native `change` on accept). Deliberately NOT `update:modelValue`, which fires per
+  // keystroke: reloading the form from a half-typed name would swap every other field while the user
+  // is still deciding, and typing "Tcell2" passes through "Tcell" on the way.
+  (e: 'commit', key: string, v: unknown): void
 }>()
 
 // section (collapsible box) state
@@ -45,6 +52,7 @@ const sectionOpen = ref(!props.param.collapsed)
 
 // dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
 const showDirBrowser = ref(false)
+
 
 const val = computed({
   get: () => props.modelValue ?? props.param.default,
@@ -58,28 +66,36 @@ const val = computed({
 // `field` names a CciaImage field (stores/project.ts): 'filepaths' (image versions, the default),
 // 'labels' (segmentation label sets), 'spatialGraphs'. See `VALUE_NAME_FIELDS` in paramValues.ts —
 // an unrecognised name used to degrade silently, and the suite now rejects one.
-function imageFieldKeys(img: CciaImage, field: string | undefined): string[] {
-  if (field === 'labels') return Object.keys(img.labels ?? {})
-  // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
-  // across the selected images is exactly the set of graphs a pooled analysis can run over.
-  if (field === 'spatialGraphs') return Object.keys(img.spatialGraphs ?? {})
-  return Object.keys(img.filepaths ?? { default: '' })
-}
 
-const availableValueNames = computed(() => {
-  const extra = props.context?.extraValueNames ?? []
-  const images = props.context?.images ?? []
-  // Base names: intersection of what exists on the selected images (or just "default" if none).
-  const base = images.length === 0
-    ? ['default']
-    : (() => {
-        const field = props.param.field
-        const sets = images.map(img => new Set(imageFieldKeys(img, field)))
-        return [...sets[0]].filter(k => sets.every(s => s.has(k)))
-      })()
-  // Union in chain-propagated names (upstream node outputs), de-duplicated, preserving order.
-  return [...new Set([...base, ...extra])]
-})
+// Which image field the NAME LIST comes from. A `valueNameSelection` says so directly (`field`); a
+// `valueNameInput` says which namespace it writes into and the field follows from that, so a spec
+// never states the same thing twice. `null` = a namespace with no image-payload field yet (clusters,
+// stats, models, obsCols) — the input still works, it just offers no suggestions. See
+// docs/todo/VALUE_NAME_INPUT_PLAN.md → Phase 3.
+// THREE-valued, and the difference matters. `undefined` means image VERSIONS — most task JSON omits
+// `field`, so that is the common case — while `null` means there is genuinely no source, which only a
+// `valueNameInput` whose namespace has no image field can be. Collapsing the two emptied the version
+// picker on six specs; `valueNameOptions` is where that distinction is now enforced and tested.
+const nameSourceField = computed<string | null | undefined>(() =>
+  props.param.type === 'valueNameInput'
+    ? consumerField(props.param.namespace as ValueNameNamespace)
+    : props.param.field)
+
+// A GLOBAL namespace has no image to read from — `models` is the vault, shared across projects — so
+// its suggestions ride the spec's OPTIONS, injected by the definitions route the same way the coastal
+// model picker's are. `null` field + no options = a plain input, which is the honest fallback for a
+// namespace nothing can enumerate yet.
+const globalNameOptions = computed<string[]>(() =>
+  props.param.type === 'valueNameInput' && nameSourceField.value === null
+    ? (props.param.options ?? []).map(o => String(o.value)).filter(Boolean)
+    : [])
+
+const availableValueNames = computed(() => valueNameOptions(
+  props.context?.images ?? [],
+  nameSourceField.value,
+  // chain-propagated names (an upstream node's output, not on disk yet) + a GLOBAL namespace's
+  // injected spec options, which is how `models` gets its list without an image to read from
+  [...globalNameOptions.value, ...(props.context?.extraValueNames ?? [])]))
 
 // When images change, auto-select an appropriate value name.
 // For filepath fields: prefer the active value name.
@@ -497,6 +513,20 @@ const pct = computed(() => {
       v-tooltip.right="param.tip"
     />
 
+    <!-- valueNameInput: the name this task WRITES under. Free text, with the names already in that
+         namespace offered as you type. `valueNameSelection` (a strict <select>) is the INPUT-side
+         twin: correct where the name must already exist, wrong here because you could never name a
+         new one. -->
+    <SuggestInput v-else-if="param.type === 'valueNameInput'"
+      :model-value="(val as string) ?? ''"
+      :options="availableValueNames"
+      :placeholder="param.placeholder"
+      :tip="param.tip"
+      mark-existing
+      @update:model-value="val = $event"
+      @change="emit('commit', param.key, ($event.target as HTMLInputElement).value)"
+    />
+
     <!-- dirPath: a folder on the machine running the server. Still typeable — a remembered path is
          faster to paste than to browse to — but Browse opens the shared FileBrowser in dir mode, the
          same picker the .ccbundle project export uses. A destination that has to be typed exactly is
@@ -651,6 +681,7 @@ const pct = computed(() => {
         :modelValue="(val as ParamValues)?.[p.key]"
         @update:modelValue="val = { ...(val as ParamValues ?? {}), [p.key]: $event }"
         :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
       />
     </div>
   </div>
@@ -707,6 +738,7 @@ const pct = computed(() => {
                 :modelValue="entry.vals[sp.key]"
                 @update:modelValue="updateGroupEntry(entry.key, sp.key, $event)"
                 :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
               />
             </div>
           </template>
@@ -716,6 +748,7 @@ const pct = computed(() => {
             :modelValue="entry.vals[p.key]"
             @update:modelValue="updateGroupEntry(entry.key, p.key, $event)"
             :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
           />
         </template>
       </div>

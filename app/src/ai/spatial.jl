@@ -25,7 +25,7 @@ _nullable_float(r, k) = let v = get(r, k, nothing)
     (v === nothing || v isa Nothing) ? nothing : Float64(v)
 end
 function _collect_contact_stats(img::CciaImage)
-    dir = joinpath(img._dir, "spatialStats"); out = Any[]
+    dir = img_stats_dir(img); out = Any[]
     isdir(dir) || return out
     for f in sort(readdir(dir))
         endswith(f, ".json") || continue

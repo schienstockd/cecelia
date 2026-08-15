@@ -19,7 +19,8 @@
     {
       "key": "modelName",
       "label": "Model name",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "models",
       "default": "",
       "tip": "Saved to the vault under this name"
     },

@@ -317,6 +317,21 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
         p = strip(String(value))
         (!isempty(p) && ispath(p) && !isdir(p)) &&
             throw(ParamValidationError("'$key' is a file, not a folder: $p"))
+    elseif type_str == "valueNameInput"
+        # The name this task WRITES under. Unlike `text` it is not free-form: it becomes a filename
+        # stem (`spatialGraph/{suffix}.h5ad`), a versioned-dict key (`labels[name]`) or a column
+        # suffix (`clusters.{suffix}`) — so a path separator in it silently writes somewhere else,
+        # and an empty one produces `labels[""]`. Dots ARE allowed: real names use them
+        # (`flow.cyto`, `clusters.immune`). See docs/todo/VALUE_NAME_INPUT_PLAN.md.
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a name string, got: $value"))
+        v = strip(String(value))
+        isempty(v) &&
+            throw(ParamValidationError("'$key' cannot be empty — it names this task's output"))
+        (occursin('/', v) || occursin('\\', v)) &&
+            throw(ParamValidationError("'$key' cannot contain a path separator: \"$v\""))
+        (v == "." || v == "..") &&
+            throw(ParamValidationError("'$key' is not a usable name: \"$v\""))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
@@ -371,6 +386,72 @@ function validate_params(task::CciaTask, params::Dict{String,Any})
     spec_params = get(spec, "params", [])
     isempty(spec_params) && return
     _validate_params_against_spec(params, spec_params)
+end
+
+# ── The name a run writes under ───────────────────────────────────────────────
+#
+# The Julia twin of `taskOutput` (frontend/src/utils/taskOutput.ts). ELEVEN task params across SIX key
+# spellings name an output (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`,
+# `colName`, `modelName`), so nothing can find it by key — the spec declares a `namespace` and that is
+# what both sides read. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
+#
+# Two implementations of one rule, which the repo accepts across a language boundary (the calibration
+# writers are the precedent) PROVIDED a test pins them together: `task_output_name agrees with the
+# frontend rule` walks the real specs, exactly as `taskOutput.test.ts` does for the TS half. They
+# cannot call each other, so the specs are the shared contract.
+#
+# `""` when the task names no output of its own — an import, a plot, a measurement onto an existing
+# set. Callers must treat that as "not keyed by a name", never as a name.
+function _spec_output_name(spec_params, params::Dict{String,Any})::String
+    legacy = ""
+    for p in spec_params
+        p isa AbstractDict || continue
+        t = string(get(p, "type", ""))
+        if t in ("section", "group")
+            inner = get(p, "params", [])
+            if !isempty(inner)
+                nested = _spec_output_name(inner, params)
+                isempty(nested) || return nested
+            end
+            continue
+        end
+        key = string(get(p, "key", ""))
+        isempty(key) && continue
+        ns = get(p, "namespace", nothing)
+        v  = strip(string(get(params, key, get(p, "default", ""))))
+        if ns !== nothing && !isempty(string(ns))
+            isempty(v) || return v
+        elseif key == "outputValueName" && isempty(legacy)
+            # the pre-registry spelling, for a spec (or a custom module) not yet migrated
+            legacy = v
+        end
+    end
+    legacy
+end
+
+"""
+    task_output_name(fun_name, params) -> String
+
+The name this run writes its output under, or `""` when the task names none. Resolved from the task
+spec's `namespace` declaration, so it works for every spelling of the key.
+
+A COMPOSITE folds over its steps (see the `::CompositeTask` method below) — the module pages run
+`segment.cellposeMeasure`, not `segment.cellpose`, so without that this answers `""` for every
+segmentation the app actually runs.
+"""
+function task_output_name(fun_name::AbstractString, params::Dict{String,Any})::String
+    task = try
+        _task_from_fun_name(String(fun_name))
+    catch
+        nothing        # unknown fun_name — not this function's job to raise
+    end
+    isnothing(task) ? "" : task_output_name(task, params)
+end
+
+function task_output_name(task::CciaTask, params::Dict{String,Any})::String
+    spec = _task_spec(task)
+    isnothing(spec) && return ""
+    _spec_output_name(get(spec, "params", []), params)
 end
 
 # ── Applicability (axis gating) ───────────────────────────────────────────────
@@ -484,6 +565,7 @@ end
 #   task_requires_axes  → union of the steps' required axes
 #   _section_keys       → union of the steps' section param keys
 #   live_outputs        → concatenation of the steps' live outputs
+#   task_output_name    → the FIRST step that names an output
 #
 # Forgetting one is SILENT and looks like "the feature doesn't work for the composite" — which is
 # exactly how the live preview first shipped broken (the segmentation module page runs
@@ -564,6 +646,24 @@ function preview_params(task::CompositeTask, params::AbstractDict, img::CciaImag
     params
 end
 
+
+# Composite: the FIRST step that names an output. A composite carries no params of its own — the form
+# is the union of its steps' (see `api_task_definitions`) — so the name the user typed belongs to a
+# step's spec, and the composite writes under it. First, not last: the producing step comes first
+# (`cellpose` → `measureLabels`), and a later step that measures ONTO that output names nothing.
+#
+# This is the trait-recursion trap this section warns about, and it shipped: params banked per output
+# name keyed off `task_output_name`, which answered `""` for every composite — so the segmentation
+# page, which runs `segment.cellposeMeasure`, banked nothing under `Tcell` no matter how often it ran.
+# The frontend was not affected (the definitions route merges composite params before it sees them),
+# so the field looked right and only the memory was missing.
+function task_output_name(task::CompositeTask, params::Dict{String,Any})::String
+    for sub in _composite_steps(task)
+        name = task_output_name(sub, params)
+        isempty(name) || return name
+    end
+    ""
+end
 
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.

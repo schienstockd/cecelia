@@ -149,18 +149,23 @@ and attributes beside its movies without parsing a filename.
 """
 function register_movie!(project_uid::AbstractString, filename::AbstractString;
                          produced_by::AbstractString = "", image_uid::AbstractString = "",
-                         channels = nothing, config = nothing,
+                         channels = nothing, suffix::AbstractString = "", config = nothing,
                          config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION)
     try
         _valid_movie_name(filename) || return nothing
         reg = _read_movies_registry(project_uid)
         e   = get(reg, String(filename), Dict{String,Any}())
         e["producedBy"] = _clean_producer(produced_by)
-        # Both only when known, so a recorder that cannot say (an animation shows whatever the keyframes
+        # These only when known, so a recorder that cannot say (an animation shows whatever the keyframes
         # do) leaves a previously banked answer standing rather than blanking it on a re-record.
         isempty(image_uid) || (e["imageUid"] = String(image_uid))
         chans = _clean_movie_channels(channels)
         isempty(chans)     || (e["channels"] = chans)
+        # The user's RAW suffix, not the `_sanitised` fragment `_movie_suffix` puts in the filename:
+        # this is banked to be offered back the next time someone names a recording, and round-tripping
+        # the sanitised form would re-prefix it. Recoverable from the filename only by reverse-
+        # engineering three recorders' naming, which is why it is stored rather than parsed.
+        isempty(suffix)    || (e["suffix"] = String(suffix))
         e["recordedAt"] = time()          # unix seconds — the same clock `mtime` uses, see _config_stale
         if config !== nothing && !isempty(config_kind)
             e["configKind"]    = String(config_kind)
@@ -214,6 +219,9 @@ function movies_with_meta(project_uid::AbstractString)
                           # against the project's images to put channels and attributes on the row.
                           imageUid    = _entry_image_uid(e),
                           channels    = _entry_channels(e),
+                          # What the user typed into "name" when recording. Surfaced so the next
+                          # recording can offer it back rather than being retyped from memory.
+                          suffix      = String(get(e, "suffix", "")),
                           hasConfig   = haskey(e, "config"),
                           configKind  = String(get(e, "configKind", "")),
                           configStale = _config_stale(e, mt)))
