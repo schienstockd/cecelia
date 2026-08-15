@@ -231,23 +231,28 @@ class MeasureUtils:
     # ── extended 3D via trimesh ───────────────────────────────────────────────
 
     def _extended_3d_measures(self, vol: np.ndarray, df: pd.DataFrame, log) -> pd.DataFrame:
-        import trimesh  # guaranteed available — caller checks _HAS_TRIMESH
+        # Meshes come from the SHARED builder (mesh_utils.build_label_meshes), which marches cubes on
+        # each label's BOUNDING BOX and offsets the vertices back into the full-volume frame. This
+        # used to march cubes over `vol == lb` — the WHOLE volume — once per cell, which is
+        # O(n_cells x volume) and was the single largest cost in the whole segment+measure pipeline:
+        # 9.88 s of an 11.35 s timepoint on a 32x420x441 crop. It scales the wrong way twice, because
+        # a bigger image has both more voxels AND more cells: 6.88x the volume measured 6.54x the
+        # per-cell cost, so a full 37x1039x1060 x 181 T movie projected to ~27 h of measurement.
+        #
+        # The vertex OFFSET is not cosmetic — it is what keeps qhull's input coordinates identical to
+        # the whole-volume form. With it, all nine mesh measures below are bit-identical to the old
+        # code (verified over 719 cells); without it the three convex-hull axis lengths drift by up
+        # to 0.8%, because qhull is sensitive to the coordinate range it is handed.
+        #
+        # phys=1: these measures are in VOXEL units (the physical scale is applied downstream), which
+        # is the one thing this caller needs that the spatial/mesh caller does not.
+        from cecelia.utils.mesh_utils import build_label_meshes
 
         rows: dict[int, dict] = {}
         labels = df.index.tolist()
+        meshes = build_label_meshes(vol, labels, phys=(1.0, 1.0, 1.0), min_voxels=4)
 
-        for lb in labels:
-            mask = (vol == lb)
-            if mask.sum() < 4:
-                continue
-
-            try:
-                mesh = trimesh.voxel.ops.matrix_to_marching_cubes(mask)
-                if not mesh.is_watertight:
-                    mesh.fill_holes()
-            except Exception:
-                continue
-
+        for lb, mesh in meshes.items():
             ch = mesh.convex_hull
             row: dict = {
                 'surface_area':       float(mesh.area),
