@@ -2913,6 +2913,35 @@ end
     end
 end
 
+# ── a plot spec may only name CURRENT column names ────────────────────────────────
+# `groupByOptions` is a HINT list: SummaryPanel keeps only the entries actually present on the data
+# (`hints = groupByOptions.filter(c => present.has(c))`). So a spec naming a column that no longer
+# exists does not error and does not warn — the option just never appears in the menu, and whatever
+# view it unlocks is silently unreachable. That is exactly how the segmentation-QC per-timepoint plot
+# (cell count / any label measure over time, the LOESS trend + CI ribbon) sat dark: the spec said
+# `t`, the PRE-MIGRATION temporal column name that `centroid_migrate.py` renames to `centroid_t`
+# (`uns/temporal_cols`), so the hint matched nothing, `timeSeries` never went true, and the chart menu
+# never swapped to [trend, count]. The spec was right when written and rotted in place — which is why
+# this is pinned statically rather than left to a data-dependent test.
+@testset "plot spec groupByOptions name current columns" begin
+    root = joinpath(dirname(dirname(pathof(Cecelia))), "src", "plotDefinitions")
+    RETIRED = Set(["t"])          # pre-migration uns/temporal_cols spelling → now "centroid_t"
+    for f in readdir(root)
+        endswith(f, ".json") || continue
+        spec = JSON3.read(read(joinpath(root, f), String), Dict{String,Any})
+        ds = get(spec, "dataSource", nothing)
+        ds isa AbstractDict || continue
+        for c in String.(get(ds, "groupByOptions", String[]))
+            @test !(c in RETIRED)                 # a retired name filters to nothing, silently
+            @test !startswith(c, "centroid-")     # pre-migration positional centroid spelling
+        end
+    end
+    # and the segmentation-QC spec still offers the per-timepoint view at all
+    qc = JSON3.read(read(joinpath(root, "segmentation_qc.json"), String), Dict{String,Any})
+    @test "centroid_t" in String.(qc["dataSource"]["groupByOptions"])
+    @test "count" in String.(qc["chartTypes"])    # the count-over-time headline
+end
+
 @testset "interaction matrix aggregates with NO population targets" begin
     # The path `api_plot_data`'s `precomputed` branch now takes. The panel sends no `series` (the
     # matrix's rows/columns come from the neighbourStats run), so the targets vector is EMPTY — and
@@ -7181,6 +7210,51 @@ end
         @test haskey(img._pop_df_cache, ck)
         fresh = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"], flush_cache=true)
         @test nrow(cached) == truth && nrow(fresh) == truth
+    end
+end
+
+# ── pop_df "labels": the value_name PREFIX selects the segmentation ───────────────
+# `labels` has no sub-populations, so the branch used to ignore `pops` entirely and read the image's
+# ACTIVE segmentation — meaning the QC canvas returned the active label set's cells whichever one the
+# picker asked for: the WRONG DATA under the RIGHT LABEL, with no error. The prefix half of a pop ref
+# still carries the value_name, and it has to be honoured like every other pop_type's.
+@testset "pop_df labels honours the value_name prefix (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "pop_df labels prefix (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        cp(h5, joinpath(td, "labelProps", "C.h5ad"))    # a SECOND segmentation on the same image
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"
+        img.label_props["C"] = "C.h5ad"
+        img.label_props["_active"] = "B"                # active is B — the old code always returned B
+
+        n1 = nrow(pop_df(img, "labels", ["B/labels"]; pop_cols=["area"]))
+        @test n1 > 0
+
+        # the PREFIX picks the segmentation, not the active one
+        onlyC = pop_df(img, "labels", ["C/labels"]; pop_cols=["area"])
+        @test unique(onlyC.value_name) == ["C"]
+        @test nrow(onlyC) == n1
+
+        # both segmentations pool in ONE call — the QC canvas comparing two label sets side by side
+        both = pop_df(img, "labels", ["B/labels", "C/labels"]; pop_cols=["area"])
+        @test Set(unique(both.value_name)) == Set(["B", "C"])
+        @test unique(both.pop) == ["/labels"]
+        # `label` is unique only WITHIN a segmentation, so the pooled frame repeats ids across
+        # value_names — nothing may dedup by label alone or one segmentation's cells vanish
+        @test nrow(both) == 2 * n1
+
+        # a segmentation absent on THIS image is skipped, not an error: a set-level call spans images
+        # segmented differently (a cellpose run yielding zero objects writes no labelProps at all)
+        miss = pop_df(img, "labels", ["B/labels", "nope/labels"]; pop_cols=["area"])
+        @test unique(miss.value_name) == ["B"] && nrow(miss) == n1
+
+        # no pops, or a leading-slash ref, still resolves to the ACTIVE segmentation — unchanged
+        @test unique(pop_df(img, "labels", String[]; pop_cols=["area"]).value_name) == ["B"]
+        @test unique(pop_df(img, "labels", ["/labels"]; pop_cols=["area"]).value_name) == ["B"]
     end
 end
 

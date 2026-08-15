@@ -1612,27 +1612,53 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # segmentation-output data source (e.g. the segmentation-integrity QC canvas): every measured
     # object of `resolved_vn`, tagged with a single "/labels" pop path so the summary framework groups
     # it like any other population (path starts with "/", matching the picker + manager-form id).
-    # `pops` is ignored (there are no sub-populations).
+    # There are no sub-populations, so a pop ref carries no PATH information — but it still names its
+    # segmentation as a value_name PREFIX (`"Neutrophil/labels"`), the same grammar every other
+    # pop_type gets from `_group_pops_by_value_name`. Honour it, so ONE call can pool several
+    # segmentations and the QC canvas can plot Tcell against Neutrophil (this used to read
+    # `resolved_vn` and ignore `pops` entirely, which silently returned the image's ACTIVE
+    # segmentation whichever one the picker asked for — the wrong data under the right label).
+    # A value_name absent on THIS image is skipped rather than an error: a set-level call spans images
+    # that were not all segmented the same way (one image's cellpose run can legitimately yield zero
+    # objects and write no labelProps), mirroring the gated path's skip for a pop defined on only
+    # some images. With no `pops` (or a leading-slash ref) this resolves to the active segmentation,
+    # exactly as before.
     if String(pop_type) == "labels"
-        lp = label_props(img; value_name=resolved_vn) |> v -> rename_channels!(v, !raw_channel_names)
-        # No columns requested — `nothing` OR `String[]` — means a bare cell COUNT: read neither X nor
-        # obs, just label/centroids. Reading every obs measure for millions of cells only to count rows
-        # needlessly loads the (single-process) API and would stall e.g. a queued napari open. (Empty and
-        # `nothing` used to diverge — `String[]` slipped past this into a muddled "all X, no usable obs"
-        # state.) With pop_cols set, `select_cols` narrows the read to exactly those columns. NOTE: this
-        # path is for gated/measure reads — to summarise an OBS column (HMM state, clusters), read it
-        # directly via `as_df`, not through here (obs isn't a first-class pushdown target).
-        no_cols = pop_cols === nothing || isempty(pop_cols)
-        # `centroids` widens a narrowed read to include this value_name's coordinate columns; the
-        # no-columns read already returns label/centroids, so it needs nothing.
-        cols = no_cols ? String[] :
-               (centroids === false ? String.(pop_cols) :
-                unique(vcat(String.(pop_cols), centroid_columns(lp), temporal_columns(lp))))
-        no_cols || select_cols(lp, cols)
-        df = as_df(lp; include_x=(no_cols ? include_x : true),
-                       include_obs=(no_cols ? false : include_obs))
-        df[!, "value_name"] .= resolved_vn
-        df[!, "pop"]        .= "/labels"
+        want = isempty(pops) ? [resolved_vn] :
+               sort!(collect(keys(_group_pops_by_value_name(pops, resolved_vn))))
+        # The skip applies to the EXTRA value_names a multi-segmentation request names, never to the
+        # image's own resolved one: if that is somehow unreadable the caller should get `label_props`'
+        # error as before, not a silently empty frame.
+        parts = DataFrame[]
+        for vn in filter(v -> v == resolved_vn || img_has_value_name(img, v), want)
+            lp = label_props(img; value_name=vn) |> v -> rename_channels!(v, !raw_channel_names)
+            # No columns requested — `nothing` OR `String[]` — means a bare cell COUNT: read neither X nor
+            # obs, just label/centroids. Reading every obs measure for millions of cells only to count rows
+            # needlessly loads the (single-process) API and would stall e.g. a queued napari open. (Empty and
+            # `nothing` used to diverge — `String[]` slipped past this into a muddled "all X, no usable obs"
+            # state.) With pop_cols set, `select_cols` narrows the read to exactly those columns. NOTE: this
+            # path is for gated/measure reads — to summarise an OBS column (HMM state, clusters), read it
+            # directly via `as_df`, not through here (obs isn't a first-class pushdown target).
+            no_cols = pop_cols === nothing || isempty(pop_cols)
+            # `centroids` widens a narrowed read to include this value_name's coordinate columns; the
+            # no-columns read already returns label/centroids, so it needs nothing. Resolved per
+            # value_name — two segmentations of one image need not share an axis set.
+            cols = no_cols ? String[] :
+                   (centroids === false ? String.(pop_cols) :
+                    unique(vcat(String.(pop_cols), centroid_columns(lp), temporal_columns(lp))))
+            no_cols || select_cols(lp, cols)
+            d = as_df(lp; include_x=(no_cols ? include_x : true),
+                          include_obs=(no_cols ? false : include_obs))
+            d[!, "value_name"] .= vn
+            d[!, "pop"]        .= "/labels"
+            push!(parts, d)
+        end
+        # `label` is only unique WITHIN a segmentation, so a pooled frame repeats label ids across
+        # value_names. That is fine here and must stay that way: nothing on this path dedups by label
+        # (the gated path's `unique_labels` never applied to it), and the (value_name, label) pair is
+        # the real key — dedup by label alone would silently drop one segmentation's cells.
+        df = isempty(parts) ? DataFrame() :
+             length(parts) == 1 ? parts[1] : reduce((a, b) -> vcat(a, b; cols=:union), parts)
         img._pop_df_cache[ckey] = df
         return _pop_df_finish(copy(df), img, centroids)
     end

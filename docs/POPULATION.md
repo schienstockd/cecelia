@@ -377,6 +377,20 @@ correctly as px. If one ever turns up, the converter is in git history on `work/
 
 - **`value_name=nothing`** resolves to the image's **active** segmentation (same resolution
   as `label_props(img)`); pass a name to set the default value_name for unprefixed pops.
+- **`pop_type="labels"`** is the raw segmentation output — every measured object, ungated, no
+  gating map and no membership eval. It has no sub-populations, so a pop ref's *path* half carries
+  nothing; its **value_name prefix still selects the segmentation** (`"Neutrophil/labels"`), exactly
+  as for every other pop_type, so one call pools several label sets for a side-by-side comparison.
+  A value_name absent on this image is **skipped**, not an error — a set-level call spans images that
+  were not all segmented the same way (a cellpose run yielding zero objects writes no labelProps at
+  all). With no pops, or a leading-slash ref, it falls back to the active segmentation.
+  **It never dedups by `label`**: label ids are unique only *within* a segmentation, so the pooled
+  frame repeats them across value_names and `(value_name, label)` is the real key — deduping by
+  `label` alone would silently drop one segmentation's cells.
+  > Until 2026-08-15 this branch ignored `pops` entirely and always read the **active** segmentation,
+  > so the QC canvas returned the active label set's cells whichever one the picker asked for — the
+  > wrong data under the right label, with no error. Pinned by *pop_df labels honours the value_name
+  > prefix (KDIeEm)*.
 - **`drop_na`** drops cells that are NA/NaN in any requested `pop_col` (mirrors R popDT
   `dropNA`; only the user-requested measure columns are considered, not bookkeeping columns).
 - **Dedup / `unique_labels`**: when `true` (default), collapse to one row per cell with the
