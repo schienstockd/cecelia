@@ -20,6 +20,8 @@
 // docs/MODULES.md → *Param advisories*.
 
 import type { Severity } from '../lib/severity'
+import { isImageVersionField } from './paramValues'
+import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 
 /** What the renderer shows: a one-line readout, a severity, and the full reasoning on hover. */
 export interface ParamAdvisory {
@@ -69,6 +71,10 @@ export interface AdvisorImage {
   sizeT?: number | null
   sizeZ?: number | null
   physicalSizeX?: number | null
+  /** the version the image is currently ON — what the viewer shows and what a picker preselects */
+  activeValueName?: string
+  /** every registered image version, valueName → filename */
+  filepaths?: Record<string, string>
 }
 
 /** Frame geometry of ONE resolved image version — what the grid estimate actually needs. */
@@ -88,13 +94,26 @@ export interface AdvisorContext {
   values?: Record<string, unknown>
 }
 
+/** The param an advisor is running ON — a structural subset of `ParamDef` (tasks/types.ts).
+ *
+ *  Needed because an advisor registered under a TYPE serves every param of that type, and one type
+ *  can mean different things: a `valueNameSelection` names image versions, label sets or spatial
+ *  graphs depending on its `field`, and only the first has an "active version" to compare against.
+ *  The two key-registered advisors ignore this argument, which is fine — they can only ever run on
+ *  the one param they are registered for. */
+export interface AdvisorParam {
+  type?: string
+  key?: string
+  field?: string
+}
+
 export interface ParamAdvisor {
   /**
    * Produce the advisory, or `null` when there is nothing useful to say (a missing input included —
    * silence beats a wrong number). Async so an advisor MAY fetch; one that doesn't simply returns.
    * Never throws: an advisory is not load-bearing.
    */
-  advise: (value: unknown, ctx: AdvisorContext) => Promise<ParamAdvisory | null>
+  advise: (value: unknown, ctx: AdvisorContext, param?: AdvisorParam) => Promise<ParamAdvisory | null>
   /** Context values whose change should re-run `advise`, beyond the param value itself. */
   reloadOn?: (ctx: AdvisorContext) => unknown[]
 }
@@ -273,6 +292,69 @@ export function motionDimsAdvisory(value: unknown, m: MotionDims | null): ParamA
   }
 }
 
+// ── image version: is this the version the image is actually ON? ───────────────────────────────
+//
+// A `valueNameSelection` over `filepaths` picks WHICH VERSION of the image the task reads. The form
+// preselects the active one (`preferredValueName`), but every option is selectable and nothing said
+// what picking another one meant.
+//
+// THE COST, measured: `WIaUjL/p6t4mC` was re-segmented on `default` (the 512x512 raw import) while
+// the image is active on `afCorrected` (605x617 — drift correction expands the canvas). The run
+// reported done, banked 92374 cells, and wrote a 512x512 label store that the viewer then laid over
+// a 605x617 image, so every neutrophil sat displaced in XY. Nothing in the app said the run and the
+// view were on different versions; it read as a segmentation bug for as long as it took to compare
+// the two store shapes on disk.
+//
+// NOT a guard. Running an older version is a legitimate thing to do — re-segmenting the raw import
+// to compare against a correction is the obvious case — which is exactly why this is one advisory
+// line and not a block.
+//
+// Applies only where `field` names image versions (`isImageVersionField`). Label sets and spatial
+// graphs use the same widget and have no "active", so there is nothing to compare them to.
+export function imageVersionAdvisory(
+  value: unknown, images: AdvisorImage[] | undefined,
+): ParamAdvisory | null {
+  const chosen = typeof value === 'string' ? value : ''
+  if (!chosen || !images?.length) return null
+
+  // Only images that HAVE this version can be judged against it. A name on NONE of them is an
+  // upstream chain node's future output ("cpCorrected" — `ParamContext.extraValueNames`), which does
+  // not exist yet and is not a mistake. Nothing to compare, so say nothing.
+  const known = images.filter(i => chosen in (i.filepaths ?? {}))
+  if (!known.length) return null
+
+  // Nowhere to go wrong where there is only one version to pick. Keeps the line off every task in a
+  // project that has never run a correction, which is most of them on first use.
+  if (known.every(i => Object.keys(i.filepaths ?? {}).length < 2)) return null
+
+  const activeOf = (i: AdvisorImage) => i.activeValueName || DEFAULT_VALUE_NAME
+  const off = known.filter(i => activeOf(i) !== chosen)
+
+  if (!off.length) {
+    return {
+      severity: 'ok',
+      message: 'active version',
+      tip: `"${chosen}" is the version these images are on, so the run reads the pixels you are looking at.`,
+    }
+  }
+
+  // Name the version to switch TO when the selection agrees on one. With a mixed selection there is
+  // no single name to offer, so report the spread rather than picking one image's answer for all.
+  const actives = [...new Set(off.map(activeOf))]
+  const partial = off.length < known.length ? ` on ${off.length} of ${known.length} images` : ''
+  return {
+    severity: 'warn',
+    message: actives.length === 1 && !partial
+      ? `not the active version ("${actives[0]}")`
+      : `not the active version${partial}`,
+    tip: actives.length === 1
+      ? `These images are on "${actives[0]}", so this run reads pixels the viewer is not showing and `
+        + `writes its output against a different canvas. Pick "${actives[0]}", or make "${chosen}" active first.`
+      : `The selected images are on ${actives.length} different versions, so "${chosen}" is not what `
+        + `the viewer shows for all of them. Check the version on each before running.`,
+  }
+}
+
 // ── registry ───────────────────────────────────────────────────────────────────────────────────
 //
 // Looked up by param TYPE first, then by param KEY. Types are global (`motionDimsSelection` is a
@@ -293,6 +375,16 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
       const geom = await frameGeometry(ctx.projectUid, img.uid, img.physicalSizeX)
       return anisoGridAdvisory(value, geom)
     },
+  },
+
+  // Every image-version picker in every task, which is the point: the mismatch is not a property of
+  // one task, it is a property of the widget. Purely local — the image payload already carries both
+  // the version list and the active name, so this never awaits.
+  valueNameSelection: {
+    // the active version changes under the form: a correction finishing mid-session re-points it
+    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.activeValueName ?? ''}`).join(',')],
+    advise: async (value, ctx, param) =>
+      isImageVersionField(param?.field) ? imageVersionAdvisory(value, ctx.images) : null,
   },
 
   motionDimsSelection: {
@@ -344,7 +436,7 @@ export function frameGeometry(
 /** Drop cached geometry — call after anything that can change a version's extent (crop, correction). */
 export function clearFrameGeometryCache(): void { _geomCache.clear() }
 
-export function paramAdvisor(param: { type?: string; key?: string }): ParamAdvisor | undefined {
+export function paramAdvisor(param: AdvisorParam): ParamAdvisor | undefined {
   return (param.type ? PARAM_ADVISORS[param.type] : undefined)
     ?? (param.key ? PARAM_ADVISORS[param.key] : undefined)
 }

@@ -641,9 +641,13 @@ of them through the same block, so **adding one needs no template change**.
 ```ts
 anisotropyBoxUm: {
   reloadOn: ctx => [ctx.images?.[0]?.uid],          // re-run when the context changes
-  advise: async (value, ctx) => ({ severity: 'ok', message: '69×68 grid · 37 MB', tip: '…' }),
+  advise: async (value, ctx, param) => ({ severity: 'ok', message: '69×68 grid · 37 MB', tip: '…' }),
 },
 ```
+
+`advise` receives the param it is running on (`AdvisorParam` — `type`/`key`/`field`) as well as the
+value and the context. A KEY-registered advisor can ignore it; a TYPE-registered one usually cannot,
+because one widget type can mean different things — see the version advisory below.
 
 One entry point, `advise`, async. It started as two kinds — a pure `compute` and an async `load` —
 until both real advisors needed to fetch and `compute` had no user; a purely local advisory is just
@@ -663,6 +667,22 @@ sequences the results so a slider drag can't land an out-of-order answer.
   value in a version-independent slot, silently wrong on every corrected image.
 - **Advisory, never a gate.** Same rule as QC: it informs, it does not block. Say what it costs and
   let the user decide — the grid advisor's own tooltip ends "this is a heads-up, not a limit".
+- **Every image-version picker carries the mismatch advisory** (`valueNameSelection` →
+  `imageVersionAdvisory`), because picking a version other than the ACTIVE one is a property of the
+  widget, not of any one task. `ok` "active version" when they match, `warn` naming the active
+  version when they don't, and silent when there is only one version to pick or the name is an
+  upstream chain output that doesn't exist yet. **Registered under the TYPE, so it must check
+  `param.field`** — `valueNameSelection` also picks label sets (`labels`) and neighbour graphs
+  (`spatialGraphs`), neither of which has an "active" to compare against;
+  `paramValues.isImageVersionField` is the one answer to that, shared with `preferredValueName` so
+  the form cannot preselect a value its own advisory warns about.
+
+  It is there because of a real, silent, expensive miss: `WIaUjL/p6t4mC` is active on `afCorrected`
+  (605×617, drift-corrected) and was re-segmented on `default` (the 512×512 raw import). The run
+  reported done and banked 92 374 cells; the viewer then laid a 512×512 label store over a 605×617
+  image and every neutrophil appeared displaced in XY. Nothing in the app said the run and the view
+  were on different versions, and the only way to find out was comparing the two store shapes on
+  disk. Running an older version is legitimate — hence an advisory, not a guard.
 - **Two signals, not one — return a `flag` when the DATA is the problem.** `message`/`severity`
   answer *"what should I do?"*. The optional `flag` (a second severity icon with its own tooltip)
   answers *"how much can I trust what this is based on?"*. They move independently:

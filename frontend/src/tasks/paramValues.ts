@@ -163,6 +163,18 @@ export function isKnownValueNameField(field: string | undefined): boolean {
 }
 
 /**
+ * Does this `field` name IMAGE VERSIONS — the names in `filepaths`, where the image has an ACTIVE
+ * one? Label sets and spatial graphs are also `valueNameSelection`, and neither has an active.
+ *
+ * The one answer to that question. It was a private set read only by `preferredValueName` until the
+ * version advisory (`paramAdvisors.ts`) needed the same test; a second copy is how the same param
+ * ends up preselecting the active version and then advising against a different reference.
+ */
+export function isImageVersionField(field: string | undefined): boolean {
+  return field === undefined || FIELD_IS_IMAGE_VERSION.has(field)
+}
+
+/**
  * Which name to select when the image selection changes.
  *
  * For image versions, the ACTIVE version — it is what the viewer shows and what a run with no explicit
@@ -178,8 +190,7 @@ export function preferredValueName(
   available: string[], field: string | undefined, activeValueName?: string | null,
 ): string {
   const first = available[0] ?? 'default'
-  const wantsActive = field === undefined || FIELD_IS_IMAGE_VERSION.has(field)
-  const preferred = wantsActive ? (activeValueName ?? first) : first
+  const preferred = isImageVersionField(field) ? (activeValueName ?? first) : first
   return available.includes(preferred) ? preferred : first
 }
 
