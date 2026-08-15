@@ -9,6 +9,7 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
+import CcProgressBar from './CcProgressBar.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
@@ -348,9 +349,8 @@ function formatDate(iso: string | null): string {
           <div class="pp-io-status cc-row cc-muted" :class="ioTask.status">
             <span class="pp-io-label">{{ ioTask.label }}</span>
             <span class="pp-io-state">{{ ioTask.status }}</span>
-            <div v-if="ioBusy" class="pp-io-bar">
-              <div class="pp-io-fill" :style="{ width: Math.round((ioTask.progress ?? 0) * 100) + '%' }" />
-            </div>
+            <CcProgressBar v-if="ioBusy" class="pp-io-bar" size="bar"
+              :value="ioTask.progress" :aria-label="`${ioTask.label} progress`" />
             <button v-if="ioBusy" class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" @click="cancelIo" v-tooltip.top="'Cancel'">
               <i class="pi pi-times" />
             </button>
@@ -517,8 +517,7 @@ function formatDate(iso: string | null): string {
 .pp-io-state { text-transform: uppercase; font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; }
 .pp-io-status.done  .pp-io-state { color: #34d399; }
 .pp-io-status.failed .pp-io-state, .pp-io-status.cancelled .pp-io-state { color: #fca5a5; }
-.pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; }
-.pp-io-fill { height: 100%; background: var(--cc-accent); transition: width 0.2s; }
+.pp-io-bar { flex: 0 0 90px; }   /* geometry only — the bar itself is CcProgressBar */
 .pp-io-log {
   flex: 1 1 100%; min-width: 0;
   font-family: var(--cc-mono); font-size: var(--cc-fs-xs); opacity: 0.75;

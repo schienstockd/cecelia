@@ -18,6 +18,7 @@ import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 import { canRerunTask } from '../utils/taskRerun'
+import CcProgressBar from '../components/CcProgressBar.vue'
 
 const props = withDefaults(defineProps<{
   module: string
@@ -223,10 +224,9 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
         </div>
       </div>
 
-      <!-- progress bar -->
-      <div v-if="t.status === 'running' && t.progress !== undefined" class="task-progress">
-        <div class="task-progress-fill" :style="{ width: `${(t.progress * 100).toFixed(1)}%` }" />
-      </div>
+      <!-- progress bar — flush inside the card, hence `thin` (the default) -->
+      <CcProgressBar v-if="t.status === 'running' && t.progress !== undefined"
+        :value="t.progress" :aria-label="`${t.label} progress`" />
 
       <!-- log -->
       <pre v-if="expanded.has(t.id) && t.log.length" class="task-log">{{ t.log.join('\n') }}</pre>
@@ -322,18 +322,6 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
 
 .jump-btn { color: #4ade80; -webkit-text-stroke: 0.4px #4ade80; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .task-item:hover .jump-btn { display: inline-flex; }
-
-.task-progress {
-  height: 3px;
-  background: var(--cc-surface-2);
-  overflow: hidden;
-}
-.task-progress-fill {
-  height: 100%;
-  background: var(--cc-accent);
-  transition: width 0.25s ease;
-  min-width: 2px;
-}
 
 .task-log {
   font-family: var(--cc-mono);

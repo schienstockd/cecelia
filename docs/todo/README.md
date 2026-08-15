@@ -148,3 +148,15 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   contract** (`{selected, scope, docked}`), because until the board no host ever held two managers
   behind one variable. Also cleans the half-renamed `pm-` CSS vocabulary the generalisation left
   behind (`CanvasSidePanel` → `csp-`, `SeriesPicker` → `pick-`).
+- `TASK_LIST_UNIFICATION_PLAN.md` — **planning** (`refactor/task-list-canonical`). The two task
+  surfaces — the module-page sidebar (`tasks/TaskList.vue`, a card stack) and the Task Manager page
+  (`modules/TasksModule.vue`, a flat row list) — are **two hand-rolled lists**, neither using
+  `SelectionTable`, the canonical list per `docs/UI.md`. The visible symptom is that `/tasks`
+  highlights the selected row in **purple** (`--cc-accent`, form-control chrome) using a hand-rolled
+  copy of `SelectionTable`'s own left-rule idiom, which is **amber** (`--cc-selected`). Dated as
+  drift, not a decision: the rule is from the initial commit, `--cc-selected` arrived 2026-07-14 and
+  `SelectionTable` 2026-08-03. Both surfaces move onto `SelectionTable`; the sidebar becomes a real
+  table, header and all (Dominik, 2026-08-15). Phase 0 is separable and lands first: **four**
+  hand-rolled determinate progress bars (`TaskList`, `TasksModule`, `SettingsModule`, `ProjectPanel`)
+  that have drifted to two heights, two radii, two transitions and three different fraction→width
+  sums, extracted to `CcProgressBar`.
