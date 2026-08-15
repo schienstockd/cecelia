@@ -5,7 +5,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
-import { useTaskStore, type TaskStatus } from '../stores/tasks'
+import { useTaskStore, type TaskStatus, type TaskEntry } from '../stores/tasks'
+import { rollupTaskStatus } from '../lib/taskStatus'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
@@ -388,18 +389,47 @@ async function openInNapari(imageUid: string) {
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
+// imageUid → the module's tasks for that image, newest first (the store unshifts). Built once per
+// change rather than re-filtered per cell: the badge, its tooltip and the spinner each ask, and the
+// scan is over EVERY task in the store.
+const moduleTasks = computed(() => {
+  const by = new Map<string, TaskEntry[]>()
+  if (!props.module) return by
+  for (const t of taskStore.forModule(props.module, projectMeta.current?.uid)) {
+    const list = by.get(t.imageUid); list ? list.push(t) : by.set(t.imageUid, [t])
+  }
+  return by
+})
+
+// An image can have SEVERAL tasks in one module — a failed run, its re-run, a second value name. The
+// badge is one cell, so the set is rolled up by `rollupTaskStatus` (live beats terminal, then most
+// recent), and the tooltip lists them all. Previously this took whichever row `find()` hit first,
+// i.e. store insertion order, which `adopt()` reshuffles on every reconnect.
 function imageModuleStatus(img: CciaImage): TaskStatus | 'pending' | null {
   if (!props.module) return null
-  const t = taskStore.forModule(props.module, projectMeta.current?.uid).find(t => t.imageUid === img.uid)
-  if (t) return t.status
+  const s = rollupTaskStatus(moduleTasks.value.get(img.uid) ?? [])
+  if (s) return s
   if (props.module === 'manageImages') {
-    const s = img.status as string
-    if (s === 'converting') return 'running'
-    if (s === 'done')       return 'done'
-    if (s === 'failed')     return 'failed'
+    const st = img.status as string
+    if (st === 'converting') return 'running'
+    if (st === 'done')       return 'done'
+    if (st === 'failed')     return 'failed'
     return 'pending'
   }
   return null
+}
+
+// One task ⇒ the plain label, like every other phrase tooltip. Several ⇒ the breakdown, because the
+// badge alone cannot say WHICH run failed — the question that sends you to the Tasks page. Plain text
+// (`escape` stays on); `.task-tip` only turns the newlines into lines.
+function imageModuleStatusTip(img: CciaImage): string | Record<string, unknown> {
+  const s = imageModuleStatus(img)
+  const label = s ? statusConfig[s]?.label ?? '' : ''
+  const ts = moduleTasks.value.get(img.uid) ?? []
+  if (ts.length < 2) return label
+  const lines = ts.map(t => `${statusConfig[t.status]?.label ?? t.status} · ${t.label}`
+                          + (t.params?.outputValueName ? ` → ${t.params.outputValueName}` : ''))
+  return { value: `${ts.length} runs\n${lines.join('\n')}`, class: 'task-tip' }
 }
 
 const statusConfig: Record<string, { label: string; cls: string }> = {
@@ -687,7 +717,7 @@ const unselectableUids = computed(() =>
       <span v-if="imageModuleStatus(img)"
         class="status-badge"
         :class="statusConfig[imageModuleStatus(img)!]?.cls"
-        v-tooltip.right="statusConfig[imageModuleStatus(img)!]?.label">
+        v-tooltip.right="imageModuleStatusTip(img)">
         <span v-if="imageModuleStatus(img) === 'running'" class="spinner" />
         {{ statusConfig[imageModuleStatus(img)!]?.label }}
       </span>

@@ -85,16 +85,33 @@ watch(
   () => nextTick(() => { if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight })
 )
 
+// Pull the whole run's output from `{img}/logs/{fun}.log` and put it in place of what this tab has.
+// The file is the complete record; the store's copy is only whatever frames this tab was awake for.
+// Per ROW, not per panel: the fetch outlives the selection (a big log over a slow link), so a
+// panel-wide flag spun on whichever row you switched to and disabled its button.
+const syncingId = ref<string | null>(null)
+const syncing = (t: TaskEntry) => syncingId.value === t.id
+async function syncLogFromDisk(t: TaskEntry) {
+  syncingId.value = t.id
+  try {
+    const lines = await fetchLogBackfill({
+      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
+    })
+    if (lines.length) tasks.setLog(t.id, lines)
+  } finally { if (syncingId.value === t.id) syncingId.value = null }
+}
+
 function select(t: TaskEntry) {
   selectedId.value = t.id
-  // An adopted row (rebuilt after a reload) only has lines from when this tab connected — the rest is on
-  // disk. Fetched when the row is actually opened rather than on adoption, so twenty rows don't fire
-  // twenty requests for output nobody looked at.
-  if (t.adopted && !t.log.length) {
-    void fetchLogBackfill({
-      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
-    }).then(lines => { if (lines.length) tasks.setLog(t.id, lines) })
-  }
+  // An adopted row (rebuilt after a reconnect) only has lines from the moment this tab connected — the
+  // rest is on disk. Fetched when the row is actually opened rather than on adoption, so twenty rows
+  // don't fire twenty requests for output nobody looked at.
+  //
+  // Gated on `logSynced`, NOT on the log being empty. A backend restart adopts rows that are already
+  // producing output, so live lines land within the second and the empty-log test then declined to
+  // fetch — which is why opening the row after a restart showed only the last few minutes of a
+  // two-hour run. A still-running row re-syncs on each open, since the file has grown since the last.
+  if (t.adopted && (!t.logSynced || t.status === 'running')) void syncLogFromDisk(t)
 }
 
 function cancelTask(t: TaskEntry) {
@@ -243,6 +260,14 @@ const FILTERS: ChipOption[] = [
             <div class="log-actions">
               <button class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog" v-tooltip.left="copied() ? 'Copied!' : 'Copy log'">
                 <i :class="['pi', copied() ? 'pi-check' : 'pi-copy']" />
+              </button>
+              <!-- The tab's copy of a log has holes wherever the socket was down; the file on disk does
+                   not. Offered for any row with a start (an adopted one syncs on open anyway) so a run
+                   this tab launched and then lost the backend under can still be read in full. -->
+              <button v-if="selected.startedAt" class="ra-btn cc-btn cc-btn-bare cc-btn-icon"
+                :disabled="syncing(selected)" @click="syncLogFromDisk(selected)"
+                v-tooltip.left="'Reload log from disk'">
+                <i :class="['pi', syncing(selected) ? 'pi-spin pi-spinner' : 'pi-refresh']" />
               </button>
               <button v-if="selected.status === 'running' || selected.status === 'queued'"
                 class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(selected)"

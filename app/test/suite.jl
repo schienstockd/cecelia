@@ -3645,6 +3645,29 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Dead task subdirs are cleared on load (log/, mesh/) ─────────────────────
+# `log/` and `mesh/` were created at import and never written to (the scheduler tees to `logs/`;
+# meshes are per-timepoint and never persisted). They are gone from `[dirs.tasks]`, and an image that
+# still carries them sheds them when it loads — but ONLY if empty, so a dir holding anything survives.
+@testset "Legacy task subdirs dropped on load" begin
+    proj = create_project!(name="deaddir-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    for sub in ("log", "mesh", "logs"); mkpath(joinpath(img._dir, sub)); end
+    @test isdir(joinpath(img._dir, "log"))
+    init_object(proj.uid, img.uid)
+    @test !isdir(joinpath(img._dir, "log"))
+    @test !isdir(joinpath(img._dir, "mesh"))
+    @test  isdir(joinpath(img._dir, "logs"))            # the live one is untouched
+
+    # a non-empty one is somebody's data, whatever we think wrote it
+    mkpath(joinpath(img._dir, "mesh"))
+    write(joinpath(img._dir, "mesh", "keep.txt"), "x")
+    init_object(proj.uid, img.uid)
+    @test isfile(joinpath(img._dir, "mesh", "keep.txt"))
+    rm(proj.root; recursive=true)
+end
+
 # ── Branch labels round-trip (BRANCHING_PLAN.md Decision 6) ──────────────────
 # Skeleton (branch) label sets live in a dedicated `branch_labels` field, NOT in the generic
 # `labels` dict, so the labels/measure/tracking pickers never see branch labels. Guards: the

@@ -153,6 +153,48 @@ export function adoptableTasks(
   return out
 }
 
+/** A status the store got wrong and the snapshot can put right. `id` is the STORE row's id. */
+export interface StatusRepair {
+  id: string
+  status: 'running'
+  /** the scheduler's own start — the row has none, since it never saw the transition */
+  startedAt?: Date
+}
+
+/**
+ * Rows the tab ALREADY has, whose status it missed — the other half of adoption.
+ *
+ * `adoptableTasks` skips a known row because its entry is richer (params, log, seq). Richer, but not
+ * necessarily current: a task admitted to a pool slot while the socket was down never delivered its
+ * `queued → running` frame, and nothing else ever revisits it. The row then sits at Queued for the
+ * whole run — visibly wrong next to a sibling that happened to be adopted fresh, and the reason the
+ * image table read "some active, some queued" after a backend restart with nothing actually queued.
+ *
+ * Deliberately ONE transition, `queued → running`. Everything else the snapshot could disagree about
+ * belongs to someone else: a row that ended is the outcome poll's (`taskReconcile.ts`), and a row the
+ * user cancelled is sticky by design (`setStatus`). Repairing only the transition that has no other
+ * owner keeps this from becoming a second, competing source of truth.
+ *
+ * `resolve` maps a SCHEDULER id to the store row wearing it — for a chain row that is `backendTaskId`,
+ * not `id`, which is why the caller owns the lookup.
+ */
+export function staleInFlightStatuses(
+  rows: InFlightTaskRow[],
+  resolve: (schedulerId: string) => { id: string; status: string } | undefined,
+): StatusRepair[] {
+  if (!Array.isArray(rows)) return []
+  const out: StatusRepair[] = []
+  for (const r of rows) {
+    const id = String(r?.id ?? '')
+    if (!id || String(r?.status ?? '') !== 'running') continue
+    const row = resolve(id)
+    if (!row || row.status !== 'queued') continue
+    out.push({ id: row.id, status: 'running',
+               ...(r.started_at ? { startedAt: new Date(r.started_at) } : {}) })
+  }
+  return out
+}
+
 /**
  * The raw snapshot, or `[]` if the check fails.
  *

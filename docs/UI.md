@@ -81,6 +81,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
+| Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
 | Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
 | Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
 
@@ -1470,6 +1471,24 @@ panel body scrolls when the sections together exceed the height.
 
 Emits `selectionChange(uids: string[])`. `ModuleLayout` handles this internally.
 
+### The module status badge rolls up N runs, it does not pick one
+
+With `module` set the table shows a per-module status column — and an image routinely has **several**
+tasks in that module: a failed run, its re-run, a second value name. One cell, so the set is reduced by
+`rollupTaskStatus` (`lib/taskStatus.ts`, the five-state twin of `worstSeverity`):
+
+- **Live beats terminal, and running beats queued.** A run in flight is the state you can still act on.
+- **Among terminal states the most recent run wins** (`finishedAt`, then `seq`) — *not* a severity order.
+  A failure surfaces anyway, because until you re-run it *is* the latest outcome; but ranking `failed`
+  above `done` outright would leave a successful re-run badged Failed for the rest of the session, which
+  is the more misleading of the two errors. Severity only breaks a tie between runs finishing in the
+  same second.
+
+It previously took `forModule(...).find(t => t.imageUid === img.uid)` — whichever row sat first in the
+store array, i.e. insertion order, which `adopt()` reshuffles on every reconnect. With more than one run
+the badge's tooltip lists them all (status · label → output value name), because the badge cannot say
+*which* run failed and that is the question that sends you to the Tasks page.
+
 **File operations live in the action bar, not in the rows.** Copy / Move / Delete act on the whole
 checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Manage images page's
 `#actions` slot — next to *Add images*, where a file manager puts them. Two rules follow:
@@ -2086,6 +2105,20 @@ by the scheduler's own id.
   the click that opens the log — twenty adopted rows must not fire twenty requests for output nobody
   asked to see. No `started_at` (a queued task, an older backend) → no fetch, because the unsliced file
   would show a previous run's output as this row's.
+  **Gated on `logSynced`, never on "the log looks empty".** The empty test was the original gate and it
+  silently stopped working: a backend restart adopts rows that are *already producing output*, live lines
+  land within the second, and by the time the user clicked the row it was non-empty — so opening a
+  two-hour run after a restart showed only its last few minutes. A still-running row re-syncs on each
+  open (the file has grown since), and the log header carries a **Reload log from disk** button for any
+  row with a start, so a run *this tab* launched and then lost the backend under can also be read whole.
+- **A known row's STATUS is reconciled even though the row itself is skipped** (`staleInFlightStatuses`).
+  Adoption skips a row the tab already has because its entry is richer — but richer is not current: a task
+  admitted to a pool slot while the socket was down never delivered its `queued → running` frame, and
+  nothing else revisits it, so the row sat at Queued for the rest of the run (and the image table read
+  "some active, some queued" with nothing actually queued). Deliberately **one** transition,
+  `queued → running`: an ended row belongs to the outcome poll and a cancelled one is sticky by the
+  user's choice, so repairing only the transition with no other owner keeps this from becoming a second,
+  competing source of truth.
 - **Chain nodes are adopted under the key their own frames use** (`runId::nodeId::imageUid`), so the next
   `chain:node:*` frame updates that row instead of adding a second one — which is why `list_tasks()`
   reports `chain_node_id`. A node with no node id is skipped: a **set-scope** node bypasses `run_task`, so
