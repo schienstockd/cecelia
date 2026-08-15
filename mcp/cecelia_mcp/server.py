@@ -773,21 +773,32 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
 
 
 @mcp.tool()
-def get_recent_logs(level: str = "", limit: int = 100) -> list:
-    """Recent lines from the backend's own console — server `@info`/`@warn`/`@error`, newest last.
+def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list:
+    """Recent lines from the app's console — everything the backend SIDE says, newest last.
 
     This is where a **Julia-side task crash lands** (e.g. a task that dies before its Python
     subprocess starts) — it does NOT appear in `get_task_log`, which only captures the Python
     process's stdout. When `poll_observations` shows a `repeat_attempts` / a task keeps failing but
     the task log looks empty, call this to find the actual error.
 
-    `level` optionally filters to one of "info" / "warn" / "error" (default: all). `limit` caps how
-    many of the most-recent lines are returned. It's a process-wide ring buffer (~500 lines, not
-    persisted, not per-project), so it's for *live/recent* diagnosis, not historical forensics.
+    Each record is `{seq, ts, level, source, message, detail?}`. Two fields are worth using:
+
+    - **`detail` carries the formatted stacktrace** for anything logged with an exception. The
+      `message` is the one-line summary; if you are diagnosing, read `detail`.
+    - **`source` says which process spoke** — `backend` (the Julia server), `napari` (viewer bridge
+      :7655), `preview` (task-preview worker :7656), `runner` (detached task runner :7657),
+      `notebooks` (Pluto :7660). A Python traceback from any of the children arrives as ONE record
+      with the frames in `detail`. Pass `source` to filter to one of them.
+
+    `level` optionally filters to "info" / "warn" / "error" (default: all). `limit` caps how many of
+    the most-recent lines are returned. It's a process-wide ring buffer (~500 records, not persisted,
+    not per-project), so it's for *live/recent* diagnosis, not historical forensics.
     """
     logs = _client.get_recent_logs().get("logs", [])
     if level:
         logs = [l for l in logs if str(l.get("level", "")).lower() == level.lower()]
+    if source:
+        logs = [l for l in logs if str(l.get("source", "")).lower() == source.lower()]
     return logs[-limit:] if limit and limit > 0 else logs
 
 

@@ -532,14 +532,43 @@ each. The exact scope, what counts as coverage, and the ratchet are in *Tooltip 
 All errors go to `useLogStore().error(msg, { source, detail })`.
 Task failures must never be silent — errors must reach the console bar visible to the user.
 
-The **console** is one component — `components/ErrorConsole.vue` over the `log` store — mounted in two
-places: the docked bar at the bottom of the app shell, and (with the `fill` prop) full-window in the
-standalone **console window**. Do not build a second console. The window is a `bare` route
-(`/console`, `meta.bare` → `App.vue` renders it without the shell) opened via
-`window.open(origin + pathname + '#/console', …)` from the docked console bar's pop-out (↗) button;
-being a separate browser window it's a fresh app instance with its own WS, and it backfills recent lines from
-`GET /api/logs/recent` on open. The stream includes the backend's own logs (WS `server:log`, see
-`docs/API.md`), so it's a real "pixi console", not just task logs.
+## The console
+
+One component — `components/ErrorConsole.vue` over the `log` store — mounted in two places: the docked
+bar at the bottom of the app shell, and (with the `fill` prop) full-window in the standalone **console
+window**. Do not build a second console. The window is a `bare` route (`/console`, `meta.bare` →
+`App.vue` renders it without the shell) opened via `window.open(origin + pathname + '#/console', …)`
+from the docked console bar's pop-out (↗) button; being a separate browser window it's a fresh app
+instance with its own WS.
+
+**It shows every producer in the app, not just the backend.** That was not always true — see
+`docs/ARCHITECTURE.md` → *The log rail* for the server half and for what used to be discarded.
+
+| Chip | What it carries | `source` values |
+|---|---|---|
+| **App** | this browser: user actions, fetch failures, Vue render errors, unhandled rejections | the ~19 fine-grained UI tags (`manageImages`, `gating`, `movies`, …), `ws`, `frontend` |
+| **Backend** | the Julia server's own `@info`/`@warn`/`@error` | `backend` |
+| **Tasks** | a failed task or chain step (the full run log stays in the task drawer) | `task`, `chain` |
+| **Napari** · **Preview** · **Runner** · **Notebooks** | each child process's stdout/stderr | `napari`, `preview`, `runner`, `notebooks` |
+
+Four rules, all of them load-bearing:
+
+1. **`source` is a closed set on the server side.** `SERVER_LOG_SOURCES` in `utils/logFilter.ts`
+   mirrors `LOG_SOURCES` in `app/src/log_stream.jl`, asserted by the *"log sources agree across
+   languages"* testset. A frontend call site may still use any tag it likes — unknown tags group under
+   **App**, so a new panel needs no change here to be reachable.
+2. **The child chips are OFF by default, and an error is never hidden by a chip.** The bridge prints a
+   line per label layer; that is narration, not news. Switching a child off stops the narration, and
+   its errors still appear. A console that can silently withhold a stacktrace is the thing this design
+   exists to prevent (`isVisible`, `utils/logFilter.ts`).
+3. **Autoscroll follows only while you are at the bottom.** Scrolling up pauses it; scrolling back
+   resumes. Unconditional jump-to-bottom was fine when the console was quiet and is unusable now.
+4. **Backfill is the store's job, on every mount and every reconnect.** `log.backfill()` →
+   `GET /api/logs/recent?since=<seq>`. The docked console never used to do this, so the console
+   actually in front of you started blank on every page load while the pop-out showed history.
+
+Filtering, grouping, gap detection and the copy format are pure functions in `utils/logFilter.ts`
+(unit-tested) — the SFC only renders.
 
 ## Settings → System (service control panel)
 

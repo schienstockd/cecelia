@@ -145,7 +145,7 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/napari/apply-movie-config` | `projectUid,imageUid,config` | **F1.2 preview**: apply an authored movie config to the **currently open** image (no recording), so the user can eyeball the look the batch will record. Reuses the existing open/`show-tracks`/`show-populations`/`colour-labels` handlers via `_apply_movie_config!` (channels→colormap+visibility, overlays, colour-by). `config` = `{valueName,channels:{name→colormap},colourBy,showTracks,trackValueNames,tailWidth,showGatedTracks,showTrackclust,showPopulations,popType,pointsSize,colourLabels,colourOverrides,tStart,tEnd}`. `200 {ok}`; `400` if napari not running or `config` missing. |
 | POST | `/api/app/shutdown` | the global "Quit everything" (Settings → System). Best-effort stops **every** resident child then `exit(0)` from a detached task so the response flushes first — graceful stop (napari `close!`, notebook server, `_stop_preview_worker!`) followed by a port-level kill on each, which is what also catches a child we merely *adopted* or that outlived a crash. The list is asserted by *"shutdown stops EVERY resident child"* in `api/test/runtests.jl`, tied to the `*Port` keys `/api/diagnostics` reports — adding a child there without adding it here fails. Dev: ends `pixi run dev`; packaged: server exit ends `app.py`. (`api/src/app_api.jl`) |
 | POST | `/api/app/restart` | **dev-only** backend restart (button gated on `diag.dev`). Stops children then `exit(42)` (`RESTART_EXIT_CODE`); the **supervisor** relaunches in place — `api/dev.jl` in dev, `app.py`'s loop in prod. `409` when not supervised (no `CECELIA_SUPERVISED` — a bare `julia src/server.jl`). Replaced the old detached-relauncher, which couldn't reattach to a foreground terminal. |
-| GET | `/api/logs/recent` | `{logs: [{level,message}]}` — the server-log ring buffer (last 500), so a freshly-opened console **window** backfills recent lines. Fed by the `BroadcastLogger` tee that also emits the `server:log` WS event (see below). |
+| GET | `/api/logs/recent[?since=<seq>]` | `{logs: [{seq,ts,level,source,message,detail?}], seq, ringId}` — the console ring (last 500). Omit `since` for the whole ring (a cold console's backfill); pass one to fetch only a detected gap. Fed by the `TeeLogger` that also emits `server:log` (see below). The runner answers the same path on :7657 for its own ring. |
 | GET | `/api/setup/defaults` | `{projectsDir}` — OS-correct pre-fill for the first-launch wizard (`joinpath(homedir(), "cecelia-projects")`). (`api/src/setup_api.jl`) |
 | GET | `/api/setup/validate?path=` | `{ok, message, willCreate}` — live projects-dir feedback (pure check, no side effects). |
 | POST | `/api/setup/init` | `{projectsDir}` → `{ok, projectsDir, restartRequired}` \| `400`. Validate → `mkpath` → write `custom.toml` (`Cecelia.set_projects_dir!`) → hot-reload config. `restartRequired` is `false` on the normal path (config reloads in place). Drives the `/setup` wizard; `/api/diagnostics` exposes `setupRequired` to trigger it. See `docs/todo/ONBOARDING_PLAN.md`. |
@@ -193,11 +193,20 @@ Task events (`task:log`/`task:status`/`task:progress`/`task:result`)
 are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
 to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,
 `pixi run console`) both see live progress. (They're keyed by `taskId`, so clients filter to what they
-care about. Chain events already broadcast.) The server also tees its **own** logs (`@info`/`@warn`/
-`@error` — startup banner, napari warnings, …) to WS as **`server:log`** `{level, message}` via a global
-`BroadcastLogger` installed in `start()` (never under `CECELIA_NO_SERVE`), keeping a 500-line ring
-buffer (`GET /api/logs/recent`). This is what makes the Settings console window a real "pixi console",
-not just a task log. Broadcast is **decoupled from the caller, per client**:
+care about. Chain events already broadcast.) The server also tees **everything the backend side says** to WS as
+**`server:log`** `{seq, ts, level, source, message, detail?}` — its own `@info`/`@warn`/`@error`, plus
+every line the napari bridge, preview worker, Pluto server and detached runner produce (they are all on
+one log rail; see `docs/ARCHITECTURE.md` → *The log rail*). The tee is `Cecelia.TeeLogger` installed in
+`start()` (never under `CECELIA_NO_SERVE`) over a 500-record `Cecelia.LogRing`
+(`GET /api/logs/recent?since=<seq>`). This is what makes the console window a real "pixi console", not
+just a task log.
+
+**`seq` is why a dropped log line is now recoverable.** Broadcast is lossy by design (below): a frame
+for a client with a full queue is skipped. Task frames survive that because `/api/tasks/recent`
+reconciles them; log lines had nothing, so a dropped line was simply gone and undetectable. Every
+record now carries a monotonic `seq`, so a client receiving `n+2` after `n` knows it missed one and
+fetches the gap. `ringId` in the response identifies the ring instance — a restarted server counts from
+1 again, and without it a client would treat the fresh ring's first records as ones it already had. Broadcast is **decoupled from the caller, per client**:
 each connected socket has its own bounded, drop-on-full queue drained by its own background task, and
 `broadcast_ws` enqueues a pre-serialised frame onto every client's queue (non-blocking; it skips a
 client whose queue is full). This is deliberate — task events fan out on every log/progress line from

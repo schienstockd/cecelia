@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "7b8fafb5a06f18ec0592cb0d9ef2ffd4ba44717e"
+project_hash = "d65bfbfbc1ff045ba0f27c2bece3bfe36b41e33c"
 
 [[deps.AbstractTrees]]
 git-tree-sha1 = "2d9c9a55f9c93e8887ad391fbae72f8ef55e1177"
@@ -57,7 +57,7 @@ uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 version = "1.11.0"
 
 [[deps.Cecelia]]
-deps = ["Clustering", "DataFrames", "Dates", "DensityInterface", "Distributions", "HDF5", "HTTP", "HiddenMarkovModels", "HypothesisTests", "JSON3", "LinearAlgebra", "NearestNeighbors", "Random", "SHA", "Statistics", "StatsAPI", "StructTypes", "TOML", "UUIDs"]
+deps = ["Clustering", "DataFrames", "Dates", "DensityInterface", "Distributions", "HDF5", "HTTP", "HiddenMarkovModels", "HypothesisTests", "JSON3", "LinearAlgebra", "Logging", "NearestNeighbors", "Random", "SHA", "Statistics", "StatsAPI", "StructTypes", "TOML", "UUIDs"]
 path = "."
 uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 version = "0.0.0"

@@ -18,6 +18,17 @@ export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
 export safe_name_part
 
+# ── Log rail (console records, the server tee, child-process capture) ─────────
+# `log_record`/`TeeLogger`/`install_log_tee!` are what a SERVER installs to forward the package's own
+# `@info`/`@warn`/`@error` to a transport; `spawn_logged` is how a long-lived child gets onto the same
+# rail. Deliberately generic names are avoided (no bare `Tee`/`record`) — see the export rule in
+# CLAUDE.md → Julia conventions.
+export log_record, TeeLogger, install_log_tee!, log_level_name, log_timestamp, spawn_logged
+export LogRing, log_ring_push!, log_ring_since, log_ring_seq, log_ring_id
+export LOG_SOURCES, CHILD_LOG_SOURCES, LOG_DETAIL_CAP
+export LOG_SOURCE_BACKEND, LOG_SOURCE_NAPARI, LOG_SOURCE_PREVIEW, LOG_SOURCE_RUNNER,
+       LOG_SOURCE_NOTEBOOKS
+
 # ── Versioned-variable helpers ────────────────────────────────────────────────
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
 export versioned_active, versioned_get, versioned_set!
@@ -144,7 +155,7 @@ export subscribe_chain_frames!, chain_event_task_id
 # The detached task runner (runner/server.jl + runner/client.jl)
 export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
-export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_pools, runner_set_pool_limit
+export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_logs, runner_pools, runner_set_pool_limit
 export runner_submit_chain, runner_cancel_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
@@ -176,6 +187,10 @@ export task_previewable, preview_params, preview_params_for_run,
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")
 include("utils.jl")
+# The log rail: the canonical console-record shape, the tee a server installs, and `spawn_logged`
+# (the only sanctioned way to start a long-lived child, because `run(cmd; wait=false)` swallows its
+# stdio). Early — napari, the preview worker and the notebook server all launch through it.
+include("log_stream.jl")
 include("py_runner.jl")
 # OS process control (kill primitives) + the background-job registry (track/cancel by task_id) shared
 # by data patches and project export/import. Foundational; before the scheduler + jobs that use it.

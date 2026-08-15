@@ -102,10 +102,16 @@ function _start_frontend(root::AbstractString)
     isdir(joinpath(fe, "node_modules")) || @warn "[dev] $fe/node_modules missing — run `npm install` there"
     cmd = Sys.iswindows() ? `cmd /c npm run dev` : `npm run dev`
     try
-        p = run(Cmd(cmd; dir = fe); wait = false)   # inherits stdio → Vite logs into this terminal
-        # Julia-flushed confirmation: Vite's own "ready" banner is block-buffered when its stdout is a
-        # pipe (under this supervisor, not a TTY), so it can appear late or not at all — this line always
-        # shows that the frontend was launched, and where.
+        # stdio wired EXPLICITLY to this supervisor's streams. The comment here used to read "inherits
+        # stdio → Vite logs into this terminal" over a bare `run(cmd; wait = false)` — which does the
+        # opposite: a non-blocking `run` sends both streams to DEVNULL (`spawn_opts_swallow`). Vite's
+        # output, build errors included, was discarded, and the missing "ready" banner noted below got
+        # explained as buffering rather than as the sink it actually was. Same trap the backend spawn
+        # further down already documents and avoids.
+        p = run(pipeline(Cmd(cmd; dir = fe); stdout = stdout, stderr = stderr); wait = false)
+        # Julia-flushed confirmation that the frontend was launched, and where. Still worth having now
+        # that Vite's own banner can actually arrive: it is block-buffered when its stdout is a pipe
+        # rather than a TTY, so it can appear late — this line does not.
         @info "[dev] frontend (Vite) starting → http://localhost:$FRONTEND_PORT" dir = fe
         return p
     catch e

@@ -47,6 +47,17 @@ the page you're on).
    backend `@info/@warn/@error` as `{type:"server:log",level,message,ts}` → pushed into the same `log`
    store. Bounded server-side ring buffer + `GET /api/logs/recent` so a freshly-opened console
    backfills the last N lines (mirrors how the task console reconciles from `GET /api/tasks`).
+
+   > **Superseded (console rework).** Decision 6 shipped as written and was right as far as it went,
+   > but it scoped the console to ONE producer. Three more arrived afterwards (preview :7656, task
+   > runner :7657, plus napari and Pluto, which were never covered) — and all three of the
+   > `run(cmd; wait=false)` children turned out to be writing to devnull, so their output was not
+   > merely absent from the console, it existed nowhere. The tee, the record and the ring now live in
+   > the package (`app/src/log_stream.jl`) so the runner can install the same three; `spawn_logged`
+   > replaced the swallowing spawns; records carry `source`/`detail`/`ts`/`seq`. What was NOT true in
+   > the original: `ts` was listed in the frame shape here but never implemented, so a backfilled line
+   > was stamped "now". Current design: `docs/ARCHITECTURE.md` → *The log rail*, `docs/UI.md` →
+   > *The console*.
 7. **Status polling** is ephemeral UI state → plain `ref` + `setInterval(~4s)` cleared on unmount
    (NOT persisted view state); refresh immediately after each action.
 8. **Dev vs prod is auto-detected**, no installer changes. The `dev` pixi task sets `CECELIA_DEV=1`;

@@ -328,6 +328,75 @@ Clients tracked in `_ws_clients::Set` guarded by `_ws_clients_lock`.
 
 ---
 
+## The log rail — one record shape, one tee, one way to start a child
+
+Everything the app can say about itself reaches the bottom console, and there is exactly **one** way to
+get it there: **a component reports by LOGGING, and the sink decides where that goes.** The package
+emits ordinary `@info`/`@warn`/`@error` (it must stay usable headless — see *Layer boundary*); a server
+installs `Cecelia.TeeLogger` to forward each record to its transport. Record shape, tee, ring and
+child-process capture all live in **`app/src/log_stream.jl`**, because two servers need the identical
+four and a second copy is how the two consoles would drift.
+
+| Producer | Carrier | `source` |
+|---|---|---|
+| API server's own logs | `TeeLogger` → `server:log` | `backend` |
+| napari bridge :7655, preview worker :7656, Pluto :7660 | `spawn_logged` → the same tee | `napari` · `preview` · `notebooks` |
+| detached task runner :7657 | its own tee → `runner:log` on `/events` → relayed into the API ring; raw stdio inherited → terminal | `runner` |
+| a task's Python | `run_py` → `on_log` → `task:log` (the task drawer) | *n/a — per-task, not console* |
+
+### `run(cmd; wait = false)` swallows stdio — use `spawn_logged`
+
+Julia's non-blocking `run` does **not** inherit stdio; it sends both streams to devnull
+(`spawn_opts_swallow`). Three long-lived children were started exactly that way, so the napari
+bridge's ~20 `print(..., flush=True)` diagnostics and the preview worker's `traceback.print_exc()` went
+**nowhere at all** — not to the console, and not to the `pixi run dev` terminal either. Anyone looking
+for them reasonably assumed the terminal had them.
+
+So `spawn_logged(source, cmd)` is the only sanctioned way to start a long-lived child. It pipes both
+streams into the logger a line at a time and reassembles a Python traceback into **one** record
+(header + frames in `detail`) — split per line, the frames classify as `info`, which the default view
+hides, and the console would show a bare `Traceback (most recent call last):` with nothing under it.
+Pinned by the *"long-lived children are spawned onto the log rail, never swallowed"* testset.
+
+**The runner is the one deliberate exception, and must stay one.** It is spawned `detach = true`
+because it has to outlive the backend; a pipe this process owns becomes a broken pipe on exactly the
+restart it exists to survive. So it splits its output across two carriers — `@info`/`@warn`/`@error`
+over `runner:log` to the console, and raw `stdout`/`stderr` **inherited** so it reaches the calling
+terminal. Inheriting is safe where a pipe is not: the fd belongs to the terminal, not to us, and a
+detached child keeps writing to it after we exit. It is also the right home for a **segfault dump**,
+which the C runtime writes while the process dies — a pipe read by that same process is the worst
+possible destination for the one output you most need. Both carriers are asserted by the same testset,
+so the exemption cannot quietly decay back into silence. Details: `docs/RUNNER.md`.
+
+**Corollary — "not `spawn_logged`" never means "leave it at the default".** The default for a
+non-blocking `run` is devnull, so any spawn that opts out of the rail must still name its streams
+explicitly. `api/dev.jl` had both of its long-lived spawns in this position and got one of them wrong:
+Vite was launched with a bare `run(cmd; wait = false)` under a comment reading *"inherits stdio → Vite
+logs into this terminal"*, so its build errors were discarded — and the resulting absence of Vite's
+"ready" banner was written up as output buffering rather than as the discard it was. Both spawns there
+are now explicit and pinned by a test.
+
+### An exception is formatted, never interpolated
+
+`@error "…" exception = (e, catch_backtrace())` is the most valuable line the backend can produce, and
+the previous tee flattened kwargs with `"$k = $v"` — which rendered it as **857 characters of raw
+`Ptr{Nothing}`** in the collapsed row. A backtrace is a thing to format (`showerror(io, e, bt)`), and
+the formatted form belongs in `detail`. `log_record` also promotes the exception's first line into the
+message, because half the call sites read `@warn "show_labels failed" exception = e` and the one word
+that matters (`BoundsError`, `KeyError`) was otherwise a click away.
+
+### A log line carries a sequence, because the transport is lossy
+
+`broadcast_ws` **drops** a frame for a client whose queue is full rather than block a worker thread.
+Task frames survive that — `GET /api/tasks/recent` reconciles them. Log lines had no equivalent: a
+dropped line was gone, and nothing anywhere could tell it had happened. Every record now gets a
+monotonic `seq` from a `LogRing`, so a client that receives `n+2` after `n` knows it missed one and
+asks for the gap (`GET /api/logs/recent?since=n`). The ring also carries a `ringId`: a restarted server
+counts from 1 again, and a client holding the old cursor would otherwise treat the new ring's first N
+records as ones it already had — a restart that silently ate its own startup.
+
+---
+
 ## WS message type reference
 
 | Direction | Type | Payload | Handler |
@@ -347,6 +416,7 @@ Clients tracked in `_ws_clients::Set` guarded by `_ws_clients_lock`.
 | S→C | `chain:node:running` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params` | Same path. Fired when a pool worker actually starts the job — this is when `startedAt`/elapsed begins |
 | S→C | `chain:node:done` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params`, `result` | same path as above |
 | S→C | `chain:node:failed` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `status` | same path; `status` is `failed`/`skipped`/`cancelled` (the frontend maps `cancelled` to a cancelled entry, not failed) |
+| S→C | `server:log` | `seq`, `ts`, `level`, `source`, `message`, `detail?` | `ws.ts` → `log.pushServer`. Everything the backend side says — its own logs and every child process's output. `seq` lets a client detect a dropped frame and refetch it; see *The log rail* |
 
 ### `task:result` — mandatory fields for filepath-producing tasks
 

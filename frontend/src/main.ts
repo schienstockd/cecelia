@@ -9,6 +9,7 @@ import 'primeicons/primeicons.css'
 import './style.css'
 import App from './App.vue'
 import { useAppControlStore } from './stores/appControl'
+import { useLogStore } from './stores/log'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -79,4 +80,29 @@ app.use(PrimeVue, {
 })
 app.use(ToastService)
 app.directive('tooltip', Tooltip)
+
+// ── The browser's own failures → the console ─────────────────────────────────
+// The console reported everything the SERVER side could go wrong with and nothing this half could. A
+// Vue render error or a rejected promise showed up only in the browser devtools — which nobody has
+// open — so the visible symptom of a frontend bug was a panel that just never appeared, with a console
+// sitting underneath it saying all was well. Three hooks cover the three ways JS fails; each keeps its
+// default behaviour (rethrow / log) so devtools is unaffected.
+//
+// Registered after `app.use(pinia)`, because `useLogStore()` needs the active pinia.
+const bootLog = useLogStore(pinia)
+app.config.errorHandler = (err, _instance, info) => {
+  bootLog.error(`UI error (${info}): ${err instanceof Error ? err.message : String(err)}`,
+                { source: 'frontend', detail: err instanceof Error ? err.stack : String(err) })
+  console.error(err)                                       // keep the devtools behaviour we replaced
+}
+window.addEventListener('error', e => {
+  bootLog.error(`Script error: ${e.message}`,
+                { source: 'frontend', detail: e.error instanceof Error ? e.error.stack : `${e.filename}:${e.lineno}` })
+})
+window.addEventListener('unhandledrejection', e => {
+  const r = e.reason
+  bootLog.error(`Unhandled promise rejection: ${r instanceof Error ? r.message : String(r)}`,
+                { source: 'frontend', detail: r instanceof Error ? r.stack : undefined })
+})
+
 app.mount('#app')

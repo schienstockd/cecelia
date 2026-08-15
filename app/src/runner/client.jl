@@ -102,9 +102,31 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
     # Pass the port explicitly rather than relying on the child inheriting our env: the handle may have
     # been built with an explicit port, and a child that binds a different one than we then ping is a
     # launch that "succeeds" and never answers.
-    h.proc = run(Cmd(addenv(`$julia --project -t auto runner.jl`,
-                            "CECELIA_RUNNER_PORT" => string(h.port));
-                     dir = dirname(script), detach = true); wait = false)
+    #
+    # ── Its output, and why the runner has TWO carriers ────────────────────────
+    # stdio is INHERITED explicitly. It has to be said out loud, because the default for a
+    # non-blocking `run` is not "inherit", it is DEVNULL (`spawn_opts_swallow`) — which is what this
+    # line used to do, so everything the runner printed was discarded. Not merely absent from the
+    # console: absent from the terminal too, for the one process most likely to be holding a running
+    # segmentation.
+    #
+    # Inheriting is safe for a process built to outlive us, and this is the distinction that matters:
+    # the fd belongs to the TERMINAL (or wherever the launcher's stdout points), not to this process,
+    # so it stays valid after we exit — verified, a detached child's writes still land three seconds
+    # after the parent is gone. What would be wrong is `spawn_logged`, which hands the child a pipe
+    # THIS process reads: that becomes a broken pipe on exactly the restart the runner exists to
+    # survive. Hence the split, and it is not a dev/prod switch — both halves are right everywhere:
+    #
+    #   raw stdout/stderr  → the calling terminal.  `println`, an unhandled `@spawn` task error, the
+    #                        precompile chatter, and a segfault's dump — which the C runtime writes
+    #                        from a DYING process, so a pipe read by that same process is the worst
+    #                        possible destination for the one output you most need.
+    #   `@info/@warn/@error` → `runner:log` on its event stream → the app console, with source/detail/
+    #                        seq, gap-filled from the runner's own ring after a reconnect.
+    h.proc = run(pipeline(Cmd(addenv(`$julia --project -t auto runner.jl`,
+                                     "CECELIA_RUNNER_PORT" => string(h.port));
+                              dir = dirname(script), detach = true);
+                          stdout = stdout, stderr = stderr); wait = false)
     h.adopted = false
 
     deadline = time() + wait_seconds
@@ -156,6 +178,10 @@ runner_chain_runs(h::RunnerHandle) = get(_runner_get(h, "/chains"), "runs", Any[
 runner_pools(h::RunnerHandle)  = _runner_get_array(h, "/api/pools")
 runner_recent(h::RunnerHandle; since::AbstractString = "") =
     _runner_get_array(h, "/api/tasks/recent?since=$(HTTP.escapeuri(since))")
+# The runner's own console records after `since` (a `seq` from its `LogRing`). The gap-fill half of
+# `runner:log` — see `_emit_server_log` in runner/server.jl for why a ring is needed at all.
+runner_logs(h::RunnerHandle; since::Integer = 0) =
+    get(_runner_get(h, "/api/logs/recent?since=$(Int(since))"), "logs", Any[])
 runner_set_pool_limit(h::RunnerHandle, name::AbstractString, limit::Integer) =
     _runner_post(h, "/pools/set", Dict{String,Any}("name" => string(name), "limit" => Int(limit)))
 

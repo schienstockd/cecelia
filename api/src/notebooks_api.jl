@@ -66,7 +66,10 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
 
         @info "Launching Pluto notebook server..." notebooks_dir port = NOTEBOOKS_PORT
         _nb_error[] = nothing
-        proc = run(pipeline(cmd; stdout = stdout, stderr = stderr), wait = false)
+        # Onto the log rail with the other children (`spawn_logged`, app/src/log_stream.jl). Pluto was
+        # already wired to the parent's streams, so this loses nothing from the terminal — it ADDS the
+        # console, which is where a "not instantiated" precompile failure is actually read from.
+        proc = spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd)
         _nb_proc_ref[] = proc
         _nb_starting[] = true
         # Off the request path: wait for the port, OR detect the process dying during startup (the
@@ -192,7 +195,9 @@ function _ensure_sysimage_build!()::String
         cmd = Cmd(`$julia_exe --project=$pluto_root $build_script`)
         @info "Building the notebook fast-plot sysimage in the background (first run, ~10 min)..." out = _sysimage_path()
         _nb_build_error[] = nothing
-        proc = run(pipeline(cmd; stdout = stdout, stderr = stderr), wait = false)
+        # Same rail as the server launch above — a ~10 min sysimage build is the one job where "is it
+        # still going?" is the whole question, and its progress was terminal-only.
+        proc = spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd)
         _nb_build_proc[] = proc
         # Watch for completion off the request path: success = the file now exists (PackageCompiler
         # can exit 0 without writing on some failures, so trust the file, not the code).
