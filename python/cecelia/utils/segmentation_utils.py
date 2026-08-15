@@ -167,12 +167,13 @@ class SegmentationUtils:
         ifa_x = in_axes.index('X')
         ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
 
-        # Which z planes actually hold data, per timepoint. `None` for every store that never padded,
-        # which is most of them — then `_valid_z_span` returns the whole stack and nothing changes.
+        # Which planes/rows/columns actually hold data, per timepoint. `None` for every store that
+        # never padded, which is most of them — then the spans are the whole frame and nothing changes.
         store_la_z = label_axes.index('Z') if 'Z' in label_axes else None
+        store_la_y = label_axes.index('Y')
+        store_la_x = label_axes.index('X')
         n_z = im_shape[dim_utils.im_dim_order.index('Z')] if 'Z' in dim_utils.im_dim_order else 0
         im_path_for_box = self.params.get('imPath')
-        z_spans = {}
 
         # Axis indices on the FULL input array (time axis still present) — the in-RAM frame has T
         # dropped, so its indices cannot address other timepoints. Only used for temporal context.
@@ -199,9 +200,31 @@ class SegmentationUtils:
 
         counts = {ma: 0 for ma in match_as_list}
 
-        xy_tiles = self._create_xy_tiles(H, W)
-        total = T * len(xy_tiles)
+        # Every timepoint's valid span, resolved UP FRONT rather than inside the loop. Two things
+        # need it early: the XY span decides how many tiles a frame is cut into, and the progress
+        # total has to be known before the first tile is reported. One cheap attr read per timepoint.
+        spans = {}
+        for t in range(T):
+            box = (zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
+                   if im_path_for_box else None)
+            spans[t] = {
+                'Z': self._valid_span(box, 'Z', n_z) if store_la_z is not None else (0, n_z),
+                'Y': self._valid_span(box, 'Y', H),
+                'X': self._valid_span(box, 'X', W),
+            }
+
+        # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
+        xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],
+                                                  sp['X'][1] - sp['X'][0])
+                         for t, sp in spans.items()}
+        total = sum(len(v) for v in xy_tiles_by_t.values())
         done = 0
+
+        _yx_narrowed = any(sp['Y'] != (0, H) or sp['X'] != (0, W) for sp in spans.values())
+        if _yx_narrowed:
+            sp0 = spans[0]
+            print(f'>> skipping padded XY: segmenting y {sp0["Y"][0]}:{sp0["Y"][1]} of {H}, '
+                  f'x {sp0["X"][0]}:{sp0["X"][1]} of {W}', flush=True)
 
         # Each store is written through `zarr_utils.staged_store`: streamed into a staging sibling
         # and renamed onto its final path only once its pyramid is complete. So re-running a
@@ -223,20 +246,20 @@ class SegmentationUtils:
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
                 frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
 
-                # Narrow to the planes that hold data. Everything below — tiling, cellpose, post-
-                # processing, nuc/cyto matching — then runs on the reduced stack unchanged; only the
-                # WRITE puts it back at its z offset, so the store keeps its full shape.
-                z0, z1 = 0, n_z
-                if ifa_z is not None and store_la_z is not None and im_path_for_box:
-                    box = zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
-                    z0, z1 = self._valid_z_span(box, n_z)
-                z_spans[t] = (z0, z1)
+                # Narrow to the region that holds data. Everything below — tiling, cellpose, post-
+                # processing, nuc/cyto matching — then runs on the reduced frame unchanged; only the
+                # WRITE puts it back at its offset, so the store keeps its full shape.
+                z0, z1 = spans[t]['Z'] if (ifa_z is not None and store_la_z is not None) else (0, n_z)
+                y0, y1 = spans[t]['Y']
+                x0, x1 = spans[t]['X']
                 narrowed = (z0, z1) != (0, n_z)
                 if narrowed:
-                    frame_in = self._narrow_z(frame_in, ifa_z, z0, z1)
+                    frame_in = self._narrow_axis(frame_in, ifa_z, z0, z1)
                     if t == 0:
                         print(f'>> skipping padded z planes: segmenting z {z0}:{z1} of {n_z}',
                               flush=True)
+                frame_in = self._narrow_axis(frame_in, ifa_y, y0, y1)
+                frame_in = self._narrow_axis(frame_in, ifa_x, x0, x1)
 
                 # One frame's labels per type (uint32 zeros), no time axis — sized to the span we
                 # actually segment, so the buffer and the tiles agree. Allocated AFTER the span is
@@ -244,9 +267,11 @@ class SegmentationUtils:
                 frame_shape_t = list(frame_shape)
                 if fa_z is not None:
                     frame_shape_t[fa_z] = z1 - z0
+                frame_shape_t[fa_y] = y1 - y0
+                frame_shape_t[fa_x] = x1 - x0
                 frame = {ma: np.zeros(frame_shape_t, dtype=self.LABEL_DTYPE) for ma in match_as_list}
 
-                for read_yx, write_yx, crop_yx in xy_tiles:
+                for read_yx, write_yx, crop_yx in xy_tiles_by_t[t]:
                     for model_key in sorted(models.keys()):
                         model_params = models[model_key]
                         match_as = model_params.get('matchAs', 'base')
@@ -268,8 +293,16 @@ class SegmentationUtils:
                             # padding. Each frame's OWN span may differ — drift moves the stack — but
                             # the window is one array with one z extent, and t's span is the one the
                             # output is written back at.
+                            #
+                            # `read_yx` indexes the NARROWED frame, but these frames come from the
+                            # full store — so the XY offset has to be added back, exactly as the z
+                            # span is re-applied below. Without it the window would be read from the
+                            # wrong part of the image whenever XY was narrowed, silently handing a
+                            # temporal subclass pixels that do not correspond to its own tile.
+                            read_yx_full = (slice(read_yx[0].start + y0, read_yx[0].stop + y0),
+                                            slice(read_yx[1].start + x0, read_yx[1].stop + x0))
                             context = np.stack([
-                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx,
+                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
                                                    z_idx=ia_z if narrowed else None, z=(z0, z1))
                                 for t2 in range(lo, hi + 1)])
                             masks = self.predict_slice(tile, model_params, norm_p,
@@ -294,7 +327,9 @@ class SegmentationUtils:
                 # helper — i.e. exactly one iteration of the loop each already ran over timepoints.
                 if self.label_overlap > 0:
                     for ma in frame:
-                        frame[ma] = self._stitch_tile_seams(frame[ma], H, W, None, fa_y, fa_x, 1)
+                        # narrowed extent, not the canvas — the seams are where THIS frame's tiles met
+                        frame[ma] = self._stitch_tile_seams(
+                            frame[ma], y1 - y0, x1 - x0, None, fa_y, fa_x, 1)
 
                 for ma in frame:
                     # no `real_border`: a run processes whole frames, so its array edge IS the image edge
@@ -311,18 +346,28 @@ class SegmentationUtils:
                     _, level0, _ = stores[ma]
                     sl = tuple(t if i == store_la_t else
                                slice(z0, z1) if i == store_la_z else
+                               slice(y0, y1) if i == store_la_y else
+                               slice(x0, x1) if i == store_la_x else
                                slice(None) for i in range(level0.ndim))
                     level0[sl] = frame[ma]
                     counts[ma] += count_labels(frame[ma])
 
-            # The label store inherits the same fact about itself: outside these z spans it is zero
+            # The label store inherits the same fact about itself: outside these spans it is zero
             # because nothing was segmented there, not because nothing was found. Recording it means
-            # a downstream consumer skips the same planes without re-deriving the geometry — the
+            # a downstream consumer skips the same region without re-deriving the geometry — the
             # propagation rule in docs/ARCHITECTURE.md → *The valid box*.
-            if store_la_z is not None and any(sp != (0, n_z) for sp in z_spans.values()):
+            #
+            # Only the axes that were ACTUALLY narrowed are recorded: writing a full-extent span for
+            # an axis nothing skipped would claim a restriction that isn't one.
+            _extent = {'Z': n_z, 'Y': H, 'X': W}
+            recorded = [ax for ax in ('Z', 'Y', 'X')
+                        if (ax != 'Z' or store_la_z is not None)
+                        and any(spans[t][ax] != (0, _extent[ax]) for t in spans)]
+            if recorded:
                 for ma in match_as_list:
                     zarr_utils.write_valid_box(
-                        staged[ma], ['Z'], {t: {'Z': z_spans[t]} for t in sorted(z_spans)})
+                        staged[ma], recorded,
+                        {t: {ax: spans[t][ax] for ax in recorded} for t in sorted(spans)})
 
             # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
             for ma in match_as_list:
@@ -783,14 +828,46 @@ class SegmentationUtils:
     # to the same span. It was not: the window was read from the full store and came back full depth
     # while the tile was narrowed, which broke coastal on any drift-corrected 3D image.
     @staticmethod
-    def _narrow_z(arr, axis, z0, z1):
-        """`arr` restricted to z planes `[z0, z1)` — for an array already in RAM.
+    def _narrow_axis(arr, axis, lo, hi):
+        """`arr` restricted to `[lo, hi)` along `axis` — for an array already in RAM.
 
         The window frames are narrowed by `_extract_tile`'s `z_idx=`/`z=` instead, which is the same
         restriction pushed into the store index so the padded planes are never read at all. That is
         only possible where the read has not happened yet, which is why there are two spellings.
         """
-        return arr[tuple(slice(z0, z1) if i == axis else slice(None) for i in range(arr.ndim))]
+        if (lo, hi) == (0, arr.shape[axis]):
+            return arr
+        return arr[tuple(slice(lo, hi) if i == axis else slice(None) for i in range(arr.ndim))]
+
+    @staticmethod
+    def _narrow_z(arr, axis, z0, z1):
+        """`arr` restricted to z planes `[z0, z1)`. The z spelling of `_narrow_axis`."""
+        return SegmentationUtils._narrow_axis(arr, axis, z0, z1)
+
+    @staticmethod
+    def _valid_span(box, axis, n, min_span=2):
+        """`(lo, hi)` of `axis` to segment for one timepoint, given that frame's valid `box`.
+
+        The axis-generic form of `_valid_z_span` — the rule is a property of the BOX, not of z, and a
+        drift correction pads XY exactly as it pads Z. How much that matters is per-image and worth
+        measuring rather than assuming: on a 5.8 px-drift movie the XY padding is 0.4% and not worth
+        the read, while on a 139.9 px-drift one the canvas is 605x617 around a 512x512 frame and 30%
+        of every cellpose pass is padding (zolIMa/Dml3RG and WIaUjL/p6t4mC respectively, measured).
+
+        See `_valid_z_span` for the safety argument, which is the same on every axis: a valid box is
+        a contiguous [start, stop), so narrowing can only drop LEADING/TRAILING slices, and those are
+        all-zero. Every ambiguous case widens rather than narrows.
+        """
+        if not box or n <= 0:
+            return 0, n
+        rng = box.get(axis)
+        if not rng:
+            return 0, n
+        lo, hi = int(rng[0]), int(rng[1])
+        lo, hi = max(0, lo), min(int(n), hi)
+        if hi - lo < max(1, min_span) or (lo == 0 and hi == n):
+            return 0, n
+        return lo, hi
 
     @staticmethod
     def _valid_z_span(box, n_z, min_span=2):
@@ -807,17 +884,11 @@ class SegmentationUtils:
         `test_drift_geometry.py::test_every_frames_z_span_is_the_source_depth`, so if a future
         producer starts emitting thin boxes that test fails rather than this guard quietly
         switching the skip off.
+
+        Kept as the named z spelling — it carries the z-specific rationale above, and it is what the
+        `_valid_z_span` tests address. The rule itself lives in `_valid_span`.
         """
-        if not box or n_z <= 0:
-            return 0, n_z
-        rng = box.get('Z')
-        if not rng:
-            return 0, n_z
-        z0, z1 = int(rng[0]), int(rng[1])
-        z0, z1 = max(0, z0), min(int(n_z), z1)
-        if z1 - z0 < max(1, min_span) or (z0 == 0 and z1 == n_z):
-            return 0, n_z
-        return z0, z1
+        return SegmentationUtils._valid_span(box, 'Z', n_z, min_span=min_span)
 
     def _compute_iou_matrix(self, a, b):
         """IoU matrix between all pairs of non-zero labels in a and b.
