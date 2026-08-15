@@ -10,7 +10,9 @@
   (teleport, positioning, theme, outside-click, Escape) — so this owns only the list and the keys.
   See docs/UI.md → *Suggesting what you already use*.
 
-  Opens on TYPING, never on focus: an untouched form is not covered by a popover nobody asked for.
+  Opens on FOCUS, showing everything already in use, and narrows as you type. It opened on typing
+  only at first, which gets the question backwards: "what did I call the other one?" is exactly what
+  you cannot answer if the list appears only once you can already spell it.
 
   `separator` makes it a MULTI-value field (tags): suggestions then complete the token at the caret
   instead of the whole box, so accepting one does not wipe the tags already typed.
@@ -43,7 +45,11 @@ const open = ref(false)
 const highlight = ref(-1)
 
 const query = computed(() => activeToken(props.modelValue ?? '', props.separator))
-const matches = computed(() => filterSuggestions(props.options, query.value))
+// Focus offers EVERYTHING — a field holding `Tcell` would otherwise open filtered to `Tcell`, hiding
+// the one name the user opened it to find. The first keystroke narrows.
+const showAll = ref(false)
+const matches = computed(() =>
+  showAll.value ? [...props.options] : filterSuggestions(props.options, query.value))
 /** Whether what is typed names something that EXISTS — the reuse vs create distinction. */
 const existing = computed(() =>
   props.markExisting === true && isExistingOption(props.options, query.value))
@@ -55,15 +61,27 @@ const width = computed(() => (input.value ? `${input.value.offsetWidth}px` : und
 function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLInputElement).value)
   highlight.value = -1        // typing means "something new" until an arrow key says otherwise
+  showAll.value = false       // …and narrows the list to what is typed
   nextTick(() => { open.value = matches.value.length > 0 })
+}
+
+// Focus AND click: focus alone would never re-open the list after Escape, since the input still has
+// it. Nothing to show = nothing to open, so a field with no history behaves like a plain input.
+function onOpen() {
+  showAll.value = true
+  open.value = props.options.length > 0
 }
 
 function accept(choice: string) {
   emit('update:modelValue', replaceActiveToken(props.modelValue ?? '', choice, props.separator))
   open.value = false
   highlight.value = -1
+  showAll.value = false
   nextTick(() => {
     input.value?.focus()
+    // Restoring focus fires `onOpen` when focus had actually left (a mouse pick returns it), which
+    // would re-open the list on the value just chosen. Accepting is a decision, not a re-ask.
+    open.value = false
     // Accepting a suggestion sets the value programmatically, so the browser fires NO `change` — and
     // a caller that commits on `@change` (MovieOutputControls emits `update:suffix` there, the way a
     // plain <input> works) would silently never hear it. Dispatch one so this component stays a
@@ -133,7 +151,9 @@ function onKeyup(e: KeyboardEvent) {
     @input="onInput"
     @keydown="onKeydown"
     @keyup="onKeyup"
-    @blur="open = false"
+    @focus="onOpen"
+    @click="onOpen"
+    @blur="open = false; showAll = false"
     v-tooltip.right="tip"
     v-bind="$attrs"
   />

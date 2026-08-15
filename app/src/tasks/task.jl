@@ -434,13 +434,22 @@ end
 
 The name this run writes its output under, or `""` when the task names none. Resolved from the task
 spec's `namespace` declaration, so it works for every spelling of the key.
+
+A COMPOSITE folds over its steps (see the `::CompositeTask` method below) — the module pages run
+`segment.cellposeMeasure`, not `segment.cellpose`, so without that this answers `""` for every
+segmentation the app actually runs.
 """
 function task_output_name(fun_name::AbstractString, params::Dict{String,Any})::String
-    spec = try
-        _task_spec(_task_from_fun_name(String(fun_name)))
+    task = try
+        _task_from_fun_name(String(fun_name))
     catch
         nothing        # unknown fun_name — not this function's job to raise
     end
+    isnothing(task) ? "" : task_output_name(task, params)
+end
+
+function task_output_name(task::CciaTask, params::Dict{String,Any})::String
+    spec = _task_spec(task)
     isnothing(spec) && return ""
     _spec_output_name(get(spec, "params", []), params)
 end
@@ -556,6 +565,7 @@ end
 #   task_requires_axes  → union of the steps' required axes
 #   _section_keys       → union of the steps' section param keys
 #   live_outputs        → concatenation of the steps' live outputs
+#   task_output_name    → the FIRST step that names an output
 #
 # Forgetting one is SILENT and looks like "the feature doesn't work for the composite" — which is
 # exactly how the live preview first shipped broken (the segmentation module page runs
@@ -636,6 +646,24 @@ function preview_params(task::CompositeTask, params::AbstractDict, img::CciaImag
     params
 end
 
+
+# Composite: the FIRST step that names an output. A composite carries no params of its own — the form
+# is the union of its steps' (see `api_task_definitions`) — so the name the user typed belongs to a
+# step's spec, and the composite writes under it. First, not last: the producing step comes first
+# (`cellpose` → `measureLabels`), and a later step that measures ONTO that output names nothing.
+#
+# This is the trait-recursion trap this section warns about, and it shipped: params banked per output
+# name keyed off `task_output_name`, which answered `""` for every composite — so the segmentation
+# page, which runs `segment.cellposeMeasure`, banked nothing under `Tcell` no matter how often it ran.
+# The frontend was not affected (the definitions route merges composite params before it sees them),
+# so the field looked right and only the memory was missing.
+function task_output_name(task::CompositeTask, params::Dict{String,Any})::String
+    for sub in _composite_steps(task)
+        name = task_output_name(sub, params)
+        isempty(name) || return name
+    end
+    ""
+end
 
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.

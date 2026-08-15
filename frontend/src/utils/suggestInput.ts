@@ -10,8 +10,10 @@
  * that START with the query ranked above entries that merely contain it ("cell" offers `cellA`
  * before `Tcell`). Ties keep the caller's order, which is the order the source reports them in.
  *
- * **An empty query offers nothing.** The list opens as you TYPE, not on focus, so an untouched form
- * is never covered by a popover the user did not ask for.
+ * **An empty query offers EVERYTHING.** Clicking into the field shows what you have already used —
+ * which is the question being asked ("what did I call the other one?") and is unanswerable if the
+ * list only appears once you can already spell it. Typing then narrows, and clearing the box brings
+ * the full list back rather than leaving it stuck empty.
  *
  * An exact match is deliberately still offered: seeing the text you just typed in the list is how you
  * know you are about to reuse an EXISTING entry rather than create a new one — which is the whole
@@ -20,7 +22,7 @@
  */
 export function filterSuggestions(options: readonly string[], query: string): string[] {
   const q = query.trim().toLowerCase()
-  if (!q) return []
+  if (!q) return [...options]
   const starts: string[] = []
   const contains: string[] = []
   for (const n of options) {

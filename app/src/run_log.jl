@@ -52,13 +52,19 @@ const RUN_LOG_INTERRUPTED = "interrupted"
 # than it buys.
 const _RUN_LOG_LOCK = ReentrantLock()
 
-run_log_path(img::CciaImage) = joinpath(img._dir, "runlog.json")
+run_log_path(ccid_dir::AbstractString) = joinpath(String(ccid_dir), "runlog.json")
+run_log_path(img::CciaImage) = run_log_path(img._dir)
 
 # the run log as a Vector of Dicts ({fun, valueName, status, params, at, taskId, finishedAt}),
 # oldest→newest; [] when none. Legacy entries may lack `status`/`params`/`taskId`; readers treat a
 # missing status as "done", missing params as {} and a missing taskId as "".
-function read_run_log(img::CciaImage)::Vector{Any}
-    p = run_log_path(img)
+#
+# Dir-based as well as image-based: the funParams reader (`read_module_fun_params_by_name`) is
+# dir-based by design — the task form asks for a name's params without loading an object — and it
+# backfills from this log. Same file, one reader.
+read_run_log(img::CciaImage)::Vector{Any} = read_run_log(img._dir)
+function read_run_log(ccid_dir::AbstractString)::Vector{Any}
+    p = run_log_path(ccid_dir)
     isfile(p) || return Any[]
     try
         collect(JSON3.read(read(p, String), Vector{Any}))
@@ -179,6 +185,73 @@ function reap_run_log!(img::CciaImage, live_task_ids = String[])::Int
         entries
     end
     n
+end
+
+"""
+    run_log_params_for_output(ccid_dir, fun, value_name) -> Dict | nothing
+
+The params of the most recent run of `fun` that wrote its output under `value_name`, or `nothing`.
+
+**This is what makes "pick a name, get its settings back" work on work that already exists.** Params
+are banked per output name in `ccid.json` (`meta.funParamsByName`) only from the run that banks them
+onwards — so on every project segmented before that existed, every name resolved to "nothing banked"
+and the form restored nothing. Nobody re-runs six segmentations to seed a convenience feature.
+
+The history was already on disk: this log records every run's params, and a run's output name is
+recoverable from them (`task_output_name`, via the spec's `namespace`). So the by-name record is a
+fast index over this, not the only copy — and a name that predates it is found here instead.
+
+Two deliberate choices:
+  • **Only a run that finished `"done"` counts.** A failed run's params are "what was tried", not what
+    the name was made with. More to the point, the two halves of this feature have to agree on one set
+    of names: the picker offers what EXISTS in the namespace, and a failed run wrote nothing — so
+    honouring one would restore settings for a name the list will never offer. (It first fell back to
+    a failed run when no successful one existed, which is exactly that mismatch.) The alternative —
+    offering failed names in the picker — cannot be had cheaply: that list is the image payload's
+    per-namespace listing, shared with `valueNameSelection`, where a name that was never written is a
+    task that fails on read.
+  • **`valueName` is put back.** `_run_log_params` strips it because the entry carries it as its own
+    field — but it is a real form param (the INPUT version a task reads), so a record restored
+    without it would silently reset which version the task runs on.
+
+The reverse mismatch stays possible and is the harmless direction: a name in the picker with nothing
+to restore (written by a different task, or by a run older than `RUN_LOG_CAP`) answers `nothing`, and
+the form is left alone rather than overwritten.
+"""
+function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString,
+                                   value_name::AbstractString)::Union{Dict{String,Any},Nothing}
+    (isempty(fun) || isempty(value_name)) && return nothing
+    entries = read_run_log(ccid_dir)
+    isempty(entries) && return nothing
+
+    # Resolved once so an entry for a task that no longer exists costs one lookup, not one per entry.
+    # The per-entry call stays `task_output_name` rather than its pure `_spec_output_name` half: that
+    # would skip the `::CompositeTask` method and answer `""` for exactly the tasks the module pages
+    # run. Re-entering `_task_spec` per entry is the price (a cached read, plus a deepcopy + a model-dir
+    # scan for a task with dynamic options) and it is paid only while resolving a name.
+    task = try
+        _task_from_fun_name(String(fun))
+    catch
+        nothing
+    end
+    isnothing(task) && return nothing
+
+    for e in Iterators.reverse(entries)          # newest first — the most recent run under the name
+        # legacy entries carry no status and are historical successes (the log was append-on-finish
+        # for :done/:failed only — see the header). `running` is skipped with the rest: a run in
+        # flight has not written its output yet, so the picker is not offering that name either.
+        st = _rl_str(e, "status")
+        (isempty(st) || st == "done") || continue
+        _rl_str(e, "fun") == String(fun) || continue
+        p = _rl_get(e, "params", nothing)
+        p isa AbstractDict || continue
+        params = Dict{String,Any}(String(k) => v for (k, v) in p)
+        task_output_name(task, params) == String(value_name) || continue
+        vn = _rl_str(e, "valueName")
+        isempty(vn) || (params["valueName"] = vn)
+        return params
+    end
+    nothing
 end
 
 # open+close in one call, for a run whose outcome is already known — the REPL, tests, and anything

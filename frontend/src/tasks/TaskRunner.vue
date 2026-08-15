@@ -147,6 +147,10 @@ async function fetchSavedParams(
   const qs = new URLSearchParams({ projectUid: projectUid.value, fun: def.fun_name })
   if (drivingImageUid.value) qs.set('imageUid', drivingImageUid.value)
   if (setUid.value) qs.set('setUid', setUid.value)
+  // ALL selected images, for the by-name lookup only. `imageUid` is empty unless exactly one is
+  // selected (that is what "driving" means), and a batch segmentation is normally several — so
+  // without this, asking for `Neutrophil`'s params asked only the set, which holds no run log.
+  if (props.selectedUids.length) qs.set('imageUids', props.selectedUids.join(','))
   // The OUTPUT name being named, so the server can prefer what was last run UNDER it. `matched` says
   // it found one rather than falling back — the difference decides whether it is safe to replace a
   // form the user may have edited.

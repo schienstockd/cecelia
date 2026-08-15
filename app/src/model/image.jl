@@ -539,13 +539,12 @@ default than the task's bare defaults — and is what the form did before this e
 """
 function read_module_fun_params(ccid_dir::String, fun::String;
                                 value_name::AbstractString = "")::Union{Dict{String,Any},Nothing}
-    meta = _read_meta(ccid_dir)
-    isnothing(meta) && return nothing
     if !isempty(value_name)
-        hit = _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
-                                String(value_name))
+        hit = read_module_fun_params_by_name(ccid_dir, fun, value_name)
         isnothing(hit) || return hit
     end
+    meta = _read_meta(ccid_dir)
+    isnothing(meta) && return nothing
     _fun_params_entry(get(meta, FUN_PARAMS_META_KEY, nothing), fun)
 end
 
@@ -559,14 +558,23 @@ must REPLACE what the user is looking at when a name has params banked for it, a
 it does not: falling back there would quietly discard edits the user had just made, replacing them
 with the previous run's. "Nothing banked for this name" and "here are the previous run's params" are
 different answers and only one of them is safe to apply.
+
+Answers for names that PREDATE the by-name record too, by falling back to the run log
+(`run_log_params_for_output`) — which has always recorded every run's params, and from which the
+output name is recoverable. Without that this returns `nothing` for every existing project until each
+name is re-run once, which is the same as the feature not working. The by-name blob stays because it
+is exact and covers the SET dir (which keeps no run log); the log is the retroactive half.
 """
 function read_module_fun_params_by_name(ccid_dir::String, fun::String,
                                         value_name::AbstractString)::Union{Dict{String,Any},Nothing}
     isempty(value_name) && return nothing
     meta = _read_meta(ccid_dir)
-    isnothing(meta) && return nothing
-    _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
-                      String(value_name))
+    if !isnothing(meta)
+        hit = _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
+                                String(value_name))
+        isnothing(hit) || return hit
+    end
+    run_log_params_for_output(ccid_dir, fun, value_name)
 end
 
 function _read_meta(ccid_dir::String)

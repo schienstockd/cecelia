@@ -59,7 +59,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expans
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export read_run_log, append_run_log!, run_log_path
+export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!

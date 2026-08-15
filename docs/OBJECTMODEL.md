@@ -213,6 +213,20 @@ has to tell "nothing banked for this name" apart from "here is the last run" —
 safe to stamp over a form the user has been editing. See `docs/MODULES.md` → *Remembered PER OUTPUT
 NAME, too*.
 
+**A name with nothing banked is answered from the run log.** This key only ever fills from the run
+that writes it, so on a project segmented before it existed *every* name read as "nothing banked" and
+the form restored nothing — the feature was live and did nothing, and nobody re-runs six
+segmentations to seed it. `runlog.json` has always recorded each run's params, and a run's output
+name is recoverable from them (`task_output_name`, via the spec's `namespace`), so
+`run_log_params_for_output(ccid_dir, fun, value_name)` (`app/src/run_log.jl`) answers for the
+history. This key stays because it is the exact answer and is the only one the **set** dir has (a set
+keeps no run log) — an index over the log, not a second copy of the truth.
+
+**Only a run that finished `"done"` counts**, so the two halves of the feature name the same set: the
+picker offers what EXISTS in the namespace, and a failed or in-flight run wrote nothing there. The
+reverse (a name in the picker with nothing to restore — written by another task, or by a run older
+than `RUN_LOG_CAP`) is the harmless direction: `matched` is false and the form is left alone.
+
 ---
 
 ## Versioned fields

@@ -3801,6 +3801,78 @@ end
     rm(proj.root; recursive=true)
 end
 
+# Banking params per name only helps runs made AFTER it existed — which on every real project is
+# none of them, so every name resolved to "nothing banked" and the form restored nothing. The run log
+# already held each run's params and the output name is recoverable from them, so names that predate
+# the by-name record are answered from there.
+@testset "funParams by name fall back to the run log" begin
+    proj = create_project!(name="fpl-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+    fun = "segment.cellpose"
+
+    # the history a project already has: two names segmented, nothing banked by name
+    append_run_log!(img, fun, "corrected", "done",
+                    Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 8))
+    append_run_log!(img, fun, "corrected", "done",
+                    Dict{String,Any}("outputValueName" => "Neutrophil", "cellDiameter" => 15))
+    @test isnothing(read_module_fun_params_by_name(img._dir, fun, "Macrophage"))
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["cellDiameter"] == 8
+    @test read_module_fun_params_by_name(img._dir, fun, "Neutrophil")["cellDiameter"] == 15
+
+    # the INPUT version comes back too. `_run_log_params` strips `valueName` (the entry carries it as
+    # its own field), and a record restored without it silently resets which version the task runs on.
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["valueName"] == "corrected"
+
+    # the newest run under a name wins — this is "the settings it was last segmented with"
+    append_run_log!(img, fun, "corrected", "done",
+                    Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 11))
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["cellDiameter"] == 11
+
+    # …and only among runs that SUCCEEDED — a later failure does not become the name's settings
+    append_run_log!(img, fun, "corrected", "failed",
+                    Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 99))
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["cellDiameter"] == 11
+
+    # A name that ONLY ever failed restores nothing, rather than falling back to the failed run. The
+    # two halves have to agree on one set of names: the picker offers what exists in the namespace,
+    # and a failed run wrote nothing there — so restoring for it would answer for a name the list can
+    # never offer. Same for a run still in flight, which has not written its output yet.
+    append_run_log!(img, fun, "corrected", "failed",
+                    Dict{String,Any}("outputValueName" => "Bcell", "cellDiameter" => 4))
+    @test isnothing(read_module_fun_params_by_name(img._dir, fun, "Bcell"))
+    append_run_log!(img, fun, "corrected", Cecelia.RUN_LOG_RUNNING,
+                    Dict{String,Any}("outputValueName" => "Eos", "cellDiameter" => 5))
+    @test isnothing(read_module_fun_params_by_name(img._dir, fun, "Eos"))
+
+    # a name is matched through the SPEC's `namespace`, not by a key called `outputValueName` — the
+    # run log records six different spellings depending on the task
+    append_run_log!(img, "clustPops.cluster", "", "done",
+                    Dict{String,Any}("valueNameSuffix" => "immune", "resolution" => 0.6))
+    @test read_module_fun_params_by_name(img._dir, "clustPops.cluster", "immune")["resolution"] == 0.6
+
+    # …and through a COMPOSITE's steps. This is what the segmentation page runs, so a log full of
+    # `segment.cellposeMeasure` entries is the realistic case, not the plain-task one above.
+    append_run_log!(img, "segment.cellposeMeasure", "afCorrected", "done",
+                    Dict{String,Any}("outputValueName" => "Podocyte", "cellDiameter" => 6))
+    got = read_module_fun_params_by_name(img._dir, "segment.cellposeMeasure", "Podocyte")
+    @test !isnothing(got) && got["cellDiameter"] == 6 && got["valueName"] == "afCorrected"
+
+    # another task's run under the same name is not this task's params
+    @test isnothing(read_module_fun_params_by_name(img._dir, "cleanupImages.smooth", "Tcell"))
+
+    # a banked record still wins — it is the exact answer, the log is the retroactive half
+    write_module_fun_params!(img._dir, fun, Dict{String,Any}(
+        "outputValueName" => "Tcell", "cellDiameter" => 3); value_name = "Tcell")
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["cellDiameter"] == 3
+
+    # the SET dir keeps no run log, so it answers from the banked record only — no crash, no guess
+    @test isnothing(read_module_fun_params_by_name(s._dir, fun, "Tcell"))
+
+    rm(proj.root; recursive=true)
+end
+
 # The namespaces a `valueNameInput` suggests from need an IMAGE-owned accessor, like the graph/track
 # /branch ones — `INVENTORY.md`'s rule, and the reason `_clustfeatures_suffixes` (which takes a
 # label-props PATH and owns the sidecar's three historical layouts) is WRAPPED here rather than moved.
@@ -3872,6 +3944,31 @@ end
         k = first(vni)
         @test Cecelia.task_output_name(fun, Dict{String,Any}(k => "probe-name")) == "probe-name"
     end
+
+    # …and every COMPOSITE resolves its steps' name. The loop above cannot see them: a composite spec
+    # declares no params of its own, so it carries no `valueNameInput` to probe and was skipped —
+    # while being what the module pages actually run (`segment.cellposeMeasure`, not `segment.cellpose`).
+    # That is the trait-recursion trap task.jl warns about, and it shipped once: params banked per
+    # output name keyed off this function, so no segmentation started from a module page was ever
+    # remembered under its name. The frontend was fine, because `api_task_definitions` merges a
+    # composite's step params before it ever sees them — which is what made it silent.
+    composites = 0
+    for (fun, task) in Cecelia._fun_name_map()
+        task isa Cecelia.CompositeTask || continue
+        keys_ = String[]
+        for sub in Cecelia._composite_steps(task)
+            spec = Cecelia._task_spec(sub)
+            isnothing(spec) && continue
+            each_spec_param(get(spec, "params", [])) do p, _gk
+                String(something(spec_get(p, "type", ""), "")) == "valueNameInput" &&
+                    push!(keys_, String(something(spec_get(p, "key", ""), "")))
+            end
+        end
+        isempty(keys_) && continue
+        composites += 1
+        @test Cecelia.task_output_name(fun, Dict{String,Any}(first(keys_) => "probe-name")) == "probe-name"
+    end
+    @test composites > 0        # the loop above must not pass by finding nothing to check
 end
 
 # ── Channel names use the versioned convention ──────────────────────────────

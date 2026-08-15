@@ -643,7 +643,8 @@ is: **toggle = one immediate option; checkbox = selection from a list.** Don't h
 ### Suggesting what you already use — `SuggestInput`
 
 `components/SuggestInput.vue` is the ONE control for a field whose value the user invents but
-usually repeats. Type freely; what already exists is offered **as you type**. Callers today:
+usually repeats. Type freely; what already exists is offered **on focus, and narrowed as you type**.
+Callers today:
 
 | surface | offers | why it matters |
 |---|---|---|
@@ -667,7 +668,11 @@ reject a duplicate, so offering the existing ones suggests something guaranteed 
 Built on `TeleportPopover`, so it inherits teleporting, positioning, theme tokens, outside-click and
 Escape, and owns only the list and the keys. Three behaviours worth knowing before changing it:
 
-- **Opens on typing, never on focus** — an untouched form is not covered by a popover nobody asked for.
+- **Opens on focus, showing everything already in use.** It opened on typing at first, to keep an
+  untouched form clear of a popover nobody asked for — which gets the question backwards: *"what did I
+  call the other one?"* is exactly what you cannot answer if the list appears only once you can spell
+  it. Focus shows all (an empty query filters nothing), the first keystroke narrows, and a field with
+  no history opens nothing and behaves like a plain input.
 - **Nothing is highlighted after a keystroke** (`moveHighlight` returns `-1`). You are naming something
   NEW until an arrow key says otherwise, so Enter must not silently accept a suggestion.
 - **Rows accept on `mousedown`, not `click`** — the input's `@blur` closes the popover first, so a

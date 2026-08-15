@@ -6,9 +6,16 @@ import {
 const NAMES = ['Neutrophil', 'Tcell', 'cellA', 'Bcell']
 
 describe('filterSuggestions', () => {
-  it('offers nothing for an empty query — the list opens on TYPING, not on focus', () => {
-    expect(filterSuggestions(NAMES, '')).toEqual([])
-    expect(filterSuggestions(NAMES, '   ')).toEqual([])
+  // Clicking into the field asks "what did I call the other one?" — a question the list cannot answer
+  // if it only appears once you can already spell the name. So an empty query filters nothing, and
+  // clearing the box brings the whole list back instead of leaving it stuck empty.
+  it('offers everything for an empty query — clicking in shows what is already in use', () => {
+    expect(filterSuggestions(NAMES, '')).toEqual(NAMES)
+    expect(filterSuggestions(NAMES, '   ')).toEqual(NAMES)
+  })
+
+  it('copies rather than aliasing the caller list, so a consumer cannot sort the source', () => {
+    expect(filterSuggestions(NAMES, '')).not.toBe(NAMES)
   })
 
   it('matches anywhere, not just the start', () => {
@@ -92,9 +99,11 @@ describe('multi-value fields (tags)', () => {
       expect(activeToken('liv', ',')).toBe('liv')
     })
 
-    it('is empty right after a separator — which offers nothing, by filterSuggestions', () => {
+    // …which then offers every tag, the same as clicking into an empty field: having just typed a
+    // comma, "what else do I use?" is precisely the question.
+    it('is empty right after a separator — which offers the full list', () => {
       expect(activeToken('live,', ',')).toBe('')
-      expect(filterSuggestions(['qc'], activeToken('live,', ','))).toEqual([])
+      expect(filterSuggestions(['qc'], activeToken('live,', ','))).toEqual(['qc'])
     })
   })
 

@@ -534,6 +534,13 @@ end
 #
 # By-name wins across BOTH levels before either flat blob is considered: a set-level record for the
 # name the user is actually naming is a better answer than the image's record of some other run.
+#
+# `imageUids` (all selected) is asked ONLY the by-name question. `imageUid` is the single-selection
+# driving image, so with several selected the flat blob correctly resolves at the set — but the by-name
+# answer for a batch is on the images: a run under a name banks the same params on every image it ran
+# on, and the run log that backfills names from before that record existed is per-image and has no
+# set-level half. Without this, naming `Neutrophil` restored nothing whenever more than one image was
+# selected, which for segmentation is the normal case. The flat-blob resolution is untouched.
 function api_task_fun_params(req::HTTP.Request)
     q     = HTTP.queryparams(HTTP.URI(req.target))
     proj  = get(q, "projectUid", "")
@@ -541,6 +548,7 @@ function api_task_fun_params(req::HTTP.Request)
     imgu  = get(q, "imageUid", "")
     setu  = get(q, "setUid", "")
     vname = get(q, "valueName", "")
+    imgus = filter(!isempty, String.(split(get(q, "imageUids", ""), ',')))
     (isempty(proj) || isempty(fun)) &&
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
@@ -549,8 +557,7 @@ function api_task_fun_params(req::HTTP.Request)
 
     params, matched = nothing, false
     if !isempty(vname)
-        for u in (imgu, setu)
-            isempty(u) && continue
+        for u in unique(filter(!isempty, [imgu; imgus; setu]))
             params = Cecelia.read_module_fun_params_by_name(dir(u), fun, vname)
             isnothing(params) || (matched = true; break)
         end

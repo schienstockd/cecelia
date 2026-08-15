@@ -839,6 +839,16 @@ end
 
 No `.py` script for the composite — the steps' Python scripts are reused.
 
+**Adding a task trait? Give it a `::CompositeTask` method.** A composite's steps run through
+`_run_task` directly and are never consulted as tasks in their own right, so whatever the composite
+answers *is* the answer — and a missing method is silent, looking exactly like "the feature doesn't
+work for this task". The list lives on `CompositeTask` in `app/src/tasks/task.jl`
+(`task_requires_axes`, `_section_keys`, `live_outputs`, `task_previewable`, `preview_params`,
+`task_output_name`). It has caught people twice: the live preview shipped broken, and params-per-output-name
+banked nothing for any segmentation started from a module page — both because the page runs
+`segment.cellposeMeasure`, not `segment.cellpose`. Neither showed up in the frontend, because
+`api_task_definitions` merges a composite's step params before the frontend ever sees them.
+
 ### When to use composite vs a new standalone task
 
 Use composite when two or more tasks are naturally sequential and share no new logic. Write a standalone task when the combined operation has meaningful optimisations that compositing would lose (e.g., holding an intermediate array in memory across steps to avoid a write-then-read cycle).
@@ -985,6 +995,11 @@ working untouched; there is no migration.
   the calibration writers).
 - **The flat blob still tracks the most recent run**, whatever it was called, because that is what a
   NEW name falls back to. Starting from the last run beats starting from bare task defaults.
+- **A name that predates the record is answered from the run log.** A key that only fills from the
+  run that writes it is empty on every project that already exists, so the feature shipped restoring
+  nothing at all. `run_log_params_for_output` recovers it from `runlog.json`, which has always kept
+  each run's params — newest **successful** run of that name wins, so the names that restore are the
+  names the picker offers. Details: `docs/OBJECTMODEL.md` → *`meta["funParamsByName"]`*.
 - **`matched` decides whether the form is replaced.** `GET …/funparams` answers `{params, matched}`;
   `matched` means the params came from a by-name record rather than the fallback. `TaskRunner` only
   overwrites the form when it is true — applying the fallback would stamp the previous run's params

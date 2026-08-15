@@ -2812,8 +2812,9 @@ end
         save!(img)
         fun = "segment.cellpose"
 
-        get_fp(; vn = "", iu = img.uid) = begin
+        get_fp(; vn = "", iu = img.uid, ius = "") = begin
             q = "projectUid=$(proj.uid)&fun=$(fun)&imageUid=$(iu)&setUid=$(s.uid)" *
+                (isempty(ius) ? "" : "&imageUids=$(ius)") *
                 (isempty(vn) ? "" : "&valueName=$(vn)")
             st, body = api_task_fun_params(HTTP.Request("GET", "/api/tasks/funparams?$q"))
             @test st == 200
@@ -2846,13 +2847,29 @@ end
 
         # by-name wins across BOTH levels before either flat blob: a set-level record for the name the
         # user is actually naming beats the image's record of some other run
+        # both extra images added BEFORE anything is written to the SET dir: `add_image!` saves the
+        # set from its in-memory object, which would overwrite a `funParams` blob written to that
+        # file dir-based (that write is deliberately object-free — see `write_module_fun_params!`)
         img2 = add_image!(s; name="img2"); save!(img2)
+        img3 = add_image!(s; name="img3"); save!(img3)
         write_module_fun_params!(img2._dir, fun,
             Dict{String,Any}("cellDiameter" => 99))                       # image flat only
         write_module_fun_params!(s._dir, fun,
             Dict{String,Any}("cellDiameter" => 7); value_name = "Tcell")  # set by-name
         r2 = get_fp(vn = "Tcell", iu = img2.uid)
         @test r2.matched == true && r2.params.cellDiameter == 7
+
+        # A BATCH: several images selected, so there is no driving image and `imageUid` is empty. The
+        # by-name answer still has to be found, because that is the normal way a segmentation is run —
+        # it lives on the images (and, for names predating the record, only in their run logs), never
+        # on the set. `imageUids` carries the whole selection for that question alone.
+        write_module_fun_params!(img3._dir, fun,
+            Dict{String,Any}("outputValueName" => "Bcell", "cellDiameter" => 21); value_name = "Bcell")
+        b = get_fp(vn = "Bcell", iu = "", ius = "$(img2.uid),$(img3.uid)")
+        @test b.matched == true && b.params.cellDiameter == 21
+        # …and it does not become a second way to answer the flat blob: with no name, the resolution is
+        # image → set exactly as before, which for a batch means the set
+        @test get_fp(iu = "", ius = "$(img2.uid),$(img3.uid)").params.cellDiameter == 7
 
         @test api_task_fun_params(HTTP.Request("GET", "/api/tasks/funparams?fun=$fun"))[1] == 400
     finally

@@ -97,8 +97,30 @@ Two different questions that look like one:
 > * **It is capped at 200 entries**, so recall would silently stop working on a busy image.
 >
 > So Phase 2 extended the existing mechanism instead: `meta["funParamsByName"]`, alongside the flat
-> `funParams` blob. The run log stays what it says it is — a tuning TRAIL, read by the observer, never
-> a source the form restores from. The *shape* of D2 holds; only the store changed.
+> `funParams` blob. The *shape* of D2 holds; only the store changed.
+>
+> **Amended again, on first use — the run log is back, as the FALLBACK.** A key that only fills from
+> the run that writes it is empty on every project that already exists. Shipped as above, the feature
+> restored nothing at all on the project it was built for: eight names segmented, none of them banked,
+> every lookup a miss. Waiting for it to fill means re-running six segmentations to seed a convenience
+> feature, which nobody will do. The history was already on disk in `runlog.json` and the output name
+> is recoverable from a run's params (`task_output_name`), so `run_log_params_for_output` reads it when
+> nothing is banked. The three objections above were right about it being the wrong PRIMARY store, and
+> that is exactly what it is not:
+>
+> * per-IMAGE → the banked record is still the only answer for the **set** dir, and still wins when
+>   present;
+> * records FAILED runs → only a run that finished `"done"` counts. It first fell back to a failed run
+>   when no successful one existed, which broke the invariant that makes this coherent: **the names
+>   that restore are the names the picker offers.** The picker lists what exists in the namespace, and
+>   a failed run wrote nothing there. Offering failed names instead was the other way to settle it and
+>   is not cheap — that list is the image payload's per-namespace listing, shared with
+>   `valueNameSelection`, where a name that was never written is a task that fails on read;
+> * capped at 200 → recall degrades to the flat blob on a very busy image, as it did before.
+>
+> What was wrong was the *last* sentence: "never a source the form restores from" was a rule about
+> tidiness that cost the feature its entire existing corpus. The log remains a trail; reading it is
+> not the same as writing to it.
 
 ### D3 — The input is a combobox: type freely, with existing names offered.
 
@@ -130,9 +152,11 @@ is not value-name-specific. See `docs/UI.md` → *Suggesting what you already us
 
 Behaviour, chosen deliberately:
 
-- **Filters as you type; opens on typing, never on focus.** An untouched form is not covered by a
-  popover nobody asked for, and a name with no matches shows nothing — which is itself the signal
-  that you are creating something new.
+- **Opens on focus with the full list; filters as you type.** ~~Opens on typing, never on focus — an
+  untouched form is not covered by a popover nobody asked for.~~ **Amended after use:** that answers
+  the wrong question. You click into the field *because* you cannot remember what the other one was
+  called, and a list that appears only once you can spell the name is no help. A name with no matches
+  still shows nothing — which is itself the signal that you are creating something new.
 - **Nothing is highlighted after a keystroke.** You are naming something NEW until an arrow key says
   otherwise, so Enter must never silently accept a suggestion you did not move to.
 - **An exact match is still offered.** Seeing the name you just typed in the list is how you know
