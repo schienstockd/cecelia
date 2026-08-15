@@ -76,7 +76,14 @@ const props = withDefaults(defineProps<{
   // affordance with no other surface, that no live check could answer.
   hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
   hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
-  rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
+  // The #right panel's width bounds. These used to live inside the panels themselves, back when each
+  // owned its own width — TaskRunner 200/600/280, MetadataPanel 260/520/280. The host owns the width
+  // now (one panel, one handle), so the numbers have to come from here or they are silently lost:
+  // the default 280 is what both pinned themselves to, and the min/max are what each CHOSE.
+  // A floor is content-driven — the metadata panel's labelled fields stop being usable below ~260.
+  rightDefaultWidth?: number
+  rightMinWidth?: number
+  rightMaxWidth?: number
   cohortFuns?:  string[]  // explicit cohort funs for the "Check cohort" button (custom pages); overrides COHORT_STAGES
 }>(), {
   allowManage: false,
@@ -395,7 +402,8 @@ const visibleUids = computed<string[]>(() =>
 
       <!-- ── Right: module-specific panel (collapsible + resizable) ── -->
       <CollapsiblePanel v-if="$slots.right" :storage-key="rightWidthKey" label="functions panel"
-                        :max="680" :default-width="rightDefaultWidth ?? null">
+                        :min="rightMinWidth ?? 200" :max="rightMaxWidth ?? 680"
+                        :default-width="rightDefaultWidth ?? 280">
         <slot
           name="right"
           :set-uid="activeSet?.uid"

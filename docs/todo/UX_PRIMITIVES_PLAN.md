@@ -100,17 +100,15 @@ accident of two files are indistinguishable.
 
 ## Deliberately not extracted
 
-- **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — distinct from a section header, and
-  deliberately NOT extracted. Inspected, the two sites differ on **four** axes: `TaskList` uses a
-  focusable `<button>` (already `.cc-btn-bare .cc-btn-icon`) with a tooltip, the icon as click target and
-  multi-expand (a `Set`); `ErrorConsole` uses a non-focusable `<span>`, the whole row as click target and
-  single-expand. Four differences from two samples — you discover an axis by watching sites differ on it,
-  and at n=2 a real axis is indistinguishable from an accident of those two files. The cost is
-  asymmetric: extract now, both adopt, then site three differs on the un-modelled axis and hand-rolls,
-  leaving a primitive *and* divergence — strictly worse than divergence alone. Waiting costs two small
-  scoped rules that no detector flags. There may also be nothing to extract: one is already the canonical
-  icon button, the other isn't a button at all, and the only shared thing is "the chevron points up when
-  open".
+- **Per-row disclosure in a list** — was `TaskList` + `ErrorConsole`, and the reasoning for not
+  extracting was that at n=2 a real axis is indistinguishable from an accident of two files (they
+  differed on four: focusable `<button>` vs `<span>`, icon vs whole-row click target, multi-expand via
+  a `Set` vs single-expand). **That is now n=1.** `TaskList` moved onto `SelectionTable`'s
+  `#row-detail` + `isExpanded` when the two task lists were unified
+  ([`TASK_LIST_UNIFICATION_PLAN.md`](TASK_LIST_UNIFICATION_PLAN.md)), which is where per-row
+  disclosure in a TABLE belongs — the table owns the extra `<tr>`, the caller owns which row is open.
+  `ErrorConsole` is not a table and is the only remaining site, so there is nothing to extract and no
+  longer a comparison to reason from. Revisit only if a *second* non-table list wants disclosure.
 - **Not recommended as a sweep: a single-value range wrapper.** Verified — the global base is the whole
   treatment (`accent-color` + `cursor`) and every per-site rule is pure geometry (`width`, `flex`). There
   is nothing to extract, and some sliders commit on release rather than input.

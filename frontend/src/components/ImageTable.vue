@@ -634,7 +634,7 @@ const unselectableUids = computed(() =>
         </span>
       </span>
       <span class="uid-row">
-        <span class="img-uid cc-muted cc-fs-xs">{{ img.uid }}</span>
+        <span class="img-uid cc-uid">{{ img.uid }}</span>
         <!-- last successful run — the shared module tag (.cc-module-tag + taskModule palette) -->
         <span v-if="lastRunTag(img)" class="cc-module-tag run-tag" :style="lastRunTag(img)!.style"
           v-tooltip.right="lastRunTag(img)!.tip">
@@ -925,7 +925,8 @@ const unselectableUids = computed(() =>
 .runlog-fun { font-weight: 600; color: var(--cc-text); font-family: var(--cc-mono); }
 .runlog-vn { color: var(--cc-accent); font-size: var(--cc-fs-2xs); }
 .runlog-at { margin-left: auto; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.img-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+/* + .cc-uid (mono/tracking/dim/clip). This site's own half: the share of the uid row it takes. */
+.img-uid { flex: 1; min-width: 0; }
 
 /* last-successful-run tag: the shared `.cc-module-tag` (style.css) plus the one thing that is this
    site's own — how much of the UID row it may take before the function label ellipsises. */

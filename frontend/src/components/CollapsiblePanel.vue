@@ -4,8 +4,15 @@
 //
 // Extracted from ModuleLayout, where this had been inline — the module pages' functions/tasks panel.
 // Nothing else could reuse it, so the Movies player had no way to get the same affordance, and
-// ModuleLayout had meanwhile hand-rolled its OWN drag-to-resize next to the shared `usePanelResize`
-// that TaskRunner and MetadataPanel use. One component, one composable underneath.
+// ModuleLayout had meanwhile hand-rolled its OWN drag-to-resize next to the shared `usePanelResize`.
+// One component, one composable underneath.
+//
+// THE PANEL INSIDE MUST NOT OWN A WIDTH. That extraction left half the job done: `TaskRunner` and
+// `MetadataPanel` kept their own `usePanelResize` + drag handle, so each sat inside this one with a
+// second width and a second handle on the same edge — dragging THIS widened this while the content
+// stayed pinned at its own stored 280px, which reads as the content shifting rather than reflowing
+// (Dominik, 2026-08-15). Both now fill the slot (`flex: 1; min-width: 0`) and the starting width is
+// ModuleLayout's `rightDefaultWidth` (280 by default). A slot child that sets its own width is a bug.
 //
 // COLLAPSE IS ONE SHARED FLAG, deliberately: `settings.rightPanelCollapsed` is global, so folding the
 // panel away on one page folds it everywhere (decision: Dominik). That is the behaviour module pages

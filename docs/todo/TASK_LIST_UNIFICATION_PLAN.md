@@ -1,6 +1,9 @@
 # Task list unification — one canonical list for both task surfaces
 
-**Status:** planning — branch `refactor/task-list-canonical`. Nothing built yet.
+**Status:** built, phases 0–4 — branches `refactor/task-list-canonical` (Phase 0, PR #576) and
+`refactor/task-rows` (phases 1–4). **Not yet seen in a browser**; the sidebar table is the part that
+needs eyes. Promote the durable parts into `docs/UI.md` and retire this file once it has been used
+in anger.
 
 ## Goal
 
@@ -157,55 +160,61 @@ Each phase is independently shippable and independently viewable in the browser.
   two of four), so a just-started job shows a sliver rather than an empty track. **Not yet seen in a
   browser** — Settings → Data patches and the project panel's export row are where to look.
 
-### Phase 1 — the shared row helper
-- [ ] Add `frontend/src/utils/taskRows.ts`: `taskRow(t, ctx)` → the row object (`id`, `label`, `seq`,
-      `imageText`, `elapsed`, `elapsedMs`, `module`, `chainLabel`, `status`), plus the two predicates
-      the surfaces already share in spirit (`isRunningWithProgress`).
-- [ ] Add `frontend/src/utils/taskRows.test.ts` — blank/formatting cases, `elapsedMs` vs `elapsed`,
-      the foreign-project prefix.
-- [ ] `pixi run test-frontend` green.
-- **Checkpoint:** no visual change yet; both surfaces still hand-rolled.
+### Phase 1 — the shared row helper — **DONE**
+- [x] Add `frontend/src/utils/taskRows.ts`: `taskRow(t, ctx)` / `taskRows(...)` → the row object
+      (`id`, `seq`, `status`, `module`, `task`, `image`, `imageUid`, `projectLabel`, `chainLabel`,
+      `chainTip`, `elapsed`, `elapsedMs`, `progress`, `hasProgress`, `canRerun`, `entry`).
+- [x] Add `frontend/src/utils/taskRows.test.ts` — blanks vs zero, `elapsedMs` vs `elapsed` (with the
+      `4m 12s` < `59s` case asserted through `sortRows`), the foreign-project label, chain fallback.
+- [x] Shipped together with Phase 2 rather than alone — an exported helper with no consumer is dead
+      code for a reviewer to puzzle over, and the repo's rule is the test ships with the code.
 
-### Phase 2 — `/tasks` onto `SelectionTable`
-- [ ] Replace `.tm-list` / `.tm-row` with `SelectionTable` (`single`, `sortStorageKey`,
-      `columnWidthKey`, `actionsWidth`, `#empty`).
-- [ ] Delete `.tm-row`, `.tm-row.selected`, `.tm-row.selected::before`, `.row-icon`, `.row-body`,
-      `.row-top`, `.row-label`, `.row-actions` and the hover-reveal. **The purple selection rule goes
-      with them** — this is where the reported symptom is fixed.
-- [ ] Keep the toolbar, the filter chips, the two toggles, the throttle popover and the whole log pane
+### Phase 2 — `/tasks` onto `SelectionTable` — **DONE**
+
+- [x] Replace `.tm-list` / `.tm-row` with `SelectionTable` (`single`, `sortStorageKey`,
+      `columnWidthKey`, `actionsWidth`, `fit="content"`, `#empty`).
+- [x] Delete `.tm-row`, `.tm-row.selected`, `.tm-row.selected::before`, `.row-body`, `.row-top`,
+      `.row-label`, `.row-image`, `.tm-empty`, `.row-actions` and the hover-reveal. **The purple
+      selection rule went with them** — the reported symptom is fixed.
+- [x] Keep the toolbar, the filter chips, the two toggles, the throttle popover and the whole log pane
       exactly as they are.
-- [ ] Add the `progress` column (Decision 7b) — new to this surface.
-- **Checkpoint:** `/tasks` selection is amber; the list sorts; the log pane behaves as before; a
-  running row shows its bar in the list, not only in the pane.
+- [x] Add the `progress` column (Decision 7b) — new to this surface.
+- [x] `.chain-pill`'s raw `#a78bfa22` → `color-mix(…)` (was a loose end below; the file was open).
+- [x] `npm run typecheck` clean; `npx vitest run` 124 files / 1518 tests green.
+- **Two things to look at in a browser:** the list pane went **340px → 460px** to fit six columns
+  (it eats that much from the log pane), and the row actions are now **always visible** rather than
+  hover-revealed (Decision 8). Sorting and per-column drag-resize are both new here.
 
-### Phase 3 — the sidebar onto `SelectionTable`
-- [ ] Replace `.task-item` with `SelectionTable` (`none`, `fit="content"`, `columnWidthKey`,
+### Phase 3 — the sidebar onto `SelectionTable` — **DONE**
+- [x] Replace `.task-item` with `SelectionTable` (`none`, `fit="content"`, `columnWidthKey`,
       `#row-detail` for the expanded log only, `#cell-progress` for the bar — Decision 7b).
-- [ ] Port the status tints to `rowClass` + `:deep()`; port the jump / expand / cancel / rerun / copy /
-      dismiss buttons to `#actions`.
-- [ ] Keep the heading row and its two list-wide actions (cancel-all, clear-finished) — they belong to
-      `TaskList` itself and are why `BatchMoviesPanel` and `AnimationPanel` get them.
-- [ ] Verify all three hosts: `TaskRunner` (every module page), `BatchMoviesPanel`, `AnimationPanel`.
-- **Checkpoint:** the sidebar and `/tasks` are visibly the same list. **Needs Dominik's eyes in a
-  browser before merge** — a 280px table is the part of this that cannot be judged from the diff.
+- [x] Port the status tints to `rowClass` + `:deep()` — keyed off `TASK_STATUS[...].tone`, so the four
+      raw hexes the card stack carried (`#1e3a5f18`, `#7f1d1d18`, `#14532d55`, `#3f3f4666`) are gone
+      and the tint comes from the same tokens as the status light. `st-done` had only a border colour,
+      which a table row has nothing to do with — dropped; the icon already says it.
+- [x] Port the jump / expand / cancel / rerun / copy / dismiss buttons (jump stays in the Task cell,
+      where it reads as belonging to the task's identity; the rest to `#actions`).
+- [x] Keep the heading row and its two list-wide actions (cancel-all, clear-finished).
+- [x] Deleted a dead rule while there: `.task-item:hover .jump-btn { display: inline-flex }` had no
+      `display: none` base to reverse, so it never did anything.
+- [x] `npm run typecheck` clean; `npx vitest run` 124 files / 1518 tests green.
+- **The card look is gone** — rounded per-status bordered cards become table rows. That is the point,
+  and it is also the biggest visual change in the whole plan. **Needs Dominik's eyes in a browser**:
+  a 280px-wide table with six columns and five row buttons is what cannot be judged from a diff.
+- [ ] Verify all three hosts in the browser: `TaskRunner` (every module page), `BatchMoviesPanel`,
+      `AnimationPanel`.
 
-### Phase 4 — docs + the stale notes
-- [ ] `docs/UI.md` — the task-list sections (*Task list scoping*, the chain-badge note) still describe
-      the card stack.
-- [ ] `docs/todo/UX_PRIMITIVES_PLAN.md` → *Deliberately not extracted* → **Per-row disclosure in a
-      list** cites `TaskList` as one of its two samples. Once `TaskList` uses `#row-detail`, that entry
-      is down to one site (`ErrorConsole`) and its n=2 reasoning no longer describes reality. Rewrite
-      it; do not leave it asserting something that stopped being true.
-- [ ] `INVENTORY.md` — add the `utils/taskRows.ts` line (`CcProgressBar` landed in Phase 0).
-- [ ] `pixi run test-frontend` — the CSS-scenario detectors are exact lists that fail on *improvement*
-      too. Removing hand-rolled rules will move counts; lower them in the same change.
+### Phase 4 — docs + the stale notes — **DONE**
+- [x] `docs/UI.md` — both surfaces documented, including why the sidebar's two differences follow from
+      its width.
+- [x] `docs/todo/UX_PRIMITIVES_PLAN.md` → *Per-row disclosure in a list* — its n=2 reasoning is now
+      n=1 (`ErrorConsole` alone), rewritten rather than left asserting something untrue.
+- [x] `INVENTORY.md` — `utils/taskRows.ts` (+ `CcProgressBar` in Phase 0).
+- [x] `pixi run test-frontend` — the CSS-scenario exact lists needed no adjustment.
 
 ## Loose ends found on the way (not blockers)
 
-- `.chain-pill` (`TasksModule.vue`) uses the raw hex `#a78bfa22` — `--cc-accent` at ~13% alpha. It
-  escapes `findRawColours` only because the 8-digit form isn't an exact token match. Should be
-  `color-mix(in srgb, var(--cc-accent) 13%, transparent)`. Purple is right here: it is a *badge*, not a
-  selection.
+- ~~`.chain-pill`'s raw `#a78bfa22`~~ — done in Phase 2.
 - **Indeterminate** progress is out of scope. `CcProgressBar` is determinate only (a 0–1 value); a
   task that reports no fraction shows an empty progress cell, exactly as it shows no bar today. In a
   task row the "working, no number" cue is already the running status icon (`lib/taskStatus.ts`,

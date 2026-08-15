@@ -52,7 +52,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Filtering rows by their attributes | `components/AttrFilterPanel.vue` + `utils/attrFilter.ts` (`v-model` an `AttrFilterState`, `:rows` anything with an `attr` bag) | a second set of chip rows + Apply/Reset/Invert, or a per-page matching clause |
 | **ANY table of rows and columns** — pick one, pick many, or a plain list | `components/SelectionTable.vue` — `selectionMode` `single` (default, a radio) / `multi` (checkboxes, `v-model:selected`) / `none` (a list; `@row-click` is what a row means). Per-column `sortable`, `sortKey` for a formatted cell, `ellipsis` for a long one; `#cell-<key>` to render one cell yourself, `#actions` for row buttons | a `<select>` that hides the trade-off, or a hand-rolled `<table>` — four of those existed only because `multi`/`none` didn't, and none of them could sort or resize |
 | Sorting a list by a clicked header | `utils/sortRows.ts` — `sortRows(rows, valueOf, dir)` + `cycleSort`/`sortIconFor` | a per-table comparator, or an inline asc/desc/off cycle |
-| Drag-resizable table columns | `composables/useColumnResize.ts` (`SelectionTable` opts in via `columnWidthKey`; per-column `width` for the starting size, `actionsWidth` for the trailing button column, and a reset-widths button appears in the header). Pair it with `fit="content"` + an `overflow-x: auto` wrapper whenever the columns can outgrow the panel — **mandatory with `sticky` columns**, since a squeezed table renders its columns narrower than the offsets the pinning is computed from | a per-table mousemove drag + an unpersisted widths `ref`, or `width: max-content` in the caller's stylesheet (a single class loses to `.sel-table.sized`) |
+| A dense list in a panel with no width to spare | `SelectionTable`'s `density="compact"` — one step down the type scale, ~half the cell padding, a narrower radio gutter. Nothing else changes, so a compact list still agrees with every other one about selection and sorting | `:deep()` on `th`/`td` from the caller, rediscovering a padding number per panel |
+| Drag-resizable table columns | `composables/useColumnResize.ts` (`SelectionTable` opts in via `columnWidthKey`; per-column `width` for the starting size, `actionsWidth` for the trailing button column, and a reset-widths button appears in the header). Pair it with `fit="content"` + an `overflow-x: auto` wrapper when the columns must keep their declared width and the panel should SCROLL — **mandatory with `sticky` columns**, since a squeezed table renders its columns narrower than the offsets the pinning is computed from. Otherwise leave `fit` at `fill`: the declared widths are then starting hints and the table is exactly its panel. Choose by what should give — `content` makes the panel scroll, `fill` makes the columns squeeze. Picking `content` for a table that ought to fit is what put a horizontal scrollbar in the 280px task sidebar and pushed the manager's Time column off-screen | a per-table mousemove drag + an unpersisted widths `ref`, or `width: max-content` in the caller's stylesheet (a single class loses to `.sel-table.sized`) |
 | Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
 | The ⚙ that holds those two blocks | `components/MovieOptionsButton.vue` — the button + tooltip + popover; the blocks go in its slot | a second gear, or the blocks laid out flat in a page header |
@@ -71,7 +72,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
 | Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
-| Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels* | an inline handle + `v-show` + its own mousemove drag |
+| Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels*. **The content inside fills it (`flex: 1; min-width: 0`) and must not set a width of its own** | an inline handle + `v-show` + its own mousemove drag, or a slot child with its own `usePanelResize` — two widths and two handles on one edge, so dragging the outer one shifts the content instead of reflowing it |
+| A panel resized from its RIGHT edge (a left-hand pane, e.g. the `/tasks` list) | `usePanelResize({ edge: 'right' })` — the same composable; `edge` only flips the sign of the drag | a second composable, or negating the delta at the call site |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | A short line with its reasoning on hover | `components/InlineNote.vue` | an `<i class="pi …"/> {{ text }}` + `v-tooltip` by hand (four sites had one each, two already drifted off the severity model) |
@@ -1776,6 +1778,32 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 `poolName` in the `task:run` WS message, which `handle_task_run` in `sockets.jl` passes to
 `run_task` as the `pool_name` override kwarg. The old concurrent-task slider
 (`task:setLimit` / `tasksLimit`) has been removed entirely.
+
+**The two task surfaces render through one list and one row mapper.** The `/tasks` manager
+(`TasksModule.vue`) is a `SelectionTable` in `single` mode — a row IS selected, and what it selects is
+what the log pane shows — so its selected-row highlight is the table's own amber `--cc-selected`
+rather than the purple left rule it hand-rolled for a long time (`--cc-accent` is form-control chrome;
+see `docs/todo/TASK_LIST_UNIFICATION_PLAN.md` for the dating). Both surfaces flatten `TaskEntry` to
+row fields through **`utils/taskRows.ts`**, because `SelectionTable` renders `row[key]` and sorts by
+row FIELDS — including the raw `elapsedMs` behind the formatted `elapsed`, since `4m 12s` sorts before
+`59s` as text. Where the two lists genuinely differ they differ in their `#cell-*` slots (the manager
+prefixes the image with a foreign-project label, the sidebar shows a uid chip), never in a second copy
+of the derivation.
+
+The per-module sidebar (`TaskList.vue`, also hosted by `BatchMoviesPanel` and `AnimationPanel`) is the
+same table in `none` mode — a row there isn't selected, the buttons act — with two differences that
+follow from the panel being ~280px wide:
+
+- **the log expands in place**, through `#row-detail`, instead of into a side pane. `isExpanded` is
+  only ever "the user opened this row": the running-task bar is its **own column**, not a second
+  tenant of the detail row, so the predicate keeps meaning what it says.
+- **`fit="content"` + `overflow-x`** on its own wrapper, so the columns can outgrow the panel and be
+  dragged, rather than the panel being pushed wider (the containment `.task-list` needed as a card
+  stack, for the same reason).
+
+Its per-status row tint comes from `TASK_STATUS[...].tone` via `rowClass` + `:deep()` (the
+`ImageTable` `.row-excluded` precedent) — that `tone` field exists precisely so a component tints its
+own chrome from the same tokens as the status light, rather than the raw hexes the card stack carried.
 
 **Task list scoping.** `useTaskStore().forModule(module, projectUid?)` and `clearFinished(module,
 projectUid?)` take an optional `projectUid` — `TaskList.vue`/`TaskRunner.vue` always pass the
