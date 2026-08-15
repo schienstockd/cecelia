@@ -580,10 +580,70 @@ const PORT = parse(Int, get(ENV, "CECELIA_PORT", "8080"))
 # runs when the bind is loopback, so a loopback bind — not a spoofable header — is the network control.
 const _BOUND_HOST = Ref{String}("")
 
+# Stop when our SUPERVISOR goes away without stopping us.
+#
+# `dev.jl` runs the backend in its own process group (so a terminal Ctrl-C reaches only the
+# supervisor, which then stops us in an orderly way — see its `detach = true` comment). The price of
+# that isolation is that a supervisor killed OUTRIGHT — `kill -9`, or the terminal window closed —
+# can no longer take us with it, and we would sit on :8080 with no UI attached and nothing able to
+# reach us. Watching for it is the cheap half of the trade.
+#
+# Reparenting is the signal: when our parent dies we are re-parented (to init/systemd), so `getppid`
+# changes. Polled, because there is no portable "parent died" notification. Unix only — Windows has no
+# `getppid`; there `pixi run stop` remains the recovery, which is what it was everywhere before.
+function _watch_supervisor!()
+    (haskey(ENV, "CECELIA_SUPERVISED") && !Sys.iswindows()) || return
+    parent = ccall(:getppid, Cint, ())
+    parent > 1 || return                      # already orphaned, or no supervisor to speak of
+    # EVERY step here is wrapped, because of WHERE this runs: the supervisor owned our stdout/stderr,
+    # so by the time this fires those streams are usually a closed pipe or a dead PTY (the terminal
+    # window was closed — that is the case this exists for). An unguarded `@warn` then throws EIO,
+    # kills this task, and the shutdown it was about to do never happens. Measured exactly that: the
+    # watchdog fired, died on its own log line, and left the backend holding :8080.
+    errormonitor(Threads.@spawn while true
+        sleep(2)
+        ccall(:getppid, Cint, ()) == parent && continue
+        try; @warn "Supervisor exited without stopping us — shutting down" was_parent = parent; catch; end
+        try; _stop_children_for_exit(); catch; end
+        _exit_now(0)                                   # flushes defensively; never throws
+    end)
+    nothing
+end
+
+# Ctrl-C must stop this server's CHILDREN too, not just this process. Nothing else will: napari
+# (:7655), the preview worker (:7656), Pluto (:7660) and the task runner (:7657) are grandchildren in
+# their own process groups, and an in-flight task's Python child is only reparented. Before this hook,
+# a Ctrl-C left every one of them running — verified live: the task runner survived on :7657 with
+# nothing able to reach it again.
+#
+# **It has to be an `atexit` hook, not a caught `InterruptException`.** Julia's default for a
+# non-interactive process does not unwind to us, and the obvious fix — `exit_on_sigint(false)` so it
+# throws instead — is WRONG here and was measured to be: under `-t auto` the InterruptException is
+# delivered to whichever task is at a safepoint, routinely an idle worker inside the scheduler's own
+# `poptask`/`task_done_hook`. Nothing there handles it, so the process dies on the spot with
+# `fatal: error thrown and no exception handler available` — skipping the teardown entirely, which is
+# worse than the bug. `api/test` asserts this file contains no `exit_on_sigint`, to keep it out.
+#
+# An `atexit` hook has none of that fragility: `jl_exit` runs hooks, and it was verified to run on
+# SIGINT *and* SIGTERM, with worker threads idle *and* busy. So the children are stopped however we
+# are asked to go.
+#
+# The Quit/Restart routes are unaffected: they call `_stop_children_for_exit` themselves and leave via
+# `_exit_now`, which skips atexit — so the teardown runs exactly once, in the order those routes want
+# (`stop_runner = false` for a restart), and never twice.
+#
+# Registered INSIDE `start`, so `CECELIA_NO_SERVE=1` (the test suite, the REPL) never installs it.
 function start(; host=HOST, port=PORT)
     _BOUND_HOST[] = string(host)
     _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
     _start_runner!()      # launch or ADOPT the detached task runner (no-op unless CECELIA_RUNNER=1)
+    # Guarded for the same reason as `_watch_supervisor!`: on a Ctrl-C or a closed window our streams
+    # may already be gone, and a throwing log line here would take the teardown with it.
+    atexit() do
+        try; @info "Server exiting — stopping children"; catch; end
+        try; _stop_children_for_exit(); catch; end
+    end
+    _watch_supervisor!()
     @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end

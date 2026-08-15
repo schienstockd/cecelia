@@ -69,6 +69,43 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
     stop_runner && try; Cecelia.runner_stop!(_RUNNER); catch; end
 end
 
+# ── Leaving the process ─────────────────────────────────────────────────────────
+# **Never call `exit()` here — use `_exit_now`.** `Base.exit` runs `jl_atexit_hook`, which tears down
+# the JIT and the thread pool while the rest of the process is still live. Every HTTP handler runs on
+# the thread pool (see `handle_stream`), so at shutdown there is routinely a worker mid-compile, and
+# that teardown then either SEGFAULTS or hangs. Measured on Julia 1.12.6 with worker threads
+# compiling: `exit(0)` faulted in LLVM in 3 of 5 runs; `_exit` was clean in 8 of 8.
+#
+# The segfault was not cosmetic — it is why Quit did not quit. `dev.jl` classifies a fault signal as a
+# CRASH (`_crash_death`) and relaunches the backend, so an in-app Quit that faulted on the way out came
+# straight back up. And the exit CODE is the only channel that carries intent (0 = quit,
+# RESTART_EXIT_CODE = restart); a process that dies of SIGSEGV delivers a signal instead, so the
+# supervisor could not tell "the user asked to stop" from "it broke".
+#
+# POSIX `_exit` skips all of it: no atexit hooks, no thread rendezvous, no JIT teardown — the kernel
+# just reaps the process, with the exact status we asked for.
+#
+# **Skipping atexit is deliberate, not collateral.** `start` (server.jl) registers a
+# `_stop_children_for_exit` atexit hook, because that is the ONLY thing that runs on a Ctrl-C or a
+# SIGTERM — Julia's `jl_exit` runs hooks, and a caught `InterruptException` is not available to a
+# multithreaded server (see the comment on `start`). Every caller here has already run the teardown
+# ITSELF, with the arguments this route wants — so bypassing the hook is what keeps it from running a
+# second time and, on a Restart, from stopping the task runner that `stop_runner = false` just spared.
+# Each route must therefore keep calling `_stop_children_for_exit` explicitly; `api/test` asserts it.
+#
+# Buffered IO is NOT flushed by `_exit`, so flush first — otherwise the final log line is lost.
+function _exit_now(code::Integer)
+    for io in (stdout, stderr)
+        try; flush(io); catch; end
+    end
+    try
+        ccall(:_exit, Cvoid, (Cint,), code)
+    catch e     # no `_exit` in this libc (should not happen on any supported OS) — take the risky path
+        @warn "Immediate exit unavailable; falling back to exit()" exception = e
+        exit(code)
+    end
+end
+
 # POST /api/app/shutdown  → { ok, message }   — the global "Quit everything".
 # Stops children, answers 200, then exits the process from a detached task so the HTTP response
 # flushes first. In dev this ends `pixi run dev`; in the packaged app the server exit ends app.py.
@@ -77,7 +114,7 @@ function api_app_shutdown(body_bytes::Vector{UInt8})
     _stop_children_for_exit()
     @async begin
         sleep(0.3)      # give handle_stream time to write the response before the process dies
-        exit(0)
+        _exit_now(0)
     end
     200, JSON3.write((; ok = true, message = "Shutting down Cecelia"))
 end
@@ -100,7 +137,7 @@ function api_app_restart(body_bytes::Vector{UInt8})
     _stop_children_for_exit(; stop_runner = false)   # a restart must NOT cost a running task
     @async begin
         sleep(0.4)      # flush the HTTP response first, then exit with the restart sentinel
-        exit(RESTART_EXIT_CODE)
+        _exit_now(RESTART_EXIT_CODE)
     end
     200, JSON3.write((; ok = true, message = "Restarting Cecelia"))
 end
@@ -166,7 +203,7 @@ function api_app_switch_worktree(body_bytes::Vector{UInt8})
     _stop_children_for_exit(; stop_runner = false)
     @async begin
         sleep(0.4)
-        exit(RESTART_EXIT_CODE)
+        _exit_now(RESTART_EXIT_CODE)
     end
     200, JSON3.write((; ok = true, message = "Switching to $(basename(target))"))
 end

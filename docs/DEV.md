@@ -173,6 +173,75 @@ you see `[dev] backend crashed — relaunching` and the traceback stays on scree
 minute and it gives up (a server that cannot boot should say so, not loop). Full rule:
 [`docs/RUNNER.md`](RUNNER.md) → *Lifecycle*.
 
+### Stopping the app — why it is not just `kill`
+
+If you have ever pressed Quit or `Ctrl-C` and watched hundreds of lines of Julia backtrace scroll past,
+ending in `Allocations: … ; GC: …`, and then found the app still there — that is not a crash in
+Cecelia. It is Julia 1.12's signal and exit behaviour, and four separate things had to be handled.
+
+| what | why it broke stopping |
+|---|---|
+| `exit()` tears down the JIT + thread pool while threads are live | With a worker mid-compile it **segfaults** (3 of 5 runs, measured). `dev.jl` reads a fault as a crash and relaunches — so Quit came straight back up. Every exit path now uses `_exit_now` (POSIX `_exit`): no atexit, no teardown, and the exit code that carries intent is actually delivered. |
+| a signal-driven exit needs every thread at a safepoint | A thread inside codegen or a blocking `ccall` never reaches one: the process prints every thread's backtrace and **keeps running**, still holding its port. An idle `-t auto` julia dies on SIGTERM in ~0.4 s; one with every worker busy was still alive after 8 s. So a lone SIGTERM cannot stop the backend — and `pixi run stop` sent exactly one, then printed "stopped". |
+| nothing unwound on `Ctrl-C`, so no teardown ran | The supervisor's whole `finally` was dead code. Verified live on a real session: a `Ctrl-C` left the **task runner** alive on :7657 with nothing able to reach it again. |
+| the backend shared the terminal's process group | Both processes got `Ctrl-C` at once. The backend died first with Julia's unhandled-`InterruptException` status (**exit 1**), the supervisor's `wait` returned normally, and the crash classifier read exit-1 as a fault and **relaunched the app the user had just stopped**. |
+
+**How it works now.** The backend runs in its own process group (`detach = true`), so `Ctrl-C` reaches
+only the supervisor. The supervisor then stops it *by asking* — `POST /api/app/shutdown`, the very
+route the Quit button uses — and only escalates if that is ignored:
+
+```
+ask (/api/app/shutdown)  →  SIGTERM  →  SIGKILL  →  verify the port is free
+```
+
+Each step is a downgrade on the one before, which is why the order matters: the ask is silent and
+complete, SIGTERM still runs the backend's `atexit` teardown but prints the backtrace wall, and
+SIGKILL orphans the children outright. `api/portkill.jl` is the one implementation of the
+port → TERM → KILL → *verify* part, shared by the supervisor and every `pixi run stop*` task; if it
+cannot free a port it says `STILL RUNNING` and exits non-zero rather than reporting success over a
+live process.
+
+Measured on the real stack (backend + Vite + task runner), from the fix branch:
+
+| action | time to fully stop | left behind |
+|---|---|---|
+| `Ctrl-C` | 2.8 s | nothing |
+| Quit button | 2.8 s | nothing |
+| `pixi run stop` | 4.1 s | nothing |
+| terminal window closed / supervisor `kill -9` | 3.7 s | nothing |
+
+Restart and crash-relaunch are unchanged and still verified: a Restart brings the backend back and
+**keeps the task runner**; a `SIGSEGV` relaunches the backend with its children left running.
+
+**Two traps worth naming, because both look like tidy-ups.**
+
+*Do not set `exit_on_sigint(false)` in the server.* It is what the supervisor needs, so making the two
+match is the obvious next edit. In the server it is fatal: under `-t auto` the `InterruptException`
+goes to whichever task is at a safepoint — routinely an idle worker inside the scheduler's own
+`poptask`/`task_done_hook`, where nothing handles it — and the process dies on the spot with
+
+```
+fatal: error thrown and no exception handler available.
+InterruptException()
+```
+
+skipping the teardown entirely. The server uses an `atexit` hook instead, which `jl_exit` runs on
+SIGINT *and* SIGTERM, with workers idle *and* busy (all four verified). `api/test/runtests.jl` asserts
+the server contains no `exit_on_sigint`.
+
+*Do not pin the supervisor to `-t 1`.* It only spawns and waits, so one thread reads as obviously
+right. At one thread Julia 1.12 does not deliver SIGINT to a process blocked in `wait` at all — it is
+simply ignored, and `Ctrl-C` stops working entirely. The suite asserts the pin stays off.
+
+Anything in the teardown path that logs is wrapped in `try`. By the time it runs, stdout/stderr are
+often a closed pipe or a dead PTY (the window was closed — the case the watchdog exists for), and an
+unguarded `@warn` throws EIO and takes the shutdown down with it. That was measured too: the watchdog
+fired, died on its own log line, and left :8080 held.
+
+That dump is worth recognising on sight: **it is not a crash**. It is Julia printing every thread's
+stack because a signal arrived, and if the process then keeps running, it is stuck *in exit* — not in
+your code. `pixi run stop` will now end it.
+
 Why the runner is dev-only, and how it works: [`docs/RUNNER.md`](RUNNER.md).
 
 ## CI

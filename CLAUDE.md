@@ -359,7 +359,11 @@ use the named helper, don't re-derive the platform branch inline:
   (Julia nulls `handle` on reap), which is an **uncatchable SIGSEGV that kills the server**; `Libc.getpid`
   does the same read with the iolock held and throws instead. Never `taskkill /IM julia.exe` — it kills every Julia
   process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
-  port** instead of process name (via `_kill_listeners_on_port`, same file).
+  port** instead of process name. Two homes, by caller: **in-process** → `_kill_listeners_on_port`
+  (same file); **outside the package** (`api/dev.jl`, every `pixi run stop*` task) → `free_port` in
+  `api/portkill.jl`, which is Base-only so it still works with no env. Both escalate to SIGKILL —
+  a SIGTERM does NOT stop a Julia process whose worker threads are mid-compile (it prints every
+  thread's backtrace and keeps running). Never write a third one. See `docs/DEV.md` → *Stopping the app*.
 - **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
   processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
 - **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
@@ -376,7 +380,12 @@ use the named helper, don't re-derive the platform branch inline:
 
 Launcher logic for all of the above lives in `pixi.toml` tasks (`dev`/`prod`/`frontend`/`napari`/
 `stop`), not shell scripts — add a `[target.<platform>.tasks]` override for OS-specific commands
-rather than a separate script.
+rather than a separate script. **Exception, when the same task needs all three OS branches:** a
+per-OS override means maintaining N copies of one behaviour by hand, and they drift. The `stop*`
+tasks carried 18 such one-liners and every escalation fix had to land three times; they now call one
+Base-only Julia file (`api/portkill.jl`) that does the platform branch *in code*, where it can be
+tested. Prefer that over a fourth copy — but keep the shared file dependency-free, so an emergency
+`pixi run stop` never depends on the env being intact.
 
 ---
 

@@ -77,9 +77,16 @@ running. That is not merely untidy: the preview worker holds a warm cellpose mod
 able to reach it, and an orphan gets silently **adopted** by the next launch, which is how a worker
 running stale code can outlive several restarts. `POST /api/app/shutdown` already stops all three (it is
 the in-app Quit path), so the launcher reuses it instead of carrying a third copy of platform-specific
-port-killing — the other two live in Julia's `_kill_listeners_on_port` and `api/dev.jl::_free_port`.
+port-killing — the other two live in Julia's `_kill_listeners_on_port` (in-process) and
+`api/portkill.jl` (outside the package: `api/dev.jl` and every `pixi run stop*` task).
 Asserted by *"shutdown stops EVERY resident child"* in `api/test/runtests.jl`, which covers all three
 supervisors and checks the ORDER (a graceful attempt after the terminate would be pointless).
+
+**And asking is not enough on its own — the fallback has to escalate.** A SIGTERM does not stop a
+Julia server whose worker threads are inside a non-yielding region (codegen, a blocking `ccall`): it
+prints every thread's backtrace and keeps running, still holding its port. So every stop path goes
+SIGTERM → SIGKILL → *verify the port is free* (`app.py` waits 10 s then `kill()`; `portkill.jl` waits
+1.5 s then SIGKILLs and confirms). Why, with the measurements: `docs/DEV.md` → *Stopping the app*.
 
 The same-origin design (server serves the frontend) is what removes all the friction: the frontend
 calls `/api/...` and `ws://<host>/ws` relatively, so it works identically whether served by Vite in
@@ -512,7 +519,7 @@ pixi run build            # frontend → static assets (frontend/dist), required
 pixi run app              # one-click: start prod server, wait for /api/health, open the browser
 pixi run napari           # napari bridge standalone (normally the backend launches it)
 pixi run update           # update the env to latest within pixi.toml constraints
-pixi run stop             # stop backend/frontend/napari by port
+pixi run stop             # stop backend/frontend/napari by port (TERM → KILL → verify; exit 1 if stuck)
 ```
 
 In dev you typically run `pixi run dev` + `pixi run frontend` (Vite, hot reload). To exercise the
