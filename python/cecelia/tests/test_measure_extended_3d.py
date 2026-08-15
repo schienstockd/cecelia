@@ -12,12 +12,15 @@ Two things are pinned here, because the fix is only safe if BOTH hold:
 1. **The numbers do not move.** Every mesh measure is identical to the whole-volume form. The vertex
    OFFSET back into the full-volume frame is what makes that true and is easy to drop as redundant:
    the mesh measures themselves are translation-invariant, but the convex hull is computed by qhull,
-   which is sensitive to the coordinate range it is handed. Without the offset the three hull-derived
-   axis lengths drift by ~1e-3 relative — small enough to pass a sloppy tolerance and wrong. So this
-   asserts EXACT equality, and `test_offset_is_what_makes_the_hull_match` fails if the offset goes.
+   which is sensitive to the coordinate range it is handed — on Linux, dropping the offset moves the
+   three hull-derived axis lengths by ~1e-1, small enough to pass a sloppy tolerance and wrong. So
+   this asserts EXACT equality. **How sensitive qhull is, though, is platform-dependent** (macOS is
+   exact at these coordinates), so the offset is guarded by where the mesh *sits* —
+   `test_meshes_are_positioned_in_the_full_volume_frame` — not by whether removing it happens to
+   perturb an arithmetic result on the machine running the suite.
 
-2. **The cost does not follow the volume.** Padding the same cells into a much larger array must not
-   make the measurement meaningfully slower. Without that, correctness alone would happily pass a
+2. **The cost does not follow the volume.** Measuring the same cells must not get more expensive
+   because the array around them got bigger. Without that, correctness alone would happily pass a
    reintroduced whole-volume loop.
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
@@ -36,11 +39,13 @@ except ImportError:
 from cecelia.utils.measure_utils import MeasureUtils
 
 
-#: Cells are placed AWAY FROM THE ORIGIN, because that is the only condition under which the vertex
-#: offset is observable. qhull's hull vertices are exact for blobs sitting at coordinates 0-90, so a
-#: volume built at the origin cannot tell the offset apart from its absence and would green-light
-#: dropping it. At coordinates ~110+ (and every real image is far past that — zolIMa is 1039x1060)
-#: the hull axes shift by ~1e-1 without it. Measured: 0.0 at the origin, 1.4e-1 at offset 110.
+#: Cells are placed AWAY FROM THE ORIGIN, so the fixture resembles a real image, where a cell is
+#: hundreds of voxels from the corner (zolIMa is 1039x1060, p6t4mC 605x617). It matters because qhull
+#: can be sensitive to the coordinate range it is handed: on Linux, dropping the vertex offset moves
+#: the hull axes by 1.4e-1 at offset 110 and by exactly 0.0 at the origin. That sensitivity is NOT
+#: portable — macOS is exact at both — so it is the reason to build the fixture realistically, not
+#: something to assert. The offset itself is guarded by
+#: `test_meshes_are_positioned_in_the_full_volume_frame`, which holds on every platform.
 _CELL_ORIGIN = 110
 _VOL_SHAPE = (20, 200, 200)
 
@@ -68,11 +73,11 @@ def _blobs(shape=_VOL_SHAPE, n=12, r=4, seed=0, origin=_CELL_ORIGIN):
     return vol
 
 
-def _whole_volume_reference(vol, labels, offset_vertices):
+def _whole_volume_reference(vol, labels):
     """The ORIGINAL implementation: marching cubes over the full volume, once per label.
 
-    `offset_vertices` mirrors what the bounding-box path does, so the two spellings can be compared
-    with the offset present and absent.
+    The oracle the fix has to reproduce exactly. Its vertices are already in the full-volume frame by
+    construction, which is what the bounding-box path has to translate back to.
     """
     import trimesh
     rows = {}
@@ -81,8 +86,6 @@ def _whole_volume_reference(vol, labels, offset_vertices):
         if mask.sum() < 4:
             continue
         mesh = trimesh.voxel.ops.matrix_to_marching_cubes(mask)
-        if not offset_vertices:
-            mesh.vertices -= mesh.bounds[0]        # collapse to the origin, as a bbox crop would
         if not mesh.is_watertight:
             mesh.fill_holes()
         ch = mesh.convex_hull
@@ -121,7 +124,7 @@ class ExtendedMeasuresMatchWholeVolumeTest(unittest.TestCase):
         vol = _blobs()
         labels = [int(x) for x in np.unique(vol[vol > 0])]
         got = _measure(vol)
-        want = _whole_volume_reference(vol, labels, offset_vertices=True)
+        want = _whole_volume_reference(vol, labels)
 
         self.assertEqual(sorted(got.index), sorted(want.index))
         for col in want.columns:
@@ -130,24 +133,34 @@ class ExtendedMeasuresMatchWholeVolumeTest(unittest.TestCase):
                 got.loc[want.index, col].to_numpy(float), want[col].to_numpy(float),
                 err_msg=f'{col} differs from the whole-volume form')
 
-    def test_offset_is_what_makes_the_hull_match(self):
-        """Pin the PREMISE of the offset, separately from the behaviour above.
+    def test_meshes_are_positioned_in_the_full_volume_frame(self):
+        """The offset, pinned as a property of OUR code rather than of qhull's arithmetic.
 
-        The test above would also pass if qhull were offset-insensitive and the offset were merely
-        harmless. This asserts the offset is doing real work at these coordinates, so that if a
-        future qhull makes it a no-op, this fails and says so — a prompt to re-verify the rationale
-        in `_extended_3d_measures`, not a licence to delete the offset.
+        An earlier version of this test asserted the opposite direction — that DROPPING the offset
+        changes the hull axes. It does on Linux (~1e-1) and not at all on macOS, where qhull is exact
+        at these coordinates, so it pinned a third-party numerical accident: it failed in CI on one
+        platform while the code was correct on both. A test whose subject is someone else's rounding
+        is not a test of this fix.
+
+        What holds everywhere: the mesh must sit where the cell is. That is what keeps qhull's input
+        identical to the whole-volume form wherever qhull is offset-sensitive, and it is checkable
+        without depending on whether it is. Drop the offset and each mesh collapses toward the origin
+        — ~219 voxels away for this fixture, against a tolerance of 1.
         """
+        from cecelia.utils.mesh_utils import build_label_meshes
+
         vol = _blobs()
         labels = [int(x) for x in np.unique(vol[vol > 0])]
-        no_offset = _whole_volume_reference(vol, labels, offset_vertices=False)
-        with_offset = _whole_volume_reference(vol, labels, offset_vertices=True)
-        drift = max(
-            float(np.abs(no_offset[c] - with_offset[c]).max())
-            for c in ('major_axis_length', 'interm_axis_length', 'minor_axis_length'))
-        self.assertGreater(
-            drift, 0.0,
-            'hull axes no longer depend on the coordinate offset — re-check the offset rationale')
+        meshes = build_label_meshes(vol, labels, phys=(1.0, 1.0, 1.0), min_voxels=4)
+        self.assertTrue(meshes, 'no meshes were built')
+
+        for lb, mesh in meshes.items():
+            voxel_centroid = np.argwhere(vol == lb).mean(axis=0)
+            off_by = float(np.linalg.norm(np.asarray(mesh.centroid) - voxel_centroid))
+            self.assertLess(
+                off_by, 1.0,
+                f'label {lb}: mesh centroid is {off_by:.1f} voxels from the cell it describes — the '
+                f'submask was not translated back into the full-volume frame')
 
     def test_never_compares_a_label_against_the_whole_volume(self):
         """The cost property, pinned STRUCTURALLY rather than by a stopwatch.
