@@ -2589,6 +2589,15 @@ function _image_payload(img::CciaImage)
         # migrated project has tracks and no `tracking.*` entry), and `labels`/`label_props` look
         # identical tracked or not. One readdir per image, no HDF5 open.
         trackValueNames = img_track_value_names(img),
+        # Interaction-stats runs (spatialAnalysis.neighbourStats), keyed by run suffix — same listing
+        # convention as spatialGraphs above. Feeds the `stats` namespace of a `valueNameInput`.
+        statsSuffixes   = img_stats_suffixes(img),
+        # Clustering runs recorded for the ACTIVE segmentation, split by family so a `clusters.immune`
+        # and a `regions.immune` can coexist. Per (image, value_name) rather than per image — a
+        # clustering belongs to a segmentation (VALUE_NAME_INPUT_PLAN → D6) — so this is the active
+        # one's list; switching segmentation re-fetches the payload anyway.
+        clusterSuffixes = img_cluster_suffixes(img; family = "clusters"),
+        regionSuffixes  = img_cluster_suffixes(img; family = "regions"),
         attr            = img.attr,
         # Include/exclude in further processing (default true). Excluded images are greyed in the
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.

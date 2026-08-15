@@ -91,11 +91,24 @@ export function taskOutput(
 /** The namespace a task's FIXED output lands in. `outputField` is the pre-registry spelling. */
 function namespaceOfDef(def: TaskDef): ValueNameNamespace {
   if (isValueNameNamespace(def.outputNamespace)) return def.outputNamespace
-  return normaliseField(def.outputField)   // 'filepath' (singular) is the outputField spelling
+  // Mapped explicitly, NOT through `normaliseField`. The two vocabularies overlap on `labels` and
+  // `filepaths` and are otherwise different domains: a NAMESPACE is what a task writes into, a FIELD
+  // is where the frontend reads names from, and the suffix namespaces read from fields named nothing
+  // like them (`stats` → `statsSuffixes`). Reusing one for the other type-errors the moment a
+  // namespace has no matching field, which is how this was caught.
+  return def.outputField === 'labels' ? 'labels' : 'filepaths'
 }
 
-/** The three `field` values a `valueNameSelection` can read — `VALUE_NAME_FIELDS` in paramValues.ts. */
-export type ConsumerField = 'filepaths' | 'labels' | 'spatialGraphs'
+/**
+ * The image-payload fields a picker can read names from.
+ *
+ * The first three are what a `valueNameSelection` may declare (`VALUE_NAME_FIELDS` in paramValues.ts);
+ * the rest are suggestion-only sources for a `valueNameInput`, listed from disk rather than registered
+ * in ccid.json. `models` is deliberately absent — that namespace is GLOBAL, so it has no image field
+ * at all and its suggestions arrive as injected spec options (VALUE_NAME_INPUT_PLAN → D6).
+ */
+export type ConsumerField =
+  'filepaths' | 'labels' | 'spatialGraphs' | 'statsSuffixes' | 'clusterSuffixes' | 'regionSuffixes'
 
 /**
  * The `valueNameSelection` `field` a CONSUMER would declare to read this namespace — the chain
@@ -111,6 +124,12 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
     case 'labels':        return 'labels'
     case 'filepaths':     return 'filepaths'
     case 'spatialGraphs': return 'spatialGraphs'
+    case 'stats':         return 'statsSuffixes'
+    case 'clusters':      return 'clusterSuffixes'
+    case 'regions':       return 'regionSuffixes'
+    // `models` is GLOBAL (the vault, not an image) and `tracks`/`branches`/`obsCols` name nothing a
+    // task WRITES through a valueNameInput today — null means "no image field", which the caller
+    // renders as a plain input rather than guessing.
     default:              return null
   }
 }
@@ -126,5 +145,7 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
 export function normaliseField(field: string | undefined | null): ConsumerField {
   if (field === 'labels') return 'labels'
   if (field === 'spatialGraphs') return 'spatialGraphs'
+  if (field === 'statsSuffixes' || field === 'clusterSuffixes' || field === 'regionSuffixes')
+    return field
   return 'filepaths'
 }

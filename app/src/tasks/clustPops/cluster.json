@@ -10,7 +10,8 @@
     {
       "key": "valueNameSuffix",
       "label": "Suffix",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "clusters",
       "default": "default",
       "tip": "Output suffix → clusters.<suffix>"
     },

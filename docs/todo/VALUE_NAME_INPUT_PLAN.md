@@ -8,11 +8,13 @@ remaining phases*. Decisions below are locked.
 | — | settle the duplicate "what does this task write" resolvers (`utils/taskOutput.ts`) | ✅ done |
 | 1 | the `SuggestInput` primitive + `valueNameInput` param type, on the namespaces that already work | ✅ done |
 | 2 | params remembered per output name, restored when you name an existing output | ✅ done |
-| 3 | the five namespaces with nothing to suggest from — clusters, regions, stats, models, obsCols | ⬜ open |
+| 3 | the namespaces with nothing to suggest from — clusters, regions, stats, models | ✅ done |
+| — | `obsCols` (`behaviour.hmmStates`/`hmmTransitions`) | ⬜ **dropped, deliberately** |
 
-Phase 3 in one line: **7 of the 11 output-naming params are still bare text**, because there is no
-accessor to list existing names for their namespace. The per-task breakdown and the order to do it in
-are in the TODO entry; the design is D5/D6 below.
+**9 of the 11** output-naming params now declare a namespace. The two that do not are the `colName`
+pair, and that is a decision rather than a gap: listing obs columns means opening the `.h5ad` on every
+form render, for the two least-used tasks. Revisit only if someone asks for it — recorded in
+`docs/TODO.md` so it is not rediscovered as an oversight.
 
 ## The problem, in one screen
 

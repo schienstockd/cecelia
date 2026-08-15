@@ -19,7 +19,8 @@
     {
       "key": "statsSuffix",
       "label": "Name",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "stats",
       "default": "default",
       "tip": "Output name \u2192 spatialStats/<name>.json"
     },

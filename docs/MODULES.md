@@ -527,8 +527,19 @@ not the field — the field the suggestions come from follows from it, so a spec
 ```
 
 Namespaces: `filepaths`, `labels`, `spatialGraphs`, `tracks`, `branches`, `clusters`, `regions`,
-`stats`, `models`, `obsCols`. Only the first four reach the image payload today, so the rest render as
-plain free text until Phase 3 (`docs/todo/VALUE_NAME_INPUT_PLAN.md`) wires them.
+`stats`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
+which is not uniform:
+
+| scope | namespaces | source |
+|---|---|---|
+| per image | `filepaths`, `labels`, `spatialGraphs`, `stats` | the image payload (`consumerField` names the field) |
+| per (image, value_name) | `clusters`, `regions` | the payload, for the ACTIVE segmentation — a clustering belongs to a segmentation, not an image |
+| **global** | `models` | injected spec `options` (`_inject_dynamic_options!`), because the model vault is not a property of any image |
+| not wired | `tracks`, `branches`, `obsCols` | renders as a plain input — no suggestions, everything else still works |
+
+`obsCols` is deliberately not wired: listing obs columns means opening the `.h5ad` on every form
+render, for the two least-used tasks. See `docs/TODO.md` → *Value-name input — the one namespace left
+out*.
 
 > **Use it for every param that names an output, whatever the key is called.** Eleven params across
 > six spellings do (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`, `colName`,

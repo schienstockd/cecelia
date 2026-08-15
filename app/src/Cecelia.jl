@@ -49,6 +49,7 @@ export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
+export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
 export state_file, obj_meta_dir, STATE_FILENAME

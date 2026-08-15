@@ -18,7 +18,8 @@
     {
       "key": "valueNameSuffix",
       "label": "Suffix",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "regions",
       "default": "default",
       "tip": "Output suffix → regions.<suffix>"
     },

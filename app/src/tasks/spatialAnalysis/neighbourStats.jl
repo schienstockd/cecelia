@@ -74,7 +74,7 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
     length(basis) < 2 &&
         (on_log("[ERROR] neighbourStats: need ≥2 populations for pairwise stats (got $(basis))"); return nothing)
 
-    stats_path = joinpath(img._dir, "spatialStats", "$(suffix).json")
+    stats_path = img_stats_path(img, suffix)
     qc_out_path = joinpath(task_run_dir(img._dir), "neighbour_stats_qc.json")
     n_perm = Int(get(params, "nPermutations", 1000))
     on_log("[INFO] neighbourStats: graph=$(graph_sfx) basis=$(basis) permutations=$(n_perm) → $(suffix)")

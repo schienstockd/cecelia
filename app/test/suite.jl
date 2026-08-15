@@ -3801,6 +3801,42 @@ end
     rm(proj.root; recursive=true)
 end
 
+# The namespaces a `valueNameInput` suggests from need an IMAGE-owned accessor, like the graph/track
+# /branch ones — `INVENTORY.md`'s rule, and the reason `_clustfeatures_suffixes` (which takes a
+# label-props PATH and owns the sidecar's three historical layouts) is WRAPPED here rather than moved.
+@testset "image accessors for the suggestion namespaces" begin
+    proj = create_project!(name="ns-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+
+    # nothing on disk → empty, never an error: an image with no stats/clustering is the normal case
+    @test img_stats_suffixes(img) == String[]
+    @test img_cluster_suffixes(img) == String[]
+
+    # stats are listed from spatialStats/{suffix}.json, and the PATH helper is the one speller —
+    # the writer (neighbourStats.jl) and reader (ai/spatial.jl) both used to join it inline
+    mkpath(img_stats_dir(img))
+    write(img_stats_path(img, "contacts"), "{}")
+    write(img_stats_path(img, "aggregates"), "{}")
+    write(joinpath(img_stats_dir(img), "notes.txt"), "x")     # not a .json → not a run
+    @test img_stats_suffixes(img) == ["aggregates", "contacts"]
+
+    # clustering runs come from the clustfeatures manifest beside the label props, per SEGMENTATION,
+    # and the two families are listed separately so `clusters.immune` and `regions.immune` coexist
+    mkpath(img_label_props_dir(img))
+    props = img_label_props_path(img, "default")
+    write(Cecelia._clustfeatures_path(props),
+          """{"clusters.immune": {"features": ["a"]}, "regions.niches": {"features": ["b"]}}""")
+    @test img_cluster_suffixes(img, "default"; family="clusters") == ["immune"]
+    @test img_cluster_suffixes(img, "default"; family="regions")  == ["niches"]
+
+    # a different segmentation has its own manifest — this is per (image, value_name), not per image
+    @test img_cluster_suffixes(img, "other"; family="clusters") == String[]
+
+    rm(proj.root; recursive=true)
+end
+
 # `task_output_name` is the Julia twin of `taskOutput` (frontend/src/utils/taskOutput.ts) — the name a
 # run writes under, resolved from the spec's `namespace` because SIX different keys can carry it. The
 # two cannot call each other, so the SPECS are the shared contract and each side is pinned against

@@ -290,6 +290,21 @@ function list_coastal_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
 end
 
 """
+    flow_model_names(dev_dir = nothing) -> Vector{String}
+
+The model names already in the vault, as the user TYPES them — stems, no `.pt`, because that is what
+`flow_model_target` takes and what `opticalFlow.train`'s `modelName` field holds.
+
+Built on `list_coastal_models` rather than listing the directory again: that is the one enumeration of
+the vault, and it already knows to skip dotfiles and the `.json` manifests sitting beside each model.
+
+The `models` namespace is the odd one out — **global**, not per image (VALUE_NAME_INPUT_PLAN → D6), so
+this takes no image and its suggestions cannot ride the image payload.
+"""
+flow_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
+    String[first(splitext(m.name)) for m in list_coastal_models(dev_dir)]
+
+"""
 Initialise Cecelia configuration. Merges the bundled `config.toml` with the user `custom.toml`
 found at [`custom_toml_path`](@ref) (see [`config_dir`](@ref) for how the location is resolved).
 """

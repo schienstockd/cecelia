@@ -137,6 +137,48 @@ function img_spatial_graph_suffixes(img::CciaImage)::Vector{String}
     sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".h5ad")])
 end
 
+"""
+    img_stats_suffixes(img) -> Vector{String}
+
+The interaction-stats runs on this image — the `statsSuffix` values already used
+(`{img._dir}/spatialStats/{suffix}.json`). Listed from disk, the same convention as the neighbour
+graphs above; no ccid.json registration.
+
+`img_stats_dir`/`img_stats_path` own the path convention: the writer (`spatialAnalysis.neighbourStats`)
+and the reader (`ai/spatial.jl`) both joined `"spatialStats"` inline, which is two places to keep in
+step and was about to become three.
+"""
+img_stats_dir(img::CciaImage)::String = joinpath(img._dir, "spatialStats")
+img_stats_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_stats_dir(img), "$(suffix).json")
+function img_stats_suffixes(img::CciaImage)::Vector{String}
+    d = img_stats_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
+    img_cluster_suffixes(img[, value_name]; family = "clusters") -> Vector{String}
+
+The clustering runs recorded for one segmentation — the `valueNameSuffix` values already used.
+`family` is `"clusters"` (clustPops/clustTracks) or `"regions"` (clustRegions); a run of each can
+share a suffix without clobbering, so they are listed separately.
+
+**Image-owned accessor over the canonical sidecar reader, not a second reader.** The manifest
+(`{props}.clustfeatures.json`) has three historical layouts and `_clustfeatures_suffixes`
+(`gating/population_manager.jl`) is the one place that knows them — INVENTORY.md says so. What was
+missing was an accessor hanging off the IMAGE, like the graph/track/branch ones, so a caller does not
+have to know that a clustering run is addressed by a label-props path.
+
+Unlike its siblings this is per **(image, value_name)**: a clustering belongs to a segmentation, not
+to an image (VALUE_NAME_INPUT_PLAN → D6).
+"""
+function img_cluster_suffixes(img::CciaImage, value_name::AbstractString = "";
+                              family::AbstractString = "clusters")::Vector{String}
+    vn = isempty(value_name) ? resolve_value_name(img) : String(value_name)
+    sort!(collect(_clustfeatures_suffixes(img_label_props_path(img, vn); family = family)))
+end
+
 # Generic value_name checks over a versioned property field (default `label_props` = the segmentations).
 # It's just "does this versioned field carry this value_name" — reusable wherever a feature must know
 # whether an image has a given value_name before acting on it (e.g. copying gating across images).

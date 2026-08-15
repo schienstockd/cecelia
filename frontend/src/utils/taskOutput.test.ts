@@ -81,10 +81,20 @@ describe('consumerField', () => {
     expect(consumerField('spatialGraphs')).toBe('spatialGraphs')
   })
 
-  it('reports null for a namespace no consumer param can name', () => {
-    // the old normField collapsed these to 'filepath', which prefilled an image-version picker
-    // with a cluster suffix
-    for (const ns of ['clusters', 'regions', 'stats', 'models', 'obsCols'] as const)
+  it('maps the suffix namespaces to the payload fields they are listed under', () => {
+    // deliberately named nothing like the namespace — the payload field is where the frontend READS
+    // names from, which is a different vocabulary to what a task WRITES into
+    expect(consumerField('stats')).toBe('statsSuffixes')
+    expect(consumerField('clusters')).toBe('clusterSuffixes')
+    expect(consumerField('regions')).toBe('regionSuffixes')
+  })
+
+  it('reports null for a namespace no IMAGE field can name', () => {
+    // `models` is the global vault, so its suggestions arrive as injected spec options instead;
+    // the rest name nothing a task writes through a valueNameInput today. The old `normField`
+    // collapsed all of these to 'filepath', which would prefill an image-version picker with a
+    // cluster suffix.
+    for (const ns of ['models', 'tracks', 'branches', 'obsCols'] as const)
       expect(consumerField(ns)).toBeNull()
   })
 })
@@ -98,6 +108,11 @@ describe('normaliseField — the singular/plural trap', () => {
     expect(normaliseField('filepath')).toBe('filepaths')
   })
 
+  it('passes the suffix fields through', () => {
+    for (const f of ['statsSuffixes', 'clusterSuffixes', 'regionSuffixes'] as const)
+      expect(normaliseField(f)).toBe(f)
+  })
+
   it('treats an absent field as the image-version field, like paramValues does', () => {
     expect(normaliseField(undefined)).toBe('filepaths')
     expect(normaliseField(null)).toBe('filepaths')
@@ -109,9 +124,12 @@ describe('normaliseField — the singular/plural trap', () => {
   })
 
   it('round-trips against consumerField, so a producer and a consumer can be compared', () => {
-    expect(normaliseField(consumerField('labels'))).toBe('labels')
-    expect(normaliseField(consumerField('filepaths'))).toBe('filepaths')
-    expect(normaliseField(consumerField('spatialGraphs'))).toBe('spatialGraphs')
+    for (const ns of ['labels', 'filepaths', 'spatialGraphs',
+                      'stats', 'clusters', 'regions'] as const) {
+      const f = consumerField(ns)
+      expect(f).not.toBeNull()
+      expect(normaliseField(f)).toBe(f)
+    }
   })
 })
 
