@@ -24,6 +24,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, provide } from 'vue'
+import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
@@ -51,7 +52,7 @@ const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panel
 // Per-image, like the summary/gating canvases (`flow:` is registered in the canvasPanels store's
 // MODULE_PREFIXES, so the panels persist with the image at 1/{uid}/moduleCanvases.json).
 const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
-const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey)
 
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
@@ -121,13 +122,8 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
           <option value="" disabled selected>+ Plot…</option>
           <option v-for="t in plotTypes" :key="t.key" :value="t.key">{{ t.label }}</option>
         </select>
-        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
-        <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
-                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
-                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
-        </div>
+        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+                              @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
                   @click="showManager = !showManager"

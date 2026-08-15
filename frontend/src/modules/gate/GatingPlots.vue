@@ -15,6 +15,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
@@ -65,7 +66,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // only runs while ui.xt is undefined — pre-seeding a concrete transform here would pin logicle and
 // silently defeat it. Channels (x/y) start empty; the panel picks index-based defaults once columns
 // load (see ensureChannels).
-const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PlotState>(zoomRef, () =>
     ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
        x: '', y: '', renderMode: 'points', channels: [] }), ckey)
@@ -245,13 +246,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
           ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
         </label>
-        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
-        <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
-                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
-                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
-        </div>
+        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+                              @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="gate.popManager"
                   :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"

@@ -16,6 +16,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, provide } from 'vue'
+import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
@@ -55,7 +56,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // NB: no `features: []` default — leave it undefined so the heatmap panel self-seeds its features
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
-const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<ClusterPanelState>(zoomRef, () => ({ kind: 'umap', labels: true, hl: [] }), ckey)
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
 
@@ -201,13 +202,8 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           <option value="" disabled selected>+ Plot…</option>
           <option v-for="t in plotTypes" :key="t.kind" :value="t.kind">{{ t.label }}</option>
         </select>
-        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
-        <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
-                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
-                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
-        </div>
+        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+                              @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="cluster.popManager"
                   :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"

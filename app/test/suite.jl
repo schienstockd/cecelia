@@ -2942,6 +2942,49 @@ end
     @test "count" in String.(qc["chartTypes"])    # the count-over-time headline
 end
 
+# ── every plot canvas offers the same bulk close ──────────────────────────────────
+# "Close all" has to be on EVERY canvas, not just the one it was asked for — a per-canvas answer is
+# how the Tile/Cascade group ended up copied into four hosts in the first place. The shared halves are
+# `useCanvasPanels.removeAll` (the workspace logic) and `CanvasArrangeButtons` (the toolbar group), so
+# the drift to catch is a host that drives the composable but renders its own arrange buttons: it
+# would silently lack the close, and nothing else would fail.
+#
+# Scanned from here rather than from vitest because the frontend suite is deliberately pure-logic only
+# (docs/DEV.md → Tests) — `removeAll` is store mutation with no pure kernel to unit-test, and this is
+# the same source-scanning guard the plot-host wiring above already uses.
+@testset "every canvas host offers Close all" begin
+    fe = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "frontend", "src")
+    comp = read(joinpath(fe, "composables", "useCanvasPanels.ts"), String)
+    @test occursin("function removeAll", comp)
+    @test occursin("removeAll,", comp)                  # …and it is actually returned to hosts
+    @test isfile(joinpath(fe, "components", "canvas", "CanvasArrangeButtons.vue"))
+
+    HOSTS = [joinpath("components", "canvas", "SummaryCanvas.vue"),
+             joinpath("modules", "gate", "GatingPlots.vue"),
+             joinpath("modules", "cluster", "ClusterPlots.vue"),
+             joinpath("modules", "opticalFlow", "FlowPlots.vue")]
+    for h in HOSTS
+        src = read(joinpath(fe, h), String)
+        @test occursin("useCanvasPanels", src)
+        @test occursin("CanvasArrangeButtons", src)     # the shared group, not a private copy
+        @test occursin("close-all", src)                # …wired, not merely imported
+        # the arrange buttons must not be re-inlined beside the shared component
+        @test !occursin("'Tile in a grid'", src)
+    end
+
+    # Any OTHER host that starts driving the same workspace must adopt the shared group too — this is
+    # the check that fails when a fifth canvas is added and quietly ships without Close all.
+    for (root, _, files) in walkdir(fe), f in files
+        endswith(f, ".vue") || continue
+        p = joinpath(root, f)
+        src = read(p, String)
+        occursin("useCanvasPanels(", src) || continue   # calls it (not merely a type import)
+        occursin("CanvasArrangeButtons", src) ||
+            error("$(relpath(p, fe)) drives useCanvasPanels but renders no CanvasArrangeButtons — " *
+                  "every plot canvas must offer Tile/Cascade/Close all")
+    end
+end
+
 @testset "interaction matrix aggregates with NO population targets" begin
     # The path `api_plot_data`'s `precomputed` branch now takes. The panel sends no `series` (the
     # matrix's rows/columns come from the neighbourStats run), so the targets vector is EMPTY — and
