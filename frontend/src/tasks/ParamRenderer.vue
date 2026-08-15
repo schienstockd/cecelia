@@ -40,6 +40,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: unknown): void
+  // A `valueNameInput` the user has FINISHED entering — blur, or picking a suggestion (SuggestInput
+  // dispatches a native `change` on accept). Deliberately NOT `update:modelValue`, which fires per
+  // keystroke: reloading the form from a half-typed name would swap every other field while the user
+  // is still deciding, and typing "Tcell2" passes through "Tcell" on the way.
+  (e: 'commit', key: string, v: unknown): void
 }>()
 
 // section (collapsible box) state
@@ -522,6 +527,7 @@ const pct = computed(() => {
       :tip="param.tip"
       mark-existing
       @update:model-value="val = $event"
+      @change="emit('commit', param.key, ($event.target as HTMLInputElement).value)"
     />
 
     <!-- dirPath: a folder on the machine running the server. Still typeable — a remembered path is
@@ -678,6 +684,7 @@ const pct = computed(() => {
         :modelValue="(val as ParamValues)?.[p.key]"
         @update:modelValue="val = { ...(val as ParamValues ?? {}), [p.key]: $event }"
         :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
       />
     </div>
   </div>
@@ -734,6 +741,7 @@ const pct = computed(() => {
                 :modelValue="entry.vals[sp.key]"
                 @update:modelValue="updateGroupEntry(entry.key, sp.key, $event)"
                 :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
               />
             </div>
           </template>
@@ -743,6 +751,7 @@ const pct = computed(() => {
             :modelValue="entry.vals[p.key]"
             @update:modelValue="updateGroupEntry(entry.key, p.key, $event)"
             :context="context"
+        @commit="(k, v) => emit('commit', k, v)"
           />
         </template>
       </div>

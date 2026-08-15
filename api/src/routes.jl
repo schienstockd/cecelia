@@ -518,25 +518,51 @@ function api_custom_modules_reload(::Vector{UInt8})
 end
 
 # ── Task param memory (funParams) ─────────────────────────────────────────────
-# GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=
+# GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=&valueName=
 # Returns the last-used params for `fun`, resolved image → set → none (R parity). The frontend
 # passes imageUid only when exactly one image is selected (else the shared set-level default).
+#
+# `valueName` is the OUTPUT name the form is currently naming (e.g. the label set "Tcell"). Given one,
+# each level prefers what was last run under that name and falls back to that level's flat blob — so
+# picking an existing output restores ITS parameters, and a new name still starts from the last run
+# rather than from bare defaults. Optional: omit it and this behaves exactly as it did.
+#
+# `matched` says the params came from a BY-NAME record, not a fallback. The form uses it to decide
+# whether to replace what the user is looking at: switching to a name with params banked for it
+# should restore them, but a name with none must leave the form alone — applying the fallback there
+# would discard edits the user had just made.
+#
+# By-name wins across BOTH levels before either flat blob is considered: a set-level record for the
+# name the user is actually naming is a better answer than the image's record of some other run.
 function api_task_fun_params(req::HTTP.Request)
     q     = HTTP.queryparams(HTTP.URI(req.target))
     proj  = get(q, "projectUid", "")
     fun   = get(q, "fun", "")
     imgu  = get(q, "imageUid", "")
     setu  = get(q, "setUid", "")
+    vname = get(q, "valueName", "")
     (isempty(proj) || isempty(fun)) &&
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
     proj_root = joinpath(projects_dir(), proj)
-    params = isempty(imgu) ? nothing :
-             Cecelia.read_module_fun_params(joinpath(proj_root, "1", imgu), fun)
-    if isnothing(params) && !isempty(setu)
-        params = Cecelia.read_module_fun_params(joinpath(proj_root, "1", setu), fun)
+    dir(u) = joinpath(proj_root, "1", u)
+
+    params, matched = nothing, false
+    if !isempty(vname)
+        for u in (imgu, setu)
+            isempty(u) && continue
+            params = Cecelia.read_module_fun_params_by_name(dir(u), fun, vname)
+            isnothing(params) || (matched = true; break)
+        end
     end
-    200, JSON3.write((; params = params))
+    if isnothing(params)
+        for u in (imgu, setu)
+            isempty(u) && continue
+            params = Cecelia.read_module_fun_params(dir(u), fun)
+            isnothing(params) || break
+        end
+    end
+    200, JSON3.write((; params = params, matched = matched))
 end
 
 # ── Resource pools ───────────────────────────────────────────────────────────

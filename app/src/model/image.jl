@@ -472,38 +472,106 @@ end
 # on the set never has to load all of the set's images (`save!(::CciaSet)` cascades to every child).
 const FUN_PARAMS_META_KEY = "funParams"
 
-"""
-    read_module_fun_params(ccid_dir, fun) -> Dict | nothing
+# Params remembered PER OUTPUT NAME, alongside (never instead of) the flat last-run blob above.
+#
+# One blob per task is wrong the moment a task is run twice under different names: segmenting `Tcell`
+# and then `Neutrophil` left the form showing the Neutrophil settings, so re-running Tcell meant
+# re-entering every model parameter by hand. That is the problem this exists for.
+#
+# A SEPARATE meta key rather than nesting inside `funParams[fun]`, because the two answer different
+# questions and mixing them would make the flat blob ambiguous — is a key a param, or a name? Old
+# entries keep working untouched and there is no migration: a task/name pair with nothing banked falls
+# back to the flat blob, which is exactly today's behaviour.
+const FUN_PARAMS_BY_NAME_META_KEY = "funParamsByName"
 
-Last-used params for task `fun` stored in `<ccid_dir>/ccid.json` under `meta["funParams"]`, or
-`nothing` if absent. `ccid_dir` is an object metadata dir (`{proj}/1/{uid}/`) — image or set.
 """
-function read_module_fun_params(ccid_dir::String, fun::String)::Union{Dict{String,Any},Nothing}
+    read_module_fun_params(ccid_dir, fun; value_name = "") -> Dict | nothing
+
+Last-used params for task `fun` in `<ccid_dir>/ccid.json`, or `nothing` if absent. `ccid_dir` is an
+object metadata dir (`{proj}/1/{uid}/`) — image or set.
+
+With a `value_name`, prefers what was last run UNDER THAT NAME (`meta["funParamsByName"][fun][name]`)
+and falls back to the flat last-run blob (`meta["funParams"][fun]`). The fallback is the point: the
+first time a name is used there is nothing banked for it, and starting from the last run is a better
+default than the task's bare defaults — and is what the form did before this existed.
+"""
+function read_module_fun_params(ccid_dir::String, fun::String;
+                                value_name::AbstractString = "")::Union{Dict{String,Any},Nothing}
+    meta = _read_meta(ccid_dir)
+    isnothing(meta) && return nothing
+    if !isempty(value_name)
+        hit = _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
+                                String(value_name))
+        isnothing(hit) || return hit
+    end
+    _fun_params_entry(get(meta, FUN_PARAMS_META_KEY, nothing), fun)
+end
+
+"""
+    read_module_fun_params_by_name(ccid_dir, fun, value_name) -> Dict | nothing
+
+ONLY what was last run under `value_name` — no fallback to the flat blob.
+
+Separate from the fallback-taking read above because the caller needs to tell the two apart. The form
+must REPLACE what the user is looking at when a name has params banked for it, and leave it alone when
+it does not: falling back there would quietly discard edits the user had just made, replacing them
+with the previous run's. "Nothing banked for this name" and "here are the previous run's params" are
+different answers and only one of them is safe to apply.
+"""
+function read_module_fun_params_by_name(ccid_dir::String, fun::String,
+                                        value_name::AbstractString)::Union{Dict{String,Any},Nothing}
+    isempty(value_name) && return nothing
+    meta = _read_meta(ccid_dir)
+    isnothing(meta) && return nothing
+    _fun_params_entry(_fun_params_entry(get(meta, FUN_PARAMS_BY_NAME_META_KEY, nothing), fun),
+                      String(value_name))
+end
+
+function _read_meta(ccid_dir::String)
     path = state_file(ccid_dir)
     isfile(path) || return nothing
-    raw  = JSON3.read(read(path, String), Dict{String,Any})
-    meta = get(raw, "meta", nothing)
-    meta isa AbstractDict || return nothing
-    fp = get(meta, FUN_PARAMS_META_KEY, nothing)
-    fp isa AbstractDict || return nothing
-    v = get(fp, fun, nothing)
+    meta = get(JSON3.read(read(path, String), Dict{String,Any}), "meta", nothing)
+    meta isa AbstractDict ? meta : nothing
+end
+
+# one level of `{key => Dict}` lookup, String-keyed (JSON3 hands back Symbols — CLAUDE.md)
+function _fun_params_entry(bag, key)::Union{Dict{String,Any},Nothing}
+    v = bag isa AbstractDict ? get(bag, key, nothing) : nothing
     v isa AbstractDict ? Dict{String,Any}(String(k) => vv for (k, vv) in v) : nothing
 end
 
 """
-    write_module_fun_params!(ccid_dir, fun, params)
+    write_module_fun_params!(ccid_dir, fun, params; value_name = "")
 
-Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.json`
-(`meta["funParams"][fun]`), preserving every other field. No-op if the file is absent.
+Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.json`, preserving every
+other field. No-op if the file is absent.
+
+Writes the flat blob (`meta["funParams"][fun]`) ALWAYS, and additionally under the output name when
+one is given (`meta["funParamsByName"][fun][name]`). Both, deliberately: the flat one is what a NEW
+name falls back to, so it has to keep tracking the most recent run whatever it was called.
 """
-function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict)
+function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict;
+                                  value_name::AbstractString = "")
     path = state_file(ccid_dir)
     isfile(path) || return nothing
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String), Dict{String,Any}))
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    fp   = Dict{String,Any}(String(k) => v for (k, v) in get(meta, FUN_PARAMS_META_KEY, Dict{String,Any}()))
-    fp[fun] = Dict{String,Any}(String(k) => v for (k, v) in params)
+    clean = Dict{String,Any}(String(k) => v for (k, v) in params)
+
+    fp = Dict{String,Any}(String(k) => v for (k, v) in get(meta, FUN_PARAMS_META_KEY, Dict{String,Any}()))
+    fp[fun] = clean
     meta[FUN_PARAMS_META_KEY] = fp
+
+    if !isempty(value_name)
+        byn = Dict{String,Any}(String(k) => v
+                               for (k, v) in get(meta, FUN_PARAMS_BY_NAME_META_KEY, Dict{String,Any}()))
+        per_fun = Dict{String,Any}(String(k) => v
+                                   for (k, v) in get(byn, fun, Dict{String,Any}()))
+        per_fun[String(value_name)] = clean
+        byn[fun] = per_fun
+        meta[FUN_PARAMS_BY_NAME_META_KEY] = byn
+    end
+
     raw["meta"] = meta
     write_json_atomic(path, raw)
     nothing

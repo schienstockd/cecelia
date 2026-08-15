@@ -388,6 +388,63 @@ function validate_params(task::CciaTask, params::Dict{String,Any})
     _validate_params_against_spec(params, spec_params)
 end
 
+# ── The name a run writes under ───────────────────────────────────────────────
+#
+# The Julia twin of `taskOutput` (frontend/src/utils/taskOutput.ts). ELEVEN task params across SIX key
+# spellings name an output (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`,
+# `colName`, `modelName`), so nothing can find it by key — the spec declares a `namespace` and that is
+# what both sides read. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
+#
+# Two implementations of one rule, which the repo accepts across a language boundary (the calibration
+# writers are the precedent) PROVIDED a test pins them together: `task_output_name agrees with the
+# frontend rule` walks the real specs, exactly as `taskOutput.test.ts` does for the TS half. They
+# cannot call each other, so the specs are the shared contract.
+#
+# `""` when the task names no output of its own — an import, a plot, a measurement onto an existing
+# set. Callers must treat that as "not keyed by a name", never as a name.
+function _spec_output_name(spec_params, params::Dict{String,Any})::String
+    legacy = ""
+    for p in spec_params
+        p isa AbstractDict || continue
+        t = string(get(p, "type", ""))
+        if t in ("section", "group")
+            inner = get(p, "params", [])
+            if !isempty(inner)
+                nested = _spec_output_name(inner, params)
+                isempty(nested) || return nested
+            end
+            continue
+        end
+        key = string(get(p, "key", ""))
+        isempty(key) && continue
+        ns = get(p, "namespace", nothing)
+        v  = strip(string(get(params, key, get(p, "default", ""))))
+        if ns !== nothing && !isempty(string(ns))
+            isempty(v) || return v
+        elseif key == "outputValueName" && isempty(legacy)
+            # the pre-registry spelling, for a spec (or a custom module) not yet migrated
+            legacy = v
+        end
+    end
+    legacy
+end
+
+"""
+    task_output_name(fun_name, params) -> String
+
+The name this run writes its output under, or `""` when the task names none. Resolved from the task
+spec's `namespace` declaration, so it works for every spelling of the key.
+"""
+function task_output_name(fun_name::AbstractString, params::Dict{String,Any})::String
+    spec = try
+        _task_spec(_task_from_fun_name(String(fun_name)))
+    catch
+        nothing        # unknown fun_name — not this function's job to raise
+    end
+    isnothing(spec) && return ""
+    _spec_output_name(get(spec, "params", []), params)
+end
+
 # ── Applicability (axis gating) ───────────────────────────────────────────────
 # One declarative field, one predicate. The task JSON declares what image shape it needs:
 #

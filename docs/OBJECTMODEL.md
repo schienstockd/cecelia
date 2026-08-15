@@ -195,6 +195,24 @@ read-modify-write (same idiom a task uses to register its output `filepath`), **
 remembering a param blob on the set never has to load all its images. `CciaSet.meta` carries the
 same `funParams` key.
 
+### `meta["funParamsByName"]` — remembered per OUTPUT name
+
+`{ "<fun_name>": { "<output name>": { …params… } } }` — what was last run under each output name, so
+re-running a segmentation as `Tcell` restores Tcell's settings instead of whatever ran last. Written
+alongside (never instead of) `funParams`, which keeps tracking the most recent run because that is
+what a NEW name falls back to.
+
+A **separate key** on purpose: nesting per-name blobs inside `funParams[fun]` would make that map
+ambiguous about whether a key is a param or a name, and every existing entry would need migrating.
+Nothing migrates — a task/name pair with nothing banked reads through to the flat blob, which is
+exactly the pre-existing behaviour.
+
+`read_module_fun_params(ccid_dir, fun; value_name)` takes that fallback;
+`read_module_fun_params_by_name(ccid_dir, fun, value_name)` deliberately does NOT, because the caller
+has to tell "nothing banked for this name" apart from "here is the last run" — only one of them is
+safe to stamp over a form the user has been editing. See `docs/MODULES.md` → *Remembered PER OUTPUT
+NAME, too*.
+
 ---
 
 ## Versioned fields

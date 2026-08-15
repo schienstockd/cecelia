@@ -956,6 +956,36 @@ halves are hidden by a CSS rule rather than a per-element guard: `docs/UI.md` �
   set — a re-run when the uid appears is what makes the `null` answer recoverable rather than a form
   stuck empty.
 
+#### Remembered PER OUTPUT NAME, too
+
+One blob per task is wrong the moment a task runs twice under different names. Segmenting `Tcell` and
+then `Neutrophil` left the form showing Neutrophil's settings, so re-running `Tcell` meant re-entering
+every model parameter by hand — the reason `valueNameInput` exists at all.
+
+Params are therefore ALSO banked under the output name the run wrote, in a **separate** meta key
+(`meta["funParamsByName"]["<fun>"]["<name>"]`) — separate rather than nested inside `funParams[fun]`,
+which would make that blob ambiguous about whether a key is a param or a name. Old entries keep
+working untouched; there is no migration.
+
+- **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
+  `namespace` declaration, because six different keys can carry it. It is the Julia twin of
+  `utils/taskOutput.taskOutput`, pinned against the same specs by *task_output_name agrees with the
+  frontend rule* — they cannot call each other, so the specs are the contract (same arrangement as
+  the calibration writers).
+- **The flat blob still tracks the most recent run**, whatever it was called, because that is what a
+  NEW name falls back to. Starting from the last run beats starting from bare task defaults.
+- **`matched` decides whether the form is replaced.** `GET …/funparams` answers `{params, matched}`;
+  `matched` means the params came from a by-name record rather than the fallback. `TaskRunner` only
+  overwrites the form when it is true — applying the fallback would stamp the previous run's params
+  over edits the user had just made, which is the same failure the `null` rule above exists to stop.
+- **Restored on COMMIT, never per keystroke.** `ParamRenderer` emits `commit` when a `valueNameInput`
+  is finished (blur, or picking a suggestion — `SuggestInput` dispatches a native `change` on accept),
+  not on `update:modelValue`. Typing toward `Tcell2` passes through `Tcell`, and swapping every other
+  field mid-word would be worse than not having the feature.
+- **The name the user just typed is kept.** A restored record carries the output name it was saved
+  with; `onParamCommit` writes the committed value back over it, because silently rewriting the field
+  someone just typed in is never right.
+
 Whiteboard chain nodes are unaffected — their params live in the per-project chain template, not in
 `funParams`.
 

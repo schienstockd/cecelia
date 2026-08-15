@@ -50,7 +50,7 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_trac
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
-export read_module_fun_params, write_module_fun_params!
+export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
 export state_file, obj_meta_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings

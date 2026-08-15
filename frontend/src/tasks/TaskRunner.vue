@@ -30,6 +30,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
+import { taskOutput } from '../utils/taskOutput'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -139,16 +140,22 @@ const projectUid = computed(() => projectMeta.current?.uid ?? '')
 // answered and there is nothing saved. Collapsing the two into `{}` is what reset filled-in forms:
 // `buildParamValues(def, {})` answers every param with its default, so a load that never happened was
 // indistinguishable from a first run and silently overwrote the form. See `resolveInitialParams`.
-async function fetchSavedParams(def: TaskDef): Promise<ParamValues | null> {
+async function fetchSavedParams(
+  def: TaskDef, valueName = '',
+): Promise<{ params: ParamValues; matched: boolean } | null> {
   if (!projectUid.value) return null
   const qs = new URLSearchParams({ projectUid: projectUid.value, fun: def.fun_name })
   if (drivingImageUid.value) qs.set('imageUid', drivingImageUid.value)
   if (setUid.value) qs.set('setUid', setUid.value)
+  // The OUTPUT name being named, so the server can prefer what was last run UNDER it. `matched` says
+  // it found one rather than falling back — the difference decides whether it is safe to replace a
+  // form the user may have edited.
+  if (valueName) qs.set('valueName', valueName)
   try {
     const res = await fetch(`/api/tasks/funparams?${qs.toString()}`)
     if (!res.ok) return null
-    const d = await res.json() as { params?: ParamValues | null }
-    return d.params ?? {}
+    const d = await res.json() as { params?: ParamValues | null; matched?: boolean }
+    return { params: d.params ?? {}, matched: d.matched === true }
   } catch { return null }
 }
 
@@ -167,13 +174,41 @@ async function initParams(def: TaskDef | undefined) {
   // DECISION is still the one helper, so the draft path cannot drift from the saved-record path.
   if (draft) { paramValues.value = resolveInitialParams(def, draft, null) as ParamValues; return }
   const seq = ++paramReqSeq
-  const saved = await fetchSavedParams(def)
+  // The name the form is about to show — its own defaults on a first render, or whatever the last
+  // scope change left. Asking WITH it means a form that opens on "Tcell" opens with Tcell's params.
+  const got = await fetchSavedParams(def, taskOutput(def, paramValues.value)?.name ?? '')
+  const saved = got?.params ?? null
   if (seq !== paramReqSeq) return
   // `null` → the load did not happen, so LEAVE THE FORM ALONE rather than stamping defaults over it.
   // The watches below re-run this once the project/set/selection is known, which is the case that used
   // to arrive too late and find the form already reset.
   const next = resolveInitialParams(def, undefined, saved)
   if (next !== null) paramValues.value = next
+}
+
+// A `valueNameInput` the user has FINISHED entering (blur, or picking a suggestion) — the moment to
+// restore that output's parameters. This is the point of the feature: naming `Tcell` again brings
+// back the settings Tcell was segmented with, instead of whatever ran last.
+//
+// Only on COMMIT, never per keystroke: typing toward "Tcell2" passes through "Tcell", and swapping
+// every other field mid-word would be worse than not having this at all.
+//
+// Only when the server MATCHED a by-name record. Without that guard the fallback (the last run's
+// params) would be stamped over a form the user had just edited — the same bug class as the
+// "my params go back to default" report below, arriving by a different route.
+async function onParamCommit(key: string, value: unknown) {
+  const def = taskDef.value
+  if (!def || typeof value !== 'string' || !value) return
+  const seq = ++paramReqSeq
+  const got = await fetchSavedParams(def, value)
+  if (seq !== paramReqSeq || !got || !got.matched) return
+  const next = resolveInitialParams(def, undefined, got.params)
+  if (next === null) return
+  // Keep the name the user just entered. A restored record carries the output name it was saved
+  // with, which is normally the same string — but the fallback path (and a record saved before a
+  // rename) is not, and silently rewriting the field the user just typed in is never right.
+  paramValues.value = { ...next, [key]: value } as ParamValues
+  drafts.set(currentDraftKey.value, paramValues.value)
 }
 
 // Persist a param edit as a draft (USER edits only — never on programmatic init) so navigating away
@@ -427,6 +462,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           :param="p"
           :modelValue="paramValues[p.key]"
           @update:modelValue="onParamEdit(p.key, $event)"
+          @commit="onParamCommit"
           :context="paramContext"
         />
       </div>

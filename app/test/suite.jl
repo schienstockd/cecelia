@@ -3758,6 +3758,86 @@ end
     rm(proj.root; recursive=true)
 end
 
+# One blob per TASK is wrong the moment a task runs twice under different names: segmenting `Tcell`
+# and then `Neutrophil` left the form showing Neutrophil's settings, so re-running Tcell meant
+# re-entering every model parameter. Params are now ALSO banked per output name.
+@testset "funParams remembered per output name" begin
+    proj = create_project!(name="fpn-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+    fun = "segment.cellpose"
+
+    tcell = Dict{String,Any}("outputValueName" => "Tcell", "cellDiameter" => 8)
+    neutr = Dict{String,Any}("outputValueName" => "Neutrophil", "cellDiameter" => 15)
+    write_module_fun_params!(img._dir, fun, tcell; value_name = "Tcell")
+    write_module_fun_params!(img._dir, fun, neutr; value_name = "Neutrophil")
+
+    # each name keeps its OWN params — the whole point
+    @test read_module_fun_params(img._dir, fun; value_name = "Tcell")["cellDiameter"] == 8
+    @test read_module_fun_params(img._dir, fun; value_name = "Neutrophil")["cellDiameter"] == 15
+
+    # the flat blob still tracks the most recent run whatever it was called, because that is what a
+    # NEW name falls back to — and falling back to bare task defaults would be a worse starting point
+    @test read_module_fun_params(img._dir, fun)["cellDiameter"] == 15
+    @test read_module_fun_params(img._dir, fun; value_name = "Macrophage")["cellDiameter"] == 15
+
+    # …but the by-name reader does NOT fall back. The form needs the two answers distinguishable:
+    # "nothing banked for this name" must not overwrite a form the user has just edited.
+    @test read_module_fun_params_by_name(img._dir, fun, "Macrophage") === nothing
+    @test read_module_fun_params_by_name(img._dir, fun, "Tcell")["cellDiameter"] == 8
+    @test read_module_fun_params_by_name(img._dir, fun, "") === nothing
+
+    # a task with no name banked is untouched by any of this (the pre-existing path)
+    write_module_fun_params!(img._dir, "cleanupImages.smooth", Dict{String,Any}("spatialSigma" => 2))
+    @test read_module_fun_params(img._dir, "cleanupImages.smooth")["spatialSigma"] == 2
+    @test read_module_fun_params_by_name(img._dir, "cleanupImages.smooth", "Tcell") === nothing
+
+    # survives the object round-trip, like funParams above
+    r = init_object(proj.uid, img.uid)
+    r.status = "done"; save!(r)
+    @test read_module_fun_params_by_name(init_object(proj.uid, img.uid)._dir, fun, "Tcell")["cellDiameter"] == 8
+
+    rm(proj.root; recursive=true)
+end
+
+# `task_output_name` is the Julia twin of `taskOutput` (frontend/src/utils/taskOutput.ts) — the name a
+# run writes under, resolved from the spec's `namespace` because SIX different keys can carry it. The
+# two cannot call each other, so the SPECS are the shared contract and each side is pinned against
+# them (the TS half is `taskOutput.test.ts`). Same arrangement as the calibration writers.
+@testset "task_output_name agrees with the frontend rule" begin
+    # a `valueNameInput` param, found by its declared namespace and not by its key
+    @test Cecelia.task_output_name("segment.cellpose",
+                           Dict{String,Any}("outputValueName" => "Tcell")) == "Tcell"
+    @test Cecelia.task_output_name("spatialAnalysis.cellNeighbours",
+                           Dict{String,Any}("graphSuffix" => "pooled")) == "pooled"
+
+    # falls back to the param's DEFAULT when the form has not set one — the same name the run will use
+    @test Cecelia.task_output_name("segment.cellpose", Dict{String,Any}()) == "default"
+
+    # whitespace is not a name; an unknown fun_name is not this function's error to raise
+    @test Cecelia.task_output_name("segment.cellpose", Dict{String,Any}("outputValueName" => "  ")) == ""
+    @test Cecelia.task_output_name("no.such.task", Dict{String,Any}("outputValueName" => "x")) == ""
+
+    # a task that names no output of its own reports "", never a guess
+    @test Cecelia.task_output_name("importImages.omezarr", Dict{String,Any}()) == ""
+
+    # EVERY spec carrying a valueNameInput resolves through it — so flipping another task's param
+    # (Phase 3: clustering, stats, models) cannot silently fail to be remembered per name
+    for (fun, task) in Cecelia._fun_name_map()
+        spec = Cecelia._task_spec(task)
+        isnothing(spec) && continue
+        vni = String[]
+        each_spec_param(get(spec, "params", [])) do p, _gk
+            String(something(spec_get(p, "type", ""), "")) == "valueNameInput" &&
+                push!(vni, String(something(spec_get(p, "key", ""), "")))
+        end
+        isempty(vni) && continue
+        k = first(vni)
+        @test Cecelia.task_output_name(fun, Dict{String,Any}(k => "probe-name")) == "probe-name"
+    end
+end
+
 # ── Channel names use the versioned convention ──────────────────────────────
 # Regression guard: channel names were stored unversioned under meta, where the
 # task/API readers (which use top-level versioned imChannelNames) never saw them.
