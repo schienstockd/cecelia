@@ -2666,12 +2666,40 @@ Today's overrides:
 |---|---|---|
 | Gate plot / gate pairs | axis transform → `linear` when the measure's range can't take logicle | the server (`plotmeta` reports the transform it USED) |
 | Any summary plot | x tick labels → rotated when they wouldn't fit their bands | `needsXRotation` (measured label widths vs the panel width) |
+| Any summary plot | `Facet by` → `None` on a chart that composites its series into one frame (histogram / frequency family / heatmap) | `NON_FACETING_CHARTS` in `plots/plot.ts` → `_facetIgnored` |
 
 This replaced two ad-hoc copies. `GatePlotPanel` and `GatePairsPanel` each did their own
 preferred-vs-used comparison with their own amber class and their own wording — and `GatePlotPanel`'s
 transform select was tooltipped just "Axis transform", so the amber announced that *something* had
 happened without ever saying what. A third case (auto-rotation) was the point at which a third variant
 stopped being acceptable.
+
+### Notices about a render — `PlotNotice`
+
+An auto-override is one kind of message; the other is a **caution or observation about what was just
+drawn** — it will be heavy, or it came back partly empty. That is not an override (nothing was
+substituted) and not an error (no request failed), and it had three shapes before it had one:
+`GatePairsPanel`'s tinted `.pairs-warn` banner, `SummaryPanel`'s `.sp-foot-note` chip (amber with a
+triangle for overrides, muted and icon-less for empty series — the two disagreed on whether a notice
+has an icon), and the Flow views' bare `.cc-muted-warn` paragraphs.
+
+**`components/canvas/PlotNotice.vue` is the one affordance.** Two variants, because the placements are
+genuinely different: `chip` sits inline in the panel's chrome row, `banner` is a full-width tinted bar
+above the plot for something you should see *before* waiting for the render. Tone is `warn` (amber +
+triangle) or `muted`. The text says WHAT, the tooltip says what to DO — the same split
+`overrideTooltip` uses. Add a notice here rather than a fourth span. (The Flow views' `error`
+paragraphs are deliberately left alone: a failed request is a different thing.)
+
+**The predicates are pure and live in `plots/renderLoad.ts`** (`facetLoad`, `explodeLoad`, with their
+thresholds as named exports; the pairs matrix keeps `estimateMatrixLoad` beside its own geometry).
+A load predicate **never blocks** — it feeds a notice and the user decides. A threshold is a guess
+about someone else's screen and data, and silently refusing to draw what was asked for is worse than
+drawing something slow.
+
+Today's notices: **faceting into more than `FACET_PANELS_HEAVY` panels** (each becomes a sliver, which
+defeats the comparison faceting is for), and **"Show series" about to add more than
+`EXPLODE_PLOTS_HEAVY` plots** (unlike facet panels these are real canvas plots that each fetch their
+own data and persist until closed).
 
 **A marked control SHOWS the effective value and WRITES the preference** (`effectiveOf`). This is the
 half that's easy to miss: an ambered control still displaying the value that was *not* used reads as

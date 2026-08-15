@@ -10,6 +10,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
+import PlotNotice from '../../components/canvas/PlotNotice.vue'
 import TeleportPopover from '../../components/TeleportPopover.vue'
 import { useGatingStore } from '../../stores/gating'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
@@ -188,9 +189,7 @@ function exportAs(kind: string) {
       </select>
     </template>
 
-    <div v-if="heavy" class="pairs-warn" v-tooltip.bottom="heavyTip">
-      <i class="pi pi-exclamation-triangle" /> Large matrix — may be slow to load
-    </div>
+    <PlotNotice v-if="heavy" variant="banner" text="Large matrix — may be slow to load" :tip="heavyTip" />
 
     <GateMontage ref="montageRef" :project-uid="g.projectUid()" :image-uid="g.imageUid ?? ''"
                  :value-name="g.valueName" :pop-type="g.popType" :defs="defs" :col-label="g.colLabel"
@@ -206,9 +205,6 @@ function exportAs(kind: string) {
 .ro-tag { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; }
 /* heavy-matrix warning strip (brief; numbers + the fix live in the tooltip) */
-.pairs-warn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: var(--cc-fs-xs);
-  color: var(--cc-warn); background: color-mix(in srgb, var(--cc-warn) 12%, transparent);
-  border-bottom: 1px solid var(--cc-border); cursor: help; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 /* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }

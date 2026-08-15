@@ -10,7 +10,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { VisProps } from '../../plots/plot'
+import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
@@ -25,6 +25,15 @@ const props = withDefaults(defineProps<{
   readout?: PlotReadout
 }>(), { sections: () => ['layout', 'points', 'colours', 'labels'], readout: emptyReadout })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
+
+// the facet mode, migrating the legacy boolean so a canvas saved before the mode existed still
+// shows as faceted rather than silently reverting to None
+const facetBy = computed(() => facetMode(props.vis))
+// …and when the chart can't facet at all, SHOW the effective value ('none') while the select still
+// WRITES the preference — the same contract as the gating transform selects (see effectiveOf). An
+// ambered control still displaying the mode that was NOT used reads as "your setting is ignored".
+const facetOverrideNote = computed(() => overrideFor(props.readout, 'Facet by'))
+const facetShown = computed(() => effectiveOf(facetOverrideNote.value, facetBy.value, 'none' as const))
 
 // the x-tick-label rotation the renderer applied without being asked (labels wouldn't fit their bands)
 const xLabelOverride = computed(() => overrideFor(props.readout, 'X labels'))
@@ -76,10 +85,19 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
           <CcToggle aria-label="Rotate 90 degrees" :model-value="vis.rotate"
-                 @update:model-value="set({ rotate: $event, ...($event ? { facet: false } : {}) })" /></div>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One small-multiple panel per series (mutually exclusive with rotate)'"><span>Facet</span>
-          <CcToggle aria-label="Facet" :model-value="vis.facet"
-                 @update:model-value="set({ facet: $event, ...($event ? { rotate: false } : {}) })" /></div>
+                 @update:model-value="set({ rotate: $event, ...($event ? { facetBy: 'none' } : {}) })" /></div>
+        <!-- WHAT a small-multiple panel is one OF. Image = compare the selected images side by side,
+             each panel holding that image's segmentations/populations. -->
+        <label class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!facetOverrideNote }"
+               v-tooltip.left="overrideTooltip(facetOverrideNote, 'Split into small multiples (mutually exclusive with rotate)')">
+          <span>Facet by<i v-if="facetOverrideNote" class="pi pi-exclamation-triangle po-warn" /></span>
+          <select class="po-sel" :value="facetShown"
+                  @change="set({ facetBy: ($event.target as HTMLSelectElement).value as VisProps['facetBy'],
+                                 ...(($event.target as HTMLSelectElement).value !== 'none' ? { rotate: false } : {}) })">
+            <option value="none">None</option>
+            <option value="image">Image</option>
+            <option value="series">Series</option>
+          </select></label>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Dark plot background; export always uses light'"><span>Dark theme</span>
           <CcToggle aria-label="Dark theme" :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y min</span>

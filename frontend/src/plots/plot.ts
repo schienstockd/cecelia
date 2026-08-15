@@ -20,6 +20,9 @@ import { rescaleRows01 } from '../utils/heatmapScale'
 import { needsXRotation } from './autoOverride'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
+// charts whose series composite into a single frame — a `Facet by` request cannot be honoured
+// on these (see facetOverride in plots/autoOverride.ts)
+const NON_FACETING_CHARTS = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100', 'heatmap'])
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
 export const CATEGORICAL_CHARTS: ChartType[] = ['frequency', 'stacked', 'stacked100']
 // A 0/1 measure is numeric, but its useful readout is the FRACTION positive — "% of B cells in contact
@@ -97,7 +100,14 @@ export interface VisProps {
   rotateXAngle?: number                       // x tick-label rotation angle in degrees (default 45)
   rotate: boolean                            // flip plot 90° — measure on X, series on Y (R coord_flip)
   darkTheme: boolean                         // dark plot ground + light ink (R darkTheme)
-  facet: boolean                             // small multiples — one panel per series (R faceting)
+  // Small multiples (R faceting). WHAT a panel is one OF is the choice:
+  //   'series' — one panel per plotted series (image·segmentation·population), the original behaviour
+  //   'image'  — one panel per IMAGE, with the remaining dimensions overlaid INSIDE each panel. This
+  //              is the cross-image comparison: 5 movies × 2 segmentations reads as 5 panels of 2
+  //              curves, not 10 single-curve panels where you compare by scanning titles.
+  facetBy?: 'none' | 'series' | 'image'
+  /** @deprecated legacy boolean — `true` meant today's 'series'. Read via `facetMode`, never directly. */
+  facet?: boolean
   yMin: string                               // measure-axis range override min (R range; blank → 0)
   yMax: string                               // measure-axis range override max (blank → auto)
   // colours
@@ -217,9 +227,34 @@ function resolveXRotation(labels: string[], o: BuildOpts): { rotate: boolean; au
 const xRotMargin = (base: number, o: { rotateXAngle?: number }) =>
   Math.round(base * (0.5 + 0.5 * Math.abs(o.rotateXAngle ?? 45) / 45))
 
+/**
+ * The facet mode of a saved vis, migrating the legacy boolean.
+ *
+ * `facet` was a toggle whose `true` meant "one panel per series". Canvases persisted before the
+ * mode existed still carry it, and a saved plot that silently un-facets on upgrade is exactly the
+ * kind of regression nobody reports — so read the mode through here, never `vis.facetBy` directly.
+ */
+export function facetMode(v: Pick<VisProps, 'facetBy' | 'facet'> | null | undefined): 'none' | 'series' | 'image' {
+  if (!v) return 'none'
+  if (v.facetBy) return v.facetBy
+  return v.facet ? 'series' : 'none'
+}
+/** Is there a facet channel at all? */
+const faceted = (v: Pick<VisProps, 'facetBy' | 'facet'>) => facetMode(v) !== 'none'
+/**
+ * Does each panel hold exactly ONE series? True only when faceting BY SERIES — that is what lets the
+ * position axis collapse to a single slot per panel. Faceting BY IMAGE puts several series in each
+ * panel, so they still need distinct positions (and a real band scale) inside it; conflating the two
+ * would stack every segmentation on top of itself at x=0.
+ */
+const facetSingle = (v: Pick<VisProps, 'facetBy' | 'facet'>) => facetMode(v) === 'series'
+/** The value a mark's facet panel is keyed by, given the series key it already computed. */
+const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, seriesKey: string) =>
+  facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
+
 export const defaultVis = (): VisProps => ({
   jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
-  legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
+  legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
   statsEnabled: false, statsTest: 'auto', statsShowNs: false, statsUseStars: false, statsUseLetters: false,
@@ -417,7 +452,10 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // of bars/boxes.
   if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
   if (!r.series.length) return null
-  const d = dimsOf(r.series, o.byImage)
+  // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
+  // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
+  // Leaving `img` in would repeat it in every legend entry and give each panel a single series.
+  const d = { ...dimsOf(r.series, o.byImage), ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)
   // When sub-split by a groupBy column (e.g. HMM state) the levels have no population-manager colour,
@@ -463,7 +501,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // render on the leftmost facet).
   if (Array.isArray(opts.marks)) {
     (opts.marks as unknown[]).push(Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }))
-    if (!o.facet) (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
+    if (!faceted(o)) (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
   }
 
   // ── generic post-process: layout / label / font knobs (R plotHelpers adjustments) ──
@@ -515,6 +553,10 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   const posLabels = seriesIndex(r, keyOf).labels
   const xrot = resolveXRotation(posLabels, o)
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
+  // Faceting is only wired for the charts that give each series its own position (box/violin/strip/bar)
+  // and the trend line. Histogram and the frequency family composite every series into ONE frame, so a
+  // facet request there is silently not applied — report it rather than leaving the control lying.
+  ;(opts as Record<string, unknown>)._facetIgnored = faceted(o) && NON_FACETING_CHARTS.has(o.chartType)
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
                     ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }
@@ -708,7 +750,11 @@ function loess(xs: number[], ys: number[], grid: number[], span: number): { y: n
 // (population colours collide when the same pop spans several images).
 function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Record<string, unknown> | null {
   if (!r.series.length) return null
-  const d = { ...dimsOf(r.series, o.byImage), grp: false }   // group level → X axis, not a series
+  // group level → X axis, not a series. Faceting BY IMAGE additionally lifts the image onto the panel
+  // header, so each panel holds that movie's curves (one per segmentation/population) — which is the
+  // point: five movies × two segmentations is ten overlaid LOESS curves on one axis otherwise.
+  const d = { ...dimsOf(r.series, o.byImage), grp: false,
+              ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)
   // distinguish lines: if population colours collide (same pop across images) or a non-standard palette
@@ -722,7 +768,9 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     const hues = pal.length ? color.domain.map((_, i) => pal[i % pal.length]) : distinctColors(color.domain.length)
     color = { ...color, range: hues }
   }
-  const lines = new Map<string, { x: number; y: number }[]>()
+  // keyed by SERIES; each entry remembers its facet panel too, since the map key alone can't say
+  // which image a series came from once the image is out of the key (facet-by-image).
+  const lines = new Map<string, { fkey: string; pts: { x: number; y: number }[] }>()
   for (const s of r.series) {
     // the group level is a FRAME INDEX; `timeScale` (when every image's interval is known) turns it
     // into elapsed SECONDS, per image — two movies at different intervals must not share one factor
@@ -730,12 +778,13 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     const x = Number(s.group) * perFrame, y = Number(s.value)
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue
     const k = keyOf(s)
-    ;(lines.get(k) ?? lines.set(k, []).get(k)!).push({ x, y })
+    const e = lines.get(k) ?? lines.set(k, { fkey: facetKeyOf(o, s, k), pts: [] }).get(k)!
+    e.pts.push({ x, y })
   }
   const span = Math.min(1, Math.max(0.05, (o.smooth ?? 30) / 100)), floor = o.nonNegative && !o.logScale
-  const fit: { series: string; x: number; y: number; lo: number; hi: number }[] = []
+  const fit: { series: string; fkey: string; x: number; y: number; lo: number; hi: number }[] = []
   let hi = 0
-  for (const [k, pts] of lines) {
+  for (const [k, { fkey, pts }] of lines) {
     pts.sort((a, b) => a.x - b.x)
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
     const x0 = xs[0], x1 = xs[xs.length - 1]
@@ -754,7 +803,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
       const y = floor ? Math.max(0, p.y) : p.y
       const lo = floor ? Math.max(0, y - 1.96 * p.se) : y - 1.96 * p.se, up = y + 1.96 * p.se
       if ((o.interval ? up : y) > hi) hi = o.interval ? up : y
-      fit.push({ series: k, x: grid[i], y, lo, hi: up })
+      fit.push({ series: k, fkey, x: grid[i], y, lo, hi: up })
     })
   }
   if (!fit.length) return null
@@ -769,12 +818,15 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const base = r.chartType === 'count'
     ? (r.normalize && r.normalize !== 'none' ? 'fraction' : 'count')
     : (r.measure ?? 'value')
+  const f = fxCh(o)                       // facet channel (rows carry `fkey`); {} when not faceting
   const marks: unknown[] = []
   if (o.interval) marks.push(
-    Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15 }))
+    Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15, ...f }))
   marks.push(
-    Plot.line(fit, { x: 'x', y: 'y', stroke: 'series', z: 'series', strokeWidth: 2 }),
-    Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
+    Plot.line(fit, { x: 'x', y: 'y', stroke: 'series', z: 'series', strokeWidth: 2, ...f }),
+    // Plot repeats a frame per facet, so the left anchor becomes a divider at every panel boundary
+    // (same reason the distribution charts drop it) — keep only the shared bottom baseline.
+    ...(faceted(o) ? [] : [Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 })]),
     Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
   )
   const opts: Record<string, unknown> = {
@@ -786,6 +838,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
          ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
          ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
+    ...fxScale(o),
     marks,
   }
   if (o.rotateXLabel) opts.marginBottom = xRotMargin(64, o)
@@ -951,7 +1004,7 @@ function statsBracketMarks(
   if (!cmp) return []
   const extent = measureExtent(r)
   if (!extent) return []
-  const { idx } = seriesIndex(r, keyOf, o.facet)
+  const { idx } = seriesIndex(r, keyOf, facetSingle(o))
   const labelBySeries = serverStatsLabels(r.series)
   const posByLabel = new Map<string, number>()
   for (const label of cmp.groups) {
@@ -1035,9 +1088,11 @@ function bandX(labels: string[]) {
   }
 }
 const xScale = (labels: string[], o: BuildOpts) =>
-  o.facet ? { axis: null, domain: [-0.6, 0.6] } : bandX(labels)
-const fxScale = (o: BuildOpts) => o.facet ? { fx: { label: null as null } } : {}
-const fxCh = (o: BuildOpts) => o.facet ? { fx: 'series' } : {}     // per-mark facet channel (rows carry `series`)
+  facetSingle(o) ? { axis: null, domain: [-0.6, 0.6] } : bandX(labels)
+const fxScale = (o: BuildOpts) => faceted(o) ? { fx: { label: null as null } } : {}
+// per-mark facet channel. Rows carry `fkey` — the series key when faceting BY SERIES, the source
+// image when faceting BY IMAGE — so one channel name serves both modes.
+const fxCh = (o: BuildOpts) => faceted(o) ? { fx: 'fkey' } : {}
 
 // coord_flip (R): when rotated, the series (position) axis is Y and the MEASURE axis is X; otherwise
 // position=X, measure=Y. `posLo/posHi`/`measLo/measHi` are the range-channel names (x1/x2 vs y1/y2).
@@ -1115,7 +1170,7 @@ function frequency(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 // ── numeric: bar (mean ± chosen error) ────────────────────────────────────────────
 function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                   keyOf: (s: PlotSeries) => string, color: object, logY: object) {
-  const { labels, idx } = seriesIndex(r, keyOf, o.facet)
+  const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
   // a percentage has ONE error interval (the Wilson binomial CI) — the sd/sem/ci95 selector doesn't
   // apply to it, and its bounds are asymmetric about the point estimate, so use them as sent
   const isPct = o.chartType === 'percent'
@@ -1126,7 +1181,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const asym = isPct && Number.isFinite(s.lower) && Number.isFinite(s.upper)
     const lo = asym ? (s.lower as number) : (s.value ?? 0) - e
     const hi = asym ? (s.upper as number) : (s.value ?? 0) + e
-    return { series: k, xi: i, xlo: i - 0.32, xhi: i + 0.32, value: s.value,
+    return { series: k, fkey: facetKeyOf(o, s, k), xi: i, xlo: i - 0.32, xhi: i + 0.32, value: s.value,
              lo: floor ? Math.max(0, lo) : lo, hi, n: s.n,
              tip: o.chartType === 'count' ? `${k}\ncount ${fmtCount(s.value)}`
                 : isPct ? `${k}\n${fmt(s.value)}% positive\n95% CI ${fmt(lo)}–${fmt(hi)}\nn ${s.n}`
@@ -1156,11 +1211,11 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 // ── numeric: boxplot (Tukey, precomputed) + jittered raw-point overlay ────────────
 function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                  keyOf: (s: PlotSeries) => string, color: object, logY: object) {
-  const { labels, idx } = seriesIndex(r, keyOf, o.facet)
+  const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
   const floor = o.nonNegative && !o.logScale
   const stat = r.series.filter(s => Number.isFinite(s.median)).map(s => {
     const k = keyOf(s), i = idx.get(k)!
-    return { series: k, xi: i, xlo: i - 0.28, xhi: i + 0.28,
+    return { series: k, fkey: facetKeyOf(o, s, k), xi: i, xlo: i - 0.28, xhi: i + 0.28,
              q1: s.q1, median: s.median, q3: s.q3,
              lower: floor ? Math.max(0, s.lower as number) : s.lower, upper: s.upper, mean: s.mean, n: s.n,
              tip: `${k}\nmedian ${fmt(s.median)}\nq1 ${fmt(s.q1)}  q3 ${fmt(s.q3)}\nn ${s.n}` }
@@ -1171,7 +1226,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
-    vals.forEach((v, k) => pts.push({ series: keyOf(s), xj: i + off[k], value: v }))
+    vals.forEach((v, k) => pts.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v }))
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = o.colorData ? 'series' : 'currentColor'
@@ -1202,14 +1257,14 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 // ── numeric: violin (mirrored Gaussian KDE from downsampled raw points) ───────────
 function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                 keyOf: (s: PlotSeries) => string, color: object, logY: object) {
-  const { labels, idx } = seriesIndex(r, keyOf, o.facet)
+  const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
   // per-series density, scaled so the widest series fills ~0.42 of a band half-width
   const perSeries = r.series.map(s => ({ s, i: idx.get(keyOf(s))!, dens: kde((s.points ?? []) as number[]) }))
   const maxD = Math.max(1e-9, ...perSeries.flatMap(p => p.dens.map(g => g.d)))
   const W = 0.42 / maxD
   const rows: object[] = []
   for (const p of perSeries) for (const g of p.dens)
-    rows.push({ series: keyOf(p.s), value: g.v, xlo: p.i - g.d * W, xhi: p.i + g.d * W })
+    rows.push({ series: keyOf(p.s), fkey: facetKeyOf(o, p.s, keyOf(p.s)), value: g.v, xlo: p.i - g.d * W, xhi: p.i + g.d * W })
   if (!rows.length) return null
   const f = fxCh(o), a = axM(o)
   // density ribbon runs ACROSS the position axis at each measure value; rotate swaps area/line family.
@@ -1234,13 +1289,13 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 // ── numeric: strip / jitter (raw points, downsampled) ─────────────────────────────
 function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                keyOf: (s: PlotSeries) => string, color: object, logY: object) {
-  const { labels, idx } = seriesIndex(r, keyOf, o.facet)
+  const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
   const rows: object[] = []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const off = offsetsFor(o, vals, 0.42)                     // wider swarm (no box to overlay)
-    vals.forEach((v, k) => rows.push({ series: keyOf(s), xj: i + off[k], value: v }))
+    vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v }))
   }
   if (!rows.length) return null
   const a = axM(o)
