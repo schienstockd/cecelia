@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toSeconds, frameSeconds, frameSecondsByImage, sharedFrameSeconds } from './timeAxis'
+import { toSeconds, frameSeconds, frameSecondsByImage, sharedFrameSeconds, frameAxisLabel } from './timeAxis'
 import type { CciaImage } from '../stores/project'
 
 const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'x', name: 'x', ...o } as CciaImage)
@@ -89,5 +89,23 @@ describe('sharedFrameSeconds', () => {
     const m = { a: img({ uid: 'a', timeIncrement: 30, timeIncrementUnit: 'second' }), b: img({ uid: 'b' }) }
     expect(sharedFrameSeconds(['a', 'b'], lookup(m))).toBeNull()
     expect(sharedFrameSeconds([], lookup(m))).toBeNull()
+  })
+})
+
+describe('frameAxisLabel', () => {
+  it('names the temporal column as frames, never as bare time', () => {
+    // the unit must stay: "Time" alone is the claim the SECONDS axis makes, and this axis is the
+    // one that could not be converted
+    expect(frameAxisLabel('centroid_t')).toBe('Time (frames)')
+    expect(frameAxisLabel('CENTROID_T')).toBe('Time (frames)')
+  })
+
+  it('leaves a non-temporal groupBy as its own name', () => {
+    expect(frameAxisLabel('hmm.state')).toBe('hmm.state')
+    expect(frameAxisLabel('clusters.0')).toBe('clusters.0')
+  })
+
+  it('falls back to t when there is no groupBy at all', () => {
+    for (const g of ['', undefined, null]) expect(frameAxisLabel(g)).toBe('t')
   })
 })

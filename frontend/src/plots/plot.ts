@@ -17,6 +17,7 @@
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
+import { frameAxisLabel } from '../utils/timeAxis'
 import { needsXRotation } from './autoOverride'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -834,7 +835,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
     // "Time (s)" only when the frames were actually converted — otherwise the axis IS the frame index
     // and must keep saying so rather than implying a unit it doesn't have
-    x: { label: o.labX || (o.timeScale ? 'Time (s)' : (r.groupBy || 't')), grid: o.grid,
+    x: { label: o.labX || (o.timeScale ? 'Time (s)' : frameAxisLabel(r.groupBy)), grid: o.grid,
          ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
          ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },

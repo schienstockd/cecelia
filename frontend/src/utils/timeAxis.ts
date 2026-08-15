@@ -65,3 +65,19 @@ export function sharedFrameSeconds(uids: string[],
   const vals = [...new Set(Object.values(m))]
   return vals.length === 1 ? vals[0] : null
 }
+
+/**
+ * The x-axis title when the levels stayed FRAME INDICES — i.e. the conversion above returned null.
+ *
+ * The axis used to fall back to the raw group column, so an unconvertible movie drew an axis labelled
+ * `centroid_t`. That is both unreadable and less informative than it looks: it names the column rather
+ * than the quantity, and says nothing about the numbers being frame counts.
+ *
+ * `(frames)` is carried deliberately. The rule at the top of this file is that an unknown interval must
+ * never be presented as time, so this must not shorten to a bare "Time" — that is exactly the claim the
+ * seconds axis makes. Anything that isn't the temporal column keeps its own name.
+ */
+export function frameAxisLabel(groupBy?: string | null): string {
+  const g = groupBy ?? ''
+  return g.toLowerCase() === 'centroid_t' ? 'Time (frames)' : (g || 't')
+}
