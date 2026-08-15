@@ -36,16 +36,22 @@ Sets group images for processing. An image belongs to one set but lives independ
     {image_uid}/
       ccid.json             — CciaImage fields
       runlog.json           — per-run history (fun, valueName, params, status) — see run_log.jl
-      data/                 — task outputs: labels.zarr, label props, layer-props .pkl
+      data/                 — napari layer-props sidecars ({zarr}.json), image sidecars
       labels/               — segmentation label zarrs, one per value_name
       labelProps/           — per-cell measurements, {value_name}.h5ad
-      populations/ cl/ shapes/ stats/ models/ out/
-      tasks/                — each run's params JSON (`[dirs.tasks] tasks`)
+      branchLabels/         — skeleton label zarrs (segment.branching)
+      gating/               — {value_name}.json population definitions (docs/POPULATION.md)
+      spatialStats/ spatialGraph/  — spatial analysis output
+      tasks/                — each run's params JSON (`task_run_dir`)
       logs/                 — {fun_name}.log, CUMULATIVE across runs (scheduler `_wrap_log_with_file`)
       qc/                   — per-fun QC sidecars
 ```
 
-The subdirs above `logs/` are created up front at import from `[dirs.tasks]` in `config.toml` (and mirrored by copy/crop); `logs/` and `qc/` are created on demand by their own writers. **`[dirs.tasks]` is not a rename knob** — every reader joins these names literally, so changing a value there breaks the readers rather than moving the directory. Two entries were dropped once nothing wrote to them: `log/` (the scheduler tees to `logs/`) and `mesh/` (meshes are rebuilt per timepoint in Python and never persisted — `mesh_utils.py`). `_load_image` removes both from images that still carry them, if they are empty.
+**Nothing is pre-created. A subdirectory exists iff something has written to it**, so the contents of `1/{image_uid}/` are a readable summary of what has actually been run on that image. Every writer makes its own home: `mkpath` in `napari_api.jl` (`data/`) and `py_runner.jl` (`tasks/`), `os.makedirs` inside `atomic_path` (`labelProps/`), zarr's own store creation (`labels/`), and an explicit `mkpath` in the gating / spatial / branching writers.
+
+This replaced a `[dirs.tasks]` table in `config.toml` whose values were `mkpath`ed for every new image at import (and mirrored by copy/crop). It was a knob that could not turn: every reader joined those names literally, so renaming one produced an empty directory beside the real one rather than moving anything — and only `tasks` was ever read back, by `task_run_dir`. Six of its entries (`populations`, `stats`, `shapes`, `models`, `out`, `cl`) had **no writer anywhere in the codebase**; they were inherited from the R version (`cciaImageCollection.R` created the same set) and every image had been carrying them empty ever since. `log/` and `mesh/` went the same way earlier, for the same reason.
+
+`_load_image` removes all eight from images that still carry them, **if empty** — see `_DEAD_TASK_DIRS`. Live names are deliberately not on that list: an image imported before the change also has an empty `labels/`, `labelProps/`, `data/` and `tasks/`, and deleting one of those could race the task that just made it.
 
 Sets and images live in the same flat `1/` namespace. They are distinguished only by the `"class"` field in their `ccid.json` (`"CciaSet"` vs `"CciaImage"`). `init_object(proj_uid, uid)` dispatches on that field — no need to know the type in advance.
 

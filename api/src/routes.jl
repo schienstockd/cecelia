@@ -1316,12 +1316,10 @@ function api_images_register(body_bytes::Vector{UInt8})
         abs_path = isabspath(filepath) ? filepath : joinpath(FS_ROOT, filepath)
         isfile(abs_path) || begin; @warn "Skipping missing file" path=abs_path; continue; end
 
-        task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
+        # No task subdirs are created here — each one is made by whoever writes into it (see
+        # docs/OBJECTMODEL.md → Disk layout), so an image folder holds only what has actually run.
         img = add_image!(s; name=splitext(basename(abs_path))[1],
                          meta=Dict{String,Any}("ori_path" => abs_path))
-        for subdir in values(task_dirs)
-            mkpath(joinpath(proj_dir, "1", img.uid, string(subdir)))
-        end
 
         push!(registered, Dict{String,Any}(
             "uid"       => img.uid,
@@ -1397,7 +1395,6 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
     isnothing(si) && return 404, JSON3.write((; error="Set not found in project: $set_uid"))
     s = proj._sets[si]
 
-    task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
     registered = Dict{String,Any}[]
     for im in imgs_in
         uid  = String(get(im, :uid, ""))
@@ -1408,9 +1405,6 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
         meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
         isempty(rsc) || (meta["legacyRscript"] = rsc)
         img = add_image!(s; name=name, uid=uid, meta=meta)
-        for subdir in values(task_dirs)
-            mkpath(joinpath(proj_dir, "1", img.uid, string(subdir)))
-        end
         push!(registered, Dict{String,Any}(
             "uid" => img.uid, "name" => img.name, "status" => "pending"))
     end

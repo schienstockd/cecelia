@@ -7,21 +7,9 @@ projects       = "/path/to/projects"
 bioformats2raw = "/path/to/bioformats2raw"
 python         = "python3"
 
-  # Per-image task subdirs, created up front at import (and mirrored by copy/crop). NOT a rename knob —
-  # every reader joins these names literally. Dropped: `log` (the scheduler tees to `logs/`, which its
-  # own writer creates) and `mesh` (meshes are per-timepoint and never persisted). `_load_image` clears
-  # both from images that already have them.
-  [dirs.tasks]
-  populations     = "populations"
-  data            = "data"
-  labels          = "labels"
-  labelProps      = "labelProps"
-  tasks           = "tasks"
-  stats           = "stats"
-  shapes          = "shapes"
-  classifications = "cl"
-  models          = "models"
-  out             = "out"
+  # [dirs.tasks] used to list the per-image task subdirs to create at import. It is gone: every one of
+  # those directories is made by whoever writes into it, so pre-creating them only produced empty
+  # directories for features nobody had run. See docs/OBJECTMODEL.md → Disk layout.
 
 [files]
 labelProps = "labelProps.h5ad"

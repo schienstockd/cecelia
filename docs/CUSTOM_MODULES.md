@@ -94,6 +94,11 @@ Follow the same invariants as built-in tasks (see [`docs/MODULES.md`](MODULES.md
 - **Read/write cell data only through the label-props view** (`label_props |> … |> as_df`;
   `label_props |> add_obs |> save!`) — never touch the `.h5ad` directly.
 - **Open images only through `zarr_utils`**, never a bare `zarr.open`.
+- **Create any subdirectory of `img._dir` you write into** — `mkpath(dirname(out))`, or Python's
+  `atomic_path` / `write_h5ad_atomic`, which do it for you. Nothing under `1/{uid}/` is pre-created;
+  a subdirectory exists iff a task has written there (docs/OBJECTMODEL.md → *Disk layout*). A module
+  written against the old behaviour, which created a fixed set of directories at import, has to add
+  the `mkpath` it was relying on. `Cecelia.task_run_dir` makes its own, so `run_py` needs nothing.
 
 Two runnable examples ship in [`docs/examples/custom-modules/`](examples/custom-modules/) — copy the
 category folders into `<config_dir>/modules/`:

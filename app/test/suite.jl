@@ -3645,20 +3645,34 @@ end
     rm(proj.root; recursive=true)
 end
 
-# ── Dead task subdirs are cleared on load (log/, mesh/) ─────────────────────
-# `log/` and `mesh/` were created at import and never written to (the scheduler tees to `logs/`;
-# meshes are per-timepoint and never persisted). They are gone from `[dirs.tasks]`, and an image that
-# still carries them sheds them when it loads — but ONLY if empty, so a dir holding anything survives.
+# ── Task subdirs: none pre-created, dead ones cleared on load ───────────────
+# An image folder holds only what has actually run — every writer makes its own directory, so nothing
+# is created up front (the `[dirs.tasks]` pre-create table is gone). The eight names no writer in the
+# codebase uses are shed when an old image loads — ONLY if empty, and never a name a live writer uses.
+@testset "New image gets no task subdirs" begin
+    proj = create_project!(name="nodirs-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    # ccid.json and nothing else — the image dir describes what has run, and nothing has
+    @test readdir(img._dir) == ["ccid.json"]
+    @test !isdir(joinpath(img._dir, "labels"))
+    rm(proj.root; recursive=true)
+end
+
 @testset "Legacy task subdirs dropped on load" begin
     proj = create_project!(name="deaddir-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
     img  = add_image!(s; name="img")
-    for sub in ("log", "mesh", "logs"); mkpath(joinpath(img._dir, sub)); end
-    @test isdir(joinpath(img._dir, "log"))
+    live = ("logs", "labels", "labelProps", "data", "tasks")
+    for sub in (Cecelia._DEAD_TASK_DIRS..., live...); mkpath(joinpath(img._dir, sub)); end
     init_object(proj.uid, img.uid)
-    @test !isdir(joinpath(img._dir, "log"))
-    @test !isdir(joinpath(img._dir, "mesh"))
-    @test  isdir(joinpath(img._dir, "logs"))            # the live one is untouched
+    for sub in Cecelia._DEAD_TASK_DIRS
+        @test !isdir(joinpath(img._dir, sub))
+    end
+    # a live name is never shed, even when empty — removing one would race the task that just made it
+    for sub in live
+        @test isdir(joinpath(img._dir, sub))
+    end
 
     # a non-empty one is somebody's data, whatever we think wrote it
     mkpath(joinpath(img._dir, "mesh"))
@@ -3666,6 +3680,16 @@ end
     init_object(proj.uid, img.uid)
     @test isfile(joinpath(img._dir, "mesh", "keep.txt"))
     rm(proj.root; recursive=true)
+end
+
+# The one name that survived `[dirs.tasks]`, now a constant rather than a config lookup.
+# Build the base with `joinpath` and reuse it on both sides: a literal "/x/y" keeps its forward
+# slashes on Windows while `joinpath` appends a backslash, so hardcoding either separator asserts
+# the platform rather than the behaviour.
+@testset "task_run_dir is <base>/tasks" begin
+    base = joinpath("x", "y")
+    @test Cecelia.task_run_dir(base) == joinpath(base, "tasks")
+    @test basename(Cecelia.task_run_dir(base)) == "tasks"
 end
 
 # ── Branch labels round-trip (BRANCHING_PLAN.md Decision 6) ──────────────────

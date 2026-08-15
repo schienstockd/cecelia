@@ -114,11 +114,8 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
     new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta)
 
-    # per-task run subdirs (mirrors the import route / cropImage) so downstream tasks have their homes
-    task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
-    for subdir in values(task_dirs)
-        mkpath(joinpath(proj_dir, "1", new_img.uid, string(subdir)))
-    end
+    # No task subdirs are created for the new image (mirrors the import route / cropImage): each is made
+    # by whoever writes into it. The `data/` sidecar copy below makes its own, which is why it still works.
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
