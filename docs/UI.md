@@ -461,6 +461,33 @@ where a missing tip should be visibly missing. All ten are gone; the binding is 
 Presence is the half a machine can decide. Whether a tip is the *right* tip is still a review
 question — exactly as the length check can't tell you a short line is a good one.
 
+### A picker shows the QUANTITY, not the column name
+
+A control that offers data columns must label them with what they *are*. The stored name is an
+implementation detail of the `.h5ad`, and a user picking an axis to gate on has no reason to know it.
+
+Two mappings exist, both display-only:
+
+| Raw column | Shown as | Where |
+|---|---|---|
+| `mean_intensity_0`, … | the channel name (`CD3`) | `gating.colLabel` |
+| `centroid_x` / `_y` / `_z` | `X position` / `Y position` / `Z position` | `utils/gatingAxes.ts` → `centroidLabel` |
+| `centroid_t` | `Time` (`Time (frames)` on a frame axis, `Time (s)` once converted) | `centroidLabel`, `timeAxis.ts` → `frameAxisLabel` |
+
+`centroid_t` is the one that made the rule: it was the option you pick to split a movie into
+timepoints, and it read as neither "time" nor anything else a biologist measures. `centroid_x` had the
+same problem more quietly — `x` is only obviously spatial if you already know the schema.
+
+**Display-only, and that is the point.** The stored column, CSV exports and the REPL keep the raw
+name, so a rename here cannot desynchronise anything downstream — the same split `colLabel` already
+made for intensity columns. Compose with the unit rather than baking one in
+(`axisLabelWithUnit(colLabel(c), unit)` → `X position (µm)`), so a label never carries two bracketed
+clauses.
+
+**A frame axis must keep its unit.** `frameAxisLabel` returns `Time (frames)`, never a bare `Time` —
+that is the claim the seconds axis makes, and this is the axis whose interval was unknown
+(`docs/ARCHITECTURE.md` → *Calibration*).
+
 ---
 
 ## Design tokens

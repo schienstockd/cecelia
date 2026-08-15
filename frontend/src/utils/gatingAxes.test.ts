@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isCentroidAxis, axisLabelWithUnit } from './gatingAxes'
+import { isCentroidAxis, axisLabelWithUnit, centroidLabel } from './gatingAxes'
 
 describe('isCentroidAxis', () => {
   it('matches every centroid coordinate column', () => {
@@ -10,6 +10,32 @@ describe('isCentroidAxis', () => {
   it('does not match ordinary feature columns', () => {
     for (const c of ['area', 'intensity_mean', 'live.cell.speed', 'eccentricity', 'centroids', 'x_centroid'])
       expect(isCentroidAxis(c)).toBe(false)
+  })
+})
+
+describe('centroidLabel', () => {
+  it('names the quantity rather than the column', () => {
+    expect(centroidLabel('centroid_x')).toBe('X position')
+    expect(centroidLabel('centroid_y')).toBe('Y position')
+    expect(centroidLabel('centroid_z')).toBe('Z position')
+    expect(centroidLabel('centroid_t')).toBe('Time')
+  })
+
+  it('is case-insensitive, matching isCentroidAxis', () => {
+    expect(centroidLabel('Centroid_X')).toBe('X position')
+    expect(centroidLabel('CENTROID_T')).toBe('Time')
+  })
+
+  // display-only: anything that isn't a mapped centroid keeps its raw name, so an intensity or
+  // morphology column is never silently renamed, and an unmapped centroid_* is not guessed at
+  it('leaves every other column untouched', () => {
+    for (const c of ['area', 'live.cell.speed', 'mean_intensity_0', 'track_id', 'centroid_w', 'label'])
+      expect(centroidLabel(c)).toBe(c)
+  })
+
+  it('composes with the unit suffix without doubling brackets', () => {
+    expect(axisLabelWithUnit(centroidLabel('centroid_x'), 'µm')).toBe('X position (µm)')
+    expect(axisLabelWithUnit(centroidLabel('centroid_t'), '')).toBe('Time')
   })
 })
 

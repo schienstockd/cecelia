@@ -21,6 +21,7 @@ import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
+import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
@@ -735,7 +736,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
             <span>Split by</span>
             <select v-model="groupBy">
               <option value="">none</option>
-              <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
+              <option v-for="g in groupByOpts" :key="g" :value="g">{{ centroidLabel(g) }}</option>
             </select>
           </label>
           <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
@@ -771,7 +772,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
                    v-tooltip.left="'Categorical column: profile columns / crosstab from_to pairs'">
               <span>Category</span>
               <select v-model="categorySel">
-                <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
+                <option v-for="g in groupByOpts" :key="g" :value="g">{{ centroidLabel(g) }}</option>
               </select>
             </label>
             <div v-if="hmCtl.zscore" class="sp-pop-row cc-muted"

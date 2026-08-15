@@ -5,7 +5,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
 import { clusterMeasure } from '../utils/clusterMeasure'
-import { isCentroidAxis } from '../utils/gatingAxes'
+import { isCentroidAxis, centroidLabel } from '../utils/gatingAxes'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
 // leaf names beginning with `_`. Hand-drawn gates may not use that prefix — mirrors the backend
@@ -135,10 +135,12 @@ export const useGatingStore = defineStore('gating', () => {
   const napariSetUid = () => (imageUid.value ? projStore.setUidOfImage(imageUid.value) : null) ?? ''
 
   // resolve a raw column to its display label: intensity columns → channel name (R
-  // change_channel_names), everything else (morphology, etc.) stays as-is.
+  // change_channel_names), centroids → "X position"/"Time" (centroidLabel), everything else
+  // (morphology, etc.) stays as-is.
   function colLabel(col: string): string {
     const i = channels.value.indexOf(col)
-    return i >= 0 && channelNames.value[i] ? channelNames.value[i] : col
+    if (i >= 0 && channelNames.value[i]) return channelNames.value[i]
+    return centroidLabel(col)
   }
 
   function bump(p: string) {
