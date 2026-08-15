@@ -920,10 +920,20 @@ the **napari Viewer controls** are its first consumer — mounted in `App.vue`, 
 </FloatingPanel>
 ```
 
-- **Parent owns visibility** (`v-if` + `@close`); the panel owns position/size/collapsed, persisted per
-  `storageKey` under `cc.floating.<storageKey>` (reopens where you left it). Drag by the header, resize
-  from the bottom-right grip, collapse to header-only. Position is clamped into the viewport on mount +
-  window resize so a stale/off-screen box always comes back.
+- **Parent owns visibility** (`v-if` + `@close`); the panel owns position/size/collapsed/maximised,
+  persisted per `storageKey` under `cc.floating.<storageKey>` (reopens where you left it). Drag by the
+  header, resize from the bottom-right grip, collapse to header-only, **maximise** (button, or
+  double-click the header). Maximised fills the width and everything below the app header; the panel
+  neither drags nor resizes in that state, and `x/y/w/h` keep the restore geometry so un-maximising
+  returns it where it was, even across a reload.
+- **The top bound is the app header, not zero** — `utils/panelBounds.ts`. Panels stack from
+  `PANEL_Z_BASE` = 60 and `AppHeader` is `z-index: 100`, so a panel dragged above the header's bottom
+  edge is not merely hidden: the header paints over it and eats its pointer events. The first thing to
+  disappear is the panel's own header, which is the only handle you can drag it back by — so the panel
+  became **unrecoverable without clearing localStorage**. The bound was `0` in two places (the drag path
+  and the mount/resize path); both are now one call, and a panel saved in the bad position self-heals on
+  next mount. **Don't reintroduce a bare `0`, and don't inline the maths a third time** — the pure
+  version is unit-tested (`panelBounds.test.ts`).
 - **Stacking** — panels start at z-index 60 (above content and the right panel, below
   modals/console) and are ordered **most-recently-touched on top**: opening a panel or pressing
   anywhere inside it raises it above its siblings, so two open panels no longer stack by DOM
