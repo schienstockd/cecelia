@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken,
+  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken, withoutChosen,
 } from './suggestInput'
 
 const NAMES = ['Neutrophil', 'Tcell', 'cellA', 'Bcell']
@@ -104,6 +104,42 @@ describe('multi-value fields (tags)', () => {
     it('is empty right after a separator — which offers the full list', () => {
       expect(activeToken('live,', ',')).toBe('')
       expect(filterSuggestions(['qc'], activeToken('live,', ','))).toEqual(['qc'])
+    })
+  })
+
+  describe('withoutChosen', () => {
+    const TAGS = ['live', 'qc', 'redo']
+
+    it('drops the tags already in the box — the same one cannot be added twice', () => {
+      expect(withoutChosen(TAGS, 'live, ', ',')).toEqual(['qc', 'redo'])
+      expect(withoutChosen(TAGS, 'live, qc, ', ',')).toEqual(['redo'])
+    })
+
+    it('keeps the token being TYPED on offer — it is not chosen yet', () => {
+      // `li` is on its way to `live`; dropping it would empty the list exactly as it became useful
+      expect(withoutChosen(TAGS, 'li', ',')).toEqual(TAGS)
+      expect(withoutChosen(TAGS, 'live, q', ',')).toEqual(['qc', 'redo'])
+    })
+
+    it('ignores spacing and case, like isExistingOption', () => {
+      expect(withoutChosen(TAGS, ' LIVE ,', ',')).toEqual(['qc', 'redo'])
+    })
+
+    it('ignores empty tokens, so a stray separator drops nothing', () => {
+      expect(withoutChosen(TAGS, ',,', ',')).toEqual(TAGS)
+    })
+
+    it('is a no-op for a single-value field — there are no other tokens', () => {
+      expect(withoutChosen(TAGS, 'live')).toEqual(TAGS)
+      expect(withoutChosen(TAGS, 'live, qc')).toEqual(TAGS)   // no separator passed → one value
+    })
+
+    it('can empty the list, which is the correct answer once everything is added', () => {
+      expect(withoutChosen(TAGS, 'live, qc, redo, ', ',')).toEqual([])
+    })
+
+    it('copies rather than aliasing the caller list', () => {
+      expect(withoutChosen(TAGS, 'live')).not.toBe(TAGS)
     })
   })
 

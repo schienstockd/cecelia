@@ -15,13 +15,14 @@
   you cannot answer if the list appears only once you can already spell it.
 
   `separator` makes it a MULTI-value field (tags): suggestions then complete the token at the caret
-  instead of the whole box, so accepting one does not wipe the tags already typed.
+  instead of the whole box, so accepting one does not wipe the tags already typed — and a tag already
+  in the box drops off the list, so the same one cannot be added twice from it.
 -->
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import TeleportPopover from './TeleportPopover.vue'
 import {
-  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken,
+  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken, withoutChosen,
 } from '../utils/suggestInput'
 
 // Two root nodes (the input and the teleported popover), so a caller's attrs — `@blur`,
@@ -45,11 +46,14 @@ const open = ref(false)
 const highlight = ref(-1)
 
 const query = computed(() => activeToken(props.modelValue ?? '', props.separator))
+// What is still on offer — a multi-value field drops the tags already in the box (no-op otherwise).
+const available = computed(() =>
+  withoutChosen(props.options, props.modelValue ?? '', props.separator))
 // Focus offers EVERYTHING — a field holding `Tcell` would otherwise open filtered to `Tcell`, hiding
 // the one name the user opened it to find. The first keystroke narrows.
 const showAll = ref(false)
 const matches = computed(() =>
-  showAll.value ? [...props.options] : filterSuggestions(props.options, query.value))
+  showAll.value ? available.value : filterSuggestions(available.value, query.value))
 /** Whether what is typed names something that EXISTS — the reuse vs create distinction. */
 const existing = computed(() =>
   props.markExisting === true && isExistingOption(props.options, query.value))
@@ -69,7 +73,7 @@ function onInput(e: Event) {
 // it. Nothing to show = nothing to open, so a field with no history behaves like a plain input.
 function onOpen() {
   showAll.value = true
-  open.value = props.options.length > 0
+  open.value = available.value.length > 0   // every tag already added = nothing left to offer
 }
 
 function accept(choice: string) {

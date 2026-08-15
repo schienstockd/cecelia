@@ -677,6 +677,9 @@ Escape, and owns only the list and the keys. Three behaviours worth knowing befo
   NEW until an arrow key says otherwise, so Enter must not silently accept a suggestion.
 - **Rows accept on `mousedown`, not `click`** — the input's `@blur` closes the popover first, so a
   `click` handler would never fire.
+- **A multi-value field (`separator`) drops what is already in the box** (`withoutChosen`), so the
+  same tag cannot be added twice from the list and it gets shorter as you pick. The token at the
+  CARET is exempt — it is what you are typing, not something you chose.
 - **Accepting with Enter must not also fire the caller's own Enter handler.** Several callers commit
   on Enter (the movie tag cell saves and closes; Metadata assigns the value), and a caller's listener
   is a SIBLING on the same input — so `stopPropagation` does not reach it and `stopImmediatePropagation`

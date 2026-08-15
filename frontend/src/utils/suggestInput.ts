@@ -66,6 +66,28 @@ export function isExistingOption(options: readonly string[], value: string): boo
 // the token the caret is in. `separator` absent = the whole field is one value, which is every
 // single-value caller and the reason these are no-ops rather than a second component.
 
+/**
+ * `options` minus the ones already in `value` — the tags you have added are not still on offer, so a
+ * list you are picking from gets shorter instead of letting you add `live` three times.
+ *
+ * Only the COMPLETED tokens are dropped. The token at the caret is what you are *typing*, so `live`
+ * has to stay offered while `li` is on its way to it — dropping that one would make the list vanish
+ * exactly as it became useful. Case-insensitive, matching `isExistingOption`.
+ *
+ * A single-value field (no `separator`) has no other tokens, so this is a no-op there — which is why
+ * it is one function rather than a second component.
+ */
+export function withoutChosen(
+  options: readonly string[], value: string, separator?: string,
+): string[] {
+  if (!separator) return [...options]
+  const i = value.lastIndexOf(separator)
+  if (i < 0) return [...options]
+  const chosen = new Set(
+    value.slice(0, i).split(separator).map(t => t.trim().toLowerCase()).filter(Boolean))
+  return options.filter(o => !chosen.has(o.trim().toLowerCase()))
+}
+
 /** The token being typed — the text after the last `separator`. The whole value when there is none. */
 export function activeToken(value: string, separator?: string): string {
   if (!separator) return value
