@@ -167,12 +167,18 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
    > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
    > they now have to decide. The commit log is one click away on the compare link appended below.
 4. Bump the `version:` + `date-released:` in **`CITATION.cff`** to this tag.
-5. **`bash scripts/bundle_check.sh --launch`** — packs the bundle `release.yml` will pack, extracts
-   it, and boots the API server from it on `:8099` (~20 s, leaves the running app alone). The tar
-   list is an allow-list, so a runtime directory nobody named is missing from the *stable* channel
-   only, and the `dev` channel keeps working — which is how v0.1.1 shipped without `pluto/` and died
-   at launch for every installer (#540). CI pins the same list, but this is the one that runs the
-   thing. See `docs/SHIPPING.md` → *Building & releasing*.
+5. **`bash scripts/bundle_check.sh --build --launch`** — packs the bundle `release.yml` will pack,
+   extracts it, and boots the API server from it on `:8099` (~1 min, leaves the running app alone).
+   Pass `--build`: without it the bundle carries whatever `frontend/dist` is already on disk, which
+   is a build artefact unrelated to your working tree — before the v0.1.3 check it was five days and
+   six merged UI PRs stale, and the check passed anyway, because no required path lives under
+   `frontend/dist`. It costs almost nothing to be sure: `npm ci` is 2 s and the build 9 s, against
+   ~40 s to pack the 288 MB tar and ~13 s to boot.
+
+   The tar list is an allow-list, so a runtime directory nobody named is missing from the *stable*
+   channel only, and the `dev` channel keeps working — which is how v0.1.1 shipped without `pluto/`
+   and died at launch for every installer (#540). CI pins the same list, but this is the one that
+   runs the thing. See `docs/SHIPPING.md` → *Building & releasing*.
 6. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
 7. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
    fresh machine + the target dataset before relying on it.
