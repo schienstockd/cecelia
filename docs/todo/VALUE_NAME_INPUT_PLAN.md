@@ -1,6 +1,18 @@
 # Value-name input — one primitive for "the name this task writes under"
 
-**Status:** Phase 1 BUILT. Decisions below are locked; Phases 2-3 are not started.
+**Status:** Phases 1 and 2 BUILT; Phase 3 open — tracked in `docs/TODO.md` → *Value-name input —
+remaining phases*. Decisions below are locked.
+
+| | phase | state |
+|---|---|---|
+| — | settle the duplicate "what does this task write" resolvers (`utils/taskOutput.ts`) | ✅ done |
+| 1 | the `SuggestInput` primitive + `valueNameInput` param type, on the namespaces that already work | ✅ done |
+| 2 | params remembered per output name, restored when you name an existing output | ✅ done |
+| 3 | the five namespaces with nothing to suggest from — clusters, regions, stats, models, obsCols | ⬜ open |
+
+Phase 3 in one line: **7 of the 11 output-naming params are still bare text**, because there is no
+accessor to list existing names for their namespace. The per-task breakdown and the order to do it in
+are in the TODO entry; the design is D5/D6 below.
 
 ## The problem, in one screen
 
@@ -62,17 +74,29 @@ entries keep their existing keys and keep working, with no migration.
 > not a suffix *of* a value name. Renaming that ONE key is a correction, not a convergence. Not part
 > of this plan.
 
-### D2 — Suggestions come from DISK; param recall comes from the RUN LOG.
+### D2 — Suggestions come from DISK; param recall from the params store. *(amended at build time)*
 
 Two different questions that look like one:
 
 - *"What names exist?"* → the namespace's accessor. Authoritative: a name that is offered can be
-  re-run onto, and one that was deleted stops being offered.
-- *"What params did I use for that name?"* → `runlog.json`, which already records
-  `{fun, valueName, status, params, at}` per run with the output key inside `params`.
+  re-run onto, and one that was deleted stops being offered. Using the run log here would offer every
+  typo forever.
+- *"What params did I use for that name?"* → the params store, keyed by name.
 
-Using the run log for suggestions would offer every typo forever; using disk for param recall is
-impossible (disk holds outputs, not the settings that made them). **They pair; neither substitutes.**
+> **Amended.** As drafted, this said param recall would read `runlog.json`, since it already records
+> `{fun, valueName, status, params, at}` per run. Phase 2 did NOT do that, for three reasons that only
+> became clear against the code:
+>
+> * **The run log is per-IMAGE.** `funParams` resolves image → set, which is what makes the form work
+>   when several images are selected. Reading recall from the run log would have meant reimplementing
+>   that fallback against a store that has no set-level half.
+> * **It records FAILED runs too** — deliberately, so repeated failures are visible. Restoring the
+>   params of a run that failed is the opposite of helpful.
+> * **It is capped at 200 entries**, so recall would silently stop working on a busy image.
+>
+> So Phase 2 extended the existing mechanism instead: `meta["funParamsByName"]`, alongside the flat
+> `funParams` blob. The run log stays what it says it is — a tuning TRAIL, read by the observer, never
+> a source the form restores from. The *shape* of D2 holds; only the store changed.
 
 ### D3 — The input is a combobox: type freely, with existing names offered.
 
@@ -171,12 +195,23 @@ That found two live bugs — `normField` collapsed every non-`labels` namespace 
 cluster suffix would have been offered as an image version), and `field: "filepaths"` vs
 `outputField: "filepath"` never matched when compared raw.
 
-**Phase 2 — param memory keyed by output name.**
-`funParams[fun]` gains a nested-by-name layer, **falling back to the existing flat blob** when there
-is no entry for the name — so no migration and old blobs keep serving as the default.
-Touches: `read_module_fun_params`/`write_module_fun_params!` (`app/src/model/image.jl`),
-`_remember_fun_params` (`api/src/sockets.jl`), `api_task_fun_params` (`api/src/routes.jl`),
-`fetchSavedParams` (`TaskRunner.vue`), plus the re-fetch on a *matched* name (D3).
+**Phase 2 — param memory keyed by output name. DONE.**
+A SEPARATE `meta["funParamsByName"]` rather than nesting inside `funParams[fun]` — nesting would make
+that blob ambiguous about whether a key is a param or a name, and would need a migration. Nothing
+migrates: a task/name pair with nothing banked reads through to the flat blob, which stays the
+most-recent-run record because that is what a NEW name falls back to.
+
+Two things the build added that the plan had not anticipated, both load-bearing:
+
+* **`matched` on the response.** The read has to distinguish "nothing banked for this name" from
+  "here is the last run" — the form may only REPLACE what the user is looking at for the first.
+  Applying the fallback would stamp the previous run's params over unsaved edits. Hence
+  `read_module_fun_params_by_name`, which deliberately does not fall back.
+* **Restore on COMMIT, not on change.** `ParamRenderer` emits `commit` when a `valueNameInput` is
+  finished (blur, or accepting a suggestion). Per-keystroke would swap every other field mid-word,
+  since typing toward `Tcell2` passes through `Tcell`.
+
+`Cecelia.task_output_name` is the Julia twin of `taskOutput`, pinned against the same specs.
 
 **Phase 3 — the missing namespaces.**
 Move `_clustfeatures_suffixes` onto the image (D5); write the `stats` and `models` accessors; extend

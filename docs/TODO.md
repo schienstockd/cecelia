@@ -43,6 +43,34 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Value-name input — remaining phases
+
+Design + locked decisions: [`docs/todo/VALUE_NAME_INPUT_PLAN.md`](todo/VALUE_NAME_INPUT_PLAN.md).
+Phases 1 and 2 have shipped (the `SuggestInput` primitive, and params remembered per output name).
+What is left is Phase 3 — the namespaces that have nothing to suggest FROM yet.
+
+**Seven of the eleven output-naming params are still bare `"type": "text"`**, so they get no
+suggestions and no per-name param recall:
+
+| param | tasks | namespace | what it needs first |
+|---|---|---|---|
+| `valueNameSuffix` | `clustPops`, `clustRegions`, `clustTracks` | `clusters` / `regions` | move `_clustfeatures_suffixes` out of `gating/population_manager.jl` onto the image (plan → D5), then surface it on the image payload |
+| `statsSuffix` | `spatialAnalysis.neighbourStats` | `stats` | an accessor — there is none today |
+| `modelName` | `opticalFlow.train` | `models` | an accessor over `coastal_models_dir`; note this namespace is **global**, not per-image (plan → D6) |
+| `colName` | `behaviour.hmmStates`, `behaviour.hmmTransitions` | `obsCols` | obs columns of the label props — **the one to drop** if this gets tight: it costs an HDF5 open per form render and serves the two least-used tasks |
+
+The order that matters: the accessor and the payload field come first, then flipping the spec to
+`valueNameInput` + `namespace` is a one-line change per task and the param recall follows for free
+(it keys off `task_output_name`, which already reads the declaration).
+
+Two things deliberately NOT in scope, recorded so they are not rediscovered as gaps:
+
+- **Renaming the six keys to one.** They name five different storage shapes; one name would make the
+  handlers lie. Plan → D1.
+- **The Metadata "new attribute name" field.** `createAttr` rejects an existing name, so offering the
+  existing ones would suggest guaranteed failures. The useful version merges the existing-attribute
+  `<select>` with the create-input into one control — a real interaction change, its own piece of work.
+
 ### Per-notebook reset (re-run a notebook on new data without killing the Pluto server)
 Pluto has no filesystem watcher, so a notebook keeps rendering **stale data with no visible sign**
 after a pipeline task rewrites its inputs. The `DATA_STAMP` convention
