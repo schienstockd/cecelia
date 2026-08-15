@@ -12,9 +12,11 @@ import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContex
          type AdvisorParam } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
+import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -46,6 +48,7 @@ const sectionOpen = ref(!props.param.collapsed)
 // dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
 const showDirBrowser = ref(false)
 
+
 const val = computed({
   get: () => props.modelValue ?? props.param.default,
   set: (v) => emit('update:modelValue', v),
@@ -66,6 +69,16 @@ function imageFieldKeys(img: CciaImage, field: string | undefined): string[] {
   return Object.keys(img.filepaths ?? { default: '' })
 }
 
+// Which image field the NAME LIST comes from. A `valueNameSelection` says so directly (`field`); a
+// `valueNameInput` says which namespace it writes into and the field follows from that, so a spec
+// never states the same thing twice. `null` = a namespace with no image-payload field yet (clusters,
+// stats, models, obsCols) — the input still works, it just offers no suggestions. See
+// docs/todo/VALUE_NAME_INPUT_PLAN.md → Phase 3.
+const nameSourceField = computed<string | null>(() =>
+  props.param.type === 'valueNameInput'
+    ? consumerField(props.param.namespace as ValueNameNamespace)
+    : (props.param.field ?? null))
+
 const availableValueNames = computed(() => {
   const extra = props.context?.extraValueNames ?? []
   const images = props.context?.images ?? []
@@ -73,7 +86,8 @@ const availableValueNames = computed(() => {
   const base = images.length === 0
     ? ['default']
     : (() => {
-        const field = props.param.field
+        const field = nameSourceField.value
+        if (field === null) return []
         const sets = images.map(img => new Set(imageFieldKeys(img, field)))
         return [...sets[0]].filter(k => sets.every(s => s.has(k)))
       })()
@@ -495,6 +509,19 @@ const pct = computed(() => {
       :value="val as string"
       @input="val = ($event.target as HTMLInputElement).value"
       v-tooltip.right="param.tip"
+    />
+
+    <!-- valueNameInput: the name this task WRITES under. Free text, with the names already in that
+         namespace offered as you type. `valueNameSelection` (a strict <select>) is the INPUT-side
+         twin: correct where the name must already exist, wrong here because you could never name a
+         new one. -->
+    <SuggestInput v-else-if="param.type === 'valueNameInput'"
+      :model-value="(val as string) ?? ''"
+      :options="availableValueNames"
+      :placeholder="param.placeholder"
+      :tip="param.tip"
+      mark-existing
+      @update:model-value="val = $event"
     />
 
     <!-- dirPath: a folder on the machine running the server. Still typeable — a remembered path is

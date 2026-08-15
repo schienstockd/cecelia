@@ -17,7 +17,8 @@
     {
       "key": "outputValueName",
       "label": "Output name",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "labels",
       "default": "default",
       "tip": "Name for the output branch label set"
     },

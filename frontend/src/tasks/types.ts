@@ -2,7 +2,7 @@ export interface ParamDef {
   key: string
   label: string
   type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'select' | 'chipSelect'
-       | 'channelSelection' | 'valueNameSelection'
+       | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
        | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'group' | 'section'
@@ -25,7 +25,14 @@ export interface ParamDef {
   // nothing on its own and the answer differs per option, so one param-level tip cannot carry it.
   options?: { label: string; value: string; help?: string }[]
   multiple?: boolean
-  field?: string        // valueNameSelection: which image field to read names from ('filepath' | 'labels')
+  field?: string        // valueNameSelection: which image field to read names from ('filepaths' | 'labels' | 'spatialGraphs')
+  // valueNameInput: which storage namespace this param NAMES INTO — the registry entry that makes
+  // "the name this task writes under" one greppable concept across six different key spellings
+  // (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`, `colName`, `modelName`).
+  // Read by `utils/taskOutput.taskOutput` for the suggestion list, chain propagation and the preview
+  // layer stem. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
+  namespace?: 'filepaths' | 'labels' | 'spatialGraphs' | 'tracks' | 'branches'
+            | 'clusters' | 'regions' | 'stats' | 'models' | 'obsCols'
   popType?: string      // popSelection: which population type to list ('flow' | 'live' | 'clust')
   // group / section
   repeatable?: boolean
@@ -47,7 +54,11 @@ export interface TaskDef {
   outputValueName?: string // the value_name this task produces (e.g. "cpCorrected"); read by the
                            // whiteboard to prefill a downstream node's input valueName. Absent when
                            // the output name is a user-set param instead (segment.cellpose).
-  outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'
+  outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'.
+                          // NOTE the singular spelling — consumer params say 'filepaths'. Normalise
+                          // both through `utils/taskOutput.normaliseField`, never compare them raw.
+  outputNamespace?: string // the namespace a FIXED output lands in; supersedes outputField. Absent on
+                           // every spec today — outputField still answers it for image versions/labels.
   qcPlot?: string         // plotDefinitions id of this task's default QC plot (e.g. "segmentation_qc"); if set,
                           // the whiteboard Live view auto-shows a QC thumbnail linked to this node
   requires?: { axes?: string[] }  // task-applicability gate: axis codes the image must carry (e.g. ["T"]);

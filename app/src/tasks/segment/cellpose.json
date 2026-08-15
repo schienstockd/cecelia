@@ -18,7 +18,8 @@
     {
       "key": "outputValueName",
       "label": "Output label name",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "labels",
       "default": "default",
       "tip": "Name for the output label set"
     },

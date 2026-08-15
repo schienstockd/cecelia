@@ -518,6 +518,30 @@ suite detector fails a handler that skips them:
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }
 ```
 
+**`valueNameInput`** — the INPUT-side twin's opposite: the name this task **writes under**. Free text
+with the names already in that namespace offered (an `<input>` + native `<datalist>`), so re-running
+onto an existing output is a pick and naming a new one is still just typing. Declare the **namespace**,
+not the field — the field the suggestions come from follows from it, so a spec never states it twice:
+```json
+{ "key": "outputValueName", "label": "Name", "type": "valueNameInput", "namespace": "labels", "default": "default" }
+```
+
+Namespaces: `filepaths`, `labels`, `spatialGraphs`, `tracks`, `branches`, `clusters`, `regions`,
+`stats`, `models`, `obsCols`. Only the first four reach the image payload today, so the rest render as
+plain free text until Phase 3 (`docs/todo/VALUE_NAME_INPUT_PLAN.md`) wires them.
+
+> **Use it for every param that names an output, whatever the key is called.** Eleven params across
+> six spellings do (`outputValueName`, `valueNameSuffix`, `graphSuffix`, `statsSuffix`, `colName`,
+> `modelName`) — the keys stay, because they name five genuinely different storage shapes and one
+> shared name would make the handlers lie. The `namespace` is what makes them one concept, and it is
+> what `utils/taskOutput.taskOutput` reads to answer "what does this task write" for the chain
+> whiteboard, the preview layer stem and the param suggestions — **one rule, three callers**. Adding a
+> fourth place that sniffs for a particular key is the bug this replaced.
+
+Unlike `text`, the value is validated (`app/src/tasks/task.jl`): non-empty, no path separator. It
+becomes a filename stem, a dict key or a column suffix, so `a/b` would silently write elsewhere. Dots
+are allowed — real names use them (`flow.cyto`).
+
 **`chipSelect`** — multi-pick from a fixed set, rendered as `ChipSelect` chips rather than a
 dropdown or a comma-separated text field. `options` plus a **list** `default`; `validate_params`
 checks each element against `options`, exactly as it does for `select`.

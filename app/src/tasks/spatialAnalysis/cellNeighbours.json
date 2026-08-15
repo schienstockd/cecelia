@@ -9,7 +9,8 @@
     {
       "key": "graphSuffix",
       "label": "Name",
-      "type": "text",
+      "type": "valueNameInput",
+      "namespace": "spatialGraphs",
       "default": "default",
       "tip": "Output name → spatialGraph/<name>.h5ad"
     },

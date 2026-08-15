@@ -423,6 +423,34 @@ end
             "0" => Dict{String,Any}("model" => "__not_in_the_vault__.pt"))))
 end
 
+# A `valueNameInput` is NOT free text, unlike the `text` type it replaced. Its value becomes a
+# filename stem (`spatialGraph/{suffix}.h5ad`), a versioned-dict key (`labels[name]`) or a column
+# suffix (`clusters.{suffix}`) — so a path separator writes somewhere else entirely and an empty
+# name produces `labels[""]`. Both used to be accepted silently.
+# See docs/todo/VALUE_NAME_INPUT_PLAN.md; the widget is `SuggestInput` (docs/UI.md).
+@testset "valueNameInput rejects a name that is not usable as a key" begin
+    ok(v) = validate_params(CellposeSegment(), Dict{String,Any}("outputValueName" => v))
+    bad(v) = @test_throws ParamValidationError validate_params(
+        CellposeSegment(), Dict{String,Any}("outputValueName" => v))
+
+    @test ok("Tcell") === nothing
+    @test ok("flow.cyto") === nothing        # dots are REAL names, not a path — never reject them
+    @test ok("a b") === nothing              # a space is ugly, not dangerous; not ours to police
+
+    # An EMPTY string is "unset", not a bad name: `_validate_params_against_spec` treats `""` the
+    # same as absent for every param type, and the task then falls back to the spec default. Cleared
+    # field → `default`, which is the behaviour the `text` type already had. Asserted so the guard
+    # below is not "tightened" into rejecting it, which would fail a form the user merely blanked.
+    @test ok("") === nothing
+
+    bad("   ")                               # whitespace-only is NOT `== ""`, so it would become a real key
+    bad("a/b")                               # → writes under a nested path
+    bad("a\\b")                              # the Windows spelling of the same mistake
+    bad(".")
+    bad("..")
+    bad(3)                                   # a number is not a name
+end
+
 # Selecting nothing must fail with an instruction, not with a stack trace deep in Python. The
 # missing-model case is the shared one: a config-dir model does not travel with a `.ccbundle`, so
 # opening someone else's project WILL name a model this machine does not have.
@@ -2297,13 +2325,20 @@ end
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
     known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
-                       "channelSelection", "valueNameSelection", "popSelection",
+                       "channelSelection", "valueNameSelection", "valueNameInput", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
     # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
     # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image
     # versions. NOT the ccid.json spelling (`filepath`, singular) nor the R version's (`imFilepath`).
     known_value_name_fields = Set(["filepaths", "labels", "spatialGraphs"])
+
+    # Namespaces a `valueNameInput` may write into — `VALUE_NAME_NAMESPACES`
+    # (frontend/src/utils/taskOutput.ts). A superset of the fields above: several are not readable
+    # from the image payload yet, so they offer no suggestions, but declaring one is still how the
+    # param says what it names. See docs/todo/VALUE_NAME_INPUT_PLAN.md.
+    known_value_name_namespaces = Set(["filepaths", "labels", "spatialGraphs", "tracks", "branches",
+                                       "clusters", "regions", "stats", "models", "obsCols"])
 
     # A value the spec itself calls valid: the declared default, else something in range/options.
     function valid_value(p)
@@ -2407,6 +2442,19 @@ end
                 if t == "valueNameSelection"
                     fld = spec_get(p, "field", nothing)
                     fld === nothing || @test String(fld) ∈ known_value_name_fields
+                end
+
+                # A `valueNameInput` declares the NAMESPACE it writes into, and it is REQUIRED —
+                # unlike `field` above, there is no sensible default, and the whole point of the type
+                # is that it is what makes "the name this task writes under" one concept across six
+                # different key names (`outputValueName`, `valueNameSuffix`, `graphSuffix`, …). A
+                # missing or misspelled one degrades exactly as quietly as an unknown `field` did:
+                # no suggestions, no chain propagation, no param recall — and the form still looks
+                # fine. Kept in step with `VALUE_NAME_NAMESPACES` (frontend/src/utils/taskOutput.ts).
+                if t == "valueNameInput"
+                    ns = spec_get(p, "namespace", nothing)
+                    @test ns !== nothing
+                    ns === nothing || @test String(ns) ∈ known_value_name_namespaces
                 end
 
                 # perturb exactly one value, in place, inside its group entry if nested

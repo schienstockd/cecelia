@@ -317,6 +317,21 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
         p = strip(String(value))
         (!isempty(p) && ispath(p) && !isdir(p)) &&
             throw(ParamValidationError("'$key' is a file, not a folder: $p"))
+    elseif type_str == "valueNameInput"
+        # The name this task WRITES under. Unlike `text` it is not free-form: it becomes a filename
+        # stem (`spatialGraph/{suffix}.h5ad`), a versioned-dict key (`labels[name]`) or a column
+        # suffix (`clusters.{suffix}`) — so a path separator in it silently writes somewhere else,
+        # and an empty one produces `labels[""]`. Dots ARE allowed: real names use them
+        # (`flow.cyto`, `clusters.immune`). See docs/todo/VALUE_NAME_INPUT_PLAN.md.
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a name string, got: $value"))
+        v = strip(String(value))
+        isempty(v) &&
+            throw(ParamValidationError("'$key' cannot be empty — it names this task's output"))
+        (occursin('/', v) || occursin('\\', v)) &&
+            throw(ParamValidationError("'$key' cannot contain a path separator: \"$v\""))
+        (v == "." || v == "..") &&
+            throw(ParamValidationError("'$key' is not a usable name: \"$v\""))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
