@@ -131,6 +131,10 @@ torchvision = ">=0.21"
 # longer stalls the accept loop / a napari open, and the scheduler's per-image task functions
 # (Threads.@spawn) actually parallelise. Julia HDF5 is serialised via `_with_h5`; shared API state is
 # lock-guarded. Override with JULIA_NUM_THREADS if you want a fixed count.
+# Do NOT pin the supervisor's thread count. `-t 1` looks harmless (it only spawns and waits) and was
+# measured to BREAK Ctrl-C outright: at one thread, Julia 1.12 does not deliver SIGINT to a process
+# blocked in `wait` at all — it is simply ignored, so `supervise()`'s teardown never runs. Leave the
+# default. See docs/DEV.md → *Stopping the app*.
 dev  = { cmd = "julia --project dev.jl", cwd = "api", env = { CECELIA_DEV = "1", CECELIA_SUPERVISED = "1" } }  # dev.jl supervises BOTH the Revise hot-reload backend AND the frontend (Vite) — relaunches them on Settings→System Restart/worktree-switch. So `pixi run dev` now starts the frontend too; don't also run `pixi run frontend` alongside it. CECELIA_DEV marks a dev server (prod/app.py never sets it → auto-detected); CECELIA_SUPERVISED enables the backend Restart button
 prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }                                    # plain include (production)
 # The detached task runner (:7657) — the process that owns the resource pools and executes tasks, so a
@@ -233,40 +237,29 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.insta
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
 # after editing napari_bridge.py (the backend otherwise adopts the running bridge on restart).
-# -sTCP:LISTEN restricts to the LISTENING server; without it lsof also returns clients CONNECTED to the
-# port — the browser on :5173 (page + Vite HMR socket) — so `kill` would crash Firefox/Chrome. Mirrors
-# the win-64 branch's `-State Listen`.
-# These (lsof) tasks are the macOS default; Linux OVERRIDES them with `ss` below — lsof walks every
-# process's /proc/<pid>/fd table and hangs indefinitely on any process stuck in D (uninterruptible)
-# sleep (e.g. a filesystem-wide search wedged on a slow mount), which stalled `pixi run stop`.
-stop           = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:5173 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7656 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7657 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/preview(7656)/runner(7657)/notebooks(7660)'"
-stop-backend   = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)'"
-stop-napari    = "kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
-stop-preview   = "kill $(lsof -ti tcp:7656 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped preview worker(7656)'"
-stop-runner    = "kill $(lsof -ti tcp:7657 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped task runner(7657)'"
-stop-notebooks = "kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped notebooks(7660)'"
-
-# Windows: kill by listening port via PowerShell (lsof is unix-only). Untested on Windows hardware.
-[target.win-64.tasks]
-stop           = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655,7656,7657,7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-backend   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-napari    = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-preview   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7656 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-runner    = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7657 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-notebooks = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-
-# Linux: kill by listening port via `ss` (iproute2) instead of lsof. `ss` reads /proc/net/tcp*
-# directly and does NOT walk each process's /proc/<pid>/fd table, so a process wedged in D state
-# can't hang it (lsof does — see the default tasks above). `-l` = listening sockets only (mirrors
-# lsof's -sTCP:LISTEN / the Windows -State Listen), so a browser client connected to :5173 is never
-# killed. Literal (single-quoted) TOML strings so the `\K` in the grep pattern isn't escape-mangled.
-[target.linux-64.tasks]
-stop           = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :5173" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7656" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7657" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)/frontend(5173)/napari(7655)/preview(7656)/runner(7657)/notebooks(7660)"'
-stop-backend   = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)"'
-stop-napari    = 'kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped napari bridge(7655)"'
-stop-preview   = 'kill $(ss -tlnpH "sport = :7656" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped preview worker(7656)"'
-stop-runner    = 'kill $(ss -tlnpH "sport = :7657" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped task runner(7657)"'
-stop-notebooks = 'kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped notebooks(7660)"'
+#
+# All six delegate to `api/portkill.jl`, which is ONE cross-platform implementation instead of the
+# three per-OS shell variants (lsof / PowerShell / ss) these used to carry — 18 one-liners that had to
+# be kept in step by hand. Two things that shell could not do, and both were real bugs:
+#
+#   • It sent ONE SIGTERM and then echoed "stopped …" unconditionally. A Julia server whose worker
+#     threads are mid-compile does not die on SIGTERM — it prints every thread's backtrace and keeps
+#     running — so `pixi run stop` reported success while :8080 was still held and the next
+#     `pixi run dev` could not bind. portkill.jl escalates to SIGKILL and CONFIRMS the port is free,
+#     and says "STILL RUNNING" (exit 1) when it isn't, rather than lying.
+#   • The lsof variant hung indefinitely on any process stuck in D (uninterruptible) sleep, because
+#     lsof walks every process's /proc/<pid>/fd table. portkill.jl uses `ss` on Linux for that reason
+#     and puts a watchdog around every probe.
+#
+# It restricts to LISTENING sockets throughout: a browser tab and its Vite HMR socket are CONNECTED to
+# :5173, and killing those reaps Firefox/Chrome. Base-only Julia (no `--project`), so it still works
+# when the env or a manifest is half-installed — which is exactly when you reach for `stop`.
+stop           = { cmd = "julia --startup-file=no portkill.jl backend 8080 frontend 5173 napari 7655 preview 7656 runner 7657 notebooks 7660", cwd = "api" }
+stop-backend   = { cmd = "julia --startup-file=no portkill.jl backend 8080",       cwd = "api" }
+stop-napari    = { cmd = "julia --startup-file=no portkill.jl napari 7655",        cwd = "api" }
+stop-preview   = { cmd = "julia --startup-file=no portkill.jl preview 7656",       cwd = "api" }
+stop-runner    = { cmd = "julia --startup-file=no portkill.jl runner 7657",        cwd = "api" }
+stop-notebooks = { cmd = "julia --startup-file=no portkill.jl notebooks 7660",     cwd = "api" }
 
 # --- GPU acceleration (PARKED) ----------------------------------------------------------------
 # RAPIDS-based GPU clustering is CUDA-only (Linux/Windows + NVIDIA). When un-parked, add it as a

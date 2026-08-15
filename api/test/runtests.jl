@@ -400,6 +400,144 @@ end
     end
 end
 
+# ── Stopping the app actually stops it ────────────────────────────────────────
+# Three separate defects made "stop" not stop, all of them Julia-1.12 signal/exit behaviour rather
+# than anything visible in the app's own logic — which is why they are pinned here:
+#
+#  1. `exit()` tears down the JIT and the thread pool while worker threads are still live. With a
+#     worker mid-compile — the normal state, since every HTTP handler runs on the pool — it SEGFAULTS
+#     (measured: 3 of 5 runs). `dev.jl` reads a fault signal as a crash and RELAUNCHES, so an in-app
+#     Quit came straight back up.
+#  2. `exit_on_sigint` is TRUE for a non-interactive julia: SIGINT calls `jl_exit` from the handler,
+#     so nothing unwinds. The supervisor's whole `finally` teardown, and the server's own child
+#     cleanup, were dead code under Ctrl-C.
+#  3. A signal-driven exit needs every thread at a safepoint; one inside codegen or a blocking ccall
+#     never gets there, so the process prints every thread's backtrace and KEEPS RUNNING. A single
+#     SIGTERM — all `pixi run stop` sent — therefore could not stop the backend, while the task
+#     printed "stopped …" regardless.
+#
+# Source-level, like the shutdown testset above and for the same reason: exercising any of it would
+# kill the developer's own running napari, preview worker and task runner (the ports are fixed).
+@testset "API: stopping the app actually stops it" begin
+    app_api = read(joinpath(@__DIR__, "..", "src", "app_api.jl"), String)
+    server  = read(joinpath(@__DIR__, "..", "src", "server.jl"),  String)
+    dev     = read(joinpath(@__DIR__, "..", "dev.jl"),            String)
+
+    # (1) No exit path may call `exit()`. `_exit_now` is POSIX `_exit`: no atexit, no thread
+    # rendezvous, no JIT teardown — and it delivers the exact status, which is the ONLY channel
+    # carrying intent to the supervisor (0 = quit, 42 = restart). A `exit(0)` that faults delivers a
+    # signal instead, and the supervisor cannot then tell a Quit from a crash.
+    @test occursin("ccall(:_exit, Cvoid, (Cint,), code)", app_api)
+    for route in ("api_app_shutdown(", "api_app_restart(", "api_app_switch_worktree(")
+        body = app_api[findfirst("function $route", app_api)[1]:end]
+        body = body[1:findfirst("\nend", body)[1]]
+        @test occursin("_exit_now(", body)
+        # the bare `exit(` this replaced — the fallback inside `_exit_now` itself is the only one left
+        @test match(r"(?<![_\w])exit\(", body) === nothing
+    end
+
+    # (2) Ctrl-C must run each process's teardown — but the two need OPPOSITE mechanisms, and using
+    # the supervisor's in the server was measured to be fatal.
+    #
+    # Supervisor: `exit_on_sigint(false)`, so SIGINT throws and the `catch`/`finally` below it are
+    # reachable at all — without it they are dead code and every child is orphaned.
+    @test occursin("Base.exit_on_sigint(false)", dev)
+    @test occursin("Base.disable_sigint()", dev)          # a 2nd Ctrl-C can't abort teardown half way
+    # The backend runs in its OWN process group, so Ctrl-C reaches only the supervisor. Same group and
+    # it is a race: the backend dies first with Julia's unhandled-InterruptException status (exit 1),
+    # `wait` returns normally, and the crash classifier RELAUNCHES the app the user just stopped.
+    @test occursin("detach = true", dev)
+    # …which in turn means a hard-killed supervisor can no longer take the backend down, so the server
+    # watches for it. Without this pairing, `detach` trades one orphan for another.
+    @test occursin("_watch_supervisor!", server) && occursin(":getppid", server)
+    # Server: an `atexit` hook, NEVER `exit_on_sigint(false)`. Under `-t auto` the InterruptException
+    # goes to whichever task is at a safepoint — routinely an idle worker inside the scheduler's own
+    # `poptask`, which has no handler — so the process dies with `fatal: error thrown and no exception
+    # handler available` and skips the teardown entirely. `jl_exit` runs atexit hooks, so the hook
+    # works on Ctrl-C *and* SIGTERM. This assertion is the one that keeps the "obvious" fix out.
+    # Checked against the CODE, not the file text — the comment above `start` names the trap in order
+    # to warn about it, and must not itself trip the guard.
+    let code = join(filter(l -> !startswith(strip(l), "#"), split(server, '\n')), '\n')
+        @test !occursin("exit_on_sigint", code)
+    end
+    let body = server[findfirst("function start(", server)[1]:end]
+        body = body[1:findfirst("\nend", body)[1]]
+        @test occursin("atexit() do", body)
+        @test occursin("_stop_children_for_exit()", body)
+    end
+    # The Quit/Restart routes leave via `_exit_now` (POSIX `_exit`), which SKIPS atexit — that is what
+    # stops the teardown running twice, and stops a Restart's `stop_runner = false` being undone by a
+    # hook that does not know about it. So they must each still call the teardown THEMSELVES.
+    for route in ("api_app_shutdown(", "api_app_restart(", "api_app_switch_worktree(")
+        body = app_api[findfirst("function $route", app_api)[1]:end]
+        body = body[1:findfirst("\nend", body)[1]]
+        @test occursin("_stop_children_for_exit(", body)
+    end
+    # The supervisor's thread count must NOT be pinned. `-t 1` reads as harmless (it only spawns and
+    # waits) and breaks Ctrl-C outright: at one thread Julia 1.12 does not deliver SIGINT to a process
+    # blocked in `wait` at all, so the teardown never runs. Measured; this keeps the pin from coming
+    # back as a "tidy-up".
+    let pixi = read(joinpath(@__DIR__, "..", "..", "pixi.toml"), String)
+        for task in ("dev", "dev-runner")
+            line = only(filter(l -> startswith(l, task * " ") || startswith(l, task * "  "),
+                               split(pixi, '\n')))
+            @test occursin("dev.jl", line) && !occursin("-t ", line)
+        end
+    end
+
+    # (3) SIGTERM is not enough — the stop path must escalate to SIGKILL and CONFIRM.
+    # `_stop_backend!` is real code, loaded and called below rather than grepped for: "does it return
+    # only once the process is actually dead" is not something a text assertion can see.
+    # NOTE the `port` on every call: `_stop_backend!` ASKS before it signals, and its default port is
+    # :8080. Left at the default these tests would POST /api/app/shutdown to the developer's own
+    # running server and quit it. `port = 1` can never be listening, so the ask always fails through.
+    @test occursin("Base.SIGKILL", dev)
+    let p = run(pipeline(`bash -c 'trap "" TERM INT; sleep 60'`; stdout = devnull, stderr = devnull);
+                wait = false)
+        sleep(0.3)
+        DevSupervisor._stop_backend!(p; port = 1, quit_grace = 0.5, term_grace = 0.8)
+        @test !process_running(p)                    # deaf to SIGTERM, so only SIGKILL ended it
+    end
+    # …and a backend that goes away on its own inside the grace window is never signalled at all —
+    # the orderly path (`/api/app/shutdown` → `_exit_now(0)`) must not be cut short by a SIGTERM.
+    let p = run(pipeline(`bash -c 'sleep 1'`); wait = false)
+        DevSupervisor._stop_backend!(p; port = 1, quit_grace = 6.0)
+        @test !process_running(p)
+        @test p.termsignal == 0 && p.exitcode == 0   # it exited on its own terms
+    end
+    # Asking is tried BEFORE signalling — the ordering is the whole point (SIGTERM prints every
+    # thread's backtrace; SIGKILL orphans the children outright), and a diff that reverses it looks
+    # almost identical to the correct one. Same assertion prod's `app.py` already carries.
+    let body = dev[findfirst("function _stop_backend!(", dev)[1]:end]
+        body = body[1:findfirst("\nend", body)[1]]
+        @test findfirst("_ask_backend_to_quit(", body)[1] < findfirst("kill(p)", body)[1]
+        @test findfirst("kill(p)", body)[1] < findfirst("Base.SIGKILL", body)[1]
+    end
+
+    # portkill.jl is the ONE port→kill implementation, shared by `dev.jl` and every `pixi run stop*`
+    # task (which used to carry three per-OS shell variants of it). Its parser must agree with the
+    # package's own — they cannot share code across the api/app boundary, so pin them to each other.
+    @test occursin("include(joinpath(@__DIR__, \"portkill.jl\"))", dev)
+    let raw = "LISTEN 0 128 127.0.0.1:8080 0.0.0.0:* users:((\"julia\",pid=4242,fd=24))\n" *
+              "LISTEN 0 128    [::1]:8080    [::]:* users:((\"julia\",pid=4242,fd=25))\n"
+        @test DevSupervisor.PortKill.pids_from_ss(raw) == ["4242"]     # deduped across IPv4/IPv6
+        @test string.(Cecelia._listener_pids_from_ss(raw)) == DevSupervisor.PortKill.pids_from_ss(raw)
+        @test isempty(DevSupervisor.PortKill.pids_from_ss(""))
+    end
+    # Every port a `stop*` task names must be one the app actually uses — a typo'd port silently
+    # stops nothing, and the task prints "stopped" either way.
+    let pixi = read(joinpath(@__DIR__, "..", "..", "pixi.toml"), String)
+        stop_line = only(filter(l -> startswith(l, "stop  "), split(pixi, '\n')))
+        ports = sort(parse.(Int, [m.captures[1] for m in eachmatch(r"\b(\d{4})\b", stop_line)]))
+        @test ports == sort([8080, 5173, Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT,
+                             Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
+        @test occursin("portkill.jl", stop_line)
+        # Base-only, deliberately: `stop` has to work when a manifest is broken, which is when you
+        # reach for it. `--project` here would make the emergency stop depend on the thing that broke.
+        @test !occursin("--project", stop_line)
+    end
+end
+
 # ── A missing runner is repaired, not silently worked around ──────────────────
 # The runner dying used to degrade in total silence: every later run went in-process, dying with the
 # next restart — the one thing enabling the runner prevents — and the only tell was a 20-second-polled

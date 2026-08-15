@@ -174,9 +174,17 @@ tested in `api/test`):
 
 | how the backend died | supervisor |
 |---|---|
-| `exit(42)` — Restart / worktree switch | relaunch (the loop's main job) |
-| `exit(0)` — in-app Quit; `SIGINT`/`SIGTERM`/`SIGKILL` — Ctrl-C, `pixi run stop` | stop, teardown takes the runner |
+| `_exit_now(42)` — Restart / worktree switch | relaunch (the loop's main job) |
+| `_exit_now(0)` — in-app Quit or Ctrl-C; `SIGTERM`/`SIGKILL` — `pixi run stop` | stop, teardown takes the runner |
 | a **fault** signal (SEGV/ABRT/BUS/FPE/ILL) or any other nonzero exit | **relaunch, children left running** |
+
+> **The exit code is the only channel carrying intent, so it has to survive.** Every exit path uses
+> `_exit_now` (POSIX `_exit`) rather than `exit`, because `exit` tears down the JIT and the thread pool
+> under live threads and *segfaults* when a worker is mid-compile — which lands the process in the
+> third row. An in-app Quit that faulted on the way out was classified as a crash and **relaunched**,
+> so Quit did not quit. Ctrl-C gets the teardown too, via an `atexit` hook in `start` — measured
+> before the fix, a Ctrl-C left this runner alive on :7657 with nothing able to reach it again.
+> See `docs/DEV.md` → *Stopping the app*.
 
 The distinction that matters is the middle row: relaunching on `SIGTERM`/`SIGKILL` would make
 `pixi run stop` unable to stop the app, because the supervisor would keep bringing it back. Bounded by
