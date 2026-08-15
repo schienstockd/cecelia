@@ -78,6 +78,16 @@ class PlanePngTest(unittest.TestCase):
         self.assertEqual(img[0, 0].tolist(), [68, 1, 84])
         self.assertEqual(img[7, 7].tolist(), [253, 231, 37])
 
+    def test_a_colormapped_plane_is_stored_as_a_palette_not_expanded_rgb(self):
+        # Invisible to a reader — the test above decodes the identical RGB either way — so this
+        # assertion is the only thing standing between the sheet and a silent 4x regression in
+        # encode time and 2x in bytes. See `plane_png` for the measurement.
+        import io
+
+        from PIL import Image
+        with Image.open(io.BytesIO(plane_png(np.linspace(0, 1, 64).reshape(8, 8)))) as im:
+            self.assertEqual(im.mode, 'P')
+
     def test_grey_stays_single_channel(self):
         img = self._decode(plane_png(np.linspace(0, 1, 64).reshape(8, 8), colormap='grey'))
         self.assertEqual(img.shape, (8, 8))
