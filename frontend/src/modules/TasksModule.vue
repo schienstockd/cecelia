@@ -86,15 +86,18 @@ watch(
 
 // Pull the whole run's output from `{img}/logs/{fun}.log` and put it in place of what this tab has.
 // The file is the complete record; the store's copy is only whatever frames this tab was awake for.
-const syncing = ref(false)
+// Per ROW, not per panel: the fetch outlives the selection (a big log over a slow link), so a
+// panel-wide flag spun on whichever row you switched to and disabled its button.
+const syncingId = ref<string | null>(null)
+const syncing = (t: TaskEntry) => syncingId.value === t.id
 async function syncLogFromDisk(t: TaskEntry) {
-  syncing.value = true
+  syncingId.value = t.id
   try {
     const lines = await fetchLogBackfill({
       projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
     })
     if (lines.length) tasks.setLog(t.id, lines)
-  } finally { syncing.value = false }
+  } finally { if (syncingId.value === t.id) syncingId.value = null }
 }
 
 function select(t: TaskEntry) {
@@ -261,9 +264,9 @@ const FILTERS: ChipOption[] = [
                    not. Offered for any row with a start (an adopted one syncs on open anyway) so a run
                    this tab launched and then lost the backend under can still be read in full. -->
               <button v-if="selected.startedAt" class="ra-btn cc-btn cc-btn-bare cc-btn-icon"
-                :disabled="syncing" @click="syncLogFromDisk(selected)"
+                :disabled="syncing(selected)" @click="syncLogFromDisk(selected)"
                 v-tooltip.left="'Reload log from disk'">
-                <i :class="['pi', syncing ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+                <i :class="['pi', syncing(selected) ? 'pi-spin pi-spinner' : 'pi-refresh']" />
               </button>
               <button v-if="selected.status === 'running' || selected.status === 'queued'"
                 class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(selected)"
