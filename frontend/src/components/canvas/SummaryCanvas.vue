@@ -43,9 +43,19 @@ const projectUid = computed(() => meta.current?.uid ?? '')
 const imageUid = computed(() => props.imageUids[0] ?? null)   // drives "this image" plots
 const setUid = computed(() => project.activeSetUid)
 
-// Persistence key: an explicit override (the Analysis board) wins; otherwise per-module + per-image so
-// each image keeps its own plots/selections and the canvas rebinds when the selected image changes.
-const ckey = computed(() => props.canvasKey ?? `summary:${props.module ?? 'universal'}:${imageUid.value ?? 'none'}`)
+// Persistence key: an explicit override (the Analysis board) wins; otherwise per-module + PER SET.
+//
+// It used to be per IMAGE, which coupled two unrelated things to whichever image happened to be first
+// in the selection: not just what was plotted, but WHICH SAVED CANVAS you were looking at. Ticking a
+// different set of images silently swapped your whole plot layout, and ticking five images showed the
+// layout of the first. Summary plots are set-aware by design — per-image vs pooled vs by-attribute is
+// exactly what the `compare` control decides — so the layout has no business being image-scoped on top
+// of that. `ClusterPlots` was already `clust:{popType}:{setUid}`, and `objectOf` persists a set-keyed
+// canvas to the SET's own moduleCanvases.json, so this is an existing path, not a new one.
+//
+// Canvases saved under the old per-image keys are deliberately NOT ported (agreed 2026-08-15): there is
+// no honest merge from N per-image layouts into one, so they are simply no longer read.
+const ckey = computed(() => props.canvasKey ?? `summary:${props.module ?? 'universal'}:${setUid.value ?? 'none'}`)
 
 // per-plot state (edited inside SummaryPanel; persists in the panel objects). Canvas-level view state
 // + all shared data (specs/pops/attrs, compare/scope/global sel+vis) come from useSummaryData below.
