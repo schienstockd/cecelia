@@ -1,0 +1,10 @@
+{
+  "label": "Gating + behaviour",
+  "items": [
+    "/manage-images",
+    "/gate",
+    "/track",
+    "/behaviour",
+    "/tasks"
+  ]
+}

@@ -447,6 +447,17 @@ not a native tooltip.) **Per-option `tip`s don't count either**: `ChipSelect`/`C
 may each carry one, and they're worth having, but they explain the individual choices, not what the
 control as a whole is for — so the control still needs its own `v-tooltip`.
 
+> **…but not BOTH.** A chip row with per-option tips *and* its own `v-tooltip` shows two tooltips at
+> once, the control's landing on top of the chip's. `duplicateTooltips` flags that (`why: 'per-option'`),
+> and `hasPerOptionTips` is what feeds it — so **how the `:options` binding is written decides whether
+> the rule can see anything at all.** It resolves a bare identifier, an inline literal, and (since
+> 2026-08-17) the root of a call or member expression — `optionsFor(g.heading)`, `byGroup[k]`. Before
+> that last case a function-built options list answered a flat `false`, which broke the rule in **both**
+> directions at once: coverage called the row unexplained and pushed a `v-tooltip` onto it, then the
+> duplicate check stayed silent about the pair that created. That is how `ViewProfileEditor` shipped a
+> double tooltip. If your options come from somewhere none of those forms can follow, the answer is
+> `null` — "cannot tell" — and you get no help from either half; prefer a followable binding.
+
 > **A tooltip on an ANCESTOR counts.** Most of this app puts it on the row, not the control —
 > `<label class="po-row" v-tooltip.left="'X tick angle'"><span>X angle</span><input type="range" /></label>`
 > — and the user does get help on hover. Checking the tag alone calls that a violation and
@@ -2265,6 +2276,42 @@ a chevron icon (`pi-chevron-down` / `pi-chevron-right`) reflects the current sta
 The **napari viewer controls** are NOT in the sidebar — the sidebar only carries the button that
 toggles them. They live in a `FloatingPanel` mounted in `App.vue`; see *Floating panels* above and
 *ViewerPanel component* below.
+
+### The nav catalogue lives outside the SFC
+
+`frontend/src/lib/navGroups.ts` holds `NAV_GROUPS` (the static groups, in pipeline order),
+`customNavGroup(categories)` and `allNavGroups(categories)`. **Add a page there, not in the SFC** —
+three surfaces read the same list and must agree: the sidebar renders it, the view-profile editor
+offers it (you can only curate pages that exist), and the guide picker checks a guide's pages against
+it. Route paths must match `frontend/src/main.ts` — **pinned by `lib/navGroups.test.ts`**, which reads
+the router's route table as source and fails both ways: a catalogue path the router cannot route, and a
+routed page missing from the menu without an entry in that test's stated-exception list.
+
+### View profiles — a curated sidebar
+
+A **view profile** is a named, ordered SUBSET of the nav catalogue, so someone doing narrow work
+(gating + behaviour on already-segmented data) isn't navigating 20 items. Definitions are drop-in
+files (`<config_dir>/profiles/<id>.json`, served by `GET /api/profiles`); the *selection* is per user
+(`settings.viewProfile`, `cc.viewProfile`). Built in the GUI — Settings → Interface → **View profile** is a
+`ChipSelect` of the profiles plus "All pages", and **Edit** opens `ViewProfileEditor.vue`: one
+reorderable `ChipSelect` per sidebar group, where the selection is the pages and the chip order is
+their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
+
+- Filtering is pure and tested: `utils/viewProfiles.ts` (`applyProfile`, `unknownPaths`,
+  `hiddenGuideRoutes`). The sidebar renders `shownGroups`, never `allGroups`.
+- **It is decluttering, NOT access control.** A hidden page still opens by URL, and no route guard
+  consults a profile. Never treat a profile as a permission.
+- **`/` is a neutral welcome page** (`modules/WelcomeModule.vue`, a greyed brand watermark), NOT a
+  redirect. A `redirect` on the `/` record resolves before any guard — i.e. before the profile list has
+  arrived — so a profile-derived landing page bounced on a cold boot. No page is "the start".
+- A guide whose steps visit hidden pages gets one **derived prereq** in the picker
+  (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
+  counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new
+  guide is covered without declaring anything.
+- A listed path the app no longer has is dropped from the menu and named in Settings — a profile that
+  quietly shrinks gives the user nothing to act on.
+
+Full design: `docs/todo/VIEW_PROFILES_PLAN.md`.
 
 ### Nav item reference
 

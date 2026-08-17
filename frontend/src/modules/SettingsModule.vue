@@ -9,6 +9,9 @@ import { napariState, notebooksState, previewState, stateInfo, formatUptime, typ
 import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
+import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
+import ViewProfileEditor from '../components/ViewProfileEditor.vue'
+import ChipSelect from '../components/ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
          fetchStoreLayout, setStoreLayout,
          type StorageSummary, type CompressorSettings, type StoreLayoutSettings } from '../utils/storage'
@@ -120,6 +123,21 @@ const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const appCtl      = useAppControlStore()
 const customModules = useCustomModulesStore()
+
+// ── View profiles ────────────────────────────────────────────────────────────
+// A curated sidebar: which module pages show, in which order (docs/todo/VIEW_PROFILES_PLAN.md). The
+// selection is per user; the definitions are files under <config_dir>/profiles/, authored by the
+// editor below. Refreshed when the panel opens so a hand-dropped file shows up without a restart.
+const viewProfiles = useViewProfilesStore()
+const showProfileEditor = ref(false)
+// One chip per profile, plus the implicit "All pages". ChipSelect is the canonical inline selector
+// (docs/UI.md) — a handful of named profiles is a chip row, not a dropdown. No per-option tips: the
+// labels ARE the profile names, and a tip per chip would fire on top of the control's own tooltip.
+const profileOptions = computed(() => [
+  { value: ALL_PROFILE_ID, label: 'All pages' },
+  ...viewProfiles.profiles.map(p => ({ value: p.id, label: p.label })),
+])
+onMounted(() => viewProfiles.refresh())
 
 // ── Custom modules ───────────────────────────────────────────────────────────
 // User drop-in tasks (docs/CUSTOM_MODULES.md). Reload rescans the config dir for NEWLY dropped .jl;
@@ -529,6 +547,30 @@ async function switchWt(path: string) {
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
           v-tooltip.right="'Reload plots automatically when a task finishes'" />
+      </div>
+
+      <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
+           pages stay reachable by URL — this declutters, it does not restrict. -->
+      <div class="field">
+        <label class="field-label">View profile</label>
+        <div class="field-row">
+          <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift
+               right (and eventually wrap) as it does. A fixed control belongs on the fixed side. -->
+          <button class="save-btn" @click="showProfileEditor = true"
+                  v-tooltip.right="'Create or change a profile'">
+            <i class="pi pi-pencil" /> Edit
+          </button>
+          <ChipSelect :options="profileOptions" :model-value="settings.viewProfile"
+                      aria-label="Active view profile"
+                      v-tooltip.right="'Show only the pages this profile lists'"
+                      @update:model-value="viewProfiles.select($event as string)" />
+        </div>
+        <span class="field-hint cc-muted cc-fs-xs">
+          Hides sidebar pages you don't use. Hidden pages still open by URL.
+        </span>
+        <span v-for="e in viewProfiles.errors" :key="e.file" class="field-hint cc-muted-warn cc-fs-xs">
+          {{ e.file }}: {{ e.error }}
+        </span>
       </div>
     </section>
 
@@ -941,7 +983,7 @@ async function switchWt(path: string) {
           {{ r.detail }}
           <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
         </span>
-        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn cc-btn-sm"
+        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn"
                 :disabled="observer.registering" @click="observer.registerMcp()"
                 v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
           <i class="pi pi-download" /> {{ observer.registering ? 'Setting up…' : 'Set up' }}
@@ -1069,6 +1111,7 @@ async function switchWt(path: string) {
     </div>
 
     <PackagesDialog v-if="showPackages" @close="showPackages = false" />
+    <ViewProfileEditor v-if="showProfileEditor" @close="showProfileEditor = false" />
   </div>
 </template>
 

@@ -115,6 +115,10 @@ export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
 export task_requires_axes, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
+
+# ── View profiles (curated sidebar) ───────────────────────────────────────────
+export view_profiles_dir, read_view_profiles, parse_view_profile,
+       view_profile_id, write_view_profile, delete_view_profile!
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
 # The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
@@ -263,6 +267,10 @@ include("tasks/clustRegions/cluster.jl")
 include("storage.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
+# User drop-in sidebar profiles — the other <config_dir> data surface beside modules/. Read + written
+# here; the ROUTE TABLE it filters lives in the frontend, so this validates shape only.
+# See docs/todo/VIEW_PROFILES_PLAN.md.
+include("view_profiles.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")

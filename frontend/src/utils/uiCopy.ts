@@ -235,18 +235,39 @@ const tooltipExpr = (attrs: string): string | null => TOOLTIP_ATTR.exec(attrs)?.
  */
 const OPTIONS_ATTR = /:options\s*=\s*"([^"]*)"/
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+// The leading name of a call or member expression — `optionsFor` in `optionsFor(g.heading)`, `byGroup`
+// in `byGroup[g.heading]`. What to resolve when the binding is not a bare identifier.
+const ROOT_NAME = /^([A-Za-z_$][\w$]*)\s*[([.]/
 // The next top-level binding — where a `const NAME = …` definition ends, for our purposes.
 const NEXT_BINDING = /\n(?:const|let|var|function|async function|type|interface|export)\b/
 
-export function hasPerOptionTips(script: string, attrs: string): boolean | null {
-  const opts = OPTIONS_ATTR.exec(attrs)?.[1]?.trim()
-  if (!opts) return null                                  // no `:options` binding at all
-  if (!IDENTIFIER.test(opts)) return /\btip\s*:/.test(opts)   // an inline array literal
-  const at = script.search(new RegExp(`\\b(?:const|let|var)\\s+${opts}\\b`))
+/** Does the declaration of `name` — a const/let/var, or a `function` — contain a `tip:` key? */
+function declaredTips(script: string, name: string): boolean | null {
+  const at = script.search(new RegExp(`\\b(?:const|let|var|function)\\s+${name}\\b`))
   if (at < 0) return null                                 // a prop, an import — cannot tell
   const rest = script.slice(at + 1)
   const end = rest.search(NEXT_BINDING)
   return /\btip\s*:/.test(end < 0 ? rest : rest.slice(0, end))
+}
+
+export function hasPerOptionTips(script: string, attrs: string): boolean | null {
+  const opts = OPTIONS_ATTR.exec(attrs)?.[1]?.trim()
+  if (!opts) return null                                  // no `:options` binding at all
+  if (IDENTIFIER.test(opts)) return declaredTips(script, opts)
+  // An inline literal is fully visible right here, so its answer is definite in BOTH directions —
+  // `false` means "no tips", never "cannot tell". Checked before the resolve below, which would
+  // otherwise downgrade a tip-less literal to `null` and quietly excuse it from the rule.
+  if (opts.startsWith('[') || opts.startsWith('{')) return /\btip\s*:/.test(opts)
+  if (/\btip\s*:/.test(opts)) return true                 // tips written into some other expression
+  // Not a bare identifier and no inline `tip:` — follow the ROOT of a call or member expression
+  // (`optionsFor(g.heading)`, `byGroup[g.heading]`) into the script. Without this the answer was a
+  // flat `false`, which broke the chip-row rule in BOTH directions at once: coverage reported the
+  // control as unexplained and pushed a `v-tooltip` onto it, and the per-option duplicate check then
+  // stayed quiet about the two tooltips that produced — which is exactly how `ViewProfileEditor`
+  // shipped a chip row that showed its own tooltip on top of each chip's (Dominik, 2026-08-17).
+  // A v-for alias (`g.options`) still resolves to nothing and stays `null` — "cannot tell", not "no".
+  const root = ROOT_NAME.exec(opts)?.[1]
+  return root ? declaredTips(script, root) : null
 }
 
 /**

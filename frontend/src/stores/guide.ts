@@ -22,8 +22,12 @@ import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
 import { useTaskStore, type TaskEntry } from './tasks'
+import { useCustomModulesStore } from './customModules'
+import { useViewProfilesStore } from './viewProfiles'
+import { allNavGroups, navLabelFor } from '../lib/navGroups'
+import { applyProfile, availablePaths, hiddenGuideRoutes } from '../utils/viewProfiles'
 import { GUIDES, guideById } from '../lib/guides'
-import type { GuideCtx, GuideDef, GuideStep, Reveal } from '../lib/guides/types'
+import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from '../lib/guides/types'
 import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
 
 const doneKey = (id: string) => `cc.guide.${id}.done`
@@ -284,8 +288,35 @@ export const useGuideStore = defineStore('guide', () => {
   // ── prerequisites (plan D6) ─────────────────────────────────────────────────────────────────
   // Evaluated for the picker. A miss is a WARNING plus a better suggestion, never a blocked Start —
   // the user may well know something we can't see.
-  const prereqState = (g: GuideDef) => g.prereqs.map(p => ({ ...p, met: p.ok(ctx.value) }))
-  const prereqsMet = (g: GuideDef) => g.prereqs.every(p => p.ok(ctx.value))
+  //
+  // One prereq is DERIVED rather than declared: a guide walks specific pages (`GuideStep.route`), and
+  // a view profile can hide some of them — so a guide would keep nudging towards a page the user's
+  // menu doesn't show. It is computed from the guide's own steps instead of being listed on each of
+  // the 16 guides, so a new guide is covered without remembering anything (and a guide tied to no
+  // page is never flagged). Same treatment as any other miss: an amber line, counted in "N missing",
+  // Start still works — the page is still reachable, this is decluttering not access control.
+  // See docs/todo/VIEW_PROFILES_PLAN.md.
+  const profileNavGroups = computed(() => allNavGroups(useCustomModulesStore().categories))
+  const profileVisiblePaths = computed(() =>
+    availablePaths(applyProfile(profileNavGroups.value, useViewProfilesStore().activeItems)))
+
+  const hiddenPagesOf = (g: GuideDef) => hiddenGuideRoutes(g.steps, profileVisiblePaths.value)
+
+  function profilePrereq(g: GuideDef): (Prereq & { met: boolean }) | null {
+    const hidden = hiddenPagesOf(g)
+    if (!hidden.length) return null
+    const names = hidden.map(p => navLabelFor(profileNavGroups.value, p)).join(', ')
+    return { id: 'profileVisible', label: `pages your view profile hides (${names})`,
+             ok: () => false, met: false }
+  }
+
+  const prereqState = (g: GuideDef) => {
+    const base = g.prereqs.map(p => ({ ...p, met: p.ok(ctx.value) }))
+    const hidden = profilePrereq(g)
+    return hidden ? [...base, hidden] : base
+  }
+  const prereqsMet = (g: GuideDef) =>
+    g.prereqs.every(p => p.ok(ctx.value)) && !hiddenPagesOf(g).length
 
   return {
     // state
