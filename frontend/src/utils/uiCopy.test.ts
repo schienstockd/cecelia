@@ -604,4 +604,27 @@ const WITHOUT = [{ value: 'a', label: 'A' }]
   it('stops at the next binding, so a later tip is not attributed to this one', () => {
     expect(hasPerOptionTips(script, ':options="WITHOUT"')).toBe(false)
   })
+
+  // The blind spot that let a real double tooltip ship: options built by a FUNCTION rather than bound
+  // as an identifier answered a flat `false`, so coverage demanded a tooltip on a chip row whose chips
+  // were already tipped, and the per-option duplicate check never fired (Dominik, 2026-08-17).
+  const built = `
+function tippedOptions(k: string) {
+  return items(k).map(i => ({ value: i.to, label: i.label, tip: i.tip }))
+}
+const plainOptions = (k: string) => items(k).map(i => ({ value: i.to, label: i.label }))
+`
+  it('follows a function CALL to the function that builds the options', () => {
+    expect(hasPerOptionTips(built, ':options="tippedOptions(g.heading)"')).toBe(true)
+    expect(hasPerOptionTips(built, ':options="plainOptions(g.heading)"')).toBe(false)
+  })
+
+  it('follows the root of a member/index expression', () => {
+    const byGroup = `const byGroup = { data: [{ value: 'a', tip: 'x' }] }`
+    expect(hasPerOptionTips(byGroup, ':options="byGroup[g.heading]"')).toBe(true)
+  })
+
+  it('still answers null for a v-for alias it cannot resolve', () => {
+    expect(hasPerOptionTips(built, ':options="g.options"')).toBeNull()
+  })
 })

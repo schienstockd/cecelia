@@ -517,6 +517,51 @@ function api_custom_modules_reload(::Vector{UInt8})
                         categories = _custom_module_categories()))
 end
 
+# ── View profiles (curated sidebar) ───────────────────────────────────────────
+# GET  /api/profiles         → { dir, profiles: [{id,label,items}], errors: [{file,error}] }
+# POST /api/profiles/save    → create/update one: { label, items, id? } → the stored profile
+# POST /api/profiles/delete  → { id } → { deleted: Bool }
+#
+# A profile is a named, ordered SUBSET of sidebar routes (docs/todo/VIEW_PROFILES_PLAN.md). The server
+# validates SHAPE only — it does not know the route table (that is `frontend/src/main.ts`), so an item
+# pointing at a route that no longer exists is resolved and reported in the frontend against the live
+# router. Files are the storage format; the GUI builder is the authoring path.
+function api_view_profiles(::HTTP.Request)
+    res = Cecelia.read_view_profiles()
+    200, JSON3.write((; dir = res.dir, profiles = res.profiles, errors = res.errors))
+end
+
+function api_view_profile_save(body_bytes::Vector{UInt8})
+    body  = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
+    label = string(get(body, "label", ""))
+    isempty(strip(label)) && return 400, JSON3.write((; error="label required"))
+    items = get(body, "items", nothing)
+    items isa AbstractVector || return 400, JSON3.write((; error="items must be an array of route paths"))
+    id = get(body, "id", nothing)
+    try
+        prof = Cecelia.write_view_profile(label, items;
+                                         id = id === nothing ? nothing : string(id))
+        200, JSON3.write((; profile = prof))
+    catch e
+        # A bad shape is the user's typo, not a server fault — hand back the message the reader would
+        # have reported, so the editor can show it inline.
+        e isa ArgumentError || rethrow()
+        400, JSON3.write((; error = e.msg))
+    end
+end
+
+function api_view_profile_delete(body_bytes::Vector{UInt8})
+    body = isempty(body_bytes) ? Dict{String,Any}() : JSON3.read(String(body_bytes), Dict{String,Any})
+    id   = string(get(body, "id", ""))
+    isempty(strip(id)) && return 400, JSON3.write((; error="profile id required"))
+    try
+        200, JSON3.write((; deleted = Cecelia.delete_view_profile!(id)))
+    catch e
+        e isa ArgumentError || rethrow()
+        400, JSON3.write((; error = e.msg))
+    end
+end
+
 # ── Task param memory (funParams) ─────────────────────────────────────────────
 # GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=&valueName=
 # Returns the last-used params for `fun`, resolved image → set → none (R parity). The frontend

@@ -4179,6 +4179,7 @@ end
         "/api/repl/api", "/api/setup/defaults",
         "/api/setup/validate", "/api/storage/compressor", "/api/storage/layout",
         "/api/storage/summary",
+        "/api/profiles",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
@@ -4240,6 +4241,7 @@ end
         "/api/repl/config", "/api/sets/create",
         "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
+        "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
@@ -4283,7 +4285,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 76 && length(POST_ROUTES) == 107
+    @test length(GET_ROUTES) == 77 && length(POST_ROUTES) == 109
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

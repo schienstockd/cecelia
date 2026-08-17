@@ -19,7 +19,11 @@ const pinia = createPinia()
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/',          redirect: '/manage-images' },
+    // A real page, NOT a redirect. `/` used to redirect to /manage-images, which a view profile can
+    // hide — and a record's `redirect` resolves BEFORE any guard, so the profile list had not arrived
+    // yet and a cold boot landed on the fallback and then bounced. A neutral home removes the race
+    // rather than timing around it. See docs/todo/VIEW_PROFILES_PLAN.md → Decision 9.
+    { path: '/',          component: () => import('./modules/WelcomeModule.vue'), meta: { label: 'Welcome' } },
     { path: '/manage-images', component: () => import('./modules/ManageImagesModule.vue'), meta: { label: 'Manage images' } },
     { path: '/metadata',  component: () => import('./modules/MetadataModule.vue'),      meta: { label: 'Metadata' } },
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
@@ -62,7 +66,7 @@ router.beforeEach(async (to) => {
     await appCtl.refreshStartup()
   }
   if (appCtl.setupRequired === true && to.path !== '/setup') return '/setup'
-  if (appCtl.setupRequired === false && to.path === '/setup') return '/manage-images'
+  if (appCtl.setupRequired === false && to.path === '/setup') return '/'
   return true
 })
 

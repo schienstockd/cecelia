@@ -12311,3 +12311,78 @@ end
                                 "\nccid.json/NGFF store UDUNITS names ('micrometer'); OME-XML " *
                                 "needs the symbol ('µm'), and an invalid one voids the whole block.")
 end
+
+@testset "view profiles (curated sidebar)" begin
+    # A profile is a named, ORDERED subset of sidebar routes, dropped in as a file under
+    # <config_dir>/profiles/. The reader validates SHAPE ONLY — it deliberately does not know the route
+    # table (that lives in frontend/src/main.ts), so an item naming a route that no longer exists is a
+    # frontend concern, not an error here. See docs/todo/VIEW_PROFILES_PLAN.md.
+    @test view_profiles_dir() == joinpath(config_dir(), "profiles")
+
+    # ── parse: what a valid profile is ────────────────────────────────────────
+    p = parse_view_profile("focused", Dict("label" => "Gating + behaviour",
+                                           "items" => ["/gate", "/behaviour"]))
+    @test p.id == "focused"
+    @test p.label == "Gating + behaviour"
+    @test p.items == ["/gate", "/behaviour"]
+
+    # the label falls back to the id, so a file needs only `items`
+    @test parse_view_profile("myview", Dict("items" => ["/gate"])).label == "myview"
+    # order is the profile's, and duplicates keep their FIRST position
+    @test parse_view_profile("x", Dict("items" => ["/track", "/gate", "/track"])).items ==
+          ["/track", "/gate"]
+
+    # ── parse: every rejection is a message, never a crash ────────────────────
+    @test_throws ArgumentError parse_view_profile("x", Dict("label" => "no items"))
+    # empty is an ERROR, not an empty profile: rendering a blank sidebar from a typo looks broken
+    @test_throws ArgumentError parse_view_profile("x", Dict("items" => String[]))
+    @test_throws ArgumentError parse_view_profile("x", Dict("items" => ["gate"]))   # not a route path
+    @test_throws ArgumentError parse_view_profile("x", Dict("items" => [42]))
+    @test_throws ArgumentError parse_view_profile("x", "not an object")
+
+    # ── ids come from a user-typed label, never a filename ────────────────────
+    @test view_profile_id("Gating + behaviour") == "gating_behaviour"
+    @test_throws ArgumentError view_profile_id("+++")
+    # and a hostile id cannot escape the profiles dir
+    @test !occursin("..", view_profile_id("../../etc/passwd"))
+
+    # ── round-trip through disk: write → read ─────────────────────────────────
+    dir = view_profiles_dir()
+    saved = write_view_profile("Gating + behaviour", ["/gate", "/track", "/behaviour"])
+    @test saved.id == "gating_behaviour"
+    @test isfile(joinpath(dir, "gating_behaviour.json"))
+
+    got = read_view_profiles()
+    @test got.dir == dir
+    mine = only(filter(p -> p.id == "gating_behaviour", got.profiles))
+    @test mine.label == "Gating + behaviour"
+    @test mine.items == ["/gate", "/track", "/behaviour"]
+    @test isempty(got.errors)
+
+    # renaming the LABEL must keep the id, or an active selection breaks under the user
+    renamed = write_view_profile("Gating only", ["/gate"]; id = "gating_behaviour")
+    @test renamed.id == "gating_behaviour"
+    @test renamed.label == "Gating only"
+    @test only(filter(p -> p.id == "gating_behaviour", read_view_profiles().profiles)).items == ["/gate"]
+
+    # ── a broken file is REPORTED, never fatal, and never hides the good ones ──
+    write(joinpath(dir, "broken.json"), "{ not json")
+    write(joinpath(dir, "empty.json"), "{\"items\": []}")
+    bad = read_view_profiles()
+    @test any(p -> p.id == "gating_behaviour", bad.profiles)     # the valid one still loads
+    @test Set(e.file for e in bad.errors) == Set(["broken.json", "empty.json"])
+
+    # a non-.json file in the dir is not a profile and not an error
+    write(joinpath(dir, "notes.txt"), "ignore me")
+    @test Set(e.file for e in read_view_profiles().errors) == Set(["broken.json", "empty.json"])
+
+    # ── delete ────────────────────────────────────────────────────────────────
+    @test delete_view_profile!("gating_behaviour")
+    @test !delete_view_profile!("gating_behaviour")             # already gone is not an error
+    @test !any(p -> p.id == "gating_behaviour", read_view_profiles().profiles)
+
+    # tidy up so a later testset reading the config dir sees no leftovers
+    for f in ("broken.json", "empty.json", "notes.txt")
+        rm(joinpath(dir, f); force = true)
+    end
+end

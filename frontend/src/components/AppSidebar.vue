@@ -4,6 +4,9 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
+import { useViewProfilesStore } from '../stores/viewProfiles'
+import { allNavGroups, type NavItem } from '../lib/navGroups'
+import { applyProfile } from '../utils/viewProfiles'
 import { runningTaskCount } from '../utils/runningTasks'
 import { quitConfirmTooltip } from '../utils/quitWarning'
 import ProjectPanel from './ProjectPanel.vue'
@@ -27,11 +30,12 @@ async function armQuit(arm: () => void) {
   quitTasks.value = await runningTaskCount()   // then fill in what it will cost
 }
 const customModules = useCustomModulesStore()
+const viewProfiles = useViewProfilesStore()
 const showPanel = ref(false)
 
 // quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
 // the Settings → System panel uses. Quit is destructive → two-click ConfirmButton (no native dialog).
-onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded() })
+onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfiles.ensureLoaded() })
 
 // Re-scan custom modules when a project opens — the custom-module nav group needs a project anyway, and
 // this way a module dropped after startup appears without a detour through Settings (the old symptom:
@@ -46,94 +50,17 @@ function toggleGroup(key: string) {
 }
 function isOpen(key: string) { return !collapsed.value.has(key) }
 
-interface NavItem {
-  to: string
-  label: string
-  icon: string
-  tip: string
-  disabled?: boolean
-  soon?: boolean
-  requiresProject?: boolean
-}
+// static pipeline groups + the dynamic custom-module group (when any new-category modules exist).
+// The catalogue itself lives in lib/navGroups.ts — the view-profile editor and the guide picker read
+// the SAME list, so nothing can offer a page this sidebar doesn't have.
+const allGroups = computed(() => allNavGroups(customModules.categories))
 
-// Grouped by pipeline stage, not by "everything is analysis":
-//   Data        — get images in and ready (import → segment)
-//   Populations — the modules that DEFINE populations (gate / track / cluster cells / cluster tracks)
-//   Explore     — modules that USE those populations to explore their properties (phenotype/behaviour/spatial)
-//   Analysis    — the only free-form analysis surfaces (board + notebooks)
-//   Pipeline    — orchestration (tasks + whiteboard); Settings lives in the footer, not here.
-const groups: { heading: string; items: NavItem[] }[] = [
-  {
-    heading: 'Data',
-    items: [
-      { to: '/manage-images', label: 'Manage images', icon: 'pi-upload', tip: 'Add, organise and export images.', requiresProject: true },
-      { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
-      { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
-      { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },
-      { to: '/segment',  label: 'Segment',  icon: 'pi-th-large', tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
-    ],
-  },
-  {
-    heading: 'Populations',
-    items: [
-      { to: '/gate',    label: 'Gate',    icon: 'pi-chart-scatter', tip: 'FlowJo-style manual gating on segmented populations.', requiresProject: true },
-      { to: '/track',   label: 'Track',   icon: 'pi-share-alt',     tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
-      { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
-      { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap', tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
-      // Region clustering DEFINES populations (the `region` pop type) on the same ClusterPlots +
-      // PopulationManager as its two siblings above, so it belongs here rather than under Explore.
-      { to: '/regions',      label: 'Cluster regions', icon: 'pi-objects-column', tip: 'Cluster cells into spatial regions by neighbourhood composition, then define region populations.', requiresProject: true },
-    ],
-  },
-  {
-    heading: 'Explore',
-    items: [
-      { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise populations — counts / proportion of each population across images.', requiresProject: true },
-      { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar',  tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
-      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Neighbour graph, cell interactions, contacts and aggregates.', requiresProject: true },
-    ],
-  },
-  {
-    heading: 'Analysis',
-    items: [
-      { to: '/analysis',  label: 'Analysis board', icon: 'pi-clone', tip: 'Free-form canvas combining plots across modules, images and segmentations.', requiresProject: true },
-      { to: '/notebooks', label: 'Notebooks',      icon: 'pi-book',  tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
-      { to: '/animation', label: 'Animation',      icon: 'pi-video', tip: 'Capture napari view snapshots and record them as movies (channels, populations, colour-by).', requiresProject: true },
-      { to: '/batch-movies', label: 'Batch movies', icon: 'pi-images', tip: 'Author one config (channels, overlays, colour-by) and generate a timelapse mp4 for every selected image.', requiresProject: true },
-      { to: '/movies',    label: 'Movies',         icon: 'pi-play-circle', tip: 'Play the movies rendered for this project — native player with adjustable speed and zoom.', requiresProject: true },
-    ],
-  },
-  {
-    heading: 'Pipeline',
-    items: [
-      { to: '/tasks',    label: 'Tasks',      icon: 'pi-list-check', tip: 'View and manage all running and completed analysis tasks.' },
-      { to: '/chain',    label: 'Whiteboard', icon: 'pi-cog',        tip: 'Visual chain editor — drag tasks, connect nodes, build pipelines.', requiresProject: true },
-    ],
-  },
-]
-
-// User custom-module categories that have NO built-in page get their own generic page + nav entry
-// (docs/CUSTOM_MODULES.md). Tasks in an existing category surface on that category's real page, so
-// only `builtin === false` categories appear here. Group is hidden entirely when there are none.
-function prettifyCategory(name: string): string {
-  const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim()
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-const customGroup = computed<{ heading: string; items: NavItem[] } | null>(() => {
-  const items = customModules.categories
-    .filter(c => !c.builtin)
-    .map<NavItem>(c => ({
-      to: `/custom/${c.name}`,
-      label: prettifyCategory(c.name),
-      icon: 'pi-wrench',
-      tip: `Custom module: ${c.funNames.join(', ')}`,
-      requiresProject: true,
-    }))
-  return items.length ? { heading: 'Custom', items } : null
-})
-
-// static pipeline groups + the dynamic custom-module group (when any new-category modules exist)
-const allGroups = computed(() => customGroup.value ? [...groups, customGroup.value] : groups)
+// …then curated by the active VIEW PROFILE: an ordered subset of the above, so a user doing narrow
+// work isn't navigating 20 items they never touch. No profile ⇒ the implicit "All" ⇒ untouched.
+// Live-reactive on purpose (`allGroups` is already a computed, and hiding an entry unmounts nothing).
+// A hidden page stays reachable by URL — this is decluttering, NOT access control. Filtering logic +
+// tests: utils/viewProfiles.ts. See docs/todo/VIEW_PROFILES_PLAN.md.
+const shownGroups = computed(() => applyProfile(allGroups.value, viewProfiles.activeItems))
 
 function navTip(item: NavItem): string {
   if (item.disabled && item.soon) return `${item.tip} (coming soon)`
@@ -179,7 +106,7 @@ function isNavDisabled(item: NavItem): boolean {
          ONLY this region scrolls (flex:1 + overflow). The project block above and the viewer/lab-log
          CTAs + footer below stay pinned, so a long menu never pushes them out of reach. -->
     <div class="nav-scroll">
-      <template v-for="group in allGroups" :key="group.heading">
+      <template v-for="group in shownGroups" :key="group.heading">
         <button class="group-heading" @click="toggleGroup(group.heading)">
           <span>{{ group.heading }}</span>
           <i :class="['pi', isOpen(group.heading) ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
