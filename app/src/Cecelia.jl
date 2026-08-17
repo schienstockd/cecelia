@@ -115,6 +115,11 @@ export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
 export task_requires_axes, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
+export custom_task_clashes
+export plugins_dir, plugin_roots, plugin_name_of, read_plugin_manifest, plugin_version_warning
+export user_task_specs, user_plot_specs, plugins_report, tier_name
+export PLUGINS_SUBDIR, PLUGIN_MANIFEST, PLUGIN_INSTALL_RECORD, LEGACY_LAYOUT_DIRS, PLOT_DEFS_SUBDIR
+export TIER_PLUGIN, TIER_USER, TIER_BUILTIN
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
 # The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
@@ -263,6 +268,7 @@ include("tasks/clustRegions/cluster.jl")
 include("storage.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
+include("tasks/plugins.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")

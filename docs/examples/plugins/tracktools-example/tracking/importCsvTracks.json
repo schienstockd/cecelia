@@ -1,0 +1,131 @@
+{
+  "task": "importCsvTracks",
+  "fun_name": "tracking.importCsvTracks",
+  "label": "Import external tracks",
+  "category": "tracking",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "scope": "image",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which segmentation the tracks attach to"
+    },
+    {
+      "key": "csvPath",
+      "label": "Track file",
+      "type": "text",
+      "default": "",
+      "required": true,
+      "tip": "Absolute path to the exported track table"
+    },
+    {
+      "key": "template",
+      "label": "Exported from",
+      "type": "select",
+      "default": "imagej_manual",
+      "options": [
+        { "value": "imagej_manual", "label": "ImageJ Manual Tracking" },
+        { "value": "trackmate",     "label": "TrackMate" },
+        { "value": "imaris",        "label": "Imaris" },
+        { "value": "custom",        "label": "Custom (map columns below)" }
+      ],
+      "tip": "Preset column mapping; fields below override it"
+    },
+    {
+      "key": "maxDistance",
+      "label": "Match distance (px)",
+      "type": "float",
+      "min": 0.5,
+      "max": 200,
+      "step": 0.5,
+      "default": 10,
+      "tip": "Cells further than this from any spot stay untracked"
+    },
+    {
+      "key": "columnMapping",
+      "label": "Column mapping",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "trackColumn",
+          "label": "Track id",
+          "type": "text",
+          "default": "",
+          "tip": "Leave empty to use the preset"
+        },
+        {
+          "key": "frameColumn",
+          "label": "Frame",
+          "type": "text",
+          "default": "",
+          "tip": "Leave empty to use the preset"
+        },
+        {
+          "key": "xColumn",
+          "label": "X",
+          "type": "text",
+          "default": "",
+          "tip": "Leave empty to use the preset"
+        },
+        {
+          "key": "yColumn",
+          "label": "Y",
+          "type": "text",
+          "default": "",
+          "tip": "Leave empty to use the preset"
+        },
+        {
+          "key": "zColumn",
+          "label": "Z",
+          "type": "text",
+          "default": "",
+          "tip": "Leave empty for a 2D export"
+        },
+        {
+          "key": "frameBase",
+          "label": "First frame is",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "step": 1,
+          "default": 1,
+          "tip": "0 or 1, whichever the file counts from"
+        },
+        {
+          "key": "skipRows",
+          "label": "Skip rows",
+          "type": "int",
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "default": 0,
+          "tip": "Lines above the header row (Imaris writes 3)"
+        },
+        {
+          "key": "spotUnit",
+          "label": "Coordinates in",
+          "type": "select",
+          "default": "physical",
+          "options": [
+            { "value": "physical", "label": "Calibrated (µm)" },
+            { "value": "pixel",    "label": "Pixels" }
+          ],
+          "tip": "How the file stores X/Y/Z"
+        },
+        {
+          "key": "outColumn",
+          "label": "Write to",
+          "type": "text",
+          "default": "trackTools.track_id",
+          "tip": "Obs column; unmatched cells get -1"
+        }
+      ]
+    }
+  ]
+}

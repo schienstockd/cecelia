@@ -1,0 +1,12 @@
+{
+  "name": "Imaris (Position statistics)",
+  "note": "Imaris statistics export, e.g. Position.csv. The real header sits below a 3-line preamble, hence skipRows. Time is 1-based; positions are in the image's calibrated unit.",
+  "trackColumn": "TrackID",
+  "frameColumn": "Time",
+  "xColumn": "Position X",
+  "yColumn": "Position Y",
+  "zColumn": "Position Z",
+  "frameBase": 1,
+  "skipRows": 3,
+  "spotUnit": "physical"
+}

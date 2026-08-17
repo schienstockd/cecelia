@@ -2535,19 +2535,65 @@ end
 end
 
 @testset "API: custom modules status/reload" begin
-    # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
+    # Read-only status: shape is { dir, modules, plugins, clashes, categories }; dir is <config_dir>/modules.
     st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
     @test st == 200
     d = JSON3.read(body)
     @test endswith(String(d.dir), joinpath("modules"))
     @test haskey(d, :modules)
     @test haskey(d, :categories)   # drives the generic new-category page + "Custom" nav group
+    @test haskey(d, :plugins)      # installed plugin sets — docs/todo/PLUGINS_PLAN.md
+    @test haskey(d, :clashes)      # fun_names a module registered but did NOT get
 
-    # Reload rescans; with no modules dir present it returns empty lists, never errors.
+    # Reload rescans; with no modules dir present it returns empty lists, never errors. It returns the
+    # SAME payload as status plus the run's outcome, so the two can't drift.
     st2, body2 = api_custom_modules_reload(Vector{UInt8}("{}"))
     @test st2 == 200
     d2 = JSON3.read(body2)
     @test haskey(d2, :loaded) && haskey(d2, :failed) && haskey(d2, :categories)
+    @test haskey(d2, :plugins) && haskey(d2, :clashes)
+end
+
+@testset "API: a plugin's task gets a form and a nav entry" begin
+    # THE P1 blocker, end to end (docs/todo/PLUGINS_PLAN.md). The Julia loader walks the modules tree
+    # recursively, but both API scans did a one-level readdir — so a plugin's task registered and ran
+    # while its `.json` sat one level too deep to be seen: no form, no nav entry. Both scans now go
+    # through Cecelia.user_task_specs, which knows the plugins/<plugin>/<category>/ shape explicitly.
+    mods = joinpath(Cecelia.config_dir(), "modules")
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "trackimport-smithlab")
+    mkpath(joinpath(pdir, "tracking"))
+    write(joinpath(pdir, "plugin.json"),
+          JSON3.write(Dict("name" => "trackimport-smithlab", "version" => "0.2.0")))
+    write(joinpath(pdir, "tracking", "importSmith.json"),
+          JSON3.write(Dict("fun_name" => "tracking.importSmith", "label" => "Import Smith tracks",
+                           "resource_pool" => "cpu", "scope" => "image", "params" => [])))
+    try
+        # 1) the FORM: the spec is merged into the tracking category, not a category named after the plugin
+        st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=tracking"))
+        @test st == 200
+        defs = JSON3.read(body)
+        @test haskey(defs, :tracking)
+        @test any(s -> String(get(s, :fun_name, "")) == "tracking.importSmith", defs.tracking)
+
+        # 2) the NAV entry: the category is `tracking` (the dir BELOW the plugin root), never the
+        #    plugin name — PLUGINS_PLAN Decision 2.
+        cats = _custom_module_categories()
+        byname = Dict(String(c.name) => c for c in cats)
+        @test haskey(byname, "tracking")
+        @test "tracking.importSmith" ∈ byname["tracking"].funNames
+        @test byname["tracking"].builtin == true          # tracking is a built-in page; no generic page
+        @test !haskey(byname, "trackimport-smithlab")     # the plugin name is not a category
+        @test !haskey(byname, "plugins")                  # nor is the plugin root
+
+        # 3) it shows up as an installed plugin, with what it actually ships on disk
+        st3, body3 = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
+        plugs = JSON3.read(body3).plugins
+        smith = only(filter(p -> String(p.name) == "trackimport-smithlab", collect(plugs)))
+        @test String(smith.version) == "0.2.0"
+        @test "tracking" ∈ String.(smith.categories)
+    finally
+        rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+    end
 end
 
 # Observer (in-app AI assistant) — status shape + request validation. The actual agent spawn (a real

@@ -336,34 +336,28 @@ function api_task_definitions(req::HTTP.Request)
     end
 
     # ── User drop-in modules (custom tasks) ────────────────────────────────────
-    # Same directory-driven contract as the built-ins, and the SAME co-located layout, but rooted at
-    # the per-user config dir (<config_dir>/modules/<category>/<name>.json). Category = subdir name, so
-    # a custom task in an existing category (e.g. behaviour/) appears in that module page automatically.
-    # Built-ins win on a fun_name clash. See docs/CUSTOM_MODULES.md and Cecelia.load_custom_modules!.
+    # Same directory-driven contract as the built-ins, and the SAME co-located layout, rooted at the
+    # per-user config dir — in BOTH shapes:
+    #   <config_dir>/modules/<category>/<name>.json                    hand-dropped
+    #   <config_dir>/modules/plugins/<plugin>/<category>/<name>.json   a plugin (one directory)
+    # Category = the subdir name in both, so a custom task in an existing category (e.g. behaviour/)
+    # appears on that module page automatically.
+    #
+    # Enumeration, the legacy skip list and fun_name precedence all live in ONE place —
+    # `Cecelia.user_task_specs` — shared with `_custom_module_categories` below. They each used to
+    # hand-roll the same one-level `readdir`, which is how the scans drifted from the (recursive)
+    # Julia loader and why a plugin could register a task that had no form. Built-ins still win, which
+    # is what `exclude_funs` says. See docs/CUSTOM_MODULES.md, docs/todo/PLUGINS_PLAN.md.
     builtin_funs = Set{String}()
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))
         isempty(fn) || push!(builtin_funs, fn)
     end
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
-    if isdir(user_defs_root)
-        for entry in readdir(user_defs_root; join=true)
-            isdir(entry) || continue
-            category = basename(entry)
-            category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
-            (!isempty(cat) && category != cat) && continue
-            for f in readdir(entry; join=true)
-                endswith(f, ".json") || continue
-                try
-                    parsed = JSON3.read(read(f, String), Dict{String,Any})
-                    fn     = string(get(parsed, "fun_name", ""))
-                    (isempty(fn) || fn ∈ builtin_funs) && continue   # need a fun_name; built-ins win
-                    resolved = Cecelia._resolve_spec_includes(parsed, frag_dir)
-                    push!(get!(raw, category, Any[]), resolved)
-                catch e
-                    @warn "Skipping malformed custom task spec" path=f exception=e
-                end
-            end
+    for e in Cecelia.user_task_specs(; category = cat, exclude_funs = builtin_funs)
+        try
+            push!(get!(raw, e.category, Any[]), Cecelia._resolve_spec_includes(e.spec, frag_dir))
+        catch err
+            @warn "Skipping malformed custom task spec" path=e.path exception=err
         end
     end
 
@@ -471,24 +465,12 @@ end
 # that category (a matching dir under app/src/tasks). The frontend renders a generic page + nav entry
 # only for the NEW categories (builtin == false); tasks in an existing category already show there.
 function _custom_module_categories()
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
-    isdir(user_defs_root) || return Any[]
+    specs = Cecelia.user_task_specs()   # both layouts, deduped by precedence — see api_task_definitions
+    isempty(specs) && return Any[]
     builtin = Set(basename(e) for e in readdir(_TASK_SPECS_ROOT; join=true) if isdir(e))
     cats = Any[]
-    for entry in readdir(user_defs_root; join=true)
-        isdir(entry) || continue
-        category = basename(entry)
-        category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
-        funs = String[]
-        for f in readdir(entry; join=true)
-            endswith(f, ".json") || continue
-            try
-                parsed = JSON3.read(read(f, String), Dict{String,Any})
-                fn = string(get(parsed, "fun_name", ""))
-                isempty(fn) || push!(funs, fn)
-            catch
-            end
-        end
+    for category in unique(String[e.category for e in specs])
+        funs = String[e.fun_name for e in specs if e.category == category]
         isempty(funs) && continue
         # cohortFuns = the category's funs that bank cohort-comparable metrics (Cecelia.COHORT_METRICS,
         # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
@@ -500,21 +482,28 @@ function _custom_module_categories()
     cats
 end
 
+# `plugins` = the installed plugin sets (docs/todo/PLUGINS_PLAN.md); `clashes` = fun_names a module
+# registered but did NOT get, which loading alone cannot report — the file `include`s fine, it just
+# lost the name to a higher tier. Without it the task is simply missing from the UI with nothing
+# saying why. The running version is passed in because `requiresCecelia` is checked here, not in the
+# package (and is skipped outright for a "dev" checkout — see Cecelia.plugin_version_warning).
+_custom_modules_payload() = (; dir        = Cecelia.custom_modules_dir(),
+                               modules    = Cecelia.custom_modules_report(),
+                               plugins    = Cecelia.plugins_report(; running_version = _running_version()),
+                               clashes    = Cecelia.custom_task_clashes(),
+                               categories = _custom_module_categories())
+
 function api_custom_modules_status(::HTTP.Request)
-    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
-                        modules    = Cecelia.custom_modules_report(),
-                        categories = _custom_module_categories()))
+    200, JSON3.write(_custom_modules_payload())
 end
 
 function api_custom_modules_reload(::Vector{UInt8})
     res = Cecelia.load_custom_modules!()
-    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
+    200, JSON3.write((; _custom_modules_payload()...,
                         loaded     = res.loaded,
                         skipped    = res.skipped,
                         removed    = res.removed,
-                        failed     = [(; path = p, error = m) for (p, m) in res.failed],
-                        modules    = Cecelia.custom_modules_report(),
-                        categories = _custom_module_categories()))
+                        failed     = [(; path = p, error = m) for (p, m) in res.failed]))
 end
 
 # ── Task param memory (funParams) ─────────────────────────────────────────────

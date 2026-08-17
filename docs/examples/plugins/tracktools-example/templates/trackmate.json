@@ -1,0 +1,11 @@
+{
+  "name": "TrackMate (spots in tracks)",
+  "note": "TrackMate's 'Spots in tracks statistics' export. Frames are 0-based. Extra unit/description header rows below the real header are skipped automatically.",
+  "trackColumn": "TRACK_ID",
+  "frameColumn": "FRAME",
+  "xColumn": "POSITION_X",
+  "yColumn": "POSITION_Y",
+  "zColumn": "POSITION_Z",
+  "frameBase": 0,
+  "spotUnit": "physical"
+}

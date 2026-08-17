@@ -1,0 +1,11 @@
+{
+  "name": "ImageJ Manual Tracking",
+  "note": "Fiji's Manual Tracking plugin results table. Headers carry a non-ASCII degree sign (U+00B0) and slices are 1-based. 2D only — no Z column.",
+  "trackColumn": "Track n°",
+  "frameColumn": "Slice n°",
+  "xColumn": "X",
+  "yColumn": "Y",
+  "zColumn": "",
+  "frameBase": 1,
+  "spotUnit": "physical"
+}

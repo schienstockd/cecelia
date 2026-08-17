@@ -5,20 +5,40 @@ import { ref } from 'vue'
 // /api/tasks/custom-modules payload: the load report + the categories present among the user's
 // custom specs. `categories` with builtin === false drive a generic page + a "Custom" nav group;
 // tasks in a builtin category already surface on that category's existing page.
-export interface CustomModuleEntry { path: string; status: 'ok' | 'error'; error: string | null }
+export interface CustomModuleEntry { path: string; plugin: string | null; status: 'ok' | 'error'; error: string | null }
 export interface CustomCategory { name: string; builtin: boolean; funNames: string[]; cohortFuns?: string[] }
+
+// An installed plugin: one directory under <modules>/plugins/ (docs/todo/PLUGINS_PLAN.md).
+// `categories` is what it actually ships on disk, not what its manifest claims. `warning` is the
+// advisory requiresCecelia mismatch — never a hard block, and absent on a dev checkout.
+export interface PluginEntry {
+  name: string; dir: string; version: string; description: string; homepage: string
+  categories: string[]; error: string | null; warning: string | null
+}
+// A fun_name a module registered but did NOT get, because a higher tier already owned it
+// (built-in > hand-dropped > plugin). NOT a load failure — the file loaded fine, so this is the only
+// place that explains why its task is missing from the UI.
+export interface TaskClash {
+  funName: string; path: string; plugin: string | null
+  tier: string; winner: string | null; winnerTier: string
+}
 
 export const useCustomModulesStore = defineStore('customModules', () => {
   const dir        = ref('')
   const modules    = ref<CustomModuleEntry[]>([])
   const categories = ref<CustomCategory[]>([])
+  const plugins    = ref<PluginEntry[]>([])
+  const clashes    = ref<TaskClash[]>([])
   const loading    = ref(false)
   let   loadedOnce = false
 
-  function apply(data: { dir?: string; modules?: CustomModuleEntry[]; categories?: CustomCategory[] }) {
+  function apply(data: { dir?: string; modules?: CustomModuleEntry[]; categories?: CustomCategory[]
+                         plugins?: PluginEntry[]; clashes?: TaskClash[] }) {
     if (data.dir !== undefined) dir.value = data.dir
     if (data.modules)    modules.value    = data.modules
     if (data.categories) categories.value = data.categories
+    if (data.plugins)    plugins.value    = data.plugins
+    if (data.clashes)    clashes.value    = data.clashes
   }
 
   async function refresh() {
@@ -44,5 +64,5 @@ export const useCustomModulesStore = defineStore('customModules', () => {
     finally { loading.value = false; loadedOnce = true }
   }
 
-  return { dir, modules, categories, loading, ensureLoaded, refresh, reload }
+  return { dir, modules, categories, plugins, clashes, loading, ensureLoaded, refresh, reload }
 })

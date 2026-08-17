@@ -1,15 +1,21 @@
 <!--
   Generic module page for a USER custom-module category that has no built-in page of its own
-  (see docs/CUSTOM_MODULES.md). Routed as /custom/:category. Same layout as a built-in module page —
-  pick images on the left, run the category's custom tasks in the TaskRunner on the right — but with
-  no plot canvas (a custom category has no registered plot specs). A custom task added to an EXISTING
-  category (behaviour, segment, …) shows up on that category's real page instead; only brand-new
-  categories land here.
+  (see docs/CUSTOM_MODULES.md). Routed as /custom/:category. Same layout as a built-in module page:
+  pick images on the left, run the category's custom tasks in the TaskRunner on the right, inspect the
+  results in the summary-plot canvas below. A custom task added to an EXISTING category (behaviour,
+  segment, …) shows up on that category's real page instead; only brand-new categories land here.
+
+  The canvas is fed by plot specs the module or PLUGIN ships in its own `plotDefinitions/` folder,
+  declaring `module: "<category>"` — read by `Cecelia.user_plot_specs` and served through the same
+  /api/plots/definitions route every built-in page uses. That is what lets a plugin provide a real
+  module page (task form + plots) without shipping any Vue: an installed app has no Node/Vite to
+  compile a component with. See docs/todo/PLUGINS_PLAN.md.
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import ModuleLayout from '../components/ModuleLayout.vue'
+import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 import { useCustomModulesStore } from '../stores/customModules'
@@ -37,6 +43,9 @@ const cohortFuns = computed(() =>
         :selected-uids="selectedUids"
         :selected-names="selectedNames"
       />
+    </template>
+    <template #plots="{ selectedUids }">
+      <SummaryCanvas :image-uids="selectedUids" :module="category" />
     </template>
   </ModuleLayout>
 </template>

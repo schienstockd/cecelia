@@ -756,9 +756,28 @@ end
     # config_dir() function (equality would fail if it ever called anything else).
     # Post-#332 the custom-modules python dir IS the modules ROOT (runners are co-located under
     # modules/<cat>/, launched by absolute path so their own dir is sys.path[0]; the root just makes
-    # the wider tree importable) — not the old shared modules/python. See py_runner.jl:_custom_modules_pydir.
-    @test Cecelia._custom_modules_pydir() == joinpath(config_dir(), "modules")
-    @test endswith(Cecelia._custom_modules_pydir(), "modules")
+    # the wider tree importable) — not the old shared modules/python. See py_runner.jl:_custom_modules_pydirs.
+    mods = joinpath(config_dir(), "modules")
+    mkpath(mods)
+    @test first(Cecelia._custom_modules_pydirs()) == mods
+    @test endswith(first(Cecelia._custom_modules_pydirs()), "modules")
+
+    # …and every installed plugin's `python/` dir is listed alongside it (PLUGINS_PLAN R2). Via the
+    # modules root alone a plugin's shared code spells `plugins.<plugin>.python.<mod>`, and a plugin
+    # directory name is not required to be a Python identifier — the hyphen here is exactly the case
+    # that can never be imported that way. Naming `python/` directly makes it a plain `import <mod>`,
+    # so the plugin's directory name never appears in an import at all.
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "trackimport-smithlab")
+    mkpath(joinpath(pdir, "python"))
+    try
+        @test joinpath(pdir, "python") ∈ Cecelia._custom_modules_pydirs()
+        @test pdir ∉ Cecelia._custom_modules_pydirs()   # the ROOT is not added — see the helper's note
+        # a plugin with no shared code contributes no entry
+        mkpath(joinpath(mods, Cecelia.PLUGINS_SUBDIR, "nopython"))
+        @test !any(p -> occursin("nopython", p), Cecelia._custom_modules_pydirs())
+    finally
+        rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+    end
 end
 
 # ── Every Python task inherits a BLAS thread budget ─────────────────────────
@@ -3480,6 +3499,264 @@ end
 
     # unknown fun_name still errors
     @test_throws Exception _task_from_fun_name("customTest.doesNotExist")
+end
+
+# ── Plugins: layout, enumeration, precedence (docs/todo/PLUGINS_PLAN.md P1) ───────────────────────
+#
+# A plugin is ONE directory under <config_dir>/modules/plugins/. The shipped blocker was that the two
+# halves scanned at different depths — the Julia loader `walkdir`s (any depth) while both API scans
+# did a one-level `readdir` — so a plugin's task registered and ran but had no form and no nav entry.
+# These testsets pin the fix: one enumerator, explicit depth, and a precedence rule that no longer
+# depends on the filesystem's ordering.
+
+# Build a modules tree in a throwaway config dir and return its root.
+function _mk_plugin_tree(cfg)
+    mods = joinpath(cfg, "modules")
+    spec(fun) = JSON3.write(Dict("fun_name" => fun, "label" => fun,
+                                 "resource_pool" => "cpu", "scope" => "image", "params" => []))
+    # hand-dropped: modules/<category>/<name>.json
+    mkpath(joinpath(mods, "tracking"))
+    write(joinpath(mods, "tracking", "handDropped.json"), spec("tracking.handDropped"))
+    # plugin: modules/plugins/<plugin>/<category>/<name>.json  + a manifest at the plugin ROOT
+    pdir = joinpath(mods, "plugins", "trackimport-smithlab")
+    mkpath(joinpath(pdir, "tracking"))
+    mkpath(joinpath(pdir, "python"))          # shared code — NOT a category
+    write(joinpath(pdir, "plugin.json"), JSON3.write(Dict(
+        "name" => "trackimport-smithlab", "version" => "0.2.0",
+        "description" => "Import tracks from the Smith lab CSV export",
+        "requiresCecelia" => ">=0.1.3", "categories" => ["tracking"])))
+    write(joinpath(pdir, "tracking", "importSmith.json"), spec("tracking.importSmith"))
+    write(joinpath(pdir, "python", "reader.json"), spec("should.neverAppear"))
+    mods
+end
+
+@testset "Plugin layout + spec enumeration" begin
+    cfg  = mktempdir()
+    mods = _mk_plugin_tree(cfg)
+    specs = Cecelia.user_task_specs(; dev_dir = cfg)
+    byfun = Dict(e.fun_name => e for e in specs)
+
+    # Both layouts are enumerated by the one scan — this is the whole P1 blocker.
+    @test haskey(byfun, "tracking.handDropped")
+    @test haskey(byfun, "tracking.importSmith")
+
+    # CATEGORY comes from the directory BELOW the plugin root, never from the plugin name
+    # (PLUGINS_PLAN Decision 2). `trackimport-smithlab` must not become a category.
+    @test byfun["tracking.importSmith"].category == "tracking"
+    @test byfun["tracking.importSmith"].plugin   == "trackimport-smithlab"
+    @test !any(e -> e.category == "trackimport-smithlab", specs)
+    @test !any(e -> e.category == "plugins", specs)          # the plugin ROOT is not a category
+
+    # A hand-dropped module reports no plugin, and is the higher tier.
+    @test byfun["tracking.handDropped"].plugin === nothing
+    @test byfun["tracking.handDropped"].tier > byfun["tracking.importSmith"].tier
+
+    # `python/` is a plugin's shared-code dir, not a category — a stray .json in it is NOT a task.
+    @test !haskey(byfun, "should.neverAppear")
+    # The manifest sits at the plugin root, so it can never be mistaken for a task spec.
+    @test !any(e -> basename(e.path) == Cecelia.PLUGIN_MANIFEST, specs)
+
+    # Depth stays EXPLICIT rather than recursive: a stray nested folder must not become a category
+    # (an unbounded walkdir here is what Decision 2 rules out).
+    mkpath(joinpath(mods, "tracking", "nested"))
+    write(joinpath(mods, "tracking", "nested", "deep.json"),
+          JSON3.write(Dict("fun_name" => "nested.deep", "label" => "d",
+                           "resource_pool" => "cpu", "scope" => "image", "params" => [])))
+    @test !any(e -> e.fun_name == "nested.deep", Cecelia.user_task_specs(; dev_dir = cfg))
+
+    # category filter + built-in exclusion
+    @test all(e -> e.category == "tracking", Cecelia.user_task_specs(; dev_dir = cfg, category = "tracking"))
+    @test isempty(Cecelia.user_task_specs(; dev_dir = cfg, category = "nope"))
+    excl = Cecelia.user_task_specs(; dev_dir = cfg, exclude_funs = Set(["tracking.importSmith"]))
+    @test !any(e -> e.fun_name == "tracking.importSmith", excl)
+
+    # plugin_name_of: components, not string prefixes
+    @test Cecelia.plugin_name_of(joinpath(mods, "plugins", "trackimport-smithlab", "tracking", "x.jl");
+                                 dev_dir = cfg) == "trackimport-smithlab"
+    @test Cecelia.plugin_name_of(joinpath(mods, "tracking", "handDropped.jl"); dev_dir = cfg) === nothing
+    @test Cecelia.plugin_name_of("/somewhere/else/x.jl"; dev_dir = cfg) === nothing
+end
+
+@testset "Plugin manifest + version warning" begin
+    cfg = mktempdir(); _mk_plugin_tree(cfg)
+    pdir = joinpath(cfg, "modules", "plugins", "trackimport-smithlab")
+
+    m = Cecelia.read_plugin_manifest(pdir)
+    @test m.name == "trackimport-smithlab" && m.version == "0.2.0" && m.error === nothing
+    @test m.categories == ["tracking"]
+
+    # Never throws: a missing or malformed manifest still yields a NAMEABLE plugin, because its tasks
+    # may well have loaded and Settings has to be able to show it.
+    empty_dir = joinpath(cfg, "modules", "plugins", "nomanifest"); mkpath(empty_dir)
+    @test Cecelia.read_plugin_manifest(empty_dir).name  == "nomanifest"
+    @test Cecelia.read_plugin_manifest(empty_dir).error !== nothing
+    bad = joinpath(cfg, "modules", "plugins", "broken"); mkpath(bad)
+    write(joinpath(bad, "plugin.json"), "{not json")
+    @test Cecelia.read_plugin_manifest(bad).name  == "broken"
+    @test Cecelia.read_plugin_manifest(bad).error !== nothing
+
+    # requiresCecelia is WARN-ONLY (Decision 4) — and skipped outright on a dev checkout, where the
+    # running version is the literal "dev". Without this every plugin warns on every dev machine.
+    @test Cecelia.plugin_version_warning(">=0.1.3", "dev")     === nothing
+    @test Cecelia.plugin_version_warning(">=0.1.3", "")        === nothing
+    @test Cecelia.plugin_version_warning("",        "0.1.0")   === nothing   # no requirement
+    @test Cecelia.plugin_version_warning(">=0.1.3", "0.1.3")   === nothing
+    @test Cecelia.plugin_version_warning(">=0.1.3", "v0.2.0")  === nothing
+    @test Cecelia.plugin_version_warning(">=0.1.3", "0.1.0")   !== nothing   # genuinely too old
+    @test Cecelia.plugin_version_warning("garbage",  "0.1.3")  !== nothing   # unreadable, not fatal
+
+    rep = Cecelia.plugins_report(; dev_dir = cfg, running_version = "dev")
+    smith = only(filter(p -> p.name == "trackimport-smithlab", rep))
+    @test smith.version == "0.2.0"
+    @test smith.categories == ["tracking"]     # what it SHIPS, read off disk, not what it claims
+    @test smith.warning === nothing            # dev → skipped
+    @test length(rep) == 3                     # sorted, and the two broken ones still appear
+end
+
+@testset "Plugin fun_name precedence (built-in > hand-dropped > plugin)" begin
+    # This is the rule that stops an installed plugin silently taking over a name the user's own
+    # drop-in module already uses. Before it, `register_task!` overwrote unconditionally and the
+    # winner was decided by `walkdir`'s filesystem order.
+    cfg  = mktempdir()
+    mods = joinpath(cfg, "modules")
+    spec = joinpath(mods, "spec.json"); mkpath(mods)
+    write(spec, JSON3.write(Dict("fun_name" => "x", "label" => "x",
+                                 "resource_pool" => "cpu", "scope" => "image", "params" => [])))
+    fn   = "plugPrec.shared$(rand(1000:9999))"
+    user_path   = joinpath(mods, "tracking", "mine.jl")
+    plugin_path = joinpath(mods, "plugins", "p-one", "tracking", "theirs.jl")
+
+    # Simulate the loader's include context (what load_custom_modules! sets around Base.include).
+    function _as(path, tier, plugin, task)
+        Cecelia._LOADING_SOURCE[] = (; path, tier, plugin)
+        try register_task!(fn, task; spec = spec) finally Cecelia._LOADING_SOURCE[] = nothing end
+    end
+
+    # The plugin registers FIRST, then the user's own module — the user must still win, so this
+    # cannot be implemented as plain last-one-wins ordering.
+    _as(plugin_path, Cecelia.TIER_PLUGIN, "p-one", _TestCustomTask())
+    @test _task_from_fun_name(fn) isa _TestCustomTask
+    _as(user_path, Cecelia.TIER_USER, nothing, _TestCustomTask2())
+    @test _task_from_fun_name(fn) isa _TestCustomTask2          # hand-dropped displaced the plugin
+
+    # …and the reverse order is stable too: the plugin does not take it back.
+    _as(joinpath(mods, "plugins", "p-two", "tracking", "again.jl"),
+        Cecelia.TIER_PLUGIN, "p-two", _TestCustomTask())
+    @test _task_from_fun_name(fn) isa _TestCustomTask2
+
+    # Every refusal is REPORTED, never silent — a clash is not a load failure, so it cannot show up
+    # in custom_modules_report and would otherwise leave the task missing with no explanation.
+    # custom_task_clashes() drops entries whose losing file is gone (same rule the load report uses),
+    # so the placeholders have to exist for the clash to still be reportable.
+    mkpath(dirname(user_path));   write(user_path,   "# placeholder\n")
+    mkpath(dirname(plugin_path)); write(plugin_path, "# placeholder\n")
+    clashes = filter(c -> c.funName == fn, custom_task_clashes())
+    @test !isempty(clashes)
+    @test any(c -> c.path == plugin_path && c.tier == "plugin", clashes)
+    @test all(c -> c.winnerTier in ("hand-dropped", "built-in", "plugin"), clashes)
+
+    # Built-ins outrank everything, as before — and now say so rather than failing silently.
+    bfn = "importImages.remove"
+    _as(joinpath(mods, "plugins", "p-one", "importImages", "remove.jl"),
+        Cecelia.TIER_PLUGIN, "p-one", _TestCustomTask())
+    @test _task_from_fun_name(bfn) isa RemoveImage
+end
+
+@testset "Custom module load order is deterministic (hand-dropped before plugins)" begin
+    # Precedence is only meaningful if the ORDER is fixed: within a tier the first file loaded keeps
+    # the name, and walkdir returns filesystem order, which differs between machines.
+    cfg  = mktempdir()
+    mods = _mk_plugin_tree(cfg)
+    for (d, f) in (("tracking", "handDropped.jl"),)
+        write(joinpath(mods, d, f), "# noop\n")
+    end
+    write(joinpath(mods, "plugins", "trackimport-smithlab", "tracking", "importSmith.jl"), "# noop\n")
+    mkpath(joinpath(mods, "plugins", "a-earlier", "tracking"))
+    write(joinpath(mods, "plugins", "a-earlier", "tracking", "z.jl"), "# noop\n")
+
+    srcs = Cecelia._custom_module_sources(mods, cfg)
+    isplug(p) = Cecelia.plugin_name_of(p; dev_dir = cfg) !== nothing
+    @test !isempty(srcs)
+    # every hand-dropped path precedes every plugin path
+    @test findlast(!isplug, srcs) < findfirst(isplug, srcs)
+    # and each group is path-sorted, so "first wins" is reproducible
+    @test issorted(filter(!isplug, srcs)) && issorted(filter(isplug, srcs))
+end
+
+@testset "The shipped example plugin loads end to end" begin
+    # The example under docs/examples/plugins/ is the reference a user copies, so CI has to actually
+    # LOAD it — the older docs/examples/custom-modules/ examples were never executed by any test and
+    # could have rotted silently. This installs the example into a throwaway config dir exactly as a
+    # user would (`cp -r` into modules/plugins/) and asserts the whole chain.
+    src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                   "docs", "examples", "plugins", "tracktools-example")
+    @test isdir(src)
+
+    cfg = mktempdir()
+    dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, "tracktools-example")
+    mkpath(dirname(dst)); cp(src, dst)
+
+    # 1) the MANIFEST parses, and the hyphenated directory name is not a problem anywhere
+    m = Cecelia.read_plugin_manifest(dst)
+    @test m.error === nothing && m.name == "tracktools-example"
+    @test occursin("-", basename(dst))   # the case that can never be a Python/Julia identifier
+
+    # 2) both TASKS are enumerated, each under the category dir it sits in — one on a built-in page
+    #    (tracking), one in the plugin's own new category (trackTools)
+    specs = Cecelia.user_task_specs(; dev_dir = cfg)
+    byfun = Dict(e.fun_name => e for e in specs)
+    @test byfun["tracking.importCsvTracks"].category    == "tracking"
+    @test byfun["trackTools.cumulativeChange"].category == "trackTools"
+    @test all(e -> e.plugin == "tracktools-example", values(byfun))
+    # neither the manifest, the shared python/, nor plotDefinitions/ is mistaken for a task or category
+    @test !any(e -> e.category in ("python", Cecelia.PLOT_DEFS_SUBDIR), specs)
+
+    # 3) the PAGE half — the plugin's plot spec is picked up and declares the plugin's own category,
+    #    which is what makes /custom/trackTools a real module page rather than a bare task runner.
+    plots = Cecelia.user_plot_specs(; dev_dir = cfg)
+    cc = only(filter(p -> get(p, "id", "") == "tracktools_cumulative_change", plots))
+    @test cc["module"] == "trackTools"
+    @test "trackTools.cumulativeSpeed" ∈ cc["dataSource"]["measureOptions"]
+    # built-ins win on an id clash — a plugin must not be able to replace a package plot
+    @test isempty(Cecelia.user_plot_specs(; dev_dir = cfg,
+                                            exclude_ids = Set(["tracktools_cumulative_change"])))
+
+    # 4) the tasks actually LOAD and register (this `include`s the plugin's real Julia)
+    res = load_custom_modules!(; dev_dir = cfg)
+    @test isempty(res.failed)
+    @test length(res.loaded) == 2
+    try
+        @test _task_from_fun_name("trackTools.cumulativeChange") !== nothing
+        @test _task_from_fun_name("tracking.importCsvTracks")    !== nothing
+        # the registered spec resolves, so the form renders and params validate like a built-in
+        @test task_scope(_task_from_fun_name("trackTools.cumulativeChange")) == "image"
+        @test_throws ParamValidationError validate_params(
+            _task_from_fun_name("trackTools.cumulativeChange"), Dict{String,Any}("gap" => 99))
+        @test validate_params(
+            _task_from_fun_name("trackTools.cumulativeChange"), Dict{String,Any}("gap" => 3)) === nothing
+
+        # The window arithmetic, pinned. Verified against real spleen tracks (project 4kS67f, image
+        # 3w4IY5): 482 tracked cells in 17 tracks at gap=3 produced exactly 482 - 17*3 = 431 windows,
+        # i.e. each track loses precisely `gap` leading cells and no more. That off-by-one is the whole
+        # correctness risk here, and it is invisible without either real data or this test.
+        coords = [Float64[Float64(i), 0.0] for i in 1:10]        # straight line, unit steps
+        d, s, st = Cecelia._cc_track(coords, 3)
+        @test count(isfinite, d) == length(coords) - 3           # only the leading `gap` are NaN
+        @test all(isnan, d[1:3]) && all(isfinite, d[4:end])
+        @test all(≈(3.0), filter(isfinite, d))                   # 3 unit steps in a straight line
+        @test all(≈(1.0), filter(isfinite, s))                   # speed = displacement / gap
+        @test all(≈(1.0), filter(isfinite, st))                  # perfectly directed → straightness 1
+
+        # A cell that never moves has zero path length: straightness is UNDEFINED, not 0 — reporting 0
+        # would say "searching in place" about a cell that produced no evidence either way.
+        still = [Float64[0.0, 0.0] for _ in 1:6]
+        _, _, st0 = Cecelia._cc_track(still, 2)
+        @test all(isnan, st0)
+    finally
+        # leave the global registry as we found it — later testsets enumerate available fun_names
+        Cecelia._unregister_task!("trackTools.cumulativeChange")
+        Cecelia._unregister_task!("tracking.importCsvTracks")
+    end
 end
 
 @testset "Resource pool mapping" begin

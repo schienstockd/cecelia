@@ -150,17 +150,78 @@ mute bar's **Module pages** group — so a user can mute your module's `[Cecelia
 Custom modules are loaded once on server start. To pick up **newly dropped** files without a restart,
 use **Settings → Custom modules**: it shows the modules directory, lists every module with its
 loaded/error status, and has a **Reload** button. (Under the hood: `GET /api/tasks/custom-modules`
-for status — `{ dir, modules: [{path,status,error}], categories: [...] }` — and
-`POST /api/tasks/custom-modules/reload` to rescan.)
+for status — `{ dir, modules: [{path,plugin,status,error}], plugins: [...], clashes: [...],
+categories: [...] }` — and `POST /api/tasks/custom-modules/reload` to rescan.)
 
 Newly dropped `.jl` files are `include`d on reload; **edits to an already-loaded `.jl` need a full
 server restart** (re-`include`ing a Julia `struct` isn't allowed — the same rule as any `app/` struct
 change). Edits to a `.json` spec are picked up live (the definitions endpoint rescans on every
 request). A broken module is logged and reported, never crashes the server.
 
+Modules load in a fixed order — **hand-dropped first, then plugins, each path-sorted**. That order is
+what makes name precedence below reproducible instead of depending on the filesystem.
+
+## Plugins — a module set in one directory
+
+A **plugin** ships a custom task **and the custom module page that inspects it**, as ONE directory —
+installed, updated and removed as a unit (typically a git repo). The page is the part that matters: the
+drop-in loader above already gives you the task, so packaging alone would add nothing.
+
+```
+<config_dir>/modules/plugins/<plugin>/
+  plugin.json                      # manifest: name, version, description, homepage, requiresCecelia
+  <category>/<name>.{jl,json,_run.py}   # the same co-located layout as above
+  plotDefinitions/<id>.json        # OPTIONAL plot specs — the page's canvas
+  python/                          # OPTIONAL shared Python, importable as a top-level module
+```
+
+A complete runnable example (loaded by CI, so it cannot rot):
+[`examples/plugins/`](examples/plugins/).
+
+### The module page
+
+Give a task a **new** category and it gets the generic page at `/custom/<category>` plus a **Custom**
+sidebar group. Drop a plot spec in `plotDefinitions/` declaring `"module": "<category>"` and that page
+gains a plot canvas over whatever the task wrote — run on the right, inspect below, exactly like a
+built-in page.
+
+Both halves are declarative, so **a plugin never ships a `.vue`**:
+
+| Half of the page | Declared by | Rendered by |
+|---|---|---|
+| the task form | the task spec's `params` | `ParamRenderer` |
+| the plot canvas | a `plotDefinitions/*.json` (`module: "<category>"`) | `SummaryCanvas` |
+
+That is a constraint, not a preference: an installed app serves a prebuilt `frontend/dist` and has no
+Node or Vite ([`SHIPPING.md`](SHIPPING.md)), so a shipped component could never be compiled on the
+user's machine. Plot spec ids follow the same precedence as task names — **built-ins win**, so a plugin
+cannot replace a package plot by reusing its id.
+
+**The category is the directory below the plugin root, never the plugin's name** — a task in
+`plugins/trackimport-smithlab/tracking/` lands on the **Tracking** page, exactly as if it had been
+dropped at `modules/tracking/`. A plugin directory may be named anything a repo may be named; it is
+not required to be a Julia or Python identifier.
+
+**Name precedence: built-in > hand-dropped > plugin.** Within a tier the first module loaded keeps
+the `fun_name`. A module that loses a clash still loads fine — it just doesn't get the name — so it
+reports `ok` in the module list and appears instead in the **clashes** list, which names the winner.
+That list is the only place explaining why a task is absent from the UI.
+
+`requiresCecelia` is **advisory**: a mismatch warns and never blocks (otherwise every cecelia release
+would break every plugin at once), and the check is skipped entirely on a dev checkout, where the
+running version is the literal `"dev"`.
+
+Installing today is a manual `git clone` into `modules/plugins/`. Fetching a pinned plugin from a URL,
+removing one, and the Settings surface for both are designed but **not built** — see
+[`docs/todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md).
+
+> **A plugin is not sandboxed.** Its Julia is `Base.include`d into `Cecelia` with full access to your
+> machine, exactly like a module you dropped in yourself. Installing one is trusting whoever wrote it.
+
 ## Limits / not-goals
 
-- Not a sandbox and not a marketplace — local, trusted, single-user drop-in only.
+- Not a sandbox — plugin and drop-in code both run unconfined, by design.
+- Plugins may only use what the Python env already ships; a plugin cannot declare its own pip deps.
 - A new category's generic page has an image picker + task runner but **no plot canvas** (custom
   categories have no registered plot specs); results are still plottable on the Analysis board / in
   the built-in Explore pages once written to the `.h5ad`.
@@ -169,7 +230,10 @@ request). A broken module is logged and reported, never crashes the server.
 
 ## Pointers
 
-Registry + loader: `app/src/tasks/task.jl` (`register_task!`, `_task_from_fun_name`) and
-`app/src/tasks/custom_modules.jl` (`load_custom_modules!`). Definitions scan:
-`api/src/routes.jl` `api_task_definitions`. Python launcher: `app/src/py_runner.jl` `run_py`.
+Registry + precedence: `app/src/tasks/task.jl` (`register_task!`, `_task_from_fun_name`,
+`custom_task_clashes`). Loader: `app/src/tasks/custom_modules.jl` (`load_custom_modules!`,
+`_custom_module_sources`). Plugin layout + the ONE spec enumerator both API scans use:
+`app/src/tasks/plugins.jl` (`user_task_specs`, `plugin_roots`, `read_plugin_manifest`). Definitions
+scan: `api/src/routes.jl` `api_task_definitions` + `_custom_module_categories`. Python launcher:
+`app/src/py_runner.jl` `run_py` (`_custom_modules_pydirs` puts each plugin root on `PYTHONPATH`).
 Config resolver: `app/src/config.jl` `config_dir`.
