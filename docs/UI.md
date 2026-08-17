@@ -2301,6 +2301,10 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   `hiddenGuideRoutes`). The sidebar renders `shownGroups`, never `allGroups`.
 - **It is decluttering, NOT access control.** A hidden page still opens by URL, and no route guard
   consults a profile. Never treat a profile as a permission.
+- The active profile shows as a badge under the project name in the sidebar, **only when it is not
+  "All pages"** — a badge for the default state is noise forever. It is its own row below `.proj-info`,
+  never a second line inside it: that row centres the folder icon and the ⋯ button against the name, so
+  growing it moves all three.
 - **`/` is a neutral welcome page** (`modules/WelcomeModule.vue`, a greyed brand watermark), NOT a
   redirect. A `redirect` on the `/` record resolves before any guard — i.e. before the profile list has
   arrived — so a profile-derived landing page bounced on a cold boot. No page is "the start".

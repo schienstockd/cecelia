@@ -92,6 +92,14 @@ function isNavDisabled(item: NavItem): boolean {
             <i class="pi pi-ellipsis-h" />
           </button>
         </div>
+        <!-- Only when a profile is actually curating the menu: "All pages" is the default, and a badge
+             for the default state is noise on every screen forever. Its own row BELOW `.proj-info`,
+             never a second line inside it — that row centres the folder icon and the ⋯ button against
+             the name, so growing it pushed the name up and both controls down (Dominik, 2026-08-17). -->
+        <span v-if="viewProfiles.active" class="profile-badge"
+              v-tooltip.right="'View profile — change in Settings → Interface'">
+          <i class="pi pi-eye" />{{ viewProfiles.active.label }}
+        </span>
       </template>
       <template v-else>
         <button class="open-project-btn" @click="showPanel = true"
@@ -245,6 +253,28 @@ function isNavDisabled(item: NavItem): boolean {
 }
 .proj-icon { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; }
 .proj-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* The third badge in this file (`.soon-badge`, `.lock-badge` below), same shape. Badges are
+   deliberately NOT unified app-wide — a badge, a chip and a card are all surface + border + radius, so
+   the class name is the only thing carrying intent (docs/todo/UX_PRIMITIVES_PLAN.md, principle 7).
+   Not uppercased, unlike `.soon-badge`: this shows a name the user typed. */
+.profile-badge {
+  /* Indented to start under the project NAME rather than under the folder icon — the icon's own width
+     plus `.proj-info`'s gap. Tied to `.proj-icon`'s font-size; change one, change both. */
+  margin: 0.25rem 0 0 calc(var(--cc-fs-md) + 0.4rem);
+  max-width: calc(100% - var(--cc-fs-md) - 0.4rem);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--cc-fs-2xs);
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--cc-radius-xs);
+  background: var(--cc-surface-2);
+  color: var(--cc-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
 .proj-name {
   font-size: var(--cc-fs-md);
   font-weight: 600;
