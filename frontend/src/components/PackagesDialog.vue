@@ -72,7 +72,7 @@ function copyAll() {
     </template>
 
     <div class="pk-body">
-      <p v-if="loading" class="state-line cc-muted"><i class="pi pi-spin pi-cog" /> Reading packages…</p>
+      <p v-if="loading" class="state-line cc-muted"><i class="pi pi-spin pi-spinner" /> Reading packages…</p>
       <p v-else-if="error" class="state-line err cc-muted"><i class="pi pi-times-circle" /> {{ error }}</p>
 
       <template v-else-if="data">

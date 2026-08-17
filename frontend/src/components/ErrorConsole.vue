@@ -119,7 +119,7 @@ const filterOptions = computed<ChipOption[]>(() =>
        nothing for anyone who already had the console open. -->
   <div v-if="!fill && !log.consoleOpen" class="console-bar" data-guide="console.bar" @click="log.openConsole()">
     <span class="bar-toggle" v-tooltip.top="'Open error console'">
-      <i class="pi pi-angle-up" />
+      <i class="pi pi-chevron-up" />
       Console
     </span>
 
@@ -151,7 +151,7 @@ const filterOptions = computed<ChipOption[]>(() =>
         @click="log.closeConsole()"
         v-tooltip.top="'Collapse console'"
       >
-        <i class="pi pi-angle-down" /> Console
+        <i class="pi pi-chevron-down" /> Console
       </button>
       <span v-else class="bar-toggle"><i class="pi pi-desktop" /> Console</span>
 

@@ -161,7 +161,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       <!-- body -->
       <div class="fb-body">
         <div v-if="loading" class="fb-state cc-muted cc-fs-md">
-          <i class="pi pi-spin pi-cog" /> Loading…
+          <i class="pi pi-spin pi-spinner" /> Loading…
         </div>
 
         <div v-else-if="error" class="fb-state error cc-muted cc-fs-md">

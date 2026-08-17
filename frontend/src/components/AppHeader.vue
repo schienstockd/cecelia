@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
+import { openIconLegend } from '../lib/iconLegendOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 
 const ws = useWsStore()
@@ -60,6 +61,16 @@ const statusTip: Record<string, string> = {
             aria-label="Open guides"
             @click="openGuides">
       <i class="pi pi-compass" />
+    </button>
+
+    <!-- The icon glossary. A KEY — the word for a legend of symbols — and the only glyph in the app
+         that means "what do these symbols mean". Beside the compass because both answer "how does this
+         work?", and NOT in Settings: the question is asked while looking at the symbol. -->
+    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.iconLegend"
+            v-tooltip.bottom="'What the icons mean'"
+            aria-label="Open the icon glossary"
+            @click="openIconLegend">
+      <i class="pi pi-key" />
     </button>
 
     <!-- Where to go when the app is not the answer: report a problem, or ask someone. Next to the

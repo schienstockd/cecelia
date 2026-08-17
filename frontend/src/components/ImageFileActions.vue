@@ -303,7 +303,7 @@ async function runPlan(plan: DeletePlan) {
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="showMove = false">Cancel</button>
       <button class="cc-btn cc-btn-primary" :disabled="moving" @click="doMove">
-        <i v-if="moving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-arrows-h" /> Move
+        <i v-if="moving" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-arrows-h" /> Move
       </button>
     </template>
   </BaseModal>

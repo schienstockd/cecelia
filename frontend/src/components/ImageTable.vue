@@ -745,7 +745,7 @@ const unselectableUids = computed(() =>
     <div v-if="actionsImg" class="actions-menu">
       <button v-if="pageIconFor()" class="actions-item"
         @click.stop="runAction(() => physSizeDialogUid = actionsImg!.uid)">
-        <i class="pi pi-file-edit" /> {{ pageIconFor()!.tip }}
+        <i class="pi pi-pencil" /> {{ pageIconFor()!.tip }}
       </button>
       <button class="actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
         <i class="pi pi-info-circle" /> Metadata
@@ -763,7 +763,7 @@ const unselectableUids = computed(() =>
         {{ isExcluded(actionsImg) ? 'Include in processing' : 'Exclude from processing' }}
       </button>
       <button class="actions-item" @click.stop="openRunLogFromMenu(actionsImg.uid)">
-        <i class="pi pi-cog" /> Run history
+        <i class="pi pi-history" /> Run history
       </button>
     </div>
   </TeleportPopover>
