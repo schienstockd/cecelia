@@ -462,7 +462,13 @@ Miss one and it precompiles fine everywhere else but dies in that one env — wh
 - `5173` — Vite dev (proxies `/ws` → `8080`)
 - `7655` — Napari bridge WS
 - `7656` — Task-preview worker WS (`preview/preview_worker.py`)
+- `7657` — Detached task runner (`api/runner.jl`, dev only — see `docs/RUNNER.md`)
 - `7660` — Pluto notebooks server
+
+The runner's port is **fixed and deliberately outlives the API server**, so two checkouts that share a
+`CECELIA_DEV_DIR` (a worktree with a copied `.env`) share it too and cannot both run `pixi run dev`.
+The second one's runner stands down with a one-line message rather than a stack trace; override with
+`CECELIA_RUNNER_PORT` if you genuinely need two.
 
 ### Module pattern
 Every task = **co-located files, same base name**:
