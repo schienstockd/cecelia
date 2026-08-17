@@ -8,8 +8,8 @@ Settings panel can load anything.
 **Origin:** a lab that used the old R version does narrow work — gating, tracking and behaviour on
 already-segmented data — and needs none of the clustering pages. Old R hid module pages via a
 live/static distinction; the Julia+Vue rewrite dropped it and renders one fixed menu of **20 items**
-for everyone. Their other asks: [`CORRECTION_PLAN.md`](CORRECTION_PLAN.md),
-[`PLUGINS_PLAN.md`](PLUGINS_PLAN.md).
+for everyone. Their other asks — manual segmentation/track correction, and their own format-specific
+importers as installable plugins — are being designed and built separately, each with its own plan.
 
 ## Goal
 
@@ -58,7 +58,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
    selector *and* a builder: create, rename, duplicate, delete a profile, choose its pages and their
    order, all in the app. Hand-editing a `<config_dir>/profiles/*.json` keeps working (that is how a
    profile is shared between machines, and how a plugin can ship one —
-   [`PLUGINS_PLAN.md`](PLUGINS_PLAN.md) open question 4), but nobody should have to write JSON to get
+   the plugin work, which keeps the two systems decoupled), but nobody should have to write JSON to get
    a smaller menu.
    **The builder is assembled from canonical primitives, not hand-rolled:**
    - one **`ChipSelect`** per sidebar group, `multiple` + `reorderable` (`variant="pill"`) — the
@@ -185,5 +185,5 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
 ## Related
 
 - `docs/archive/view-profiles-prompt.md` — the originating brief (superseded by this plan).
-- [`PLUGINS_PLAN.md`](PLUGINS_PLAN.md) — a plugin may ship a profile; the systems stay decoupled.
-- [`CORRECTION_PLAN.md`](CORRECTION_PLAN.md) — the pages that lab is actually here for.
+- The plugin-distribution plan — a plugin may ship a profile file; the two systems stay decoupled.
+- The manual-correction plan — the pages that lab is actually here for.
