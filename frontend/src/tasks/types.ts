@@ -24,6 +24,12 @@ export interface ParamDef {
   // option is chosen. Distinct from `tip`, which describes the PARAM: a label like "Gated" says
   // nothing on its own and the answer differs per option, so one param-level tip cannot carry it.
   options?: { label: string; value: string; help?: string }[]
+  // When true, editing THIS param re-resolves the task's options against the current form — for a
+  // param whose value other params' options are derived from (an importer's file path, whose columns
+  // become the mapping fields' suggestions). The refetch is debounced at the sink; see TaskRunner.
+  // Options obtained this way are SUGGESTIONS only: validation never depends on the form, so a field
+  // fed this way must stay valid on its own (`_inject_dynamic_options!` in app/src/tasks/task.jl).
+  triggersOptions?: boolean
   multiple?: boolean
   field?: string        // valueNameSelection: which image field to read names from ('filepaths' | 'labels' | 'spatialGraphs')
   // valueNameInput: which storage namespace this param NAMES INTO — the registry entry that makes

@@ -2554,6 +2554,65 @@ end
     @test haskey(d2, :plugins) && haskey(d2, :clashes)
 end
 
+@testset "API: a plugin task's options can depend on the form" begin
+    # The import builder (docs/todo/PLUGINS_PLAN.md → P1.5): the column fields offer the columns of
+    # the file the user just picked. Two things this pins, both previously broken:
+    #   1. dynamic options resolved through `_fun_name_map()` — BUILT-INS ONLY — so a plugin task
+    #      overloading the hooks got its options at validation time (via `_task_spec`, which
+    #      dispatches on the instance) but never in the served form. Picker and validator disagreed.
+    #   2. options could only come from disk, never from what the user had typed.
+    mods = joinpath(Cecelia.config_dir(), "modules")
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "tracktools-example")
+    src  = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                    "docs", "examples", "plugins", "tracktools-example")
+    mkpath(dirname(pdir)); cp(src, pdir; force = true)
+    csv = joinpath(mods, "spots.csv")
+    write(csv, "Nb,Track n°,Slice n°,X,Y,Z\n1,7,1,10.0,20.0,3.0\n")
+    Cecelia.load_custom_modules!()
+    try
+        _cols(body, key) = begin
+            defs = JSON3.read(body)
+            spec = only(filter(s -> String(get(s, :fun_name, "")) == "tracking.importCsvTracks",
+                               collect(defs.tracking)))
+            found = Ref{Any}(nothing)
+            walk(ps) = for p in ps
+                String(get(p, :key, "")) == key && (found[] = get(p, :options, nothing))
+                haskey(p, :params) && walk(p.params)
+            end
+            walk(spec.params)
+            found[]
+        end
+
+        # with the file in hand, the column fields offer ITS headers — including the non-ASCII `°`
+        q = "/api/tasks/definitions?category=tracking&params=" *
+            HTTP.escapeuri(JSON3.write(Dict("csvPath" => csv)))
+        st, body = api_task_definitions(HTTP.Request("GET", q))
+        @test st == 200
+        opts = _cols(body, "trackColumn")
+        @test opts !== nothing
+        vals = String[String(o.value) for o in opts]
+        @test "Track n°" ∈ vals && "Slice n°" ∈ vals && "X" ∈ vals
+        @test String.(getproperty.(_cols(body, "yColumn"), :value)) == vals   # every column field
+
+        # without form state there is nothing to offer, and the request still succeeds — a fresh page
+        # load must render the form, just with no suggestions yet
+        st2, body2 = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=tracking"))
+        @test st2 == 200
+        @test _cols(body2, "trackColumn") === nothing
+
+        # malformed form state degrades to no suggestions rather than 400-ing the page
+        st3, body3 = api_task_definitions(
+            HTTP.Request("GET", "/api/tasks/definitions?category=tracking&params=not-json"))
+        @test st3 == 200
+        @test _cols(body3, "trackColumn") === nothing
+    finally
+        Cecelia._unregister_task!("tracking.importCsvTracks")
+        Cecelia._unregister_task!("trackTools.cumulativeChange")
+        rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+        rm(csv; force = true)
+    end
+end
+
 @testset "API: a plugin's task gets a form and a nav entry" begin
     # THE P1 blocker, end to end (docs/todo/PLUGINS_PLAN.md). The Julia loader walks the modules tree
     # recursively, but both API scans did a one-level readdir — so a plugin's task registered and ran
@@ -4287,6 +4346,7 @@ end
         "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/tasks/custom-modules/reload",
+        "/api/plugins/install", "/api/plugins/remove",
         "/api/update/apply",
     ]
     UNSAFE = [
@@ -4329,7 +4389,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 76 && length(POST_ROUTES) == 107
+    @test length(GET_ROUTES) == 76 && length(POST_ROUTES) == 109
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

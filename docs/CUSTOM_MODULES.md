@@ -185,17 +185,22 @@ sidebar group. Drop a plot spec in `plotDefinitions/` declaring `"module": "<cat
 gains a plot canvas over whatever the task wrote — run on the right, inspect below, exactly like a
 built-in page.
 
-Both halves are declarative, so **a plugin never ships a `.vue`**:
+Both halves are declarative, so **a plugin ships JSON, not Vue**:
 
 | Half of the page | Declared by | Rendered by |
 |---|---|---|
 | the task form | the task spec's `params` | `ParamRenderer` |
 | the plot canvas | a `plotDefinitions/*.json` (`module: "<category>"`) | `SummaryCanvas` |
 
-That is a constraint, not a preference: an installed app serves a prebuilt `frontend/dist` and has no
-Node or Vite ([`SHIPPING.md`](SHIPPING.md)), so a shipped component could never be compiled on the
-user's machine. Plot spec ids follow the same precedence as task names — **built-ins win**, so a plugin
-cannot replace a package plot by reusing its id.
+That is a deliberate choice, not a hard limit. A stable install ships a prebuilt `frontend/dist` and
+precompiles SFCs, so a plugin's `.vue` file could not be compiled there — but pre-compiled ESM using
+render functions would load fine. It is excluded because shipping renderable code makes the frontend a
+**plugin ABI**: a component contract that cannot be refactored freely, plus a loader and version skew
+between a plugin and the app drawing it. Declarative specs cost a plugin author far less to maintain
+across releases. See [`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md).
+
+Plot spec ids follow the same precedence as task names — **built-ins win**, so a plugin cannot replace
+a package plot by reusing its id.
 
 **The category is the directory below the plugin root, never the plugin's name** — a task in
 `plugins/trackimport-smithlab/tracking/` lands on the **Tracking** page, exactly as if it had been

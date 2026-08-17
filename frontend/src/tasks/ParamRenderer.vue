@@ -505,13 +505,23 @@ const pct = computed(() => {
     <CcToggle v-else-if="param.type === 'bool'" :aria-label="param.label"
       :model-value="val as boolean" @update:model-value="val = $event" />
 
-    <!-- text -->
-    <input v-else-if="param.type === 'text'"
-      type="text" class="text-input"
-      :value="val as string"
-      @input="val = ($event.target as HTMLInputElement).value"
-      v-tooltip.right="param.tip"
-    />
+    <!-- text — with SUGGESTIONS when the spec carries options (a datalist, so the field stays free
+         text). Deliberately not a `select`/`chipSelect`: those validate the value against the spec's
+         options (task.jl), and options injected from the current form are absent at validation time
+         (`_task_spec` resolves without form state), so a picked value would fail to validate. This is
+         the same shape as `valueNameInput`'s suggestions — offer, never constrain. -->
+    <template v-else-if="param.type === 'text'">
+      <input
+        type="text" class="text-input"
+        :value="val as string"
+        :list="param.options?.length ? `dl-${param.key}` : undefined"
+        @input="val = ($event.target as HTMLInputElement).value"
+        v-tooltip.right="param.tip"
+      />
+      <datalist v-if="param.options?.length" :id="`dl-${param.key}`">
+        <option v-for="o in param.options" :key="o.value" :value="o.value" />
+      </datalist>
+    </template>
 
     <!-- valueNameInput: the name this task WRITES under. Free text, with the names already in that
          namespace offered as you type. `valueNameSelection` (a strict <select>) is the INPUT-side

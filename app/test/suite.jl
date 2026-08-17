@@ -3759,6 +3759,71 @@ end
     end
 end
 
+@testset "Plugin install / remove (P2)" begin
+    # URL → tarball + directory name. GitHub serves any ref as an archive, which is why no `git`
+    # binary is needed — an installed app has none (see PLUGINS_PLAN R1).
+    @test Cecelia.plugin_tarball_url("https://github.com/schienstockd/ccia-importTracks", "v0.1.0") ==
+          "https://github.com/schienstockd/ccia-importTracks/archive/v0.1.0.tar.gz"
+    @test Cecelia.plugin_tarball_url("https://github.com/o/r.git", "") ==
+          "https://github.com/o/r/archive/HEAD.tar.gz"
+    # a direct tarball URL is passed through untouched
+    @test Cecelia.plugin_tarball_url("https://example.org/p.tar.gz", "abc") == "https://example.org/p.tar.gz"
+    # the DIRECTORY takes the repo name, so one repo maps to one directory with no lookup table
+    @test Cecelia.plugin_name_from_url("https://github.com/schienstockd/ccia-importTracks") == "ccia-importTracks"
+    @test Cecelia.plugin_name_from_url("https://github.com/o/r.git") == "r"
+
+    cfg = mktempdir()
+    src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                   "docs", "examples", "plugins", "tracktools-example")
+    # Build a GitHub-shaped archive: everything wrapped in ONE `<repo>-<ref>/` directory, which the
+    # unpacker has to see through without assuming it is always there.
+    pack = mktempdir(); cp(src, joinpath(pack, "ccia-importTracks-main"))
+    tarball = joinpath(mktempdir(), "p.tar.gz")
+    run(pipeline(`tar -czf $tarball -C $pack ccia-importTracks-main`; stdout = devnull, stderr = devnull))
+
+    res = Cecelia.plugin_unpack!(tarball, "https://github.com/schienstockd/ccia-importTracks";
+                                 ref = "main", dev_dir = cfg)
+    @test res.ok && res.name == "ccia-importTracks"
+    @test isfile(joinpath(res.dir, Cecelia.PLUGIN_MANIFEST))     # wrapper dir seen through
+    @test isfile(joinpath(res.dir, "tracking", "importCsvTracks.jl"))
+
+    # The install record is a SIBLING of plugin.json, never inside it — plugin.json ships from the
+    # plugin's own repo, so writing the ref into it would dirty the checkout and be overwritten by the
+    # next update (Decision 5).
+    rec = Cecelia.read_install_record(res.dir)
+    @test rec["ref"] == "main" && occursin("ccia-importTracks", rec["url"])
+    @test !occursin("url", read(joinpath(res.dir, Cecelia.PLUGIN_MANIFEST), String))
+    @test Cecelia.PLUGIN_INSTALL_RECORD ∉ [e.category for e in Cecelia.user_task_specs(; dev_dir = cfg)]
+
+    # A hand-cloned plugin has no record and must NOT look broken for it
+    hand = joinpath(Cecelia.plugins_dir(cfg), "hand-rolled"); mkpath(hand)
+    write(joinpath(hand, Cecelia.PLUGIN_MANIFEST), JSON3.write(Dict("name" => "hand-rolled")))
+    @test isempty(Cecelia.read_install_record(hand))
+
+    # An archive that is not a plugin is refused BEFORE anything is moved into place — otherwise the
+    # loader would walk a half-written directory on the next reload.
+    junk = mktempdir(); write(joinpath(junk, "readme.txt"), "nope")
+    jt = joinpath(mktempdir(), "junk.tar.gz")
+    run(pipeline(`tar -czf $jt -C $junk .`; stdout = devnull, stderr = devnull))
+    bad = Cecelia.plugin_unpack!(jt, "https://github.com/o/notaplugin"; dev_dir = cfg)
+    @test !bad.ok && occursin("no plugin.json", replace(bad.error, "$(Cecelia.PLUGIN_MANIFEST)" => "plugin.json"))
+    @test !isdir(joinpath(Cecelia.plugins_dir(cfg), "notaplugin"))   # nothing left behind
+
+    # Remove unregisters the tasks and deletes the directory.
+    Cecelia.load_custom_modules!(; dev_dir = cfg)
+    try
+        rm_res = Cecelia.plugin_remove!("ccia-importTracks"; dev_dir = cfg)
+        @test rm_res.ok
+        @test "tracking.importCsvTracks" ∈ rm_res.removed
+        @test !isdir(res.dir)
+        @test_throws Exception _task_from_fun_name("tracking.importCsvTracks")
+        @test !Cecelia.plugin_remove!("ccia-importTracks"; dev_dir = cfg).ok   # gone → not ok
+    finally
+        Cecelia._unregister_task!("tracking.importCsvTracks")
+        Cecelia._unregister_task!("trackTools.cumulativeChange")
+    end
+end
+
 @testset "Resource pool mapping" begin
     # Pins the pool recategorisation (cpu/gpu/io/network). A task's pool comes from its JSON
     # resource_pool via _task_pool_name; a spec-less task falls back to "cpu".

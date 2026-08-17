@@ -24,6 +24,7 @@ import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/task
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -41,7 +42,8 @@ const props = defineProps<{
   module: string
   selectedUids: string[]
   selectedNames: string[]
-  onReloadDefs?: () => Promise<void>
+  // `form` (optional) re-resolves param options against the current form — see optionRefetch.
+  onReloadDefs?: (form?: Record<string, unknown>) => Promise<void>
 }>()
 
 const taskStore    = useTaskStore()
@@ -219,7 +221,39 @@ async function onParamCommit(key: string, value: unknown) {
 function onParamEdit(key: string, value: unknown) {
   paramValues.value[key] = value
   drafts.set(currentDraftKey.value, paramValues.value)
+  if (optionTriggerKeys.value.has(key)) optionRefetch.schedule(null)
 }
+
+// ── Options that depend on the form ───────────────────────────────────────────────────────────────
+// A param marked `triggersOptions` re-resolves the task's options server-side against the current
+// form — an importer's file path, whose columns become the mapping fields' suggestions.
+//
+// Coalesced at the SINK, not the call site (docs/UI.md → Continuous controls): a path is TYPED, so a
+// per-keystroke refetch would fire a request per character and land them out of order. `debouncedLatest`
+// is the canonical scheduler for a request; the `isCurrent` guard means a superseded response is
+// discarded rather than overwriting the options for the path the user has since finished typing.
+function collectTriggerKeys(ps: TaskDef['params']): string[] {
+  const out: string[] = []
+  for (const p of ps ?? []) {
+    if (p.triggersOptions) out.push(p.key)
+    if (p.params) out.push(...collectTriggerKeys(p.params))   // sections nest
+  }
+  return out
+}
+
+const optionTriggerKeys = computed(
+  () => new Set(taskDef.value ? collectTriggerKeys(taskDef.value.params ?? []) : []))
+
+const optionRefetch = debouncedLatest<null>(async () => {
+  const def = taskDef.value
+  if (!def || !props.onReloadDefs) return
+  // Read the form INSIDE the run, not at schedule time: the debounce means several keystrokes collapse
+  // into one run, and it must resolve against the value the user ended on, not the one that first
+  // triggered it.
+  await props.onReloadDefs(flattenParams(def, paramValues.value) as Record<string, unknown>)
+}, { wait: 400 })
+
+onUnmounted(() => optionRefetch.cancel())
 
 watch(selectedTask, (task) => {
   localStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
@@ -410,7 +444,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
     <section v-if="!defs.length" class="runner-section defs-empty">
       <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
-      <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="onReloadDefs">
+      <!-- Called with NO argument on purpose: `onReloadDefs(form?)` treats an argument as form state
+           to resolve options against, and `@click="onReloadDefs"` would hand it the PointerEvent. -->
+      <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="() => onReloadDefs?.()">
         <i class="pi pi-refresh" /> Reload
       </button>
     </section>

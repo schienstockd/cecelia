@@ -44,7 +44,7 @@ from scipy.spatial import cKDTree
 
 
 def read_spot_csv(path, track_column='Track n°', frame_column='Slice n°',
-                  pos_columns=('X', 'Y', 'Z'), frame_base=1, skip_rows=0):
+                  pos_columns=('X', 'Y', 'Z'), frame_base=1, skip_rows=0, delimiter=','):
     """Read a per-spot track export → `(track_ids, frames, positions)`.
 
     There is no single external-tracks format, so nothing here is hard-coded: the caller supplies a
@@ -74,7 +74,9 @@ def read_spot_csv(path, track_column='Track n°', frame_column='Slice n°',
     with open(path, newline='', encoding='utf-8', errors='replace') as fh:
         for _ in range(int(skip_rows)):
             fh.readline()
-        reader = csv.DictReader(fh)
+        # The delimiter is PASSED, never sniffed here: the task's Julia already sniffed it to
+        # populate the column picker, and a second guess could disagree with the first on one file.
+        reader = csv.DictReader(fh, delimiter=delimiter)
         if reader.fieldnames is None:
             raise KeyError(f'{path} is empty — no header row')
         have = list(reader.fieldnames)

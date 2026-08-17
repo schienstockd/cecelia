@@ -305,6 +305,22 @@ end
 
 const _TASK_SPECS_ROOT = joinpath(@__DIR__, "..", "..", "app", "src", "tasks")
 
+# The task form's CURRENT values, for options that depend on what the user just typed (see
+# `_inject_dynamic_options!`'s three-argument method). Sent as one JSON blob rather than flattened into
+# the query string, because param keys are the task's own and would collide with `category`/`params`.
+# Malformed input yields an empty form rather than a 400: these values only ever add SUGGESTIONS, so
+# losing them degrades the picker instead of failing the request that draws the whole page.
+function _form_params(query::AbstractDict)::Dict{String,Any}
+    raw = get(query, "params", "")
+    isempty(raw) && return Dict{String,Any}()
+    try
+        JSON3.read(String(raw), Dict{String,Any})
+    catch e
+        @warn "Ignoring malformed task-form params" exception=e
+        Dict{String,Any}()
+    end
+end
+
 function api_task_definitions(req::HTTP.Request)
     uri    = HTTP.URI(req.target)
     query  = HTTP.queryparams(uri)
@@ -365,24 +381,33 @@ function api_task_definitions(req::HTTP.Request)
     # <install>/models/cellposeModels/ + <config_dir>/models/cellposeModels/) — mutate specs in
     # place via the same dispatch hook `validate_params` uses (`_inject_dynamic_options!`), so
     # picker and validation stay in sync. See docs/SEGMENTATION.md → Custom cellpose checkpoints.
-    fun_map = Cecelia._fun_name_map()
+    # Resolution goes through `_task_from_fun_name` — the canonical resolver, which falls back to the
+    # custom/plugin registry — NOT `_fun_name_map`, which holds built-ins only. That gate was a real
+    # desync: a custom or plugin task overloading these hooks DID get its options at validation time
+    # (via `_task_spec`, which dispatches on the instance) but not in the served form, so the picker
+    # and the validator disagreed — the one thing this block exists to prevent.
+    #
+    # `form` is the values currently in the open task form, for options that depend on what the user
+    # just typed (an importer offering the columns of the file they picked) rather than on what is on
+    # disk. Empty for a plain fetch, and ignored by every option source that doesn't need it.
+    # …and the task-preview trait is stamped in the SAME pass. It is declared in Julia beside the task
+    # (`task_previewable`, task.jl) rather than written into the JSON, because the JSON is the PARAM
+    # spec — a capability of the compute doesn't belong in it, and duplicating it there would let the
+    # two disagree. Composites resolve through their own overload, so `segment.cellposeMeasure` reports
+    # true. One loop, one resolution: this used to be a second pass with its own `_fun_name_map`
+    # lookup, carrying the identical built-ins-only bug (a plugin task was never stamped at all).
+    form = _form_params(query)
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))
-        (isempty(fn) || !haskey(fun_map, fn)) && continue
-        Cecelia._needs_dynamic_options(fun_map[fn]) || continue
-        Cecelia._inject_dynamic_options!(spec, fun_map[fn])
-    end
+        isempty(fn) && continue
+        task = try Cecelia._task_from_fun_name(fn) catch; nothing end
+        task === nothing && continue
 
-    # Stamp the task-preview trait onto each spec. Declared in Julia beside the task
-    # (`task_previewable`, task.jl) and stamped here rather than written into the JSON, because the JSON
-    # is the PARAM spec — a capability of the compute doesn't belong in it, and duplicating it there
-    # would let the two disagree. The frontend reads `previewable` instead of guessing from the params.
-    # Composites resolve through their own overload, so `segment.cellposeMeasure` reports true.
-    for specs in values(raw), spec in specs
-        fn = string(get(spec, "fun_name", ""))
-        haskey(fun_map, fn) || continue
+        Cecelia._needs_dynamic_options(task) &&
+            Cecelia._inject_dynamic_options!(spec, task, form)
+
         spec["previewable"] = try
-            Cecelia.task_previewable(fun_map[fn])
+            Cecelia.task_previewable(task)
         catch e
             # a task's own overload must never take the whole picker down (same guard as
             # `_live_outputs_for`): report not-previewable and carry on
@@ -491,6 +516,7 @@ _custom_modules_payload() = (; dir        = Cecelia.custom_modules_dir(),
                                modules    = Cecelia.custom_modules_report(),
                                plugins    = Cecelia.plugins_report(; running_version = _running_version()),
                                clashes    = Cecelia.custom_task_clashes(),
+                               registry   = Cecelia.plugin_registry_status(),
                                categories = _custom_module_categories())
 
 function api_custom_modules_status(::HTTP.Request)

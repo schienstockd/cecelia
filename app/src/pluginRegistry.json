@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "note": "Plugins we vouch for — a CURATED list, not a search index. Anything not listed here installs by explicit URL; cecelia never browses GitHub. Shipped with the app rather than fetched, so an offline install behaves like an online one and the list cannot change under a running server. Revisit that when adding a plugin should no longer require a release.",
+  "plugins": [
+    {
+      "name": "ccia-importTracks",
+      "url": "https://github.com/schienstockd/ccia-importTracks",
+      "description": "Import tracks from ImageJ Manual Tracking, TrackMate or Imaris",
+      "categories": ["tracking"],
+      "ref": ""
+    }
+  ]
+}

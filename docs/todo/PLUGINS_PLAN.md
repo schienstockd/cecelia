@@ -30,12 +30,31 @@ into `<config_dir>/modules/`, a runtime `register_task!` puts it in dispatch, an
 > `plotDefinitions/*.json` beside its tasks and gets a real page — no Vue, no framework. **Built** as
 > part of P1; see the Phases section.
 >
-> **And shipping a `.vue` is ruled out by the architecture, not by taste.** An installed app serves a
-> prebuilt `frontend/dist` with **no Node or Vite** (`docs/SHIPPING.md:138`, `:217`, `:236`), so a
-> plugin-supplied component could never be compiled on the user's machine. Pre-compiled JS would need
-> a stable component API — the framework this plan rules out below. The declarative route avoids both
-> and is strictly less for a plugin author to maintain across releases. Do not reopen this without
-> first changing how the frontend ships.
+> **Shipping Vue is a DECISION, not an impossibility — an earlier draft of this plan claimed
+> otherwise and was wrong.** The accurate facts: the frontend precompiles SFCs via
+> `@vitejs/plugin-vue` with no runtime-compiler alias, and a *stable* bundle ships prebuilt
+> `frontend/dist`, so a plugin-supplied **`.vue` file** cannot be compiled by a stable install. That
+> does not generalise to "no Vue":
+> - the **dev channel builds the frontend on the machine and requires Node** (`docs/SHIPPING.md` →
+>   *The one extra requirement: Node*), so a `.vue` could be compiled there;
+> - a plugin could ship **pre-compiled ESM using `h()` render functions**, which needs no compiler and
+>   would `import()` fine against the bundle as it stands;
+> - the runtime compiler could be aliased in (~40 kB) to accept template strings.
+>
+> **The real reason to stay declarative** is that any of those makes the frontend a **plugin ABI**: a
+> component contract that cannot be refactored freely, plus a loader, plus version skew between a
+> plugin and the app that rendered it. That is the framework this plan rules out — and it is a cost
+> worth refusing, which is a different claim from "it cannot be done". If declarative proves too thin,
+> pre-compiled ESM is the escape hatch to evaluate first, because it needs no bundle change.
+>
+> **A second, concrete reason arrived 2026-08-17: the icon ratchet.** `frontend/src/lib/iconLegend.ts`
+> + `iconLegend.test.ts` (on `feat/view-profile-badge`) scan every glyph rendered under `frontend/src`
+> and fail the suite on one that is not in the legend — one meaning per glyph, one glyph per meaning.
+> **Markup shipped by a plugin would sit outside that scan entirely**, so every convention the app
+> enforces on itself — icons today, and whatever ratchets follow — would stop applying exactly where
+> the least-reviewed code is. A plugin that ships only JSON cannot introduce an unlisted glyph, because
+> it renders nothing. That is a checkable argument, unlike the "it's impossible" one this block
+> replaced.
 
 So beyond the page, this plan is **distribution** — install / update / remove a module set from a URL,
 and host a few. It is explicitly **not** a plugin framework:
@@ -253,13 +272,83 @@ registers the tasks — hence "registers and runs, but has no form".)
   shared `python/`. Pre-existing (hand-dropped modules were never visible to them either) and inert
   today, since only built-in segmentation tasks are previewable — but it is the thing that breaks
   first if a plugin task is ever made previewable.
+- **P1.5 — the import builder: preview the file, then map its columns.** (Dominik, 2026-08-17.)
+  The task half is done; this is the page half for an *input*, which P1 does not cover — P1 gave the
+  custom page a plot canvas, which is the right primitive for RESULTS. An import form needs to show
+  the data being imported and let the user assign its columns.
+
+  **It stays a plugin: no format-specific or lab-specific knowledge enters cecelia.** The plugin owns
+  delimiter sniffing, headers, sample rows, the mapping and the templates. Three of the four pieces
+  need no core change at all:
+
+  - **Column chips.** `chipSelect` already exists as a param type with a renderer and validation, and
+    dynamic options already exist as a dispatch hook — `_needs_dynamic_options` /
+    `_inject_dynamic_options!`, which is how cellpose enumerates checkpoints, kept in sync with
+    `validate_params`. A plugin ships arbitrary Julia, so it can overload both. **But plugins are
+    locked out today**: `api_task_definitions` resolves via `_fun_name_map()` (built-ins only) and
+    skips anything else — resolving through `_task_from_fun_name` instead is roughly a one-line fix
+    and is the prerequisite for all of this.
+  - **Drawing the tracks.** Reuse `frontend/src/plots/trackPaths.ts` from the correction work, which
+    states in its own header that it is "ONE module for this, used by every track-path drawing that
+    follows — not a private helper inside the correction view". No new component, no plugin-supplied
+    Vue. **Ordering dependency: this waits for `feat/correction-seg-tracks` to merge.** Building a
+    second track-path renderer here would be the exact divergence CLAUDE.md warns about.
+  - **Parsing.** Any delimited file, in the plugin's own Python/Julia. Core never learns what a CSV is.
+
+  The one genuine core seam is **plumbing, and generic**: a task-declared preview that returns JSON to
+  the form, so the plugin can answer "here are the headers" and "here are the paths in this file"
+  before anything is imported. That rhymes with the existing `task_previewable` + `/api/preview/run`
+  ("run the task's real compute and RETURN the result rather than writing a store") — same shape, JSON
+  instead of a mask block. Two sub-problems to settle when building it:
+  - Options here depend on **another param's current value** (the file the user just picked), whereas
+    cellpose enumerates from the filesystem and needs nothing from the form. So the request has to
+    carry current form state; today the spec is fetched once per page load.
+  - `trackPaths.ts` takes µm coordinates converted server-side by `scale_centroids!`. The importer's
+    own unit/axis handling must go through the same conversion, or the preview and the import will
+    disagree — and Z,Y,X vs X,Y,Z has already caused exactly that once (see the Phases note above).
+
+  **Why it is worth doing:** a plugin that contributes a task *and* a real page is the only thing that
+  tests the plugin concept end to end. It also retires the standing reservation that `maxDistance` is
+  a guess — with a preview you can see whether spots landed on cells instead of inferring it from a
+  match count.
+
 - **P2 — install / remove.** Pinned fetch from a URL, install record, uninstall, `/api/plugins/*`
   routes. Confirm dialog with the trust text (Decision 5).
 - **P3 — Settings UI.** The plugins section in the existing panel: installed list with version + ref,
   install-by-URL, remove, the restart-needed hint (Decision 7).
-- **P4 — the curated few.** The registry list plus the seed plugins. Strongest first candidates are
-  **cell2location** and **Xenium**, because working old-R code exists to translate and they exercise
-  the "importer as plugin" shape without waiting on another lab's files.
+- **P4 — the curated few.** The registry list plus the seed plugins.
+
+  **First candidate is the external TRACK importer** (Dominik, 2026-08-17). An earlier draft of this
+  plan named cell2location and Xenium instead, "because working old-R code exists to translate" —
+  which is a much weaker criterion than *can we tell whether it is right*. Both halves of that
+  rationale have since collapsed:
+  - There is **no spatial data to hand**, so a cell2location/Xenium plugin could not be verified. This
+    plan's own P1 is the argument: four real bugs in the example survived CI *loading* it and died
+    only when it was run against real tracks. Shipping an unrunnable seed plugin repeats that.
+  - Their design is **not settled for Feijoa**. `importImages` has three tasks and an import runs
+    against an already-created `CciaImage`; it does not conjure one from an external file the way old
+    R did. So the old code does not translate mechanically — that is design work, not a port.
+  - The "without waiting on another lab's files" argument is dead anyway: the importer takes a
+    **column mapping** with shipped templates, so no one is blocked on their export.
+
+  Track import has neither problem — real data exists, it is verified end to end, and it is the ask
+  that started this plan. Keep cell2location/Xenium on the catalogue above as later candidates, gated
+  on spatial data arriving and on the "how does an importer create an image" question being answered.
+
+  **Do not split the example into its own repo before P2 exists.** There is nothing to fetch it with
+  until then, and the importer is the intricate half (mapping, units, axis order — where every bug
+  was), so moving it out of `docs/examples/` costs it CI coverage for no gain. When P2 lands, extract
+  the importer to **`schienstockd/ccia-trackImport`** and leave `cumulativeChange` + its plot spec as
+  the in-repo reference; do not keep a copy in both, which is how `docs/examples/custom-modules/`
+  rotted.
+
+  **Naming: `ccia-<thing>`, and the installed directory takes the repo name.** So
+  `schienstockd/ccia-trackImport` installs to `<config_dir>/modules/plugins/ccia-trackImport/` with
+  `"name": "ccia-trackImport"` in its manifest. One-to-one means install, update and remove map onto a
+  single directory with no lookup table (Decision 1), and a glance at `plugins/` says where each
+  directory came from. The camelCase second half matches the house `fun_name` style
+  (`tracking.importCsvTracks`), and a plugin directory name is never parsed as a Julia or Python
+  identifier — P1 proved that with a hyphenated name — so it is free to be exactly the repo name.
 
 ## Cross-file architecture
 

@@ -18,6 +18,11 @@ export interface PluginEntry {
 // A fun_name a module registered but did NOT get, because a higher tier already owned it
 // (built-in > hand-dropped > plugin). NOT a load failure — the file loaded fine, so this is the only
 // place that explains why its task is missing from the UI.
+// A curated, vouched-for plugin (shipped with the app). `installed` is matched on the directory the
+// url would install to, not the manifest name — that is author-controlled.
+export interface RegistryPlugin {
+  name: string; url: string; description: string; categories: string[]; ref?: string; installed: boolean
+}
 export interface TaskClash {
   funName: string; path: string; plugin: string | null
   tier: string; winner: string | null; winnerTier: string
@@ -29,16 +34,18 @@ export const useCustomModulesStore = defineStore('customModules', () => {
   const categories = ref<CustomCategory[]>([])
   const plugins    = ref<PluginEntry[]>([])
   const clashes    = ref<TaskClash[]>([])
+  const registry   = ref<RegistryPlugin[]>([])
   const loading    = ref(false)
   let   loadedOnce = false
 
   function apply(data: { dir?: string; modules?: CustomModuleEntry[]; categories?: CustomCategory[]
-                         plugins?: PluginEntry[]; clashes?: TaskClash[] }) {
+                         plugins?: PluginEntry[]; clashes?: TaskClash[]; registry?: RegistryPlugin[] }) {
     if (data.dir !== undefined) dir.value = data.dir
     if (data.modules)    modules.value    = data.modules
     if (data.categories) categories.value = data.categories
     if (data.plugins)    plugins.value    = data.plugins
     if (data.clashes)    clashes.value    = data.clashes
+    if (data.registry)   registry.value   = data.registry
   }
 
   async function refresh() {
@@ -64,5 +71,8 @@ export const useCustomModulesStore = defineStore('customModules', () => {
     finally { loading.value = false; loadedOnce = true }
   }
 
-  return { dir, modules, categories, plugins, clashes, loading, ensureLoaded, refresh, reload }
+  // `apply` is exported because /api/plugins/{install,remove} return the SAME payload as the
+  // status route — the caller refreshes from the response instead of a follow-up fetch that could
+  // race the reload those endpoints just performed.
+  return { dir, modules, categories, plugins, clashes, registry, loading, apply, ensureLoaded, refresh, reload }
 })

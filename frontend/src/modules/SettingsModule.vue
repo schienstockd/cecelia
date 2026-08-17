@@ -136,6 +136,54 @@ function shortModulePath(p: string): string {
   return p
 }
 
+// ── Plugins ──────────────────────────────────────────────────────────────────
+// A plugin is one directory of custom modules installed from a URL (docs/todo/PLUGINS_PLAN.md).
+// Install and remove both return the SAME payload the status endpoint does, so the store is refreshed
+// from the response rather than by a follow-up fetch that could race the reload.
+const pluginUrl  = ref('')
+const pluginRef  = ref('')
+const pluginBusy = ref(false)
+const pluginMsg  = ref('')
+// Updating an already-loaded plugin needs a server restart — Julia cannot redefine a struct in place,
+// so `load_custom_modules!` skips a file it has already loaded. The server tells us which case it was;
+// saying nothing here is how "my edit did nothing" becomes a support question (Decision 7).
+const pluginRestart = ref(false)
+
+async function installPlugin() {
+  if (!pluginUrl.value.trim()) return
+  pluginBusy.value = true; pluginMsg.value = ''; pluginRestart.value = false
+  try {
+    const res = await fetch('/api/plugins/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: pluginUrl.value.trim(), ref: pluginRef.value.trim() }),
+    })
+    const data = await res.json()
+    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
+    customModules.apply(data)
+    pluginRestart.value = !!data.restartRequired
+    pluginUrl.value = ''; pluginRef.value = ''
+  } catch (e) {
+    pluginMsg.value = String(e)
+  } finally { pluginBusy.value = false }
+}
+
+async function removePlugin(name: string) {
+  pluginBusy.value = true; pluginMsg.value = ''
+  try {
+    const res = await fetch('/api/plugins/remove', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    // 409 = one of its tasks is still running. That is a state, not a mistake, so it reads as a
+    // message rather than an error the user has to interpret.
+    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
+    customModules.apply(data)
+  } catch (e) {
+    pluginMsg.value = String(e)
+  } finally { pluginBusy.value = false }
+}
+
 const editName = ref(projectMeta.current?.name ?? '')
 const saving   = ref(false)
 const saved    = ref(false)
@@ -727,6 +775,98 @@ async function switchWt(path: string) {
         </div>
       </div>
       <span v-else class="field-hint cc-muted cc-fs-xs">No custom modules loaded.</span>
+
+      <!-- fun_name clashes: NOT load failures, so they cannot show in the list above (those files
+           loaded fine — they just lost the name). Without this the task is simply absent from the UI
+           with nothing anywhere saying why. -->
+      <div v-if="customModules.clashes.length" class="cm-list">
+        <div v-for="c in customModules.clashes" :key="c.path + c.funName" class="cm-row">
+          <span class="svc-pill err"><span class="dot" /> clash</span>
+          <span class="cm-path mono"
+                v-tooltip.top="`${c.path} — ${c.winner ?? 'a built-in'} keeps this name`">
+            {{ c.funName }} — {{ c.winnerTier }} wins
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Plugins (module sets installed from a URL) ─────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Plugins</h2>
+      <p class="field-hint cc-muted cc-fs-xs">
+        Module sets installed from a URL. Plugin code runs unsandboxed, with full access to this machine.
+      </p>
+
+      <div class="field">
+        <label class="field-label">Install from URL</label>
+        <div class="field-row">
+          <input class="field-input mono" v-model="pluginUrl" :disabled="pluginBusy"
+                 placeholder="https://github.com/owner/repo"
+                 v-tooltip.right="'A git repo or a tarball URL'" />
+          <input class="field-input mono" v-model="pluginRef" :disabled="pluginBusy"
+                 placeholder="tag or commit"
+                 v-tooltip.right="'Pin a tag or commit; blank takes the default branch'" />
+          <ConfirmButton @confirm="installPlugin" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
+                    v-tooltip.top="'Fetch and install — this code is not sandboxed'">
+              <i :class="['pi', pluginBusy ? 'pi-spin pi-cog' : 'pi-download']" /> Install
+            </button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm"
+                      v-tooltip.top="'Runs with full access to this machine'">
+                <i class="pi pi-download" /> Confirm install
+              </button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+        </div>
+        <span v-if="pluginMsg" class="field-hint cc-fs-xs">
+          <i class="pi pi-exclamation-triangle" /> {{ pluginMsg }}
+        </span>
+        <span v-if="pluginRestart" class="field-hint cc-muted cc-fs-xs">
+          Restart the server to pick up the update.
+        </span>
+      </div>
+
+      <div v-if="customModules.plugins.length" class="cm-list">
+        <div v-for="p in customModules.plugins" :key="p.dir" class="cm-row">
+          <span class="svc-pill" :class="p.error ? 'err' : 'ok'">
+            <span class="dot" /> {{ p.version || '—' }}
+          </span>
+          <span class="cm-path" v-tooltip.top="p.error || p.description || p.dir">
+            {{ p.name }}<span v-if="p.categories.length" class="cc-muted"> · {{ p.categories.join(', ') }}</span>
+          </span>
+          <span v-if="p.warning" class="cc-muted cc-fs-xs" v-tooltip.top="p.warning">
+            <i class="pi pi-exclamation-triangle" />
+          </span>
+          <ConfirmButton @confirm="removePlugin(p.name)" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn ghost" :disabled="pluginBusy" @click="arm"
+                    v-tooltip.top="'Remove this plugin'"><i class="pi pi-trash" /> Remove</button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm"><i class="pi pi-trash" /> Confirm</button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+        </div>
+      </div>
+      <span v-else class="field-hint cc-muted cc-fs-xs">No plugins installed.</span>
+
+      <!-- The curated list. Not a search index: these are the ones we vouch for; anything else goes
+           in the URL field above. -->
+      <div v-if="customModules.registry.length" class="field">
+        <label class="field-label">Available</label>
+        <div class="cm-list">
+          <div v-for="r in customModules.registry" :key="r.url" class="cm-row">
+            <span class="cm-path" v-tooltip.top="r.description">
+              {{ r.name }}<span v-if="r.categories.length" class="cc-muted"> · {{ r.categories.join(', ') }}</span>
+            </span>
+            <span v-if="r.installed" class="cc-muted cc-fs-xs">installed</span>
+            <button v-else class="save-btn ghost" :disabled="pluginBusy"
+                    @click="pluginUrl = r.url; pluginRef = r.ref ?? ''"
+                    v-tooltip.top="'Fill the URL above — install is still a confirmed step'">Use</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->

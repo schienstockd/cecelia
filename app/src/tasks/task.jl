@@ -77,6 +77,26 @@ end
 _needs_dynamic_options(::CciaTask) = false
 _inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
 
+"""
+    _inject_dynamic_options!(spec, task, form) -> spec
+
+Three-argument form: options that depend on **what the user has typed so far**, not just on what is on
+disk. `form` is the current param values from the open task form (empty when there are none yet).
+
+The existing overloads enumerate from the filesystem — cellpose checkpoints, flow models — and need
+nothing from the form, so the base method here drops `form` and calls the two-argument one. Only a task
+whose options come from a file the user just pointed at needs to overload this (an importer offering
+that file's own column names).
+
+**Only the served form gets these; `validate_params` does not.** That is deliberate rather than an
+oversight: a value derived this way must stay valid on its own, exactly as `opticalFlow/train.jl`
+treats its model-name suggestions ("the user types the stem, so the suggestion IS what goes in the
+field"). Anything that would make validation depend on `form` reintroduces the picker/validator
+disagreement `_task_spec` exists to prevent — so use this for SUGGESTIONS, never for a constraint.
+"""
+_inject_dynamic_options!(spec::Dict{String,Any}, task::CciaTask, ::AbstractDict) =
+    _inject_dynamic_options!(spec, task)
+
 # ── Live outputs (watch a store while the task is still writing it) ───────────
 # What a task writes to disk *as it runs*, i.e. an output a viewer can already show before the task
 # finishes. The base method declares nothing, which is the correct answer for most tasks: an output

@@ -3,7 +3,9 @@
   "fun_name": "tracking.importCsvTracks",
   "label": "Import external tracks",
   "category": "tracking",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "cpu",
   "scope": "image",
   "outputValueName": "default",
@@ -21,7 +23,8 @@
       "type": "text",
       "default": "",
       "required": true,
-      "tip": "Absolute path to the exported track table"
+      "tip": "Absolute path to the exported track table — its columns fill the mapping below",
+      "triggersOptions": true
     },
     {
       "key": "template",
@@ -29,10 +32,22 @@
       "type": "select",
       "default": "imagej_manual",
       "options": [
-        { "value": "imagej_manual", "label": "ImageJ Manual Tracking" },
-        { "value": "trackmate",     "label": "TrackMate" },
-        { "value": "imaris",        "label": "Imaris" },
-        { "value": "custom",        "label": "Custom (map columns below)" }
+        {
+          "value": "imagej_manual",
+          "label": "ImageJ Manual Tracking"
+        },
+        {
+          "value": "trackmate",
+          "label": "TrackMate"
+        },
+        {
+          "value": "imaris",
+          "label": "Imaris"
+        },
+        {
+          "value": "custom",
+          "label": "Custom (map columns below)"
+        }
       ],
       "tip": "Preset column mapping; fields below override it"
     },
@@ -105,7 +120,8 @@
           "max": 20,
           "step": 1,
           "default": 0,
-          "tip": "Lines above the header row (Imaris writes 3)"
+          "tip": "Lines above the header row (Imaris writes 3)",
+          "triggersOptions": true
         },
         {
           "key": "spotUnit",
@@ -113,8 +129,14 @@
           "type": "select",
           "default": "physical",
           "options": [
-            { "value": "physical", "label": "Calibrated (µm)" },
-            { "value": "pixel",    "label": "Pixels" }
+            {
+              "value": "physical",
+              "label": "Calibrated (µm)"
+            },
+            {
+              "value": "pixel",
+              "label": "Pixels"
+            }
           ],
           "tip": "How the file stores X/Y/Z"
         },

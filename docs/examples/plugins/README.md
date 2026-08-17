@@ -65,17 +65,18 @@ inspect the distribution below.
 own name never appears in that import — `tracktools-example` has a hyphen and is not a Python
 identifier, so anything that spelled the plugin name into a module path could not work.
 
-## A plugin ships JSON and code, never a `.vue`
+## A plugin describes its page; it does not implement it
 
 Both halves of a module page are already declarative — the form comes from the task spec's `params`
-(rendered by `ParamRenderer`), the canvas from a plot spec (rendered by `SummaryCanvas`). So a plugin
-describes its page rather than implementing it.
+(rendered by `ParamRenderer`), the canvas from a plot spec (rendered by `SummaryCanvas`).
 
-This is a real constraint, not a stylistic preference: an installed app serves a **prebuilt
-`frontend/dist` and has no Node or Vite** ([`../../SHIPPING.md`](../../SHIPPING.md)), so a shipped
-`.vue` could never be compiled on the user's machine. Shipping *pre-compiled* JS instead would require
-a stable component API — the plugin framework `PLUGINS_PLAN.md` explicitly rules out. Declarative
-specs avoid both, and give a plugin author strictly less to maintain across cecelia releases.
+This is a **decision**, not an impossibility. A stable install ships a prebuilt `frontend/dist` and
+precompiles SFCs, so a plugin's `.vue` could not be compiled there — but pre-compiled ESM using render
+functions would `import()` fine, and the dev channel builds the frontend locally anyway. It is
+excluded because shipping renderable code turns the frontend into a **plugin ABI**: a component
+contract that cannot be refactored freely, a loader to maintain, and version skew between a plugin and
+the app drawing it. Declarative specs cost a plugin author far less across cecelia releases. The
+trade-off is written up in [`../../todo/PLUGINS_PLAN.md`](../../todo/PLUGINS_PLAN.md).
 
 ## Not sandboxed
 

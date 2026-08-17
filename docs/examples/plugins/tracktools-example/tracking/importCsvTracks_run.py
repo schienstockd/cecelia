@@ -1,9 +1,9 @@
-"""Example PLUGIN Python compute — attach externally-tracked TrackMate spots to this segmentation.
+"""Example PLUGIN Python compute — attach externally-tracked spots to this segmentation.
 
 Launched by the `tracking.importCsvTracks` Julia task through `run_py`. Two imports matter here and
 they resolve by different mechanisms:
 
-  from csv_tracks import read_trackmate_csv        <- the PLUGIN's own python/ dir, on PYTHONPATH
+  from csv_tracks import read_spot_csv             <- the PLUGIN's own python/ dir, on PYTHONPATH
   from cecelia.utils.label_props_utils import …    <- the cecelia IO library, also on PYTHONPATH
 
 Both come from `run_py`; there is no `sys.path` bootstrapping in a runner, ever.
@@ -11,10 +11,12 @@ See docs/CUSTOM_MODULES.md and docs/todo/PLUGINS_PLAN.md.
 
 Parameter contract (JSON written by the Julia task):
   labelPropsPath - absolute path to the segmentation's labelProps .h5ad
-  csvPath        - the TrackMate spot export
-  trackColumn / frameColumn / posColumns - column names in that export
-  spotUnit       - "physical" (TrackMate default, µm) or "pixel"
-  physicalSizes  - [x, y, z] µm per pixel, from ccid.json; used to convert when spotUnit=physical
+  csvPath        - the external spot export
+  mapping        - RESOLVED column mapping (template + user overrides, merged Julia-side):
+                   trackColumn / frameColumn / xColumn / yColumn / zColumn / frameBase / skipRows,
+                   plus spotUnit = "physical" (calibrated, µm) or "pixel"
+  delimiter      - sniffed ONCE Julia-side and passed; this side never guesses
+  physicalSizesZYX - Z,Y,X µm per pixel from ccid.json; reversed here to match x,y,z columns
   maxDistance    - match cutoff, in PIXELS
   outColumn      - obs column to write
 """
@@ -44,7 +46,8 @@ def run(params):
         mp.get('frameColumn', 'FRAME'),
         pos_cols,
         int(mp.get('frameBase', 0)),
-        int(mp.get('skipRows', 0)))
+        int(mp.get('skipRows', 0)),
+        params.get('delimiter', ','))
     log.log(f'[INFO] Read {len(tracks)} tracked spots in {len(np.unique(tracks))} tracks')
     log.progress(1, 2)
 
@@ -64,7 +67,7 @@ def run(params):
     cell_frames = (df[tcols[0]].to_numpy(dtype=float).round().astype(int)
                    if tcols else np.zeros(len(df), dtype=int))
 
-    # TrackMate writes positions in PHYSICAL units when the image is calibrated; cecelia centroids are
+    # External tools write positions in PHYSICAL units when the image is calibrated; cecelia centroids are
     # in pixels. Convert the spots rather than the cells, so `maxDistance` stays in pixels — the unit
     # the user can actually judge against a segmentation.
     pos = pos[:, :cell_pos.shape[1]]

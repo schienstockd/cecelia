@@ -23,6 +23,8 @@
 # into `Cecelia` with full machine access, exactly like a hand-dropped module. There is no sandbox.
 # What P2 adds is that the FETCH is pinned and user-confirmed — not that the code is contained.
 
+using Dates: now
+
 const PLUGINS_SUBDIR        = "plugins"
 const PLUGIN_MANIFEST       = "plugin.json"
 # A plugin's plot specs, mirroring the package's own `app/src/plotDefinitions/`. This is the half that
@@ -245,11 +247,11 @@ because both halves of a page are already declarative:
 | the task form | a task spec's `params` | `ParamRenderer` |
 | the plot canvas | a plot spec here (`module: "<category>"`) | `SummaryCanvas` |
 
-A plugin therefore cannot ship a `.vue` file, and does not need to: an installed app serves a
-**prebuilt `frontend/dist` and has no Node or Vite** (`docs/SHIPPING.md`), so a shipped component could
-never be compiled on the user's machine — and shipping *pre-compiled* JS would require a stable
-component API, i.e. exactly the plugin framework `docs/todo/PLUGINS_PLAN.md` rules out. Declarative
-specs sidestep both problems, which is why the constraint is a good one.
+A plugin therefore does not ship Vue. That is a decision rather than a hard limit — a stable install
+precompiles SFCs so a plugin's `.vue` could not be compiled there, but pre-compiled ESM would load
+fine. It is excluded because shipping renderable code makes the frontend a **plugin ABI**: a component
+contract that cannot be refactored freely, plus a loader and version skew between a plugin and the app
+drawing it. See `docs/todo/PLUGINS_PLAN.md` for the full trade-off.
 
 `exclude_ids` drops ids owned by the package registry — **built-ins win**, the same rule as tasks. A
 malformed spec is warned about and skipped, never fatal.
@@ -279,6 +281,178 @@ function user_plot_specs(; dev_dir::Union{String,Nothing} = nothing, exclude_ids
         end
     end
     out
+end
+
+# ── P2: install / update / remove ─────────────────────────────────────────────────────────────────
+#
+# Source is a URL plus a **pinned ref**, fetched as a TARBALL — never `git`. An installed app has no
+# git: both installers fetch tarballs over plain HTTP, and `_is_installed` is literally defined as
+# "has a VERSION file and has NO `.git`". The download + unpack path here is the same one the in-app
+# updater uses (`Downloads` stdlib + `Cecelia._run_tar`, the one tar runner, which registers the
+# process so an extract can be cancelled and checks `termsignal` — a bare `run` reads a killed extract
+# as success). See docs/todo/PLUGINS_PLAN.md → R1.
+
+"""GitHub repo URL + ref → the archive tarball. Any other URL is returned unchanged (already a tarball)."""
+function plugin_tarball_url(url::AbstractString, ref::AbstractString)::String
+    u = strip(String(url))
+    m = match(r"^https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?$", u)
+    m === nothing && return u
+    r = isempty(strip(String(ref))) ? "HEAD" : strip(String(ref))
+    "https://github.com/$(m.captures[1])/$(m.captures[2])/archive/$r.tar.gz"
+end
+
+"""Plugin directory name for a source URL — the repo name, so one repo maps to one directory."""
+function plugin_name_from_url(url::AbstractString)::String
+    u = strip(String(url))
+    m = match(r"github\.com/[^/]+/([^/#?]+?)(?:\.git)?/?$", u)
+    m !== nothing && return String(m.captures[1])
+    safe_name_part(splitext(basename(rstrip(u, '/')))[1])
+end
+
+install_record_path(dir::AbstractString) = joinpath(String(dir), PLUGIN_INSTALL_RECORD)
+
+"""
+    read_install_record(dir) -> Dict{String,Any}
+
+Where the plugin came from: `(url, ref, installedAt)`. `Dict()` when hand-installed — a `git clone`
+into `plugins/` is a first-class way to install, and must not look broken for lacking a record.
+"""
+function read_install_record(dir::AbstractString)::Dict{String,Any}
+    p = install_record_path(dir)
+    isfile(p) || return Dict{String,Any}()
+    try JSON3.read(read(p, String), Dict{String,Any}) catch; Dict{String,Any}() end
+end
+
+"""
+    plugin_unpack!(tarball, url; ref="", dev_dir=nothing, job_id=…, on_log=…) -> NamedTuple
+
+Unpack an already-downloaded plugin tarball into place: extract to a temp dir → verify it looks like a
+plugin → **replace** the target directory → write `.install.json`. Returns `(; ok, name, dir, error)`.
+
+Verification before the move is the point: extracting straight into `plugins/<name>/` would leave a
+half-written directory that the loader walks on the next reload. A tarball with no `plugin.json` is
+rejected here rather than becoming a directory that registers nothing and explains nothing.
+
+The DOWNLOAD is the caller's job (`api/src/plugins_api.jl`) — `Downloads` is not an `app/` dependency
+and adding one would mean re-resolving three manifests for an HTTP fetch that is an API-layer concern
+anyway. This half is the part worth unit-testing, so it takes a local file and stays in the package.
+
+Never throws: install is user-driven and every failure is a message, not a stacktrace.
+"""
+function plugin_unpack!(tarball::AbstractString, url::AbstractString;
+                        ref::AbstractString = "",
+                        dev_dir::Union{String,Nothing} = nothing,
+                        job_id::AbstractString = "plugin-install",
+                        on_log::Function = _ -> nothing)
+    _tar_available() ||
+        return (; ok = false, name = "", dir = "", error = "`tar` was not found on PATH")
+    isfile(tarball) ||
+        return (; ok = false, name = "", dir = "", error = "no such archive: $tarball")
+    name = plugin_name_from_url(url)
+    isempty(name) &&
+        return (; ok = false, name = "", dir = "", error = "could not derive a plugin name from $url")
+    target = joinpath(plugins_dir(dev_dir), name)
+    tmp    = mktempdir()
+    try
+        payload = joinpath(tmp, "payload"); mkpath(payload)
+        _run_tar(`tar -xzf $tarball -C $payload`, String(job_id)) ||
+            return (; ok = false, name, dir = "",
+                      error = "unpacking failed (tar exited non-zero or was cancelled)")
+
+        # A GitHub archive wraps everything in one `<repo>-<ref>/` directory; a hand-rolled tarball may
+        # not. Take the wrapper only when it IS the single entry, rather than assuming either shape.
+        entries = readdir(payload; join = true)
+        root = (length(entries) == 1 && isdir(entries[1])) ? entries[1] : payload
+        isfile(joinpath(root, PLUGIN_MANIFEST)) ||
+            return (; ok = false, name, dir = "",
+                      error = "not a plugin: no $PLUGIN_MANIFEST at the archive root")
+
+        mkpath(dirname(target))
+        isdir(target) && rm(target; recursive = true, force = true)
+        mv(root, target)
+        # The record is a SIBLING of plugin.json, never inside it: plugin.json ships from the plugin's
+        # own repo, so writing the resolved ref into it would dirty the checkout and be overwritten by
+        # the next update. Decision 5.
+        write_json_atomic(install_record_path(target),
+                          Dict{String,Any}("url" => String(url), "ref" => String(ref),
+                                           "installedAt" => string(now())))
+        on_log("Installed $name")
+        (; ok = true, name, dir = target, error = nothing)
+    catch e
+        (; ok = false, name, dir = "", error = sprint(showerror, e))
+    finally
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+"""
+    plugin_remove!(name; dev_dir=nothing) -> NamedTuple
+
+Unregister the plugin's tasks, then delete its directory. Returns `(; ok, removed, error)`.
+
+**Refuses while any of its tasks is running.** Deleting the directory under a live run pulls the
+runner's own `_run.py` out from under a `run_py` subprocess, and `_unregister_task!` only drops the
+registry entry — an in-flight `_run_task` already holds the instance. Decision 9.
+"""
+function plugin_remove!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing)
+    dir = joinpath(plugins_dir(dev_dir), String(name))
+    isdir(dir) || return (; ok = false, removed = String[], error = "no such plugin: $name")
+
+    mine = String[e.fun_name for e in user_task_specs(; dev_dir) if e.plugin == String(name)]
+    busy = [t.fun_name for t in list_tasks() if t.fun_name ∈ mine]
+    isempty(busy) ||
+        return (; ok = false, removed = String[],
+                  error = "still running: $(join(unique(busy), ", ")) — cancel it first")
+
+    removed = String[]
+    for fn in mine
+        _unregister_task!(fn) && push!(removed, fn)
+    end
+    rm(dir; recursive = true, force = true)
+    (; ok = true, removed, error = nothing)
+end
+
+"""
+    plugin_registry() -> Vector{Dict{String,Any}}
+
+The curated list of plugins we vouch for (`app/src/pluginRegistry.json`), each
+`(name, url, description, categories, ref)`, with `installed` stamped on by `plugin_registry_status`.
+
+**Curated, not a search index** (Decision 6): anything not listed installs by explicit URL, and cecelia
+never browses GitHub. The list SHIPS with the app rather than being fetched, so an offline install
+behaves like an online one and the catalogue cannot change under a running server — the trade is that
+adding a plugin needs a release, which is the thing to revisit if the list grows.
+
+A malformed registry yields an empty list rather than taking Settings down: the catalogue is a
+convenience, and install-by-URL works without it.
+"""
+function plugin_registry()::Vector{Dict{String,Any}}
+    path = joinpath(@__DIR__, "..", "pluginRegistry.json")
+    isfile(path) || return Dict{String,Any}[]
+    try
+        doc = JSON3.read(read(path, String), Dict{String,Any})
+        ps  = get(doc, "plugins", nothing)
+        ps isa AbstractVector ? Dict{String,Any}[Dict{String,Any}(p) for p in ps] : Dict{String,Any}[]
+    catch e
+        @warn "Skipping malformed plugin registry" path exception = e
+        Dict{String,Any}[]
+    end
+end
+
+"""
+    plugin_registry_status(; dev_dir=nothing) -> Vector{Dict{String,Any}}
+
+The registry with `installed` set per entry, matched on the DIRECTORY the entry's url would install to
+— not on the manifest `name`, which a plugin author controls and could set to anything. One repo maps
+to one directory, which is what makes the check unambiguous.
+"""
+function plugin_registry_status(; dev_dir::Union{String,Nothing} = nothing)
+    have = Set(basename.(plugin_roots(; dev_dir)))
+    map(plugin_registry()) do e
+        d = copy(e)
+        d["installed"] = plugin_name_from_url(string(get(e, "url", ""))) ∈ have
+        d
+    end
 end
 
 """

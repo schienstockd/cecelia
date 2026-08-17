@@ -118,6 +118,8 @@ export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_
 export custom_task_clashes
 export plugins_dir, plugin_roots, plugin_name_of, read_plugin_manifest, plugin_version_warning
 export user_task_specs, user_plot_specs, plugins_report, tier_name
+export plugin_unpack!, plugin_remove!, plugin_tarball_url, plugin_name_from_url
+export read_install_record, install_record_path, plugin_registry, plugin_registry_status
 export PLUGINS_SUBDIR, PLUGIN_MANIFEST, PLUGIN_INSTALL_RECORD, LEGACY_LAYOUT_DIRS, PLOT_DEFS_SUBDIR
 export TIER_PLUGIN, TIER_USER, TIER_BUILTIN
 export TestImageTask, TestSetTask, IncrementalPlotTask
