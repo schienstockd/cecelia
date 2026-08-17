@@ -312,11 +312,34 @@ registers the tasks — hence "registers and runs, but has no form".)
   a guess — with a preview you can see whether spots landed on cells instead of inferring it from a
   match count.
 
-- **P2 — install / remove.** Pinned fetch from a URL, install record, uninstall, `/api/plugins/*`
+- **P2 — install / remove. ✅ BUILT.** Pinned tarball fetch (`Downloads` in `api/src/plugins_api.jl`),
+  verify-then-place in `Cecelia.plugin_unpack!` via `_run_tar`, `.install.json` sidecar, uninstall that
+  refuses while one of the plugin's tasks is running, `POST /api/plugins/{install,remove}`. Verified
+  live against `github.com/schienstockd/ccia-importTracks`: fetch → install → both tasks register →
+  plot spec picked up → registry reports installed → remove unregisters both.
+  *(original scope below)*
+- **P2 (original) — install / remove.** Pinned fetch from a URL, install record, uninstall, `/api/plugins/*`
   routes. Confirm dialog with the trust text (Decision 5).
-- **P3 — Settings UI.** The plugins section in the existing panel: installed list with version + ref,
+- **P3 — Settings UI. ✅ BUILT.** Plugins section in the EXISTING Settings panel (never a second
+  surface): install-by-URL behind a confirm that states the code is unsandboxed, installed list with
+  version + categories + the advisory version warning, remove, the restart-needed hint for an update,
+  the curated list, and the clash list P1 owed. **Unverified in a browser.**
+  *(original scope below)*
+- **P3 (original) — Settings UI.** The plugins section in the existing panel: installed list with version + ref,
   install-by-URL, remove, the restart-needed hint (Decision 7).
-- **P4 — the curated few.** The registry list plus the seed plugins.
+- **P4 — the curated few. ✅ SEEDED.** `app/src/pluginRegistry.json` — shipped with the app, not
+  fetched, so an offline install behaves like an online one and the catalogue cannot change under a
+  running server; the trade is that adding one needs a release. Seeded with `ccia-importTracks`.
+
+  > **OPEN: the plugin now exists twice.** `docs/examples/plugins/tracktools-example/` (CI loads it)
+  > and `schienstockd/ccia-importTracks` (installable) are copies, which is exactly how
+  > `docs/examples/custom-modules/` rotted. Resolve once the install flow has been tried by hand:
+  > recommended is to cut the example down to `cumulativeChange` + its plot spec as the in-repo
+  > REFERENCE, and let the importer live only in its repo. Not done yet because the duplicate is what
+  > currently lets both CI and a real install exercise the same code.
+
+  *(original scope below)*
+- **P4 (original) — the curated few.** The registry list plus the seed plugins.
 
   **First candidate is the external TRACK importer** (Dominik, 2026-08-17). An earlier draft of this
   plan named cell2location and Xenium instead, "because working old-R code exists to translate" —

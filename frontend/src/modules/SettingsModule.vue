@@ -851,7 +851,7 @@ async function switchWt(path: string) {
           <ConfirmButton @confirm="installPlugin" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
                     v-tooltip.top="'Fetch and install — this code is not sandboxed'">
-              <i :class="['pi', pluginBusy ? 'pi-spin pi-cog' : 'pi-download']" /> Install
+              <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> Install
             </button>
             <template v-else>
               <button class="save-btn danger" @click="confirm"
