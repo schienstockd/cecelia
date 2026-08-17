@@ -94,6 +94,13 @@ executable/registration half needs to become dynamic.
 
 ## Non-goals
 - Not a sandbox / not a marketplace. Local, trusted, single-user drop-in only.
+  **Partially reversed 2026-08-17** — the *marketplace* half is being revisited in
+  [`PLUGINS_PLAN.md`](PLUGINS_PLAN.md): a plugin (one self-contained directory of custom modules)
+  installable from a pinned git URL, with a small curated list we publish. Driven by a lab needing two
+  format-specific importers that must not ship in the app. **The no-sandbox half stands** — plugin code
+  is still arbitrary Julia with full machine access, which is why install is an explicit, pinned,
+  user-confirmed fetch and never automatic. Decision 2 below (no plugin framework) also stands and is
+  not reopened.
 - Not changing the built-in task authoring flow (`docs/MODULES.md` stays for in-repo tasks).
 
 ## Pointers
