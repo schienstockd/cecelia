@@ -229,6 +229,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
     "/api/plots/attrs" => (req, body_bytes) -> (api_plot_attrs(req)),
     "/api/tracking/motion-dims" => (req, body_bytes) -> (api_motion_dims(req)),
+    "/api/tracking/issues" => (req, body_bytes) -> (api_track_issues(req)),
     "/api/storage/summary" => (req, body_bytes) -> (api_storage_summary(req)),
     "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),

@@ -68,6 +68,13 @@ are preserved untouched.
 Cells not assigned to a track get **`NaN`** in all of these. A "tracked" population is then
 just cells with `track_id` present (the old `live` filter `track_id > 0`).
 
+**A root track's parent is ITSELF.** For a track with no division history btrack writes
+`track_parent == track_root == track_id` and `track_generation == 0` — *not* `NaN`. Anything that
+creates a track by hand (see correction, below) must follow that convention; writing `NaN` for
+"no parent" produces a track that reads as untracked lineage. Verified on real data
+(`zolIMa/1/fXgbTl`, 374 tracks, all roots). Every one of these six columns is stored **float64** —
+`add_obs` writes Float64 only (`app/src/label_props.jl`), so round the values on read.
+
 ## Non-obvious things (carry into the next phases)
 
 - **`track_id` is the btrack track number, not the cell label.** `label_id` is btrack's
@@ -278,6 +285,54 @@ invalidation** — when btrack writes new `track_id`s it drops any stale `live.c
 `docs/DATAMODEL.md`); `track_measures` likewise drops any leftover broadcast
 `live.track.*` from the cell obs when it runs. Re-running the composite recomputes against the
 fresh tracking and rewrites the track table.
+
+## Manual track correction (`tracking.correct`)
+
+Fixing a wrong track by hand. Design + the old-R ground truth it ports:
+[`docs/todo/CORRECTION_PLAN.md`](todo/CORRECTION_PLAN.md). Shipped so far: the ops engine, the task,
+the journal and its QC (plan phase **P1**). The editing UI is P4 — today the ops arrive
+programmatically.
+
+**A track correction is an `obs` rewrite and nothing else.** It moves cells between `track_id`s and
+maintains the lineage columns; it never touches `X`/`var`, so the cell table needs no re-measure.
+That is why it is cheap, and why it is a separate task from segmentation correction (which rewrites
+the label store and *does* force a re-measure).
+
+| Op | Effect |
+|---|---|
+| `points.remove` | untrack the given cells (`track_id := NaN`) |
+| `points.add` | attach cells to a track, or to a new one when no `trackId` is given |
+| `track.remove` | untrack every cell of a track |
+| `track.join` | fold track B into track A; **B ceases to exist** |
+| `track.split` | cells at/after a timepoint become a new track |
+
+Ops are pure functions over a label-keyed frame (`app/src/tracking/track_correction.jl`) and are
+applied **in order**, each seeing the previous result — so the op list is a replay script, which is
+what makes a correction reproducible from the producing task's output plus the journal.
+
+Three rules that are not obvious:
+
+- **The write is never population-scoped.** `add_obs` aligns by label and writes `NaN` for every
+  label *absent* from the staged frame, so staging a population subset would untrack every cell
+  outside it. A population may scope what the user can select; it must never scope the write.
+- **A join refuses a temporal overlap.** Two tracks that both have a cell at one timepoint are not
+  one cell. Old R silently re-assigned only the non-overlapping part, leaving B alive as a shorter
+  remnant; consuming the overlap instead would give the joined track two cells at one time and make
+  every `dt` — and so every speed — degenerate. Both are wrong, so the op fails and names the
+  timepoints.
+- **`cell_id` is renumbered and lineage is reconciled** after every batch. A joined track keeps A's
+  parent/root/generation; a split fragment becomes a root. `track_state` is per-cell and is left
+  alone. Old R maintained none of this — it only ever wrote `track_id`.
+
+**Invalidation.** The task drops stale `live.cell.*` / `live.track.*` obs columns itself (the same
+thing btrack does when it rewrites tracks), so a standalone correction can never leave measures
+describing the previous assignment. The composite **`tracking.correct_measures`** chains
+`tracking.correct` → `tracking.track_measures` to recompute them; `track_measures` rebuilds tracks
+from `obs.track_id` alone, so it recomputes correctly after any correction.
+
+**Journal.** Every applied op is appended to `{task_dir}/corrections/{value_name}.json` — the same
+per-segmentation sidecar shape as `gating/{value_name}.json`, written with `write_json_atomic`. This
+is the durable, per-image edit history; old R's died with the Shiny session.
 
 ## Track-property gating — backend done, frontend/napari deferred
 

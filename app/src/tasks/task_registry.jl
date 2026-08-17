@@ -45,6 +45,10 @@ function _spec_path(::TrackMeasures)
     joinpath(@__DIR__, "tracking", "track_measures.json")
 end
 
+function _spec_path(::TrackCorrect)
+    joinpath(@__DIR__, "tracking", "correct.json")
+end
+
 function _spec_path(::HmmStates)
     joinpath(@__DIR__, "behaviour", "hmm_states.json")
 end
@@ -137,6 +141,9 @@ _COMPOSITE_SPEC_PATHS["segment.coastalMeasure"] =
 _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
     joinpath(@__DIR__, "tracking", "bayesian_track_measures.json")
 
+_COMPOSITE_SPEC_PATHS["tracking.correct_measures"] =
+    joinpath(@__DIR__, "tracking", "correct_measures.json")
+
 _COMPOSITE_SPEC_PATHS["behaviour.hmm"] =
     joinpath(@__DIR__, "behaviour", "hmm.json")
 
@@ -153,7 +160,9 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),
         "tracking.track_measures"           => TrackMeasures(),
+        "tracking.correct"                  => TrackCorrect(),
         "tracking.bayesian_track_measures"  => CompositeTask("tracking.bayesian_track_measures"),
+        "tracking.correct_measures"         => CompositeTask("tracking.correct_measures"),
         "behaviour.hmm_states"              => HmmStates(),
         "behaviour.hmm_transitions"         => HmmTransitions(),
         "behaviour.hmm"                     => CompositeTask("behaviour.hmm"),

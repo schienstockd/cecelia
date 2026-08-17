@@ -101,6 +101,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Motion dimensionality uncertain ({dims}D)",
         long  = "z couldn't be classified as migration vs jitter — review whether tracking should be 2D or 3D and re-run with dims set."),
 
+    # manual track correction (track_correction_qc_findings)
+    "correction.large_share_edited" => (
+        short = "{pct}% of cells hand-corrected",
+        long  = "This much correction points at the tracking parameters — revisit those and re-track instead."),
+    "correction.short_tracks" => (
+        short = "{count} track(s) below {min} timepoints",
+        long  = "Splitting left tracks shorter than tracking's own minimum — join them or remove them."),
+
     # clustering (cluster_qc_findings)
     "clustering.single_cluster" => (
         short = "Only one cluster found",

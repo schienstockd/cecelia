@@ -56,6 +56,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "segment.branching"          => ["nBranches", "meanBranchLength", "anisotropy"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
     "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
+    # manual track correction: `fracCellsEdited` is the cohort-comparable one — images from one
+    # experiment tracked with one parameter set should need comparable hand-correction, so the movie
+    # that needed three times as much is either a worse acquisition or a tracking setting that does
+    # not suit it. A raw op count is not comparable (it scales with how patient the user was).
+    "tracking.correct"           => ["fracCellsEdited", "nCellsReassigned", "nTracksAfter"],
     # clustering is set-scope (one run over all images); per-image QC records how each image's points
     # landed, so cohort stats flag an image that collapsed into far fewer clusters / one dominant
     # cluster than its peers (a batch/normalisation outlier). See qc.jl write_cluster_qc!.
