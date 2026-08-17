@@ -20,9 +20,11 @@ import { useProjectStore } from './stores/project'
 import { useLogStore } from './stores/log'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
 import GuidesDialog from './components/GuidesDialog.vue'
+import IconLegendDialog from './components/IconLegendDialog.vue'
 import GuideBubble from './components/GuideBubble.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
+import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useNapariAutoShow } from './composables/useNapariAutoShow'
@@ -181,6 +183,7 @@ const bare = computed(() => route.meta.bare === true)
     <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
          The bubble renders only while a guide is running — see stores/guide.ts. -->
     <GuidesDialog v-if="isGuidesOpen" />
+    <IconLegendDialog v-if="isIconLegendOpen" />
     <GuideBubble v-if="guide.active" />
   </div>
 </template>

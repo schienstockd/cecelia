@@ -47,7 +47,7 @@ const plural = () => `${props.count} plot${props.count === 1 ? '' : 's'}`
         <button class="cc-btn cc-btn-bare cc-btn-icon ca-danger" type="button" @click="confirm"
                 v-tooltip.bottom="`Confirm — close all ${plural()}`"><i class="pi pi-check" /></button>
         <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" @click="cancel"
-                v-tooltip.bottom="'Keep plots'"><i class="pi pi-replay" /></button>
+                v-tooltip.bottom="'Keep plots'"><i class="pi pi-undo" /></button>
       </template>
     </ConfirmButton>
   </div>

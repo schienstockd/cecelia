@@ -173,7 +173,7 @@ async function deleteSet() {
         />
         <button class="cc-btn cc-btn-primary" @click="submitName" :disabled="busy"
           v-tooltip.bottom="nameMode === 'rename' ? 'Rename this image set' : 'Create this image set'">
-          <i v-if="busy" class="pi pi-spin pi-cog" />
+          <i v-if="busy" class="pi pi-spin pi-spinner" />
           <template v-else>{{ nameMode === 'rename' ? 'Rename' : 'Create' }}</template>
         </button>
         <button class="cc-btn cc-btn-ghost" @click="closeNameInput"

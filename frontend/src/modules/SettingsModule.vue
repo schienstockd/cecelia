@@ -9,6 +9,9 @@ import { napariState, notebooksState, previewState, stateInfo, formatUptime, typ
 import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
+import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
+import ViewProfileEditor from '../components/ViewProfileEditor.vue'
+import ChipSelect from '../components/ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
          fetchStoreLayout, setStoreLayout,
          type StorageSummary, type CompressorSettings, type StoreLayoutSettings } from '../utils/storage'
@@ -120,6 +123,21 @@ const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const appCtl      = useAppControlStore()
 const customModules = useCustomModulesStore()
+
+// ── View profiles ────────────────────────────────────────────────────────────
+// A curated sidebar: which module pages show, in which order (docs/todo/VIEW_PROFILES_PLAN.md). The
+// selection is per user; the definitions are files under <config_dir>/profiles/, authored by the
+// editor below. Refreshed when the panel opens so a hand-dropped file shows up without a restart.
+const viewProfiles = useViewProfilesStore()
+const showProfileEditor = ref(false)
+// One chip per profile, plus the implicit "All pages". ChipSelect is the canonical inline selector
+// (docs/UI.md) — a handful of named profiles is a chip row, not a dropdown. No per-option tips: the
+// labels ARE the profile names, and a tip per chip would fire on top of the control's own tooltip.
+const profileOptions = computed(() => [
+  { value: ALL_PROFILE_ID, label: 'All pages' },
+  ...viewProfiles.profiles.map(p => ({ value: p.id, label: p.label })),
+])
+onMounted(() => viewProfiles.refresh())
 
 // ── Custom modules ───────────────────────────────────────────────────────────
 // User drop-in tasks (docs/CUSTOM_MODULES.md). Reload rescans the config dir for NEWLY dropped .jl;
@@ -542,7 +560,7 @@ async function switchWt(path: string) {
                 @click="saveName"
                 v-tooltip.right="'Apply the new project name'"
               >
-                <i :class="['pi', saved ? 'pi-check' : saving ? 'pi-spin pi-cog' : 'pi-check']" />
+                <i :class="['pi', saved ? 'pi-check' : saving ? 'pi-spin pi-spinner' : 'pi-check']" />
                 {{ saved ? 'Applied' : 'Apply' }}
               </button>
             </div>
@@ -578,6 +596,30 @@ async function switchWt(path: string) {
         <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
           v-tooltip.right="'Reload plots automatically when a task finishes'" />
       </div>
+
+      <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
+           pages stay reachable by URL — this declutters, it does not restrict. -->
+      <div class="field">
+        <label class="field-label">View profile</label>
+        <div class="field-row">
+          <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift
+               right (and eventually wrap) as it does. A fixed control belongs on the fixed side. -->
+          <button class="save-btn" @click="showProfileEditor = true"
+                  v-tooltip.right="'Create or change a profile'">
+            <i class="pi pi-pencil" /> Edit
+          </button>
+          <ChipSelect :options="profileOptions" :model-value="settings.viewProfile"
+                      aria-label="Active view profile"
+                      v-tooltip.right="'Show only the pages this profile lists'"
+                      @update:model-value="viewProfiles.select($event as string)" />
+        </div>
+        <span class="field-hint cc-muted cc-fs-xs">
+          Hides sidebar pages you don't use. Hidden pages still open by URL.
+        </span>
+        <span v-for="e in viewProfiles.errors" :key="e.file" class="field-hint cc-muted-warn cc-fs-xs">
+          {{ e.file }}: {{ e.error }}
+        </span>
+      </div>
     </section>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
@@ -595,7 +637,7 @@ async function switchWt(path: string) {
             @click="appCtl.checkUpdate"
             v-tooltip.right="'Check GitHub for a newer release'"
           >
-            <i :class="['pi', appCtl.updateChecking ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            <i :class="['pi', appCtl.updateChecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
             {{ appCtl.updateChecking ? 'Checking…' : 'Check' }}
           </button>
         </div>
@@ -612,7 +654,7 @@ async function switchWt(path: string) {
           @click="appCtl.applyUpdate"
           v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish`"
         >
-          <i :class="['pi', appCtl.updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
+          <i :class="['pi', appCtl.updateBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
           {{ appCtl.updateBusy ? 'Updating…' : `Update to ${appCtl.updateLatest}` }}
         </button>
       </div>
@@ -673,7 +715,7 @@ async function switchWt(path: string) {
           <button class="save-btn" data-guide="settings.storageScan"
                   :disabled="storageScan || !projectMeta.current" @click="scanStorage"
                   v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
-            <i :class="['pi', storageScan ? 'pi-spin pi-cog' : 'pi-search']" />
+            <i :class="['pi', storageScan ? 'pi-spin pi-spinner' : 'pi-search']" />
             {{ storage ? 'Re-scan' : 'Scan storage' }}
           </button>
         </div>
@@ -730,7 +772,7 @@ async function switchWt(path: string) {
           <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
                     v-tooltip.top="'Delete every non-active image version'">
-              <i :class="['pi', storageBusy ? 'pi-spin pi-cog' : 'pi-trash']" /> Free up space
+              <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : 'pi-trash']" /> Free up space
             </button>
             <template v-else>
               <button class="save-btn danger" @click="confirm">
@@ -757,7 +799,7 @@ async function switchWt(path: string) {
             @click="customModules.reload"
             v-tooltip.right="'Rescan for newly dropped modules; edits need a server restart'"
           >
-            <i :class="['pi', customModules.loading ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            <i :class="['pi', customModules.loading ? 'pi-spin pi-spinner' : 'pi-refresh']" />
             {{ customModules.loading ? 'Reloading…' : 'Reload' }}
           </button>
         </div>
@@ -880,7 +922,7 @@ async function switchWt(path: string) {
           <span class="patch-actions">
             <button class="save-btn" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
                     v-tooltip.top="'List what would change — writes nothing'">
-              <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-cog' : 'pi-search']" /> Dry-run
+              <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
             </button>
             <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, arm, confirm, cancel }">
               <button v-if="!armed" class="save-btn danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
@@ -919,7 +961,7 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
-            <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+            <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="armQuit(arm)"
@@ -956,11 +998,11 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <button class="save-btn" :disabled="svcBusy === 'napari'" @click="napariAction('restart')"
                   v-tooltip.top="'Close and relaunch the napari bridge (picks up bridge code changes)'">
-            <i :class="['pi', svcBusy === 'napari' ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            <i :class="['pi', svcBusy === 'napari' ? 'pi-spin pi-spinner' : 'pi-refresh']" />
             {{ napariSt === 'stopped' ? 'Start' : 'Restart' }}
           </button>
           <button v-if="napariSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'napari'"
-                  @click="napariAction('stop')"><i class="pi pi-stop" /> Stop</button>
+                  @click="napariAction('stop')"><i class="pi pi-stop-circle" /> Stop</button>
         </span>
       </div>
 
@@ -972,7 +1014,7 @@ async function switchWt(path: string) {
                @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
                v-tooltip.right="'Render napari on the discrete GPU; restarts napari (Linux only)'">
           Use discrete GPU for napari
-          <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:var(--cc-fs-xs);" />
+          <i v-if="gpuBusy" class="pi pi-spin pi-spinner" style="font-size:var(--cc-fs-xs);" />
         </CcToggle>
         <span v-if="!gpuSupported" class="field-hint cc-muted cc-fs-xs">
           Only configurable on Linux — on this system the GPU is selected by the OS/driver.
@@ -987,14 +1029,14 @@ async function switchWt(path: string) {
           <button v-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
                   v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
-            <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-cog' : 'pi-play']" /> Start
+            <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-play']" /> Start
           </button>
           <template v-else>
             <button class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
-              <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+              <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
             </button>
             <button class="save-btn ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
-              <i class="pi pi-stop" /> Stop
+              <i class="pi pi-stop-circle" /> Stop
             </button>
           </template>
         </span>
@@ -1011,7 +1053,7 @@ async function switchWt(path: string) {
           <button v-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
                   @click="previewStop()"
                   v-tooltip.top="'Stop the preview worker and free its GPU memory'">
-            <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-cog' : 'pi-stop']" /> Stop
+            <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-spinner' : 'pi-stop-circle']" /> Stop
           </button>
           <span v-else class="cc-muted cc-fs-xs">Starts from a task's preview toggle</span>
         </span>
@@ -1033,7 +1075,7 @@ async function switchWt(path: string) {
           <button v-if="runnerSt !== 'stopped'" class="save-btn" :disabled="svcBusy === 'runner'"
                   @click="runnerRestart(!!runnerRaw?.busy && svcMsg.includes('again'))"
                   v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
-            <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+            <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
           </button>
           <span v-else-if="runnerRaw?.enabled" class="cc-muted cc-fs-xs">Starts with the backend</span>
           <span v-else class="cc-muted cc-fs-xs">Off — tasks run in the backend</span>
@@ -1081,7 +1123,7 @@ async function switchWt(path: string) {
           {{ r.detail }}
           <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
         </span>
-        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn cc-btn-sm"
+        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn"
                 :disabled="observer.registering" @click="observer.registerMcp()"
                 v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
           <i class="pi pi-download" /> {{ observer.registering ? 'Setting up…' : 'Set up' }}
@@ -1145,7 +1187,7 @@ async function switchWt(path: string) {
 
       <div class="field-row" style="margin-top:0.6rem; gap:0.5rem">
         <button class="save-btn" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
-          <i :class="['pi', diagBusy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Refresh
+          <i :class="['pi', diagBusy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
         </button>
         <button class="save-btn" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
           <i class="pi pi-box" /> Packages…
@@ -1200,7 +1242,7 @@ async function switchWt(path: string) {
       />
       <div class="field-row" style="margin-top:0.5rem">
         <button class="save-btn" :disabled="replBusy || !replCode.trim()" @click="runRepl">
-          <i :class="['pi', replBusy ? 'pi-spin pi-cog' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
+          <i :class="['pi', replBusy ? 'pi-spin pi-spinner' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
         </button>
       </div>
     </section>
@@ -1209,6 +1251,7 @@ async function switchWt(path: string) {
     </div>
 
     <PackagesDialog v-if="showPackages" @close="showPackages = false" />
+    <ViewProfileEditor v-if="showProfileEditor" @close="showProfileEditor = false" />
   </div>
 </template>
 

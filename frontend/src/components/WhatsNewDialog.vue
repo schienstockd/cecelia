@@ -89,7 +89,7 @@ const canInstall = computed(() =>
       <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>
       <button v-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
               :disabled="app.updateBusy || !app.updateLatest" @click="app.applyUpdate">
-        <i :class="['pi', app.updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
+        <i :class="['pi', app.updateBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
         {{ app.updateBusy ? 'Installing…' : `Install ${app.updateLatest ?? '(no version)'}` }}
       </button>
       <button class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'wn-close-btn': !canInstall }" @click="$emit('close')">Close</button>

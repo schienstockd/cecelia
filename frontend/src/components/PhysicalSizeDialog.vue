@@ -253,7 +253,7 @@ async function fillFlagged() {
 <template>
   <BaseModal width="480px" @close="emit('close')">
     <template #title>
-      <i class="pi pi-ruler" /> Physical size &amp; timing
+      <i class="pi pi-gauge" /> Physical size &amp; timing
       <i class="pi pi-info-circle info-dot"
          v-tooltip.bottom="'Flagged = missing or unusual; check Fiji (Image ▸ Properties)'" />
     </template>
@@ -309,19 +309,19 @@ async function fillFlagged() {
     <template #footer>
       <button class="cc-btn cc-btn-ghost" :disabled="propagating" @click="fillFlagged"
         v-tooltip.top="'Fill these values into the other flagged selected images'">
-        <i v-if="propagating" class="pi pi-spin pi-cog" /><i v-else class="pi pi-share-alt" />
+        <i v-if="propagating" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-share-alt" />
         Fill flagged
       </button>
       <button class="cc-btn cc-btn-ghost" :disabled="copying" @click="copyToSelected"
         v-tooltip.top="'Copy this image\'s values to the other selected images'">
-        <i v-if="copying" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
+        <i v-if="copying" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-copy" />
         Copy to selected
       </button>
       <span class="footer-spacer" />
       <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
       <button class="cc-btn cc-btn-primary" :disabled="saving" @click="apply"
         v-tooltip.top="`Apply to ${targetUids.length} image(s); derived measures are not recomputed`">
-        <i v-if="saving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-check" />
+        <i v-if="saving" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-check" />
         Apply
       </button>
     </template>

@@ -82,7 +82,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
     ],
   },
   {
-    key: 'creates', title: 'Creates', icon: 'pi-file-edit', tone: 'good',
+    key: 'creates', title: 'Creates', icon: 'pi-file', tone: 'good',
     items: [
       'Analysis boards — a page of plots, added beside your own',
       'Chains — a wired pipeline you review, then run',

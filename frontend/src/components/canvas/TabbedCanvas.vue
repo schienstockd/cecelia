@@ -216,7 +216,7 @@ function exportBoard(kind: string) {
               <template v-else>
                 <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="confirm"
                         v-tooltip.bottom="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`"><i class="pi pi-check" /></button>
-                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-replay" /></button>
+                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-undo" /></button>
               </template>
             </span>
           </ConfirmButton>

@@ -17,7 +17,7 @@ export interface TaskStatusStyle {
 
 export const TASK_STATUS: Record<TaskStatus, TaskStatusStyle> = {
   queued:    { icon: 'pi-clock',        color: 'var(--cc-text-dim)', tone: 'neutral', label: 'Queued' },
-  running:   { icon: 'pi-spin pi-cog',  color: 'var(--cc-active)',   tone: 'active',  label: 'Running' },
+  running:   { icon: 'pi-spin pi-spinner',  color: 'var(--cc-active)',   tone: 'active',  label: 'Running' },
   done:      { icon: 'pi-check-circle', color: 'var(--cc-sev-ok)',   tone: 'ok',      label: 'Done' },
   failed:    { icon: 'pi-times-circle', color: 'var(--cc-sev-fail)', tone: 'fail',    label: 'Failed' },
   cancelled: { icon: 'pi-ban',          color: 'var(--cc-text-dim)', tone: 'neutral', label: 'Cancelled' },

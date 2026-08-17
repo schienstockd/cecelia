@@ -545,7 +545,7 @@ const pct = computed(() => {
       <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
         @input="val = ($event.target as HTMLInputElement).value"
         v-tooltip.right="param.tip" />
-      <button type="button" class="cc-btn cc-btn-ghost cc-btn-sm" @click="showDirBrowser = true"
+      <button type="button" class="cc-btn cc-btn-ghost" @click="showDirBrowser = true"
         v-tooltip.top="'Browse for a folder'">
         <i class="pi pi-folder-open" />
       </button>

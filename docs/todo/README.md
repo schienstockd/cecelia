@@ -40,6 +40,16 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Current parked plans
 
+- `VIEW_PROFILES_PLAN.md` — **BUILT**; kept as the rationale record. A named, ordered subset of the
+  existing 20 sidebar items, dropped in as `<config_dir>/profiles/*.json` and built in a GUI editor,
+  selected **per user** (`cc.viewProfile`) — definitions and selection are separate axes, which the
+  originating brief conflated. Live-reactive (`allGroups` was already a computed), and hidden pages stay
+  reachable by URL: it declutters, it is not access control. The one real downstream assumption of the
+  static menu was `/` redirecting to `/manage-images`, which a profile can hide — `/` is now its own
+  welcome page instead, because a record `redirect` resolves before any guard and so bounced on a cold
+  boot. Also extracted the nav catalogue to `frontend/src/lib/navGroups.ts` (three surfaces read it) and
+  closed a `hasPerOptionTips` blind spot that had pushed a duplicate tooltip onto a chip row.
+  Supersedes `docs/archive/view-profiles-prompt.md`.
 - `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.smooth` (σ=1 gaussian + centred 3-frame
   temporal median, one shared kernel per channel); the `smooth → AF → drift` composite is still open.
   Needed because AF's triangle background
