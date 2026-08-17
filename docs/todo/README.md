@@ -40,30 +40,16 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Current parked plans
 
-- `CORRECTION_PLAN.md` — **planning.** Manual correction of segmentation and tracks, asked for by a
-  lab that used the old R version. Track correction is a real port (old R had a 663-line Shiny module:
-  points remove/add, tracks remove/join, edit history, napari selection); **segmentation correction is
-  not** — old R repurposed the *training-label* Save-Labels path, which wrote the label store **in
-  place, single-level, with no re-measure**, so every downstream number silently described the pre-edit
-  mask. The lab coped by manually re-running measure-labels and tracking-with-`calcTrackingStatsOnly`.
-  The plan's centre is the **staleness cascade**: corrections are composite tasks that chain
-  `segment.measureLabels` / `tracking.track_measures` themselves, write labels via `staged_store`, keep
-  a replayable `corrections/{value_name}.json` journal, and *declare* what they invalidated instead of
-  going quiet.
-- `PLUGINS_PLAN.md` — **planning.** Distribution for custom modules, not a new plugin system: the
-  system already shipped (P1–P3), so this is install/update/remove from a pinned git URL plus a small
-  curated list. Reverses the *marketplace* half of `CUSTOM_MODULES_PLAN.md`'s non-goal and keeps the
-  *no-sandbox* half, which is the whole trust story. The verified blocker is a **depth asymmetry**: the
-  Julia loader is recursive (`walkdir`) but the definitions/categories scans are one-level
-  (`api/src/routes.jl:350`, `:478`), so a cloned plugin registers and runs but has **no form and no nav
-  entry**. Candidate plugins beyond the lab's two: the never-ported old-R `cellToLocation` and
-  `tenxXenium` importers.
-- `VIEW_PROFILES_PLAN.md` — **in progress** (`feat/view-profiles`). A named, ordered subset of the
-  existing 20 sidebar items, dropped in as `<config_dir>/profiles/*.json`, selected **per user**
-  (`cc.viewProfile`) — definitions and selection are separate axes, which the originating brief
-  conflated. Live-reactive (`allGroups` is already a computed), hidden pages stay reachable by URL, and
-  the one real downstream assumption of the static list is `main.ts:22`'s `/` → `/manage-images`
-  redirect, which must follow the profile. Supersedes `docs/archive/view-profiles-prompt.md`.
+- `VIEW_PROFILES_PLAN.md` — **BUILT**; kept as the rationale record. A named, ordered subset of the
+  existing 20 sidebar items, dropped in as `<config_dir>/profiles/*.json` and built in a GUI editor,
+  selected **per user** (`cc.viewProfile`) — definitions and selection are separate axes, which the
+  originating brief conflated. Live-reactive (`allGroups` was already a computed), and hidden pages stay
+  reachable by URL: it declutters, it is not access control. The one real downstream assumption of the
+  static menu was `/` redirecting to `/manage-images`, which a profile can hide — `/` is now its own
+  welcome page instead, because a record `redirect` resolves before any guard and so bounced on a cold
+  boot. Also extracted the nav catalogue to `frontend/src/lib/navGroups.ts` (three surfaces read it) and
+  closed a `hasPerOptionTips` blind spot that had pushed a duplicate tooltip onto a chip row.
+  Supersedes `docs/archive/view-profiles-prompt.md`.
 - `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.smooth` (σ=1 gaussian + centred 3-frame
   temporal median, one shared kernel per channel); the `smooth → AF → drift` composite is still open.
   Needed because AF's triangle background
