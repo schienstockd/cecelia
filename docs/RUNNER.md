@@ -157,6 +157,34 @@ subscriber**. Both conditions are load-bearing: work alone would kill it between
 a subscriber alone would kill it during the ~45 s of a backend restart, which is the thing it exists to
 survive. A `runner.json` (pid, port, commit) in the config dir makes a stray one findable.
 
+### Losing the port is a normal outcome, not a crash
+
+Because the runner outlives the API server, a fresh `pixi run dev` frequently finds one already there.
+`runner_launch!` adopts anything that ANSWERS — but a cold runner pays Julia load plus Cecelia
+precompilation (~45 s) before it binds, and during that window it answers neither a ping nor a state
+file. So a second launch looks justified, and one of the two then loses the bind.
+
+Two things used to go wrong at that point, and both are fixed:
+
+- The loser died with a `TaskFailedException` stack trace out of `HTTP.listen`, which reads as a broken
+  app. It now checks for an incumbent first and, failing that, catches the bind and **exits 0 with one
+  line naming the pid and commit that hold the port**.
+- Worse, the loser wrote `runner.json` with its OWN pid *before* binding — clobbering the incumbent's
+  record — and its `atexit` hook then **deleted** the file. A collision therefore left the *surviving*
+  runner with no state file, which is exactly the "a stray runner is folklore" case the file exists to
+  prevent. The order is now **bind first, claim second** (`HTTP.listen!` + `wait`), so a runner only
+  ever writes the record for a port it actually owns. Pinned by *"runner_serve stands down when the
+  port is taken"* in `app/test/suite.jl`.
+
+`runner_launch!` also reports **whose** runner answered: it compares the pid on the wire with
+`Libc.getpid` of the child it spawned, and says "adopted" rather than "started" when they differ. It
+used to log "started" with the incumbent's pid while the process it had launched died in the same
+terminal — two different pids in one log, which sent the reader hunting for a bug in the wrong one.
+
+**A shared `CECELIA_DEV_DIR` shares this port.** A worktree with a copied `.env` resolves the same
+`config_dir()`, so two checkouts cannot both run `pixi run dev`; the second's runner stands down. Set
+`CECELIA_RUNNER_PORT` for a genuinely independent pair.
+
 ### Lifecycle — the one asymmetry
 
 `_stop_children_for_exit(; stop_runner)` is the split. Quit stops it; **Restart and the worktree switch

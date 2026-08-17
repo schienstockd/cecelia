@@ -437,9 +437,47 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
     # Installed BEFORE the startup banner below, so "task runner starting" is the first line a
     # subscriber sees rather than the first one it misses.
     install_log_tee!(_emit_server_log)
+
+    # ── Losing the port is a NORMAL outcome, not a crash ──────────────────────────
+    #
+    # This process is built to outlive the API server, so on a fresh `pixi run dev` there is often
+    # already one running — and two checkouts sharing a `CECELIA_DEV_DIR` share this port outright.
+    # `runner_launch!` adopts a runner that ANSWERS, but a cold start pays Julia load plus Cecelia
+    # precompilation before it ever binds, so for tens of seconds there is nothing to adopt and a
+    # second launch looks justified. That second process then died on `bind` with a
+    # `TaskFailedException` stack trace, which reads as a broken app rather than "someone else got
+    # there first".
+    #
+    # Ask before taking: if a runner already answers on this port, say so in one line and leave. Note
+    # the check is deliberately BEFORE the state file is written — see below.
+    incumbent = runner_ping(RunnerHandle(; port = port))
+    if incumbent !== nothing
+        @info("A task runner already owns this port — leaving it alone",
+              port, its_pid = get(incumbent, "pid", "?"), its_commit = get(incumbent, "commit", ""),
+              hint = "Stop it with `pixi run stop-runner`, or restart it from Settings → System when its work is done.")
+        return nothing
+    end
+
+    # ── Bind FIRST, claim the state file second ──────────────────────────────────
+    #
+    # The order used to be the other way round, and it made a lost race destructive rather than merely
+    # noisy: the loser wrote `runner.json` with ITS pid — clobbering the winner's record — and then its
+    # `atexit` hook DELETED the file on the way out. So after a collision the surviving runner had no
+    # state file at all, which is exactly the "a stray runner is folklore" case this file exists to
+    # prevent. `HTTP.listen!` binds synchronously and hands back a server to `wait` on, so the claim
+    # can happen after the port is genuinely ours.
+    server = try
+        HTTP.listen!(_runner_stream, host, port)
+    catch e
+        # A true race (someone bound between the ping above and here). Nothing has been written yet, so
+        # no other runner's record is harmed — report it as the ordinary event it is.
+        @warn("Could not bind the task runner port — another process took it. This runner is exiting; " *
+              "the one holding the port keeps working.", port, exception = e)
+        return nothing
+    end
     _runner_write_state_file(port)
     atexit(_runner_remove_state_file)
     _runner_idle_watchdog!()
     @info "Cecelia task runner starting" host port pid=getpid() threads=Threads.nthreads() commit=_RUNNER_COMMIT[] projects_dir=projects_dir()
-    HTTP.listen(_runner_stream, host, port)
+    wait(server)
 end

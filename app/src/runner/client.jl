@@ -132,12 +132,36 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
     deadline = time() + wait_seconds
     while time() < deadline
         reply = runner_ping(h)
-        if reply !== nothing
-            Int(get(reply, "protocol", 0)) == RUNNER_PROTOCOL &&
-                (@info("Task runner started", port = h.port, pid = get(reply, "pid", "?")); return h)
+        if reply !== nothing && Int(get(reply, "protocol", 0)) == RUNNER_PROTOCOL
+            # WHOSE runner answered? Not necessarily ours. A runner that was already starting up when
+            # we looked answers neither ping nor state file for the tens of seconds it spends in Julia
+            # load + precompilation, so we may have launched a second one into a race we then lost —
+            # and the reply is the incumbent's. Reporting "started" for a process we did not start sent
+            # the reader hunting for a bug in the pid that died, which is what happened in practice.
+            # The pid on the wire is the truth; compare it and say which of the two this was.
+            their_pid = get(reply, "pid", nothing)
+            ours      = try; Libc.getpid(h.proc); catch; nothing; end
+            mine      = their_pid !== nothing && ours !== nothing && Int(their_pid) == Int(ours)
+            h.adopted = !mine
+            mine ?
+                @info("Task runner started", port = h.port, pid = something(their_pid, "?")) :
+                @info("Task runner adopted — one was already starting on this port, so ours stood down",
+                      port = h.port, pid = something(their_pid, "?"),
+                      ours = something(ours, "?"))
+            return h
         end
+        # `!process_running` no longer implies the port was taken: a runner that finds an incumbent now
+        # exits cleanly and deliberately (see `runner_serve`). Loop once more so an incumbent that is
+        # up gets adopted on the next pass rather than reported as a failure.
         if !process_running(h.proc)
-            @warn "Task runner exited immediately — is port $(h.port) already taken?"
+            reply = runner_ping(h)
+            if reply !== nothing
+                h.adopted = true
+                @info("Task runner adopted — ours stood down for the one already on this port",
+                      port = h.port, pid = get(reply, "pid", "?"))
+            else
+                @warn "Task runner exited without binding, and nothing is answering" port = h.port
+            end
             return h
         end
         sleep(0.5)
