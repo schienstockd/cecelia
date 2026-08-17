@@ -186,7 +186,7 @@ function isNavDisabled(item: NavItem): boolean {
       <RouterLink to="/settings" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
                   data-guide="sidebar.settings"
                   v-tooltip.right="'Settings — project name, ID, and interface preferences'">
-        <i class="pi pi-sliders-h" />
+        <i class="pi pi-cog" />
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
@@ -207,7 +207,7 @@ function isNavDisabled(item: NavItem): boolean {
         </ConfirmButton>
         <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
                 v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
-          <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />
+          <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
         </button>
       </div>
     </div>

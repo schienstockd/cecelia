@@ -64,7 +64,7 @@ const nameChip = (c: NameCount): ChipOption => ({
 const scopeOptions = computed<ChipOption[]>(() => [
   { value: 'images',   label: 'Whole images', icon: 'pi pi-trash',
     tip: 'Delete the images and everything derived from them' },
-  { value: 'versions', label: 'Versions', icon: 'pi pi-layer-group',
+  { value: 'versions', label: 'Versions', icon: 'pi pi-history',
     badge: versionNames.value.length, disabled: versionNames.value.length === 0,
     tip: versionNames.value.length ? 'Delete specific image versions' : 'No image version is registered yet' },
   { value: 'labels',   label: 'Label sets', icon: 'pi pi-th-large',

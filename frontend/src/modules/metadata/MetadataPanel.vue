@@ -333,7 +333,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         v-tooltip.bottom="flaggedCount
           ? `Voxel size and frame interval — ${flaggedCount} image(s) flagged`
           : 'View or fix voxel size and frame interval for the selected image(s)'">
-        <i class="pi pi-ruler" /> Open editor
+        <i class="pi pi-gauge" /> Open editor
         <span v-if="flaggedCount" class="warn-count">{{ flaggedCount }}</span>
       </button>
     </section>

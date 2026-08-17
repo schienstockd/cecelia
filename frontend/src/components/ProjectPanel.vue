@@ -334,7 +334,7 @@ function formatDate(iso: string | null): string {
             @click="createProject"
             v-tooltip.top="'Create the project and open it'">
             <i class="pi pi-plus" v-if="!projectMeta.loading" />
-            <i class="pi pi-spin pi-cog" v-else />
+            <i class="pi pi-spin pi-spinner" v-else />
             Create project
           </button>
         </template>

@@ -177,7 +177,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         <!-- Fast-plot cache: an optional compiled sysimage that makes the first plot fast. Built on
              demand (this button); notebooks work without it, just slow-first-plot. -->
         <div v-if="sysimage === 'building'" class="nb-note">
-          <i class="pi pi-spin pi-cog" />
+          <i class="pi pi-spin pi-spinner" />
           <span>
             <strong>Building the fast-plot cache (~10 min, in the background).</strong>
             Keep working — notebooks are usable now; only the <em>first</em> plot is slow until it

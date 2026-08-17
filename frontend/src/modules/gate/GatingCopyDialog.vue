@@ -119,7 +119,7 @@ async function copy() {
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
       <button class="cc-btn cc-btn-primary" :disabled="busy || checking || !picked.size" @click="copy">
-        <i v-if="busy" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
+        <i v-if="busy" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-copy" />
         Copy to {{ picked.size }} image{{ picked.size === 1 ? '' : 's' }}
       </button>
     </template>

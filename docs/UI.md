@@ -84,6 +84,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
 | Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
+| Choosing an ICON for anything | `frontend/src/lib/iconLegend.ts` — find the meaning, use its glyph | a glyph that "looks right", or a second glyph for a meaning that already has one |
 | Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
 | Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
 
@@ -793,6 +794,28 @@ exactly how the z-slider bug got in — so the sink-side rule above is the part 
 changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
 
 ---
+
+## Icons — one meaning per glyph, and the glossary is the reference
+
+`frontend/src/lib/iconLegend.ts` is THE list of what every glyph in this app means, grouped by family.
+**Consult it before choosing an icon**: find the meaning you need and use its glyph, or — if the meaning
+is genuinely new — add an entry saying what it means. Users read the same list from the **key** in the
+header (`pi-key`, beside the Guides compass, rendered by `IconLegendDialog.vue`).
+
+It cannot rot, because `iconLegend.test.ts` scans every glyph actually rendered under `frontend/src`
+(comments stripped) and fails when one is **missing from the list**, or **listed and rendered nowhere**.
+A new icon therefore fails the suite until somebody says what it means.
+
+Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 uses):
+
+- **One meaning per glyph.** `pi-replay` meant both "run it again" (task re-run, notebook restore) *and*
+  "cancel" (the canvas confirm pairs' Keep button, now `pi-undo`). `pi-sliders-h` meant both "Settings"
+  and "napari viewer controls" — 40 px apart in the same sidebar; Settings is now `pi-cog`. A cog
+  labelled "Run history" is now `pi-history`.
+- **One glyph per meaning.** The busy state was split almost exactly 50/50 between `pi-spin pi-cog` (29
+  uses) and `pi-spin pi-spinner` (28) with nothing choosing between them; it is now **always
+  `pi-spin pi-spinner`**, which frees `pi-cog` to mean only settings/options. `pi-spin` is a *modifier*,
+  not a glyph. "Edit" was split between `pi-pencil` and `pi-file-edit`; it is `pi-pencil`.
 
 ## Modals & dialogs — always use `BaseModal`
 

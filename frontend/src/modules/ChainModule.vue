@@ -1433,7 +1433,7 @@ onActivated(async () => {
                 @dragstart="onPaletteDragStart($event, def)"
                 v-tooltip.right="paletteTooltip(def)"
               >
-                <i class="pi pi-grip-vertical drag-grip" />
+                <i class="pi pi-ellipsis-v drag-grip" />
                 <span class="palette-item-label">{{ def.label }}</span>
                 <span
                   v-for="ax in requiredAxesFor(def)"
@@ -1659,7 +1659,7 @@ onActivated(async () => {
       </template>
 
       <div v-else class="config-placeholder cc-empty">
-        <i class="pi pi-mouse-pointer" style="font-size:1.4rem; opacity:0.3" />
+        <i class="pi pi-cog" style="font-size:1.4rem; opacity:0.3" />
         <p>Click a node to configure it.</p>
       </div>
     </aside>

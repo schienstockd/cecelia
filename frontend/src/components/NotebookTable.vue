@@ -335,7 +335,7 @@ defineExpose({ refresh })
                         v-tooltip.top="confirmingPrune === nb.file
                           ? `Click Confirm to delete every snapshot except the current (v${nb.version})`
                           : `Keep only the current version (v${nb.version}) — delete older snapshots`">
-                  <i class="pi pi-filter" /> {{ confirmingPrune === nb.file ? 'Confirm prune' : 'Prune' }}
+                  <i class="pi pi-eraser" /> {{ confirmingPrune === nb.file ? 'Confirm prune' : 'Prune' }}
                 </button>
           </template>
         </div>
