@@ -389,6 +389,37 @@ Both from `app/src/label_props.jl:657-692`:
   `centre(pos, tp)` and `colour_labels(overrides)` are already shipped, so flying to a candidate
   needs no bridge work.
 
+### Icons for the correction surface — checked against the glossary
+
+`frontend/src/lib/iconLegend.ts` (#589) is the reference, and `iconLegend.test.ts` is a two-way
+ratchet: a rendered glyph missing from the list fails, **and so does a listed glyph nothing renders**.
+So glossary entries land WITH the component, never ahead of it — do not pre-register these.
+
+Checked availability (316 glyphs in the installed PrimeIcons) and, more importantly, consistency —
+one meaning per glyph. Everything the worklist needs already exists:
+
+| Need | Glyph | Its existing meaning |
+|---|---|---|
+| Which way the cell was going (the gap discriminator) | `pi-directions` | "Direction of movement" — exact |
+| Show this candidate in napari | `pi-map-marker` | "…or a napari selection" |
+| Dismiss a candidate | `pi-times` | "Close, cancel or clear" |
+| The "needs review" list | `pi-flag` | "QC findings on this image" — a candidate *is* a finding |
+| Undo a pending edit | `pi-undo` | exact |
+| Commit the pending edits | `pi-save` | exact |
+| The correction journal | `pi-history` | "Earlier — past runs, versions" |
+| Remove a track / a duplicate | `pi-trash` | "Delete" |
+
+**Join and Split get text buttons, not glyphs.** PrimeIcons has nothing that reads as "merge these
+two" or "cut this in half" — the nearest free candidates are `pi-link` (too close to
+`pi-external-link`), `pi-expand` (reads "fullscreen", and `pi-window-maximize` already owns that) and
+`pi-arrow-right-arrow-left` (reads "swap"). A worklist row has room for a word, and these two ops are
+destructive and asymmetric, so the label has to be exact rather than guessable. Inventing a glyph for
+a concept the set does not cover is how a glossary starts lying.
+
+One genuinely new glyph, and only when the star plot is built: **`pi-sun`** for the star / rose plot
+(free; rays from a centre is literally the plot). `pi-star`/`pi-star-fill` are taken by
+starred/not-starred, and `pi-asterisk` by density outliers.
+
 ### celltrackR plots worth adding to the suite
 
 From celltrackR 1.2.2's own vignettes (extracted locally; Wortel et al. 2021,
