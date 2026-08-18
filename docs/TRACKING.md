@@ -368,6 +368,16 @@ Three modes, because "the tracks" is three questions:
 - **The cap is stated, not silent.** Longest-first, capped, and the plot reports `shown of total` —
   a hairball of 500 tracks looks exactly like a hairball of 5000.
 
+### A track view never defaults to `default` — or to the active segmentation
+
+Both are routinely untracked. On the reference image (`zolIMa/1/fXgbTl`) `default` and the active
+`three` carry no tracks while `memTom` holds 374 — so a panel defaulting to either reported "nothing to
+review" for an image with 31 correction candidates. `GET /api/gating/channels?popType=track` therefore
+returns **`trackedValueNames`** (via `is_tracked`, which reads only the obs column list), and every track
+surface resolves through one helper, `resolveTrackValueName`: a persisted choice that is still tracked →
+the active segmentation if it is tracked → the first tracked one. The picker disables the untracked
+entries rather than hiding them, so "why is this one not offered" has a visible answer.
+
 ## Track diagnostics — the celltrackR QC battery (`track_diagnostics.jl`)
 
 "Can this tracking result be trusted, and what kind of motion is in it." Ported from celltrackR's

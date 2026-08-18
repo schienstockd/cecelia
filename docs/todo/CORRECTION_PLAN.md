@@ -352,13 +352,18 @@ Both from `app/src/label_props.jl:657-692`:
   `track_state` is per-cell and must be left alone. One thing it added: **an empty op list is a
   legal no-op**, because the suite requires every task's own spec defaults to validate, and a task
   whose default cannot be submitted does not fit the framework.
-  **Not built:** the editing surface. Ops arrive programmatically (a `trackOps` param taking a
-  Vector or a JSON string); the `text` widget in the spec is a stopgap, not the authoring path.
+  **Not built:** an authoring surface for an op the DETECTOR did not suggest — see P4d below. The
+  `text` widget in the spec is a stopgap, not the authoring path.
 - **P2 — `segment.correct`.** Three separable pieces, in order of risk:
   1. the `editable` load mode in `show_labels` (2b) — smallest, and testable on its own;
   2. a bridge command to hand the edited layer back (none exists today);
   3. the staged store write + re-measure + **obs carry-over** (4b), which is the real work.
-- **P3 — invalidation surface.** Decision 5, for both tasks, plus the QC findings.
+- **P3 — invalidation surface. NOT BUILT.** Decision 5, for both tasks, plus the QC findings.
+  `tracking.correct` handles 4b's half (it drops stale `live.*` obs from the cell table itself), but
+  nothing reports the SEPARATE artefacts that now predate the correction — `{vn}__tracks.h5ad`, cluster
+  runs, `trackclust` populations, gating pops, spatial graphs. Today a correction silently leaves them
+  in place with no warning, which is precisely the silent staleness the plan calls "the one place where
+  Feijoa must beat old R rather than match it".
 - **P4a — triage worklist. ✅ BACKEND BUILT.** The app finds what looks wrong and pre-picks the fix;
   the user only judges it. This is the inversion of old R, which made the user find the bad track AND
   specify the repair, with no help for the first part — and finding it is the afternoon's work.
@@ -379,24 +384,43 @@ Both from `app/src/label_props.jl:657-692`:
   (1.4 µm there) and the jump floor is a **quantile** of all steps, because step lengths are
   heavy-tailed (median 1.4, p90 4.9, p99 10.3 µm) and a median-multiple flags the whole tail.
   Result: **374 tracks → 31 candidates (8.3%)**, tunable to 10. That is a worklist someone finishes.
-- **P4b — the visuals.** Text cannot answer the question a candidate poses. Two track ends 2 µm
+- **P4b — the visuals. ✅ BUILT.** Text cannot answer the question a candidate poses. Two track ends 2 µm
   apart are one cell if the first was heading toward the second and two cells if it was heading away
   — same number, opposite answer. **There was no track-path plotting in the frontend at all**
   (`lib/tips.ts` states the position: tracks are viewed as polylines in napari). Built so far:
   `frontend/src/plots/trackPaths.ts` — the canonical engine, pure and Vitest-covered
   (`pathPoints`, a **square** `pathDomain` so a straight run cannot render as a diagonal,
   `focusPoint`, `gapGeometry`/`gapHint` for the heading, and `normalizeTracks`/`displacementVectors`
-  for star plots). Still to build: the view component. napari stays the place you look at the image —
-  `centre(pos, tp)` and `colour_labels(overrides)` are already shipped, so flying to a candidate
-  needs no bridge work.
+  for star plots). The views followed: `TrackCorrectionView` (per-row thumbnails with the decision point
+  marked), `TrackPathsView` (paths / star / rose, on the board too) and `TrackDiagnosticsView` (the
+  celltrackR QC battery — `docs/TRACKING.md` → *Track diagnostics*). napari stays the place you look at
+  the image; `POST /api/napari/centre` flies it to a candidate.
 
-- **P4c — where it lives.** Still open, and it is a product question rather than a build one: a
-  Data-group page of its own, or an affordance on Segment / Track? It interacts with view profiles —
-  this lab wants a *small* menu, and correction is the reason they are here. The interactive-views
-  registry (`frontend/src/components/canvas/interactiveViews.ts`) is the likely host, since a view
-  there gets panel chrome, zoom and export for free and needs no new nav entry; note the correction
-  view MUTATES, so it must not be offered on the read-only Analysis board. Consult `docs/UI.md`'s
-  primitive catalog and the icon glossary before rendering a single control.
+- **P4c — where it lives. ✅ SETTLED: the Track page's canvas.** No new nav entry, no new route. The
+  Track page IS `GatingPlots` with `popType="track"`, so correction is a third panel kind there
+  (**+ Correct**, beside **+ Tracks** and **+ Checks**), hosted through the generic `InteractivePanel`
+  from an interactive-views registry entry that carries **no surface flag** — it mutates, and the
+  Analysis board is read-only. The read-only track plots DO carry the board flag.
+
+- **P4d — authoring an op the detector did not find. NOT BUILT, and it is the real gap.** The worklist
+  inverts old R for the case the detector catches; for the case the user simply SEES, there is now no
+  GUI path at all, where old R at least let you name the tracks. A swap, a mid-track mis-link, a gap
+  wider than `gapFrames` — none of those reach the queue. Two candidate designs, both reusing shipped
+  machinery rather than new bridge work:
+  1. **From a napari selection.** `startCellSelection` already turns a drawn region into a transient
+     cell population (`napari/start-selection` + `napari/event`). Those labels are exactly the argument
+     `points.remove` / `points.add` take, so "untrack these detections" is a button over an existing
+     mechanism.
+  2. **From two picked tracks.** Picking two paths in the track plot and offering Join (with the same
+     temporal-overlap refusal the op already enforces) covers the mis-link case.
+  Until one of them exists, the honest statement is: **the worklist is complete for what the detector
+  finds, not for what the user sees.**
+
+- **P4e — detector thresholds in the GUI. NOT BUILT.** `GET /api/tracking/issues` accepts
+  `gapFrames`/`gapSteps`/`jumpFactor`/`jumpQuantile`/`minLen`, and the panel sends none of them. The
+  defaults are measured (374 tracks → 31 candidates on the reference image) but they describe one lab's
+  cell type; a stricter/looser control is the difference between a worklist someone finishes and one
+  they abandon.
 
 ### Icons for the correction surface — checked against the glossary
 

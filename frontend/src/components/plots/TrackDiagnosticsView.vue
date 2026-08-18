@@ -33,7 +33,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import {
   availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine, axisLabels,
-  diagnosticsSummary, pairCapNote, diagnosticsCsvRows, DIAG_LABEL,
+  diagnosticsSummary, pairCapNote, diagnosticsCsvRows, resolveTrackValueName, DIAG_LABEL,
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
 
@@ -44,8 +44,14 @@ const props = defineProps<{
 
 const imageUid = computed(() => (props.state.imageUid && props.imageUids.includes(props.state.imageUid))
   ? props.state.imageUid : (props.imageUids[0] ?? ''))
-const valueName = computed({ get: () => props.state.valueName ?? '',
-                             set: v => (props.state.valueName = v) })
+// a TRACKED segmentation, never 'default' or the active one — see resolveTrackValueName
+const trackedNames = ref<string[]>([])
+const activeName = ref('')            // the segmentation the rest of the app is pointed at
+const valueName = computed({
+  get: () => resolveTrackValueName(props.state.valueName, trackedNames.value, valueNames.value,
+                                   activeName.value),
+  set: v => (props.state.valueName = v),
+})
 
 const data = ref<DiagnosticsResponse | null>(null)
 const valueNames = ref<string[]>([])
@@ -67,9 +73,11 @@ async function loadValueNames() {
               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
     const r = await fetch(`/api/gating/channels?${q}`)
     if (!r.ok) return
-    const d = await r.json() as { valueNames?: string[]; valueName?: string }
+    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]
+                                  valueName?: string }
     valueNames.value = d.valueNames ?? []
-    if (d.valueName && !valueName.value) valueName.value = d.valueName
+    trackedNames.value = d.trackedValueNames ?? []
+    activeName.value = d.valueName ?? ''    
   } catch { /* the diagnostics request reports its own failure */ }
 }
 

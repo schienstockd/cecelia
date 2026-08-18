@@ -361,8 +361,16 @@ function api_gating_channels(req::HTTP.Request)
         pt    = get(q, "popType", "track")
         tsfx  = _cluster_suffixes(tobs, pt)                      # trackclust runs in the track table
         tfam  = Cecelia._cluster_measure_family(pt)
+        # WHICH of this image's segmentations actually have tracks. Every track surface needs this and
+        # none of them could get it: a track view defaulting to "default" or to the ACTIVE segmentation
+        # picks an UNTRACKED one on any image where tracking ran on a named label set — on the
+        # reference image (zolIMa/1/fXgbTl) `default` and the active `three` are both untracked while
+        # `memTom` holds 374 tracks, so the correction worklist reported "nothing to review" for an
+        # image with 31 candidates. `is_tracked` reads only the obs column list, so this is cheap.
+        tracked = String[v for v in versioned_keys(img.label_props) if is_tracked(img; value_name = v)]
         return 200, JSON3.write((;
             columns = motility,                                  # whole-track motility (directly gateable)
+            trackedValueNames = tracked,                          # the ones a track view may default to
             cellMeasures = cellmeas,                             # cell vars → per-track numeric aggregates
             cellObsMeasures = cellobs,                           # cell obs → per-track aggregates (HMM, …)
             channelNames = display === nothing ? String[] : display,  # relabel intensity aggregates

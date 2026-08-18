@@ -39,6 +39,7 @@ import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL } from '../
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint, type TrackPathMap,
 } from '../../plots/trackPaths'
+import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -56,8 +57,16 @@ const ws = useWsStore()
 
 const imageUid = computed(() => (props.state.imageUid && props.imageUids.includes(props.state.imageUid))
   ? props.state.imageUid : (props.imageUids[0] ?? ''))
-const valueName = computed({ get: () => props.state.valueName ?? 'default',
-                             set: v => (props.state.valueName = v) })
+// NEVER default to 'default' (or to the ACTIVE segmentation): both are routinely untracked, and this
+// panel then reports "nothing to review" for an image that has candidates — see resolveTrackValueName.
+const valueNames = ref<string[]>([])
+const trackedNames = ref<string[]>([])
+const activeName = ref('')            // the segmentation the rest of the app is pointed at
+const valueName = computed({
+  get: () => resolveTrackValueName(props.state.valueName, trackedNames.value, valueNames.value,
+                                   activeName.value),
+  set: v => (props.state.valueName = v),
+})
 const kinds = computed({ get: () => props.state.kinds ?? [], set: v => (props.state.kinds = v) })
 const pending = computed({ get: () => props.state.pending ?? [], set: v => (props.state.pending = v) })
 const skipped = computed({ get: () => props.state.skipped ?? [], set: v => (props.state.skipped = v) })
@@ -76,6 +85,21 @@ const kindOptions = computed<ChipOption[]>(() =>
   Object.entries(data.value?.counts ?? {})
     .map(([k, n]) => ({ value: k, label: `${KIND_LABEL[k] ?? k} ${n}` })))
 
+/** Which segmentations this image has, and which of them are tracked. */
+async function loadValueNames() {
+  if (!props.projectUid || !imageUid.value) { valueNames.value = []; trackedNames.value = []; return }
+  try {
+    const r = await fetch(`/api/gating/channels?projectUid=${props.projectUid}` +
+                          `&imageUid=${imageUid.value}&popType=track`)
+    if (!r.ok) return
+    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]
+                                  valueName?: string }
+    valueNames.value = d.valueNames ?? []
+    trackedNames.value = d.trackedValueNames ?? []
+    activeName.value = d.valueName ?? ''    
+  } catch { /* the issues request reports its own failure */ }
+}
+
 async function load() {
   if (!props.projectUid || !imageUid.value) { data.value = null; return }
   loading.value = true; error.value = ''
@@ -93,8 +117,9 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
-watch([() => props.projectUid, imageUid, valueName], load)
+onMounted(async () => { await loadValueNames(); await load() })
+watch([() => props.projectUid, imageUid], async () => { await loadValueNames(); await load() })
+watch(valueName, load)
 // applying corrections re-runs the detector's own input, and `commit` promises the user this list
 // comes back updated — that promise is this line (subject to the global autoRefreshOnTask setting)
 useDataRefresh(() => (imageUid.value ? [imageUid.value] : []), load)
@@ -229,6 +254,11 @@ defineExpose({ exportFormats, exportAs })
       <ChipSelect v-if="kindOptions.length" v-model="kinds" :options="kindOptions" multiple
                   v-tooltip="'Show only these kinds'" />
       <span class="tc-spacer" />
+      <select v-if="valueNames.length > 1" v-model="valueName"
+              v-tooltip="'Which tracked segmentation'" aria-label="Segmentation">
+        <option v-for="vn in valueNames" :key="vn" :value="vn"
+                :disabled="trackedNames.length > 0 && !trackedNames.includes(vn)">{{ vn }}</option>
+      </select>
       <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip="'Re-scan the tracks'" @click="load">
         <i class="pi pi-refresh" />
       </button>

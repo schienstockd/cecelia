@@ -184,3 +184,29 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
     : { distance: d.pairs?.distance ?? [], angle: d.pairs?.angle ?? [] }
   return cloud.distance.map((dist, i) => ({ distance: dist, angle: cloud.angle[i] }))
 }
+
+/**
+ * Which segmentation a TRACK view should show, given what the image has.
+ *
+ * Not `'default'`, and not the active one: both are routinely untracked. On the reference image
+ * (`zolIMa/1/fXgbTl`) `default` and the active `three` carry no tracks while `memTom` holds 374, so a
+ * view defaulting to either reported "nothing to review" for an image with 31 correction candidates.
+ * `trackedValueNames` comes from `/api/gating/channels?popType=track`.
+ *
+ * Order of preference: a persisted choice that is still tracked (so navigating away and back does not
+ * re-point the panel), then the active segmentation if it is tracked, then the first tracked one.
+ */
+export function resolveTrackValueName(
+  wanted: string | undefined, tracked: readonly string[], all: readonly string[] = [],
+  active?: string,
+): string {
+  if (wanted && tracked.includes(wanted)) return wanted
+  // the ACTIVE segmentation when it is tracked — on an image with two tracked sets ("importTest" and
+  // "memTom" on the reference image) "the first one" is an arbitrary pick, and the one the rest of the
+  // app is pointed at is the answer the user expects
+  if (active && tracked.includes(active)) return active
+  if (tracked.length) return tracked[0]
+  // nothing is tracked: keep the request (or fall back) so the view can say "not tracked" about a
+  // real segmentation rather than about nothing
+  return wanted && all.includes(wanted) ? wanted : (all[0] ?? '')
+}

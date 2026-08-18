@@ -36,6 +36,7 @@ import {
   pathPoints, pathDomain, normalizeTracks, displacementVectors, pathCsvRows, trackCountNote,
   type TrackPathMap, type PathPoint,
 } from '../../plots/trackPaths'
+import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 
 type Mode = 'paths' | 'star' | 'rose'
 
@@ -47,8 +48,14 @@ const props = defineProps<{
 
 const imageUid = computed(() => (props.state.imageUid && props.imageUids.includes(props.state.imageUid))
   ? props.state.imageUid : (props.imageUids[0] ?? ''))
-const valueName = computed({ get: () => props.state.valueName ?? '',
-                             set: v => (props.state.valueName = v) })
+// a TRACKED segmentation, never 'default' or the active one — see resolveTrackValueName
+const trackedNames = ref<string[]>([])
+const activeName = ref('')            // the segmentation the rest of the app is pointed at
+const valueName = computed({
+  get: () => resolveTrackValueName(props.state.valueName, trackedNames.value, valueNames.value,
+                                   activeName.value),
+  set: v => (props.state.valueName = v),
+})
 const mode = computed({ get: () => props.state.mode ?? 'paths',
                         set: v => (props.state.mode = v) })
 const colorBy = computed({ get: () => props.state.colorBy ?? '',
@@ -85,15 +92,15 @@ async function loadColumns() {
               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
     const r = await fetch(`/api/gating/channels?${q}`)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const d = await r.json() as { valueNames?: string[]; valueName?: string; columns?: string[] }
+    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]
+                                  valueName?: string; columns?: string[] }
     valueNames.value = d.valueNames ?? []
+    trackedNames.value = d.trackedValueNames ?? []
+    activeName.value = d.valueName ?? ''    
     // `columns` for popType=track IS the motility set (speed, displacement, straightness, …) — one
     // value per track already. NOT `trackAggregates`, which is the list of aggregate SUFFIXES
     // ("mean", "median", …); offering those as columns would have put "mean" in this picker.
     colorOptions.value = d.columns ?? []
-    // adopt the value_name the server resolved, exactly as the gating store does — otherwise the
-    // colour list and the geometry can end up describing different segmentations
-    if (d.valueName && !valueName.value) valueName.value = d.valueName
     if (colorBy.value && !colorOptions.value.includes(colorBy.value)) colorBy.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
