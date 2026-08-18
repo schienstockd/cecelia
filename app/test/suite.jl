@@ -2356,7 +2356,7 @@ end
     # (frontend/src/utils/taskOutput.ts). A superset of the fields above: several are not readable
     # from the image payload yet, so they offer no suggestions, but declaring one is still how the
     # param says what it names. See docs/todo/VALUE_NAME_INPUT_PLAN.md.
-    known_value_name_namespaces = Set(["filepaths", "labels", "spatialGraphs", "tracks", "branches",
+    known_value_name_namespaces = Set(["filepaths", "labels", "labelProps", "spatialGraphs", "tracks", "branches",
                                        "clusters", "regions", "stats", "models", "obsCols"])
 
     # A value the spec itself calls valid: the declared default, else something in range/options.
@@ -3711,11 +3711,49 @@ end
     @test issorted(filter(!isplug, srcs)) && issorted(filter(isplug, srcs))
 end
 
+@testset "The shipped custom-module examples load end to end" begin
+    # `docs/examples/custom-modules/` is the FIRST thing a beginner copies — the guide sends them
+    # there before it mentions plugins — and until now nothing executed it. The copy ratchets read its
+    # JSON, but its Julia was never `include`d by any test, so it could have rotted silently while
+    # every suite stayed green. That is the wrong way round: the example with the least experienced
+    # audience had the weakest guarantee.
+    root = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "custom-modules")
+    @test isdir(root)
+    cfg = mktempdir()
+    dst = joinpath(cfg, "modules")
+    mkpath(dirname(dst)); cp(root, dst)
+    rm(joinpath(dst, "README.md"); force = true)      # docs, not a module
+
+    # Enumerated under the category DIRECTORY, exactly like a built-in — that is what puts a task on
+    # an existing page (`behaviour`) or gives it a new one (`customExamples` → /custom/customExamples).
+    byfun = Dict(e.fun_name => e for e in Cecelia.user_task_specs(; dev_dir = cfg))
+    @test byfun["behaviour.exampleNormalise"].category == "behaviour"
+    @test byfun["customExamples.trackContext"].category == "customExamples"
+    # `nothing`, not "" — a loose drop-in belongs to no plugin, and the enumerator distinguishes
+    # "no plugin" from "a plugin whose name is empty" rather than collapsing them.
+    @test byfun["behaviour.exampleNormalise"].plugin === nothing
+
+    # …and they actually LOAD. This `include`s the real Julia a reader is being told to copy.
+    res = load_custom_modules!(; dev_dir = cfg)
+    @test isempty(res.failed)
+    @test length(res.loaded) == 2
+    try
+        @test _task_from_fun_name("behaviour.exampleNormalise") !== nothing
+        @test _task_from_fun_name("customExamples.trackContext") !== nothing
+        # The Python half is co-located and launched by absolute path, which is the layout rule the
+        # guide states; a missing sibling would make the example unrunnable for whoever copied it.
+        @test isfile(joinpath(dst, "customExamples", "trackContext_run.py"))
+    finally
+        Cecelia._unregister_task!("behaviour.exampleNormalise")
+        Cecelia._unregister_task!("customExamples.trackContext")
+    end
+end
+
 @testset "The shipped example plugin loads end to end" begin
     # The example under docs/examples/plugins/ is the reference a user copies, so CI has to actually
-    # LOAD it — the older docs/examples/custom-modules/ examples were never executed by any test and
-    # could have rotted silently. This installs the example into a throwaway config dir exactly as a
-    # user would (`cp -r` into modules/plugins/) and asserts the whole chain.
+    # LOAD it. (The custom-module examples are covered by the testset above — they were the older gap:
+    # read by the copy ratchets, executed by nothing.) This installs the example into a throwaway
+    # config dir exactly as a user would (`cp -r` into modules/plugins/) and asserts the whole chain.
     root = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins")
     # TWO single-purpose example plugins, not one mixed bag: importing someone else's tracks and
     # measuring them are different capabilities, so they are different plugins (Dominik, 2026-08-17).
@@ -3823,15 +3861,28 @@ end
     hidden(spec, k) = get(get(flat(spec), k, Dict{String,Any}()), "hidden", false) === true
     resolve(form) = Cecelia._inject_dynamic_options!(deepcopy(Cecelia._task_spec(task)), task, form)
 
-    # XML: fixed self-describing schema, so no mapping and no template to choose.
+    # The XML rule is NOT in the hook any more, and that is the point. "This export has no columns" is
+    # decided by the file EXTENSION — a property of the string already in the form — so it is a
+    # `showIf` on the spec, evaluated on every render. In the hook it was re-resolved only when the
+    # user EDITED the path, so a form restored from a previous run, or redrawn once the run finished,
+    # showed the column mapping for an XML import (reported on screen).
+    spec_of(k) = get(flat(Cecelia._task_spec(task)), k, Dict{String,Any}())
+    for k in ("columnMapping", "template")
+        @test get(spec_of(k), "showIf", nothing) == Dict("csvPath" => Dict("notEndsWith" => ".xml"))
+    end
     sx = resolve(Dict("csvPath" => xml, "mode" => "attach"))
-    @test hidden(sx, "columnMapping")
-    @test hidden(sx, "template")
+    @test !hidden(sx, "columnMapping")      # the hook no longer has an opinion
     @test !hidden(sx, "csvPath")
 
-    # A delimited file DOES need the mapping, and its columns become the suggestions.
+    # …and the shared predicate agrees with the frontend's, which is what keeps `required` + `showIf`
+    # from disagreeing between the Run button and the server.
+    cm = spec_of("columnMapping")
+    @test !Cecelia._show_if_satisfied(cm, Dict("csvPath" => xml))
+    @test  Cecelia._show_if_satisfied(cm, Dict("csvPath" => csv))
+    @test !Cecelia._show_if_satisfied(cm, Dict("csvPath" => uppercase(xml)))   # case-insensitive
+
+    # What the hook still does need the file OPEN for: the column names themselves.
     sc = resolve(Dict("csvPath" => csv, "mode" => "attach"))
-    @test !hidden(sc, "columnMapping")
     @test [o["value"] for o in flat(sc)["trackColumn"]["options"]] == ["TRACK_ID", "FRAME", "X", "Y"]
 
     # The mode rules are NOT here any more — they moved into the spec as `showIf`, because they are
@@ -3851,10 +3902,8 @@ end
     # can see. (`hidden` is presentation; `validate_params` reads the base spec.)
     @test !hidden(Cecelia._task_spec(task), "columnMapping")
 
-    # Resolution is IDEMPOTENT — it assigns the flag rather than only setting it. `_task_spec` already
-    # resolves once against an empty form and the form re-resolves on every edit, so a set-only hook
-    # could never take a flag back: an XML followed by a CSV left the mapping gone for good.
-    @test !hidden(resolve(Dict("csvPath" => csv, "mode" => "attach")), "columnMapping")   # xml → csv
+    # No `hidden` survives an XML → CSV switch, because the hook sets none at all now.
+    @test !hidden(resolve(Dict("csvPath" => csv, "mode" => "attach")), "columnMapping")
     # No teardown: the loader `include`s a plugin's .jl once, so unregistering here would leave the
     # task unrecoverable for the testset below — which installs the same plugin and tears it down.
 end
@@ -3925,10 +3974,21 @@ end
         @test minimum(df[!, "centroid_x"]) ≈ 2.0f0
         @test all(≈(2.0f0), df[!, "centroid_z"])
 
-        # Refusing to overwrite an existing segmentation is what stops an accidental second import
-        # quietly replacing the first.
+        # RE-IMPORTING THE SAME NAME MUST WORK. The first version refused any existing name, which made
+        # the ordinary case impossible — supplying a corrected file and updating the tracking you had
+        # already named ("so i have no chance of updating the tracking", Dominik). Re-running a task
+        # over its own output is what every other task does.
         @test run_task(t, img, Dict{String,Any}(
             "mode" => "create", "outputValueName" => "tm",
+            "csvPath" => xml, "template" => "trackmate_xml")) !== nothing
+        @test count(==( "tm"), img_value_names(img)) == 1      # replaced, not duplicated
+
+        # What IS still refused: landing points on a name that has MASK PIXELS behind it. The mask
+        # would stay while its cells were replaced by unrelated detections, and every population
+        # scoped to that segmentation would silently start reading someone else's rows.
+        img.labels["seg"] = ["seg.zarr"]; save!(img)
+        @test run_task(t, img, Dict{String,Any}(
+            "mode" => "create", "outputValueName" => "seg",
             "csvPath" => xml, "template" => "trackmate_xml")) === nothing
     finally
         Cecelia._unregister_task!("tracking.importCsvTracks")

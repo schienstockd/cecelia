@@ -178,7 +178,11 @@ async function initParams(def: TaskDef | undefined) {
   // from the run payload AND from the funParams record. All of that decision is `resolveInitialParams`.
   // Early-returned rather than folded into the call below so a draft costs no request — but the
   // DECISION is still the one helper, so the draft path cannot drift from the saved-record path.
-  if (draft) { paramValues.value = resolveInitialParams(def, draft, null) as ParamValues; return }
+  if (draft) {
+    paramValues.value = resolveInitialParams(def, draft, null) as ParamValues
+    refreshOptionsForForm(def)
+    return
+  }
   const seq = ++paramReqSeq
   // The name the form is about to show — its own defaults on a first render, or whatever the last
   // scope change left. Asking WITH it means a form that opens on "Tcell" opens with Tcell's params.
@@ -189,7 +193,21 @@ async function initParams(def: TaskDef | undefined) {
   // The watches below re-run this once the project/set/selection is known, which is the case that used
   // to arrive too late and find the form already reset.
   const next = resolveInitialParams(def, undefined, saved)
-  if (next !== null) paramValues.value = next
+  if (next !== null) { paramValues.value = next; refreshOptionsForForm(def) }
+}
+
+// Options were re-resolved only when the user EDITED a `triggersOptions` param, so a form POPULATED
+// with one — restored from the last run, or from a draft — carried whatever the un-resolved spec had:
+// an importer's column dropdowns came back empty for a file whose headers were read fine a minute
+// earlier. Anything the form can decide for itself belongs in `showIf` and needs no request; this is
+// only for what genuinely requires the server to look at something.
+function refreshOptionsForForm(def: TaskDef) {
+  const keys = collectTriggerKeys(def.params ?? [])
+  const armed = keys.some(k => {
+    const v = paramValues.value[k]
+    return v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)
+  })
+  if (armed) optionRefetch.schedule(null)
 }
 
 // A `valueNameInput` the user has FINISHED entering (blur, or picking a suggestion) — the moment to

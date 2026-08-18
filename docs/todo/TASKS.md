@@ -38,6 +38,38 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
 
 ## Now
 
+### Reported on screen — the import round-trip
+
+- [x] ~~**Imported tracks toggled in the viewer but never reached napari.**~~ Not the h5ad (verified
+      against the real file: centroids, `centroid_t` and labels all present) and not the API filter.
+      `pushTracksNow` re-derived the visibility record from `Object.keys(img.labels)` — masks only —
+      while the viewer seeded its toggles from the union, and `getTrackVisibility` returns only names
+      in the list it is given. So the toggle stored `true` and the key was dropped on the way out:
+      napari was asked to show nothing. One shared `trackableValueNames(img)` now feeds both, because
+      two derivations of one list is exactly how this failed silently.
+
+- [x] ~~**Column mapping reappeared for an XML import**~~ — on the finished form, and again when the
+      form was restored from that run. The rule lived in the server hook, which only re-resolves when
+      the user EDITS the path, so every other route to a populated form skipped it. But "is this an
+      XML export" is decided by the file EXTENSION — a property of the string the form already holds
+      — so it never needed the server. `showIf` gained `endsWith`/`notEndsWith` and the rule moved to
+      the spec, where it is evaluated on every render. The importer's hook now does only what needs
+      the file OPEN: the column names. Options are also re-resolved when a form is POPULATED (restored
+      from the last run or a draft), not only when a trigger param is edited — a restored CSV import
+      came back with empty column dropdowns.
+
+- [x] ~~**A re-import could not update an existing name.**~~ `[ERROR] 'importTest' already exists — pick
+      another name`, so there is no way to supply a corrected file and update the tracking you already
+      named. The guard was meant to stop a points import silently replacing a real segmentation, and
+      it now says exactly that: refused only when the name has MASK PIXELS (`img.labels`), overwritten
+      freely when it is another import.
+
+- [x] ~~**The name field suggested the wrong list.**~~ It is a `valueNameInput` with
+      `namespace: "labels"`, so it offers segmentations with mask pixels — and an imported points set
+      is never one, which is why the name you wanted to overwrite was never offered back. New
+      `labelProps` namespace, sourced from `labelPropsNames`.
+
+
 - [ ] **`cleanupImages.cellposeCorrect` hardcodes its denoise models** — no hook at all, so a
       user-dropped checkpoint is unreachable. One `optionsFrom` away, but it needs a lister for that
       vault first, which is the open half of the known custom-models gap.

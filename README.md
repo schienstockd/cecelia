@@ -144,6 +144,27 @@ so expect the occasional rough edge — for routine use, prefer the default stab
 
 ---
 
+## Adding your own analysis step
+
+Cecelia is extensible without touching the package or rebuilding anything. Drop two files into your
+config directory — a JSON describing the form and a Julia file saying what happens on Run — and your
+task appears on the page you named, alongside the built-in ones.
+
+Package the same files as a **plugin** and you get a page of your own: the task on one side, plots of
+its results below. Plugins install from a URL in **Settings → Plugins**, so they can be shared,
+versioned and reinstalled.
+
+[`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) is the guide, and starts with which of the two you
+want. Two runnable examples ship in the repo and are loaded by CI on every commit, so copying one is
+the route that stays correct:
+[`docs/examples/custom-modules/`](docs/examples/custom-modules/) and
+[`docs/examples/plugins/`](docs/examples/plugins/).
+
+> Neither is sandboxed — a custom module is arbitrary code with full access to your machine, exactly
+> like an R package. Only run what you wrote or trust.
+
+---
+
 ## Developing
 
 Running from source with hot-reload (`pixi run dev` + `pixi run frontend`) is covered in

@@ -22,7 +22,11 @@ import type { TaskDef, ParamDef, ParamValues } from '../tasks/types'
  * (image, value_name) pair rather than an image. See the plan → D6.
  */
 export const VALUE_NAME_NAMESPACES = [
-  'filepaths', 'labels', 'spatialGraphs', 'tracks', 'branches',
+  // `labels` is segmentations with mask PIXELS; `labelProps` is anything with a measurement table.
+  // Two independent ccid.json registries, and a task that writes a table but no mask — a direct track
+  // import — belongs to the second. Naming it `labels` meant its own name-picker only ever offered
+  // masks, so the name you wanted to overwrite was never suggested back to you.
+  'filepaths', 'labels', 'labelProps', 'spatialGraphs', 'tracks', 'branches',
   'clusters', 'regions', 'stats', 'models', 'obsCols',
 ] as const
 
@@ -108,7 +112,8 @@ function namespaceOfDef(def: TaskDef): ValueNameNamespace {
  * at all and its suggestions arrive as injected spec options (VALUE_NAME_INPUT_PLAN → D6).
  */
 export type ConsumerField =
-  'filepaths' | 'labels' | 'spatialGraphs' | 'statsSuffixes' | 'clusterSuffixes' | 'regionSuffixes'
+  'filepaths' | 'labels' | 'labelPropsNames' | 'spatialGraphs' | 'statsSuffixes'
+  | 'clusterSuffixes' | 'regionSuffixes'
 
 /**
  * The `valueNameSelection` `field` a CONSUMER would declare to read this namespace — the chain
@@ -122,6 +127,7 @@ export type ConsumerField =
 export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
   switch (ns) {
     case 'labels':        return 'labels'
+    case 'labelProps':    return 'labelPropsNames'
     case 'filepaths':     return 'filepaths'
     case 'spatialGraphs': return 'spatialGraphs'
     case 'stats':         return 'statsSuffixes'

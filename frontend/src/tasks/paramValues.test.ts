@@ -540,3 +540,38 @@ describe('missingRequired', () => {
     expect(missingRequired(def, { mode: 'off' })).toEqual([])
   })
 })
+
+// ── showIf suffix operators ────────────────────────────────────────────────────────────────────────
+//
+// Reported on screen: pick a TrackMate track XML, run it, and the Column mapping section reappeared —
+// on the finished form, and again when the form was restored from that run. The rule lived in the
+// server hook, which only re-resolves when the user EDITS the path, so any other route to a populated
+// form skipped it. But "is this an XML export" is decided by the file's EXTENSION — a property of the
+// string the form already holds — so it never needed the server at all.
+describe('showIfSatisfied — suffix operators', () => {
+  const NOT_XML = { csvPath: { notEndsWith: '.xml' } }
+
+  it('hides for the suffix, shows for anything else', () => {
+    expect(showIfSatisfied(NOT_XML, { csvPath: '/data/tracks.xml' })).toBe(false)
+    expect(showIfSatisfied(NOT_XML, { csvPath: '/data/spots.csv' })).toBe(true)
+  })
+
+  it('is case-insensitive — a path from Windows may shout', () => {
+    expect(showIfSatisfied(NOT_XML, { csvPath: 'C:\\data\\Tracks.XML' })).toBe(false)
+  })
+
+  it('endsWith accepts a list', () => {
+    const cond = { csvPath: { endsWith: ['.csv', '.tsv'] } }
+    expect(showIfSatisfied(cond, { csvPath: 'a.tsv' })).toBe(true)
+    expect(showIfSatisfied(cond, { csvPath: 'a.xml' })).toBe(false)
+  })
+
+  it('an absent path still satisfies nothing, operator or not', () => {
+    expect(showIfSatisfied(NOT_XML, {})).toBe(false)
+  })
+
+  it('an operator nobody implements does not silently pass', () => {
+    // Better a control that is missing and reported than one that renders on a rule that was ignored.
+    expect(showIfSatisfied({ csvPath: { matches: '.*' } } as never, { csvPath: 'a.csv' })).toBe(false)
+  })
+})

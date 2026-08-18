@@ -43,7 +43,8 @@ export interface ParamDef {
   // as strings (a spec is JSON; a control's value is a string). This is the DECLARATIVE half of
   // conditional visibility — the half that can be decided from the form alone. A condition needing a
   // file read stays a server hook setting `hidden`. See `showIfSatisfied` in paramValues.ts.
-  showIf?: Record<string, string | number | boolean | (string | number | boolean)[]>
+  showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
+                        | { endsWith?: string | string[]; notEndsWith?: string | string[] }>
   // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in
   // `validate_params`, so it holds for a chain and the REPL too — not only for a form that drew it.
   required?: boolean

@@ -1,17 +1,83 @@
-# Custom modules — user drop-in tasks
+# Extending Cecelia — custom modules and plugins
 
-Add your own task function to Cecelia by **dropping files into your config directory** — no package
-edit, no rebuild. This restores the old R-version capability (`source()`ing a `modules/` folder) for
-the Julia rewrite. A dropped task appears in the GUI like any built-in and runs through the normal
-scheduler/chain machinery.
+You can add your own analysis step to Cecelia without touching the package or rebuilding anything.
+Two ways to do it, and the difference is only **how it is packaged**:
 
-> **See also — same "drop-in" idea, one directory over.** [Custom cellpose checkpoints](SEGMENTATION.md#custom-cellpose-checkpoints)
-> live at `<config_dir>/models/cellposeModels/` (parallel to `<config_dir>/modules/` here). Drop a
-> file, refresh the Segment page, it appears in the Model dropdown — no restart, no code.
+|  | **Custom module** | **Plugin** |
+|---|---|---|
+| What it is | loose files you drop in a folder | one directory, usually a git repo |
+| What you get | your task, on an existing or new page | the same, **plus a page that plots its output** |
+| Who it is for | yourself, one machine | anything you want to share, version or reinstall |
+| How you install it | copy the files | Settings → Plugins, paste a URL |
+| How you update it | edit the files | reinstall; the version is recorded |
 
-> **Trust model.** A custom module is arbitrary Julia (and optionally Python) with **full access to
-> your machine** — exactly like the old R `source()`. There is no sandbox. Only run modules you
-> wrote or trust; only you can drop files into your own config dir. This is a power-user feature.
+**They are the same underneath.** A plugin *is* a set of custom modules with a `plugin.json` beside
+them, and the task files inside it are byte-for-byte what you would have dropped in loose. Nothing
+you learn for one is wasted on the other, and moving a working module into a plugin is a matter of
+putting it in a folder and adding a manifest.
+
+**So which do you want?**
+
+- Trying something out, or it only matters on your own machine → **custom module**. Fewest moving
+  parts, no manifest, no repo.
+- Someone else will run it, or you want it back after reinstalling Cecelia → **plugin**.
+- You want a **page of your own** — a task on the left, plots of its results below — → **plugin**.
+  That is the one thing a loose drop-in cannot give you, and it is the reason plugins exist at all.
+
+Everything else in this document applies to both. Where something is plugin-only it says so.
+
+> **Neither is sandboxed.** A custom module is arbitrary Julia (and optionally Python) with **full
+> access to your machine**, exactly like the old R version's `source()`. Installing a plugin is
+> trusting whoever wrote it, the same way installing an R package is. Only you can drop files into
+> your own config directory; only run code you wrote or trust.
+
+## Start here — the smallest thing that works
+
+You need **two files** with the same name, in a folder named after the page you want the task on:
+
+```
+<config_dir>/modules/tracking/myFirstTask.json    ← the form the user fills in
+<config_dir>/modules/tracking/myFirstTask.jl      ← what happens when they press Run
+```
+
+`<config_dir>` is where your `custom.toml` lives — `~/.cecelia/` for an installed app. The folder
+name (`tracking`) decides which page it appears on; a name that is not an existing page gets you a
+new page under **Custom** in the sidebar, with nothing to wire up.
+
+Then **Settings → Custom modules → Reload**, and your task is in the list. There is no restart and no
+rebuild.
+
+Two complete, runnable examples live in the repo, and CI loads both on every commit, so they cannot
+quietly stop working:
+
+- [`docs/examples/custom-modules/`](examples/custom-modules/) — loose drop-ins, including one with a
+  Python runner.
+- [`docs/examples/plugins/ccia-importTracks/`](examples/plugins/) — a real plugin: importing tracks
+  from ImageJ, TrackMate or Imaris.
+
+Copy one and change it. That is the fastest correct route, and it is the route that stays correct,
+because those files are tested.
+
+## What you can put in the form
+
+The `.json` is the whole form — you are declaring controls, not writing any interface code. Sliders,
+dropdowns, file pickers, population pickers, channel pickers, collapsible sections, and rules like
+"only show this field when that one says *attach*" are all fields in the JSON.
+
+The full list, with an example of each, is in
+[`docs/MODULES.md` → *Param types*](MODULES.md#param-types) and *Fields any param may carry*. It is
+the same reference the built-in tasks use, because your task's form is built by the same code.
+
+Worth knowing it exists, because it saves people writing Julia they did not need to:
+
+| You want | Field |
+|---|---|
+| a field that only applies sometimes | `showIf` |
+| a required field, with your own wording | `required` + `requiredMessage` |
+| a picker filled from installed models | `optionsFrom` |
+| a default that follows a Settings choice | `defaultFrom` |
+| the user to choose a file on disk | `type: "filePath"` |
+| a short either/or shown as buttons | `variant: "chips"` |
 
 ## Where the files go
 
@@ -216,9 +282,18 @@ That list is the only place explaining why a task is absent from the UI.
 would break every plugin at once), and the check is skipped entirely on a dev checkout, where the
 running version is the literal `"dev"`.
 
-Installing today is a manual `git clone` into `modules/plugins/`. Fetching a pinned plugin from a URL,
-removing one, and the Settings surface for both are designed but **not built** — see
-[`docs/todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md).
+### Installing, updating, removing
+
+**Settings → Plugins.** Paste a repo URL and press install; the table lists what is installed with its
+version, and removes one in a click. No `git` binary is needed — GitHub serves any ref as a tarball,
+and an installed Cecelia has no git. A curated list of known plugins is offered alongside the URL box.
+
+The ref you installed is recorded in a file **beside** `plugin.json`, never inside it: `plugin.json`
+ships from the plugin's own repo, so writing into it would dirty the checkout and be overwritten by
+the next update.
+
+Cloning by hand into `<config_dir>/modules/plugins/` still works and always will — that is all an
+install does. A hand-cloned plugin simply has no recorded ref, and is not treated as broken for it.
 
 > **A plugin is not sandboxed.** Its Julia is `Base.include`d into `Cecelia` with full access to your
 > machine, exactly like a module you dropped in yourself. Installing one is trusting whoever wrote it.
@@ -227,6 +302,9 @@ removing one, and the Settings surface for both are designed but **not built** �
 
 - Not a sandbox — plugin and drop-in code both run unconfined, by design.
 - Plugins may only use what the Python env already ships; a plugin cannot declare its own pip deps.
+- A plugin ships **no Vue**. Both halves of a page are declarative — the form from your task spec, the
+  plot canvas from a `plotDefinitions/*.json` — so there is nothing to compile. That is a deliberate
+  choice explained under *The module page*, not a gap to work around.
 - A new category's generic page has an image picker + task runner but **no plot canvas** (custom
   categories have no registered plot specs); results are still plottable on the Analysis board / in
   the built-in Explore pages once written to the `.h5ad`.

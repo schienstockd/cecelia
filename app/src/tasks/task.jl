@@ -627,8 +627,21 @@ function _show_if_satisfied(p::AbstractDict, params::AbstractDict)::Bool
     for (k, want) in cond
         have = get(params, string(k), nothing)
         isnothing(have) && return false
+        got = string(have)
+        # Operator form — `{"csvPath": {"notEndsWith": ".xml"}}`. Mirrors the frontend exactly, or the
+        # Run button and the server would disagree about which params are in play.
+        if want isa AbstractDict
+            sfx(key) = (v = get(want, key, nothing);
+                        isnothing(v) ? nothing :
+                        lowercase.(v isa AbstractVector ? string.(v) : [string(v)]))
+            ends, nends = sfx("endsWith"), sfx("notEndsWith")
+            isnothing(ends) && isnothing(nends) && return false   # an operator nobody implements
+            isnothing(ends)  || any(e -> endswith(lowercase(got), e), ends) || return false
+            isnothing(nends) || !any(e -> endswith(lowercase(got), e), nends) || return false
+            continue
+        end
         accepted = want isa AbstractVector ? string.(want) : [string(want)]
-        string(have) in accepted || return false
+        got in accepted || return false
     end
     true
 end

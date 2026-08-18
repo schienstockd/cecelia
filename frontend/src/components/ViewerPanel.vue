@@ -13,7 +13,7 @@ import {
   colourLegend, colourLegendLabels, resetColourLegend,
   livePreviews, previewShown, togglePreview,
 } from '../composables/useNapariAutoShow'
-import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napariAutoShow'
+import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/napariAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -286,12 +286,11 @@ watch(napariImage, (img) => {
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
-  // Tracks are seeded over BOTH registries: a points-only set is exactly the one whose tracks you
-  // want, and seeding from `labels` alone is what made it unreachable. Label visibility below is
-  // NOT unioned — there are no pixels to show.
-  trackVns.value = settings.getTrackVisibility(
-    img.uid, [...Object.keys(img.labels ?? {}),
-              ...(img.labelPropsNames ?? []).filter(v => !(v in (img.labels ?? {})))])
+  // Tracks are seeded over BOTH registries — a points-only set is exactly the one whose tracks you
+  // want. Through the shared helper, because `pushTracksNow` must seed from the SAME list: it once
+  // re-derived it from `labels` alone, so an imported set's toggle stored `true` and was then dropped
+  // on the way to napari. Label visibility below is NOT unioned — there are no pixels to show.
+  trackVns.value = settings.getTrackVisibility(img.uid, trackableValueNames(img))
   branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
   // Default to the active version (the `_active` key from the versioned filepath dict) — this is what
   // the server opens when no valueName is passed, so the dropdown must agree (shared resolver).

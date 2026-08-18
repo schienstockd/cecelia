@@ -167,8 +167,26 @@ export function showIfSatisfied(
   for (const [key, want] of Object.entries(showIf)) {
     const have = values?.[key]
     if (have === undefined || have === null) return false
+    const got = String(have)
+    // Operator form: `{ "csvPath": { "notEndsWith": ".xml" } }`. Suffix matching earns its place
+    // because a FILE PATH's meaning often lives in its extension, and that is a property of the
+    // string the form already holds — no server round-trip, so it stays correct when the form is
+    // restored from a previous run rather than typed.
+    if (want && typeof want === 'object' && !Array.isArray(want)) {
+      const ops = want as Record<string, unknown>
+      const suffixes = (k: string) => {
+        const v = ops[k]
+        return v === undefined ? null : (Array.isArray(v) ? v : [v]).map(x => String(x).toLowerCase())
+      }
+      const ends = suffixes('endsWith')
+      if (ends && !ends.some(sfx => got.toLowerCase().endsWith(sfx))) return false
+      const notEnds = suffixes('notEndsWith')
+      if (notEnds && notEnds.some(sfx => got.toLowerCase().endsWith(sfx))) return false
+      if (ends === null && notEnds === null) return false     // an operator nobody implements
+      continue
+    }
     const accepted = (Array.isArray(want) ? want : [want]).map(String)
-    if (!accepted.includes(String(have))) return false
+    if (!accepted.includes(got)) return false
   }
   return true
 }
@@ -291,6 +309,9 @@ export function isKnownValueNameField(field: string | undefined): boolean {
 /** The names one image carries under `field`. */
 export function imageNamesForField(img: CciaImage, field: string | undefined | null): string[] {
   if (field === 'labels') return Object.keys(img.labels ?? {})
+  // Value names with a measurement table — a superset of `labels`, and the only list a direct track
+  // import appears in (it registers a table and no mask).
+  if (field === 'labelPropsNames') return img.labelPropsNames ?? []
   // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
   // across the selected images is exactly the set of graphs a pooled analysis can run over.
   if (field === 'spatialGraphs') return Object.keys(img.spatialGraphs ?? {})

@@ -44,7 +44,7 @@
       "label": "Name",
       "type": "valueNameInput",
       "showIf": { "mode": "create" },
-      "namespace": "labels",
+      "namespace": "labelProps",
       "default": "",
       "tip": "Name for the new points segmentation"
     },
@@ -66,6 +66,7 @@
     },
     {
       "key": "template",
+      "showIf": { "csvPath": { "notEndsWith": ".xml" } },
       "label": "Exported from",
       "type": "select",
       "default": "imagej_manual",
@@ -106,6 +107,7 @@
     },
     {
       "key": "columnMapping",
+      "showIf": { "csvPath": { "notEndsWith": ".xml" } },
       "label": "Column mapping",
       "type": "section",
       "collapsed": true,

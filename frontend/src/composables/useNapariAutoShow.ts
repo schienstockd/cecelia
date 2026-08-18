@@ -9,8 +9,7 @@ import {
 } from '../utils/napariOverlays'
 import {
   buildAutoShowPlan, activeValueName, createClaimRegistry, CELL_POP_TYPES,
-  liveLabelPreviews, shouldRefreshPreview, type LivePreview, type TaskListEntry,
-} from '../utils/napariAutoShow'
+  liveLabelPreviews, shouldRefreshPreview, type LivePreview, type TaskListEntry, trackableValueNames } from '../utils/napariAutoShow'
 
 // Everything that turns an image's REMEMBERED overlay state into actual napari layers: the restore on
 // open, the re-push when gating changes, and the one implementation of each overlay request the
@@ -103,7 +102,7 @@ export async function pushTracksNow(): Promise<boolean> {
   const c = _ctx()
   if (!c) return false
   const settings = useSettingsStore()
-  const trackVis = settings.getTrackVisibility(c.uid, Object.keys(c.img.labels ?? {}))
+  const trackVis = settings.getTrackVisibility(c.uid, trackableValueNames(c.img))
   const res = await pushTracks(c.projectUid, c.uid, {
     valueNames:      Object.keys(trackVis).filter(vn => trackVis[vn]),
     showGatedTracks: c.setUid ? settings.getShowGatedTracks(c.setUid) : false,
@@ -156,7 +155,7 @@ export async function pushAllOverlays(): Promise<void> {
     branchLabels:     (c.img.branchLabels ?? {}) as Record<string, string[]>,
     labelVisibility:  settings.getLabelVisibility(c.uid, Object.keys(c.img.labels ?? {})),
     branchVisibility: settings.getBranchVisibility(c.uid, Object.keys(c.img.branchLabels ?? {})),
-    trackVisibility:  settings.getTrackVisibility(c.uid, Object.keys(c.img.labels ?? {})),
+    trackVisibility:  settings.getTrackVisibility(c.uid, trackableValueNames(c.img)),
     popTypes:         c.setUid ? CELL_POP_TYPES.filter(pt => settings.getPopVisible(c.setUid!, pt)) : [],
     showGatedTracks:  c.setUid ? settings.getShowGatedTracks(c.setUid) : false,
     showTrackclust:   c.setUid ? settings.getPopVisible(c.setUid, 'trackclust') : false,
