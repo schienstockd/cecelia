@@ -12,6 +12,7 @@ Differs from the original cecelia script_utils in two ways:
 import argparse
 import json
 import os
+import sys
 
 #: Version of the JULIA<->PYTHON PARAMS CONTRACT, mirroring `PY_CONTRACT_VERSION` in
 #: app/src/py_runner.jl. Checked in `script_params`, so every runner is covered without doing anything.
@@ -40,6 +41,28 @@ CONTRACT_VERSION = 1
 PROGRESS_MIN_FRACTION = 0.01
 
 
+# Every task log line is a stdout write that Julia reads, and Julia strings are UTF-8 — but a Python
+# child on Windows gets a cp1252 stdout by default, where writing one non-ASCII character raises
+# UnicodeEncodeError. That exception propagates out of `log()` and kills the TASK: an import that had
+# already read its file and written its output died on the line announcing it, reported only as
+# "[ERROR] Track import failed".
+#
+# This is not one task's problem. 23 of the 25 task runners contain a non-ASCII log line — em dashes
+# in warnings, µm in unit readouts — so each is a crash waiting for that branch to be taken on a
+# Windows machine. Fixed once, at the sink, rather than by policing the characters at 25 call sites:
+# UTF-8 is what Julia expects on the other end anyway, and `errors='replace'` means even a stream that
+# cannot be reconfigured degrades to a visible '?' instead of taking the task down.
+def _utf8_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass          # already wrapped, or not a real stream (captured in tests) — never fatal
+
+
+_utf8_stdio()
+
+
 class StdoutLogger:
     """Minimal logger that writes to stdout so Julia can stream every line."""
 
@@ -48,7 +71,12 @@ class StdoutLogger:
         self._progress_frac = None       # …and how far through it was
 
     def log(self, msg):
-        print(str(msg), flush=True)
+        try:
+            print(str(msg), flush=True)
+        except UnicodeEncodeError:
+            # `_utf8_stdio` normally makes this unreachable; belt and braces because the cost of
+            # being wrong is the whole task, not the line. A '?' in a log beats a dead import.
+            print(str(msg).encode('ascii', 'replace').decode('ascii'), flush=True)
 
     def progress(self, n: int, total: int):
         """Emit a structured progress line that Julia parses into a task:progress WS message.
