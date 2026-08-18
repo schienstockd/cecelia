@@ -71,7 +71,8 @@
               "label": "0.5 \u2014 zarr v3 (zarr.json), allows sharding"
             }
           ],
-          "tip": "OME-NGFF spec version; 0.5 is zarr v3 (--ngff-version)"
+          "tip": "OME-NGFF spec version; 0.5 is zarr v3 (--ngff-version)",
+          "defaultFrom": "zarr.ngffVersion"
         },
         {
           "key": "shardSize",
@@ -93,23 +94,6 @@
             }
           ],
           "tip": "NGFF 0.5 only; sharding_indexed packs chunks per file (--shard-width/height)"
-        },
-        {
-          "key": "chunkSeparator",
-          "label": "Chunk key separator",
-          "type": "select",
-          "default": "flat",
-          "options": [
-            {
-              "value": "flat",
-              "label": "Flat  .  (default)"
-            },
-            {
-              "value": "nested",
-              "label": "Nested  /"
-            }
-          ],
-          "tip": "dimension_separator: nested writes 0/0/36/0/8, flat writes 36.0.8 (--no-nested)"
         },
         {
           "key": "shardDepth",

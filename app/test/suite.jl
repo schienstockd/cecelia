@@ -12783,9 +12783,15 @@ end
     # "off" option would be a lie.
     spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
     adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
-    for key in ("ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+    # `chunkSeparator` is NOT in this list any more: it was a declared param that the importer never
+    # read — no `--no-nested`, no `dimension_separator`, nothing — and its default `"flat"`
+    # contradicted `CHUNK_SEPARATOR_DEFAULT = "nested"`, which `config.jl` notes is the only separator
+    # still offered. A control that reaches nothing is worse than an absent one: it reads as a choice.
+    for key in ("ngffVersion", "shardSize", "shardDepth")
         prm  = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
         vals = [string(get(o, :value, o)) for o in prm.options]
+        # `ngffVersion` takes its default from the Settings store layout (`defaultFrom`), so this
+        # reads the RESOLVED spec — a raw file read would see the pre-resolution literal.
         @test string(prm.default) in vals
         @test !isempty(String(get(prm, :tip, "")))
     end
@@ -12794,7 +12800,7 @@ end
 
     # Transparency: someone who knows zarr must be able to map each control onto what lands on disk, so
     # every one of these tips names its bioformats2raw flag or the metadata key it sets.
-    for key in ("chunkSize", "ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+    for key in ("chunkSize", "ngffVersion", "shardSize", "shardDepth")
         prm = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
         tip = String(get(prm, :tip, ""))
         @test occursin("--", tip) || occursin("_", tip)   # a CLI flag or a zarr metadata key

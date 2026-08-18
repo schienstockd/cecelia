@@ -42,31 +42,33 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       user-dropped checkpoint is unreachable. One `optionsFrom` away, but it needs a lister for that
       vault first, which is the open half of the known custom-models gap.
 
-- [ ] **`importImages.omezarr` ignores the Settings store layout.** The comment says the import form
-      pre-fills `ngffVersion` from `store_layout()`; it does not — no hook, and no frontend code
-      touches it, so the Settings choice reaches only REPL/chain runs while the GUI submits the spec
-      literal `"0.4"`. Also `advanced.chunkSeparator` is declared, read by NOTHING, and its default
-      `"flat"` contradicts `CHUNK_SEPARATOR_DEFAULT = "nested"`. A `defaultFrom` field would parallel
-      `optionsFrom`; a live wrong-output path either way.
+- [x] ~~**`importImages.omezarr` ignored the Settings store layout.**~~ `defaultFrom` added, paralleling
+      `optionsFrom`: `{"key":"ngffVersion","defaultFrom":"zarr.ngffVersion"}`. The form carried a
+      literal `"0.4"` while a comment claimed it pre-filled from `store_layout()` — so choosing zarr
+      v3 in Settings and importing from the form silently produced a v2 store. The dead
+      `chunkSeparator` param went with it: no `--no-nested`, no `dimension_separator`, nothing read
+      it, and its default `"flat"` contradicted `CHUNK_SEPARATOR_DEFAULT = "nested"`.
+- [x] ~~**`editImages.cropImage` consumed four undeclared params**~~ — `z0/z1/t0/t1` declared, and
+      `CropPanel` reads `resource_pool` from the def instead of hardcoding `'io'`.
+- [x] ~~**`propagateValueName` only walked top-level params**~~ — recurses now.
+- [x] ~~**Dead type `labelPropsSelection`**~~ — removed.
 
-- [ ] **`editImages.cropImage` consumes four params its spec does not declare** — `z0/z1/t0/t1`,
-      supplied by `CropPanel.vue`, which also hardcodes `funName` and `poolName: 'io'` instead of
-      reading the `resource_pool` the spec already declares. Undeclared params are invisible to
-      validation, to funParams reconciliation, and to anyone reading the spec as the contract.
+- [ ] **A dead-PARAM ratchet was tried and rejected — do not re-propose without new signal.**
+      "Every declared param key must appear in its task's own `.jl`/`_run.py`" finds **24** hits and
+      **23 are false positives**: cellpose and coastal params live inside a `group` handed to Python
+      wholesale, so the keys never appear as literals, and others are read through helpers
+      (`exclusive` via `correction_utils`, `pops` via `_hmm_pops`). Only `debounce_ms` on a test task
+      is genuinely unread. Gating on that needs an allowlist, and an allowlist is what rotted
+      `ALLOWED_NESTED`. `chunkSeparator` was found by reading, not by a scan.
 
 - [ ] **`COHORT_STAGES` hardcodes 8 fun_names in TypeScript**, kept in step with Julia by a test, so
       a plugin task can never bank cohort metrics. Either a spec flag or — better, and there is
       precedent — stamped by the definitions route the way `previewable` already is. **Needs a call
       between those two before anyone writes it.**
 
-- [ ] **`propagateValueName` only walks top-level params** (`ChainModule.vue:925`), so a
-      `valueNameSelection` inside a section is never prefilled from an upstream edge.
-
 - [ ] **`showIf` inside a repeatable `group`** is evaluated against the top-level form, so a
       sub-param cannot be gated on its own entry's siblings. Four specs use groups. Does not bite
       today; will the first time someone tries it.
-
-- [ ] **Dead type `labelPropsSelection`** declared in `types.ts`, used by zero specs.
 
 
 ## Next

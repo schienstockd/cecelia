@@ -691,6 +691,18 @@ Resolved for every task before the dispatch hook, so no `_needs_dynamic_options`
 An unregistered name is warned about once and leaves the declared options alone, rather than emptying
 the picker.
 
+**`defaultFrom`** — the other half of the picker: a `default` that comes from a SETTING rather than a
+literal in the spec.
+
+```json
+{ "key": "ngffVersion", "type": "select", "defaultFrom": "zarr.ngffVersion" }
+```
+
+Registered sources are in `_DEFAULT_SOURCES`. This is not cosmetic: the import form carried a literal
+`"0.4"` while a comment claimed it pre-filled from `store_layout()`. It did not — and since the GUI
+submits every declared param, choosing zarr v3 in Settings and importing from the form silently
+produced a v2 store. A source that is unregistered or throws leaves the spec's own `default` alone.
+
 **`triggersOptions: true`** — editing this param re-resolves the whole task's options against the
 current form (debounced at the sink). For a param whose value other params' options derive from: an
 importer's file path, whose columns become the mapping fields' suggestions. Options obtained this way

@@ -72,10 +72,12 @@ function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any},
         # spec cannot say. Both mutate a fresh deepcopy, so a newly-dropped checkpoint shows up in
         # `validate_params` and the definitions API with no restart.
         hooked = _needs_dynamic_options(task)
-        from   = _spec_has_options_from(cached)
-        (hooked || from) || return cached
+        opts   = _spec_has_options_from(cached)
+        dflts  = _spec_has_default_from(cached)
+        (hooked || opts || dflts) || return cached
         out = deepcopy(cached)
-        from && _apply_options_from!(out)
+        opts  && _apply_options_from!(out)
+        dflts && _apply_defaults_from!(out)
         hooked ? _inject_dynamic_options!(out, task, form) : out
     end
 end
@@ -110,7 +112,50 @@ const _OPTION_SOURCES = Dict{String,Function}(
     "flowModels"     => () -> [(value = n, label = n) for n in flow_model_names()],
 )
 
+"""
+`defaultFrom` — a param whose DEFAULT comes from a setting rather than a literal in the spec.
+
+    { "key": "ngffVersion", "type": "select", "defaultFrom": "zarr.ngffVersion" }
+
+The same shape as `optionsFrom`, for the other half of the picker. The import form's OME-NGFF version
+carried a literal `"0.4"` while a comment in `omezarr.jl` claimed it pre-filled from `store_layout()`.
+It did not: nothing read the setting on the way in, and the GUI submits every declared param, so the
+Settings choice reached only REPL and chain runs. Choosing zarr v3 in Settings and importing from the
+form silently produced a v2 store.
+
+A source that throws or is unregistered leaves the spec's own `default` in place — a setting that
+cannot be read must not empty the field.
+"""
+const _DEFAULT_SOURCES = Dict{String,Function}(
+    "zarr.ngffVersion" => ngff_version,
+)
+
 _spec_has_options_from(spec)::Bool = occursin("optionsFrom", JSON3.write(spec))
+_spec_has_default_from(spec)::Bool = occursin("defaultFrom", JSON3.write(spec))
+
+function _apply_defaults_from!(spec::Dict{String,Any})::Dict{String,Any}
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            src = strip(string(get(p, "defaultFrom", "")))
+            if !isempty(src)
+                if haskey(_DEFAULT_SOURCES, src)
+                    try
+                        p["default"] = _DEFAULT_SOURCES[src]()
+                    catch e
+                        @warn "defaultFrom source failed; keeping the spec default" source = src exception = e
+                    end
+                else
+                    @warn "Unknown defaultFrom source; keeping the spec default" source = src
+                end
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    spec
+end
 
 function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
     function walk(ps)
