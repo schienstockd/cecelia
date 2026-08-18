@@ -2640,6 +2640,12 @@ function _image_payload(img::CciaImage)
         activeValueName = active_vn,
         filepaths       = fps,
         labels          = img.labels,
+        # Value names that have a MEASUREMENT TABLE but not necessarily a mask. `labels` and
+        # `label_props` are two independent registries (see model/image.jl) written by two different
+        # tasks, and a directly-imported track set registers only the second: there are no mask pixels
+        # to register. Without this the client could not tell such a set exists at all — it had no
+        # viewer row, so no tracks toggle, while gating and the observer listed it happily.
+        labelPropsNames = [v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)],
         # Skeleton labels written by segment.branching — kept separate from `labels` on purpose
         # so the generic labels picker (measure / segment / tracking) never lists them
         # (BRANCHING_PLAN Decision 6). The Viewer surfaces them as a separate toggle.

@@ -14,7 +14,8 @@ import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
-import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied } from './paramValues'
+import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
+         scopeValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -27,6 +28,9 @@ export interface ParamContext {
   images: CciaImage[]
   projectUid?: string        // popSelection: needed to query the gating popmap
   values?: ParamValues       // sibling param values (popSelection reads valueName)
+  params?: ParamDef[]        // the WHOLE task's params, so a widget can find a sibling by TYPE rather
+                             // than by a hardcoded key. See `scopeValueName` in paramValues.ts —
+                             // resolving by name silently scoped two specs to the wrong segmentation.
   extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
                              // of an upstream whiteboard node ("cpCorrected") that only exists once
                              // the chain runs. Merged into the option list so it can be selected.
@@ -219,15 +223,18 @@ async function loadPops() {
     } catch { /* gating may not exist yet */ }
     return
   }
-  // single mode — scoped to the sibling valueName
-  const valueName = (props.context?.values?.valueName as string) ?? 'default'
+  // single mode — scoped to the sibling segmentation, found by TYPE (a spec may call it anything)
+  const valueName = scopeValueName(props.context?.params, props.context?.values,
+                                   Object.keys(img?.labels ?? {}))
   popOptions.value = [{ label: 'NONE (whole segmentation)', value: 'NONE' }]
   if (!img || !projectUid) return
   popOptions.value.push(...(await fetchPopPaths(img, projectUid, valueName, popType)).map(p => ({ label: p, value: p })))
 }
 
 // reload when the image or the chosen segmentation changes
-watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName],
+watch(() => [props.context?.images?.[0]?.uid,
+             scopeValueName(props.context?.params, props.context?.values,
+                            Object.keys(props.context?.images?.[0]?.labels ?? {}))],
   () => { loadPops() }, { immediate: true })
 
 // Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
@@ -246,18 +253,8 @@ const popAllValues = computed(() => popMultiOptions.value.map(o => o.value))
 // image's first segmentation. This is why the picker now lists A/B/C measures (and HMM-state
 // columns) correctly — previously it was hardcoded to "default", which the tracked sets don't have.
 function resolveColValueName(): string {
-  const pops = props.context?.values?.pops
-  if (Array.isArray(pops) && pops.length) {
-    const first = String(pops[0])
-    if (!first.startsWith('/')) {
-      const idx = first.indexOf('/')
-      if (idx > 0) return first.slice(0, idx)
-    }
-  }
-  const vn = props.context?.values?.valueName as string | undefined
-  if (vn) return vn
-  const keys = Object.keys(props.context?.images?.[0]?.labels ?? {})
-  return keys[0] ?? 'default'
+  return scopeValueName(props.context?.params, props.context?.values,
+                        Object.keys(props.context?.images?.[0]?.labels ?? {}))
 }
 
 // Map a var intensity column to its channel name, mirroring Julia `_channel_label`

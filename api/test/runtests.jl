@@ -47,6 +47,39 @@ end
 _post(f, obj) = f(Vector{UInt8}(JSON3.write(obj)))
 _repl(code) = _post(api_repl, Dict("code" => code))
 
+@testset "API: a points-only value name reaches the client" begin
+    # `labels` and `label_props` are two independent ccid.json registries. A track set imported
+    # directly — ImageJ, TrackMate — for an image nothing has segmented registers only the second:
+    # there are no mask pixels to register. The payload carried `labels` alone, so such a set was
+    # invisible to the client: no viewer row, and therefore no tracks toggle, while gating and the
+    # observer listed it happily. Reported from the screen ("the imported tracks do not show up").
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-points-only")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        mkpath(joinpath(img._dir, "labelProps"))
+        img.labels      = Dict("seg" => ["seg.zarr"])            # a real segmentation, with pixels
+        img.label_props = Dict("seg" => "seg.h5ad",              # …its measurement table
+                               "trackmate" => "trackmate.h5ad")  # …and an import with NO mask
+        save!(img)
+
+        payload = _image_payload(img)
+        @test collect(keys(payload.labels)) == ["seg"]                    # unchanged: masks only
+        @test Set(payload.labelPropsNames) == Set(["seg", "trackmate"])   # the union is derivable
+        # Both registries are surfaced SEPARATELY rather than merged server-side: the client needs the
+        # difference to decide which toggles a row can offer (tracks need only a `track_id` column;
+        # the show-labels eye needs pixels).
+        @test "trackmate" ∉ collect(keys(payload.labels))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: diagnostics" begin
     st, body = api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))
     @test st == 200

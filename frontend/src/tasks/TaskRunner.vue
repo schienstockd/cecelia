@@ -63,7 +63,8 @@ const paramContext = computed<ParamContext>(() => ({
     return []
   }),
   projectUid: projectMeta.current?.uid ?? '',
-  values: paramValues.value,     // popSelection reads the sibling valueName
+  values: paramValues.value,     // showIf conditions + sibling lookups read these
+  params: taskDef.value?.params, // so a widget finds its sibling by TYPE, not by a hardcoded key
 }))
 
 // selected function — starts empty; resolved reactively when defs load from the API

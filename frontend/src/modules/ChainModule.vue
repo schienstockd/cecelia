@@ -1031,7 +1031,12 @@ const paramContext = computed(() => {
   // `values` — the node's own params. Without them a `showIf` condition can never be satisfied here,
   // so a conditional param would be permanently hidden in the chain editor while showing correctly in
   // the task runner: the same spec, two behaviours, no error. (TaskRunner has always passed them.)
-  return { images: imgs, extraValueNames, values: selectedNode.value?.data.params }
+  // `projectUid` — WITHOUT it `loadPops`/`loadCols` early-return, so every `popSelection` (13 specs)
+  // and `labelPropsColsSelection` (4 specs) param rendered EMPTY in the chain editor while working in
+  // the task runner: same spec, two behaviours, no error. `params` lets a widget find its sibling by
+  // type rather than by a hardcoded key.
+  return { images: imgs, extraValueNames, values: selectedNode.value?.data.params,
+           projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params }
 })
 
 const runAllSelected = computed(() =>

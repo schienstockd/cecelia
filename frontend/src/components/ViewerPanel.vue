@@ -109,11 +109,28 @@ const labelNames  = computed(() => Object.keys(napariImage.value?.labels ?? {}))
 // `livePreviews`). A live-only set has no h5ad, no tracks and no branches yet — and deleting a store
 // mid-write makes no sense — so its row offers the preview toggle and nothing else. A re-run to an
 // EXISTING name is both at once: one row, with the preview watching the store the re-run recreated.
+// Value names with a measurement table but NO mask — a track set imported directly from ImageJ or
+// TrackMate for an image nothing has segmented. `labels` and `labelPropsNames` are two independent
+// ccid.json registries, and such a set is only in the second, so before this it had no row at all:
+// no tracks toggle, nothing, while gating and the observer listed it. It is a real analysis object
+// with no pixels, which is a row that offers fewer toggles — not an absent row.
+const pointsOnlyNames = computed(() =>
+  (napariImage.value?.labelPropsNames ?? []).filter(vn => !labelNames.value.includes(vn)))
+
 const labelRows = computed(() => {
   const live = new Set(livePreviews.value.map(p => p.valueName))
-  const names = [...labelNames.value, ...[...live].filter(vn => !labelNames.value.includes(vn))]
+  const names = [...labelNames.value,
+                 ...pointsOnlyNames.value,
+                 ...[...live].filter(vn => !labelNames.value.includes(vn)
+                                        && !pointsOnlyNames.value.includes(vn))]
   return names.map(valueName => ({
-    valueName, registered: labelNames.value.includes(valueName), live: live.has(valueName),
+    valueName,
+    registered: labelNames.value.includes(valueName) || pointsOnlyNames.value.includes(valueName),
+    // `masked` gates everything that needs PIXELS: the show-labels eye and the branches toggle.
+    // Tracks need only a `track_id` column, so they stay available on a points row — which is the
+    // whole reason the row exists.
+    masked: labelNames.value.includes(valueName),
+    live: live.has(valueName),
   }))
 })
 const hasLabelRows = computed(() => labelRows.value.length > 0)
@@ -269,7 +286,12 @@ watch(napariImage, (img) => {
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
-  trackVns.value = settings.getTrackVisibility(img.uid, Object.keys(img.labels ?? {}))
+  // Tracks are seeded over BOTH registries: a points-only set is exactly the one whose tracks you
+  // want, and seeding from `labels` alone is what made it unreachable. Label visibility below is
+  // NOT unioned — there are no pixels to show.
+  trackVns.value = settings.getTrackVisibility(
+    img.uid, [...Object.keys(img.labels ?? {}),
+              ...(img.labelPropsNames ?? []).filter(v => !(v in (img.labels ?? {})))])
   branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
   // Default to the active version (the `_active` key from the versioned filepath dict) — this is what
   // the server opens when no valueName is passed, so the dropdown must agree (shared resolver).
@@ -747,7 +769,8 @@ onUnmounted(() => {
         <!-- segmentation label sets: show labels / tracks, delete -->
         <div v-if="hasLabelRows" class="viewer-labels-list">
           <div v-for="row in labelRows" :key="row.valueName" class="viewer-label-row">
-            <i class="pi pi-th-large viewer-label-icon" />
+            <i :class="['pi', row.masked ? 'pi-th-large' : 'pi-circle-fill', 'viewer-label-icon']"
+               v-tooltip.right="row.masked ? undefined : 'Points only — tracks, no mask'" />
             <span class="viewer-label-name cc-muted" :title="row.valueName">{{ row.valueName }}</span>
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
@@ -763,7 +786,7 @@ onUnmounted(() => {
                  rightmost, because the segmentation is what the other two are computed from. -->
             <template v-if="row.registered">
               <button
-                v-if="(napariImage?.branchLabels?.[row.valueName]?.length ?? 0) > 0"
+                v-if="row.masked && (napariImage?.branchLabels?.[row.valueName]?.length ?? 0) > 0"
                 class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[row.valueName] }"
                 @click="toggleBranch(row.valueName)"
                 v-tooltip.right="branchVns[row.valueName] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
@@ -775,6 +798,7 @@ onUnmounted(() => {
                 v-tooltip.right="trackVns[row.valueName] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
               ><i class="pi pi-share-alt" /></button>
               <button
+                v-if="row.masked"
                 class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" data-guide="viewer.toggleLabels"
                 :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
                 @click="toggleLabel(row.valueName)"

@@ -173,6 +173,53 @@ export function showIfSatisfied(
   return true
 }
 
+// ── Finding a sibling param BY TYPE, not by name ───────────────────────────────────────────────────
+//
+// Several widgets need another param's value: a measure picker has to know which segmentation to list
+// columns for, a `popSelection` in single mode has to know which segmentation to scope to. That was
+// resolved by hardcoded KEY — `values.pops`, then `values.valueName` — which is a naming convention
+// the specs do not actually share.
+//
+// It was already wrong. Of the four specs using `labelPropsColsSelection`, `hmm_states` and
+// `hmm_transitions` call their picker `pops`, but `clustPops.cluster` and `clustTracks.cluster` call
+// theirs `popsToCluster` and declare no `valueName` — so both fell through to "the image's FIRST
+// label set", and on any project with more than one segmentation the Cluster cells / Cluster tracks
+// measure picker listed the wrong segmentation's columns. Silently: a populated dropdown of plausible
+// column names is indistinguishable from the right one.
+//
+// By TYPE there is nothing to keep in step and nothing for a plugin author to know — a spec that
+// declares a `popSelection` gets scoped by it whatever it is called.
+export function siblingKeyOfType(params: ParamDef[] | undefined, type: string): string | undefined {
+  for (const p of params ?? []) {
+    if (p.type === type) return p.key
+    const nested = siblingKeyOfType(p.params, type)   // sections/groups store sub-values FLAT
+    if (nested) return nested
+  }
+  return undefined
+}
+
+/** The segmentation a measure/population picker is scoped to, given the whole form. */
+export function scopeValueName(
+  params: ParamDef[] | undefined,
+  values: ParamValues | undefined,
+  labelKeys: string[],
+): string {
+  // 1. the segmentation prefix carried by the first selected population ("A/_tracked" → "A")
+  const popKey = siblingKeyOfType(params, 'popSelection')
+  const pops = popKey ? values?.[popKey] : undefined
+  const first = Array.isArray(pops) && pops.length ? String(pops[0]) : ''
+  if (first && !first.startsWith('/')) {
+    const idx = first.indexOf('/')
+    if (idx > 0) return first.slice(0, idx)
+  }
+  // 2. an explicit sibling segmentation picker
+  const vnKey = siblingKeyOfType(params, 'valueNameSelection')
+  const vn = vnKey ? values?.[vnKey] : undefined
+  if (typeof vn === 'string' && vn) return vn
+  // 3. the image's first label set — a guess, and the reason 1 and 2 are tried by type first
+  return labelKeys[0] ?? 'default'
+}
+
 /** Every param key a spec's `showIf` conditions refer to — for a ratchet that they exist. */
 export function showIfKeys(def: TaskDef): string[] {
   const out: string[] = []

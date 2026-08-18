@@ -3,8 +3,8 @@ import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
-  showIfSatisfied, showIfKeys } from './paramValues'
-import type { TaskDef, ParamValues } from './types'
+  showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType } from './paramValues'
+import type { TaskDef, ParamValues, ParamDef } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
 const DEF = {
@@ -445,5 +445,52 @@ describe('showIfKeys', () => {
       ],
     } as unknown as TaskDef
     expect(showIfKeys(def).sort()).toEqual(['mode', 'mode', 'template'])
+  })
+})
+
+// ── Finding a sibling param by TYPE ────────────────────────────────────────────────────────────────
+//
+// This existed as a hardcoded key lookup (`values.pops`, then `values.valueName`) and was already
+// wrong for half the specs that use it: `clustPops.cluster` and `clustTracks.cluster` call their
+// picker `popsToCluster` and declare no `valueName`, so both fell through to "the image's first label
+// set" and listed the WRONG segmentation's measure columns on any multi-segmentation project.
+describe('scopeValueName', () => {
+  const CLUSTER = [                                   // the real clustPops.cluster shape
+    { key: 'popsToCluster', type: 'popSelection' },
+    { key: 'clusterMeasures', type: 'labelPropsColsSelection' },
+  ] as unknown as ParamDef[]
+  const HMM = [                                       // the real hmm_states shape
+    { key: 'pops', type: 'popSelection' },
+    { key: 'modelMeasurements', type: 'labelPropsColsSelection' },
+  ] as unknown as ParamDef[]
+
+  it('takes the segmentation prefix off the first selected population, whatever the key is called', () => {
+    expect(scopeValueName(CLUSTER, { popsToCluster: ['B/tcells'] }, ['A', 'B'])).toBe('B')
+    expect(scopeValueName(HMM, { pops: ['B/tcells'] }, ['A', 'B'])).toBe('B')
+  })
+
+  it('THE BUG: a differently-named pop param used to fall through to the first label set', () => {
+    // Same selection, same image; before this it returned 'A' for CLUSTER and 'B' for HMM.
+    expect(scopeValueName(CLUSTER, { popsToCluster: ['B/tcells'] }, ['A', 'B']))
+      .toBe(scopeValueName(HMM, { pops: ['B/tcells'] }, ['A', 'B']))
+  })
+
+  it('falls back to a sibling valueNameSelection, then to the first label set', () => {
+    const def = [{ key: 'seg', type: 'valueNameSelection' },
+                 { key: 'cols', type: 'labelPropsColsSelection' }] as unknown as ParamDef[]
+    expect(scopeValueName(def, { seg: 'C' }, ['A', 'B'])).toBe('C')
+    expect(scopeValueName(def, {}, ['A', 'B'])).toBe('A')
+    expect(scopeValueName(def, {}, [])).toBe('default')
+  })
+
+  it('a root-relative population carries no segmentation prefix', () => {
+    expect(scopeValueName(HMM, { pops: ['/tcells'] }, ['A', 'B'])).toBe('A')
+  })
+
+  it('finds a sibling nested in a section — sub-values are stored flat', () => {
+    const def = [{ key: 'adv', type: 'section', params: [{ key: 'seg', type: 'valueNameSelection' }] }
+                ] as unknown as ParamDef[]
+    expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
+    expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
   })
 })
