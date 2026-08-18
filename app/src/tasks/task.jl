@@ -484,16 +484,53 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
             continue
         end
 
+        # A param `showIf` has ruled out is NOT required — otherwise the two combine into a form that
+        # cannot be submitted, with nothing on screen explaining why. Same rule as the frontend's
+        # `missingRequired`, so the Run button and the server agree on which params are in play.
+        _show_if_satisfied(p, params) || continue
         required = get(p, "required", false)
         val = get(params, key, nothing)
 
-        if isnothing(val) || val == ""
-            required && throw(ParamValidationError("Required param '$key' is missing"))
+        # An EMPTY COLLECTION is missing too. `Any[] == ""` is false, so `required` could not express
+        # "pick at least one" for the multi-pick types — `channelSelection`, `popSelection`,
+        # `labelPropsColsSelection`, `chipSelect` — which is exactly where the requirement bites.
+        # Every such task therefore re-implemented it as a runtime log line, so the user learned they
+        # had picked nothing AFTER pressing Run, from the log, having waited for a pool slot.
+        # `_validate_leaf` has no branch for these types, so nothing else covers it.
+        if isnothing(val) || val == "" || (val isa Union{AbstractVector,AbstractDict} && isempty(val))
+            required && throw(ParamValidationError(_required_message(p, key)))
             continue  # optional and absent — skip range/type checks
         end
 
         _validate_leaf(key, val, Dict{String,Any}(string(k) => v for (k, v) in p))
     end
+end
+
+# Is this param in play, given the form? Mirrors the frontend `showIfSatisfied`: keys AND, values
+# within a key OR, compared as STRINGS because a spec is JSON and a submitted value may be a number.
+# An absent value satisfies nothing.
+function _show_if_satisfied(p::AbstractDict, params::AbstractDict)::Bool
+    cond = get(p, "showIf", nothing)
+    cond isa AbstractDict || return true
+    for (k, want) in cond
+        have = get(params, string(k), nothing)
+        isnothing(have) && return false
+        accepted = want isa AbstractVector ? string.(want) : [string(want)]
+        string(have) in accepted || return false
+    end
+    true
+end
+
+# The message a missing required param produces. `requiredMessage` in the spec overrides it, because
+# "Required param 'pops' is missing" is a key, not a sentence — the tasks that hand-rolled this check
+# were saying things like "select at least two populations to compare", which is the thing worth
+# keeping. Falls back to the param's own label, so an un-customised message still names what the user
+# sees rather than the wire key.
+function _required_message(p::AbstractDict, key::AbstractString)::String
+    msg = strip(string(get(p, "requiredMessage", "")))
+    isempty(msg) || return msg
+    label = strip(string(get(p, "label", "")))
+    isempty(label) ? "Required param '$key' is missing" : "$label is required"
 end
 
 """

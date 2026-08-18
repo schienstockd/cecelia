@@ -3,7 +3,8 @@ import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
-  showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType } from './paramValues'
+  showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
+  missingRequired } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -492,5 +493,50 @@ describe('scopeValueName', () => {
                 ] as unknown as ParamDef[]
     expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
     expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
+  })
+})
+
+// ── required, checked before the run ───────────────────────────────────────────────────────────────
+describe('missingRequired', () => {
+  const DEF = {
+    params: [
+      { key: 'mode', type: 'select' },
+      { key: 'pops', type: 'popSelection', required: true,
+        requiredMessage: 'Select at least 2 populations' },
+      { key: 'seg', type: 'valueNameSelection', required: true, label: 'Segmentation',
+        showIf: { mode: 'attach' } },
+      { key: 'note', type: 'text' },
+    ],
+  } as unknown as TaskDef
+
+  it('an EMPTY COLLECTION is missing — the case `required` could not express', () => {
+    // Julia compared against "" only, and `Any[] == ""` is false, so `required` never fired for any
+    // multi-pick type. That is exactly where "pick at least one" is meant to apply.
+    expect(missingRequired(DEF, { mode: 'create', pops: [] }))
+      .toEqual(['Select at least 2 populations'])
+    expect(missingRequired(DEF, { mode: 'create', pops: ['A/x'] })).toEqual([])
+  })
+
+  it('uses requiredMessage, else the label — never the wire key', () => {
+    const msgs = missingRequired(DEF, { mode: 'attach', pops: ['A/x'] })
+    expect(msgs).toEqual(['Segmentation is required'])
+  })
+
+  it('a param showIf has ruled out is NOT required', () => {
+    // Otherwise the two combine into a form that cannot be submitted and shows no reason why.
+    expect(missingRequired(DEF, { mode: 'create', pops: ['A/x'] })).toEqual([])
+    expect(missingRequired(DEF, { mode: 'attach', pops: ['A/x'], seg: 'B' })).toEqual([])
+  })
+
+  it('descends into a section, but not into one that does not apply', () => {
+    const def = {
+      params: [
+        { key: 'mode', type: 'select' },
+        { key: 'adv', type: 'section', showIf: { mode: 'on' },
+          params: [{ key: 'k', type: 'text', required: true, label: 'K' }] },
+      ],
+    } as unknown as TaskDef
+    expect(missingRequired(def, { mode: 'on' })).toEqual(['K is required'])
+    expect(missingRequired(def, { mode: 'off' })).toEqual([])
   })
 })

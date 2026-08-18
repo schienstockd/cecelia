@@ -683,8 +683,24 @@ valid on its own.
 
 **`tip`** — required on every param; one line, under 90 characters. Ratcheted.
 
-**`required`** — the run is refused with a readable error if the value is missing or empty
-(`validate_params`). Server-side, so it holds for a chain and the REPL too, not just the form.
+**`required`** / **`requiredMessage`** — the run is refused if the value is missing OR an empty
+collection, both server-side (`validate_params`, so it holds for a chain and the REPL) and on the Run
+button, which shows the reason instead of `Run on N images`.
+
+`requiredMessage` is the sentence to show. Prefer it: `Required param 'basisPops' is missing` is a
+wire key, not something a user can act on, and the nine tasks that hand-rolled this check as a
+post-run log line were already saying the useful thing —
+
+```json
+{ "key": "basisPops", "label": "Populations", "type": "popSelection",
+  "required": true, "requiredMessage": "Select at least 2 populations" }
+```
+
+A param `showIf` has ruled out is **not** required, on both sides. Otherwise the two combine into a
+form that cannot be submitted and shows nothing explaining why.
+
+A required param's `default` is unusable by definition — that is what required means — so it is
+exempt from the suite's "the spec's own defaults satisfy the spec" check.
 
 **`multiple`** — on a picker type (`select`, `channelSelection`, `popSelection`,
 `labelPropsColsSelection`), the value becomes an ARRAY and the widget multi-picks.

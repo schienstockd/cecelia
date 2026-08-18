@@ -17,6 +17,8 @@
     },
     {
       "key": "popsToCluster",
+      "required": true,
+      "requiredMessage": "Select at least one population",
       "label": "Populations",
       "type": "popSelection",
       "accepts": ["live", "clust", "region", "track", "trackclust"],

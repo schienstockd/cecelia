@@ -10,6 +10,8 @@
   "params": [
     {
       "key": "pops",
+      "required": true,
+      "requiredMessage": "Select at least one population",
       "label": "Populations",
       "type": "popSelection",
       "popScope": "tracks",
@@ -27,6 +29,8 @@
     },
     {
       "key": "hmmStates",
+      "required": true,
+      "requiredMessage": "Select the state columns — run HMM states first",
       "label": "HMM states",
       "type": "labelPropsColsSelection",
       "multiple": true,

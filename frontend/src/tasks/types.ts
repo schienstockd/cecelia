@@ -47,6 +47,10 @@ export interface ParamDef {
   // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in
   // `validate_params`, so it holds for a chain and the REPL too — not only for a form that drew it.
   required?: boolean
+  // The sentence shown when `required` is unmet. "Required param 'pops' is missing" is a key, not a
+  // sentence — the tasks that hand-rolled this check said things like "select at least 2
+  // populations", which is the part worth keeping.
+  requiredMessage?: string
   /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
   extensions?: string[]
   multiple?: boolean

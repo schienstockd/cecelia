@@ -220,6 +220,32 @@ export function scopeValueName(
   return labelKeys[0] ?? 'default'
 }
 
+// ── Required params, checked BEFORE the run ────────────────────────────────────────────────────────
+//
+// `required` was declared in specs, enforced only server-side, and read by the frontend NOWHERE — no
+// marker, no Run gate. So nine tasks re-implemented it as a runtime log line and the user learned
+// they had picked nothing AFTER pressing Run, from the log, having waited for a pool slot.
+//
+// A param `showIf` has ruled out is NOT required: the two would otherwise combine into a form that
+// cannot be submitted and gives no way to see why. Julia's `validate_params` applies the same rule.
+export function missingRequired(def: TaskDef, values: ParamValues | undefined): string[] {
+  const out: string[] = []
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      const applies = p.hidden !== true && showIfSatisfied(p.showIf, values)
+      if (applies && p.required) {
+        const v = values?.[p.key]
+        const empty = v === undefined || v === null || v === '' ||
+                      (Array.isArray(v) && v.length === 0)
+        if (empty) out.push(p.requiredMessage || `${p.label || p.key} is required`)
+      }
+      applies && walk(p.params)
+    }
+  }
+  walk(def.params)
+  return out
+}
+
 /** Every param key a spec's `showIf` conditions refer to — for a ratchet that they exist. */
 export function showIfKeys(def: TaskDef): string[] {
   const out: string[] = []

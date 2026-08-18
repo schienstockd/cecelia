@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
-import { flattenParams, resolveInitialParams } from './paramValues'
+import { flattenParams, resolveInitialParams, missingRequired } from './paramValues'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
@@ -316,9 +316,17 @@ const activeTaskGatingReason = computed(() =>
   taskDef.value ? gatingReasonFor(taskDef.value) : ''
 )
 
+// A `required` param left empty, checked HERE rather than after the run. The server refuses these
+// too, but only once the task has been queued and given a pool slot — so the user learned they had
+// picked nothing from a log line, minutes later. First message only: the button is one line, and
+// fixing the first usually reveals whether the rest matter.
+const missingRequiredReason = computed(() =>
+  taskDef.value ? (missingRequired(taskDef.value, paramValues.value)[0] ?? '') : '')
+
 // run
 const canRun = computed(() =>
-  props.selectedUids.length > 0 && !!taskDef.value && !activeTaskGatingReason.value
+  props.selectedUids.length > 0 && !!taskDef.value &&
+  !activeTaskGatingReason.value && !missingRequiredReason.value
 )
 
 function run() {
@@ -393,6 +401,7 @@ const runLabel = computed(() => {
   const n = props.selectedUids.length
   if (n === 0) return 'Select images to run'
   if (activeTaskGatingReason.value) return activeTaskGatingReason.value
+  if (missingRequiredReason.value) return missingRequiredReason.value
   return `Run on ${n} image${n > 1 ? 's' : ''}`
 })
 

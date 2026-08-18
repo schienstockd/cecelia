@@ -2362,7 +2362,16 @@ end
     # A value the spec itself calls valid: the declared default, else something in range/options.
     function valid_value(p)
         t = string(get(p, "type", ""))
-        haskey(p, "default") && !isnothing(p["default"]) && p["default"] != "" && return p["default"]
+        d = get(p, "default", nothing)
+        # A `required` param's default is UNUSABLE by definition — "pick at least one" ships with an
+        # empty list — so the baseline must supply a stand-in. Without this, marking a param required
+        # made its own task fail the "the spec's defaults satisfy the spec" check, and every
+        # perturbation test in that task then threw for the required param instead of the one being
+        # perturbed, hiding whatever the perturbation was meant to prove.
+        empty_default = d isa Union{AbstractVector,AbstractDict} && isempty(d)
+        if !isnothing(d) && d != "" && !(empty_default && get(p, "required", false) === true)
+            return d
+        end
         t == "int"    && return Int(get(p, "min", 1))
         t == "float"  && return Float64(get(p, "min", 1.0))
         t == "bool"   && return false
@@ -2392,7 +2401,15 @@ end
         d
     end
 
-    # Assert the rejection names the offending key — otherwise a throw for an unrelated reason
+    # What a rejection may say instead of the raw key, per param. A `required` param rejects with the
+    # sentence the SPEC declares (`requiredMessage`, else "<label> is required") — "Required param
+    # 'basisPops' is missing" is a wire key, not something to show a user, and the nine tasks that
+    # hand-rolled this check were already saying things like "select at least 2 populations".
+    # Populated per task below, so the contract stays "the rejection names the offending PARAM" and
+    # only widens on how it may name it.
+    alt_names = Dict{String,Vector{String}}()
+
+    # Assert the rejection names the offending param — otherwise a throw for an unrelated reason
     # (a missing required param) would let a broken bound pass as "validated".
     function rejects(task, params, key, why)
         err = nothing
@@ -2405,10 +2422,12 @@ end
             @error "expected a ParamValidationError" task = typeof(task) param = key case = why got = err
         end
         @test err isa ParamValidationError
-        if err isa ParamValidationError && !occursin(key, err.msg)
+        names = err isa ParamValidationError &&
+                (occursin(key, err.msg) || any(a -> occursin(a, err.msg), get(alt_names, key, String[])))
+        if err isa ParamValidationError && !names
             @error "rejected, but for a different param" param = key case = why msg = err.msg
         end
-        @test !(err isa ParamValidationError) || occursin(key, err.msg)
+        @test !(err isa ParamValidationError) || names
     end
 
     checked_bounds   = 0
@@ -2434,6 +2453,15 @@ end
             end
             if spec_params isa AbstractVector && !isempty(spec_params)
             checked_tasks += 1
+
+            empty!(alt_names)
+            each_spec_param(spec_params) do p, _
+                k = String(something(spec_get(p, "key", ""), ""))
+                isempty(k) && return
+                alt = filter(!isempty, strip.(String[string(something(spec_get(p, "requiredMessage", ""), "")),
+                                                    string(something(spec_get(p, "label", ""), ""))]))
+                isempty(alt) || (alt_names[k] = alt)
+            end
 
             base = baseline(spec_params)
             # the spec's own defaults must satisfy the spec
