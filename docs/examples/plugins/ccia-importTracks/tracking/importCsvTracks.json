@@ -37,6 +37,10 @@
           "label": "ImageJ Manual Tracking"
         },
         {
+          "value": "trackmate_xml",
+          "label": "TrackMate (track XML)"
+        },
+        {
           "value": "trackmate",
           "label": "TrackMate"
         },
@@ -49,7 +53,7 @@
           "label": "Custom (map columns below)"
         }
       ],
-      "tip": "Preset column mapping; fields below override it"
+      "tip": "Preset column mapping; XML needs none"
     },
     {
       "key": "maxDistance",

@@ -14,8 +14,11 @@
 #
 # Category `trackTools` has no built-in page, so this task appears on the generic `/custom/trackTools`
 # page — together with the plot canvas fed by this plugin's own
-# `plotDefinitions/cumulative_change.json`. THAT pairing is the point of the plugin: a custom task and
+# `plotDefinitions/cumulative_change.json`. THAT pairing is the point of a plugin: a custom task and
 # the custom module page that inspects it, shipped as one directory, with no Vue and no rebuild.
+#
+# It is a MEASURE, deliberately not bundled with the track importer: importing someone else's tracks
+# and measuring them are different capabilities, and one repo should do one thing.
 #
 # The file is `include`d INTO the Cecelia module, so names resolve with the `Cecelia.` prefix.
 

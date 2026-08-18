@@ -2562,9 +2562,9 @@ end
     #      dispatches on the instance) but never in the served form. Picker and validator disagreed.
     #   2. options could only come from disk, never from what the user had typed.
     mods = joinpath(Cecelia.config_dir(), "modules")
-    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "tracktools-example")
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "ccia-importTracks")
     src  = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
-                    "docs", "examples", "plugins", "tracktools-example")
+                    "docs", "examples", "plugins", "ccia-importTracks")
     mkpath(dirname(pdir)); cp(src, pdir; force = true)
     csv = joinpath(mods, "spots.csv")
     write(csv, "Nb,Track n°,Slice n°,X,Y,Z\n1,7,1,10.0,20.0,3.0\n")
@@ -2607,7 +2607,6 @@ end
         @test _cols(body3, "trackColumn") === nothing
     finally
         Cecelia._unregister_task!("tracking.importCsvTracks")
-        Cecelia._unregister_task!("trackTools.cumulativeChange")
         rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
         rm(csv; force = true)
     end

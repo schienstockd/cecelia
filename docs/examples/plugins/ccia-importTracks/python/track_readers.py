@@ -1,4 +1,4 @@
-"""Shared helper for the `tracktools-example` plugin — read an external per-spot track export.
+"""Shared helper for the `ccia-importTracks` plugin — read an external track export.
 
 **Format-neutral by design.** Every column name, the frame base, the header offset and the coordinate
 unit are parameters, because there is no single "external tracks" format — labs export from ImageJ
@@ -15,9 +15,9 @@ by mapping its columns once, not by changing this file.
 `run_py` puts on `PYTHONPATH` (`_custom_modules_pydirs`), so the task runner beside it imports it as a
 plain top-level module:
 
-    from csv_tracks import read_spot_csv, match_spots_to_cells
+    from track_readers import read_track_file, match_spots_to_cells
 
-Note what is NOT in that import: the plugin's directory name. `tracktools-example` contains a hyphen
+Note what is NOT in that import: the plugin's directory name. `ccia-importTracks` contains a hyphen
 and is not a Python identifier, so anything that spelled the plugin name into a module path could
 never work. Naming `python/` on the path directly is what frees a plugin directory to be called
 whatever its repo is called. See docs/todo/PLUGINS_PLAN.md → R2.
@@ -34,6 +34,8 @@ has (`numpy`, `scipy`) but cannot declare its own pip dependencies — see docs/
 *Limits*.
 """
 import csv
+import os
+import xml.etree.ElementTree as ET
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -134,3 +136,63 @@ def match_spots_to_cells(spot_pos, spot_frames, spot_tracks,
         track_of_cell[cell_idx[ok]] = spot_tracks[spot_idx[nn[ok]]]
 
     return track_of_cell, int((track_of_cell >= 0).sum())
+
+
+def read_tracks_xml(path):
+    """Read TrackMate's **Export tracks to XML** → `(track_ids, frames, positions)`.
+
+    That export is not a table and has no columns to map, so it bypasses the mapping entirely::
+
+        <Tracks nTracks="314" spaceUnits="micron" frameInterval="15.0" timeUnits="sec">
+          <particle nSpots="24">
+            <detection t="6" x="87.2" y="72.3" z="55.1" />
+
+    **The grouping IS the track.** A `<particle>` carries no id, so the track id is its ordinal
+    position in the file — stable for one export, and the only identifier there is. `t` is the frame
+    (already 0-based here), and coordinates are in the file's `spaceUnits`, micron in every export
+    seen, which is why the caller still converts to pixels.
+
+    This is a DIFFERENT TrackMate export from the "Spots in tracks statistics" CSV, which does have
+    TRACK_ID/POSITION_X columns and goes through `read_spot_csv`. Both come out of the same tool, so
+    the file itself has to say which one it is — hence dispatching on the extension in
+    `read_track_file` rather than asking the user to know.
+    """
+    root = ET.parse(path).getroot()
+    tracks, frames, positions = [], [], []
+    for i, particle in enumerate(root.findall('particle')):
+        for d in particle.findall('detection'):
+            try:
+                t = int(float(d.get('t')))
+                xyz = [float(d.get(a)) for a in ('x', 'y', 'z') if d.get(a) is not None]
+            except (TypeError, ValueError):
+                continue          # one malformed detection must not lose the whole export
+            if not xyz:
+                continue
+            tracks.append(i)
+            frames.append(t)
+            positions.append(xyz)
+    if not tracks:
+        return np.array([], dtype=int), np.array([], dtype=int), np.zeros((0, 3))
+    width = min(len(p) for p in positions)      # 2D and 3D exports both land square
+    return (np.array(tracks, dtype=int), np.array(frames, dtype=int),
+            np.array([p[:width] for p in positions], dtype=float))
+
+
+def read_track_file(path, mapping):
+    """Read whatever the user pointed at — XML or delimited — as `(track_ids, frames, positions)`.
+
+    ONE entry point, so the runner never branches on format and a new source is added here rather
+    than at the call site. `.xml` is TrackMate's track export (no columns); anything else is a
+    delimited table read through the caller's column mapping.
+    """
+    if os.path.splitext(str(path))[1].lower() == '.xml':
+        return read_tracks_xml(path)
+    pos_cols = tuple(c for c in (mapping.get('xColumn'), mapping.get('yColumn'),
+                                 mapping.get('zColumn')) if c)
+    return read_spot_csv(path,
+                         mapping.get('trackColumn', 'TRACK_ID'),
+                         mapping.get('frameColumn', 'FRAME'),
+                         pos_cols,
+                         int(mapping.get('frameBase', 0)),
+                         int(mapping.get('skipRows', 0)),
+                         mapping.get('delimiter', ','))

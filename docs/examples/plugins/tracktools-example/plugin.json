@@ -1,8 +1,0 @@
-{
-  "name": "tracktools-example",
-  "version": "0.1.0",
-  "description": "External track import + a cumulative-change track measure, with its own module page",
-  "homepage": "https://github.com/schienstockd/cecelia",
-  "requiresCecelia": ">=0.1.3",
-  "categories": ["tracking", "trackTools"]
-}

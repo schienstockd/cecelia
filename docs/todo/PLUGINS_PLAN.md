@@ -9,6 +9,41 @@ corrected — it was new registry work, not the one-liner this plan first implie
 in the app: nobody else has that format. Their two other asks are general and are handled in
 [`CORRECTION_PLAN.md`](CORRECTION_PLAN.md).
 
+## Open items — the working list
+
+Live checklist for the `feat/plugins` branch. Delete an item when it lands; this is not a changelog.
+
+**Blocking a real import**
+- [ ] **TrackMate track XML** — reader written and verified against a real export
+      (`~/Downloads/TMP/M2b-…_Tracks.xml`: 314 tracks, 4367 detections, 3D, micron). Still to do:
+      run it end to end against a cecelia segmentation, and test it. NOTE the format has **no
+      columns** — `<particle>` IS the track, its id is its ordinal — so the column mapping is bypassed
+      entirely for `.xml`. This is a DIFFERENT export from TrackMate's "Spots in tracks" CSV.
+- [ ] **Which segmentation does it attach to?** The export is of a cropped/smoothed OME-TIFF. The
+      spatial match needs a cecelia segmentation of the SAME image, in the same coordinate frame; a
+      crop offset would silently move every spot. Unconfirmed.
+
+**Correctness / cleanup**
+- [ ] **Split the plugin.** `cumulativeChange` is a track MEASURE and does not belong in a repo called
+      `ccia-importTracks` (Dominik). Move it to its own plugin; the importer keeps the repo.
+- [ ] **The plugin exists twice** — CI-loaded example vs the published repo. Resolve after the split.
+- [ ] **Tooltip detector** — `TOOLTIP_PROP` now makes `row-tooltip` count as tipping a subtree, which
+      is right, but the ratchet fails: decide whether the pre-existing `row-tooltip` tables genuinely
+      double up (fix them) or the detector needs to only flag SLOT content.
+- [x] ~~Blank entry in the tracking function list~~ — `tracking/cell_config.json` (the vendored btrack
+      TrackerConfig) was served as a task spec, because the built-in scan had no `fun_name` filter
+      while the custom scan did. Both agree now; regression test added.
+
+**Unverified**
+- [ ] **Nothing in the browser** — the Settings plugins table, the column suggestions, the debounced
+      refetch and the custom page's plot canvas are all unrendered by their author.
+- [ ] **`maxDistance` default (10 px)** is a guess until an import runs on real data.
+- [ ] The ImageJ Manual Tracking and Imaris templates are still inferred, not checked against a real
+      export. (TrackMate XML no longer is — there is a real file.)
+
+**Parked**
+- [ ] Track preview — blocked on `feat/correction-seg-tracks` (`trackPaths.ts`).
+
 ## The premise correction — read this first
 
 **Cecelia already has a plugin system.** It is called custom modules, it shipped in three phases

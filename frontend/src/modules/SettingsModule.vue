@@ -158,6 +158,21 @@ function shortModulePath(p: string): string {
 // A plugin is one directory of custom modules installed from a URL (docs/todo/PLUGINS_PLAN.md).
 // Install and remove both return the SAME payload the status endpoint does, so the store is refreshed
 // from the response rather than by a follow-up fetch that could race the reload.
+// Columns for the two plugin tables. A table rather than stacked rows because each entry carries
+// several comparable facts (version, what it ships) plus a row-scoped action — and `.save-btn` is
+// `display:flex`, i.e. block-level, so in a plain row the button dropped onto its own line under the
+// name it belonged to. SelectionTable is THE canonical table (docs/UI.md → UX-primitive catalog);
+// hand-rolling one here is the exact mistake it exists to prevent.
+const PLUGIN_COLUMNS: SelectionColumn[] = [
+  { key: 'name',       label: 'Plugin' },
+  { key: 'version',    label: 'Version', fixed: true },
+  { key: 'categories', label: 'Provides' },
+]
+const REGISTRY_COLUMNS: SelectionColumn[] = [
+  { key: 'name',        label: 'Plugin' },
+  { key: 'description', label: 'What it does' },
+]
+
 const pluginUrl  = ref('')
 const pluginRef  = ref('')
 const pluginBusy = ref(false)
@@ -167,19 +182,25 @@ const pluginMsg  = ref('')
 // saying nothing here is how "my edit did nothing" becomes a support question (Decision 7).
 const pluginRestart = ref(false)
 
-async function installPlugin() {
-  if (!pluginUrl.value.trim()) return
+// ONE install path, used by both the URL field and a row in the curated list. The list used to just
+// FILL the field above — invisible indirection: the button was two sections away from its own effect,
+// so it read as doing nothing. A row installs itself now, behind the same confirm.
+async function installPlugin(url: string, ref = '') {
+  const u = url.trim()
+  if (!u) return
   pluginBusy.value = true; pluginMsg.value = ''; pluginRestart.value = false
   try {
     const res = await fetch('/api/plugins/install', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: pluginUrl.value.trim(), ref: pluginRef.value.trim() }),
+      body: JSON.stringify({ url: u, ref: ref.trim() }),
     })
     const data = await res.json()
     if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
     customModules.apply(data)
     pluginRestart.value = !!data.restartRequired
-    pluginUrl.value = ''; pluginRef.value = ''
+    // Only clear the URL field when it is what was submitted — clearing it after installing a listed
+    // plugin would wipe a URL the user had half-typed for something else.
+    if (u === pluginUrl.value.trim()) { pluginUrl.value = ''; pluginRef.value = '' }
   } catch (e) {
     pluginMsg.value = String(e)
   } finally { pluginBusy.value = false }
@@ -848,7 +869,7 @@ async function switchWt(path: string) {
           <input class="field-input mono" v-model="pluginRef" :disabled="pluginBusy"
                  placeholder="tag or commit"
                  v-tooltip.right="'Pin a tag or commit; blank takes the default branch'" />
-          <ConfirmButton @confirm="installPlugin" v-slot="{ armed, arm, confirm, cancel }">
+          <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
                     v-tooltip.top="'Fetch and install — this code is not sandboxed'">
               <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> Install
@@ -870,44 +891,56 @@ async function switchWt(path: string) {
         </span>
       </div>
 
-      <div v-if="customModules.plugins.length" class="cm-list">
-        <div v-for="p in customModules.plugins" :key="p.dir" class="cm-row">
-          <span class="svc-pill" :class="p.error ? 'err' : 'ok'">
-            <span class="dot" /> {{ p.version || '—' }}
-          </span>
-          <span class="cm-path" v-tooltip.top="p.error || p.description || p.dir">
-            {{ p.name }}<span v-if="p.categories.length" class="cc-muted"> · {{ p.categories.join(', ') }}</span>
-          </span>
-          <span v-if="p.warning" class="cc-muted cc-fs-xs" v-tooltip.top="p.warning">
-            <i class="pi pi-exclamation-triangle" />
-          </span>
-          <ConfirmButton @confirm="removePlugin(p.name)" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn ghost" :disabled="pluginBusy" @click="arm"
-                    v-tooltip.top="'Remove this plugin'"><i class="pi pi-trash" /> Remove</button>
+      <SelectionTable v-if="customModules.plugins.length" class="plugin-table"
+                      selection-mode="none" id-key="name" density="compact" fit="fill"
+                      :columns="PLUGIN_COLUMNS" :rows="customModules.plugins">
+        <template #cell-name="{ row }">
+          <span v-tooltip.top="row.error || row.description || row.dir">{{ row.name }}</span>
+          <i v-if="row.warning" class="pi pi-exclamation-triangle" v-tooltip.top="row.warning" />
+        </template>
+        <!-- categories is an array; the table renders values verbatim by design, so join it here
+             rather than teaching the table to format (it would become a second formatter). -->
+        <template #cell-categories="{ row }">{{ row.categories.join(', ') || '—' }}</template>
+        <template #actions="{ row }">
+          <ConfirmButton @confirm="removePlugin(row.name)" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="pluginBusy"
+                    @click="arm" v-tooltip.top="'Remove this plugin'"><i class="pi pi-trash" /></button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm"><i class="pi pi-trash" /> Confirm</button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="confirm"
+                      v-tooltip.top="'Confirm remove'"><i class="pi pi-check" /></button>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="cancel"
+                      v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
             </template>
           </ConfirmButton>
-        </div>
-      </div>
+        </template>
+      </SelectionTable>
       <span v-else class="field-hint cc-muted cc-fs-xs">No plugins installed.</span>
 
       <!-- The curated list. Not a search index: these are the ones we vouch for; anything else goes
            in the URL field above. -->
       <div v-if="customModules.registry.length" class="field">
         <label class="field-label">Available</label>
-        <div class="cm-list">
-          <div v-for="r in customModules.registry" :key="r.url" class="cm-row">
-            <span class="cm-path" v-tooltip.top="r.description">
-              {{ r.name }}<span v-if="r.categories.length" class="cc-muted"> · {{ r.categories.join(', ') }}</span>
-            </span>
-            <span v-if="r.installed" class="cc-muted cc-fs-xs">installed</span>
-            <button v-else class="save-btn ghost" :disabled="pluginBusy"
-                    @click="pluginUrl = r.url; pluginRef = r.ref ?? ''"
-                    v-tooltip.top="'Fill the URL above — install is still a confirmed step'">Use</button>
-          </div>
-        </div>
+        <SelectionTable class="plugin-table" selection-mode="none" id-key="name"
+                        density="compact" fit="fill"
+                        :columns="REGISTRY_COLUMNS" :rows="customModules.registry">
+          <template #actions="{ row }">
+            <span v-if="row.installed" class="cc-muted cc-fs-xs">installed</span>
+            <ConfirmButton v-else @confirm="installPlugin(row.url, row.ref ?? '')"
+                           v-slot="{ armed, arm, confirm, cancel }">
+              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="pluginBusy"
+                      @click="arm" v-tooltip.top="'Install — this code is not sandboxed'">
+                <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
+              </button>
+              <template v-else>
+                <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="confirm"
+                        v-tooltip.top="'Confirm install — runs with full access to this machine'">
+                  <i class="pi pi-check" /></button>
+                <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="cancel"
+                        v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
+              </template>
+            </ConfirmButton>
+          </template>
+        </SelectionTable>
       </div>
     </section>
 

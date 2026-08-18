@@ -342,6 +342,12 @@ function api_task_definitions(req::HTTP.Request)
             endswith(f, ".json") || continue
             try
                 parsed = JSON3.read(read(f, String), Dict{String,Any})
+                # A task spec is identified by its `fun_name`, exactly as the user/plugin scan below
+                # requires. Not every .json beside a task IS one: `tracking/cell_config.json` is the
+                # vendored btrack TrackerConfig, and without this it was served as a task — rendering
+                # a BLANK entry in the function picker that threw `def.params is undefined` the moment
+                # it was selected. The two scans now agree on what a spec is.
+                isempty(string(get(parsed, "fun_name", ""))) && continue
                 resolved = Cecelia._resolve_spec_includes(parsed, frag_dir)
                 push!(specs, resolved)
             catch e

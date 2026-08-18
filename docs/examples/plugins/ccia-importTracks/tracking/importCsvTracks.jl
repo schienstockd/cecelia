@@ -11,11 +11,11 @@
 # Supporting a new tool is then a new template file, not new code.
 #
 # There is no label column to join on — an external tracker knows nothing about cecelia's labels — so
-# spots are matched to cells SPATIALLY, per frame, within a cutoff. See python/csv_tracks.py.
+# spots are matched to cells SPATIALLY, per frame, within a cutoff. See python/track_readers.py.
 #
-# Category is `tracking`, an EXISTING built-in page, so this appears in the Tracking page's task list.
-# Contrast with this plugin's other task (`trackTools/cumulativeChange.jl`), whose category is new and
-# therefore gets the plugin's own page. One plugin, both routes.
+# Category is `tracking`, an EXISTING built-in page, so this appears in the Tracking page's task list
+# with no page of its own. (`ccia-trackMeasures` is the counterpart example: a NEW category, so it gets
+# the generic `/custom/<category>` page plus its own plot canvas.)
 
 struct ImportCsvTracks <: Cecelia.CciaTask end
 
@@ -56,6 +56,8 @@ half-typed or missing path must degrade to "no suggestions", never break the pag
 """
 function _ict_headers(path::AbstractString; skip::Int = 0)::Vector{String}
     isfile(path) || return String[]
+    # An XML export has no columns; splitting its first line would offer nonsense as suggestions.
+    lowercase(splitext(path)[2]) == ".xml" && return String[]
     try
         d = _ict_delimiter(path)
         open(path) do io

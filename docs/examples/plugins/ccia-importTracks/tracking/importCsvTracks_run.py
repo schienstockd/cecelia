@@ -3,7 +3,7 @@
 Launched by the `tracking.importCsvTracks` Julia task through `run_py`. Two imports matter here and
 they resolve by different mechanisms:
 
-  from csv_tracks import read_spot_csv             <- the PLUGIN's own python/ dir, on PYTHONPATH
+  from track_readers import read_track_file        <- the PLUGIN's own python/ dir, on PYTHONPATH
   from cecelia.utils.label_props_utils import …    <- the cecelia IO library, also on PYTHONPATH
 
 Both come from `run_py`; there is no `sys.path` bootstrapping in a runner, ever.
@@ -11,8 +11,8 @@ See docs/CUSTOM_MODULES.md and docs/todo/PLUGINS_PLAN.md.
 
 Parameter contract (JSON written by the Julia task):
   labelPropsPath - absolute path to the segmentation's labelProps .h5ad
-  csvPath        - the external spot export
-  mapping        - RESOLVED column mapping (template + user overrides, merged Julia-side):
+  csvPath        - the external track export (TrackMate track XML, or a delimited table)
+  mapping        - RESOLVED column mapping, ignored for XML (it has no columns):
                    trackColumn / frameColumn / xColumn / yColumn / zColumn / frameBase / skipRows,
                    plus spotUnit = "physical" (calibrated, µm) or "pixel"
   delimiter      - sniffed ONCE Julia-side and passed; this side never guesses
@@ -26,7 +26,7 @@ import pandas as pd
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.label_props_utils import LabelPropsView
 
-from csv_tracks import read_spot_csv, match_spots_to_cells   # the plugin's own shared helper
+from track_readers import read_track_file, match_spots_to_cells  # the plugin's own shared helper
 
 
 def run(params):
@@ -39,15 +39,10 @@ def run(params):
     mp = params.get('mapping', {})
 
     log.progress(0, 2)
-    pos_cols = tuple(c for c in (mp.get('xColumn'), mp.get('yColumn'), mp.get('zColumn')) if c)
-    tracks, frames, pos = read_spot_csv(
-        params['csvPath'],
-        mp.get('trackColumn', 'TRACK_ID'),
-        mp.get('frameColumn', 'FRAME'),
-        pos_cols,
-        int(mp.get('frameBase', 0)),
-        int(mp.get('skipRows', 0)),
-        params.get('delimiter', ','))
+    # ONE entry point for every format: the reader decides from the file itself (TrackMate's track
+    # XML has no columns to map), so this runner never branches on format.
+    mp = dict(mp); mp['delimiter'] = params.get('delimiter', ',')
+    tracks, frames, pos = read_track_file(params['csvPath'], mp)
     log.log(f'[INFO] Read {len(tracks)} tracked spots in {len(np.unique(tracks))} tracks')
     log.progress(1, 2)
 

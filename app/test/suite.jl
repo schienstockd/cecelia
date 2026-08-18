@@ -3688,18 +3688,19 @@ end
     # LOAD it — the older docs/examples/custom-modules/ examples were never executed by any test and
     # could have rotted silently. This installs the example into a throwaway config dir exactly as a
     # user would (`cp -r` into modules/plugins/) and asserts the whole chain.
-    src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
-                   "docs", "examples", "plugins", "tracktools-example")
-    @test isdir(src)
-
+    root = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins")
+    # TWO single-purpose example plugins, not one mixed bag: importing someone else's tracks and
+    # measuring them are different capabilities, so they are different plugins (Dominik, 2026-08-17).
     cfg = mktempdir()
-    dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, "tracktools-example")
-    mkpath(dirname(dst)); cp(src, dst)
-
-    # 1) the MANIFEST parses, and the hyphenated directory name is not a problem anywhere
-    m = Cecelia.read_plugin_manifest(dst)
-    @test m.error === nothing && m.name == "tracktools-example"
-    @test occursin("-", basename(dst))   # the case that can never be a Python/Julia identifier
+    for name in ("ccia-importTracks", "ccia-trackMeasures")
+        @test isdir(joinpath(root, name))
+        dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, name)
+        mkpath(dirname(dst)); cp(joinpath(root, name), dst)
+        m = Cecelia.read_plugin_manifest(dst)
+        @test m.error === nothing && m.name == name
+        @test occursin("-", name)   # the case that can never be a Python/Julia identifier
+    end
+    dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, "ccia-importTracks")
 
     # 2) both TASKS are enumerated, each under the category dir it sits in — one on a built-in page
     #    (tracking), one in the plugin's own new category (trackTools)
@@ -3707,7 +3708,9 @@ end
     byfun = Dict(e.fun_name => e for e in specs)
     @test byfun["tracking.importCsvTracks"].category    == "tracking"
     @test byfun["trackTools.cumulativeChange"].category == "trackTools"
-    @test all(e -> e.plugin == "tracktools-example", values(byfun))
+    # each task comes from the plugin whose single purpose it is
+    @test byfun["tracking.importCsvTracks"].plugin    == "ccia-importTracks"
+    @test byfun["trackTools.cumulativeChange"].plugin == "ccia-trackMeasures"
     # neither the manifest, the shared python/, nor plotDefinitions/ is mistaken for a task or category
     @test !any(e -> e.category in ("python", Cecelia.PLOT_DEFS_SUBDIR), specs)
 
@@ -3774,7 +3777,7 @@ end
 
     cfg = mktempdir()
     src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
-                   "docs", "examples", "plugins", "tracktools-example")
+                   "docs", "examples", "plugins", "ccia-importTracks")
     # Build a GitHub-shaped archive: everything wrapped in ONE `<repo>-<ref>/` directory, which the
     # unpacker has to see through without assuming it is always there.
     pack = mktempdir(); cp(src, joinpath(pack, "ccia-importTracks-main"))
