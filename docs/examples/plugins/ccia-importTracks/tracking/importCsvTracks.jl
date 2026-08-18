@@ -79,7 +79,6 @@ function Cecelia._inject_dynamic_options!(spec::Dict{String,Any}, ::ImportCsvTra
                                           form::AbstractDict)::Dict{String,Any}
     path   = string(get(form, "csvPath", ""))
     is_xml = !isempty(path) && lowercase(splitext(path)[2]) == ".xml"
-    mode   = string(get(form, "mode", "attach"))
 
     # Walk params + one level of section sub-params, applying `f` to each.
     function _walk!(ps, f)
@@ -95,17 +94,14 @@ function Cecelia._inject_dynamic_options!(spec::Dict{String,Any}, ::ImportCsvTra
     # take a flag back — switch mode to "create" and back and the segmentation picker would stay gone.
     hide!(p, keys) = (p["hidden"] = string(get(p, "key", "")) ∈ keys)
 
-    # What does not apply, given the form as it stands. A param that cannot be answered here is worse
-    # than absent: five empty dropdowns under "Column mapping" read as a failed load, not as
-    # "this export has no columns".
-    gone = Set{String}()
-    #  - a TrackMate track XML is a fixed, self-describing schema (`<particle><detection t x y z/>`),
-    #    so there is nothing to map and no preamble to skip. The template is implied by the file.
-    is_xml && union!(gone, ["columnMapping", "template"])
-    #  - "New points segmentation" has nothing to match against, so neither the segmentation to attach
-    #    to nor the match distance means anything; "Attach" writes into that segmentation and so has
-    #    no new name to give.
-    mode == "create" ? union!(gone, ["valueName", "maxDistance"]) : push!(gone, "outputValueName")
+    # ONLY the condition the form cannot answer lives here. A TrackMate track XML is a fixed,
+    # self-describing schema (`<particle><detection t x y z/>`), so there is nothing to map and no
+    # preamble to skip — but knowing that means READING THE FILE, which no spec field can do.
+    #
+    # Everything decidable from the form alone is declared in the spec instead, as `showIf` beside the
+    # param it is about ("maxDistance applies when attaching"). That is the line: if the form is
+    # enough, it belongs in the JSON, so a plugin author never writes Julia to make a param disappear.
+    gone = is_xml ? Set(["columnMapping", "template"]) : Set{String}()
     _walk!(get(spec, "params", nothing), p -> hide!(p, gone))
 
     # Column suggestions for whatever IS a table. Suggestions only — the fields stay valid on their own.

@@ -1028,7 +1028,10 @@ const paramContext = computed(() => {
         .map(e => { const s = findNode(e.source); return s ? nodeOutputValueName(s)?.name : null })
         .filter((n): n is string => !!n)
     : []
-  return { images: imgs, extraValueNames }
+  // `values` — the node's own params. Without them a `showIf` condition can never be satisfied here,
+  // so a conditional param would be permanently hidden in the chain editor while showing correctly in
+  // the task runner: the same spec, two behaviours, no error. (TaskRunner has always passed them.)
+  return { images: imgs, extraValueNames, values: selectedNode.value?.data.params }
 })
 
 const runAllSelected = computed(() =>

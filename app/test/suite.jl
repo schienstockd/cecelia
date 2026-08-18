@@ -3806,11 +3806,17 @@ end
     @test !hidden(sc, "columnMapping")
     @test [o["value"] for o in flat(sc)["trackColumn"]["options"]] == ["TRACK_ID", "FRAME", "X", "Y"]
 
-    # The two modes hide each other's half: nothing to attach to, or nothing new to name.
-    @test hidden(sc, "outputValueName")                       # attach writes into valueName
-    screate = resolve(Dict("csvPath" => csv, "mode" => "create"))
-    @test hidden(screate, "valueName") && hidden(screate, "maxDistance")
-    @test !hidden(screate, "outputValueName")
+    # The mode rules are NOT here any more — they moved into the spec as `showIf`, because they are
+    # decidable from the form alone. The hook keeps only what the form cannot answer. Asserting the
+    # split explicitly, so moving a rule back into Julia is a test failure and not a quiet regression.
+    spec_of(k) = get(flat(Cecelia._task_spec(task)), k, Dict{String,Any}())
+    @test get(spec_of("valueName"), "showIf", nothing) == Dict("mode" => "attach")
+    @test get(spec_of("maxDistance"), "showIf", nothing) == Dict("mode" => "attach")
+    @test get(spec_of("outputValueName"), "showIf", nothing) == Dict("mode" => "create")
+    for m in ("attach", "create")      # the hook is now blind to mode
+        @test !hidden(resolve(Dict("csvPath" => csv, "mode" => m)), "valueName")
+        @test !hidden(resolve(Dict("csvPath" => csv, "mode" => m)), "outputValueName")
+    end
 
     # Hiding must not make a param unsettable: the spec the RUNNER validates is untouched, so a value
     # carried over from before a mode switch still validates rather than erroring on a field nobody
@@ -3819,12 +3825,7 @@ end
 
     # Resolution is IDEMPOTENT — it assigns the flag rather than only setting it. `_task_spec` already
     # resolves once against an empty form and the form re-resolves on every edit, so a set-only hook
-    # could never take a flag back: switch to "create" and back and the segmentation picker stayed
-    # gone. Going back must restore exactly what going forward removed.
-    back = resolve(Dict("csvPath" => csv, "mode" => "attach"))
-    @test !hidden(back, "valueName") && !hidden(back, "maxDistance")
-    fwd = resolve(Dict("csvPath" => csv, "mode" => "create"))
-    @test !hidden(fwd, "outputValueName")
+    # could never take a flag back: an XML followed by a CSV left the mapping gone for good.
     @test !hidden(resolve(Dict("csvPath" => csv, "mode" => "attach")), "columnMapping")   # xml → csv
     # No teardown: the loader `include`s a plugin's .jl once, so unregistering here would leave the
     # task unrecoverable for the testset below — which installs the same plugin and tears it down.
@@ -11621,6 +11622,127 @@ end
 # SECTIONS AND GROUPS ARE EXEMPT. They are container headers ("Advanced", "Filters"), not inputs
 # — a user can't set them to anything, and requiring one would buy 18 tips saying "advanced
 # options". Their CHILDREN are checked like any other param.
+@testset "a handler fallback never contradicts its spec default" begin
+    # `run_task` now applies the spec's `default` before calling `_run_task`, so a handler's own
+    # `get(params, "k", d)` fallback is unreachable for any declared param — dead weight, not a second
+    # answer. It stops being harmless the moment the two DISAGREE, because then the form promises one
+    # number and a REPL/chain/MCP run uses another. Five did, and each was a real production
+    # divergence: clustTracks.minTracklength 1 vs 5, opticalFlow.trainRatio 1.0 vs 0.8,
+    # coastal.labelSmoothing 0.0 vs 0.5, contactsMeshes.maxContactDist 10.0 vs 5,
+    # track_measures.forceRecompute false vs true.
+    #
+    # Deliberately a TEXT scan of the handler sources: the alternative is running every task. Only
+    # literal scalars are compared — a computed fallback is a different thing and is skipped.
+    root = dirname(dirname(pathof(Cecelia)))
+    norm(x) = x isa AbstractString ? strip(String(x), ['"']) :
+              x isa Bool ? string(x) :
+              x isa Number ? string(float(x)) : nothing
+    bad = String[]
+    for (rootdir, _, files) in walkdir(joinpath(root, "src", "tasks")), f in files
+        endswith(f, ".json") || continue
+        spec = try JSON3.read(read(joinpath(rootdir, f), String), Dict{String,Any}) catch; continue end
+        haskey(spec, "params") || continue
+        jl = joinpath(rootdir, replace(f, ".json" => ".jl"))
+        isfile(jl) || continue
+        src = read(jl, String)
+        defaults = Dict{String,Any}()
+        walk(ps) = ps isa AbstractVector && for q in ps
+            q isa AbstractDict || continue
+            haskey(q, "default") && (defaults[string(get(q, "key", ""))] = q["default"])
+            walk(get(q, "params", nothing))
+        end
+        walk(spec["params"])
+        for (key, dflt) in defaults
+            want = norm(dflt)
+            isnothing(want) && continue                      # arrays/objects: not a literal fallback
+            for m in eachmatch(Regex("get\\(params, \"$(key)\", ([^)]+)\\)"), src)
+                got_raw = strip(m.captures[1])
+                got = occursin(r"^[-0-9.]+$", got_raw) ? string(parse(Float64, got_raw)) :
+                      got_raw in ("true", "false") ? got_raw :
+                      startswith(got_raw, "\"") ? strip(got_raw, ['"']) : nothing
+                isnothing(got) && continue                   # computed fallback — a different thing
+                got == want || push!(bad, "$(basename(jl)): $key — handler $got_raw, spec $(dflt)")
+            end
+        end
+    end
+    @test isempty(bad) || (@info "handler fallback contradicts the spec default" bad; false)
+end
+
+@testset "every task spec field is declared and documented" begin
+    # Spec fields drift in BOTH directions, so this checks both.
+    #
+    #   forward  — a field is added to `ParamDef` and rendered, and `docs/MODULES.md` never hears of
+    #              it. The reference silently stops being the reference.
+    #   backward — a spec declares a field no consumer reads. `clustPops/cluster.json` carried
+    #              `"includeChannels": true` for a `labelPropsColsSelection`; nothing in the form
+    #              read it, in Julia or in TS (the only match was `napariOverlays.ts`, an unrelated
+    #              movie-overlay concept). A spec that declares something nobody reads is a lie about
+    #              the form, and it reads as intent to whoever copies the spec next.
+    #
+    # "Read by a consumer" is either half of the contract: declared on the frontend's `ParamDef`, or
+    # read by Julia — `hideInComposite` is server-only and legitimately absent from `ParamDef`.
+    root      = dirname(dirname(dirname(pathof(Cecelia))))
+    types_ts  = read(joinpath(root, "frontend", "src", "tasks", "types.ts"), String)
+    modules   = read(joinpath(root, "docs", "MODULES.md"), String)
+    julia_src = join([read(f, String) for f in
+                      [joinpath(root, "app", "src", "tasks", "task.jl"),
+                       joinpath(root, "api", "src", "routes.jl")]], "\n")
+
+    # Structural keys of the params array itself, not fields a spec author sets on a param.
+    STRUCTURAL = Set(["key", "label", "type", "default", "\$include"])
+    fields = Set{String}()
+    each_spec() do _, spec
+        walk(ps) = ps isa AbstractVector && for q in ps
+            q isa AbstractDict || continue
+            union!(fields, string.(keys(q)))
+            walk(get(q, "params", nothing))
+        end
+        walk(get(spec, "params", nothing))
+    end
+
+    undeclared = String[]; undocumented = String[]
+    for f in sort(collect(setdiff(fields, STRUCTURAL)))
+        occursin(Regex("^\\s*$(f)\\??:", "m"), types_ts) ||
+            occursin("\"$f\"", julia_src) || push!(undeclared, f)
+        occursin("`$f`", modules) || push!(undocumented, f)
+    end
+    @test isempty(undeclared)   || (@info "spec field read by nothing" undeclared; false)
+    @test isempty(undocumented) || (@info "spec field absent from docs/MODULES.md" undocumented; false)
+end
+
+@testset "showIf conditions name a param that exists" begin
+    # `showIf` is the DECLARATIVE half of "this param does not apply here": a condition on the form,
+    # beside the param it is about, so a plugin author never writes Julia to make a field disappear.
+    # (The other half — a condition needing a file read, like "this XML export has no columns" —
+    # cannot be a spec field and stays a server hook setting `hidden`.)
+    #
+    # Its one silent failure mode: name a key that is not in the spec and the condition can never be
+    # satisfied, so the param is hidden FOREVER with no error anywhere. A typo costs a whole control.
+    bad = String[]
+    each_spec() do label, spec
+        present = Set{String}()
+        conds   = Tuple{String,String}[]
+        function walk(ps)
+            ps isa AbstractVector || return
+            for q in ps
+                q isa AbstractDict || continue
+                push!(present, string(get(q, "key", "")))
+                cond = get(q, "showIf", nothing)
+                cond isa AbstractDict &&
+                    for k in keys(cond); push!(conds, (string(get(q, "key", "?")), string(k))); end
+                walk(get(q, "params", nothing))
+            end
+        end
+        walk(get(spec, "params", nothing))
+        # Sub-params of a section are stored FLAT in the value dict, so a condition may cross that
+        # boundary in either direction — which is why membership is checked against the whole spec.
+        for (owner, k) in conds
+            k ∈ present || push!(bad, "$label: $owner showIf → '$k', which no param declares")
+        end
+    end
+    @test isempty(bad) || (@info "showIf names a param that does not exist" bad; false)
+end
+
 @testset "a param that says segmentation reads SEGMENTATIONS" begin
     # `valueNameSelection` defaults to `filepaths` — image VERSIONS — when `field` is omitted, and
     # that default is right for the seven built-ins that omit it ("Image to segment", "Images to

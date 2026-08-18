@@ -52,7 +52,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 
     uids = [img.uid for img in imgs]
 
-    min_tracklength = Int(get(params, "minTracklength", 1))
+    min_tracklength = Int(get(params, "minTracklength", 5))
 
     # The picker sends BARE base measures (like the old R): whole-track motility (used directly) and
     # cell measures (vars / obs) that `track_props` aggregates to ALL per-track stats — numeric →

@@ -34,6 +34,7 @@
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
+      "showIf": { "mode": "attach" },
       "field": "labels",
       "default": "default",
       "tip": "Which segmentation the tracks attach to"
@@ -42,6 +43,7 @@
       "key": "outputValueName",
       "label": "Name",
       "type": "valueNameInput",
+      "showIf": { "mode": "create" },
       "namespace": "labels",
       "default": "",
       "tip": "Name for the new points segmentation"
@@ -93,6 +95,7 @@
     },
     {
       "key": "maxDistance",
+      "showIf": { "mode": "attach" },
       "label": "Match distance (px)",
       "type": "float",
       "min": 0.5,

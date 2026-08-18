@@ -205,7 +205,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            zSpacing         = Int(get(params, "zSpacing", 0)),
            cropSize         = Int(get(params, "cropSize", 0)),
            maxFrames        = Int(get(params, "maxFrames", 0)),
-           trainRatio       = Float64(get(params, "trainRatio", 1.0)),
+           trainRatio       = Float64(get(params, "trainRatio", 0.8)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
            droppedMetrics   = dropped,

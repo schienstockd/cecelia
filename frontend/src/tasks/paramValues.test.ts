@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
-  resolveInitialParams, valueNameOptions, imageNamesForField } from './paramValues'
+  resolveInitialParams, valueNameOptions, imageNamesForField,
+  showIfSatisfied, showIfKeys } from './paramValues'
 import type { TaskDef, ParamValues } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -384,5 +385,65 @@ describe('imageNamesForField', () => {
 
   it('answers ["default"] for an image with no filepaths at all', () => {
     expect(imageNamesForField({} as never, undefined)).toEqual(['default'])
+  })
+})
+
+// ── showIf: conditional params declared in the spec ────────────────────────────────────────────────
+//
+// The declarative half of "this param does not apply here". The other half — a condition needing a
+// file read — stays a server hook setting `hidden`; see `showIfSatisfied`'s comment for the line
+// between them.
+describe('showIfSatisfied', () => {
+  it('no condition is always shown', () => {
+    expect(showIfSatisfied(undefined, {})).toBe(true)
+    expect(showIfSatisfied({}, {})).toBe(true)
+  })
+
+  it('matches a single value', () => {
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: 'attach' })).toBe(true)
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: 'create' })).toBe(false)
+  })
+
+  it('a list of values is OR-ed within one key', () => {
+    const cond = { method: ['gaussian', 'bilateral'] }
+    expect(showIfSatisfied(cond, { method: 'bilateral' })).toBe(true)
+    expect(showIfSatisfied(cond, { method: 'median' })).toBe(false)
+  })
+
+  it('keys are AND-ed', () => {
+    const cond = { mode: 'attach', method: 'gaussian' }
+    expect(showIfSatisfied(cond, { mode: 'attach', method: 'gaussian' })).toBe(true)
+    expect(showIfSatisfied(cond, { mode: 'attach', method: 'median' })).toBe(false)
+  })
+
+  it('compares as strings, so a spec can gate on a number a slider produced', () => {
+    // A spec is JSON and a control's value is whatever the widget emits. Without this, the same
+    // condition would work behind a select and silently fail behind an int slider.
+    expect(showIfSatisfied({ frameBase: '1' }, { frameBase: 1 })).toBe(true)
+    expect(showIfSatisfied({ nz: 1 }, { nz: '1' })).toBe(true)
+    expect(showIfSatisfied({ on: true }, { on: 'true' })).toBe(true)
+  })
+
+  it('an ABSENT value satisfies nothing', () => {
+    // Not "absent matches everything": that would flash every conditional param on first render,
+    // before defaults are applied.
+    expect(showIfSatisfied({ mode: 'attach' }, {})).toBe(false)
+    expect(showIfSatisfied({ mode: 'attach' }, undefined)).toBe(false)
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: null as unknown as string })).toBe(false)
+  })
+})
+
+describe('showIfKeys', () => {
+  it('collects conditions from params and section sub-params', () => {
+    const def = {
+      params: [
+        { key: 'mode', type: 'select' },
+        { key: 'maxDistance', type: 'float', showIf: { mode: 'attach' } },
+        { key: 'adv', type: 'section', params: [
+          { key: 'skipRows', type: 'int', showIf: { template: 'imaris', mode: 'attach' } },
+        ] },
+      ],
+    } as unknown as TaskDef
+    expect(showIfKeys(def).sort()).toEqual(['mode', 'mode', 'template'])
   })
 })

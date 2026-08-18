@@ -855,6 +855,59 @@ function _flatten_sections(task::CciaTask, params::Dict{String,Any})::Dict{Strin
 end
 
 """
+    _apply_spec_defaults(task, params) -> Dict
+
+Fill in every param the caller did not supply, from the spec's own `default`.
+
+**Why this has to be central.** `run_task` flattened sections and then handed the bag straight to
+`_run_task`, which meant every handler carried its own fallback — `get(params, "minTracklength", 1)`
+— and the spec's `default` was authoritative for the FORM only. 215 such fallbacks exist across 31
+task files; 210 agree with their spec and are pure duplication, and **five did not**:
+
+| task | param | the handler said | the spec says |
+|---|---|---|---|
+| `clustTracks.cluster` | `minTracklength` | 1 | 5 |
+| `opticalFlow.train` | `trainRatio` | 1.0 | 0.8 |
+| `segment.coastal` | `labelSmoothing` | 0.0 | 0.5 |
+| `spatialAnalysis.contactsMeshes` | `maxContactDist` | 10.0 | 5 |
+| `tracking.track_measures` | `forceRecompute` | false | true |
+
+The GUI always submits every declared param (`flattenParams`), so those five only bit REPL, chain and
+MCP callers — the callers least able to notice that the form promises one number and the run uses
+another. Applied here, the spec is the single source and the surviving fallbacks are dead weight
+rather than a rival answer.
+
+Only ABSENT keys are filled: an explicit `nothing` is a caller's choice, and `""` may be meaningful
+(an empty `valueNameSelection` means "the active version"). Sub-params of a section are filled too,
+since `_flatten_sections` has already lifted them.
+"""
+function _apply_spec_defaults(task::CciaTask, params::Dict{String,Any})::Dict{String,Any}
+    spec = _task_spec(task)
+    isnothing(spec) && return params
+    out = params; copied = false
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            key = string(get(p, "key", ""))
+            if !isempty(key) && haskey(p, "default") && !haskey(out, key)
+                copied || (out = copy(out); copied = true)
+                out[key] = _spec_value(p["default"])
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    out
+end
+
+# JSON3 hands back its own array/object views; a handler doing `Float64(...)` or `push!` on one of
+# those fails in ways that look like a task bug. Materialise to plain Julia containers.
+_spec_value(v) = v isa AbstractVector ? Any[_spec_value(x) for x in v] :
+                 v isa AbstractDict   ? Dict{String,Any}(string(k) => _spec_value(x) for (k, x) in v) :
+                 v
+
+"""
     task_scope(task) -> "image" | "set"
 
 A task's invocation scope, from its spec's `"scope"` field (default `"image"`). `"set"` tasks run

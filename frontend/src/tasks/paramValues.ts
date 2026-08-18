@@ -13,7 +13,7 @@
 // left those keys absent. Reconcile a draft through `buildParamValues` (same as a server record) and the
 // gap closes: known keys survive, new params get their defaults, params that no longer exist drop out.
 
-import type { TaskDef, ParamValues } from './types'
+import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 
 /**
@@ -132,6 +132,58 @@ export function missingParamKeys(def: TaskDef, payload: ParamValues): string[] {
     else want.push(p.key)
   }
   return want.filter(k => !keys.has(k) || payload[k] === undefined)
+}
+
+// ── showIf: a param that only applies under some other param's value ───────────────────────────────
+//
+// Declared in the SPEC, beside the param it is about:
+//
+//     { "key": "maxDistance", "showIf": { "mode": "attach" } }
+//     { "key": "sigma",       "showIf": { "method": ["gaussian", "bilateral"] } }
+//
+// Keys are AND-ed; a list of values is OR-ed within one key. Comparison is on the STRING form,
+// because a spec is JSON and a form control's value is a string: `"1"` in a spec has to match the
+// number 1 that a slider produced, or the same condition would work in one widget and not another.
+//
+// **Why this exists at all.** `ParamRenderer` already honoured a `hidden` flag, but nothing could set
+// it from a spec — the policy was hand-written Julia in each task's `_inject_dynamic_options!`, with
+// the param keys as literals. A plugin author ships JSON and a task `.jl`, so making a param
+// disappear meant writing a Julia hook: the highest-friction way to express the thing most tightly
+// bound to the param itself.
+//
+// **Where the line is, and why both sides are needed.** `showIf` decides from the FORM alone. A
+// condition that needs to read a file, the filesystem or Python — the track importer's "this XML
+// export has no columns to map" — cannot be a spec field at any price, and stays a server hook
+// setting `hidden`. The question to ask of a new condition is exactly that: is the form enough?
+//
+// An ABSENT value satisfies nothing: a param gated on `mode` stays hidden until `mode` has a value.
+// The alternative (absent matches everything) would flash every conditional param on first render,
+// before defaults are applied.
+export function showIfSatisfied(
+  showIf: Record<string, unknown> | undefined,
+  values: ParamValues | undefined,
+): boolean {
+  if (!showIf) return true            // no condition declared → always shown
+  for (const [key, want] of Object.entries(showIf)) {
+    const have = values?.[key]
+    if (have === undefined || have === null) return false
+    const accepted = (Array.isArray(want) ? want : [want]).map(String)
+    if (!accepted.includes(String(have))) return false
+  }
+  return true
+}
+
+/** Every param key a spec's `showIf` conditions refer to — for a ratchet that they exist. */
+export function showIfKeys(def: TaskDef): string[] {
+  const out: string[] = []
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      if (p.showIf) out.push(...Object.keys(p.showIf))
+      walk(p.params)
+    }
+  }
+  walk(def.params)
+  return out
 }
 
 // ── valueNameSelection: which image field, and which name to preselect ─────────────────────────────

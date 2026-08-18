@@ -14,7 +14,7 @@ import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
-import { isChosenValueName, preferredValueName, valueNameOptions } from './paramValues'
+import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -46,6 +46,14 @@ const emit = defineEmits<{
   // is still deciding, and typing "Tcell2" passes through "Tcell" on the way.
   (e: 'commit', key: string, v: unknown): void
 }>()
+
+// Two ways a param can not apply, and they are deliberately separate:
+//   `hidden`  — the SERVER ruled it out, from something only it can see (the file you picked is an
+//               XML export, which has no columns). Set by `_inject_dynamic_options!`.
+//   `showIf`  — the SPEC ruled it out, from the form alone (`{ "mode": "attach" }`). No Julia.
+// Either one means it renders nowhere rather than sitting there empty and looking broken.
+const notApplicable = computed(() =>
+  props.param.hidden === true || !showIfSatisfied(props.param.showIf, props.context?.values))
 
 // section (collapsible box) state
 const sectionOpen = ref(!props.param.collapsed)
@@ -481,7 +489,7 @@ const pct = computed(() => {
 
        Guarded here, at the component root, so it holds for every caller at once: TaskRunner's list,
        ChainModule's list, and section/group sub-params, which each iterate separately. -->
-  <template v-if="param.hidden" />
+  <template v-if="notApplicable" />
 
   <!-- Not for `section`/`group`: each renders its own heading below (the collapsible's toggle, the
        group's title), so the generic row put the label on screen TWICE — a plain "Advanced" sitting
@@ -716,7 +724,7 @@ const pct = computed(() => {
   </div>
 
   <!-- section rendered outside .param-row so it spans full width -->
-  <div v-if="param.type === 'section' && !param.hidden" class="param-section">
+  <div v-if="param.type === 'section' && !notApplicable" class="param-section">
     <button class="section-toggle cc-section-toggle cc-eyebrow cc-fs-sm" @click="sectionOpen = !sectionOpen"
       v-tooltip.left="sectionOpen ? 'Collapse advanced parameters' : 'Expand advanced parameters'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
@@ -736,7 +744,7 @@ const pct = computed(() => {
   </div>
 
   <!-- group: repeatable set of sub-params keyed by string index -->
-  <div v-if="param.type === 'group' && !param.hidden" class="param-group">
+  <div v-if="param.type === 'group' && !notApplicable" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
       <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"

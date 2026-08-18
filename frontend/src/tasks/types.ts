@@ -38,6 +38,15 @@ export interface ParamDef {
   hidden?: boolean
   /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown. */
   variant?: 'chips'
+  // Show this param only while the form satisfies these conditions: `{ "mode": "attach" }`, or
+  // `{ "method": ["gaussian", "bilateral"] }` for one-of. Keys AND, values within a key OR, compared
+  // as strings (a spec is JSON; a control's value is a string). This is the DECLARATIVE half of
+  // conditional visibility — the half that can be decided from the form alone. A condition needing a
+  // file read stays a server hook setting `hidden`. See `showIfSatisfied` in paramValues.ts.
+  showIf?: Record<string, string | number | boolean | (string | number | boolean)[]>
+  // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in
+  // `validate_params`, so it holds for a chain and the REPL too — not only for a form that drew it.
+  required?: boolean
   /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
   extensions?: string[]
   multiple?: boolean

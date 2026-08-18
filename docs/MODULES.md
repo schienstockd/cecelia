@@ -625,6 +625,111 @@ Current users: `behaviour.hmm_states` / `behaviour.hmm_transitions` / `clustTrac
 }
 ```
 
+### Fields any param may carry
+
+The types above answer *what control is drawn*. These answer *when* and *how*, and apply to every
+type — including `section` and `group`, where they hide the whole box.
+
+**`showIf` — this param only applies under another param's value.** Declared in the spec, beside the
+param it is about. Keys are AND-ed; a list within one key is OR-ed:
+
+```json
+{ "key": "maxDistance", "label": "Match distance (px)", "type": "float", "showIf": { "mode": "attach" } }
+{ "key": "sigma",       "label": "Sigma",  "type": "float", "showIf": { "method": ["gaussian", "bilateral"] } }
+```
+
+Comparison is on the **string** form: a spec is JSON and a control's value is whatever the widget
+emits, so `"1"` in a spec matches the number `1` a slider produced. Without that the same condition
+would work behind a `select` and silently fail behind an `int`.
+
+An **absent** value satisfies nothing — a param gated on `mode` stays hidden until `mode` has a value.
+The alternative would flash every conditional param on first render, before defaults are applied.
+
+A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
+with no error. The suite rejects that (`showIf conditions name a param that exists`).
+
+**`hidden` — the SERVER ruled this param out.** Set by `_inject_dynamic_options!`, never authored in
+a spec file (a spec-file `hidden: true` is just a param nobody can set — delete it instead).
+
+**Which of the two to reach for is one question: is the form enough?**
+
+| The condition | Where it goes |
+|---|---|
+| "applies only when `mode` is `attach`" | `showIf` — the form knows |
+| "the file you picked is an XML export, which has no columns" | a server hook setting `hidden` — needs to READ the file |
+| "this image has no second channel" | a server hook — needs the image |
+
+Keep that line. Anything decidable from the form belongs in the JSON, so a **plugin author never
+writes Julia to make a field disappear** — they ship a spec and a task `.jl`, and the spec is the
+half they can reason about. `_inject_dynamic_options!` must **assign** `hidden`, not only set it: the
+spec is resolved once against an empty form and again on every `triggersOptions` edit, so a hook that
+only ever sets `true` can never take a flag back.
+
+**`variant`** — `"chips"` on a `select` renders the same closed set as a segmented `ChipSelect`
+instead of a dropdown. Same type, same validation; only the rendering differs. For a short closed set
+every choice shows at once, where a dropdown hides all but one and makes a binary look like a list
+that might be long. Keep the labels short — the row label already carries the question:
+
+```json
+{ "key": "frameBase", "label": "First frame is", "type": "select", "variant": "chips",
+  "default": "1", "options": [{ "value": "0", "label": "0" }, { "value": "1", "label": "1" }] }
+```
+
+**`triggersOptions: true`** — editing this param re-resolves the whole task's options against the
+current form (debounced at the sink). For a param whose value other params' options derive from: an
+importer's file path, whose columns become the mapping fields' suggestions. Options obtained this way
+are **suggestions only** — validation never depends on the form, so a field fed this way must stay
+valid on its own.
+
+**`tip`** — required on every param; one line, under 90 characters. Ratcheted.
+
+**`required`** — the run is refused with a readable error if the value is missing or empty
+(`validate_params`). Server-side, so it holds for a chain and the REPL too, not just the form.
+
+**`multiple`** — on a picker type (`select`, `channelSelection`, `popSelection`,
+`labelPropsColsSelection`), the value becomes an ARRAY and the widget multi-picks.
+
+**`step`** — slider granularity for `int` / `float`, alongside `min` and `max`.
+
+**`collapsed`** — a `section` starts closed. Use for Advanced; a section the user needs on first run
+should not be collapsed.
+
+**`repeatable`** / **`labelKey`** — on a `group`: whether entries can be added and reordered, and
+which sub-param's value is shown in each entry's header so the list is readable when collapsed.
+
+**`acrossSegmentations`** — on a `popSelection`, list populations from EVERY segmentation
+(value_name-prefixed) rather than just the sibling `valueName`'s.
+
+**`trimPrefix`** — on a `labelPropsColsSelection`, collapse to one flat group filtered to that prefix,
+with the prefix stripped from the labels (display only — the stored value stays the raw column name).
+
+**`params`** — the child params of a `section` or `group`. Their values are stored FLAT in the values
+dict, not nested, which is why a `showIf` may cross that boundary in either direction.
+
+**`$include`** — not a param but an item IN the params array: `{ "$include": "imageTiling" }` splices
+in every param from `app/src/tasks/fragments/imageTiling.json`. For a block repeated verbatim across
+tasks (tiling is in three). Expanded server-side by `_expand_params_array`, so the frontend only ever
+sees the flattened result.
+
+---
+
+### Keeping this reference honest
+
+Two ratchets, because spec fields drift in both directions:
+
+- **`every task spec field is declared and documented`** — a field used in any spec must be declared
+  in `frontend/src/tasks/types.ts` (`ParamDef`) **or** read by Julia, AND appear backticked in this
+  section. It caught `includeChannels` in `clustPops/cluster.json`: authored, plausible-looking, and
+  read by **nothing** — the frontend match was `napariOverlays.ts`, an unrelated movie-overlay
+  concept. A spec that declares something no consumer reads is a lie about the form.
+- **`showIf conditions name a param that exists`** — a condition on a key no param declares can never
+  be satisfied, so the control is hidden forever with no error anywhere.
+
+Both walk `spec_dirs()` in `app/test/suite.jl`, which covers built-ins, `docs/examples/custom-modules`
+and `docs/examples/plugins`. Add a field here when you add it to `ParamDef`, not afterwards.
+
+---
+
 **`group`** — repeatable/sortable list of sub-param sets. Each entry is keyed `"0"`, `"1"`, … in the values dict. Use for things like "one denoise model per set of channels":
 ```json
 {
