@@ -19,12 +19,14 @@ import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.v
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
+import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useNapariOpen } from '../../composables/useNapariOpen'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
+import TrackCorrectionView from '../../components/plots/TrackCorrectionView.vue'
 import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
@@ -52,7 +54,7 @@ const { openInNapari } = useNapariOpen()
 type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // A panel is either a single gate scatter (default, drawable) or a read-only channel-pairs matrix.
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
-interface PlotState { kind: 'single' | 'pairs'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
+interface PlotState { kind: 'single' | 'pairs' | 'correction'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
   x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
@@ -82,6 +84,14 @@ provide(CANVAS_ZOOM_KEY, zoom)
 const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
+// TRACK ONLY. The correction worklist is a panel on this canvas rather than a page of its own: it is
+// read beside the track gating it will change, and a canvas panel already collapses, persists, zooms
+// and exports. It is the one panel here that MUTATES — see TrackCorrectionView's header.
+// the correction worklist needs the project it is correcting; the gating canvas otherwise never has
+// to name it (every gating call is keyed by image + value name).
+const projectMeta = useProjectMetaStore()
+const projectUid = computed(() => projectMeta.current?.uid ?? '')
+function addCorrection() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'correction' }
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
@@ -224,6 +234,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                 @click="addPairs">
           <i class="pi pi-plus" /> Pairs
         </button>
+        <!-- TRACK: what looks wrong in the tracking result, ranked, each row carrying its fix. -->
+        <button v-if="isTrack" class="cc-btn cc-btn-primary"
+                v-tooltip.bottom="'Review tracks that look wrong'" @click="addCorrection">
+          <i class="pi pi-plus" /> Correct
+        </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
         <div v-if="!isTrack" class="cc-btn-group">
           <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
@@ -271,7 +286,10 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
         <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
-          <GatePairsPanel v-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
+          <TrackCorrectionView v-if="p.state.kind === 'correction'"
+                               :project-uid="projectUid" :image-uids="imageUid ? [imageUid] : []"
+                               :set-uid="null" :state="p.state as unknown as Record<string, never>" />
+          <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
                           :ui="p.state" :persist-key="`${ckey}:${p.id}`"

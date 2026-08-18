@@ -6,7 +6,6 @@ import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
-import TrackCorrectionView from '../plots/TrackCorrectionView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -67,12 +66,6 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability', component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
-  // The tracking-correction worklist. Deliberately NOT `analysisBoard`: it is the only view here that
-  // MUTATES — applying a row submits `tracking.correct_measures` — and the board is read-only
-  // (docs/ANALYSIS.md). `rail: 'none'` because it picks its own image and label set in panel state;
-  // a population list would be dead chrome, and correction is never scoped by one (the write is
-  // whole-image by necessity — see CORRECTION_PLAN.md on `add_obs` and NaN).
-  trackCorrection: { label: 'Correct tracks', component: TrackCorrectionView, rail: 'none' },
 }
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */
