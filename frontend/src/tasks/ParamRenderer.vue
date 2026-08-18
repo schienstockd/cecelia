@@ -52,6 +52,7 @@ const sectionOpen = ref(!props.param.collapsed)
 
 // dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
 const showDirBrowser = ref(false)
+const showFileBrowser = ref(false)
 
 
 const val = computed({
@@ -551,6 +552,20 @@ const pct = computed(() => {
       </button>
     </div>
 
+    <!-- filePath: one file on the machine running the server. Same shape as dirPath — still typeable,
+         because a remembered path is faster to paste than to browse to — but Browse opens the shared
+         FileBrowser in file mode, filtered to the param's `extensions`. A path that has to be typed
+         exactly is a task that fails after the user has filled in everything else. -->
+    <div v-else-if="param.type === 'filePath'" class="cc-row cc-row-tight dir-path">
+      <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
+        @input="val = ($event.target as HTMLInputElement).value"
+        v-tooltip.right="param.tip" />
+      <button type="button" class="cc-btn cc-btn-ghost" @click="showFileBrowser = true"
+        v-tooltip.top="'Browse for a file'">
+        <i class="pi pi-folder-open" />
+      </button>
+    </div>
+
     <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
          parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
          for "pick from a set" (docs/UI.md). -->
@@ -771,6 +786,10 @@ const pct = computed(() => {
        transform/filter/will-change becomes the containing block for a fixed child and traps it.
        Teleport removes the dependency on what happens to be above this row. -->
   <Teleport to="body">
+    <FileBrowser v-if="showFileBrowser" mode="file" :extensions="param.extensions ?? []"
+      :title="param.label ? `Select ${param.label.toLowerCase()}` : ''"
+      @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showFileBrowser = false }"
+      @close="showFileBrowser = false" />
     <FileBrowser v-if="showDirBrowser" mode="dir"
       @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showDirBrowser = false }"
       @close="showDirBrowser = false" />

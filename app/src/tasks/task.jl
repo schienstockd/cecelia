@@ -51,7 +51,9 @@ function _resolve_spec_includes(obj::Dict, fdir::String)::Dict{String,Any}
     result
 end
 
-function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
+_task_spec(task::CciaTask) = _task_spec(task, Dict{String,Any}())
+
+function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any}, Nothing}
     key = string(typeof(task))
     lock(_SPEC_CACHE_LOCK) do
         cached = get(_SPEC_CACHE, key, nothing)
@@ -66,7 +68,7 @@ function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
         # picker over the filesystem) get a fresh, mutated deepcopy on every call — a user's
         # newly-dropped checkpoint reflects in `validate_params` and the definitions API without
         # a server restart or a manual invalidate. Everything else returns the cached spec as-is.
-        _needs_dynamic_options(task) ? _inject_dynamic_options!(deepcopy(cached), task) : cached
+        _needs_dynamic_options(task) ? _inject_dynamic_options!(deepcopy(cached), task, form) : cached
     end
 end
 
@@ -88,11 +90,12 @@ nothing from the form, so the base method here drops `form` and calls the two-ar
 whose options come from a file the user just pointed at needs to overload this (an importer offering
 that file's own column names).
 
-**Only the served form gets these; `validate_params` does not.** That is deliberate rather than an
-oversight: a value derived this way must stay valid on its own, exactly as `opticalFlow/train.jl`
-treats its model-name suggestions ("the user types the stem, so the suggestion IS what goes in the
-field"). Anything that would make validation depend on `form` reintroduces the picker/validator
-disagreement `_task_spec` exists to prevent — so use this for SUGGESTIONS, never for a constraint.
+**`validate_params` passes the params it is validating, so the picker and the validator see the SAME
+options.** That is what lets a form-derived list back a real `select` rather than a free-text field
+with suggestions: choosing a column that is not in the chosen file now fails validation by name,
+instead of reaching a runner that can only fail later and less clearly. Keeping the two in agreement
+is the whole reason `_task_spec` owns this — an injector that ran for the form only would recreate
+exactly the disagreement it exists to prevent.
 """
 _inject_dynamic_options!(spec::Dict{String,Any}, task::CciaTask, ::AbstractDict) =
     _inject_dynamic_options!(spec, task)
@@ -426,6 +429,15 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
         p = strip(String(value))
         (!isempty(p) && ispath(p) && !isdir(p)) &&
             throw(ParamValidationError("'$key' is a file, not a folder: $p"))
+    elseif type_str == "filePath"
+        # Mirrors dirPath, for a param that names ONE existing file (an external export to import).
+        # Checked here rather than in the task: a path typo is the most likely thing to go wrong, and
+        # failing at validation names the field, where failing in the runner names a stack.
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a path, got: $value"))
+        isfile(String(value)) ||
+            throw(ParamValidationError("'$key' is not a file: $value"))
+
     elseif type_str == "valueNameInput"
         # The name this task WRITES under. Unlike `text` it is not free-form: it becomes a filename
         # stem (`spatialGraph/{suffix}.h5ad`), a versioned-dict key (`labels[name]`) or a column
@@ -490,7 +502,9 @@ Throws ParamValidationError with a clear message if any constraint is violated.
 No-ops if the spec file is not found (allows tasks without a spec).
 """
 function validate_params(task::CciaTask, params::Dict{String,Any})
-    spec = _task_spec(task)
+    # Pass the params through: a task whose options come from a file the user picked resolves them
+    # against THESE values, so the validator checks against the same list the form offered.
+    spec = _task_spec(task, params)
     isnothing(spec) && return
     spec_params = get(spec, "params", [])
     isempty(spec_params) && return

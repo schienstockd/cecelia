@@ -427,11 +427,6 @@ export const duplicateTooltips = (src: string, path = ''): DuplicateTooltip[] =>
 export const nestedTooltips = (src: string, path = ''): DuplicateTooltip[] =>
   scanTooltips(src, path).nested
 
-// Props that make a component render a tooltip over content its CALLER supplies. Listed rather than
-// inferred: only a prop that wraps slot content can create a nested hover area, so a component that
-// merely tips its own chrome does not belong here.
-const TOOLTIP_PROP = /(?:^|\s):?row-tooltip[=\s]/
-
 function scanTooltips(src: string, path = ''):
     { uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[]; nested: DuplicateTooltip[] } {
   const none = { uncovered: [], duplicates: [], nested: [] }
@@ -474,12 +469,12 @@ function scanTooltips(src: string, path = ''):
       }
       continue
     }
-    // `v-tooltip` is not the only way an element ends up hovering-explained: a component can take a
-    // tooltip as a PROP and render it around content the caller passes in. `SelectionTable`'s
-    // `row-tooltip` wraps each row, so a tipped button in its `#actions` slot shows TWO tips at once —
-    // which this scan missed entirely, because the prop is not the directive it was looking for.
-    // Treating the prop as tipping the subtree is what makes the nested check see through it.
-    const tipped = /v-tooltip/.test(attrs!) || TOOLTIP_PROP.test(attrs!)
+    // KNOWN BLIND SPOT: only the `v-tooltip` DIRECTIVE is seen. A component that takes a tooltip as a
+    // PROP and renders it around caller-supplied content — `SelectionTable`'s `row-tooltip`, which
+    // wraps each <tr> — is invisible here, so a tipped control in one of its slots fires two tooltips
+    // and this scan says nothing. Treating that prop as tipping the subtree finds 52 real pre-existing
+    // instances across 6 files; see docs/todo/PLUGINS_PLAN.md → Open items.
+    const tipped = /v-tooltip/.test(attrs!)
     const settable = CONTROL.test(tag!) && !NOT_A_SETTING.test(attrs!)
     const perOption = HEADING_COVERED.test(tag!) ? hasPerOptionTips(script, attrs!) : null
     const covered = tipped || open.some((e) => e.tipped) ||

@@ -2595,16 +2595,16 @@ end
         @test String.(getproperty.(_cols(body, "yColumn"), :value)) == vals   # every column field
 
         # without form state there is nothing to offer, and the request still succeeds — a fresh page
-        # load must render the form, just with no suggestions yet
+        # load must render the form, just with an empty column picker until a file is chosen
         st2, body2 = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=tracking"))
         @test st2 == 200
-        @test _cols(body2, "trackColumn") === nothing
+        @test isempty(something(_cols(body2, "trackColumn"), []))
 
-        # malformed form state degrades to no suggestions rather than 400-ing the page
+        # malformed form state degrades to no options rather than 400-ing the page
         st3, body3 = api_task_definitions(
             HTTP.Request("GET", "/api/tasks/definitions?category=tracking&params=not-json"))
         @test st3 == 200
-        @test _cols(body3, "trackColumn") === nothing
+        @test isempty(something(_cols(body3, "trackColumn"), []))
     finally
         Cecelia._unregister_task!("tracking.importCsvTracks")
         rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)

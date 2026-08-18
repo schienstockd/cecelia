@@ -468,6 +468,17 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "outputName", "label": "Output name", "type": "text", "default": "result" }
 ```
 
+**`filePath`** — one **existing file**: the same shape as `dirPath`, but Browse opens the shared
+`FileBrowser` in `mode="file"`, filtered to the param's `extensions` (case-insensitive; omit for any
+file). Still typeable, for the same reason. Validation requires an existing file, so a path typo is
+named at the field rather than reaching the runner.
+```json
+{ "key": "csvPath", "label": "Track file", "type": "filePath", "required": true,
+  "extensions": [".xml", ".csv", ".tsv"], "placeholder": "Browse for the exported file" }
+```
+`FileBrowser`'s `file` mode is the generalisation of its `bundle` mode (`.ccbundle`) — one predicate
+for "which entries may be picked", so a new format is a prop rather than another branch.
+
 **`dirPath`** — a destination **folder**: a text field plus a Browse button opening the shared
 `FileBrowser` in `mode="dir"` (the same picker the `.ccbundle` project export uses). Still typeable,
 since pasting a remembered path beats browsing to it. `placeholder` describes what an empty value

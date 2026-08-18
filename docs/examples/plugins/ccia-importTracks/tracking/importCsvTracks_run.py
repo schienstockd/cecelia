@@ -18,7 +18,7 @@ Parameter contract (JSON written by the Julia task):
   delimiter      - sniffed ONCE Julia-side and passed; this side never guesses
   physicalSizesZYX - Z,Y,X µm per pixel from ccid.json; reversed here to match x,y,z columns
   maxDistance    - match cutoff, in PIXELS
-  outColumn      - obs column to write
+  outColumn      - obs column to write; always , the one name downstream tasks read
 """
 import numpy as np
 import pandas as pd
@@ -32,7 +32,7 @@ from track_readers import read_track_file, match_spots_to_cells  # the plugin's 
 def run(params):
     log     = script_utils.get_logfile_utils(params)
     path    = params['labelPropsPath']
-    out_col = params.get('outColumn', 'trackTools.track_id')
+    out_col = params.get('outColumn', 'track_id')   # the canonical column; see the .jl
     max_d   = float(params.get('maxDistance', 10.0))
     # The mapping arrives ALREADY RESOLVED (template + the user's overrides merged Julia-side), so this
     # runner knows nothing about templates or tool names — it just reads the columns it is told to.

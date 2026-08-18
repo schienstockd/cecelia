@@ -1,13 +1,13 @@
 export interface ParamDef {
   key: string
   label: string
-  type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'select' | 'chipSelect'
+  type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'filePath' | 'select' | 'chipSelect'
        | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
        | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'group' | 'section'
   tip?: string
-  placeholder?: string  // text / dirPath: shown when empty — for dirPath, the default destination
+  placeholder?: string  // text / dirPath / filePath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
@@ -30,6 +30,8 @@ export interface ParamDef {
   // Options obtained this way are SUGGESTIONS only: validation never depends on the form, so a field
   // fed this way must stay valid on its own (`_inject_dynamic_options!` in app/src/tasks/task.jl).
   triggersOptions?: boolean
+  /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
+  extensions?: string[]
   multiple?: boolean
   field?: string        // valueNameSelection: which image field to read names from ('filepaths' | 'labels' | 'spatialGraphs')
   // valueNameInput: which storage namespace this param NAMES INTO — the registry entry that makes

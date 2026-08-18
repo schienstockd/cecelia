@@ -218,8 +218,10 @@ const emit = defineEmits<{
 }>()
 
 const idOf = (row: Row) => String(row[props.idKey])
-const tipOf = (row: Row) =>
-  props.rowTooltip ? props.rowTooltip(row) : 'Select this option'
+// No tooltip unless the CALLER supplies one. The fallback here used to be "Select this option",
+// which put a content-free tip on every row of every table — it restated the control instead of
+// saying anything about the row, and a tooltip that adds nothing is noise the user has to dismiss.
+const tipOf = (row: Row) => props.rowTooltip?.(row) || undefined
 
 // A `none`-mode row is only interactive if the caller listens for the click, so the pointer cursor and
 // the hover highlight follow that rather than being on unconditionally — a list of read-only rows that

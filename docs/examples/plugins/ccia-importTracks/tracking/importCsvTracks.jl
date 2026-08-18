@@ -119,7 +119,9 @@ function _ict_mapping(params::Dict{String,Any})
         isempty(v) || (map[k] = v)          # a non-empty field overrides the template
     end
     for k in ("frameBase", "skipRows")
-        haskey(params, k) && (map[k] = Int(params[k]))
+        # `frameBase` comes from a select, so it arrives as a STRING ("0"/"1"). An int slider for a
+        # two-value choice was the wrong control — it read as a range of numbers to tune.
+        haskey(params, k) && (map[k] = something(tryparse(Int, string(params[k])), 0))
     end
     u = string(get(params, "spotUnit", ""))
     isempty(u) || (map["spotUnit"] = u)
@@ -130,10 +132,16 @@ function Cecelia._run_task(::ImportCsvTracks, img::Cecelia.CciaImage, params::Di
                            on_log::Function      = line -> println(line),
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function  = _ -> nothing)
-    vn     = string(get(params, "valueName", Cecelia.VERSIONED_DEFAULT_VAL))
-    csv    = string(get(params, "csvPath", ""))
-    outcol = string(get(params, "outColumn", "trackTools.track_id"))
-    maxd   = Float64(get(params, "maxDistance", 10.0))
+    vn   = string(get(params, "valueName", Cecelia.VERSIONED_DEFAULT_VAL))
+    csv  = string(get(params, "csvPath", ""))
+    maxd = Float64(get(params, "maxDistance", 10.0))
+
+    # `track_id` is THE column, not a choice. Everything downstream reads exactly that name —
+    # `track_props`, `tracking.track_measures`, `behaviour.hmm_transitions`, `is_tracked` — so writing
+    # anywhere else would produce a column no other task can use, and offering the name as a param
+    # would invite several rival track_id columns on one image. Importing tracks is an ALTERNATIVE to
+    # running `tracking.bayesian_tracking`, so it writes where that writes.
+    outcol = "track_id"
 
     isempty(csv) && (on_log("[ERROR] No CSV path given"); return nothing)
     isfile(csv)  || (on_log("[ERROR] CSV not found: $csv"); return nothing)

@@ -1,9 +1,10 @@
 # Plugins — distributable custom modules
 
-**Status:** **P1 built** on `feat/plugins` (layout + both scans + precedence + PYTHONPATH; Settings
-rendering deferred to P3). P2–P4 not started. Decisions were verified against the code 2026-08-17: two
-of the four open questions are now **Resolved** (see that section) and Decision 3's scope was
-corrected — it was new registry work, not the one-liner this plan first implied.
+**Status:** **P1–P4 built** on `feat/plugins` — layout, both scans, precedence, PYTHONPATH, the module
+PAGE, form-driven options, install/remove, the Settings surface and a curated registry. Nothing is
+browser-verified. Decisions were verified against the code 2026-08-17: two of the four open questions
+are **Resolved** (see that section) and Decision 3's scope was corrected — it was new registry work,
+not the one-liner this plan first implied.
 **Origin:** a lab that used the old R version wants two format-specific importers back — external
 **tracking** and external **segmentation**, in their own format (conference, 2026-08). Neither belongs
 in the app: nobody else has that format. Their two other asks are general and are handled in
@@ -24,15 +25,44 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       crop offset would silently move every spot. Unconfirmed.
 
 **Correctness / cleanup**
-- [ ] **Split the plugin.** `cumulativeChange` is a track MEASURE and does not belong in a repo called
-      `ccia-importTracks` (Dominik). Move it to its own plugin; the importer keeps the repo.
-- [ ] **The plugin exists twice** — CI-loaded example vs the published repo. Resolve after the split.
-- [ ] **Tooltip detector** — `TOOLTIP_PROP` now makes `row-tooltip` count as tipping a subtree, which
-      is right, but the ratchet fails: decide whether the pre-existing `row-tooltip` tables genuinely
-      double up (fix them) or the detector needs to only flag SLOT content.
+- [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
+      called `ccia-importTracks` (Dominik). Now two single-purpose example plugins —
+      `ccia-importTracks` and `ccia-trackMeasures` — and the published repo carries the importer only.
+- [ ] **The importer exists twice** — the CI-loaded example and the published repo are copies. The
+      measures plugin does not (it is in-repo only), so this is now one plugin, not two.
+- [ ] **Double tooltips the ratchet cannot see — 52 pre-existing sites, its own piece of work.**
+      `nestedTooltips` (`utils/uiCopy.ts`) only knows the `v-tooltip` DIRECTIVE. `SelectionTable` takes
+      its tooltip as a PROP (`row-tooltip`) and renders it on the `<tr>`, so a tipped control in one of
+      its slots fires two overlapping tooltips and the scan says nothing — which is exactly how one
+      shipped into the plugins Settings table before Dominik spotted it on screen.
+      Teaching the scanner that `row-tooltip` tips the subtree is a two-line change and finds
+      **52 real instances in 6 files**: `ImageTable` 19, `TaskList` 10, `NotebookTable` 9,
+      `TasksModule` 6, `MoviesModule` 5, `ProjectPanel` 3.
+      NOT done here on purpose: `ALLOWED_NESTED` was deliberately drained to empty and the test fails
+      on improvement too, so re-populating it would push a closed ratchet backwards — and fixing 52
+      sites across six unrelated files does not belong in a plugins PR. The blind spot is commented at
+      the `tipped` line so the next reader finds this entry instead of rediscovering it.
 - [x] ~~Blank entry in the tracking function list~~ — `tracking/cell_config.json` (the vendored btrack
       TrackerConfig) was served as a task spec, because the built-in scan had no `fun_name` filter
       while the custom scan did. Both agree now; regression test added.
+
+**UI corrections still open** (all raised on screen, 2026-08-17)
+- [x] ~~"Use" button did nothing visible~~ — it filled a field two sections away; registry rows install
+      directly now, behind the same confirm.
+- [x] ~~Install button rendered BELOW its row~~ — `.save-btn` is `display:flex`, i.e. block-level, in an
+      unstyled `.cm-row`. Both lists are `SelectionTable` (THE canonical table) with a single icon
+      action per row.
+- [x] ~~Content-free "Select this option" tooltip on every row~~ — `SelectionTable`'s fallback; no
+      tooltip now unless the caller supplies one.
+- [x] ~~Column mapping asked for free text~~ — the columns are `select`s populated from the chosen
+      file, and `validate_params` now resolves options against the same form, so a column that is not
+      in the file fails validation by name instead of reaching the runner.
+- [x] ~~"Write to" invited several rival track_id columns~~ — removed. The import always writes
+      `track_id`, the one name `track_props` / `track_measures` / `hmm_transitions` / `is_tracked`
+      read. Importing tracks is an ALTERNATIVE to `tracking.bayesian_tracking`, so it writes there.
+- [x] ~~A slider to choose between frame 0 and 1~~ — a two-value choice is a select, not a range.
+- [x] ~~Track file was a free-text path~~ — `filePath` param type + Browse, reusing `FileBrowser`
+      generalised from its `bundle` mode to a `file` mode with an extension filter.
 
 **Unverified**
 - [ ] **Nothing in the browser** — the Settings plugins table, the column suggestions, the debounced
