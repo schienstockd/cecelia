@@ -323,6 +323,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/napari/configure-autosave" => (req, body_bytes) -> (api_napari_configure_autosave(body_bytes)),
     "/api/napari/set-z-view" => (req, body_bytes) -> (api_napari_set_z_view(body_bytes)),
     "/api/napari/set-3d-level" => (req, body_bytes) -> (api_napari_set_3d_level(body_bytes)),
+    "/api/napari/centre" => (req, body_bytes) -> (api_napari_centre(body_bytes)),
     "/api/napari/show-labels" => (req, body_bytes) -> (api_napari_show_labels(body_bytes)),
     "/api/napari/refresh-labels" => (req, body_bytes) -> (api_napari_refresh_labels(body_bytes)),
     "/api/napari/show-populations" => (req, body_bytes) -> (api_napari_show_populations(body_bytes)),

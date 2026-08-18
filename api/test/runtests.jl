@@ -4213,7 +4213,7 @@ end
         "/api/napari/gpu", "/api/napari/open",
         "/api/napari/overlay-legend", "/api/napari/refresh-labels",
         "/api/napari/restart", "/api/napari/screenshot",
-        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level",
+        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level", "/api/napari/centre",
         "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
         "/api/napari/start-selection", "/api/napari/stop-selection",
@@ -4285,7 +4285,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 78 && length(POST_ROUTES) == 109
+    @test length(GET_ROUTES) == 78 && length(POST_ROUTES) == 110
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
