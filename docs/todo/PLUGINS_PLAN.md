@@ -31,10 +31,32 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       against an image or a segmentation of the UNcropped original, the crop offset shifts everything.
       Only matters once something else is put beside them.
 
+- [ ] **Imported points do not appear in the viewer's MASKS list** (Dominik, on screen). The run
+      succeeds and registers the value name, but the chip row still shows only the segmentations that
+      have label pixels. Expected in part — a points set has no mask to draw — but it then appears
+      NOWHERE in the viewer, which is not the answer either. Being traced; the question is which list
+      a tracked-but-maskless value name belongs in.
+
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
       called `ccia-importTracks` (Dominik). Now two single-purpose example plugins —
       `ccia-importTracks` and `ccia-trackMeasures` — and the published repo carries the importer only.
+- [x] ~~**Windows: plugin install could never have worked.**~~ `tar -xzf <absolute path>` — GNU tar
+      reads `C:\...` as `host:path` and attempts a REMOTE archive. The repo already had pure command
+      builders and a ratchet for exactly this; the installer hand-rolled its own because they covered
+      neither gzip nor an explicit destination. Generalised rather than adding a third variant.
+- [x] ~~**Windows: a task died on a log line.**~~ A cp1252 stdout raises on `\u2192`, and the
+      exception propagates out of `log()` and kills the task. Two SHIPPED built-ins have the same
+      latent crash on a success path (`cell_contacts_mesh`, `branching`). Fixed at the sink —
+      `script_utils` now reconfigures stdio to UTF-8. Only arrows, \u2264/\u2265 and box rules are
+      affected; cp1252 encodes the em dash and \u00b5 fine.
+- [x] ~~**A picker labelled "Segmentation" listed image versions.**~~ `valueNameSelection` defaults to
+      `filepaths` when `field` is omitted. Three more specs had it, all in files a module author
+      copies. Ratcheted: a picker that calls itself a segmentation must read `labels`. Also brought
+      `docs/examples/plugins` under `spec_dirs` — no copy ratchet had ever seen a plugin spec.
+- [x] ~~**A param can now say "not applicable".**~~ `ParamRenderer` had no conditional visibility at
+      all, so an XML with nothing to map still drew five empty dropdowns. `hidden` is set server-side
+      by the options hook; resolution ASSIGNS it, or the flag could never be taken back.
 - [ ] **The importer exists twice** — the CI-loaded example and the published repo are copies. The
       measures plugin does not (it is in-repo only), so this is now one plugin, not two.
 - [ ] **Double tooltips the ratchet cannot see — 52 pre-existing sites, its own piece of work.**
