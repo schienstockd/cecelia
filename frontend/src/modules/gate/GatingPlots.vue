@@ -26,7 +26,8 @@ import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
-import TrackCorrectionView from '../../components/plots/TrackCorrectionView.vue'
+import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
+import { isInteractiveView } from '../../components/canvas/interactiveViews'
 import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
@@ -54,7 +55,9 @@ const { openInNapari } = useNapariOpen()
 type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // A panel is either a single gate scatter (default, drawable) or a read-only channel-pairs matrix.
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
-interface PlotState { kind: 'single' | 'pairs' | 'correction'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
+// index signature so a panel's state is assignable to the generic InteractivePanel's
+// `Record<string, unknown>` state (the correction view reads its own keys) — as in ClusterPlots.
+interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
   x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
@@ -91,7 +94,11 @@ function addPairs() { const id = add(); const p = panels.value.find(x => x.id ==
 // to name it (every gating call is keyed by image + value name).
 const projectMeta = useProjectMetaStore()
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
-function addCorrection() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'correction' }
+function addCorrection() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'trackCorrection' }
+// what the correction view needs from the page (the panel's own state carries the rest)
+const correctionCtx = computed(() => ({
+  projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [], setUid: null,
+}))
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
@@ -286,9 +293,12 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
         <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
-          <TrackCorrectionView v-if="p.state.kind === 'correction'"
-                               :project-uid="projectUid" :image-uids="imageUid ? [imageUid] : []"
-                               :set-uid="null" :state="p.state as unknown as Record<string, never>" />
+          <!-- the correction worklist → generic InteractivePanel, the same host the cluster and
+               optical-flow canvases use for their registry views -->
+          <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
+                            :active="p.id === activeId" :view="p.state.kind"
+                            :context="correctionCtx" :state="p.state" :persist-key="`${ckey}:${p.id}`"
+                            @activate="activeId = p.id" @remove="remove(p.id)" />
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
