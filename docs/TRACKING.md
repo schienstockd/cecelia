@@ -289,9 +289,17 @@ fresh tracking and rewrites the track table.
 ## Manual track correction (`tracking.correct`)
 
 Fixing a wrong track by hand. Design + the old-R ground truth it ports:
-[`docs/todo/CORRECTION_PLAN.md`](todo/CORRECTION_PLAN.md). Shipped so far: the ops engine, the task,
-the journal and its QC (plan phase **P1**). The editing UI is P4 — today the ops arrive
-programmatically.
+[`docs/todo/CORRECTION_PLAN.md`](todo/CORRECTION_PLAN.md). Shipped: the ops engine, the task, the
+journal and its QC (plan phase **P1**), and the worklist UI (**P4**). Segmentation correction (P2) is
+not built.
+
+**The UI inverts the old version.** There you found the wrong track yourself, among hundreds, and
+then said how to fix it. Here `find_track_issues` ranks what looks wrong and pre-picks the op
+(`GET /api/tracking/issues`), each row draws its own geometry, and the user only judges it. Nothing is
+written until Apply, which submits the whole queue as ONE `tracking.correct_measures` run. It is a
+panel on the **Track page's canvas** (`GatingPlots`, `popType="track"`) — beside the track gating it
+changes — hosted through the generic `InteractivePanel` from the `trackCorrection` registry entry. That
+entry carries no surface flag on purpose: it MUTATES, and the Analysis board is read-only.
 
 **A track correction is an `obs` rewrite and nothing else.** It moves cells between `track_id`s and
 maintains the lineage columns; it never touches `X`/`var`, so the cell table needs no re-measure.
@@ -333,6 +341,32 @@ from `obs.track_id` alone, so it recomputes correctly after any correction.
 **Journal.** Every applied op is appended to `{task_dir}/corrections/{value_name}.json` — the same
 per-segmentation sidecar shape as `gating/{value_name}.json`, written with `write_json_atomic`. This
 is the durable, per-image edit history; old R's died with the Shiny session.
+
+## Tracks as a plot (`trackPaths`)
+
+Tracks were viewable only in napari, which is fine for judging one cell and useless for a figure: a
+viewer screenshot cannot be recoloured by a measure, put beside another condition, or exported as
+vectors. `TrackPathsView` is the plot half — an interactive-view registry entry, so it lands on the
+Track canvas **and** the Analysis board with panel chrome, zoom and PNG/SVG/CSV export attached.
+
+Three modes, because "the tracks" is three questions:
+
+| Mode | Shows | Why |
+|---|---|---|
+| Paths | the polylines where the cells were | the spatial picture, the one napari draws |
+| Star | every track translated to a common origin | position discarded, SHAPE preserved — the celltrackR rose family (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100006); directed migration fans, a random walk fills a disc |
+| Rose | one arrow per track, start → end | net displacement, when hundreds of paths have become a scribble |
+
+- **Axes are always square** (`pathDomain` in `frontend/src/plots/trackPaths.ts`). A track plot
+  stretched to its panel turns a straight run into a diagonal, destroying the one thing these modes
+  exist to show.
+- **Geometry comes from `GET /api/tracking/paths`**, in the same wire shape the correction worklist
+  reads — one Julia helper (`track_path_dicts`) builds it for both routes, so they cannot drift.
+- **The colour-by list is not a second vocabulary.** It comes from
+  `/api/gating/channels?popType=track`, the same call the track-gating axes read, so anything you can
+  gate on you can colour by (motility measures + the per-track cell aggregates).
+- **The cap is stated, not silent.** Longest-first, capped, and the plot reports `shown of total` —
+  a hairball of 500 tracks looks exactly like a hairball of 5000.
 
 ## Track-property gating — backend done, frontend/napari deferred
 

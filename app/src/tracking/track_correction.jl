@@ -43,8 +43,14 @@ const _TRACK_STATE_COL = "track_state"
 
 # Cells carrying no track. `add_obs` writes NaN for any label absent from the staged frame
 # (`label_props.jl:679`), and `track_measures` already skips NaN track ids (`:213`), so NaN is the
-# established "untracked" value on both sides — a correction uses the same one rather than 0 or -1.
-_is_untracked(v) = !(v isa Real) || isnan(v)
+# established "untracked" value on both sides — a correction WRITES that one, never 0 or -1.
+#
+# A non-positive id is untracked too, on READ. btrack numbers tracks from 1 and `track_props` has
+# always filtered `track_id > 0`, so a 0 in a cell table is a legacy/foreign "no track" marker, not
+# track number zero. Accepting it here would let one polyline stitch together every untracked cell in
+# the image — a picture that looks like a track and is not one. This predicate is the codebase's ONE
+# answer to "is this cell tracked"; `track_props` states the same rule in its own filter.
+_is_untracked(v) = !(v isa Real) || isnan(v) || v <= 0
 
 """
     track_ids_present(df) -> Vector{Int}
@@ -521,6 +527,40 @@ function _track_paths(df::DataFrame, spatial::Vector{String})
     end
     for (_, p) in paths; sort!(p; by = first); end
     paths
+end
+
+"""
+    track_path_dicts(df, spatial; ids = nothing) -> Dict{String,Any}
+
+Per-track polylines, JSON-ready: `"\$tid" => Dict("t","x","y","label")`, each sorted by time, with
+coordinates in **µm** (scale `df` first — `scale_centroids!` — this does not). `ids` restricts the
+output to those track_ids; `nothing` returns every tracked track.
+
+This is the wire format two endpoints need — the correction worklist (geometry for the candidates it
+shows) and the track plot (geometry for the tracks it draws) — and the frontend's `plots/trackPaths.ts`
+reads exactly this shape. `y` is an empty vector for a 1-D segmentation, which the frontend treats as
+y = 0 rather than as an error.
+"""
+function track_path_dicts(df::DataFrame, spatial::Vector{String}; ids = nothing)::Dict{String,Any}
+    want = ids === nothing ? nothing : Set{Int}(Int.(ids))
+    rows_by_track = Dict{Int,Vector{Int}}()
+    for r in 1:nrow(df)
+        v = df[r, :track_id]
+        _is_untracked(v) && continue
+        tid = Int(round(Float64(v)))
+        (want === nothing || tid in want) || continue
+        push!(get!(rows_by_track, tid, Int[]), r)
+    end
+    out = Dict{String,Any}()
+    for (tid, rows) in rows_by_track
+        rs = rows[sortperm(Float64[df[r, :centroid_t] for r in rows])]
+        out[string(tid)] = Dict{String,Any}(
+            "t"     => Float64[df[r, :centroid_t] for r in rs],
+            "x"     => Float64[df[r, Symbol(spatial[1])] for r in rs],
+            "y"     => length(spatial) > 1 ? Float64[df[r, Symbol(spatial[2])] for r in rs] : Float64[],
+            "label" => Int[Int(round(Float64(df[r, :label]))) for r in rs])
+    end
+    out
 end
 
 _dist(a::Vector{Float64}, b::Vector{Float64}) = sqrt(sum((a .- b) .^ 2))

@@ -94,9 +94,10 @@ function addPairs() { const id = add(); const p = panels.value.find(x => x.id ==
 // to name it (every gating call is keyed by image + value name).
 const projectMeta = useProjectMetaStore()
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
-function addCorrection() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'trackCorrection' }
-// what the correction view needs from the page (the panel's own state carries the rest)
-const correctionCtx = computed(() => ({
+function addView(key: string) { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = key }
+// what a registry view needs from the page (the panel's own state carries the rest) — the same
+// {projectUid, imageUids, setUid} contract the cluster and optical-flow canvases pass
+const viewCtx = computed(() => ({
   projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [], setUid: null,
 }))
 
@@ -241,9 +242,13 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                 @click="addPairs">
           <i class="pi pi-plus" /> Pairs
         </button>
-        <!-- TRACK: what looks wrong in the tracking result, ranked, each row carrying its fix. -->
+        <!-- TRACK: the paths themselves, and what looks wrong in them. -->
         <button v-if="isTrack" class="cc-btn cc-btn-primary"
-                v-tooltip.bottom="'Review tracks that look wrong'" @click="addCorrection">
+                v-tooltip.bottom="'Add a track-path plot'" @click="addView('trackPaths')">
+          <i class="pi pi-plus" /> Tracks
+        </button>
+        <button v-if="isTrack" class="cc-btn cc-btn-primary"
+                v-tooltip.bottom="'Review tracks that look wrong'" @click="addView('trackCorrection')">
           <i class="pi pi-plus" /> Correct
         </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
@@ -293,11 +298,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
         <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
-          <!-- the correction worklist → generic InteractivePanel, the same host the cluster and
-               optical-flow canvases use for their registry views -->
+          <!-- registry views (track paths, the correction worklist) → generic InteractivePanel, the
+               same host the cluster and optical-flow canvases use -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
-                            :context="correctionCtx" :state="p.state" :persist-key="`${ckey}:${p.id}`"
+                            :context="viewCtx" :state="p.state" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" />
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"

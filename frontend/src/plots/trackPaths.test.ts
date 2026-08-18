@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint,
   type TrackPathMap,
-  normalizeTracks, displacementVectors,
+  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote,
 } from './trackPaths'
 
 // two tracks in a straight line along x: A runs 0→2, B carries on 3→5
@@ -204,5 +204,40 @@ describe('displacementVectors', () => {
     const raw = displacementVectors(pathPoints(straight, [1, 2]))
     const norm = displacementVectors(normalizeTracks(pathPoints(straight, [1, 2])))
     expect(norm).toEqual(raw)
+  })
+})
+
+describe('pathCsvRows', () => {
+  it('emits one row per point, in draw order', () => {
+    const rows = pathCsvRows(pathPoints(straight, [1]))
+    expect(rows.map(r => r.t)).toEqual([0, 1, 2])
+    expect(rows[0]).toMatchObject({ track: '1', x: 0, y: 0, label: 1 })
+  })
+
+  it('repeats the per-track colour value on every row of that track', () => {
+    const rows = pathCsvRows(pathPoints(straight, [1, 2]), { '1': 4.5, '2': 9 }, 'speed')
+    expect(rows.filter(r => r.track === '1').every(r => r.speed === 4.5)).toBe(true)
+    expect(rows.find(r => r.track === '2')!.speed).toBe(9)
+  })
+
+  it('omits the value column entirely when nothing is coloured', () => {
+    expect(Object.keys(pathCsvRows(pathPoints(straight, [1]))[0])).not.toContain('value')
+  })
+
+  it('leaves a track with no value blank rather than dropping the row', () => {
+    const rows = pathCsvRows(pathPoints(straight, [1, 2]), { '1': 4.5 }, 'speed')
+    expect(rows).toHaveLength(6)
+    expect(rows.find(r => r.track === '2')!.speed).toBe('')
+  })
+})
+
+describe('trackCountNote', () => {
+  it('says what is missing when the plot is capped', () => {
+    expect(trackCountNote(500, 1203)).toMatch(/500 of 1203/)
+  })
+
+  it('is empty when everything is shown', () => {
+    expect(trackCountNote(374, 374)).toBe('')
+    expect(trackCountNote(0, 0)).toBe('')
   })
 })

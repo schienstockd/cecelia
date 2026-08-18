@@ -28,6 +28,8 @@ const MUST_REFRESH = [
   'modules/cluster/ClusterHmmTransitionsPanel.vue',
   'modules/gate/GatePlotPanel.vue',
   'modules/gate/GatePairsPanel.vue',
+  'components/plots/TrackPathsView.vue',
+  'components/plots/TrackCorrectionView.vue',
 ]
 
 // Fetches plot/population data but must NOT self-refresh — with the reason, so removing an entry is a

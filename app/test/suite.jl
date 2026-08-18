@@ -12889,3 +12889,41 @@ end
     @test empty_v.n_far == 0 && empty_v.drifting == false
     @test isnan(empty_v.mean_angle_far)
 end
+
+@testset "track_path_dicts — the wire shape both routes send" begin
+    # two straight tracks; rows are deliberately NOT in time order, so ordering is a real assertion
+    df = DataFrame(label = [3.0, 1.0, 2.0, 4.0, 5.0],
+                   centroid_t = [2.0, 0.0, 1.0, 0.0, 1.0],
+                   track_id = [1.0, 1.0, 1.0, 2.0, 2.0],
+                   centroid_x = [20.0, 0.0, 10.0, 5.0, 6.0],
+                   centroid_y = [0.0, 0.0, 0.0, 1.0, 1.0])
+
+    all_paths = track_path_dicts(df, ["centroid_x", "centroid_y"])
+    @test Set(keys(all_paths)) == Set(["1", "2"])
+    p1 = all_paths["1"]
+    @test p1["t"] == [0.0, 1.0, 2.0]            # sorted by time, not by row order
+    @test p1["x"] == [0.0, 10.0, 20.0]          # coords follow their own timepoint
+    @test p1["label"] == [1, 2, 3]              # labels travel with the points
+
+    # `ids` restricts, and asking for a track that isn't there is silently empty, not an error —
+    # the worklist can reference a track the geometry cap left out
+    @test collect(keys(track_path_dicts(df, ["centroid_x", "centroid_y"]; ids = [2]))) == ["2"]
+    @test isempty(track_path_dicts(df, ["centroid_x", "centroid_y"]; ids = [999]))
+
+    # Untracked cells are never a path of their own — and a 0 id counts as untracked on read, so
+    # one polyline can't stitch every untracked cell in the image into a fake track.
+    untracked = DataFrame(label = [1.0, 2.0], centroid_t = [0.0, 1.0], track_id = [NaN, 0.0],
+                          centroid_x = [1.0, 2.0], centroid_y = [0.0, 0.0])
+    @test isempty(track_path_dicts(untracked, ["centroid_x", "centroid_y"]))
+    @test isempty(track_ids_present(untracked))
+
+    # 1-D segmentation: y comes back EMPTY rather than zeros invented here (the frontend decides)
+    oned = track_path_dicts(df, ["centroid_x"])
+    @test oned["1"]["y"] == Float64[]
+
+    # the shape the detector's own geometry uses is the same shape — one helper, two routes
+    iss = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 3.0, 1.0)])
+    geo = track_path_dicts(iss, ["centroid_x", "centroid_y"]; ids = [1, 2])
+    @test sort(collect(keys(geo))) == ["1", "2"]
+    @test all(k -> issubset(["t", "x", "y", "label"], collect(keys(geo[k]))), keys(geo))
+end

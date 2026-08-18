@@ -77,20 +77,10 @@ function api_track_issues(req::HTTP.Request)
         limit  = Int(_num("limit", 100.0))
         shown  = first(issues, max(limit, 0))
 
-        # geometry for ONLY the tracks the shown candidates reference
-        want  = Set{Int}(Iterators.flatten(i.track_ids for i in shown))
-        paths = Dict{String,Any}()
-        for tid in want
-            rows = findall(v -> v isa Real && !isnan(v) && Int(round(Float64(v))) == tid, df.track_id)
-            isempty(rows) && continue
-            ord = sortperm(Float64[df[r, :centroid_t] for r in rows])
-            paths[string(tid)] = Dict{String,Any}(
-                "t"     => Float64[df[rows[k], :centroid_t] for k in ord],
-                "x"     => Float64[df[rows[k], Symbol(spatial[1])] for k in ord],
-                "y"     => length(spatial) > 1 ?
-                           Float64[df[rows[k], Symbol(spatial[2])] for k in ord] : Float64[],
-                "label" => Int[Int(round(Float64(df[rows[k], :label]))) for k in ord])
-        end
+        # geometry for ONLY the tracks the shown candidates reference (same wire shape as
+        # /api/tracking/paths — one helper, `track_path_dicts`, so the two cannot drift apart)
+        paths = track_path_dicts(df, spatial;
+                                 ids = Set{Int}(Iterators.flatten(i.track_ids for i in shown)))
 
         counts = Dict{String,Int}()
         for i in issues; counts[i.kind] = get(counts, i.kind, 0) + 1; end
@@ -104,5 +94,101 @@ function api_track_issues(req::HTTP.Request)
                             paths     = paths))
     catch e
         _gerr(500, "could not scan tracks: " * sprint(showerror, e))
+    end
+end
+
+# ── GET /api/tracking/paths — track geometry for the track plot ───────────────
+# The napari tracks layer, as a plot: every track's polyline in µm, optionally coloured by one
+# per-track property. Same wire shape as /api/tracking/issues' `paths` (both call `track_path_dicts`),
+# so `plots/trackPaths.ts` reads either without a branch.
+#
+# `colorBy` is any per-track column — a motility measure from the track table, a lineage/cluster obs,
+# or a cell measure the track table aggregates on read (`track_cell_measures`, e.g.
+# `mean_intensity_0.mean`): the same resolution the track-grained gating axes use. This route does NOT
+# return the list of them — the plot's picker reads `/api/gating/channels?popType=track`, the one the
+# gating axes already read, so there is no second vocabulary to drift out of step with it.
+#
+# The cap is by track LENGTH, longest first: an image with thousands of tracks is unreadable as a
+# hairball, and the one-or-two-point fragments are the least informative thing in it. `total` and
+# `shown` both come back so the plot can say what it is leaving out rather than quietly lying.
+function api_track_paths(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", ""))
+    props = img_label_props_path(img, vn)
+    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+
+    _num(key, default) = (v = get(q, key, ""); isempty(v) ? default : something(tryparse(Float64, v), default))
+    color_by = get(q, "colorBy", "")
+    pixel_res, time_step = img_physical_sizes(img)
+
+    try
+        lp = label_props(props)
+        # NOTE the parens: `() -> 200, JSON3.write(…)` parses as a TUPLE of (lambda, string), not a
+        # lambda returning a tuple — a probe against real data caught it as "Tuple is not callable".
+        _untracked() = (200, JSON3.write((; valueName = vn, tracked = false, paths = Dict(),
+                                            total = 0, shown = 0)))
+        ("track_id" in col_names(lp; data_type = :obs)) || return _untracked()
+
+        spatial  = centroid_columns(lp; order = [:x, :y, :z])
+        temporal = temporal_columns(lp)
+        isempty(temporal) && return _untracked()
+        select_cols(lp, vcat(spatial, temporal, ["track_id"]))
+        df = as_df(lp; include_x = false, include_obs = true)
+        scale_centroids!(df, pixel_res)          # µm, via the ONE shared conversion
+        t_col = first(temporal)
+        t_col == "centroid_t" || (df[!, :centroid_t] = df[!, Symbol(t_col)])
+
+        # Longest first, then capped. Built from the FULL path map rather than a second pass over
+        # `track_id` — "which cells are tracked" has one answer (`track_path_dicts`), and a private
+        # count loop here would be a second one, free to disagree about e.g. a 0 id.
+        all_paths = track_path_dicts(df, spatial)
+        order = sort!(collect(keys(all_paths));
+                      by = k -> (-length(all_paths[k]["t"]), parse(Int, k)))
+        limit = Int(_num("limit", 500.0))
+        ids   = first(order, max(limit, 0))
+        paths = Dict{String,Any}(k => all_paths[k] for k in ids)
+
+        # One value per shown track for the colour scale (empty when nothing is asked for).
+        #
+        # Only columns the per-track table provides DIRECTLY: the motility measures and the track
+        # table's own obs (`clusters.{suffix}` from clustTracks). A cell measure would first have to
+        # be aggregated, which means choosing WHICH aggregate — a decision this plot has no way to
+        # ask about, and `track_cell_measures` throws on a name it cannot invert (a probe against real
+        # data returned a 500 for a stale column). An unknown column comes back as `colorBy: ""`.
+        values = Dict{String,Any}()
+        color_kind = "none"
+        if !isempty(color_by)
+            tp = track_props(img; value_name = vn)
+            if color_by in names(tp)
+                col = tp[!, color_by]
+                # the ONE measure-type detector (`track_props`' own) — `eltype <: Real` is not it: a
+                # joined column decodes as Union{Missing,Float64}, and the probe duly reported
+                # `live.track.speed` as categorical, which would paint 50 distinct colours instead of
+                # a gradient
+                cat = Cecelia._is_categorical_col(col, color_by)
+                color_kind = cat ? "categorical" : "numeric"
+                want = Set(ids)                      # String keys, as `paths` is
+                for (r, tid) in enumerate(tp[!, :track_id])
+                    key = string(Int(tid))
+                    key in want || continue
+                    v = col[r]
+                    values[key] = cat ? string(v) :
+                        (v isa Real && !isnan(Float64(v)) ? Float64(v) : nothing)
+                end
+            else
+                color_by = ""
+            end
+        end
+
+        200, JSON3.write((; valueName = vn, tracked = true,
+                            total = length(order), shown = length(ids),
+                            nTracks = length(order), timeStep = time_step,
+                            stepScale = track_step_scale(df, spatial),
+                            colorBy = color_by, colorKind = color_kind,
+                            values = values, paths = paths))
+    catch e
+        _gerr(500, "could not read tracks: " * sprint(showerror, e))
     end
 end

@@ -118,6 +118,7 @@ export track_correction_metrics, track_correction_qc_findings, TRACK_CORRECTION_
 export TrackIssue, find_track_issues, track_issues_for, issue_to_dict
 export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUANTILE
 export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
+export track_path_dicts
 export TRACK_DUP_ANGLE_DEG, TRACK_DUP_DIST_UM, TRACK_DUP_MIN_SHARED
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 

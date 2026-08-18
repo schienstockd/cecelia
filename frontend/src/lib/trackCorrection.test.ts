@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  opLabel, opDescription, issueKey, visibleIssues, worklistSummary, undoLast,
+  opLabel, opDescription, issueKey, visibleIssues, worklistSummary, undoLast, worklistCsvRows,
   KIND_LABEL, type TrackIssue, type TrackOp, type IssuesResponse,
 } from './trackCorrection'
 
@@ -132,5 +132,27 @@ describe('undoLast', () => {
 describe('KIND_LABEL', () => {
   it('covers every signature the detector emits', () => {
     for (const k of ['gap', 'jump', 'short', 'duplicate']) expect(KIND_LABEL[k]).toBeTruthy()
+  })
+})
+
+describe('worklistCsvRows', () => {
+  it('records the decision, not just the scan', () => {
+    const open = issue()
+    expect(worklistCsvRows([open], [], [])[0].decision).toBe('open')
+    expect(worklistCsvRows([open], [open.op], [])[0].decision).toBe('queued')
+    expect(worklistCsvRows([open], [], [issueKey(open)])[0].decision).toBe('dismissed')
+  })
+
+  it('flattens the candidate into readable columns', () => {
+    expect(worklistCsvRows([issue({ centroid: [10, 20, 0], severity: 2.5, atT: 4 })], [], [])[0])
+      .toMatchObject({ kind: 'gap', tracks: '1 2', atT: 4, x: 10, y: 20, severity: 2.5 })
+  })
+
+  it('leaves a missing z blank rather than undefined', () => {
+    expect(worklistCsvRows([issue({ centroid: [1, 2] })], [], [])[0].z).toBe('')
+  })
+
+  it('is empty for an empty worklist', () => {
+    expect(worklistCsvRows([], [], [])).toEqual([])
   })
 })

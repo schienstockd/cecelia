@@ -151,3 +151,33 @@ export function worklistSummary(r: IssuesResponse | null, pendingCount: number):
 export function undoLast(pending: readonly TrackOp[]): TrackOp[] {
   return pending.slice(0, Math.max(0, pending.length - 1))
 }
+
+/**
+ * The worklist as CSV rows — what the detector found, and what you decided about each one.
+ *
+ * Exported because a correction run is a change to the data that a reader of the figure cannot see:
+ * this is the record of which candidates were applied, which were dismissed, and which were still
+ * open when the export was taken. `decision` is the column that makes it a record rather than a
+ * repeat of the scan.
+ */
+export function worklistCsvRows(
+  issues: readonly TrackIssue[],
+  pending: readonly TrackOp[],
+  skipped: readonly string[],
+): Record<string, unknown>[] {
+  const queued = new Set(pending.map(o => JSON.stringify(o)))
+  const dismissed = new Set(skipped)
+  return issues.map(i => ({
+    kind: i.kind,
+    tracks: i.trackIds.join(' '),
+    atT: i.atT,
+    x: i.centroid[0] ?? '',
+    y: i.centroid[1] ?? '',
+    z: i.centroid[2] ?? '',
+    severity: i.severity,
+    reason: i.reason,
+    fix: opLabel(i.op),
+    decision: queued.has(JSON.stringify(i.op)) ? 'queued'
+            : dismissed.has(issueKey(i)) ? 'dismissed' : 'open',
+  }))
+}

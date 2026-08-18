@@ -26,14 +26,16 @@ import SelectionTable from '../SelectionTable.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import ConfirmButton from '../ConfirmButton.vue'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useLogStore } from '../../stores/log'
 import { useTaskStore } from '../../stores/tasks'
 import { useProjectStore } from '../../stores/project'
 import { useWsStore } from '../../stores/ws'
 import {
-  visibleIssues, worklistSummary, opLabel, opDescription, issueKey, undoLast, KIND_LABEL,
-  type TrackIssue, type TrackOp, type IssuesResponse,
+  visibleIssues, worklistSummary, opLabel, opDescription, issueKey, undoLast, worklistCsvRows,
+  KIND_LABEL, type TrackIssue, type TrackOp, type IssuesResponse,
 } from '../../lib/trackCorrection'
+import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL } from '../../plots/export'
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint, type TrackPathMap,
 } from '../../plots/trackPaths'
@@ -93,6 +95,9 @@ async function load() {
 }
 onMounted(load)
 watch([() => props.projectUid, imageUid, valueName], load)
+// applying corrections re-runs the detector's own input, and `commit` promises the user this list
+// comes back updated — that promise is this line (subject to the global autoRefreshOnTask setting)
+useDataRefresh(() => (imageUid.value ? [imageUid.value] : []), load)
 
 // ── Judging a row ─────────────────────────────────────────────────────────────
 // Queue, don't write. The op goes on the stack exactly as the detector emitted it — nothing here
@@ -195,6 +200,24 @@ const columns = [
   { key: 'thumb',  label: '',        width: 140 },
   { key: 'reason', label: 'What looks wrong' },
 ]
+
+// ── export (the generic panel contract — plots/export.ts) ──
+// CSV is the point of exporting a worklist: a correction is a change to the data that no figure
+// shows, so the record of what was found and what was decided has to be able to leave the app.
+// The PNG is the review itself, thumbnails included (foreignObject capture, like the HMM panels).
+// No SVG: the picture here is a TABLE, and a vector table is a screenshot with extra steps.
+const exportFormats = ['csv', 'png']
+const stem = computed(() => `track_worklist_${valueName.value}`.replace(/[^\w.-]+/g, '_'))
+function exportAs(kind: string) {
+  if (kind === 'csv') {
+    const rows = worklistCsvRows(data.value?.issues ?? [], pending.value, skipped.value)
+    if (rows.length) downloadBlob(`${stem.value}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
+  } else if (kind === 'png') {
+    elementToImageURL(tcRoot.value, 'png', '#1f2226')
+      .then(url => url && downloadDataUrl(`${stem.value}.png`, url))
+  }
+}
+defineExpose({ exportFormats, exportAs })
 </script>
 
 <template>

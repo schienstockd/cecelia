@@ -174,6 +174,7 @@ export const TIPS: WhatNewCard[] = [
       'Run Behaviour → HMM on tracked images.',
       'Open the summary plots for the stats.',
       'Open the image in napari; tracks show as polylines coloured by state.',
+      'Add a Tracks plot on the Track page or the Analysis board for a figure of the paths.',
     ],
     sketchAnimation: { id: 'napari_tracks' },
   },

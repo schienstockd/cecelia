@@ -7,6 +7,7 @@ import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
 import TrackCorrectionView from '../plots/TrackCorrectionView.vue'
+import TrackPathsView from '../plots/TrackPathsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -74,6 +75,11 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // — title bar, drag, resize, collapse, persist. Hand-mounting the component instead skips all of
   // it: that is what this entry's absence cost on the first attempt.
   trackCorrection: { label: 'Track correction', component: TrackCorrectionView, rail: 'none' },
+  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the worklist above it
+  // belongs on the board. Self-contained — it picks its own image, segmentation and colour column in
+  // its panel state, so a population rail would be dead chrome. `square` because its axes are µm on
+  // both sides and a stretched track plot is a wrong one.
+  trackPaths: { label: 'Tracks', component: TrackPathsView, analysisBoard: true, square: true, rail: 'none' },
 }
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */

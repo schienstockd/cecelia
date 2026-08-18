@@ -4183,7 +4183,8 @@ end
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
-        "/api/tracking/motion-dims", "/api/tracking/issues", "/api/update/check",
+        "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
+        "/api/update/check",
         "/api/version",
     ]
     POST_ROUTES = [
@@ -4285,7 +4286,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 78 && length(POST_ROUTES) == 110
+    @test length(GET_ROUTES) == 79 && length(POST_ROUTES) == 110
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

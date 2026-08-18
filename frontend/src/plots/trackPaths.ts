@@ -226,3 +226,32 @@ export function displacementVectors(
   }
   return out
 }
+
+/**
+ * One CSV row per plotted point — the numbers behind the picture, in the same order it drew them.
+ *
+ * `values` is the per-track colour value (whatever the plot is coloured by), repeated on every row of
+ * that track. That is a denormalised column, deliberately: the alternative is a second file to join,
+ * and the reason to export this at all is to take one track's coordinates into another tool.
+ */
+export function pathCsvRows(
+  pts: readonly PathPoint[],
+  values: Record<string, number | string | null> = {},
+  valueLabel = 'value',
+): Record<string, unknown>[] {
+  const hasValues = Object.keys(values).length > 0
+  return pts.map(p => ({
+    track: p.track, t: p.t, x: p.x, y: p.y, label: p.label,
+    ...(hasValues ? { [valueLabel]: values[p.track] ?? '' } : {}),
+  }))
+}
+
+/**
+ * What the plot is NOT showing, as a phrase — empty when it is showing everything.
+ *
+ * A capped plot that says nothing is a plot that lies: a hairball of 500 tracks looks exactly like a
+ * hairball of 5000, and the reader has no way to tell which they are looking at.
+ */
+export function trackCountNote(shown: number, total: number): string {
+  return total > shown ? `${shown} of ${total} tracks — longest first` : ''
+}
