@@ -11478,6 +11478,10 @@ end
 spec_dirs() = filter(isdir, [
     joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks"),
     joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "custom-modules"),
+    # Plugin examples are shipped, installable task specs rendered by the same `ParamRenderer` — and
+    # they are what a plugin author COPIES, so a mistake here propagates. They were outside every
+    # copy ratchet until plugins existed.
+    joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins"),
 ])
 # Walk every spec, yielding (label-for-messages, parsed spec) so a failure names a findable file.
 # The label carries the containing directory — `tasks/x.json` vs `plotDefinitions/x.json` — because
@@ -11485,6 +11489,12 @@ spec_dirs() = filter(isdir, [
 function each_spec(visit)
     for dir in spec_dirs(), (root, _, files) in walkdir(dir), fname in files
         endswith(fname, ".json") || continue
+        # `plotDefinitions/` is excluded STRUCTURALLY, not by leaving one path off `spec_dirs`. Its
+        # files carry a `params` array of the same shape, but it is a defaults bag read only for
+        # `default` — a `tip` there renders to nobody (see the note above `spec_dirs`). The
+        # positional version held only while every such directory happened to sit outside the listed
+        # roots; adding `docs/examples/plugins`, which contains one, immediately broke it.
+        basename(root) == "plotDefinitions" && continue
         spec = try JSON3.read(read(joinpath(root, fname), String)) catch; continue end
         spec isa AbstractDict || continue
         visit(joinpath(basename(root), fname), spec)
@@ -11611,6 +11621,36 @@ end
 # SECTIONS AND GROUPS ARE EXEMPT. They are container headers ("Advanced", "Filters"), not inputs
 # — a user can't set them to anything, and requiring one would buy 18 tips saying "advanced
 # options". Their CHILDREN are checked like any other param.
+@testset "a param that says segmentation reads SEGMENTATIONS" begin
+    # `valueNameSelection` defaults to `filepaths` — image VERSIONS — when `field` is omitted, and
+    # that default is right for the seven built-ins that omit it ("Image to segment", "Images to
+    # train on"). It is silent, though: the importer's "Segmentation" picker offered smoothed,
+    # afCorrected, driftCorrected — image versions with segmentation's label on them, and nothing
+    # anywhere said so. Three example specs had the same bug, in the files people copy.
+    #
+    # The rule is narrow on purpose: only a param whose own label or tip CALLS ITSELF a segmentation
+    # or a label set must read `labels`. "Image to segment" is not a claim about the picker's
+    # contents, so it stays exempt.
+    bad = String[]
+    each_spec() do label, spec
+        function walk(ps)
+            ps isa AbstractVector || return
+            for q in ps
+                q isa AbstractDict || continue
+                if get(q, "type", "") == "valueNameSelection"
+                    txt = lowercase(string(get(q, "label", ""), " ", get(q, "tip", "")))
+                    claims = occursin("segmentation", txt) || occursin("label set", txt)
+                    claims && get(q, "field", "") != "labels" &&
+                        push!(bad, "$label → $(get(q, "key", "?")) (field=$(get(q, "field", "omitted")))")
+                end
+                walk(get(q, "params", nothing))
+            end
+        end
+        walk(get(spec, "params", nothing))
+    end
+    @test isempty(bad) || (@info "valueNameSelection claims a segmentation but reads image versions" bad; false)
+end
+
 @testset "every task param carries a tip" begin
     CONTAINER = ("section", "group")
     # A param whose label genuinely IS the whole explanation. Empty on purpose — same reason as

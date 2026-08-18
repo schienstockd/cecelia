@@ -12,6 +12,7 @@
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
+      "field": "labels",
       "default": "default",
       "tip": "Which segmentation's label properties to read/write"
     },
