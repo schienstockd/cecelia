@@ -119,6 +119,12 @@ export TrackIssue, find_track_issues, track_issues_for, issue_to_dict
 export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUANTILE
 export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
 export track_path_dicts
+# ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
+export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
+export plane_angle_profile, plane_artefact, drift_test
+export track_diagnostics, track_diagnostics_for, track_diagnostic_findings
+export MSD_SLOPE_RANDOM, MSD_SLOPE_DIRECTED, MSD_SLOPE_CONFINED, ACOR_PERSIST_LEVEL
+export PLANE_ANGLE_UNBIASED, DRIFT_STEP_SPACING, DRIFT_ALPHA, PAIR_SCAN_MAX_TRACKS
 export TRACK_DUP_ANGLE_DEG, TRACK_DUP_DIST_UM, TRACK_DUP_MIN_SHARED
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 
@@ -231,6 +237,7 @@ include("plotting/plot_data.jl")
 include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
+include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")

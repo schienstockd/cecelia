@@ -8,6 +8,7 @@ import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
 import TrackCorrectionView from '../plots/TrackCorrectionView.vue'
 import TrackPathsView from '../plots/TrackPathsView.vue'
+import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -80,6 +81,10 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // its panel state, so a population rail would be dead chrome. `square` because its axes are µm on
   // both sides and a stretched track plot is a wrong one.
   trackPaths: { label: 'Tracks', component: TrackPathsView, analysisBoard: true, square: true, rail: 'none' },
+  // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
+  // it belongs on the board: "is this movie comparable to its peers" is a board question. Its verdicts
+  // come from the server, the same ones `tracking.track_measures` banks as QC.
+  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, analysisBoard: true, rail: 'none' },
 }
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */

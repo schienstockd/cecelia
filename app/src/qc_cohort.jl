@@ -55,7 +55,13 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 6.
     "segment.branching"          => ["nBranches", "meanBranchLength", "anisotropy"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
-    "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
+    # `msdSlope` and `persistenceLag` are the celltrackR diagnostics worth comparing ACROSS images:
+    # one movie of the same experiment whose motion reads as confined while its peers are random
+    # walks, or whose directional memory is three times longer, is a tracking or acquisition
+    # difference, not biology. `driftP` is deliberately NOT here — a p-value is not a quantity to
+    # take a median of, and the drift verdict is already a per-image finding.
+    "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement",
+                                     "msdSlope", "persistenceLag"],
     # manual track correction: `fracCellsEdited` is the cohort-comparable one — images from one
     # experiment tracked with one parameter set should need comparable hand-correction, so the movie
     # that needed three times as much is either a worse acquisition or a tracking setting that does

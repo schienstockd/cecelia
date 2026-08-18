@@ -101,6 +101,21 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Motion dimensionality uncertain ({dims}D)",
         long  = "z couldn't be classified as migration vs jitter — review whether tracking should be 2D or 3D and re-run with dims set."),
 
+    # celltrackR diagnostics battery (track_diagnostic_findings) — advisory, and every one of them
+    # can be correct biology, which is why none is an error and each long names the check to make.
+    "tracking.field_drift" => (
+        short = "Whole field is drifting",
+        long  = "Cells share a net direction (Hotelling p = {value}) — if that is stage drift rather than chemotaxis, run drift correction in Cleanup images and re-track."),
+    "tracking.msd_confined" => (
+        short = "Tracks barely displace",
+        long  = "The log-log MSD slope is {value} where a random walk is 1.0 — check a few tracks in the viewer to rule out tracking something that is not moving."),
+    "tracking.plane_artefact" => (
+        short = "Steps flatten near the volume edge",
+        long  = "Steps nearest the lower z boundary average {value}° to it against the 32.7° of unbiased 3D motion — crop the z range or exclude those tracks."),
+    "tracking.duplicate_tracks" => (
+        short = "{count} track pair(s) look like one cell",
+        long  = "Two tracks moved in near-parallel within a few µm of each other for several frames — review them in the correction worklist."),
+
     # manual track correction (track_correction_qc_findings)
     "correction.large_share_edited" => (
         short = "{pct}% of cells hand-corrected",

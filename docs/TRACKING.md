@@ -368,6 +368,52 @@ Three modes, because "the tracks" is three questions:
 - **The cap is stated, not silent.** Longest-first, capped, and the plot reports `shown of total` —
   a hairball of 500 tracks looks exactly like a hairball of 5000.
 
+## Track diagnostics — the celltrackR QC battery (`track_diagnostics.jl`)
+
+"Can this tracking result be trusted, and what kind of motion is in it." Ported from celltrackR's
+source (not its vignette prose) and **validated against celltrackR 1.2.2 itself** — five golden
+testsets in `app/test/suite.jl` match its output to 10 decimals, which pins the CONVENTIONS as well as
+the arithmetic (see below).
+
+| Check | Statistic | Read it as |
+|---|---|---|
+| Displacement | MSD vs lag over every overlapping subtrack (`squareDisplacement`), log-log slope | 1 = random walk, 2 = directed, <1 = confined |
+| Persistence | mean cosine between two steps `lag` apart (`overallNormDot`), and the lag where it hits 1/e | slow decay = directional migration; flat at 0 = none; negative = jitter |
+| Volume edge | step angle vs distance to the lower z plane (`angleToPlane`/`distanceToPlane`), 3D only | unbiased 3D motion averages **32.7°** (Beltman 2009) at every distance; a sag ONLY near the edge is a tracking artefact |
+| Drift | Hotelling's T² on step displacement vectors (`hotellingsTest`) | a net field direction — stage drift *or* chemotaxis, the user decides |
+| Track pairs | angle vs distance between every pair of paths (`analyzeCellPairs`) | far-apart pairs average 90°; lower = the field moves together |
+
+**Three things that are easy to get wrong, and are pinned by the goldens:**
+
+- **`step_spacing` is not optional.** Consecutive steps of a persistent cell are correlated, so
+  Hotelling's T² on every step is significant for essentially any real dataset. On the golden fixture:
+  every step → p = 5.2e-4, steps 3 frames apart → p = 0.11. Same data, opposite verdict. The parameter
+  counts frames SKIPPED (celltrackR's `overlap = -step.spacing`), so the stride is `step_spacing + 1`
+  and `0` means every step. Drift is tested in **xy only**, matching celltrackR's `dim = c("x","y")`.
+- **A time gap is not a lag.** celltrackR's subtracks are contiguous by construction; a btrack table's
+  are not — a dropped detection leaves non-consecutive frames, and indexing by position would average
+  a 4-frame displacement into the lag-1 MSD. Only pairs whose FRAME difference equals the lag count.
+- **A subtrack length is not a lag.** celltrackR's `subtrack.length = L` dots the first and last step
+  of an L-step subtrack, so its L maps to lag L−1 here; its L=1 is the trivial 1.0.
+
+**Not assessed is not zero.** A drift p with too few decorrelated samples, an sem at n=1, a plane angle
+for 2D data — all `NaN` in the package, all `null` on the wire, all absent from the plot. A verdict
+invented from a matrix that cannot be inverted is worse than no verdict; `drift_test` on a *noiseless*
+drift returns no p-value at all, and says so.
+
+**Routine, not available.** The earlier pair diagnostics (`analyze_cell_pairs`, `find_duplicate_tracks`,
+`track_pair_drift`) shipped exported and reachable from nothing — no task, no route, no view. A
+diagnostic nobody can open is a diagnostic nobody has. So one roll-up (`track_diagnostics`) is now read
+two ways:
+
+- **`tracking.track_measures` banks the findings as QC on every run**, whether or not anyone looks —
+  drift, confined motion, edge artefact, duplicate pairs. `msdSlope` and `persistenceLag` join
+  `COHORT_METRICS`, so a movie whose motion reads as confined while its peers are random walks shows up
+  as a cohort outlier. `driftP` deliberately does NOT: a p-value is not a quantity to take a median of.
+- **The `trackDiagnostics` plot** (Track page → **+ Checks**, and the Analysis board) draws the curves
+  and shows the SAME findings, rendered from the same objects. The panel cannot disagree with the QC
+  line, because neither computes a threshold of its own.
+
 ## Track-property gating — backend done, frontend/napari deferred
 
 Gating on track properties (one point per track) is a first-class **`track` pop_type**. The backend

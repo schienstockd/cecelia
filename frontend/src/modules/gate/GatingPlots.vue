@@ -248,6 +248,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <i class="pi pi-plus" /> Tracks
         </button>
         <button v-if="isTrack" class="cc-btn cc-btn-primary"
+                v-tooltip.bottom="'Check the tracking: drift, motion type, double tracking'"
+                @click="addView('trackDiagnostics')">
+          <i class="pi pi-plus" /> Checks
+        </button>
+        <button v-if="isTrack" class="cc-btn cc-btn-primary"
                 v-tooltip.bottom="'Review tracks that look wrong'" @click="addView('trackCorrection')">
           <i class="pi pi-plus" /> Correct
         </button>

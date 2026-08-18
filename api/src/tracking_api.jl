@@ -85,13 +85,13 @@ function api_track_issues(req::HTTP.Request)
         counts = Dict{String,Int}()
         for i in issues; counts[i.kind] = get(counts, i.kind, 0) + 1; end
 
-        200, JSON3.write((; valueName = vn, tracked = true,
+        200, JSON3.write(_json_safe((; valueName = vn, tracked = true,
                             nTracks   = length(track_ids_present(df)),
                             stepScale = track_step_scale(df, spatial),
                             timeStep  = time_step,
                             total     = length(issues), counts = counts,
                             issues    = [issue_to_dict(i) for i in shown],
-                            paths     = paths))
+                            paths     = paths)))
     catch e
         _gerr(500, "could not scan tracks: " * sprint(showerror, e))
     end
@@ -182,13 +182,78 @@ function api_track_paths(req::HTTP.Request)
             end
         end
 
-        200, JSON3.write((; valueName = vn, tracked = true,
+        200, JSON3.write(_json_safe((; valueName = vn, tracked = true,
                             total = length(order), shown = length(ids),
                             nTracks = length(order), timeStep = time_step,
                             stepScale = track_step_scale(df, spatial),
                             colorBy = color_by, colorKind = color_kind,
-                            values = values, paths = paths))
+                            values = values, paths = paths)))
     catch e
         _gerr(500, "could not read tracks: " * sprint(showerror, e))
+    end
+end
+
+# ── GET /api/tracking/diagnostics — the celltrackR QC battery ─────────────────
+# MSD, velocity autocorrelation, step-angle-to-the-volume-edge, pair angle-vs-distance, and the
+# Hotelling drift test — the whole battery from ONE package roll-up (`track_diagnostics_for`), which is
+# the same call `tracking.track_measures` banks as QC. The plot and the finding therefore cannot
+# disagree about whether an image drifts.
+#
+# `findings` comes back with the curves on purpose: the panel shows what the run already concluded
+# rather than re-deriving a verdict in TypeScript from the numbers, which is how a second, quietly
+# different threshold gets introduced.
+#
+# The pair cloud is DOWNSAMPLED by a stride and reports its total — 374 tracks is ~70k pairs, and
+# shipping all of them to draw a scatter nobody reads at that density is a slow page for nothing.
+function api_track_diagnostics(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", ""))
+    props = img_label_props_path(img, vn)
+    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+
+    _num(key, default) = (v = get(q, key, ""); isempty(v) ? default : something(tryparse(Float64, v), default))
+    pixel_res, time_step = img_physical_sizes(img)
+
+    try
+        d = track_diagnostics_for(props, pixel_res;
+                                 max_lag = Int(_num("maxLag", 10.0)),
+                                 step_spacing = Int(_num("stepSpacing", Float64(DRIFT_STEP_SPACING))))
+        d === nothing &&
+            return 200, JSON3.write((; valueName = vn, tracked = false))
+
+        cap    = Int(_num("pairLimit", 5000.0))
+        pr     = d.pairs                      # a DataFrame; `api/` does not `using DataFrames`
+        npairs = length(pr.angle)
+        stride = max(1, cld(npairs, max(cap, 1)))
+        rows   = 1:stride:npairs
+
+        # `_json_safe` (plotting_api.jl): "not assessed" is NaN in the package and MUST be null on the
+        # wire — JSON has no NaN literal, so an unassessable drift p would 500 the whole panel
+        200, JSON3.write(_json_safe((; valueName = vn, tracked = true, timeStep = time_step,
+            nTracks = d.summary.nTracks,
+            msd  = (; lag = d.msd.lag, value = d.msd.msd, sem = d.msd.sem, n = d.msd.n),
+            acor = (; lag = d.acor.lag, value = d.acor.acor, sem = d.acor.sem, n = d.acor.n),
+            plane = (; distance = d.plane.profile.distance, angle = d.plane.profile.angle,
+                       expected = PLANE_ANGLE_UNBIASED,
+                       angleNear = d.plane.verdict.mean_angle_near,
+                       angleFar  = d.plane.verdict.mean_angle_far,
+                       suspect   = d.plane.verdict.suspect),
+            pairs = (; angle = Float64[pr.angle[r] for r in rows],
+                       distance = Float64[pr.distance[r] for r in rows],
+                       shown = length(rows), total = npairs,
+                       meanAngleFar = d.drift.pairs.mean_angle_far,
+                       drifting = d.drift.pairs.drifting,
+                       skipped = d.summary.pairsSkipped, maxTracks = PAIR_SCAN_MAX_TRACKS),
+            drift = (; p = d.drift.test.p, statistic = d.drift.test.statistic, n = d.drift.test.n,
+                       meanStep = d.drift.test.mean_step, drifting = d.drift.test.drifting,
+                       stepSpacing = d.drift.test.step_spacing, alpha = DRIFT_ALPHA),
+            summary = (; msdSlope = d.summary.msdSlope, motionKind = d.summary.motionKind,
+                         persistenceLag = d.summary.persistenceLag,
+                         nDuplicatePairs = d.summary.nDuplicatePairs),
+            findings = track_diagnostic_findings(d))))
+    catch e
+        _gerr(500, "could not compute track diagnostics: " * sprint(showerror, e))
     end
 end

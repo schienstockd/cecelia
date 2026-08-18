@@ -828,9 +828,12 @@ sees a relationship. Call it when the user asks for a deeper scan.
 function find_duplicate_tracks(df::DataFrame, spatial::Vector{String};
                                angle_deg::Real  = TRACK_DUP_ANGLE_DEG,
                                dist_um::Real    = TRACK_DUP_DIST_UM,
-                               min_shared::Integer = TRACK_DUP_MIN_SHARED)::Vector{TrackIssue}
+                               min_shared::Integer = TRACK_DUP_MIN_SHARED,
+                               pairs::Union{Nothing,DataFrame} = nothing)::Vector{TrackIssue}
     isempty(spatial) && return TrackIssue[]
-    pairs = analyze_cell_pairs(df, spatial)
+    # `pairs` lets a caller that already ran the O(n²) scan pass it in (see `track_diagnostics`);
+    # nothing changes for a caller that doesn't
+    pairs = pairs === nothing ? analyze_cell_pairs(df, spatial) : pairs
     paths = _track_paths(df, spatial)
     out = TrackIssue[]
     for r in eachrow(pairs)

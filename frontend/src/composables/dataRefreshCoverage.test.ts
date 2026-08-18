@@ -29,6 +29,7 @@ const MUST_REFRESH = [
   'modules/gate/GatePlotPanel.vue',
   'modules/gate/GatePairsPanel.vue',
   'components/plots/TrackPathsView.vue',
+  'components/plots/TrackDiagnosticsView.vue',
   'components/plots/TrackCorrectionView.vue',
 ]
 

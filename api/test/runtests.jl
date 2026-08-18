@@ -4184,6 +4184,7 @@ end
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
         "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
+        "/api/tracking/diagnostics",
         "/api/update/check",
         "/api/version",
     ]
@@ -4286,7 +4287,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 79 && length(POST_ROUTES) == 110
+    @test length(GET_ROUTES) == 80 && length(POST_ROUTES) == 110
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -4443,4 +4444,32 @@ end
     # bad input is rejected rather than silently persisted — this writes custom.toml
     @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
     @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
+end
+
+# ── `_json_safe` covers the shape handlers actually return ────────────────────
+#
+# JSON has no NaN/Inf literal, so JSON3.write throws — and the analysis layer emits NaN deliberately
+# for "not assessed" (a drift p-value with too few decorrelated steps, an sem at n=1, a step scale with
+# nothing tracked). `_json_safe` maps non-finite → null so the client sees a gap instead of a 500.
+#
+# It claimed to be recursive and was not, for NamedTuples — which is how most handlers shape a
+# response. `/api/tracking/diagnostics` 500-ed on a real image for exactly this. The method is pinned
+# here because the failure is invisible until a specific dataset produces a NaN in a specific field.
+@testset "API: _json_safe reaches into NamedTuples, not just Dicts" begin
+    @test _json_safe(NaN) === nothing
+    @test _json_safe(Inf) === nothing
+    @test _json_safe(1.5) == 1.5
+
+    nt = _json_safe((; p = NaN, n = 3, nested = (; sem = [1.0, NaN], ok = "x")))
+    @test nt.p === nothing
+    @test nt.n == 3
+    @test nt.nested.sem == [1.0, nothing]
+    @test nt.nested.ok == "x"
+    # a NamedTuple stays a NamedTuple, so the response key ORDER survives the sanitising pass
+    @test nt isa NamedTuple && keys(nt) == (:p, :n, :nested)
+    # and the whole point: it now serialises
+    @test occursin("\"p\":null", JSON3.write(nt))
+
+    @test _json_safe(Dict("a" => NaN))["a"] === nothing
+    @test _json_safe(Any[NaN, 2.0]) == Any[nothing, 2.0]
 end

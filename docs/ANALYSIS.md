@@ -149,7 +149,8 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
   hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
   (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
   **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`),
-  **tracks** (`TrackPathsView` — paths / star / rose, see [`docs/TRACKING.md`](TRACKING.md)). Surface
+  **tracks** (`TrackPathsView` — paths / star / rose) and **track diagnostics** (`TrackDiagnosticsView`
+  — the celltrackR QC battery; both in [`docs/TRACKING.md`](TRACKING.md)). Surface
   flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
   board: `interactive` (default) / `clustering` / `image`) and `rail` (see below).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`
@@ -181,7 +182,7 @@ registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCa
 | `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; any view that doesn't say otherwise |
 | `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `umap` + every `CLUSTER_PANELS` entry |
 | `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
-| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics`, `trackPaths` |
+| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics`, `trackPaths`, `trackDiagnostics` |
 
 **A slot with no `vis` falls back to `DEFAULT_VIS`, never `defaultVis()`.** The factory mints a new bag
 per call, so a template-side `?? defaultVis()` gives every panel a "new" vis on every board render — the
