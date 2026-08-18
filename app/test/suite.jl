@@ -12731,3 +12731,44 @@ end
         rm(joinpath(dir, f); force = true)
     end
 end
+
+# ── The task runner losing its port is a normal outcome, not a crash ──────────
+#
+# The runner is built to OUTLIVE the API server, so on a fresh start there is often already one
+# running — and two checkouts sharing a `CECELIA_DEV_DIR` share the port outright. Two things used to
+# go wrong when a second one lost that race, and this pins both:
+#
+#   1. it died with a `TaskFailedException` stack trace, which reads as a broken app; and
+#   2. WORSE — it wrote `runner.json` with its own pid BEFORE binding, clobbering the incumbent's
+#      record, then its `atexit` hook deleted the file on the way out. So a collision left the
+#      SURVIVING runner with no state file, which is exactly the "a stray runner is folklore" case
+#      that file exists to prevent.
+#
+# Uses an EPHEMERAL port held by a plain socket, never the real 7657 — a test must not touch a runner
+# the developer has running.
+@testset "runner_serve stands down when the port is taken" begin
+    using Sockets: listen as sock_listen, getsockname, localhost
+
+    held = sock_listen(localhost, 0)              # port 0 → the OS picks a free one
+    port = Int(getsockname(held)[2])
+
+    state = joinpath(Cecelia.config_dir(), "runner.json")
+    mkpath(dirname(state))
+    # stand in for the incumbent's record, with a pid that is NOT ours
+    marker = Dict{String,Any}("pid" => 999_999, "port" => port, "commit" => "incumbent")
+    Cecelia.write_json_atomic(state, marker)
+
+    try
+        # Returns rather than throwing. The old code raised TaskFailedException out of HTTP.listen.
+        r = @test_logs (:warn,) match_mode=:any Cecelia.runner_serve(; port = port)
+        @test r === nothing
+
+        # …and the incumbent's record is untouched: neither overwritten with our pid nor deleted.
+        @test isfile(state)
+        @test JSON3.read(read(state, String), Dict{String,Any})["pid"] == 999_999
+        @test JSON3.read(read(state, String), Dict{String,Any})["commit"] == "incumbent"
+    finally
+        close(held)
+        rm(state; force = true)
+    end
+end
