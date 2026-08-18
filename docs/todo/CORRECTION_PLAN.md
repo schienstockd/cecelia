@@ -1,9 +1,10 @@
 # Manual correction — segmentation and tracks
 
-**Status:** planning, branch `feat/correction-seg-tracks` (no code yet). Written to be picked up cold
-by another session. **Revised 2026-08-17** after auditing the plan's assumptions against both
-codebases — Decisions 2b/3b/4b/4c/4d/6b are new and four open questions are answered; the
-old-R ground truth below was verified line by line and stands.
+**Status:** **P1 + P4a built** (PR #590, branch `feat/correction-seg-tracks`); P2, P3 and the
+P4b/P4c surfaces are open. Written to be picked up cold by another session. **Revised 2026-08-17**
+after auditing the plan's assumptions against both codebases — Decisions 2b/3b/4b/4c/4d/6b are new
+and four open questions are answered; the old-R ground truth below was verified line by line and
+stands. Building P1 then corrected two of those decisions against real data (see 4c).
 **Origin:** a lab that used the old R version asked for four capabilities back (conference, 2026-08).
 Two are general and belong in the app — **correct segmentation** and **correct tracks** (this plan).
 The other two (importing tracks / segmentation in their own format) are lab-specific and become
@@ -389,6 +390,14 @@ Both from `app/src/label_props.jl:657-692`:
   `centre(pos, tp)` and `colour_labels(overrides)` are already shipped, so flying to a candidate
   needs no bridge work.
 
+- **P4c — where it lives.** Still open, and it is a product question rather than a build one: a
+  Data-group page of its own, or an affordance on Segment / Track? It interacts with view profiles —
+  this lab wants a *small* menu, and correction is the reason they are here. The interactive-views
+  registry (`frontend/src/components/canvas/interactiveViews.ts`) is the likely host, since a view
+  there gets panel chrome, zoom and export for free and needs no new nav entry; note the correction
+  view MUTATES, so it must not be offered on the read-only Analysis board. Consult `docs/UI.md`'s
+  primitive catalog and the icon glossary before rendering a single control.
+
 ### Icons for the correction surface — checked against the glossary
 
 `frontend/src/lib/iconLegend.ts` (#589) is the reference, and `iconLegend.test.ts` is a two-way
@@ -444,9 +453,6 @@ means the whole field moves together) — reported as advisory only, because the
 The remaining three are a **track-vis canvas** rather than a correction feature, and want their own
 parked plan before building — MSD and autocorrelation both need Δt aggregation that belongs in Julia
 beside the existing celltrackR ports, not in the browser.
-- **P4 — UX.** Where correction lives in the sidebar (a Data-group page? an affordance on Segment /
-  Track?), the previews, the population scope. Consult `docs/UI.md`'s primitive catalog before
-  rendering a single control.
 
 ## Cross-file architecture
 
