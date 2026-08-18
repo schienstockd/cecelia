@@ -29,7 +29,7 @@ import { useProjectStore } from '../stores/project'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
-import type { TaskDef, ChainTemplate } from '../tasks/types'
+import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
@@ -921,11 +921,18 @@ function propagateValueName(sourceId: string, targetId: string) {
   if (!out) return
   const def = taskDefFor(target.data.fn)
   if (!def) return
+  // RECURSES into sections and groups: their sub-values are stored FLAT in the params dict, so a
+  // `valueNameSelection` inside an Advanced section is addressable here — it just was not reached,
+  // and so was never prefilled from an upstream edge while its top-level twin was.
   const patch: Record<string, unknown> = {}
-  for (const p of def.params ?? []) {
-    if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
-      patch[p.key] = out.name
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
+        patch[p.key] = out.name
+      walk(p.params)
+    }
   }
+  walk(def.params)
   if (Object.keys(patch).length) {
     updateNode(targetId, {
       data: { ...target.data, params: { ...target.data.params, ...patch } },

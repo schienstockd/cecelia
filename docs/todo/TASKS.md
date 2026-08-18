@@ -8,40 +8,66 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
 
 ---
 
+## Done this round (on the branch, not yet merged)
+
+- [x] ~~**`showIf` — conditional params in the spec JSON, not in Julia**~~ Shipped, with the line
+      drawn at "is the form enough?": `showIf` for form-decidable conditions, a server hook setting
+      `hidden` for anything needing a file read. The importer's three mode rules moved to its JSON.
+- [x] ~~**The spec's `default` is the only default.**~~ `run_task` never applied them, so all 215
+      handler fallbacks were a second source of truth — and five contradicted their spec
+      (clustTracks 1≠5, trainRatio 1.0≠0.8, labelSmoothing 0.0≠0.5, maxContactDist 10≠5,
+      forceRecompute false≠true). Only REPL/chain/MCP callers were affected; the GUI always submits
+      every param. A ratchet found a sixth the audit missed.
+- [x] ~~**`required` actually works.**~~ `Any[] == ""` is false, so it could never express "pick at
+      least one" — nine tasks re-implemented it as a post-Run log line. Now an empty collection
+      counts, `requiredMessage` carries the useful sentence, and the Run button refuses first.
+- [x] ~~**`optionsFrom`**~~ — three tasks each hand-walked the spec to fill a model picker. Now a
+      spec field, resolved for every task, with vault options appended to the spec's literal ones.
+- [x] ~~**Imported points are invisible in the viewer**~~ — the payload now carries
+      `labelPropsNames` beside `labels`, and the viewer unions them: a maskless row keeps the tracks
+      toggle, drops the show-labels eye and branches. **Unverified in a browser.**
+- [x] ~~**Two pickers read the wrong segmentation**~~ — `resolveColValueName` looked for a literal
+      `pops`; `clustPops`/`clustTracks` call theirs `popsToCluster`, so both silently listed the
+      first label set's columns. Resolved by param TYPE now.
+- [x] ~~**The chain editor blanked every population picker**~~ — its ParamRenderer context omitted
+      `projectUid`, so 13 + 4 specs rendered empty there while working in the runner.
+- [x] ~~**Anti-drift safeguards**~~ — three ratchets: a spec field must be declared AND documented
+      (caught `includeChannels`, read by nothing); a `showIf` must name a param that exists; a
+      handler fallback must not contradict its spec default. `docs/MODULES.md` gained a "Fields any
+      param may carry" section — nine fields were in use and documented nowhere.
+
 ## Now
 
-- [ ] **`showIf` — conditional params in the spec JSON, not in Julia**
-      `ParamRenderer` honours a `hidden` flag, but nothing can SET it from a spec: the policy is
-      hand-written Julia in each task's `_inject_dynamic_options!`, with the param keys as literals.
-      A plugin author ships JSON and a task `.jl`, so today they must write a Julia hook to make a
-      param disappear — the highest-friction way to express the thing most tied to the param itself.
-      Add `showIf`, evaluated against the form, no Julia:
-      ```json
-      { "key": "maxDistance", "showIf": { "mode": "attach" } }
-      ```
-      The boundary is principled, and both sides of it are needed: **can this be decided from the
-      form alone?** If yes → `showIf`. If it needs to read a file, the filesystem or Python (the
-      importer's "this XML has no columns") → the server hook stays.
-      *Moves the importer's three mode rules out of Julia and leaves only `is_xml` in the hook.*
+- [ ] **`cleanupImages.cellposeCorrect` hardcodes its denoise models** — no hook at all, so a
+      user-dropped checkpoint is unreachable. One `optionsFrom` away, but it needs a lister for that
+      vault first, which is the open half of the known custom-models gap.
 
-- [ ] **Audit: what else is hardcoded that should be JSON?**
-      Same smell, repo-wide — per-task form behaviour living in Vue/TS/Julia instead of the spec.
-      Running now; findings land here as their own items, ranked by tasks-affected × how mechanical
-      the fix is. Categories: conditional visibility, special-cased param keys, per-task defaults and
-      coercion, dynamic-options hooks that did not need to be hooks, task-specific validation,
-      components that branch on a task name.
+- [ ] **`importImages.omezarr` ignores the Settings store layout.** The comment says the import form
+      pre-fills `ngffVersion` from `store_layout()`; it does not — no hook, and no frontend code
+      touches it, so the Settings choice reaches only REPL/chain runs while the GUI submits the spec
+      literal `"0.4"`. Also `advanced.chunkSeparator` is declared, read by NOTHING, and its default
+      `"flat"` contradicts `CHUNK_SEPARATOR_DEFAULT = "nested"`. A `defaultFrom` field would parallel
+      `optionsFrom`; a live wrong-output path either way.
 
-- [ ] **Imported points are invisible in the viewer** (Dominik, on screen)
-      ccid.json carries **two independent registries** and the viewer reads the other one:
-      `labels` (written by `register_label_files!`, only for a segmentation with a **zarr store**)
-      backs the MASKS chips, the segmentation rows and every `field: "labels"` picker;
-      `label_props` (an h5ad table) backs `img_value_names`, gating, populations and the observer.
-      A points import registers `label_props` only — there are no mask pixels to register — so it has
-      no MASKS chip, no segmentation row, and therefore **no per-row tracks toggle**.
-      Chosen fix (Dominik): **union the viewer's row list** over `labels` ∪ `label_props`, with a
-      maskless row rendering only the toggles that apply — tracks and populations, no show-labels eye.
-      Rejected: registering it in `labels` too, which hands napari a store that does not exist.
-      *Rendering change — wants his eyes before it ships.*
+- [ ] **`editImages.cropImage` consumes four params its spec does not declare** — `z0/z1/t0/t1`,
+      supplied by `CropPanel.vue`, which also hardcodes `funName` and `poolName: 'io'` instead of
+      reading the `resource_pool` the spec already declares. Undeclared params are invisible to
+      validation, to funParams reconciliation, and to anyone reading the spec as the contract.
+
+- [ ] **`COHORT_STAGES` hardcodes 8 fun_names in TypeScript**, kept in step with Julia by a test, so
+      a plugin task can never bank cohort metrics. Either a spec flag or — better, and there is
+      precedent — stamped by the definitions route the way `previewable` already is. **Needs a call
+      between those two before anyone writes it.**
+
+- [ ] **`propagateValueName` only walks top-level params** (`ChainModule.vue:925`), so a
+      `valueNameSelection` inside a section is never prefilled from an upstream edge.
+
+- [ ] **`showIf` inside a repeatable `group`** is evaluated against the top-level form, so a
+      sub-param cannot be gated on its own entry's siblings. Four specs use groups. Does not bite
+      today; will the first time someone tries it.
+
+- [ ] **Dead type `labelPropsSelection`** declared in `types.ts`, used by zero specs.
+
 
 ## Next
 

@@ -3,7 +3,7 @@ export interface ParamDef {
   label: string
   type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'filePath' | 'select' | 'chipSelect'
        | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
-       | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
+       | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'group' | 'section'
   tip?: string
