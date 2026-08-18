@@ -30,6 +30,14 @@ export interface ParamDef {
   // Options obtained this way are SUGGESTIONS only: validation never depends on the form, so a field
   // fed this way must stay valid on its own (`_inject_dynamic_options!` in app/src/tasks/task.jl).
   triggersOptions?: boolean
+  // Set by the SERVER (`_inject_dynamic_options!`), never authored in a spec file: this param does
+  // not apply to the form as it currently stands, so it renders nowhere. A spec-file `hidden: true`
+  // would just be a param nobody can ever set — delete it instead. Chosen over a declarative
+  // `showIf` because the condition is often not expressible in the form alone: "the file you picked
+  // is an XML export, which has no columns" needs the file read.
+  hidden?: boolean
+  /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown. */
+  variant?: 'chips'
   /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
   extensions?: string[]
   multiple?: boolean

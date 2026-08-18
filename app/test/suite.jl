@@ -3762,6 +3762,74 @@ end
     end
 end
 
+@testset "importTracks hides what does not apply" begin
+    # A param that cannot be answered from the form as it stands renders NOWHERE, rather than sitting
+    # there empty. The report: picking a TrackMate track XML left "Column mapping" showing five empty
+    # dropdowns — correct (that export has no columns) but indistinguishable from a failed load.
+    cfg = Cecelia.config_dir()
+    src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                   "docs", "examples", "plugins", "ccia-importTracks")
+    dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, "ccia-importTracks")
+    mkpath(dirname(dst)); cp(src, dst; force = true)
+    Cecelia.load_custom_modules!(; dev_dir = cfg)
+    task = Cecelia._task_from_fun_name("tracking.importCsvTracks")
+    @test task !== nothing
+
+    tmp = mktempdir()
+    xml = joinpath(tmp, "t.xml"); write(xml, "<Tracks><particle><detection t=\"0\" x=\"1\" y=\"2\" /></particle></Tracks>")
+    csv = joinpath(tmp, "t.csv"); write(csv, "TRACK_ID,FRAME,X,Y\n1,0,3,4\n")
+
+    # Walk params + one level of section sub-params — `hidden` has to be findable wherever it is set.
+    function flat(spec)
+        out = Dict{String,Any}()
+        function go(ps)
+            ps isa AbstractVector || return
+            for p in ps
+                p isa AbstractDict || continue
+                out[string(get(p, "key", ""))] = p
+                go(get(p, "params", nothing))
+            end
+        end
+        go(get(spec, "params", nothing)); out
+    end
+    hidden(spec, k) = get(get(flat(spec), k, Dict{String,Any}()), "hidden", false) === true
+    resolve(form) = Cecelia._inject_dynamic_options!(deepcopy(Cecelia._task_spec(task)), task, form)
+
+    # XML: fixed self-describing schema, so no mapping and no template to choose.
+    sx = resolve(Dict("csvPath" => xml, "mode" => "attach"))
+    @test hidden(sx, "columnMapping")
+    @test hidden(sx, "template")
+    @test !hidden(sx, "csvPath")
+
+    # A delimited file DOES need the mapping, and its columns become the suggestions.
+    sc = resolve(Dict("csvPath" => csv, "mode" => "attach"))
+    @test !hidden(sc, "columnMapping")
+    @test [o["value"] for o in flat(sc)["trackColumn"]["options"]] == ["TRACK_ID", "FRAME", "X", "Y"]
+
+    # The two modes hide each other's half: nothing to attach to, or nothing new to name.
+    @test hidden(sc, "outputValueName")                       # attach writes into valueName
+    screate = resolve(Dict("csvPath" => csv, "mode" => "create"))
+    @test hidden(screate, "valueName") && hidden(screate, "maxDistance")
+    @test !hidden(screate, "outputValueName")
+
+    # Hiding must not make a param unsettable: the spec the RUNNER validates is untouched, so a value
+    # carried over from before a mode switch still validates rather than erroring on a field nobody
+    # can see. (`hidden` is presentation; `validate_params` reads the base spec.)
+    @test !hidden(Cecelia._task_spec(task), "columnMapping")
+
+    # Resolution is IDEMPOTENT — it assigns the flag rather than only setting it. `_task_spec` already
+    # resolves once against an empty form and the form re-resolves on every edit, so a set-only hook
+    # could never take a flag back: switch to "create" and back and the segmentation picker stayed
+    # gone. Going back must restore exactly what going forward removed.
+    back = resolve(Dict("csvPath" => csv, "mode" => "attach"))
+    @test !hidden(back, "valueName") && !hidden(back, "maxDistance")
+    fwd = resolve(Dict("csvPath" => csv, "mode" => "create"))
+    @test !hidden(fwd, "outputValueName")
+    @test !hidden(resolve(Dict("csvPath" => csv, "mode" => "attach")), "columnMapping")   # xml → csv
+    # No teardown: the loader `include`s a plugin's .jl once, so unregistering here would leave the
+    # task unrecoverable for the testset below — which installs the same plugin and tears it down.
+end
+
 @testset "Import tracks with NO segmentation (points)" begin
     # The driving case: tracks exported from another tool for an image cecelia has never segmented.
     # There is nothing to match against, so each detection becomes a cell. This works because

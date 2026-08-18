@@ -472,11 +472,22 @@ const pct = computed(() => {
 </script>
 
 <template>
+  <!-- `hidden` — a param the task itself has ruled out for the CURRENT form state, so it renders
+       nowhere rather than sitting there empty and looking broken. Set by `_inject_dynamic_options!`,
+       which already re-runs on every `triggersOptions` edit and already sees the form, so nothing new
+       has to reach the frontend. The driving case: pick a TrackMate XML and the "Column mapping"
+       section had no columns to offer — because that export has none — but still drew five empty
+       dropdowns. "Not applicable" and "failed to load" looked identical.
+
+       Guarded here, at the component root, so it holds for every caller at once: TaskRunner's list,
+       ChainModule's list, and section/group sub-params, which each iterate separately. -->
+  <template v-if="param.hidden" />
+
   <!-- Not for `section`/`group`: each renders its own heading below (the collapsible's toggle, the
        group's title), so the generic row put the label on screen TWICE — a plain "Advanced" sitting
        above a collapsible headed "ADVANCED". They are siblings of this row, not children of it, so
        the row was contributing a duplicate label and an empty body. -->
-  <div v-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
+  <div v-else-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
     <label class="param-label" v-tooltip.left="param.tip">
       {{ param.label }}
       <i v-if="param.tip" class="pi pi-info-circle tip-icon" />
@@ -575,6 +586,19 @@ const pct = computed(() => {
       multiple select-all
       :aria-label="param.label"
       @update:model-value="v => val = v as string[]"
+    />
+
+    <!-- select, as a segmented control. Same param type and so the SAME validation (value ∈ options)
+         — only the rendering differs, opted into per param with `variant: "chips"`. For a short,
+         closed set the chips show every choice at once, where a dropdown hides all but one and makes
+         a binary look like a list that might be long. Kept opt-in rather than auto-applied by option
+         count, so no existing dropdown silently changes shape. -->
+    <ChipSelect v-else-if="param.type === 'select' && param.variant === 'chips'"
+      variant="segmented"
+      :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
+      :model-value="String(val ?? '')"
+      :aria-label="param.label"
+      @update:model-value="v => val = v as string"
     />
 
     <!-- select -->
@@ -692,7 +716,7 @@ const pct = computed(() => {
   </div>
 
   <!-- section rendered outside .param-row so it spans full width -->
-  <div v-if="param.type === 'section'" class="param-section">
+  <div v-if="param.type === 'section' && !param.hidden" class="param-section">
     <button class="section-toggle cc-section-toggle cc-eyebrow cc-fs-sm" @click="sectionOpen = !sectionOpen"
       v-tooltip.left="sectionOpen ? 'Collapse advanced parameters' : 'Expand advanced parameters'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
@@ -712,7 +736,7 @@ const pct = computed(() => {
   </div>
 
   <!-- group: repeatable set of sub-params keyed by string index -->
-  <div v-if="param.type === 'group'" class="param-group">
+  <div v-if="param.type === 'group' && !param.hidden" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
       <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
