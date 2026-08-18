@@ -68,8 +68,75 @@ function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any},
         # picker over the filesystem) get a fresh, mutated deepcopy on every call — a user's
         # newly-dropped checkpoint reflects in `validate_params` and the definitions API without
         # a server restart or a manual invalidate. Everything else returns the cached spec as-is.
-        _needs_dynamic_options(task) ? _inject_dynamic_options!(deepcopy(cached), task, form) : cached
+        # `optionsFrom` is spec-declared and resolved for every task; the dispatch hook is for what a
+        # spec cannot say. Both mutate a fresh deepcopy, so a newly-dropped checkpoint shows up in
+        # `validate_params` and the definitions API with no restart.
+        hooked = _needs_dynamic_options(task)
+        from   = _spec_has_options_from(cached)
+        (hooked || from) || return cached
+        out = deepcopy(cached)
+        from && _apply_options_from!(out)
+        hooked ? _inject_dynamic_options!(out, task, form) : out
     end
+end
+
+"""
+`optionsFrom` — a named, runtime-enumerated option source, declared in the SPEC.
+
+    { "key": "model", "type": "select", "optionsFrom": "cellposeModels" }
+
+Three tasks each carried twenty lines of identical dict-walking to do this — cellpose, coastal and
+opticalFlow.train — differing only in which lister they called. Worse for the reason plugins exist: a
+plugin author ships JSON and a task `.jl`, so offering a model vault meant writing a Julia hook, and
+a fourth task (`cleanupImages.cellposeCorrect`) hardcodes its model list with no hook at all, which
+is why a user-dropped denoise checkpoint is unreachable there.
+
+Vault options are **appended** to any literal `options` the spec already declares, rather than
+replacing them. That is how coastal keeps `None` first and selectable: the vault is empty until the
+user trains something, and an empty state should be a legible choice, not a select that rejects
+everything including its own default.
+
+Resolved for EVERY task, before the per-task hook, so a spec needs no `_needs_dynamic_options`
+overload to use one. A name with no registered source is left alone and warned about once — a spec
+naming a vault that does not exist should not empty the picker.
+"""
+const _OPTION_SOURCES = Dict{String,Function}(
+    # value = what the runner resolves; label = what the user reads.
+    "cellposeModels" => () -> [(value = String(m.name), label = String(m.label))
+                               for m in list_cellpose_models()],
+    "coastalModels"  => () -> [(value = String(m.name), label = String(m.label))
+                               for m in list_coastal_models()],
+    # value == label: the user types the stem, so the suggestion IS what goes in the field.
+    "flowModels"     => () -> [(value = n, label = n) for n in flow_model_names()],
+)
+
+_spec_has_options_from(spec)::Bool = occursin("optionsFrom", JSON3.write(spec))
+
+function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            src = strip(string(get(p, "optionsFrom", "")))
+            if !isempty(src)
+                if haskey(_OPTION_SOURCES, src)
+                    fixed = get(p, "options", nothing)
+                    base  = fixed isa AbstractVector ?
+                            Dict{String,Any}[Dict{String,Any}(string(k) => v for (k, v) in o)
+                                             for o in fixed if o isa AbstractDict] :
+                            Dict{String,Any}[]
+                    p["options"] = vcat(base,
+                        [Dict{String,Any}("label" => o.label, "value" => o.value)
+                         for o in _OPTION_SOURCES[src]()])
+                else
+                    @warn "Unknown optionsFrom source; leaving the declared options alone" source = src
+                end
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    spec
 end
 
 # Dispatch hooks for tasks whose spec has runtime-enumerated options (e.g. a select whose

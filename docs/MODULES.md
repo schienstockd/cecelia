@@ -675,6 +675,22 @@ that might be long. Keep the labels short — the row label already carries the 
   "default": "1", "options": [{ "value": "0", "label": "0" }, { "value": "1", "label": "1" }] }
 ```
 
+**`optionsFrom`** — fill a picker's `options` from a named runtime source, instead of writing a Julia
+hook to walk the spec and do it by hand:
+
+```json
+{ "key": "model", "type": "select", "optionsFrom": "cellposeModels" }
+```
+
+Registered sources live in `_OPTION_SOURCES` (`app/src/tasks/task.jl`): `cellposeModels`,
+`coastalModels`, `flowModels`. Vault options are **appended** to any literal `options` the spec
+already declares — which is how coastal keeps `None` first and selectable, so a vault that is empty
+until you train something is a legible choice rather than a select that rejects its own default.
+
+Resolved for every task before the dispatch hook, so no `_needs_dynamic_options` overload is needed.
+An unregistered name is warned about once and leaves the declared options alone, rather than emptying
+the picker.
+
 **`triggersOptions: true`** — editing this param re-resolves the whole task's options against the
 current form (debounced at the sink). For a param whose value other params' options derive from: an
 importer's file path, whose columns become the mapping fields' suggestions. Options obtained this way

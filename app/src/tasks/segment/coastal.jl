@@ -4,33 +4,7 @@ struct CoastalSegment <: CciaTask end
 # empty dropdown, deliberately: there is nothing sensible to segment with until the user trains a
 # model on the Optical Flow page. Same runtime-enumeration hook as cellpose, so a model appears
 # without a server restart. See `list_coastal_models` in `app/src/config.jl`.
-_needs_dynamic_options(::CoastalSegment) = true
 
-function _inject_dynamic_options!(spec::Dict{String,Any}, ::CoastalSegment)::Dict{String,Any}
-    params = get(spec, "params", nothing)
-    params isa AbstractVector || return spec
-    for p in params
-        p isa AbstractDict && string(get(p, "key", "")) == "models" || continue
-        sub_params = get(p, "params", nothing)
-        sub_params isa AbstractVector || continue
-        for sub in sub_params
-            sub isa AbstractDict || continue
-            (string(get(sub, "key", "")) == "model" &&
-             string(get(sub, "type", "")) == "select") || continue
-            # "None" stays first and stays selectable. It is what the picker shows on a fresh
-            # install — the vault is empty until the user trains something — and keeping it a real
-            # option means the empty state is a legible choice rather than a select that rejects
-            # everything including its own default. Running with it selected fails with an
-            # actionable message from `coastal_models_for_python`, not a validator's "not a valid
-            # option. Valid: ".
-            sub["options"] = vcat(
-                [Dict{String,Any}("label" => "None", "value" => "")],
-                [Dict{String,Any}("label" => m.label, "value" => m.name)
-                 for m in list_coastal_models()])
-        end
-    end
-    spec
-end
 
 # Streams into label stores created at full shape up front, like every other segmenter.
 live_outputs(::CoastalSegment, params::AbstractDict) = segment_live_outputs(params)

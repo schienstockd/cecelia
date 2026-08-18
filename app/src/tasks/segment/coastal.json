@@ -52,6 +52,8 @@
       "params": [
         {
           "key": "model",
+          "optionsFrom": "coastalModels",
+          "options": [{"value": "", "label": "None"}],
           "label": "Model",
           "type": "select",
           "default": "",

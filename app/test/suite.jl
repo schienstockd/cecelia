@@ -11738,6 +11738,47 @@ end
     @test isempty(undocumented) || (@info "spec field absent from docs/MODULES.md" undocumented; false)
 end
 
+@testset "optionsFrom fills a picker from a named source" begin
+    # Three tasks each carried twenty lines of identical dict-walking to do this — cellpose, coastal
+    # and opticalFlow.train — differing only in which lister they called. The point for plugins: a
+    # plugin author ships JSON and a task .jl, so offering a model vault used to mean writing a Julia
+    # hook. Resolved for every task now, before the dispatch hook.
+    flat(spec) = begin
+        out = Dict{String,Any}()
+        go(ps) = ps isa AbstractVector && for q in ps
+            q isa AbstractDict || continue
+            out[string(get(q, "key", ""))] = q
+            go(get(q, "params", nothing))
+        end
+        go(get(spec, "params", nothing)); out
+    end
+
+    cp = flat(Cecelia._task_spec(Cecelia._task_from_fun_name("segment.cellpose")))["model"]
+    @test cp["optionsFrom"] == "cellposeModels"
+    @test !isempty(cp["options"])                                    # the built-ins are always there
+    @test Set(String(m.name) for m in Cecelia.list_cellpose_models()) ==
+          Set(String(o["value"]) for o in cp["options"])
+
+    # Coastal APPENDS the vault to the literal options its spec declares, so "None" stays first and
+    # stays selectable. The vault is empty until the user trains something, and an empty state should
+    # be a legible choice — not a select that rejects everything including its own default.
+    co = flat(Cecelia._task_spec(Cecelia._task_from_fun_name("segment.coastal")))["model"]
+    @test co["options"][1]["value"] == "" && co["options"][1]["label"] == "None"
+    @test length(co["options"]) == 1 + length(Cecelia.list_coastal_models())
+
+    # value == label here: the user types the stem, so the suggestion IS what goes in the field.
+    tr = flat(Cecelia._task_spec(Cecelia._task_from_fun_name("opticalFlow.train")))["modelName"]
+    @test all(o -> o["label"] == o["value"], tr["options"])
+
+    # An unregistered name leaves the declared options alone rather than emptying the picker — a
+    # typo in a spec must not silently produce a control nobody can choose anything in.
+    spec = Dict{String,Any}("params" => Any[Dict{String,Any}(
+        "key" => "k", "type" => "select", "optionsFrom" => "nope",
+        "options" => Any[Dict{String,Any}("value" => "a", "label" => "A")])])
+    Cecelia._apply_options_from!(spec)
+    @test [o["value"] for o in spec["params"][1]["options"]] == ["a"]
+end
+
 @testset "showIf conditions name a param that exists" begin
     # `showIf` is the DECLARATIVE half of "this param does not apply here": a condition on the form,
     # beside the param it is about, so a plugin author never writes Julia to make a field disappear.

@@ -6,25 +6,7 @@ struct CellposeSegment <: CciaTask end
 # custom-modules convention). A newly-added checkpoint appears in the picker AND passes
 # `validate_params` without a server restart. See docs/SEGMENTATION.md → *Custom cellpose
 # checkpoints*, and `list_cellpose_models` in `app/src/config.jl`.
-_needs_dynamic_options(::CellposeSegment) = true
 
-function _inject_dynamic_options!(spec::Dict{String,Any}, ::CellposeSegment)::Dict{String,Any}
-    params = get(spec, "params", nothing)
-    params isa AbstractVector || return spec
-    for p in params
-        p isa AbstractDict && string(get(p, "key", "")) == "models" || continue
-        sub_params = get(p, "params", nothing)
-        sub_params isa AbstractVector || continue
-        for sub in sub_params
-            sub isa AbstractDict || continue
-            (string(get(sub, "key", "")) == "model" &&
-             string(get(sub, "type", "")) == "select") || continue
-            sub["options"] = [Dict{String,Any}("label" => m.label, "value" => m.name)
-                              for m in list_cellpose_models()]
-        end
-    end
-    spec
-end
 
 # Cellpose streams into label stores created at full shape up front (SegmentationUtils), so a run can
 # be watched in napari before it finishes. One line, because nothing about that is cellpose-specific —
