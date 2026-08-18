@@ -3859,7 +3859,11 @@ end
     # unpacker has to see through without assuming it is always there.
     pack = mktempdir(); cp(src, joinpath(pack, "ccia-importTracks-main"))
     tarball = joinpath(mktempdir(), "p.tar.gz")
-    run(pipeline(`tar -czf $tarball -C $pack ccia-importTracks-main`; stdout = devnull, stderr = devnull))
+    # Packed through the canonical builder, not a raw `tar -czf $tarball`: an absolute `-f` on
+    # Windows reads as `host:path` and tar tries a REMOTE archive, which is the one thing
+    # `_tar_pack_cmd` exists to prevent. Building the fixture by hand reintroduced it.
+    run(pipeline(Cecelia._tar_pack_cmd(tarball, joinpath(pack, "ccia-importTracks-main"));
+                 stdout = devnull, stderr = devnull))
 
     res = Cecelia.plugin_unpack!(tarball, "https://github.com/schienstockd/ccia-importTracks";
                                  ref = "main", dev_dir = cfg)
@@ -3884,7 +3888,9 @@ end
     # loader would walk a half-written directory on the next reload.
     junk = mktempdir(); write(joinpath(junk, "readme.txt"), "nope")
     jt = joinpath(mktempdir(), "junk.tar.gz")
-    run(pipeline(`tar -czf $jt -C $junk .`; stdout = devnull, stderr = devnull))
+    # One FILE at the root — the hand-rolled shape with no `<repo>-<ref>/` wrapper to see through.
+    run(pipeline(Cecelia._tar_pack_cmd(jt, joinpath(junk, "readme.txt"));
+                 stdout = devnull, stderr = devnull))
     bad = Cecelia.plugin_unpack!(jt, "https://github.com/o/notaplugin"; dev_dir = cfg)
     @test !bad.ok && occursin("no plugin.json", replace(bad.error, "$(Cecelia.PLUGIN_MANIFEST)" => "plugin.json"))
     @test !isdir(joinpath(Cecelia.plugins_dir(cfg), "notaplugin"))   # nothing left behind
@@ -11362,6 +11368,26 @@ end
     @test uidx !== nothing && unpack.exec[uidx + 1] == "store.zarr.tar"
     @test !occursin(':', unpack.exec[uidx + 1])
     @test unpack.dir == joinpath("D:", "a", "bundle", "0", "img")
+
+    # Plugin install uses the SAME builders in their gzip form, and the drive-letter trap does not
+    # care which flag it rode in on — so assert it there too, or the property holds only where it
+    # was already tested. Compression comes off the extension, not a caller flag.
+    gzpack = Cecelia._tar_pack_cmd(joinpath("C:", "tmp", "p.tar.gz"),
+                                   joinpath("C:", "work", "ccia-importTracks-main"))
+    gidx = findfirst(==("-czf"), gzpack.exec)
+    @test gidx !== nothing && gzpack.exec[gidx + 1] == "p.tar.gz"
+    @test !occursin(':', gzpack.exec[gidx + 1])
+    @test gzpack.dir == joinpath("C:", "tmp")
+
+    # `into` extracts somewhere other than the archive's own directory. It rides on -C, which is NOT
+    # parsed as host:path, so it stays absolute — that is the whole point of the split.
+    gzun = Cecelia._tar_unpack_cmd(joinpath("C:", "tmp", "p.tar.gz"); into = joinpath("C:", "out", "payload"))
+    xidx = findfirst(==("-xzf"), gzun.exec)
+    @test xidx !== nothing && gzun.exec[xidx + 1] == "p.tar.gz"
+    @test !occursin(':', gzun.exec[xidx + 1])
+    cidx2 = findfirst(==("-C"), gzun.exec)
+    @test cidx2 !== nothing && gzun.exec[cidx2 + 1] == joinpath("C:", "out", "payload")
+    @test gzun.dir == joinpath("C:", "tmp")
 end
 
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────

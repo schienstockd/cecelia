@@ -355,7 +355,7 @@ function plugin_unpack!(tarball::AbstractString, url::AbstractString;
     tmp    = mktempdir()
     try
         payload = joinpath(tmp, "payload"); mkpath(payload)
-        _run_tar(`tar -xzf $tarball -C $payload`, String(job_id)) ||
+        _run_tar(_tar_unpack_cmd(tarball; into = payload), String(job_id)) ||
             return (; ok = false, name, dir = "",
                       error = "unpacking failed (tar exited non-zero or was cancelled)")
 
