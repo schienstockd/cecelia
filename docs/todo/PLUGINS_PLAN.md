@@ -15,14 +15,21 @@ in the app: nobody else has that format. Their two other asks are general and ar
 Live checklist for the `feat/plugins` branch. Delete an item when it lands; this is not a changelog.
 
 **Blocking a real import**
-- [ ] **TrackMate track XML** — reader written and verified against a real export
-      (`~/Downloads/TMP/M2b-…_Tracks.xml`: 314 tracks, 4367 detections, 3D, micron). Still to do:
-      run it end to end against a cecelia segmentation, and test it. NOTE the format has **no
-      columns** — `<particle>` IS the track, its id is its ordinal — so the column mapping is bypassed
-      entirely for `.xml`. This is a DIFFERENT export from TrackMate's "Spots in tracks" CSV.
-- [ ] **Which segmentation does it attach to?** The export is of a cropped/smoothed OME-TIFF. The
-      spatial match needs a cecelia segmentation of the SAME image, in the same coordinate frame; a
-      crop offset would silently move every spot. Unconfirmed.
+- [x] ~~**TrackMate track XML**~~ — read, converted and imported end to end from the real export
+      (314 tracks, 4367 detections, 3D, micron). The format has **no columns**: `<particle>` IS the
+      track and its id is its ordinal, so the column mapping is bypassed for `.xml`. A DIFFERENT
+      export from TrackMate's "Spots in tracks" CSV, which does have columns.
+- [x] ~~**Which segmentation does it attach to?**~~ **None — there isn't one** (Dominik). Added a
+      *points* mode: each detection becomes a cell, written as a labelProps table and registered, so
+      no segmentation is needed. Works because `img_value_names` reads ccid.json's `label_props`, not
+      the label store, and `is_tracked` wants only a `track_id` column.
+      **Motility only** — no mask means no shape or intensity measures, and napari cannot draw it.
+      Track ids are 1-based: `track_props` keeps `track_id > 0`, so the 0-based particle ordinal
+      silently dropped a whole track (314 in, 313 out). Pinned by a test.
+- [ ] **Does the crop line up?** The export is of a cropped/smoothed OME-TIFF. In points mode the
+      tracks carry their own coordinates so nothing has to align — but if they are later compared
+      against an image or a segmentation of the UNcropped original, the crop offset shifts everything.
+      Only matters once something else is put beside them.
 
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo

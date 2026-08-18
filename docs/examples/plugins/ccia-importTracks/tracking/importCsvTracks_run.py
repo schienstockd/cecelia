@@ -26,7 +26,27 @@ import pandas as pd
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.label_props_utils import LabelPropsView
 
-from track_readers import read_track_file, match_spots_to_cells  # the plugin's own shared helper
+from track_readers import (read_track_file, match_spots_to_cells,   # the plugin's own shared helper
+                           write_points_h5ad)
+
+
+def _to_pixels(pos, params, mp, log):
+    """External coordinates → PIXELS. Both branches convert identically, so it is one function.
+
+    External tools write positions in the image's PHYSICAL units when it is calibrated; cecelia
+    centroids are pixels. Converting the spots (rather than the cells) keeps `maxDistance` in pixels —
+    the unit a user can judge against a segmentation.
+    """
+    if str(mp.get('spotUnit', 'physical')) != 'physical':
+        return pos
+    # `physicalSizesZYX` is Z, Y, X — the codebase convention (cf. scale_centroids(df, sizes_zyx)).
+    # Our columns are X, Y, Z, so this MUST be reversed. Getting it backwards divides x by the z
+    # spacing: on anisotropic data every distance is wrong by the aspect ratio and nothing matches,
+    # which is precisely what maxDistance turns into a loud failure rather than a guess.
+    zyx = np.asarray(params.get('physicalSizesZYX', [1.0, 1.0, 1.0]), dtype=float)
+    sizes = np.where(zyx > 0, zyx, 1.0)[::-1][:pos.shape[1]]
+    log.log(f'[INFO] Converted positions to pixels using (x,y,z) {list(sizes)} µm/px')
+    return pos / sizes
 
 
 def run(params):
@@ -46,6 +66,21 @@ def run(params):
     log.log(f'[INFO] Read {len(tracks)} tracked spots in {len(np.unique(tracks))} tracks')
     log.progress(1, 2)
 
+    # ── No segmentation? Then the tracks ARE the objects ──────────────────────────────────────────
+    # Nothing to match against, so write one cell per detection instead. Positions stay in the file's
+    # own units here only long enough to convert: the table is written in PIXELS, like every other
+    # segmentation's centroids, so downstream measures scale it the same way.
+    if str(params.get('mode', 'attach')) == 'create':
+        pts = _to_pixels(pos, params, mp, log)
+        # obsm['spatial'] is Z,Y,X (the reader convention); our columns are X,Y,Z.
+        zyx = pts[:, ::-1]
+        cols = ['centroid_z', 'centroid_y', 'centroid_x'][-zyx.shape[1]:]
+        out = write_points_h5ad(params['outPath'], tracks, frames, zyx, cols)
+        log.log(f'[INFO] Wrote {len(tracks)} points in {len(np.unique(tracks))} tracks → {out}')
+        log.log('[INFO] Points only: no mask, so no shape or intensity measures — motility only')
+        log.progress(2, 2)
+        return
+
     view = LabelPropsView(path)
     labels = view.labels()
     # Centroids come back in the segmentation's own axis order; ask for x/y/z explicitly so the spot
@@ -62,20 +97,9 @@ def run(params):
     cell_frames = (df[tcols[0]].to_numpy(dtype=float).round().astype(int)
                    if tcols else np.zeros(len(df), dtype=int))
 
-    # External tools write positions in PHYSICAL units when the image is calibrated; cecelia centroids are
-    # in pixels. Convert the spots rather than the cells, so `maxDistance` stays in pixels — the unit
-    # the user can actually judge against a segmentation.
     pos = pos[:, :cell_pos.shape[1]]
     cell_pos = cell_pos[:, :pos.shape[1]]        # a 2D export matches on x/y even for a 3D image
-    if str(mp.get('spotUnit', 'physical')) == 'physical':
-        # `physicalSizesZYX` is Z, Y, X — the codebase convention (cf. scale_centroids(df, sizes_zyx)).
-        # Our columns are X, Y, Z, so this MUST be reversed. Getting it backwards divides x by the z
-        # spacing: on anisotropic data every distance is wrong by the aspect ratio and nothing matches,
-        # which is precisely what maxDistance is here to turn into a loud failure rather than a guess.
-        zyx = np.asarray(params.get('physicalSizesZYX', [1.0, 1.0, 1.0]), dtype=float)
-        sizes = np.where(zyx > 0, zyx, 1.0)[::-1][:pos.shape[1]]
-        pos = pos / sizes
-        log.log(f'[INFO] Converted spot positions to pixels using (x,y,z) {list(sizes)} µm/px')
+    pos = _to_pixels(pos, params, mp, log)
 
     track_of_cell, matched = match_spots_to_cells(
         pos, frames, tracks, cell_pos, cell_frames, labels, max_d)

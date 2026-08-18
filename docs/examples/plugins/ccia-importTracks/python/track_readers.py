@@ -38,6 +38,7 @@ import os
 import xml.etree.ElementTree as ET
 
 import numpy as np
+import pandas as pd
 from scipy.spatial import cKDTree
 
 # TrackMate writes several header rows after the real one (units, descriptions); they are recognisable
@@ -147,8 +148,9 @@ def read_tracks_xml(path):
           <particle nSpots="24">
             <detection t="6" x="87.2" y="72.3" z="55.1" />
 
-    **The grouping IS the track.** A `<particle>` carries no id, so the track id is its ordinal
-    position in the file — stable for one export, and the only identifier there is. `t` is the frame
+    **The grouping IS the track.** A `<particle>` carries no id, so the track id is its 1-based ordinal
+    position in the file — stable for one export, and the only identifier there is. One-based because
+    cecelia reads `track_id > 0` as "this cell is tracked". `t` is the frame
     (already 0-based here), and coordinates are in the file's `spaceUnits`, micron in every export
     seen, which is why the caller still converts to pixels.
 
@@ -159,7 +161,9 @@ def read_tracks_xml(path):
     """
     root = ET.parse(path).getroot()
     tracks, frames, positions = [], [], []
-    for i, particle in enumerate(root.findall('particle')):
+    # 1-BASED: cecelia treats `track_id > 0` as "tracked" (track_props filters on it), so a 0-based
+    # ordinal silently discards the whole first track — 314 tracks in, 313 out.
+    for i, particle in enumerate(root.findall('particle'), start=1):
         for d in particle.findall('detection'):
             try:
                 t = int(float(d.get('t')))
@@ -196,3 +200,46 @@ def read_track_file(path, mapping):
                          int(mapping.get('frameBase', 0)),
                          int(mapping.get('skipRows', 0)),
                          mapping.get('delimiter', ','))
+
+
+def write_points_h5ad(out_path, tracks, frames, positions, spatial_cols):
+    """Create a labelProps `.h5ad` where **each detection is a cell** — no segmentation required.
+
+    The driving case: tracks exported from another tool for an image cecelia has never segmented.
+    There is nothing to attach them to, so the tracks ARE the objects: one row per detection, carrying
+    its position, its frame and its track id.
+
+    Why this is enough to be a real segmentation as far as cecelia is concerned: `img_value_names`
+    lists the keys of ccid.json's `label_props`, NOT the label store, and `is_tracked` asks only
+    whether the table has a `track_id` obs column. So motility analysis — `track_props`,
+    `tracking.track_measures`, the behaviour/HMM stack, every track plot — works unchanged.
+
+    What is genuinely absent, and must not be papered over: there is no label MASK, so these cells
+    have no shape, no area and no intensity. Phenotype measures are impossible on a points import,
+    and napari cannot draw the labels. It is a motility dataset, not a segmentation.
+
+    Layout follows `measure_utils._to_anndata` exactly — spatial in `obsm['spatial']` named by
+    `uns['spatial_cols']` (z,y,x), time in `obsm['temporal']` — because that is what the readers
+    expect; putting centroids in `obs` would produce a file nothing can read.
+    """
+    import anndata as ad
+    from cecelia.utils.atomic_io import write_h5ad_atomic
+
+    n = len(tracks)
+    labels = np.arange(1, n + 1)
+    # X has zero features: a point has no measurements. `var` is empty rather than padded with a fake
+    # column, so nothing downstream can mistake a placeholder for a measurement.
+    adata = ad.AnnData(
+        X=np.zeros((n, 0), dtype=np.float32),
+        obs=pd.DataFrame({'track_id': np.asarray(tracks, dtype=np.int32)},
+                         index=labels.astype(str)),
+        var=pd.DataFrame(index=pd.Index([], dtype=str)),
+    )
+    adata.obsm['spatial'] = np.asarray(positions, dtype=np.float32)
+    adata.uns['spatial_cols'] = list(spatial_cols)
+    adata.obsm['temporal'] = np.asarray(frames, dtype=np.float32).reshape(-1, 1)
+    adata.uns['temporal_cols'] = ['centroid_t']
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    write_h5ad_atomic(adata, out_path)
+    return out_path

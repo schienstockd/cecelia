@@ -3762,6 +3762,83 @@ end
     end
 end
 
+@testset "Import tracks with NO segmentation (points)" begin
+    # The driving case: tracks exported from another tool for an image cecelia has never segmented.
+    # There is nothing to match against, so each detection becomes a cell. This works because
+    # `img_value_names` lists ccid.json's `label_props` keys — NOT the label store — and `is_tracked`
+    # asks only for a `track_id` obs column. No mask exists, so it is motility-only by construction.
+    # Installed into the REAL (hermetic) config dir, not a side one: `run_py` resolves the plugin's
+    # python/ dir through `config_dir()` with no dev_dir override, so a plugin loaded from elsewhere
+    # would import nothing. That is only a test concern — an installed plugin always lives here.
+    cfg = Cecelia.config_dir()
+    src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                   "docs", "examples", "plugins", "ccia-importTracks")
+    dst = joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR, "ccia-importTracks")
+    mkpath(dirname(dst)); cp(src, dst; force = true)
+    xmldir = mktempdir()
+
+    # A TrackMate "Export tracks to XML": <particle> IS a track, and it carries NO id — so the id is
+    # the particle's position in the file. Two tracks, so an off-by-one is visible.
+    xml = joinpath(xmldir, "tracks.xml")
+    write(xml, """<?xml version="1.0" encoding="UTF-8"?>
+    <Tracks nTracks="2" spaceUnits="micron" frameInterval="15.0" timeUnits="sec">
+      <particle nSpots="2">
+        <detection t="0" x="1.0" y="2.0" z="4.0" />
+        <detection t="1" x="1.5" y="2.5" z="4.0" />
+      </particle>
+      <particle nSpots="2">
+        <detection t="0" x="9.0" y="8.0" z="4.0" />
+        <detection t="1" x="9.5" y="8.5" z="4.0" />
+      </particle>
+    </Tracks>""")
+
+    proj = create_project!(name = "pointsimport")
+    set  = add_set!(proj; name = "s1")
+    img  = add_image!(set; name = "unsegmented")
+    mkpath(img_label_props_dir(img))
+    img.meta["PhysicalSizeX"] = 0.5; img.meta["PhysicalSizeY"] = 0.5; img.meta["PhysicalSizeZ"] = 2.0
+    save!(img); save!(set); save!(proj)
+
+    @test isempty(img_value_names(img))          # nothing segmented — the whole point
+    load_custom_modules!(; dev_dir = cfg)
+    try
+        t = _task_from_fun_name("tracking.importCsvTracks")
+        res = run_task(t, img, Dict{String,Any}(
+            "mode" => "create", "outputValueName" => "tm",
+            "csvPath" => xml, "template" => "trackmate_xml"))
+        @test res !== nothing
+
+        # REGISTERED, not merely written: an .h5ad nobody recorded is invisible to every picker.
+        @test "tm" ∈ img_value_names(img)
+        @test is_tracked(img; value_name = "tm")
+
+        lp = label_props(img; value_name = "tm")
+        @test centroid_columns(lp) == ["centroid_z", "centroid_y", "centroid_x"]
+        @test temporal_columns(lp) == ["centroid_t"]
+        df = lp |> select_cols(vcat(["track_id"], centroid_columns(lp), temporal_columns(lp))) |> as_df
+        @test nrow(df) == 4
+
+        # Track ids are 1-BASED. `track_props` keeps `track_id > 0`, so a 0-based ordinal silently
+        # drops the whole first track — 314 in, 313 out on the real export that found this.
+        @test sort(unique(df.track_id)) == [1, 2]
+        @test nrow(track_props(img; value_name = "tm")) == 2
+
+        # µm → pixels, using the image's own calibration: x 1.0µm ÷ 0.5 = 2px, z 4.0µm ÷ 2.0 = 2px.
+        # Getting the Z,Y,X order wrong here would divide x by the z spacing.
+        @test minimum(df[!, "centroid_x"]) ≈ 2.0f0
+        @test all(≈(2.0f0), df[!, "centroid_z"])
+
+        # Refusing to overwrite an existing segmentation is what stops an accidental second import
+        # quietly replacing the first.
+        @test run_task(t, img, Dict{String,Any}(
+            "mode" => "create", "outputValueName" => "tm",
+            "csvPath" => xml, "template" => "trackmate_xml")) === nothing
+    finally
+        Cecelia._unregister_task!("tracking.importCsvTracks")
+        rm(joinpath(cfg, "modules", Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+    end
+end
+
 @testset "Plugin install / remove (P2)" begin
     # URL → tarball + directory name. GitHub serves any ref as an archive, which is why no `git`
     # binary is needed — an installed app has none (see PLUGINS_PLAN R1).

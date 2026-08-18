@@ -11,11 +11,38 @@
   "outputValueName": "default",
   "params": [
     {
+      "key": "mode",
+      "label": "Import as",
+      "type": "select",
+      "default": "attach",
+      "options": [
+        {
+          "value": "attach",
+          "label": "Attach to a segmentation",
+          "help": "Match each spot to the nearest segmented cell in its frame"
+        },
+        {
+          "value": "create",
+          "label": "New points segmentation",
+          "help": "No segmentation needed — each detection becomes a cell. Motility only: no shape or intensity"
+        }
+      ],
+      "tip": "Whether the tracks attach to existing cells or become their own"
+    },
+    {
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
       "default": "default",
       "tip": "Which segmentation the tracks attach to"
+    },
+    {
+      "key": "outputValueName",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "labels",
+      "default": "",
+      "tip": "Name for the new points segmentation"
     },
     {
       "key": "csvPath",
