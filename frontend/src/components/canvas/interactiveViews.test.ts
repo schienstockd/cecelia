@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView } from './interactiveViews'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 
 const SFC = import.meta.glob('/src/components/canvas/LayoutCanvas.vue', {
   query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+// The shipped example plugins' manifests, read as JSON. A relative glob (they live outside the vite
+// root) rather than node:fs, because this repo's frontend has no @types/node and `vue-tsc -b` is part
+// of CI.
+const MANIFESTS = import.meta.glob('../../../../docs/examples/plugins/*/plugin.json', {
+  eager: true }) as Record<string, { contributions?: { views?: { view: string }[] } }>
 
 describe('interactive view surface flags', () => {
   it('every analysisBoard view lands in exactly one board optgroup', () => {
@@ -65,6 +71,35 @@ describe('interactive view surface flags', () => {
 
   it('an undeclared plot falls back to the population picker', () => {
     expect(railFor('no-such-view')).toBe('pops')
+  })
+
+  // A plugin may NAME one of these ids in `plugin.json` → `contributions.views` (PLUGINS_PLAN
+  // Decision 11), which is what makes the keys of this registry a public contract: rename `trackPaths`
+  // and every installed plugin that asked for it gets a "Unknown plot" notice instead of a plot.
+  //
+  // Julia cannot check that — the registry is a frontend module — so the check has to live here. It is
+  // also the only place the two halves of a shipped example meet.
+  it('every view a shipped example plugin names is offered to plugins', () => {
+    const paths = Object.keys(MANIFESTS)
+    expect(paths.length, 'no example plugin manifests found — fix the glob').toBeGreaterThan(0)
+    let declared = 0
+    for (const path of paths)
+      for (const v of MANIFESTS[path].contributions?.views ?? []) {
+        declared++
+        // `pluginPage`, not merely registered: naming `trackCorrection` would put a MUTATING view on
+        // a plugin's page, and naming a view with a rail this canvas does not render draws nothing.
+        expect(isPluginView(v.view), `${path} names the view "${v.view}"`).toBe(true)
+      }
+    // …and at least one must declare one, or the loop above is vacuous.
+    expect(declared).toBeGreaterThan(0)
+  })
+
+  // A plugin's page renders the SUMMARY canvas — its own population picker, no other rail — so a
+  // plugin-nameable view must be self-contained. This is the check the author of the next view will
+  // not think to make.
+  it('every plugin-nameable view is self-contained (rail: none)', () => {
+    for (const [key, v] of Object.entries(INTERACTIVE_VIEWS))
+      if (v.pluginPage) expect(railFor(key), `view "${key}"`).toBe('none')
   })
 
   // The recurrence guard. `flowMetrics` shipped with `analysisBoard: true` and never showed up, because

@@ -344,8 +344,9 @@ end
 const CONTRIBUTION_KINDS = ("tasks", "plots", "views", "layers")
 
 # Kinds this version actually honours. The rest are parsed, shape-checked, and reported as "not acted
-# on yet". Moving a kind across this line is what Decisions 11/12 landing looks like.
-const CONTRIBUTIONS_HONOURED = ("tasks", "plots")
+# on yet". Moving a kind across this line is what Decisions 11/12 landing looks like — `views` crossed
+# it when the custom module page learned to host one.
+const CONTRIBUTIONS_HONOURED = ("tasks", "plots", "views")
 
 # Layer kinds a `layers` contribution may ask napari for — an ALLOW-LIST, not a passthrough
 # (Decision 12). `layerType` reaching `viewer.add_*` unchecked would make napari's constructor
@@ -476,6 +477,34 @@ function plugin_contributions(dir::AbstractString; manifest = read_plugin_manife
     end
 
     (; tasks, plots, views, layers, problems = probs)
+end
+
+"""
+    plugin_views(; dev_dir=nothing) -> Vector{NamedTuple}
+
+Every `contributions.views` entry across installed plugins, as `(; moduleName, view, label, plugin)`,
+deduped on `(moduleName, view)` and plugin-sorted so first-wins is reproducible rather than
+filesystem-dependent — the same rule `user_task_specs` uses for a `fun_name` clash.
+
+A `view` is the STABLE ID of a built-in interactive plot (PLUGINS_PLAN Decision 11). The registry it
+names lives in the frontend (`components/canvas/interactiveViews.ts`), so this layer cannot check that
+the id exists — it carries the declaration; the page that renders it says so when it resolves to
+nothing. Making view IDS public is a far smaller promise than a component contract, which is the whole
+reason to prefer it.
+"""
+function plugin_views(; dev_dir::Union{String,Nothing} = nothing)
+    out  = @NamedTuple{moduleName::String, view::String, label::String, plugin::String}[]
+    seen = Set{Tuple{String,String}}()
+    for d in plugin_roots(; dev_dir)
+        name = basename(d)
+        for v in plugin_contributions(d).views
+            key = (v.moduleName, v.view)
+            key ∈ seen && continue
+            push!(seen, key)
+            push!(out, (; v.moduleName, v.view, v.label, plugin = name))
+        end
+    end
+    out
 end
 
 # ── P2: install / update / remove ─────────────────────────────────────────────────────────────────

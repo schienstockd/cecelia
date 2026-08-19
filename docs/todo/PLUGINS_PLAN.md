@@ -37,10 +37,9 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       NOWHERE in the viewer, which is not the answer either. Being traced; the question is which list
       a tracked-but-maskless value name belongs in.
 
-- [ ] **The contribution model: Decision 10 is BUILT, 11–13 are design only** — see *The contribution
-      model* below. The `contributions` block and its desugaring landed, so the later tiers plug into
-      one grammar; `views` is next (unblocked by #590), then `layers`. The component tier is deferred
-      with a named trigger.
+- [ ] **The contribution model: Decisions 10 and 11 are BUILT, 12–13 are design only** — see *The
+      contribution model* below. The `contributions` block, its desugaring, and `views` landed;
+      `layers` is next. The component tier is deferred with a named trigger.
 
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
@@ -319,7 +318,7 @@ registers the tasks — hence "registers and runs, but has no form".)
 
 ## The contribution model — designed, not built
 
-**Status: Decision 10 is built; 11–13 are design only.** Written 2026-08-19 after Dominik asked why a
+**Status: Decisions 10 and 11 are built; 12–13 are design only.** Written 2026-08-19 after Dominik asked why a
 plugin cannot ship a component "the way napari plugins do", and the answer turned out to be more
 interesting than "the browser has a build step".
 
@@ -393,7 +392,7 @@ Two things NOT to take:
 |---|---|---|
 | `widgets` + `autogenerate: true` | task spec `params` → `ParamRenderer` | **none** |
 | `readers`/`sample data` → `list[LayerData]` | task writes an h5ad; the bridge derives layers from what it already understands | **the layer contract** |
-| plots on a plugin's own page | `plotDefinitions/*.json` → `SummaryCanvas` (summary charts only) | **naming a built-in view** |
+| plots on a plugin's own page | `plotDefinitions/*.json` → `SummaryCanvas`, **plus** `contributions.views` naming a built-in interactive plot | **none** (Decision 11) |
 | `widgets` as a hand-written `QWidget` | — | the ABI question, deliberately deferred below |
 | `writers` | export tasks | roughly covered |
 | `theme` | view profiles | covered, decoupled (Open question 2) |
@@ -430,7 +429,7 @@ so the grammar is uniform, never required. `views` and `layers` are new.
 ways; our tasks are already addressable by `fun_name`, which is the same idea with no extra layer.
 Adopt it only if a second thing ever needs naming.
 
-### Decision 11 — `views`: a plot spec may NAME a built-in view
+### Decision 11 — `views`: a plugin may NAME a built-in view  ✅ BUILT
 
 `frontend/src/components/canvas/interactiveViews.ts` is already a registry keyed by stable id — 8
 entries today (`trackPaths`, `trackCorrection`, `trackDiagnostics`, `gatingStrategy`, `filmstrip`,
@@ -448,6 +447,20 @@ smaller promise than a component ABI, and it is the whole reason to prefer it.
 A named id that does not exist must FAIL LOUDLY — a blank panel is the failure mode this codebase
 keeps producing (see the empty column mapping, the wrong-segmentation picker). Ratchet it the way
 `showIf` conditions are ratcheted.
+
+**What actually shipped, and the one thing this design missed.** Not "any registered id": a view has
+to OPT IN with `pluginPage`, because two of the eight would break if named. `trackCorrection`
+**mutates** — a manifest must not be able to put it on a page — and a view asking for a rail
+(`clusterPops`, `flowModels`) draws nothing there, since a plugin's page renders the summary canvas's
+own population picker and no other. Four are offered today: `trackPaths`, `trackDiagnostics`,
+`gatingStrategy`, `filmstrip`, ratcheted to `rail: 'none'`.
+
+`SummaryCanvas` hosts them (the picker gains an **Interactive** optgroup; `InteractivePanel` renders
+the panel), so this landed as a capability of THE module-page canvas rather than a custom-page special
+case. `CustomModule.vue` passes the category's declared views through; every other host passes none
+and is unchanged. An id that does not resolve is reported ON the canvas — "Plot not available here: x
+(plugin)" — and the ratchet lives in `interactiveViews.test.ts`, because Julia cannot see the
+registry.
 
 ### Decision 12 — `layers`: the `LayerDataTuple` equivalent, and where it must differ
 
@@ -501,7 +514,8 @@ widget as the escape hatch and puts `autogenerate` in the tutorial.
    `layerType` allow-list) but report that nothing acts on them yet, rather than shipping a blank
    panel. Ratchets: every shipped example's declarations must resolve, and at least one example must
    actually declare something or the first ratchet passes vacuously.
-2. **`views`.** Smallest visible win, and it settles "a plugin gets a real, non-declarative page".
+2. **`views`.** ✅ **BUILT** — see Decision 11. It settles "a plugin gets a real, non-declarative
+   page" without making any component a contract.
 3. **`layers`.** Biggest conceptual win, most design left — the reference vocabulary and the
    `attributes` allow-list both want their own pass.
 

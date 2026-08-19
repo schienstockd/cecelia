@@ -13,6 +13,9 @@
     ],
     "plots": [
       { "spec": "plotDefinitions/cumulative_change.json" }
+    ],
+    "views": [
+      { "module": "trackTools", "view": "trackPaths", "label": "Tracks" }
     ]
   }
 }

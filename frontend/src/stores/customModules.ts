@@ -6,7 +6,13 @@ import { ref } from 'vue'
 // custom specs. `categories` with builtin === false drive a generic page + a "Custom" nav group;
 // tasks in a builtin category already surface on that category's existing page.
 export interface CustomModuleEntry { path: string; plugin: string | null; status: 'ok' | 'error'; error: string | null }
-export interface CustomCategory { name: string; builtin: boolean; funNames: string[]; cohortFuns?: string[] }
+// `views` = interactive plots a plugin asked for on this category's page, by stable registry id
+// (PLUGINS_PLAN Decision 11). Resolved against `interactiveViews.ts` by the canvas, which is also
+// where an id that resolves to nothing is reported — Julia cannot see that registry.
+export interface CustomCategory {
+  name: string; builtin: boolean; funNames: string[]; cohortFuns?: string[]
+  views?: { view: string; label: string; plugin: string }[]
+}
 
 // What one plugin contributes, in one grammar: what its directory layout implies, merged with what
 // its manifest's OPTIONAL `contributions` block declares (PLUGINS_PLAN Decision 10). `declared` says

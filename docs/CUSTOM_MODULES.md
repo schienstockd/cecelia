@@ -268,10 +268,43 @@ that reason.
 Declaring never *restricts*. A task on disk is a task whether or not the manifest mentions it, so
 adding a block and forgetting a line cannot hide your own work.
 
-Two further kinds — `views` (show a built-in interactive plot on your page) and `layers` (say how your
-task's output should be drawn in napari) — are **understood but not yet acted on**. Declaring one
-today gets you a message saying so rather than a silently blank panel. The design is
-[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*, Decisions 11 and 12.
+### Borrowing a built-in plot — `contributions.views`
+
+Your page's canvas draws the plot specs you ship. It can **also** show one of Cecelia's own
+interactive plots, pointed at your data — so `ccia-trackMeasures` shows its cumulative measures *and*
+the track paths those numbers came from:
+
+```json
+"contributions": {
+  "views": [{ "module": "trackTools", "view": "trackPaths", "label": "Tracks" }]
+}
+```
+
+`module` is the category whose page it appears on; `view` is the plot's **stable id**; `label` is
+optional and defaults to the plot's own name. It then shows up under **Interactive** in that page's
+`+ Plot…` picker. These plots fetch their own data and carry their own controls, so the population
+picker does not drive them.
+
+Ids you may name today:
+
+| `view` | What it draws |
+|---|---|
+| `trackPaths` | tracks as paths, coloured by any track column |
+| `trackDiagnostics` | the celltrackR QC battery for a tracking result |
+| `gatingStrategy` | the gating tree for one segmentation |
+| `filmstrip` | a montage of napari screenshots |
+
+Not every built-in plot is on this list, and the reason is worth knowing: some need a side rail your
+page does not render, and `trackCorrection` **mutates**. An id that is not offered — or does not exist
+— is reported on the canvas ("Plot not available here: …") rather than quietly missing from the
+picker.
+
+What this makes public is view **ids**, not components: renaming `trackPaths` would break plugins that
+named it, but rewriting the plot behind it does not.
+
+The remaining kind, `layers` — saying how your task's output should be drawn in napari — is
+**understood but not yet acted on**. Declaring one today gets you a message saying so. The design is
+[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*, Decision 12.
 
 ### The module page
 
@@ -286,6 +319,7 @@ Both halves are declarative, so **a plugin ships JSON, not Vue**:
 |---|---|---|
 | the task form | the task spec's `params` | `ParamRenderer` |
 | the plot canvas | a `plotDefinitions/*.json` (`module: "<category>"`) | `SummaryCanvas` |
+| a borrowed built-in plot | `contributions.views` naming a view id | `InteractivePanel` on that canvas |
 
 That is a deliberate choice, not a hard limit. A stable install ships a prebuilt `frontend/dist` and
 precompiles SFCs, so a plugin's `.vue` file could not be compiled there — but pre-compiled ESM using
@@ -300,10 +334,12 @@ magicgui — which is the same pattern as a task spec's `params` here. Hand-writ
 escape hatch, not its standard path. And napari's most-used contributions put data on screen by
 *returning a data tuple* (`LayerData = (data, [attributes, [layer_type]])`), not by drawing.
 
-What a cecelia plugin genuinely cannot do yet is say what its output should LOOK like — draw my
-tracks as tracks, add my points to the viewer. The *grammar* for it exists (`contributions.layers`,
-above) and is checked; nothing renders through it yet. Designed, not built:
-[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*.
+A plugin CAN now borrow one of cecelia's own interactive plots for its page
+(`contributions.views`, above) — so "a plugin gets a real, non-declarative page" is settled, without
+making any component a contract. What it still cannot do is say what its output should LOOK LIKE in
+the VIEWER — draw my tracks as tracks, add my points as a layer. The grammar for that exists
+(`contributions.layers`) and is checked; nothing renders through it yet. Designed, not built:
+[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*, Decision 12.
 
 Worth being clear about what is **not** narrower: a plugin's compute. Both napari and cecelia run
 plugin code unsandboxed with full machine access — Python there, Julia plus a Python runner here. The

@@ -141,14 +141,20 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       that nothing acts on them yet. Reaches Settings as `contributions` + `problems`.
       `ccia-trackMeasures` declares its two, so the ratchet is not vacuous;
       **(2) `views`** — a plot spec names a built-in view from `interactiveViews.ts`, which is already
-      a registry keyed by stable id. Makes view IDS public, not components;
+      a registry keyed by stable id. Makes view IDS public, not components. ✅ **BUILT** — as a
+      capability of `SummaryCanvas` (an **Interactive** optgroup in its `+ Plot…` picker) rather than a
+      custom-page special case, so every module page could offer one. A view must OPT IN with
+      `pluginPage`: `trackCorrection` mutates and a view wanting a rail draws nothing there, so "any
+      registered id" would have shipped two ways to get a broken panel. Four are offered
+      (`trackPaths`, `trackDiagnostics`, `gatingStrategy`, `filmstrip`), ratcheted to `rail: 'none'`.
+      An unresolvable id is reported on the canvas, not silently dropped;
       **(3) `layers`** — declare what napari draws from a task's output. This is the real gap: only
       `napari_bridge.py` can add a layer, which is why the points import worked by accident;
       **(4) the component tier stays DEFERRED** with a named trigger — someone wants a picture cecelia
       genuinely cannot draw. Vue is bundled inside `frontend/dist` (checked), so it needs externalising
       plus a runtime loader, and it makes props/stores/composables a contract that cannot be walked
       back. napari treats the hand-written widget as the escape hatch too.
-      #590 landed, so `TrackPathsView` is available and (2) is unblocked whenever you want it.
+      #590 landed, which is what made `trackPaths` available to name in (2).
 
 - [ ] **Does the crop line up?** The real export is of a cropped/smoothed OME-TIFF. In points mode the
       tracks carry their own coordinates so nothing has to align — but put them beside an image or a

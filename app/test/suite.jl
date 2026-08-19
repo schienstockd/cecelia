@@ -3698,10 +3698,16 @@ end
     @test only(c.layers).layerType == "points"
     # Extra keys survive as `options` — the vocabulary is Decision 12's job, not the parser's.
     @test only(c.layers).options["colorBy"] == "speed"
-    # Declared, understood, and does nothing: SAY so. A blank panel with no explanation is the
+    # `views` IS acted on (Decision 11 — the custom module page hosts one), so it must NOT be
+    # reported; `layers` is not, and declaring it says so. A blank panel with no explanation is the
     # failure mode this codebase keeps producing.
-    @test any(m -> occursin("views", m) && occursin("does not act on", m), c.problems)
+    @test !any(m -> occursin("views", m), c.problems)
     @test any(m -> occursin("layers", m) && occursin("does not act on", m), c.problems)
+
+    # …and a declared view reaches the enumerator the API serves per category.
+    vs = Cecelia.plugin_views(; dev_dir = cfg)
+    @test only(filter(v -> v.plugin == "trackimport-smithlab", vs)).view == "trackPaths"
+    @test only(filter(v -> v.plugin == "trackimport-smithlab", vs)).moduleName == "tracking"
 
     # ── malformed, never fatal ────────────────────────────────────────────────────────────────────
     _manifest(merge(base, Dict("contributions" => Dict(

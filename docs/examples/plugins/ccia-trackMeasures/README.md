@@ -58,9 +58,19 @@ plotDefinitions/cumulative_change.json   the page's plot canvas
 
 The layout above is the whole contribution list — nothing else is needed. This manifest nonetheless
 repeats it in a `contributions` block, which buys a **check**, not a capability: rename the task's
-`fun_name` or move the plot spec and Cecelia reports which line of the manifest now disagrees. See
+`fun_name` or move the plot spec and Cecelia reports which line of the manifest now disagrees.
+(`ccia-importTracks` declares nothing and is equally complete.)
+
+The block does add one thing the layout cannot express — it **borrows a built-in plot**:
+
+```json
+"views": [{ "module": "trackTools", "view": "trackPaths", "label": "Tracks" }]
+```
+
+so the page offers Cecelia's own track-paths plot beside the measures, under **Interactive** in the
+`+ Plot…` picker. See
 [Custom modules and plugins](https://github.com/schienstockd/cecelia/blob/main/docs/CUSTOM_MODULES.md)
-→ *Declaring what you contribute*. `ccia-importTracks` declares nothing and is equally complete.
+→ *Declaring what you contribute*.
 
 ## Not sandboxed
 

@@ -499,6 +499,10 @@ function _custom_module_categories()
     specs = Cecelia.user_task_specs()   # both layouts, deduped by precedence — see api_task_definitions
     isempty(specs) && return Any[]
     builtin = Set(basename(e) for e in readdir(_TASK_SPECS_ROOT; join=true) if isdir(e))
+    # Interactive plots a plugin asked for on its page (PLUGINS_PLAN Decision 11). The id names a
+    # built-in view; the registry it names is in the frontend, so this route carries the declaration
+    # and the canvas is the half that can tell whether it resolves.
+    views = Cecelia.plugin_views()
     cats = Any[]
     for category in unique(String[e.category for e in specs])
         funs = String[e.fun_name for e in specs if e.category == category]
@@ -508,7 +512,9 @@ function _custom_module_categories()
         # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
         # declares its metrics gets the button automatically.
         cohort_funs = String[f for f in funs if haskey(Cecelia.COHORT_METRICS, f)]
-        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs, cohortFuns = cohort_funs))
+        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs,
+                       cohortFuns = cohort_funs,
+                       views = [(; v.view, v.label, v.plugin) for v in views if v.moduleName == category]))
     end
     cats
 end

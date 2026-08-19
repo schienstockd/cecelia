@@ -71,7 +71,7 @@ so anything that spelled the plugin name into a module path could not work.
 
 ```
 ccia-trackMeasures/
-  plugin.json                              manifest, incl. an optional `contributions` block
+  plugin.json                              manifest, incl. `contributions` (tasks, plots, views)
   trackTools/cumulativeChange.{jl,json}    new category, so it gets its OWN page
   plotDefinitions/cumulative_change.json   the plot canvas on that page
 ```
@@ -90,6 +90,17 @@ Its manifest also carries a `contributions` block naming those two things. It do
 layout already says it — and what the block buys is a **check**: rename the `fun_name` or move the
 plot spec and Cecelia reports which line of the manifest disagrees. See
 [`../../CUSTOM_MODULES.md`](../../CUSTOM_MODULES.md) → *Declaring what you contribute*.
+
+The block does one thing the layout cannot: it **borrows a built-in plot**.
+
+```json
+"views": [{ "module": "trackTools", "view": "trackPaths", "label": "Tracks" }]
+```
+
+so the page shows the cumulative measures *and* the track paths those numbers came from, under
+**Interactive** in its `+ Plot…` picker. Naming a plot by its stable id makes view IDS public, not
+components — which is why a plugin can have a real, non-declarative plot without any of the frontend
+becoming a contract.
 
 ## A plugin describes its page; it does not implement it
 
