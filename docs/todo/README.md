@@ -40,6 +40,10 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Current parked plans
 
+- `TRACK_SCHEME_PLAN.md` — **planning** (`feat/track-scheme`). A timeline-first correction workspace:
+  lanes over frames, so "can these two merge" is answered by the picture rather than by a greyed
+  button. Successor to the correction *surface* shipped in #590 (the engine stands); records why the
+  per-row and XY-only designs failed, and the three alternatives that were not chosen.
 - `VIEW_PROFILES_PLAN.md` — **BUILT**; kept as the rationale record. A named, ordered subset of the
   existing 20 sidebar items, dropped in as `<config_dir>/profiles/*.json` and built in a GUI editor,
   selected **per user** (`cc.viewProfile`) — definitions and selection are separate axes, which the

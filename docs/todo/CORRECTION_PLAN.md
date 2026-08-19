@@ -10,6 +10,11 @@ Two are general and belong in the app — **correct segmentation** and **correct
 The other two (importing tracks / segmentation in their own format) are lab-specific and become
 plugins — that plan was dropped from `docs/todo/` (#588) to land with its own work, like this one.
 
+> **The SURFACE has moved on.** P4's worklist shipped in #590 and did not survive contact — see
+> [`TRACK_SCHEME_PLAN.md`](TRACK_SCHEME_PLAN.md) for the timeline-first successor and an honest record
+> of why. Everything here about the OPS, the invalidation contract, the old-R ground truth and the
+> segmentation half (P2) still stands; the phases describing the correction UI (P4a–P4e) are history.
+
 ## Goal
 
 A user can fix a wrong segmentation mask and a wrong track, in napari, and have the corrected result
