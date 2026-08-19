@@ -148,7 +148,9 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
   hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
   (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
-  **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`). Surface
+  **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`),
+  **tracks** (`TrackPathsView` — paths / star / rose) and **track diagnostics** (`TrackDiagnosticsView`
+  — the celltrackR QC battery; both in [`docs/TRACKING.md`](TRACKING.md)). Surface
   flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
   board: `interactive` (default) / `clustering` / `image`) and `rail` (see below).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`
@@ -157,6 +159,12 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
 
 Adding a plot to the board = write the component to the contract + one registry line + tick the flag.
 No `LayoutCanvas` change.
+
+**An unflagged entry is legitimate — a flagged one that no host reads is not.** `trackCorrection` is
+registered with no surface flag at all: it is hosted only by the Track canvas's own "+ Correct" button,
+because it MUTATES and this board is read-only. That is different from the `flowMetrics` failure below,
+where a flag was set and silently went nowhere. The registry entry still earns its place — it is what
+`InteractivePanel` resolves to give any view the panel chrome.
 
 **A host must not name a view key.** Every optgroup comes from `boardViews(group)` (and a module page's
 picker from `pageViews(flag)`); `LayoutCanvas` mentions no view id at all, and
@@ -174,7 +182,7 @@ registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCa
 | `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; any view that doesn't say otherwise |
 | `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `umap` + every `CLUSTER_PANELS` entry |
 | `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
-| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics` |
+| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics`, `trackPaths`, `trackDiagnostics` |
 
 **A slot with no `vis` falls back to `DEFAULT_VIS`, never `defaultVis()`.** The factory mints a new bag
 per call, so a template-side `?? defaultVis()` gives every panel a "new" vis on every board render — the

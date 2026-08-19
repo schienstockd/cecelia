@@ -502,6 +502,23 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         isnan(md) || (metrics["meanDisplacement"] = round(md; digits = 4))
         findings = track_measures_qc_findings(n_tracks, dims_param, resolved, det.dims,
                                               det.confidence, det.reason)
+
+        # ── the celltrackR diagnostic battery, run whether or not anyone opens the plot ──
+        # This is what makes the ports routine rather than available: drift, motion kind, persistence
+        # and double-tracking are assessed on every measures run and land in the same QC doc as the
+        # counts. The Track-page/board "Diagnostics" plot reads the SAME roll-up, so the picture and
+        # the finding cannot disagree. Advisory only — every one of these can be correct biology.
+        diag = track_diagnostics_for(props_path, pixel_res)
+        if diag !== nothing
+            append!(findings, track_diagnostic_findings(diag))
+            isfinite(diag.summary.msdSlope) && (metrics["msdSlope"] = round(diag.summary.msdSlope; digits = 3))
+            metrics["motionKind"] = diag.summary.motionKind
+            isfinite(diag.summary.persistenceLag) &&
+                (metrics["persistenceLag"] = round(diag.summary.persistenceLag; digits = 2))
+            isfinite(diag.summary.driftP) && (metrics["driftP"] = round(diag.summary.driftP; sigdigits = 3))
+            metrics["nDuplicatePairs"] = diag.summary.nDuplicatePairs
+        end
+
         write_qc(img, "tracking.track_measures", value_name, findings; metrics = metrics)
     catch e
         on_log("[QC] could not compute track-measures QC: $e")

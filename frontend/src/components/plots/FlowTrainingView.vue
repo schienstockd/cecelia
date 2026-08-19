@@ -34,6 +34,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
+import { usePlotResize } from '../../composables/usePlotResize'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { distinctColors } from '../../plots/plot'
@@ -64,7 +65,6 @@ const host = useTemplateRef<HTMLElement>('host')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
 let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
 let node: SVGElement | HTMLElement | null = null
-let ro: ResizeObserver | null = null
 const forceLight = ref(false)
 
 const state = computed(() => props.state)
@@ -165,12 +165,12 @@ async function render() {
 
 onMounted(() => {
   load()
-  if (host.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => render()); ro.observe(host.value)
-  }
 })
-onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null })
-watch([chosen, logY, raw, () => terms.value.join(','), hasVal], render)
+// the observer's callback appends into the element it observes — usePlotResize explains why
+// that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
+const plotBox = usePlotResize(host, render)
+onBeforeUnmount(() => { node?.remove(); node = null })
+watch([chosen, logY, raw, () => terms.value.join(','), hasVal], () => plotBox.redraw())
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
 const exportFormats = ['png', 'svg', 'csv']

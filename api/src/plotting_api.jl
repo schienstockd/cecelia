@@ -13,6 +13,11 @@
 _json_safe(x::AbstractDict) = Dict{String,Any}(string(k) => _json_safe(v) for (k, v) in x)
 _json_safe(x::AbstractVector) = Any[_json_safe(v) for v in x]
 _json_safe(x::AbstractFloat) = isfinite(x) ? x : nothing
+# NamedTuples are how most handlers shape a response, and without this method one passes through
+# untouched — so "recursively" was only true for the Dict-shaped half of the routes, and any handler
+# that returned a NamedTuple carrying a NaN still 500-ed. Rebuilt as a NamedTuple, not a Dict, so the
+# response key ORDER survives.
+_json_safe(x::NamedTuple) = NamedTuple{keys(x)}(map(_json_safe, values(x)))
 _json_safe(x) = x
 
 # Fold a completed stats compute into the day's `[Cecelia]` digest via `record_stats_event!`

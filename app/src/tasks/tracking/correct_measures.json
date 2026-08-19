@@ -1,0 +1,9 @@
+{
+  "task": "trackCorrectMeasures",
+  "fun_name": "tracking.correct_measures",
+  "label": "Correct tracks + measures",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "composite": ["tracking.correct", "tracking.track_measures"]
+}

@@ -14,6 +14,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef, nextTick } from 'vue'
+import { usePlotResize } from '../../composables/usePlotResize'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
@@ -50,7 +51,6 @@ let Plot: any = null
 let node: (HTMLElement | SVGElement) | null = null
 let legendNode: HTMLElement | null = null
 let titleNode: HTMLElement | null = null
-let ro: ResizeObserver | null = null
 // `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only)
 const forceLight = ref(false)
 const effDark = computed(() => forceLight.value ? false : v.value.darkTheme)
@@ -149,12 +149,14 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setU
        () => measure.value, () => JSON.stringify(props.shownPops.map(p => [p.path, p.clusterIds]))], load)
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // styling is render-only (no refetch) — re-render when the vis bag changes
-watch(v, render, { deep: true })
+watch(v, () => plotBox.redraw(), { deep: true })
 onMounted(() => {
   load()
-  if (host.value && typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => render()); ro.observe(host.value) }
 })
-onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
+// the observer's callback appends into the element it observes — usePlotResize explains why
+// that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
+const plotBox = usePlotResize(host, render)
+onBeforeUnmount(() => { node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
 
 // board export: a plot-only LIGHT re-render → PNG, and the shown rows as CSV (generic panel contract)
 async function exportImage(): Promise<string | null> {

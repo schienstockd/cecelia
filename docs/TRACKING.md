@@ -68,6 +68,13 @@ are preserved untouched.
 Cells not assigned to a track get **`NaN`** in all of these. A "tracked" population is then
 just cells with `track_id` present (the old `live` filter `track_id > 0`).
 
+**A root track's parent is ITSELF.** For a track with no division history btrack writes
+`track_parent == track_root == track_id` and `track_generation == 0` — *not* `NaN`. Anything that
+creates a track by hand (see correction, below) must follow that convention; writing `NaN` for
+"no parent" produces a track that reads as untracked lineage. Verified on real data
+(`zolIMa/1/fXgbTl`, 374 tracks, all roots). Every one of these six columns is stored **float64** —
+`add_obs` writes Float64 only (`app/src/label_props.jl`), so round the values on read.
+
 ## Non-obvious things (carry into the next phases)
 
 - **`track_id` is the btrack track number, not the cell label.** `label_id` is btrack's
@@ -278,6 +285,169 @@ invalidation** — when btrack writes new `track_id`s it drops any stale `live.c
 `docs/DATAMODEL.md`); `track_measures` likewise drops any leftover broadcast
 `live.track.*` from the cell obs when it runs. Re-running the composite recomputes against the
 fresh tracking and rewrites the track table.
+
+## Manual track correction (`tracking.correct`)
+
+Fixing a wrong track by hand. Design + the old-R ground truth it ports:
+[`docs/todo/CORRECTION_PLAN.md`](todo/CORRECTION_PLAN.md). Shipped: the ops engine, the task, the
+journal and its QC (plan phase **P1**), and the worklist UI (**P4**). Segmentation correction (P2) is
+not built.
+
+**Two modes, because the detector is not the only source of a bad track.** *Suggested* is the ranked
+worklist; *All tracks* lists every track and turns a selection into the same op objects the detector
+emits — one queue, one task run, one journal, whether an edit was suggested or hand-authored. Without it
+the surface was WORSE than old R for the case a user simply sees: there you could at least name the
+tracks. Join is blocked with a reason when the two tracks share frames — the engine's own rule, checked
+before Apply instead of after, and the picked track can be flown to in napari like a suggested one.
+
+**From napari, not from a table.** *All tracks* also reads the viewer: draw a region around the cells
+(`POST /api/napari/start-selection`, the existing brush), then **Read selection** →
+`GET /api/tracking/selection` resolves the enclosed labels to their tracks and **Pick** selects them in
+the list, fetching them explicitly if they fall outside the picker's cap. That closes the loop the
+worklist could not: you see the bad track in the image and act on it there, instead of reading an id off
+the viewer and hunting for it. The same selection drives the one CELL-level op — **Untrack cells**
+(`points.remove`), which drops bad detections and leaves the rest of their tracks intact.
+
+**Naming beats raising a cap.** The picker lists 2000 tracks (longest first) because a 5000-row table is
+not a picker; `find` sends `ids=` to `/api/tracking/paths`, which bypasses the cap for exactly the tracks
+named. Raising the limit would make every request slower for everyone to serve one lookup.
+
+**The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
+default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
+and **309** at `minLen 15`. The panel seeds the knobs from what the server actually used
+(`thresholds` in the response) and sends only what the user moved, so the measured defaults live on the
+Julia constants and are never copied into TypeScript to drift.
+
+**The UI inverts the old version.** There you found the wrong track yourself, among hundreds, and
+then said how to fix it. Here `find_track_issues` ranks what looks wrong and pre-picks the op
+(`GET /api/tracking/issues`), each row draws its own geometry, and the user only judges it. Nothing is
+written until Apply, which submits the whole queue as ONE `tracking.correct_measures` run. It is a
+panel on the **Track page's canvas** (`GatingPlots`, `popType="track"`) — beside the track gating it
+changes — hosted through the generic `InteractivePanel` from the `trackCorrection` registry entry. That
+entry carries no surface flag on purpose: it MUTATES, and the Analysis board is read-only.
+
+**A track correction is an `obs` rewrite and nothing else.** It moves cells between `track_id`s and
+maintains the lineage columns; it never touches `X`/`var`, so the cell table needs no re-measure.
+That is why it is cheap, and why it is a separate task from segmentation correction (which rewrites
+the label store and *does* force a re-measure).
+
+| Op | Effect |
+|---|---|
+| `points.remove` | untrack the given cells (`track_id := NaN`) |
+| `points.add` | attach cells to a track, or to a new one when no `trackId` is given |
+| `track.remove` | untrack every cell of a track |
+| `track.join` | fold track B into track A; **B ceases to exist** |
+| `track.split` | cells at/after a timepoint become a new track |
+
+Ops are pure functions over a label-keyed frame (`app/src/tracking/track_correction.jl`) and are
+applied **in order**, each seeing the previous result — so the op list is a replay script, which is
+what makes a correction reproducible from the producing task's output plus the journal.
+
+Three rules that are not obvious:
+
+- **The write is never population-scoped.** `add_obs` aligns by label and writes `NaN` for every
+  label *absent* from the staged frame, so staging a population subset would untrack every cell
+  outside it. A population may scope what the user can select; it must never scope the write.
+- **A join refuses a temporal overlap.** Two tracks that both have a cell at one timepoint are not
+  one cell. Old R silently re-assigned only the non-overlapping part, leaving B alive as a shorter
+  remnant; consuming the overlap instead would give the joined track two cells at one time and make
+  every `dt` — and so every speed — degenerate. Both are wrong, so the op fails and names the
+  timepoints.
+- **`cell_id` is renumbered and lineage is reconciled** after every batch. A joined track keeps A's
+  parent/root/generation; a split fragment becomes a root. `track_state` is per-cell and is left
+  alone. Old R maintained none of this — it only ever wrote `track_id`.
+
+**Invalidation.** The task drops stale `live.cell.*` / `live.track.*` obs columns itself (the same
+thing btrack does when it rewrites tracks), so a standalone correction can never leave measures
+describing the previous assignment. The composite **`tracking.correct_measures`** chains
+`tracking.correct` → `tracking.track_measures` to recompute them; `track_measures` rebuilds tracks
+from `obs.track_id` alone, so it recomputes correctly after any correction.
+
+**Journal.** Every applied op is appended to `{task_dir}/corrections/{value_name}.json` — the same
+per-segmentation sidecar shape as `gating/{value_name}.json`, written with `write_json_atomic`. This
+is the durable, per-image edit history; old R's died with the Shiny session.
+
+## Tracks as a plot (`trackPaths`)
+
+Tracks were viewable only in napari, which is fine for judging one cell and useless for a figure: a
+viewer screenshot cannot be recoloured by a measure, put beside another condition, or exported as
+vectors. `TrackPathsView` is the plot half — an interactive-view registry entry, so it lands on the
+Track canvas **and** the Analysis board with panel chrome, zoom and PNG/SVG/CSV export attached.
+
+Three modes, because "the tracks" is three questions:
+
+| Mode | Shows | Why |
+|---|---|---|
+| Paths | the polylines where the cells were | the spatial picture, the one napari draws |
+| Star | every track translated to a common origin | position discarded, SHAPE preserved — the celltrackR rose family (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100006); directed migration fans, a random walk fills a disc |
+| Rose | one arrow per track, start → end | net displacement, when hundreds of paths have become a scribble |
+
+- **Axes are always square** (`pathDomain` in `frontend/src/plots/trackPaths.ts`). A track plot
+  stretched to its panel turns a straight run into a diagonal, destroying the one thing these modes
+  exist to show.
+- **Geometry comes from `GET /api/tracking/paths`**, in the same wire shape the correction worklist
+  reads — one Julia helper (`track_path_dicts`) builds it for both routes, so they cannot drift.
+- **The colour-by list is not a second vocabulary.** It comes from
+  `/api/gating/channels?popType=track`, the same call the track-gating axes read, so anything you can
+  gate on you can colour by (motility measures + the per-track cell aggregates).
+- **The cap is stated, not silent.** Longest-first, capped, and the plot reports `shown of total` —
+  a hairball of 500 tracks looks exactly like a hairball of 5000.
+
+### A track view never defaults to `default` — or to the active segmentation
+
+Both are routinely untracked. On the reference image (`zolIMa/1/fXgbTl`) `default` and the active
+`three` carry no tracks while `memTom` holds 374 — so a panel defaulting to either reported "nothing to
+review" for an image with 31 correction candidates. `GET /api/gating/channels?popType=track` therefore
+returns **`trackedValueNames`** (via `is_tracked`, which reads only the obs column list), and every track
+surface resolves through one helper, `resolveTrackValueName`: a persisted choice that is still tracked →
+the active segmentation if it is tracked → the first tracked one. The picker disables the untracked
+entries rather than hiding them, so "why is this one not offered" has a visible answer.
+
+## Track diagnostics — the celltrackR QC battery (`track_diagnostics.jl`)
+
+"Can this tracking result be trusted, and what kind of motion is in it." Ported from celltrackR's
+source (not its vignette prose) and **validated against celltrackR 1.2.2 itself** — five golden
+testsets in `app/test/suite.jl` match its output to 10 decimals, which pins the CONVENTIONS as well as
+the arithmetic (see below).
+
+| Check | Statistic | Read it as |
+|---|---|---|
+| Displacement | MSD vs lag over every overlapping subtrack (`squareDisplacement`), log-log slope | 1 = random walk, 2 = directed, <1 = confined |
+| Persistence | mean cosine between two steps `lag` apart (`overallNormDot`), and the lag where it hits 1/e | slow decay = directional migration; flat at 0 = none; negative = jitter |
+| Volume edge | step angle vs distance to the lower z plane (`angleToPlane`/`distanceToPlane`), 3D only | unbiased 3D motion averages **32.7°** (Beltman 2009) at every distance; a sag ONLY near the edge is a tracking artefact |
+| Drift | Hotelling's T² on step displacement vectors (`hotellingsTest`) | a net field direction — stage drift *or* chemotaxis, the user decides |
+| Track pairs | angle vs distance between every pair of paths (`analyzeCellPairs`) | far-apart pairs average 90°; lower = the field moves together |
+
+**Three things that are easy to get wrong, and are pinned by the goldens:**
+
+- **`step_spacing` is not optional.** Consecutive steps of a persistent cell are correlated, so
+  Hotelling's T² on every step is significant for essentially any real dataset. On the golden fixture:
+  every step → p = 5.2e-4, steps 3 frames apart → p = 0.11. Same data, opposite verdict. The parameter
+  counts frames SKIPPED (celltrackR's `overlap = -step.spacing`), so the stride is `step_spacing + 1`
+  and `0` means every step. Drift is tested in **xy only**, matching celltrackR's `dim = c("x","y")`.
+- **A time gap is not a lag.** celltrackR's subtracks are contiguous by construction; a btrack table's
+  are not — a dropped detection leaves non-consecutive frames, and indexing by position would average
+  a 4-frame displacement into the lag-1 MSD. Only pairs whose FRAME difference equals the lag count.
+- **A subtrack length is not a lag.** celltrackR's `subtrack.length = L` dots the first and last step
+  of an L-step subtrack, so its L maps to lag L−1 here; its L=1 is the trivial 1.0.
+
+**Not assessed is not zero.** A drift p with too few decorrelated samples, an sem at n=1, a plane angle
+for 2D data — all `NaN` in the package, all `null` on the wire, all absent from the plot. A verdict
+invented from a matrix that cannot be inverted is worse than no verdict; `drift_test` on a *noiseless*
+drift returns no p-value at all, and says so.
+
+**Routine, not available.** The earlier pair diagnostics (`analyze_cell_pairs`, `find_duplicate_tracks`,
+`track_pair_drift`) shipped exported and reachable from nothing — no task, no route, no view. A
+diagnostic nobody can open is a diagnostic nobody has. So one roll-up (`track_diagnostics`) is now read
+two ways:
+
+- **`tracking.track_measures` banks the findings as QC on every run**, whether or not anyone looks —
+  drift, confined motion, edge artefact, duplicate pairs. `msdSlope` and `persistenceLag` join
+  `COHORT_METRICS`, so a movie whose motion reads as confined while its peers are random walks shows up
+  as a cohort outlier. `driftP` deliberately does NOT: a p-value is not a quantity to take a median of.
+- **The `trackDiagnostics` plot** (Track page → **+ Checks**, and the Analysis board) draws the curves
+  and shows the SAME findings, rendered from the same objects. The panel cannot disagree with the QC
+  line, because neither computes a threshold of its own.
 
 ## Track-property gating — backend done, frontend/napari deferred
 

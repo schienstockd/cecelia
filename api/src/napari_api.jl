@@ -1695,6 +1695,37 @@ end
 # How much detail the 3D view renders — a multiscale LEVEL index (0 = full resolution, higher =
 # coarser), or `null` for napari's own choice (the coarsest level). Separate from set-z-view because
 # that one resets the camera on entering 3D and this is dragged on a slider. See docs/NAPARI.md.
+# ── POST /api/napari/centre — point the viewer at a place (and a timepoint) ────
+# The "show me this one" of the correction worklist: a candidate carries the coordinate and frame it
+# is about, so the row and the viewer agree on where to look rather than each deriving its own idea
+# of "the spot". `pos` is in the viewer's own axis order and scale — pass the µm centroid the issues
+# endpoint returns, not pixels. Thin: `centre!` (app/src/napari.jl) already exists and is the one
+# camera helper; this only resolves the viewer and shapes JSON.
+function api_napari_centre(body_bytes::Vector{UInt8})
+    data = JSON3.read(String(body_bytes))
+    raw  = get(data, :pos, nothing)
+    (raw isa AbstractVector && !isempty(raw)) &&
+        return _api_napari_centre(Float64[Float64(x) for x in raw], data)
+    400, JSON3.write((; error = "pos must be a non-empty array"))
+end
+
+function _api_napari_centre(pos::Vector{Float64}, data)
+    tpr  = get(data, :tp, nothing)
+    zmr  = get(data, :zoom, nothing)
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            centre!(v, pos; tp = tpr === nothing ? nothing : _to_int(tpr),
+                            zoom = zmr === nothing ? nothing : Float64(zmr))
+            200, JSON3.write((; ok = true))
+        catch e
+            @warn "centre failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 function api_napari_set_3d_level(body_bytes::Vector{UInt8})
     data  = JSON3.read(String(body_bytes))
     raw   = get(data, :level, 0)
