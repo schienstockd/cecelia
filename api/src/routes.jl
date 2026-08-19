@@ -529,6 +529,10 @@ _custom_modules_payload() = (; dir        = Cecelia.custom_modules_dir(),
                                plugins    = Cecelia.plugins_report(; running_version = _running_version()),
                                clashes    = Cecelia.custom_task_clashes(),
                                registry   = Cecelia.plugin_registry_status(),
+                               # Example plugins in THIS checkout (docs/examples/plugins) — installable
+                               # with no network, because that copy is the SOURCE the GitHub mirror is
+                               # published from. Empty in an installed app with no `docs/`.
+                               bundled    = Cecelia.bundled_plugins(),
                                categories = _custom_module_categories())
 
 function api_custom_modules_status(::HTTP.Request)

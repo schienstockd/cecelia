@@ -2350,7 +2350,10 @@ end
     # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
     # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image
     # versions. NOT the ccid.json spelling (`filepath`, singular) nor the R version's (`imFilepath`).
-    known_value_name_fields = Set(["filepaths", "labels", "spatialGraphs"])
+    # `labels` vs `labelPropsNames` is the choice that keeps going wrong — mask pixels vs a
+    # measurement table, two independent registries — and is ratcheted separately; see
+    # "a picker gates on `labels` only when the task needs the MASK".
+    known_value_name_fields = Set(["filepaths", "labels", "labelPropsNames", "spatialGraphs"])
 
     # Namespaces a `valueNameInput` may write into — `VALUE_NAME_NAMESPACES`
     # (frontend/src/utils/taskOutput.ts). A superset of the fields above: several are not readable
@@ -3729,6 +3732,47 @@ end
     @test all(haskey(p, :problems) for p in rep)
 end
 
+@testset "A bundled example installs from the checkout, with no network" begin
+    # `docs/examples/plugins/<name>/` is the SOURCE; the GitHub repo is a mirror published at release
+    # time. So on a checkout the newest copy of a plugin is already on disk, and installing it "the
+    # proper way" meant pushing to GitHub and pulling the same files back — with a window in which the
+    # two disagree. That window is not hypothetical: an install from GitHub produced a task form three
+    # commits stale while the fixed spec sat in the same worktree.
+    have = Cecelia.bundled_plugins()
+    @test !isempty(have)                                   # this repo HAS examples; empty means the path moved
+    @test all(isfile(joinpath(p.dir, Cecelia.PLUGIN_MANIFEST)) for p in have)
+    @test "ccia-trackMeasures" ∈ [p.name for p in have]
+
+    cfg = mktempdir()
+    res = Cecelia.plugin_install_local!("ccia-trackMeasures"; dev_dir = cfg)
+    @test res.ok
+    @test isfile(joinpath(res.dir, Cecelia.PLUGIN_MANIFEST))
+    @test isfile(joinpath(res.dir, "trackTools", "cumulativeChange.jl"))
+    # It COPIES: the source is the user's checkout, and a move would empty it.
+    @test isfile(joinpath(Cecelia.bundled_plugins_dir(), "ccia-trackMeasures", Cecelia.PLUGIN_MANIFEST))
+
+    # The record says where it really came from. Stamping the GitHub url would make an out-of-date
+    # published mirror look like the installed source — the exact confusion this exists to end.
+    rec = Cecelia.read_install_record(res.dir)
+    @test rec["url"] == "bundled:ccia-trackMeasures"
+    @test !occursin("github", rec["url"])
+
+    # Re-installing REPLACES rather than merges — a file deleted upstream must not survive.
+    stale = joinpath(res.dir, "trackTools", "gone.json")
+    write(stale, "{}")
+    @test Cecelia.plugin_install_local!("ccia-trackMeasures"; dev_dir = cfg).ok
+    @test !isfile(stale)
+
+    # A name outside the closed bundled list is refused — that list is read off disk, so there is no
+    # path to sanitise and nothing a request can point at outside the checkout.
+    for n in ("../../etc", "nope", "")
+        @test !Cecelia.plugin_install_local!(n; dev_dir = cfg).ok
+    end
+
+    # …and the installed copy is enumerated like any other plugin.
+    @test "ccia-trackMeasures" ∈ [p.name for p in Cecelia.plugins_report(; dev_dir = cfg)]
+end
+
 @testset "Plugin fun_name precedence (built-in > hand-dropped > plugin)" begin
     # This is the rule that stops an installed plugin silently taking over a name the user's own
     # drop-in module already uses. Before it, `register_task!` overwrote unconditionally and the
@@ -3941,10 +3985,23 @@ end
         @test _task_from_fun_name("tracking.importCsvTracks")    !== nothing
         # the registered spec resolves, so the form renders and params validate like a built-in
         @test task_scope(_task_from_fun_name("trackTools.cumulativeChange")) == "image"
+        # It takes TRACK POPULATIONS, not a segmentation — the house convention for anything measured
+        # along tracks (docs/MODULES.md → *Derive the segmentation from the pops*). Pinned here
+        # because the first version shipped a `valueNameSelection` labelled "Segmentation", which was
+        # both the wrong picker and the wrong word for what it consumes.
+        cc_spec = Cecelia._task_spec(_task_from_fun_name("trackTools.cumulativeChange"))
+        cc_pops = only(filter(p -> get(p, "key", "") == "pops", cc_spec["params"]))
+        @test cc_pops["type"] == "popSelection" && cc_pops["popScope"] == "tracks"
+        @test !any(p -> get(p, "type", "") == "valueNameSelection", cc_spec["params"])
+
+        ok_pops = Dict{String,Any}("pops" => ["default/_tracked"])
         @test_throws ParamValidationError validate_params(
-            _task_from_fun_name("trackTools.cumulativeChange"), Dict{String,Any}("gap" => 99))
+            _task_from_fun_name("trackTools.cumulativeChange"), merge(ok_pops, Dict{String,Any}("gap" => 99)))
+        # `pops` is required, so an empty selection is refused BEFORE the run rather than logged after
+        @test_throws ParamValidationError validate_params(
+            _task_from_fun_name("trackTools.cumulativeChange"), Dict{String,Any}("gap" => 3))
         @test validate_params(
-            _task_from_fun_name("trackTools.cumulativeChange"), Dict{String,Any}("gap" => 3)) === nothing
+            _task_from_fun_name("trackTools.cumulativeChange"), merge(ok_pops, Dict{String,Any}("gap" => 3))) === nothing
 
         # The window arithmetic, pinned. Verified against real spleen tracks (project 4kS67f, image
         # 3w4IY5): 482 tracked cells in 17 tracks at gap=3 produced exactly 482 - 17*3 = 431 windows,
@@ -12043,6 +12100,59 @@ end
         walk(get(spec, "params", nothing))
     end
     @test isempty(bad) || (@info "valueNameSelection claims a segmentation but reads image versions" bad; false)
+end
+
+@testset "a picker gates on `labels` only when the task needs the MASK" begin
+    # The mirror of the testset above, and the one that actually cost a workflow. `labels` and
+    # `label_props` are two INDEPENDENT ccid.json registries: mask pixels vs a measurement table. A
+    # directly-imported track set registers only the second — there are no mask pixels to register —
+    # so `field: "labels"` silently drops exactly the sets `ccia-importTracks` creates.
+    #
+    # Every track-CONSUMING task reads the h5ad and nothing else, and all three gated on `labels`
+    # anyway: `tracking.track_measures`, `tracking.correct`, and the plugin's
+    # `trackTools.cumulativeChange` (which is where Dominik spotted it, from the word "Segmentation"
+    # on a form that wanted tracks). You could import tracks and then not measure them, with nothing
+    # saying why the set was missing from the picker.
+    #
+    # So the rule is what the HANDLER does, not what the label says: if neither the task's `.jl` nor
+    # its `_run.py` reaches mask pixels, its picker must not gate on `labels`.
+    MASK_ACCESS = r"img_labels_path|img\.labels|labelsPath|open_labels|labels_path|zarr"
+
+    # Gates on `labels`, reads no mask, and that is DELIBERATE — with the reason, because a bare
+    # exemption list is how a real hit hides.
+    #
+    # `tracking.bayesian_tracking` reads centroids out of the h5ad and writes lineage columns back,
+    # so it touches no mask either. It stays on `labels` because it PRODUCES tracks rather than
+    # consuming them: every trackable set today comes from a segmentation (the importer only writes
+    # sets that are already tracked), so `labels` is not currently narrower than the truth. Revisit
+    # if anything ever registers untracked detections without a mask.
+    ALLOWED = Set(["bayesian_tracking.json"])
+
+    bad = String[]
+    for dir in spec_dirs(), (root, _, files) in walkdir(dir), fname in files
+        endswith(fname, ".json") || continue
+        basename(root) == "plotDefinitions" && continue
+        fname ∈ ALLOWED && continue
+        spec = try JSON3.read(read(joinpath(root, fname), String)) catch; continue end
+        spec isa AbstractDict || continue
+        base = splitext(fname)[1]
+        src  = join([isfile(joinpath(root, base * e)) ? read(joinpath(root, base * e), String) : ""
+                     for e in (".jl", "_run.py")], "\n")
+        occursin(MASK_ACCESS, src) && continue      # genuinely needs the mask
+        function walk(ps)
+            ps isa AbstractVector || return
+            for q in ps
+                q isa AbstractDict || continue
+                get(q, "type", "") == "valueNameSelection" && get(q, "field", "") == "labels" &&
+                    push!(bad, "$(joinpath(basename(root), fname)) → $(get(q, "key", "?"))")
+                walk(get(q, "params", nothing))
+            end
+        end
+        walk(get(spec, "params", nothing))
+    end
+    @test isempty(bad) ||
+        (@info "picker gates on `labels` but the task never reads a mask — an imported " *
+               "points-only set can never be picked; use `labelPropsNames`" bad; false)
 end
 
 @testset "every task param carries a tip" begin

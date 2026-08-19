@@ -548,6 +548,98 @@ function read_install_record(dir::AbstractString)::Dict{String,Any}
 end
 
 """
+Put a VERIFIED plugin directory at `target`, replacing whatever was there, and record where it came
+from. The shared half of both installers — over the network (`plugin_unpack!`) and from a directory
+already on disk (`plugin_install_local!`) — because "replace the tree, then write the record" is one
+decision and two copies of it would drift on the next change to either.
+
+`move = true` when the source is a scratch extraction we own; `false` copies, which is what a local
+install must do (its source is the user's checkout).
+"""
+function _plugin_place!(root::AbstractString, target::AbstractString;
+                        url::AbstractString, ref::AbstractString, move::Bool)
+    mkpath(dirname(target))
+    isdir(target) && rm(target; recursive = true, force = true)
+    move ? mv(root, target) : cp(root, target)
+    # The record is a SIBLING of plugin.json, never inside it: plugin.json ships from the plugin's
+    # own repo, so writing the resolved ref into it would dirty the checkout and be overwritten by
+    # the next update. Decision 5.
+    write_json_atomic(install_record_path(target),
+                      Dict{String,Any}("url" => String(url), "ref" => String(ref),
+                                       "installedAt" => string(now())))
+    target
+end
+
+"""
+    bundled_plugins_dir() -> String
+
+`docs/examples/plugins` in this checkout — the in-repo SOURCE of the example plugins.
+"""
+bundled_plugins_dir()::String =
+    normpath(joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins"))
+
+"""
+    bundled_plugins() -> Vector{NamedTuple}
+
+Example plugins that ship IN THIS CHECKOUT, as `(; name, dir, description, version)` — installable
+without touching the network.
+
+**Why this exists.** `docs/examples/plugins/<name>/` is the source; the GitHub repo is a mirror
+published at release time (`scripts/publish_plugin.jl`). So on a dev checkout the newest copy of a
+plugin is already on disk, and installing it "properly" meant pushing to GitHub and pulling the same
+files back — with a window in which the two disagree. That window is not hypothetical: Dominik
+installed `ccia-trackMeasures` from GitHub and got a form three commits stale, while the fixed spec
+sat in his own worktree.
+
+Empty when the directory is absent, which is the honest test for "is this a checkout" — structural,
+like `series_base`, rather than a dev flag that has to be kept in step with reality. An installed app
+without `docs/` simply offers nothing here.
+"""
+function bundled_plugins()
+    root = bundled_plugins_dir()
+    isdir(root) || return @NamedTuple{name::String, dir::String, description::String, version::String}[]
+    out = @NamedTuple{name::String, dir::String, description::String, version::String}[]
+    for name in sort(readdir(root))
+        d = joinpath(root, name)
+        (isdir(d) && isfile(joinpath(d, PLUGIN_MANIFEST))) || continue
+        m = read_plugin_manifest(d)
+        push!(out, (; name, dir = d, description = m.description, version = m.version))
+    end
+    out
+end
+
+"""
+    plugin_install_local!(name; dev_dir=nothing, on_log=…) -> NamedTuple
+
+Install one of the [`bundled_plugins`](@ref) straight from this checkout. Returns `(; ok, name, dir,
+error)`, and never throws — same contract as `plugin_unpack!`.
+
+Takes a NAME from the bundled list rather than an arbitrary path: the list is a closed set read off
+disk, so there is no path to sanitise and nothing a request can point at outside the checkout. A
+general install-from-anywhere is a different feature with a different threat model.
+
+The install record says `url = "bundled:<name>"` rather than a GitHub URL — the copy came from the
+checkout, and recording the repo it *would* have come from would make an out-of-date published mirror
+look like the installed source.
+"""
+function plugin_install_local!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing,
+                               on_log::Function = _ -> nothing)
+    n = String(name)
+    src = findfirst(p -> p.name == n, bundled_plugins())
+    src === nothing && return (; ok = false, name = n, dir = "",
+                                 error = "not a bundled plugin: $n")
+    dir = bundled_plugins()[src].dir
+    try
+        target = _plugin_place!(dir, joinpath(plugins_dir(dev_dir), n);
+                                url = "bundled:$n", ref = "", move = false)
+        on_log("Installed $n from this checkout")
+        (; ok = true, name = n, dir = target, error = nothing)
+    catch e
+        (; ok = false, name = n, dir = "", error = sprint(showerror, e))
+    end
+end
+
+"""
     plugin_unpack!(tarball, url; ref="", dev_dir=nothing, job_id=…, on_log=…) -> NamedTuple
 
 Unpack an already-downloaded plugin tarball into place: extract to a temp dir → verify it looks like a
@@ -591,15 +683,7 @@ function plugin_unpack!(tarball::AbstractString, url::AbstractString;
             return (; ok = false, name, dir = "",
                       error = "not a plugin: no $PLUGIN_MANIFEST at the archive root")
 
-        mkpath(dirname(target))
-        isdir(target) && rm(target; recursive = true, force = true)
-        mv(root, target)
-        # The record is a SIBLING of plugin.json, never inside it: plugin.json ships from the plugin's
-        # own repo, so writing the resolved ref into it would dirty the checkout and be overwritten by
-        # the next update. Decision 5.
-        write_json_atomic(install_record_path(target),
-                          Dict{String,Any}("url" => String(url), "ref" => String(ref),
-                                           "installedAt" => string(now())))
+        _plugin_place!(root, target; url, ref, move = true)
         on_log("Installed $name")
         (; ok = true, name, dir = target, error = nothing)
     catch e

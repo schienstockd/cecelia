@@ -165,6 +165,10 @@ describe('preferredValueName', () => {
     expect(isKnownValueNameField('imFilepath')).toBe(false)   // R version
     expect(isKnownValueNameField('filepath')).toBe(false)     // ccid.json, singular
     expect(isKnownValueNameField('filepaths')).toBe(true)
+    // The two registries are independent: `labels` = mask pixels, `labelPropsNames` = a measurement
+    // table. `imageNamesForField` always understood the second; only this allow-list rejected it, so
+    // no picker could offer an imported points-only track set. See VALUE_NAME_FIELDS.
+    expect(isKnownValueNameField('labelPropsNames')).toBe(true)
     expect(isKnownValueNameField(undefined)).toBe(true)       // absent = image versions
     for (const f of VALUE_NAME_FIELDS) expect(isKnownValueNameField(f)).toBe(true)
   })

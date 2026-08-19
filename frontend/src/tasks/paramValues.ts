@@ -293,7 +293,16 @@ export function showIfKeys(def: TaskDef): string[] {
 // rather than having it degrade quietly.
 
 /** Every `field` a `valueNameSelection` param may name. */
-export const VALUE_NAME_FIELDS = ['filepaths', 'labels', 'spatialGraphs'] as const
+// `labels` vs `labelPropsNames` is the choice that keeps going wrong, so state it once: they are two
+// INDEPENDENT ccid.json registries. `labels` = value names with mask PIXELS; `labelPropsNames` =
+// value names with a measurement TABLE. A directly-imported track set registers only the second (there
+// are no mask pixels to register), and a freshly segmented image only the first (until it is measured).
+//
+// A picker gates on `labels` only when the task genuinely needs the MASK. Every track-consuming task
+// reads the h5ad and nothing else — so gating those on `labels` silently dropped exactly the sets the
+// track importer creates: you could import tracks and then not measure them, in either the plugin or
+// the built-in `tracking.track_measures`.
+export const VALUE_NAME_FIELDS = ['filepaths', 'labels', 'labelPropsNames', 'spatialGraphs'] as const
 export type ValueNameField = typeof VALUE_NAME_FIELDS[number]
 
 /** Fields that hold IMAGE VERSIONS — the ones where the active version is the right default. */

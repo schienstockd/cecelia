@@ -530,10 +530,28 @@ suite detector fails a handler that skips them:
 > counterpart is `script_utils.channel_indices`, which catches the mirror-image failure: a *name*
 > arriving where an index was due, meaning this translation never ran.
 
-**`valueNameSelection`** — picks from registered image versions. Add `"field": "labels"` to list segmentation label sets (`img.labels` keys) instead of the default image-version keys:
+**`valueNameSelection`** — picks from registered image versions. `"field"` names which list:
+
+| `field` | Lists | Use when the task |
+|---|---|---|
+| omitted | image versions (`img.filepaths`) | takes an image |
+| `"labels"` | value names with **mask pixels** (`img.labels`) | reads or writes the mask |
+| `"labelPropsNames"` | value names with a **measurement table** (`img.labelPropsNames`) | reads or writes the `.h5ad` and nothing else |
+| `"spatialGraphs"` | neighbour graphs by run suffix | takes a graph |
+
 ```json
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }
+{ "key": "valueName", "label": "Tracks",       "type": "valueNameSelection", "field": "labelPropsNames", "default": "default" }
 ```
+
+**`labels` and `labelPropsNames` are two independent registries, and picking the wrong one loses
+data silently.** `labels` is written when a mask is produced; `label_props` when a table is. A
+directly-imported track set registers only the second — there are no mask pixels to register — and a
+freshly segmented image only the first, until it is measured. Five specs gated a track-consuming
+picker on `labels`, so tracks imported by `ccia-importTracks` simply did not appear in
+`tracking.track_measures`, `tracking.correct` or the plugin's own measure task, with nothing saying
+why. Ratcheted both ways: a param whose label calls itself a *segmentation* must read `labels`, and a
+task that never touches a mask must not.
 
 **`valueNameInput`** — the INPUT-side twin's opposite: the name this task **writes under**. Free text
 with the names already in that namespace offered (an `<input>` + native `<datalist>`), so re-running
@@ -583,6 +601,28 @@ checks each element against `options`, exactly as it does for `select`.
 Reach for it whenever a param is "some of these", instead of asking the user to type a delimited
 list — a text field there is a parse error waiting to happen, and the values usually reach a runner
 that fails much later and much less clearly.
+
+### Which picker — decide this before writing the param
+
+Every picker below already documents *how it works*. This table is the question that comes first:
+**what does the task consume?** Getting it wrong is not a cosmetic slip — a `valueNameSelection`
+labelled "Segmentation" on a task that measures tracks was both the wrong control and the wrong word,
+and it shipped in an example plugin.
+
+| The task consumes | Use | Why |
+|---|---|---|
+| an image / a version of one | `valueNameSelection`, `field` omitted | |
+| a segmentation's **mask pixels** | `valueNameSelection`, `field: "labels"` | `labels` is the mask registry |
+| one **whole measured set**, tracked or not (a producer/maintainer of measures) | `valueNameSelection`, `field: "labelPropsNames"` | the whole set, not a subset of it — `tracking.track_measures`, `tracking.correct` |
+| **cells of chosen populations** | `popSelection`, `popScope: "cells"` | |
+| **tracks** — anything measured or modelled *along* a track | `popSelection`, `popScope: "tracks"` | `behaviour.hmm_states`, `behaviour.hmm_transitions`, `clustTracks.cluster`, `trackTools.cumulativeChange` |
+| any population, resolved to cells | `popSelection`, `accepts: [...]` + `pop_df_multi` | spatial analysis, clustering |
+
+**"On tracks" means a track population, not a segmentation.** The whole set is available as the
+derived `/_tracked` pop (`track_id > 0`), which the picker offers at the root whenever tracking was
+run **ungated** — including every directly imported track set — so choosing the pop picker does not
+cost you the "just measure everything" case. And do not add a `valueName` dropdown beside it: see
+*Derive the segmentation from the pops* below.
 
 **`popSelection`** — two modes.
 

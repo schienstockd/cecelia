@@ -4387,7 +4387,7 @@ end
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload",
-        "/api/plugins/install", "/api/plugins/remove",
+        "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
     ]
     UNSAFE = [
@@ -4430,7 +4430,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 112
+    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 113
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

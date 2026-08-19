@@ -20,11 +20,27 @@
 # It is a MEASURE, deliberately not bundled with the track importer: importing someone else's tracks
 # and measuring them are different capabilities, and one repo should do one thing.
 #
+# **It takes TRACK POPULATIONS, not a segmentation.** That is the house convention for anything
+# measured along tracks (`behaviour.hmm_states`, `behaviour.hmm_transitions`, `clustTracks.cluster`
+# all do the same) — a `popSelection` with `popScope: "tracks"`, and NO `valueName` dropdown beside
+# it, because each picker value already carries its segmentation as a prefix. The first version of
+# this file had a `valueNameSelection` labelled "Segmentation", which was both the wrong picker and
+# the wrong word for what the task consumes. See docs/MODULES.md → *popScope* and *Derive the
+# segmentation from the pops*.
+#
 # The file is `include`d INTO the Cecelia module, so names resolve with the `Cecelia.` prefix.
 
 using Statistics: mean
 
 struct CumulativeChange <: Cecelia.CciaTask end
+
+# Coerce the pops param (an array from the multi-select; tolerate a bare string) and drop the
+# placeholder. Same shape `behaviour.hmm_states` uses — a track-scoped task takes TRACK POPULATIONS.
+function _cc_pops(params)::Vector{String}
+    raw = get(params, "pops", String[])
+    ps  = raw isa AbstractString ? String[raw] : String[string(x) for x in raw]
+    filter(p -> !isempty(p) && p != "NONE", ps)
+end
 
 # Straight-line distance between two rows of a coordinate matrix.
 _cc_dist(p, q) = sqrt(sum(abs2, p .- q))
@@ -55,35 +71,40 @@ function Cecelia._run_task(::CumulativeChange, img::Cecelia.CciaImage, params::D
                            on_log::Function      = line -> println(line),
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function  = _ -> nothing)
-    vn  = string(get(params, "valueName", Cecelia.VERSIONED_DEFAULT_VAL))
-    gap = Int(get(params, "gap", 3))
+    pops = _cc_pops(params)
+    gap  = Int(get(params, "gap", 3))
     gap >= 1 || (on_log("[ERROR] gap must be >= 1"); return nothing)
+    isempty(pops) && (on_log("[ERROR] Select at least one track population"); return nothing)
 
-    # Resolve the file ONCE and read *and* write through that same path. Reading via
-    # `label_props(img; value_name=…)` instead would consult the image's registered label_props map,
-    # which `img_label_props_path` falls back past — so a value_name missing from ccid.json passes the
-    # isfile check here and then errors inside the read. One resolution, no divergence.
+    # NO `valueName` param, and that is the convention rather than a shortcut (docs/MODULES.md →
+    # *Derive the segmentation from the pops*). Each picker value carries its segmentation as a
+    # prefix ("B/_tracked"), so a second dropdown would be both redundant and a footgun: pick a pop
+    # from B while the dropdown says A and the run silently resolves to zero cells.
+    vn = Cecelia.pops_value_name(pops)
+
+    # `pop_df` is THE accessor (docs/POPULATION.md) — it resolves which cells are in the chosen
+    # populations AND reads the columns in one narrow read. Reading the whole table through
+    # `label_props` and filtering afterwards would be a second, divergent membership implementation.
     path = Cecelia.img_label_props_path(img, vn)
-    isfile(path) || (on_log("[ERROR] No label props for valueName='$vn'"); return nothing)
-
-    # Read through the sanctioned view — never touch the .h5ad directly (CLAUDE.md / DATAMODEL.md).
-    view = Cecelia.label_props(path)
-    cent = Cecelia.centroid_columns(view)      # centroid_z/y/x as present for this image
-    temp = Cecelia.temporal_columns(view)      # the frame/time column, if this segmentation is a timelapse
+    isfile(path) || (on_log("[ERROR] No label props for '$vn'"); return nothing)
+    cent = Cecelia.centroid_columns(Cecelia.label_props(path))   # centroid_z/y/x as present here
+    temp = Cecelia.temporal_columns(Cecelia.label_props(path))   # the frame column, if a timelapse
     isempty(cent) && (on_log("[ERROR] No centroid columns found"); return nothing)
 
-    want = vcat(["track_id"], cent, temp)
-    cell = view |> Cecelia.select_cols(want) |> Cecelia.as_df
+    on_progress(0, 1)
+    # pop_type "live": a track population's members are resolved to their CELLS, which is what a
+    # per-position measure needs. `_tracked` (track_id > 0) is the whole segmentation's tracks.
+    #
+    # `centroids = :pixel` rather than naming the coordinate columns in `pop_cols`: which axes exist
+    # differs per segmentation (no `centroid_z` on a 2D image) and pop_df resolves that per
+    # value_name. Pixels, not µm, because `gap` windows are compared within one image.
+    cell = Cecelia.pop_df(img, "live", pops;
+                          pop_cols = ["track_id"], centroids = :pixel, granularity = :cell)
     cols = Cecelia.DataFrames.names(cell)
     "track_id" in cols ||
-        (on_log("[ERROR] Segmentation '$vn' is not tracked (no track_id)"); return nothing)
-
-    on_progress(0, 1)
-    # Untracked cells carry track_id <= 0 / missing; they have no window, so drop them up front.
-    keep = [r isa Number && isfinite(r) && r > 0 for r in cell[!, "track_id"]]
-    cell = cell[keep, :]
+        (on_log("[ERROR] '$vn' is not tracked (no track_id)"); return nothing)
     Cecelia.DataFrames.nrow(cell) == 0 &&
-        (on_log("[ERROR] No tracked cells in '$vn'"); return nothing)
+        (on_log("[ERROR] No tracked cells in the selected populations"); return nothing)
 
     # Order within a track matters — these are temporal windows. Sort by the time column when there is
     # one; row order is NOT a time order in general, and silently trusting it would compute distances

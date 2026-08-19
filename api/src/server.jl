@@ -249,6 +249,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
+    "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),
     "/api/profiles/save" => (req, body_bytes) -> (api_view_profile_save(body_bytes)),
     "/api/profiles/delete" => (req, body_bytes) -> (api_view_profile_delete(body_bytes)),

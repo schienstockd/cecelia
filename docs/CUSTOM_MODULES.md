@@ -375,6 +375,14 @@ the next update.
 Cloning by hand into `<config_dir>/modules/plugins/` still works and always will — that is all an
 install does. A hand-cloned plugin simply has no recorded ref, and is not treated as broken for it.
 
+**Working on a plugin in this repo? Install it from the checkout.** The **Available** table shows a
+folder button for any example that lives in `docs/examples/plugins/` — one click installs *or updates*
+it straight from disk, no network and no GitHub. That copy is the SOURCE the published repo is
+mirrored from at release time, so on a checkout it is the newest by definition; going via GitHub means
+editing a file, pushing it, and pulling the same file back, with a window in which the two disagree.
+That window has already produced a task form three commits stale while the fix sat in the same
+worktree. (Then restart the server — a replaced `.jl` cannot be swapped into a running session.)
+
 > **A plugin is not sandboxed.** Its Julia is `Base.include`d into `Cecelia` with full access to your
 > machine, exactly like a module you dropped in yourself. Installing one is trusting whoever wrote it.
 

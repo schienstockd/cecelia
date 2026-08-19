@@ -212,6 +212,30 @@ async function installPlugin(url: string, ref = '') {
   } finally { pluginBusy.value = false }
 }
 
+// Install (or UPDATE) an example plugin straight from this checkout — no network, no GitHub.
+// `docs/examples/plugins/<name>/` is the SOURCE the published repo is mirrored from, so on a checkout
+// it is the newest copy by definition. Without this, updating a plugin you are editing meant pushing
+// to GitHub and pulling the same files back, and the window where those two disagree is how a form
+// three commits stale reached the screen while the fix sat in the worktree.
+async function installLocalPlugin(name: string) {
+  pluginBusy.value = true; pluginMsg.value = ''; pluginRestart.value = false
+  try {
+    const res = await fetch('/api/plugins/install-local', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
+    customModules.apply(data)
+    pluginRestart.value = !!data.restartRequired
+  } catch (e) {
+    pluginMsg.value = String(e)
+  } finally { pluginBusy.value = false }
+}
+
+// Registry entries that also exist in this checkout, so the row can offer the local install.
+const bundledNames = computed(() => new Set(customModules.bundled.map(b => b.name)))
+
 async function removePlugin(name: string) {
   pluginBusy.value = true; pluginMsg.value = ''
   try {
@@ -931,6 +955,14 @@ async function switchWt(path: string) {
                         density="compact" fit="fill"
                         :columns="REGISTRY_COLUMNS" :rows="customModules.registry">
           <template #actions="{ row }">
+            <!-- In this checkout: install or UPDATE from disk. Offered even when already installed —
+                 that IS the case it exists for, editing a plugin and wanting the app to see it. -->
+            <button v-if="bundledNames.has(row.name)" class="cc-btn cc-btn-ghost cc-btn-icon"
+                    :disabled="pluginBusy" @click="installLocalPlugin(row.name)"
+                    v-tooltip.top="row.installed ? 'Update from this checkout — no network'
+                                                 : 'Install from this checkout — no network'">
+              <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-folder-open']" />
+            </button>
             <span v-if="row.installed" class="cc-muted cc-fs-xs">installed</span>
             <ConfirmButton v-else @confirm="installPlugin(row.url, row.ref ?? '')"
                            v-slot="{ armed, arm, confirm, cancel }">

@@ -68,6 +68,38 @@ function api_plugins_install(body::Vector{UInt8})
     end
 end
 
+"""
+POST /api/plugins/install-local {name} — install an example plugin from THIS checkout.
+
+`docs/examples/plugins/<name>/` is the source and the GitHub repo is a mirror published at release
+time, so on a checkout the newest copy is already on disk. Without this, updating a plugin you are
+editing meant pushing to GitHub and pulling the same files back — and the window where the two
+disagree is exactly how a stale form reached the screen while the fix sat in the worktree.
+
+No network, no tarball, no `gh`. Offers nothing when `docs/examples/plugins` is absent, which is the
+structural test for "is this a checkout".
+"""
+function api_plugins_install_local(body::Vector{UInt8})
+    req = try
+        JSON3.read(String(body), Dict{String,Any})
+    catch
+        return 400, JSON3.write((; error = "invalid JSON body"))
+    end
+    name = strip(string(get(req, "name", "")))
+    isempty(name) && return 400, JSON3.write((; error = "name is required"))
+
+    was_loaded = _plugin_restart_needed(name)
+    res = Cecelia.plugin_install_local!(name)
+    res.ok || return 400, JSON3.write((; error = res.error))
+
+    load = Cecelia.load_custom_modules!()
+    200, JSON3.write((; ok = true, name = res.name, dir = res.dir, source = "bundled:$name", ref = "",
+                        loaded = load.loaded,
+                        failed = [(; path = p, error = m) for (p, m) in load.failed],
+                        restartRequired = was_loaded,
+                        _custom_modules_payload()...))
+end
+
 function api_plugins_remove(body::Vector{UInt8})
     req = try
         JSON3.read(String(body), Dict{String,Any})

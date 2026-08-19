@@ -9,12 +9,16 @@
   "outputValueName": "default",
   "params": [
     {
-      "key": "valueName",
-      "label": "Segmentation",
-      "type": "valueNameSelection",
-      "field": "labels",
-      "default": "default",
-      "tip": "Which tracked segmentation's label properties to read/write"
+      "key": "pops",
+      "label": "Track populations",
+      "type": "popSelection",
+      "popScope": "tracks",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "required": true,
+      "requiredMessage": "Select at least one track population",
+      "default": [],
+      "tip": "Tracks to summarise; the whole set is the segmentation's tracked pop"
     },
     {
       "key": "measure",
