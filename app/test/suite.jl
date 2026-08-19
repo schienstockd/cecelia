@@ -13646,3 +13646,66 @@ end
     end
 end
 
+
+@testset "every run_py call forwards on_progress" begin
+    # A task that spawns Python and does not forward `on_progress` throws away every `[PROGRESS]`
+    # line the runner emits: `run_py` parses them and calls a no-op, so the bar never moves and the
+    # task is indistinguishable from a wedged one for its whole duration — which is usually the LONG
+    # part, since the Python phase is where the work happens.
+    #
+    # This is the same drift the chain executor had, one layer down: the wiring is per call site, so
+    # it is per call site that it gets forgotten. Ten of twenty-four calls had. A test is the only
+    # thing that makes "did you pass the callback" a property of the codebase rather than of whoever
+    # wrote the task.
+    #
+    # Balanced-paren extraction, not a line window: `run_py`'s kwargs run to 25 lines in some tasks
+    # (segment/coastal.jl), so a fixed lookahead silently reports a compliant call as a gap — which is
+    # exactly what a first pass at this test did.
+    function _py_calls(src::AbstractString)::Vector{String}
+        out = String[]
+        i = firstindex(src)
+        while true
+            j = findnext("run_py(", src, i)
+            isnothing(j) && break
+            k = last(j); depth = 0
+            while k <= lastindex(src)
+                c = src[k]
+                c == '(' && (depth += 1)
+                c == ')' && (depth -= 1; depth == 0 && break)
+                k = nextind(src, k)
+            end
+            push!(out, src[first(j):min(k, lastindex(src))])
+            i = nextind(src, min(k, lastindex(src)))
+        end
+        out
+    end
+
+    # The ONLY exemptions, each because the call cannot report anything meaningful: a single metadata
+    # value read out of a file header, over in milliseconds. Adding one here is a claim that a user
+    # will never wait on it — if you find yourself exempting a task that segments, tracks, clusters or
+    # trains, wire the callback instead.
+    EXEMPT = Set([
+        "tasks/importImages/read_ims_time_interval_run.py",       # one TimeIncrement out of an .ims
+        "tasks/importImages/read_imagej_physical_size_run.py",    # one pixel size out of an ImageJ tag
+    ])
+
+    gaps = String[]
+    checked = 0
+    for (root, _, files) in walkdir(joinpath(@__DIR__, "..", "src", "tasks")), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(root, f)
+        for call in _py_calls(read(path, String))
+            script = match(r"run_py\(\s*\"([^\"]+)\"", call)
+            isnothing(script) && continue           # a computed path — nothing to key an exemption on
+            checked += 1
+            script[1] in EXEMPT && continue
+            occursin("on_progress", call) ||
+                push!(gaps, "$(basename(path)) → $(script[1])")
+        end
+    end
+
+    isempty(gaps) || @info "run_py calls not forwarding on_progress" gaps
+    @test isempty(gaps)
+    # The scan must actually find calls; a refactor that renamed `run_py` would otherwise "pass".
+    @test checked >= 20
+end

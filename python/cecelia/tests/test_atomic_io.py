@@ -230,3 +230,39 @@ class TextIoDeclaresEncodingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgressGoesThroughTheLoggerTest(unittest.TestCase):
+    """No module may print a `[PROGRESS]` line by hand — it must go through `StdoutLogger.progress`.
+
+    The logger coalesces to `PROGRESS_MIN_FRACTION` at the SINK, so a task reports every unit it does
+    and one place decides what is worth emitting. A bare print is a second implementation that opts out
+    of that: `segmentation_utils` printed one line per tile, which on a 181-timepoint movie cut into one
+    tile each is 181 uncoalesced lines — each a stdout write, a Julia parse in `run_py`, and a
+    `task:progress` WS frame to every connected client.
+
+    Same shape as `no_bare_write_h5ad` above: the canonical helper exists, so the detector is what stops
+    the second variant being written.
+    """
+
+    def test_no_bare_progress_print(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        offenders = []
+        for py in sorted(root.rglob("*.py")):
+            if "tests" in py.parts or py.name == "script_utils.py":
+                continue          # script_utils IS the implementation; tests may assert on the format
+            for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue      # a comment may name the format while explaining it
+                # Only a BARE PRINT is the offence. A maintenance patch (`ims_relink`,
+                # `store_sweep`, `legacy_migrate`) receives an injected `log` callable instead of a
+                # StdoutLogger — it runs as a background job over the task rail, not through `run_py` —
+                # so emitting the line through that sink is its transport, not a second one.
+                if "[PROGRESS]" in line and stripped.startswith("print("):
+                    offenders.append(f"{py.relative_to(root)}:{i}")
+        self.assertEqual(
+            offenders, [],
+            "emit progress with `script_utils.get_logfile_utils(params).progress(n, total)`, "
+            "not a bare print — see PROGRESS_MIN_FRACTION",
+        )
