@@ -55,7 +55,18 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 6.
     "segment.branching"          => ["nBranches", "meanBranchLength", "anisotropy"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
-    "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
+    # `msdSlope` and `persistenceLag` are the celltrackR diagnostics worth comparing ACROSS images:
+    # one movie of the same experiment whose motion reads as confined while its peers are random
+    # walks, or whose directional memory is three times longer, is a tracking or acquisition
+    # difference, not biology. `driftP` is deliberately NOT here — a p-value is not a quantity to
+    # take a median of, and the drift verdict is already a per-image finding.
+    "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement",
+                                     "msdSlope", "persistenceLag"],
+    # manual track correction: `fracCellsEdited` is the cohort-comparable one — images from one
+    # experiment tracked with one parameter set should need comparable hand-correction, so the movie
+    # that needed three times as much is either a worse acquisition or a tracking setting that does
+    # not suit it. A raw op count is not comparable (it scales with how patient the user was).
+    "tracking.correct"           => ["fracCellsEdited", "nCellsReassigned", "nTracksAfter"],
     # clustering is set-scope (one run over all images); per-image QC records how each image's points
     # landed, so cohort stats flag an image that collapsed into far fewer clusters / one dominant
     # cluster than its peers (a batch/normalisation outlier). See qc.jl write_cluster_qc!.

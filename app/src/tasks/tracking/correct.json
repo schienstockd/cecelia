@@ -1,0 +1,25 @@
+{
+  "task": "trackCorrect",
+  "fun_name": "tracking.correct",
+  "label": "Correct tracks",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "requires": { "axes": ["T"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "field": "labels",
+      "tip": "Tracked label set to correct"
+    },
+    {
+      "key": "trackOps",
+      "label": "Edits",
+      "type": "text",
+      "default": "[]",
+      "tip": "Supplied by the correction page — a JSON list of edit ops"
+    }
+  ]
+}

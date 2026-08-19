@@ -43,6 +43,24 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Track pair diagnostics — grid the O(tracks²) scan
+
+`analyze_cell_pairs` computes, for every pair of tracks, the minimum distance over their shared
+timepoints, and that scan dominates the diagnostics battery. Measured (synthetic, 30 frames/track):
+374 tracks 1.1 s · 1000 tracks 7.1 s · **2000 tracks 27.9 s, of which the pair scan alone is 25.3 s**.
+The curves (MSD, autocorrelation) are 0.45 s at 2000 tracks.
+
+`track_diagnostics` therefore SKIPS the pair half above `PAIR_SCAN_MAX_TRACKS` (800) and reports
+`summary.pairsSkipped` — so `tracking.track_measures` QC never quietly costs half a minute, and the
+panel says "not checked above 800 tracks" instead of drawing an empty scatter that would read as
+"nothing suspicious".
+
+To lift the cap: bucket each timepoint's cells into a spatial grid with side `TRACK_DUP_DIST_UM` and
+test only the 3×3 neighbourhood — near-linear, and it finds exactly the pairs the duplicate detector
+cares about. The far-pair drift verdict needs only angles (O(1) per pair, cheap even at 2M), so that
+half can keep the full sweep. Worth doing when someone actually hits the cap.
+
+
 ### Value-name input — the one namespace left out
 
 Design + locked decisions: [`docs/todo/VALUE_NAME_INPUT_PLAN.md`](todo/VALUE_NAME_INPUT_PLAN.md).

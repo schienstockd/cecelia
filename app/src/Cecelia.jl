@@ -107,6 +107,25 @@ export region_membership, region_enrichment
 export plot_summary_data
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, is_tracked
+# manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
+# `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
+# the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.
+export apply_track_ops!, apply_track_op!, renumber_cell_ids!, next_track_id, track_ids_present
+export TRACK_OP_KINDS, TRACK_LINEAGE_OBS, TRACK_CORRECTION_OBS, MIN_USEFUL_TRACK_LENGTH
+export corrections_dir, corrections_path, load_corrections, append_corrections!
+export track_correction_metrics, track_correction_qc_findings, TRACK_CORRECTION_WARN_FRAC
+# finding what needs correcting — the triage worklist (old R had no equivalent)
+export TrackIssue, find_track_issues, track_issues_for, issue_to_dict
+export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUANTILE
+export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
+export track_path_dicts
+# ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
+export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
+export plane_angle_profile, plane_artefact, drift_test
+export track_diagnostics, track_diagnostics_for, track_diagnostic_findings
+export MSD_SLOPE_RANDOM, MSD_SLOPE_DIRECTED, MSD_SLOPE_CONFINED, ACOR_PERSIST_LEVEL
+export PLANE_ANGLE_UNBIASED, DRIFT_STEP_SPACING, DRIFT_ALPHA, PAIR_SCAN_MAX_TRACKS
+export TRACK_DUP_ANGLE_DEG, TRACK_DUP_DIST_UM, TRACK_DUP_MIN_SHARED
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 
 # ── Task system ───────────────────────────────────────────────────────────────
@@ -133,7 +152,7 @@ export CoastalSegment, coastal_models_for_python
 export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
 export MeasureLabels
 export Branching
-export BayesianTracking, TrackMeasures
+export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
@@ -217,6 +236,8 @@ include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (noteb
 include("plotting/plot_data.jl")
 include("plotting/stats.jl")
 include("tracking/track_props.jl")
+include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
+include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")
@@ -253,6 +274,7 @@ include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/tracking/bayesian_tracking.jl")
 include("tasks/tracking/track_measures.jl")
+include("tasks/tracking/correct.jl")
 include("tasks/behaviour/hmm_states.jl")
 include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/clustPops/cluster.jl")

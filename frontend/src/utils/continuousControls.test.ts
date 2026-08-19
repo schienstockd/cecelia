@@ -214,3 +214,48 @@ describe('live napari view-property endpoints have exactly one owner', () => {
     expect(others).toEqual([])
   })
 })
+
+// ── A ResizeObserver that re-renders INTO what it observes ────────────────────
+//
+// Same family as the rules above — an effect that outruns its cause — but the feedback is structural
+// rather than merely wasteful. Five views had written `new ResizeObserver(() => render())` where
+// `render` appends an `<svg>` into the observed element, and every one of them sized that svg with a
+// floor (`Math.max(200, host.clientWidth)`): in a panel narrower than the floor the svg is wider than
+// its host, the host grows, the observer fires again. The browser breaks the cycle and reports
+// "ResizeObserver loop completed with undelivered notifications" — which is exactly what showed up in
+// the log rail. `usePlotResize` is the fix (rAF coalescing + skip a render the size did not ask for).
+const RO_EXEMPT: Record<string, string> = {
+  'components/canvas/CanvasPanel.vue':
+    'writes its OWN height to keep a square plot square, and guards on a >1px difference; it does not render into itself',
+  'composables/useCanvasWorkspace.ts': 'measures only — no DOM write in the callback',
+  'composables/usePlotResize.ts': 'IS the fix',
+  'modules/MoviesModule.vue': 'measures a video element; writes nothing',
+  'components/plots/PlotChart.vue': 'already coalesces through rafCoalesce (the pattern usePlotResize generalises)',
+  'components/plots/GateOverlay.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
+  'components/plots/PlotLayers.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
+  'components/plots/UmapView.vue': 'redraws a WebGL canvas at the box size; no element is appended',
+}
+
+describe('no plot re-renders into the element it observes', () => {
+  // `sources` above is .vue only; the observer pattern also lives in composables, so this block needs
+  // both extensions
+  const RO_RAW = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+  const roSources = Object.entries(RO_RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+
+  it('every ResizeObserver that triggers a render goes through usePlotResize', () => {
+    const offenders = roSources
+      .filter(s => /new ResizeObserver\(/.test(s.text))
+      .filter(s => !(s.path in RO_EXEMPT))
+      .filter(s => !s.path.endsWith('.test.ts'))
+      .map(s => s.path)
+    expect(offenders).toEqual([])
+  })
+
+  it('the exemption list stays honest — every entry still exists and still observes', () => {
+    const stale = Object.keys(RO_EXEMPT).filter(p => {
+      const s = roSources.find(x => x.path === p)
+      return !s || !/new ResizeObserver\(/.test(s.text)
+    })
+    expect(stale).toEqual([])
+  })
+})

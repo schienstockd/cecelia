@@ -4183,7 +4183,9 @@ end
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
-        "/api/tracking/motion-dims", "/api/update/check",
+        "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
+        "/api/tracking/diagnostics", "/api/tracking/selection",
+        "/api/update/check",
         "/api/version",
     ]
     POST_ROUTES = [
@@ -4213,7 +4215,7 @@ end
         "/api/napari/gpu", "/api/napari/open",
         "/api/napari/overlay-legend", "/api/napari/refresh-labels",
         "/api/napari/restart", "/api/napari/screenshot",
-        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level",
+        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level", "/api/napari/centre",
         "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
         "/api/napari/start-selection", "/api/napari/stop-selection",
@@ -4285,7 +4287,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 77 && length(POST_ROUTES) == 109
+    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 110
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -4442,4 +4444,128 @@ end
     # bad input is rejected rather than silently persisted — this writes custom.toml
     @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
     @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
+end
+
+# ── `_json_safe` covers the shape handlers actually return ────────────────────
+#
+# JSON has no NaN/Inf literal, so JSON3.write throws — and the analysis layer emits NaN deliberately
+# for "not assessed" (a drift p-value with too few decorrelated steps, an sem at n=1, a step scale with
+# nothing tracked). `_json_safe` maps non-finite → null so the client sees a gap instead of a 500.
+#
+# It claimed to be recursive and was not, for NamedTuples — which is how most handlers shape a
+# response. `/api/tracking/diagnostics` 500-ed on a real image for exactly this. The method is pinned
+# here because the failure is invisible until a specific dataset produces a NaN in a specific field.
+@testset "API: _json_safe reaches into NamedTuples, not just Dicts" begin
+    @test _json_safe(NaN) === nothing
+    @test _json_safe(Inf) === nothing
+    @test _json_safe(1.5) == 1.5
+
+    nt = _json_safe((; p = NaN, n = 3, nested = (; sem = [1.0, NaN], ok = "x")))
+    @test nt.p === nothing
+    @test nt.n == 3
+    @test nt.nested.sem == [1.0, nothing]
+    @test nt.nested.ok == "x"
+    # a NamedTuple stays a NamedTuple, so the response key ORDER survives the sanitising pass
+    @test nt isa NamedTuple && keys(nt) == (:p, :n, :nested)
+    # and the whole point: it now serialises
+    @test occursin("\"p\":null", JSON3.write(nt))
+
+    @test _json_safe(Dict("a" => NaN))["a"] === nothing
+    @test _json_safe(Any[NaN, 2.0]) == Any[nothing, 2.0]
+end
+
+# ── The napari→tracks bridge, and naming a track past the picker's cap ────────
+#
+# Both are the answer to "fix a track the detector never flagged": draw around it in the viewer, or
+# name it. The RESOLUTION is the part worth pinning — labels in, tracks out, most-represented first,
+# with untracked cells counted separately rather than folded in (they are what `points.add` is for).
+@testset "API: a napari selection resolves to TRACKS" begin
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            # nothing drawn → an empty answer, never an error: this route is polled by an open panel
+            st, body = api_track_selection(HTTP.Request("GET",
+                "/api/tracking/selection?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
+            d = JSON3.read(body)
+            @test st == 200 && d.nLabels == 0 && isempty(d.tracks)
+
+            # inject what the bridge would have stored, then resolve it
+            lp = label_props(joinpath(proj, "1", "KDIeEm", "labelProps", "B.h5ad"))
+            select_cols(lp, ["track_id"])
+            df = as_df(lp; include_x = false, include_obs = true)
+            tids = first(Cecelia.track_ids_present(df), 2)
+            labs = Int[Int(round(Float64(df[r, :label]))) for r in 1:length(df.label)
+                       if df[r, :track_id] isa Real && !isnan(Float64(df[r, :track_id])) &&
+                          Int(round(Float64(df[r, :track_id]))) in tids]
+            @test length(labs) > 2
+            _set_napari_selection!(img._dir, "B", labs)
+            try
+                st, body = api_track_selection(HTTP.Request("GET",
+                    "/api/tracking/selection?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
+                d = JSON3.read(body)
+                @test st == 200
+                @test d.nLabels == length(labs)
+                @test Set(Int[t.track for t in d.tracks]) == Set(tids)
+                # most cells inside the drawn region first — so "pick the top two and Join" does the
+                # obvious thing rather than picking by lowest id
+                @test issorted([t.nCells for t in d.tracks]; rev = true)
+                @test sum(Int[t.nCells for t in d.tracks]) == length(labs)
+                @test d.nUntracked == 0
+            finally
+                _set_napari_selection!(img._dir, "B", Int[])
+            end
+
+            # `ids=` names tracks and IGNORES the cap — "the one I need is not in the top N" must have
+            # an answer that is not "raise N for everyone"
+            st, body = api_track_paths(HTTP.Request("GET",
+                "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&limit=1"))
+            capped = JSON3.read(body)
+            @test st == 200 && length(capped.paths) == 1
+            want = string(last(tids))
+            st, body = api_track_paths(HTTP.Request("GET",
+                "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&limit=1&ids=$want"))
+            named = JSON3.read(body)
+            @test st == 200 && collect(String.(keys(named.paths))) == [want]
+            # a track that does not exist is empty, not a 500
+            st, body = api_track_paths(HTTP.Request("GET",
+                "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&ids=999999"))
+            @test st == 200 && isempty(JSON3.read(body).paths)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+# ── `api/` has no DataFrames — a bare `nrow` compiles and dies at runtime ─────
+#
+# `api/src` is `include`d into a script that does not `using DataFrames`, so `nrow(df)` is an
+# UndefVarError the moment the line executes. It reads fine, it typechecks (there is no typecheck), and
+# it survives review — twice now in `tracking_api.jl`, both times on a branch a user reaches and a
+# smoke test does not: the second one sat behind "nothing is drawn in napari yet" and would have
+# 500-ed only for someone who actually drew a region.
+#
+# The frame's own columns are always available (`length(df.label)`), so the fix is never to import
+# DataFrames here — this layer shapes JSON, it does not do data work.
+@testset "API: no bare nrow in api/src (DataFrames is not imported there)" begin
+    src = joinpath(@__DIR__, "..", "src")
+    offenders = String[]
+    for f in readdir(src; join = true)
+        endswith(f, ".jl") || continue
+        for (i, line) in enumerate(eachline(f))
+            startswith(strip(line), "#") && continue        # the explanation itself may name it
+            occursin(r"(^|[^.\w])nrow\s*\(", line) && push!(offenders, "$(basename(f)):$i")
+        end
+    end
+    @test isempty(offenders)
+    isempty(offenders) || @info "use length(df.<col>) instead" offenders
 end

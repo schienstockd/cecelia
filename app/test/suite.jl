@@ -9515,7 +9515,8 @@ end
 
         # Every placeholder the catalog uses must be one a caller actually passes; a typo'd
         # `{metrics}` would otherwise only surface when that finding fires in production.
-        KNOWN = Set(["channel", "pct", "unit", "dims", "metric", "value", "dir", "median"])
+        KNOWN = Set(["channel", "pct", "unit", "dims", "metric", "value", "dir", "median",
+                     "count", "min"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -12426,4 +12427,815 @@ end
         close(held)
         rm(state; force = true)
     end
+end
+# ── Manual track correction (docs/todo/CORRECTION_PLAN.md, P1) ────────────────
+#
+# The ops engine is pure, so it is tested directly against a hand-built cell table — no fixture, no
+# .h5ad. `_corr_df` mirrors the real obs layout verified on `zolIMa/…/memTom.h5ad`: every lineage
+# column is Float64, and a root track has `track_parent == track_root == track_id`, generation 0.
+_corr_df() = DataFrame(
+    label            = Float64[1, 2, 3, 4, 5, 6, 7],
+    centroid_t       = Float64[0, 1, 2, 0, 1, 2, 3],
+    track_id         = Float64[10, 10, 10, 20, 20, 20, NaN],
+    track_parent     = Float64[10, 10, 10, 20, 20, 20, NaN],
+    track_root       = Float64[10, 10, 10, 20, 20, 20, NaN],
+    track_state      = Float64[5, 5, 5, 5, 5, 5, 5],
+    track_generation = Float64[0, 0, 0, 0, 0, 0, NaN],
+    cell_id          = Float64[1, 2, 3, 1, 2, 3, NaN],
+)
+
+@testset "track correction — ops" begin
+    # ── points.remove: untrack cells, clearing lineage but NOT track_state ────
+    df = _corr_df()
+    Cecelia.apply_track_ops!(df, [Dict("op" => "points.remove", "labels" => [2])])
+    @test isnan(df[2, :track_id])
+    @test isnan(df[2, :track_parent]) && isnan(df[2, :track_root])
+    @test df[2, :track_state] == 5.0          # per-cell, not lineage — must survive
+    # cell_id renumbered: track 10 now has cells at t=0,2 → ranks 1,2
+    @test df[1, :cell_id] == 1.0 && df[3, :cell_id] == 2.0
+
+    # ── track.remove ──────────────────────────────────────────────────────────
+    df = _corr_df()
+    Cecelia.apply_track_ops!(df, [Dict("op" => "track.remove", "trackIds" => [20])])
+    @test all(isnan, df[4:6, :track_id])
+    @test Cecelia.track_ids_present(df) == [10]
+
+    # ── points.add to an EXISTING track adopts its lineage, never re-roots it ──
+    df = _corr_df()
+    df[4:6, :track_parent] .= 99.0            # pretend track 20 has a real parent
+    df[4:6, :track_generation] .= 1.0
+    Cecelia.apply_track_ops!(df, [Dict("op" => "points.add", "labels" => [7], "trackId" => 20)])
+    @test df[7, :track_id] == 20.0
+    @test df[7, :track_parent] == 99.0        # adopted, not reset to 20
+    @test df[4, :track_parent] == 99.0        # the target's own lineage untouched
+    @test df[7, :cell_id] == 4.0              # t=3 is the 4th cell of track 20
+
+    # ── points.add with no trackId allocates max+1, ignoring NaN, and roots it ─
+    df = _corr_df()
+    @test Cecelia.next_track_id(df) == 21
+    Cecelia.apply_track_ops!(df, [Dict("op" => "points.add", "labels" => [7])])
+    @test df[7, :track_id] == 21.0
+    @test df[7, :track_parent] == 21.0 && df[7, :track_root] == 21.0
+    @test df[7, :track_generation] == 0.0     # a root's parent is ITSELF, not NaN
+    @test df[7, :cell_id] == 1.0
+
+    # ── points.add rejects a timepoint the target already holds ───────────────
+    df = _corr_df()
+    @test_throws Exception Cecelia.apply_track_op!(
+        df, Dict("op" => "points.add", "labels" => [1], "trackId" => 20))   # t=0 taken by label 4
+end
+
+@testset "track correction — join and split" begin
+    # ── join consumes B entirely and keeps A's lineage ────────────────────────
+    df = _corr_df()
+    df[4:6, :centroid_t] .= [3.0, 4.0, 5.0]   # move track 20 clear of track 10 in time
+    df[4:6, :track_parent] .= 20.0
+    Cecelia.apply_track_ops!(df, [Dict("op" => "track.join", "trackIds" => [10, 20])])
+    @test Cecelia.track_ids_present(df) == [10]          # B is GONE, not a remnant (old R's bug)
+    @test all(df[1:6, :track_id] .== 10.0)
+    @test all(df[1:6, :track_parent] .== 10.0)           # B's cells adopted A's lineage
+    @test df[1:6, :cell_id] == Float64[1, 2, 3, 4, 5, 6] # renumbered across the joined track
+
+    # ── join REFUSES a temporal overlap, naming the timepoints ────────────────
+    df = _corr_df()                                       # 10 and 20 both span t=0,1,2
+    err = try
+        Cecelia.apply_track_op!(df, Dict("op" => "track.join", "trackIds" => [10, 20]))
+        nothing
+    catch e; e end
+    @test err !== nothing
+    @test occursin("cannot be one cell", sprint(showerror, err))
+    @test Cecelia.track_ids_present(df) == [10, 20]        # nothing was applied
+
+    @test_throws Exception Cecelia.apply_track_op!(
+        _corr_df(), Dict("op" => "track.join", "trackIds" => [10, 10]))
+    @test_throws Exception Cecelia.apply_track_op!(
+        _corr_df(), Dict("op" => "track.join", "trackIds" => [10, 999]))
+
+    # ── split: later half becomes a new ROOT track, both halves renumbered ────
+    df = _corr_df()
+    Cecelia.apply_track_ops!(df, [Dict("op" => "track.split", "trackId" => 10, "atT" => 2)])
+    @test df[1, :track_id] == 10.0 && df[2, :track_id] == 10.0
+    @test df[3, :track_id] == 21.0
+    @test df[3, :track_parent] == 21.0 && df[3, :track_root] == 21.0
+    @test df[3, :cell_id] == 1.0                          # first cell of the new fragment
+    @test df[1, :cell_id] == 1.0 && df[2, :cell_id] == 2.0
+
+    # a split that would leave one side empty is rejected, not a silent rename
+    @test_throws Exception Cecelia.apply_track_op!(
+        _corr_df(), Dict("op" => "track.split", "trackId" => 10, "atT" => 0))
+    @test_throws Exception Cecelia.apply_track_op!(
+        _corr_df(), Dict("op" => "track.split", "trackId" => 10, "atT" => 99))
+
+    # ── ops apply SEQUENTIALLY — the journal is a replay script ───────────────
+    df = _corr_df()
+    entries = Cecelia.apply_track_ops!(df, [
+        Dict("op" => "track.split", "trackId" => 10, "atT" => 2),   # → new track 21
+        Dict("op" => "track.remove", "trackIds" => [21]),           # remove what step 1 made
+    ])
+    @test length(entries) == 2
+    @test all(e -> haskey(e, "summary") && !isempty(e["summary"]), entries)
+    @test Cecelia.track_ids_present(df) == [10, 20]
+    @test isnan(df[3, :track_id])
+end
+
+@testset "track correction — unknown op" begin
+    @test_throws ArgumentError Cecelia.apply_track_op!(_corr_df(), Dict("op" => "track.frobnicate"))
+    @test Set(Cecelia.TRACK_OP_KINDS) ==
+        Set(["points.remove", "points.add", "track.remove", "track.join", "track.split"])
+end
+
+@testset "track correction — QC metrics + findings" begin
+    before = Float64[10, 10, 10, 20, 20, 20, NaN]
+    after  = Float64[10, 10, 10, 10, 10, 10, NaN]          # a join: 3 cells moved
+    m = Cecelia.track_correction_metrics(before, after, 1)
+    @test m["nOps"] == 1
+    @test m["nCellsReassigned"] == 3
+    @test m["nTracksBefore"] == 2 && m["nTracksAfter"] == 1
+    @test m["fracCellsEdited"] ≈ 3/7 atol=1e-4
+
+    # to/from untracked counts as a reassignment
+    m2 = Cecelia.track_correction_metrics(Float64[10, 10], Float64[10, NaN], 1)
+    @test m2["nCellsReassigned"] == 1
+
+    # a big share of cells hand-corrected is a tracking-parameter problem (Decision 8)
+    @test any(f -> f["code"] == "correction.large_share_edited",
+              Cecelia.track_correction_qc_findings(m))
+    @test isempty(Cecelia.track_correction_qc_findings(
+        Cecelia.track_correction_metrics(Float64[fill(10.0, 100); 20.0],
+                                         Float64[fill(10.0, 100); 20.0], 1)))
+
+    # a split can leave tracks below tracking's own minTimepoints (4d) — warn, never re-filter.
+    # A 6-cell track split 3/3 makes BOTH halves newly short: the original (was long enough) and the
+    # new fragment (a new id).
+    short = Cecelia.track_correction_metrics(Float64[10, 10, 10, 10, 10, 10],
+                                             Float64[10, 10, 10, 21, 21, 21], 1)
+    @test short["nShortTracks"] == 2
+    @test any(f -> f["code"] == "correction.short_tracks",
+              Cecelia.track_correction_qc_findings(short))
+
+    # …but a track that was ALREADY short is not this correction's fault — don't blame the wrong task
+    @test Cecelia.track_correction_metrics(Float64[10, 10, 20], Float64[10, 10, 20],
+                                           0)["nShortTracks"] == 0
+
+    # every finding's text resolves from the catalog (no unsubstituted {placeholder} reaches a user)
+    for f in vcat(Cecelia.track_correction_qc_findings(m),
+                  Cecelia.track_correction_qc_findings(short))
+        @test !occursin("{", f["short"]) && !occursin("{", f["long"])
+    end
+end
+
+@testset "track correction — journal sidecar" begin
+    dir = mktempdir()
+    @test Cecelia.corrections_path(dir, "memTom") ==
+        joinpath(dir, "corrections", "memTom.json")
+    @test isempty(Cecelia.load_corrections(dir, "memTom")["entries"])   # absent → empty, not an error
+
+    Cecelia.append_corrections!(dir, "memTom",
+        [Dict("op" => "track.join", "trackIds" => [10, 20], "summary" => "joined")]; run_id = "r1")
+    Cecelia.append_corrections!(dir, "memTom",
+        [Dict("op" => "track.remove", "trackIds" => [30], "summary" => "removed")]; run_id = "r2")
+
+    doc = Cecelia.load_corrections(dir, "memTom")
+    @test doc["valueName"] == "memTom"
+    @test length(doc["entries"]) == 2                     # append-only across runs
+    @test [e["seq"] for e in doc["entries"]] == [1, 2]    # monotonic, so history has a stable order
+    @test [e["runId"] for e in doc["entries"]] == ["r1", "r2"]
+    @test doc["entries"][1]["op"] == "track.join"
+end
+
+@testset "track correction — task wiring + param validation" begin
+    @test Cecelia._task_from_fun_name("tracking.correct") isa Cecelia.TrackCorrect
+    @test Cecelia._task_from_fun_name("tracking.correct_measures") isa Cecelia.CompositeTask
+    @test isfile(Cecelia._spec_path(Cecelia.TrackCorrect()))
+    @test haskey(Cecelia.COHORT_METRICS, "tracking.correct")
+
+    # ops arrive either as a Vector (REPL/API/chain) or a JSON string (the form) — one parser
+    ops = Cecelia.parse_track_ops([Dict("op" => "track.remove", "trackIds" => [1])])
+    @test length(ops) == 1 && ops[1]["op"] == "track.remove"
+    @test Cecelia.parse_track_ops("[{\"op\":\"track.join\",\"trackIds\":[1,2]}]")[1]["op"] == "track.join"
+
+    # EMPTY is legal and means "no correction" — the suite requires every task's own spec defaults to
+    # validate, so `trackOps`' default ("[]") must parse. `_run_task` then reports it and no-ops.
+    for empty_val in (nothing, "", "[]", Any[])
+        @test isempty(Cecelia.parse_track_ops(empty_val))
+    end
+
+    # every malformed shape is a ParamValidationError at submit time, not a mid-run stack trace
+    for bad in ("not json", "{\"op\":\"track.remove\"}",
+                [Dict("op" => "nope")],
+                [Dict("op" => "points.remove")],                       # no labels
+                [Dict("op" => "points.remove", "labels" => [])],       # empty labels
+                [Dict("op" => "track.join", "trackIds" => [1])],       # needs exactly 2
+                [Dict("op" => "track.split", "trackId" => 1)])         # needs atT
+        @test_throws Cecelia.ParamValidationError Cecelia.parse_track_ops(bad)
+    end
+
+    # the composite is the chain Decision 4 requires: correct, then recompute measures
+    spec = Cecelia._task_spec(Cecelia._task_from_fun_name("tracking.correct_measures"))
+    @test spec["composite"] == ["tracking.correct", "tracking.track_measures"]
+end
+
+# ── Track-issue triage (the worklist old R had no equivalent of) ──────────────
+#
+# Thresholds are passed EXPLICITLY in these tests, not defaulted: the point is to pin the detection
+# logic, not the tuning. The defaults were chosen by measuring on a real image (374 tracks → 31
+# candidates, 8.3%) and are documented on the constants; a test that hard-coded them would fail every
+# time that measurement is revisited, which is the opposite of useful.
+#
+# `_issue_df` builds straight-line tracks with a controllable defect.
+function _issue_df(tracks::Vector{<:Tuple})   # (track_id, t0, n, x0, step)
+    lab, t, tid, x = Float64[], Float64[], Float64[], Float64[]
+    n = 0
+    for (id, t0, len, x0, step) in tracks, k in 0:(len - 1)
+        n += 1
+        push!(lab, n); push!(t, t0 + k); push!(tid, id); push!(x, x0 + k * step)
+    end
+    DataFrame(label = lab, centroid_t = t, track_id = tid,
+              centroid_x = x, centroid_y = zeros(length(x)))
+end
+
+@testset "track issues — gap → join" begin
+    # track 1 ends at t=2 at x=2; track 2 starts at t=3 at x=3 — 1 µm away, one frame later
+    df = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 3.0, 1.0)])
+    iss = find_track_issues(df, ["centroid_x", "centroid_y"]; gap_steps = 3.0)
+    gaps = filter(i -> i.kind == "gap", iss)
+    @test length(gaps) == 1
+    g = only(gaps)
+    @test g.op["op"] == "track.join" && g.op["trackIds"] == [1, 2]
+    @test g.at_t == 2.0                              # where to look
+    # `reason` is the terse WHAT (a row is scanned); `advice` is the instruction (its tooltip)
+    @test occursin("t=2", g.reason) && !occursin("join", g.reason)
+    @test occursin("join", g.advice)
+    @test length(g.reason) < length(g.advice)
+
+    # too far away in space → not a candidate
+    far = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 500.0, 1.0)])
+    @test isempty(filter(i -> i.kind == "gap",
+                         find_track_issues(far, ["centroid_x", "centroid_y"]; gap_steps = 3.0)))
+
+    # too far away in TIME → not a candidate (gap_frames = 1 excludes a 3-frame gap)
+    df2 = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 5, 3, 3.0, 1.0)])
+    @test isempty(filter(i -> i.kind == "gap",
+                         find_track_issues(df2, ["centroid_x", "centroid_y"]; gap_frames = 1)))
+end
+
+@testset "track issues — jump → split" begin
+    # one track of 1 µm steps with a single 40 µm leap between t=4 and t=5
+    df = _issue_df([(1, 0, 5, 0.0, 1.0), (2, 0, 8, 100.0, 1.0)])
+    push!(df, (label = 99.0, centroid_t = 5.0, track_id = 1.0,
+               centroid_x = 44.0, centroid_y = 0.0))
+    iss = find_track_issues(df, ["centroid_x", "centroid_y"];
+                            jump_factor = 4.0, jump_quantile = 0.5)
+    jumps = filter(i -> i.kind == "jump", iss)
+    @test length(jumps) == 1
+    j = only(jumps)
+    @test j.op["op"] == "track.split" && j.op["trackId"] == 1
+    @test j.op["atT"] == 5.0                         # split AT the far cell
+    @test j.at_t == 5.0
+    @test occursin("split", j.advice) && !occursin("split", j.reason)
+
+    # a steady track is never a jump candidate, however fast it moves
+    steady = _issue_df([(1, 0, 10, 0.0, 25.0)])
+    @test isempty(filter(i -> i.kind == "jump",
+                         find_track_issues(steady, ["centroid_x", "centroid_y"];
+                                           jump_factor = 4.0, jump_quantile = 0.5)))
+
+    # CONSECUTIVE suspect steps collapse into ONE candidate (out-and-back is one mistake)
+    ob = _issue_df([(1, 0, 4, 0.0, 1.0), (2, 0, 8, 200.0, 1.0)])
+    push!(ob, (label = 98.0, centroid_t = 4.0, track_id = 1.0, centroid_x = 60.0, centroid_y = 0.0))
+    push!(ob, (label = 97.0, centroid_t = 5.0, track_id = 1.0, centroid_x = 4.0,  centroid_y = 0.0))
+    cj = filter(i -> i.kind == "jump",
+                find_track_issues(ob, ["centroid_x", "centroid_y"];
+                                  jump_factor = 4.0, jump_quantile = 0.5))
+    @test length(cj) == 1
+    @test occursin("in a row", only(cj).advice)       # and it SAYS it collapsed them
+    @test occursin("×2", only(cj).reason)             # …tersely, in the row itself
+end
+
+@testset "track issues — short, ordering, degenerate" begin
+    # a short track is a remove candidate…
+    df = _issue_df([(1, 0, 2, 0.0, 1.0), (2, 0, 9, 100.0, 1.0)])
+    shorts = filter(i -> i.kind == "short",
+                    find_track_issues(df, ["centroid_x", "centroid_y"]; min_len = 5))
+    @test length(shorts) == 1
+    @test only(shorts).op == Dict{String,Any}("op" => "track.remove", "trackIds" => [1])
+    # …and not one when the minimum is lower than it
+    @test isempty(filter(i -> i.kind == "short",
+                         find_track_issues(df, ["centroid_x", "centroid_y"]; min_len = 2)))
+
+    # most suspicious first — the worklist order IS the product
+    many = _issue_df([(1, 0, 6, 0.0, 1.0), (2, 0, 6, 50.0, 1.0), (3, 0, 2, 200.0, 1.0)])
+    iss = find_track_issues(many, ["centroid_x", "centroid_y"])
+    @test issorted([i.severity for i in iss]; rev = true)
+
+    # a completely stationary image has no defensible distance threshold — no crash, no invented µm.
+    # Steps EXIST here, they are just all zero, so the scale is 0.0 (not NaN) and the detector must
+    # reject it on `> 0`, not on `isfinite` alone.
+    still = DataFrame(label = Float64[1, 2, 3], centroid_t = Float64[0, 1, 2],
+                      track_id = Float64[1, 1, 1],
+                      centroid_x = zeros(3), centroid_y = zeros(3))
+    @test track_step_scale(still, ["centroid_x", "centroid_y"]) == 0.0
+    @test isempty(filter(i -> i.kind in ("gap", "jump"),
+                         find_track_issues(still, ["centroid_x", "centroid_y"])))
+
+    # NO step at all (every track a single timepoint) is the other no-scale case → NaN
+    single = DataFrame(label = Float64[1, 2], centroid_t = Float64[0, 0],
+                       track_id = Float64[1, 2], centroid_x = Float64[0, 9],
+                       centroid_y = zeros(2))
+    @test isnan(track_step_scale(single, ["centroid_x", "centroid_y"]))
+    @test isempty(filter(i -> i.kind in ("gap", "jump"),
+                         find_track_issues(single, ["centroid_x", "centroid_y"])))
+
+    # no centroid columns at all → nothing to say
+    @test isempty(find_track_issues(_issue_df([(1, 0, 3, 0.0, 1.0)]), String[]))
+end
+
+@testset "track issues — a suggested op is SUBMITTABLE" begin
+    # The whole design rests on this: a worklist row is a ready-to-run op, so nothing has to
+    # translate "suggestion" into "edit". Detect → validate → apply, with no hand-editing.
+    df  = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 3.0, 1.0)])
+    iss = find_track_issues(df, ["centroid_x", "centroid_y"]; gap_steps = 3.0)
+    g   = only(filter(i -> i.kind == "gap", iss))
+
+    ops = Cecelia.parse_track_ops([issue_to_dict(g)["op"]])    # survives task validation
+    @test length(ops) == 1
+    for k in Cecelia.TRACK_OP_KINDS
+        # the op kind the detector emitted is one the engine knows
+        g.op["op"] == k && @test true
+    end
+    Cecelia.apply_track_ops!(df, ops)                          # and applies cleanly
+    @test Cecelia.track_ids_present(df) == [1]                 # the gap is closed
+
+    # …and re-detecting finds nothing left of that kind
+    @test isempty(filter(i -> i.kind == "gap",
+                         find_track_issues(df, ["centroid_x", "centroid_y"]; gap_steps = 3.0)))
+
+    # the dict form carries everything a UI needs to fly the viewer to the problem
+    d = issue_to_dict(g)
+    @test Set(keys(d)) == Set(["kind", "op", "trackIds", "atT", "centroid", "severity", "reason", "advice"])
+    @test d["centroid"] isa Vector && length(d["centroid"]) == 2
+end
+
+# ── celltrackR cell-pair analysis + double tracking ──────────────────────────
+#
+# Port check against celltrackR 1.2.2's own definitions (`doc/QC.Rmd` §2.3, §3.1): `angle` is between
+# the two tracks' DISPLACEMENT vectors, `dist` is the MINIMUM separation at a shared timepoint, and a
+# pair that never coexists has NO distance (celltrackR: NA → NaN here).
+@testset "analyze_cell_pairs (celltrackR)" begin
+    # two parallel tracks 4 µm apart, moving the same way, fully overlapping in time
+    para = DataFrame(
+        label      = Float64[1, 2, 3, 4, 5, 6],
+        centroid_t = Float64[0, 1, 2, 0, 1, 2],
+        track_id   = Float64[1, 1, 1, 2, 2, 2],
+        centroid_x = Float64[0, 1, 2, 0, 1, 2],
+        centroid_y = Float64[0, 0, 0, 4, 4, 4])
+    p = analyze_cell_pairs(para, ["centroid_x", "centroid_y"])
+    @test nrow(p) == 1                                  # one PAIR, not two rows
+    @test p.track1[1] == 1 && p.track2[1] == 2
+    @test p.angle[1] ≈ 0.0 atol=1e-9                    # same direction
+    @test p.distance[1] ≈ 4.0 atol=1e-9                 # min separation at a shared t
+    @test p.n_shared[1] == 3
+
+    # opposite directions → 180°
+    opp = copy(para)
+    opp[4:6, :centroid_x] = Float64[2, 1, 0]
+    @test analyze_cell_pairs(opp, ["centroid_x", "centroid_y"]).angle[1] ≈ 180.0 atol=1e-6
+
+    # perpendicular → 90°, which is the reference line the drift read-off uses
+    perp = copy(para)
+    perp[4:6, :centroid_x] = Float64[0, 0, 0]
+    perp[4:6, :centroid_y] = Float64[4, 5, 6]
+    @test analyze_cell_pairs(perp, ["centroid_x", "centroid_y"]).angle[1] ≈ 90.0 atol=1e-6
+
+    # NO overlap in time → distance undefined (NaN), exactly as celltrackR returns NA
+    seq = copy(para)
+    seq[4:6, :centroid_t] = Float64[10, 11, 12]
+    r = analyze_cell_pairs(seq, ["centroid_x", "centroid_y"])
+    @test isnan(r.distance[1])
+    @test r.n_shared[1] == 0
+    @test !isnan(r.angle[1])                            # an angle still exists
+
+    # a track that never moved has no direction → NaN angle, not a spurious 0°
+    still = copy(para)
+    still[4:6, :centroid_x] = Float64[9, 9, 9]
+    still[4:6, :centroid_y] = Float64[9, 9, 9]
+    @test isnan(analyze_cell_pairs(still, ["centroid_x", "centroid_y"]).angle[1])
+
+    # n pairs = n choose 2
+    three = DataFrame(label = Float64.(1:6), centroid_t = Float64[0, 1, 0, 1, 0, 1],
+                      track_id = Float64[1, 1, 2, 2, 3, 3],
+                      centroid_x = Float64[0, 1, 5, 6, 9, 10],
+                      centroid_y = zeros(6))
+    @test nrow(analyze_cell_pairs(three, ["centroid_x", "centroid_y"])) == 3
+end
+
+@testset "find_duplicate_tracks (celltrackR QC §3.1)" begin
+    # one cell segmented twice: near-identical paths, ~0.5 µm apart
+    dup = DataFrame(
+        label      = Float64.(1:8),
+        centroid_t = Float64[0, 1, 2, 3, 0, 1, 2, 3],
+        track_id   = Float64[1, 1, 1, 1, 2, 2, 2, 2],
+        centroid_x = Float64[0, 2, 4, 6, 0.3, 2.3, 4.3, 6.3],
+        centroid_y = Float64[0, 0, 0, 0, 0.4, 0.4, 0.4, 0.4])
+    iss = find_duplicate_tracks(dup, ["centroid_x", "centroid_y"])
+    @test length(iss) == 1
+    d = only(iss)
+    @test d.kind == "duplicate"
+    @test d.op == Dict{String,Any}("op" => "track.remove", "trackIds" => [2])  # drops the HIGHER id
+    @test d.track_ids == [1, 2]                         # but names both, so the user can see the pair
+    @test occursin("one cell tracked twice", d.advice)
+    @test occursin("remove track 2", d.advice)
+
+    # far apart → not a duplicate, however parallel
+    far = copy(dup)
+    far[5:8, :centroid_y] .= 80.0
+    @test isempty(find_duplicate_tracks(far, ["centroid_x", "centroid_y"]))
+
+    # close but heading differently → not a duplicate
+    cross = copy(dup)
+    cross[5:8, :centroid_x] = Float64[6.3, 4.3, 2.3, 0.3]
+    @test isempty(find_duplicate_tracks(cross, ["centroid_x", "centroid_y"]))
+
+    # too few shared frames to claim they are the same cell
+    @test isempty(find_duplicate_tracks(dup, ["centroid_x", "centroid_y"]; min_shared = 99))
+
+    # the suggested op is submittable and actually removes the duplicate
+    ops = Cecelia.parse_track_ops([d.op])
+    Cecelia.apply_track_ops!(dup, ops)
+    @test Cecelia.track_ids_present(dup) == [1]
+end
+
+@testset "track_pair_drift (celltrackR QC §2.3)" begin
+    # No global directionality: far-apart pairs average ~90°. Two perpendicular tracks, far apart —
+    # ONE pair, so the mean is exactly 90 by construction rather than by luck.
+    nodrift = DataFrame(label = Float64.(1:4), centroid_t = Float64[0, 1, 0, 1],
+                        track_id = Float64[1, 1, 2, 2],
+                        centroid_x = Float64[0, 1, 100, 100],
+                        centroid_y = Float64[0, 0, 0,   1])
+    pairs = analyze_cell_pairs(nodrift, ["centroid_x", "centroid_y"])
+    v = track_pair_drift(pairs; far_quantile = 0.0)      # judge ALL pairs in this tiny fixture
+    @test v.n_far == 1
+    @test v.mean_angle_far ≈ 90.0 atol=1e-6
+    @test v.drifting == false
+
+    # Everything marching the same way, even cells far apart → drift, not migration
+    drift = DataFrame(label = Float64.(1:6), centroid_t = Float64[0, 1, 0, 1, 0, 1],
+                      track_id = Float64[1, 1, 2, 2, 3, 3],
+                      centroid_x = Float64[0, 1, 50, 51, 100, 101],
+                      centroid_y = zeros(6))
+    dv = track_pair_drift(analyze_cell_pairs(drift, ["centroid_x", "centroid_y"]); far_quantile = 0.0)
+    @test dv.mean_angle_far ≈ 0.0 atol=1e-6
+    @test dv.drifting == true
+
+    # nothing measurable → no verdict, no crash, and NOT a false "drifting"
+    empty_v = track_pair_drift(DataFrame(angle = Float64[], distance = Float64[]))
+    @test empty_v.n_far == 0 && empty_v.drifting == false
+    @test isnan(empty_v.mean_angle_far)
+end
+
+@testset "track_path_dicts — the wire shape both routes send" begin
+    # two straight tracks; rows are deliberately NOT in time order, so ordering is a real assertion
+    df = DataFrame(label = [3.0, 1.0, 2.0, 4.0, 5.0],
+                   centroid_t = [2.0, 0.0, 1.0, 0.0, 1.0],
+                   track_id = [1.0, 1.0, 1.0, 2.0, 2.0],
+                   centroid_x = [20.0, 0.0, 10.0, 5.0, 6.0],
+                   centroid_y = [0.0, 0.0, 0.0, 1.0, 1.0])
+
+    all_paths = track_path_dicts(df, ["centroid_x", "centroid_y"])
+    @test Set(keys(all_paths)) == Set(["1", "2"])
+    p1 = all_paths["1"]
+    @test p1["t"] == [0.0, 1.0, 2.0]            # sorted by time, not by row order
+    @test p1["x"] == [0.0, 10.0, 20.0]          # coords follow their own timepoint
+    @test p1["label"] == [1, 2, 3]              # labels travel with the points
+
+    # `ids` restricts, and asking for a track that isn't there is silently empty, not an error —
+    # the worklist can reference a track the geometry cap left out
+    @test collect(keys(track_path_dicts(df, ["centroid_x", "centroid_y"]; ids = [2]))) == ["2"]
+    @test isempty(track_path_dicts(df, ["centroid_x", "centroid_y"]; ids = [999]))
+
+    # Untracked cells are never a path of their own — and a 0 id counts as untracked on read, so
+    # one polyline can't stitch every untracked cell in the image into a fake track.
+    untracked = DataFrame(label = [1.0, 2.0], centroid_t = [0.0, 1.0], track_id = [NaN, 0.0],
+                          centroid_x = [1.0, 2.0], centroid_y = [0.0, 0.0])
+    @test isempty(track_path_dicts(untracked, ["centroid_x", "centroid_y"]))
+    @test isempty(track_ids_present(untracked))
+
+    # 1-D segmentation: y comes back EMPTY rather than zeros invented here (the frontend decides)
+    oned = track_path_dicts(df, ["centroid_x"])
+    @test oned["1"]["y"] == Float64[]
+
+    # the shape the detector's own geometry uses is the same shape — one helper, two routes
+    iss = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 3.0, 1.0)])
+    geo = track_path_dicts(iss, ["centroid_x", "centroid_y"]; ids = [1, 2])
+    @test sort(collect(keys(geo))) == ["1", "2"]
+    @test all(k -> issubset(["t", "x", "y", "label"], collect(keys(geo[k]))), keys(geo))
+end
+
+# ── celltrackR diagnostics battery (app/src/tracking/track_diagnostics.jl) ────
+#
+# Two kinds of check, deliberately: ANALYTIC cases below (a straight track must be exactly ballistic,
+# a zig-zag exactly anti-correlated) which stay readable without R, and GOLDEN values further down
+# generated by celltrackR itself, which pin the conventions the analytic cases cannot.
+#
+# `_diag_df` builds tracks from explicit per-frame coordinates.
+function _diag_df(tracks::Vector{<:Pair})            # track_id => Vector of (t, x, y[, z])
+    lab, t, tid, x, y, z = Float64[], Float64[], Float64[], Float64[], Float64[], Float64[]
+    n = 0
+    for (id, pts) in tracks, p in pts
+        n += 1
+        push!(lab, n); push!(t, p[1]); push!(tid, id)
+        push!(x, p[2]); push!(y, p[3]); push!(z, length(p) > 3 ? p[4] : 0.0)
+    end
+    DataFrame(label = lab, centroid_t = t, track_id = tid,
+              centroid_x = x, centroid_y = y, centroid_z = z)
+end
+const _DIAG_XY  = ["centroid_x", "centroid_y"]
+const _DIAG_XYZ = ["centroid_x", "centroid_y", "centroid_z"]
+
+@testset "track_msd — a straight track is ballistic, exactly" begin
+    # 1 µm per frame along x: displacement over lag L is L µm, so MSD(L) = L² and the log-log slope
+    # is exactly 2
+    df = _diag_df([1 => [(t, Float64(t), 0.0) for t in 0:10]])
+    m = track_msd(df, _DIAG_XY; max_lag = 5)
+    @test m.lag == [1.0, 2.0, 3.0, 4.0, 5.0]
+    @test m.msd ≈ [1.0, 4.0, 9.0, 16.0, 25.0]
+    @test m.n == [10, 9, 8, 7, 6]                     # overlapping subtracks, celltrackR-style
+    @test all(isapprox.(m.sem, 0.0; atol = 1e-9))     # every sample identical → no spread
+    @test msd_log_slope(m.lag, m.msd) ≈ MSD_SLOPE_DIRECTED
+    @test msd_motion_kind(msd_log_slope(m.lag, m.msd)) == "directed"
+end
+
+@testset "track_msd — a time gap is not a lag" begin
+    # frames 0,1,2 then 6,7. Indexing by POSITION would call 2→6 a lag-1 step and fold a 4-frame,
+    # 4 µm displacement into the lag-1 mean. Each real step is 1 µm, so lag-1 MSD must be exactly 1.
+    df = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (2.0, 2.0, 0.0),
+                         (6.0, 6.0, 0.0), (7.0, 7.0, 0.0)]])
+    m = track_msd(df, _DIAG_XY; max_lag = 3)
+    @test m.msd[1] ≈ 1.0
+    @test m.n[1] == 3                                  # 0→1, 1→2, 6→7 — NOT 2→6
+    @test m.n[2] == 1 && m.msd[2] ≈ 4.0                # lag 2 is 0→2 alone
+end
+
+@testset "track_msd — stationary and untracked" begin
+    still = _diag_df([1 => [(t, 5.0, 5.0) for t in 0:5]])
+    m = track_msd(still, _DIAG_XY; max_lag = 3)
+    @test all(m.msd .== 0.0)
+    @test isnan(msd_log_slope(m.lag, m.msd))           # log(0) is not a number to invent
+    @test msd_motion_kind(NaN) == "unknown"
+
+    none = DataFrame(label = [1.0, 2.0], centroid_t = [0.0, 1.0], track_id = [NaN, NaN],
+                     centroid_x = [1.0, 2.0], centroid_y = [0.0, 0.0])
+    @test isempty(track_msd(none, _DIAG_XY).lag)
+end
+
+@testset "track_autocorrelation — straight, reversing, turning" begin
+    straight = _diag_df([1 => [(t, Float64(t), 0.0) for t in 0:8]])
+    a = track_autocorrelation(straight, _DIAG_XY; max_lag = 4)
+    @test a.lag == [0.0, 1.0, 2.0, 3.0, 4.0]
+    @test all(isapprox.(a.acor, 1.0; atol = 1e-12))
+    @test isnan(persistence_lag(a.lag, a.acor))        # never decays → report the window, not a number
+
+    # steps alternating +x/−x: cosine −1 at odd lags, +1 at even. A whole image doing this is the
+    # jitter signature the curve exists to expose.
+    zig = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (2.0, 0.0, 0.0),
+                          (3.0, 1.0, 0.0), (4.0, 0.0, 0.0), (5.0, 1.0, 0.0)]])
+    z = track_autocorrelation(zig, _DIAG_XY; max_lag = 2)
+    @test z.acor[1] ≈ 1.0 && z.acor[2] ≈ -1.0 && z.acor[3] ≈ 1.0
+
+    corner = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 1.0)]])
+    @test isapprox(track_autocorrelation(corner, _DIAG_XY; max_lag = 1).acor[2], 0.0; atol = 1e-12)
+end
+
+@testset "persistence_lag — interpolates to 1/e" begin
+    @test persistence_lag([0.0, 1.0, 2.0],
+                          [1.0, ACOR_PERSIST_LEVEL + 0.1, ACOR_PERSIST_LEVEL - 0.1]) ≈ 1.5
+    @test persistence_lag([0.0, 1.0, 2.0], [1.0, ACOR_PERSIST_LEVEL, 0.0]) ≈ 1.0
+    @test isnan(persistence_lag([0.0], [1.0]))
+    @test_throws ArgumentError persistence_lag([0.0, 1.0], [1.0])
+end
+
+@testset "plane_angle_profile — the geometry, and 2D has no plane" begin
+    # equal xy and z components → exactly 45° to the plane; distance is read at the step's START
+    df = _diag_df([1 => [(0.0, 0.0, 0.0, 10.0), (1.0, 1.0, 0.0, 11.0)]])
+    prof = plane_angle_profile(df, _DIAG_XYZ; plane_z = 0.0)
+    @test nrow(prof) == 1 && prof.angle[1] ≈ 45.0 && prof.distance[1] ≈ 10.0
+
+    flat = _diag_df([1 => [(0.0, 0.0, 0.0, 3.0), (1.0, 1.0, 1.0, 3.0)]])
+    up   = _diag_df([1 => [(0.0, 0.0, 0.0, 3.0), (1.0, 0.0, 0.0, 4.0)]])
+    @test plane_angle_profile(flat, _DIAG_XYZ; plane_z = 0.0).angle[1] ≈ 0.0
+    @test plane_angle_profile(up,   _DIAG_XYZ; plane_z = 0.0).angle[1] ≈ 90.0
+
+    # 2D data has no boundary plane — an empty frame, not an error (the panel hides the mode)
+    @test nrow(plane_angle_profile(df, _DIAG_XY)) == 0
+    @test PLANE_ANGLE_UNBIASED == 32.7                 # Beltman 2009, not a rounding
+end
+
+@testset "plane_artefact — only a NEAR deficit is suspect" begin
+    near = DataFrame(distance = fill(1.0, 20), angle = fill(5.0, 20))
+    far  = DataFrame(distance = fill(50.0, 20), angle = fill(35.0, 20))
+    v = plane_artefact(vcat(near, far))
+    @test v.suspect && v.mean_angle_near ≈ 5.0 && v.mean_angle_far ≈ 35.0
+
+    # the SAME deficit everywhere is a directional bias, not a boundary artefact
+    @test !plane_artefact(DataFrame(distance = [fill(1.0, 20); fill(50.0, 20)],
+                                    angle = fill(5.0, 40))).suspect
+    @test !plane_artefact(vcat(far, far)).suspect
+    e = plane_artefact(DataFrame(distance = Float64[], angle = Float64[]))
+    @test !e.suspect && isnan(e.mean_angle_near) && e.n_near == 0
+end
+
+@testset "drift_test — too few decorrelated samples is 'not assessed'" begin
+    tiny = _diag_df([1.0 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]])
+    t = drift_test(tiny, _DIAG_XY; step_spacing = 10)
+    @test isnan(t.p) && !t.drifting && t.n <= 1        # never a verdict from nothing
+end
+
+# A deterministic random walk: unit steps in directions from splitmix64, so the sequence is fixed
+# forever and does NOT depend on a Julia release's RNG stream. `drift` adds a constant velocity;
+# `x0` spreads the tracks apart.
+#
+# Two earlier attempts at this fixture were wrong in instructive ways, both caught by the diagnostics
+# themselves:
+#   • GOLDEN-ANGLE directions. Equidistributed is not decorrelated — rotating by a fixed 137.5° each
+#     step traces a rosette that closes on itself, and the MSD slope came out at -0.53. The fixture
+#     read as CONFINED.
+#   • A plain LCG seeded linearly per track. LCG streams from nearby seeds are correlated, so all ten
+#     "independent" walks drifted together and Hotelling's T² called it drift at p = 0.002 — a true
+#     detection of a fake dataset. splitmix64 mixes the seed, so the streams are independent.
+function _diag_walk(id::Int, n::Int; drift = (0.0, 0.0), x0 = 0.0)
+    st = Ref(UInt64(id) * 0x9E3779B97F4A7C15 + 0x00DEADBEEF)
+    function nextu()
+        st[] += 0x9E3779B97F4A7C15
+        z = st[]
+        z = (z ⊻ (z >> 30)) * 0xBF58476D1CE4E5B9
+        z = (z ⊻ (z >> 27)) * 0x94D049BB133111EB
+        z = z ⊻ (z >> 31)
+        Float64(z >> 11) / Float64(2)^53
+    end
+    pts = Tuple{Float64,Float64,Float64}[]
+    x, y = x0, 0.0
+    for k in 0:(n - 1)
+        push!(pts, (Float64(k), x, y))
+        θ = 2π * nextu()
+        x += cos(θ) + drift[1]
+        y += sin(θ) + drift[2]
+    end
+    Float64(id) => pts
+end
+
+@testset "drift_test — a NOISELESS drift cannot be tested, and says so" begin
+    # every track marching +x by exactly 1 with no variation: the sampled steps are identical, so the
+    # covariance is singular and T² does not exist. "Not assessed" is the only honest answer — a
+    # verdict from a matrix that cannot be inverted would be invented. Real data always has spread.
+    perfect = _diag_df([Float64(id) => [(Float64(t), Float64(t) + id, Float64(id)) for t in 0:24]
+                        for id in 1:8])
+    d = drift_test(perfect, _DIAG_XY; step_spacing = 10)
+    @test d.n > 3                                       # there WERE samples…
+    @test isnan(d.p) && !d.drifting                     # …and still no p-value
+    @test d.mean_step[1] ≈ 1.0                           # the mean step is reported regardless
+end
+
+@testset "track_diagnostics — one roll-up, and it reaches the QC findings" begin
+    # a real-looking drift: a quasi-random walk plus a constant +1.5 µm/frame in x, per track a
+    # different phase so the steps genuinely vary
+    drifting = _diag_df([_diag_walk(id, 30; drift = (1.5, 0.0), x0 = 40.0 * id) for id in 1:6])
+    d = track_diagnostics(drifting, _DIAG_XY; max_lag = 6)
+    @test d.summary.nTracks == 6
+    @test d.summary.driftP < DRIFT_ALPHA                 # the drift IS detected
+    @test d.summary.driftMeanStep[1] > 1.0
+    @test d.summary.motionKind == "directed"             # a drifting field is ballistic
+    @test !isempty(d.msd.lag) && !isempty(d.acor.lag)
+
+    f = track_diagnostic_findings(d)
+    @test "tracking.field_drift" in [x["code"] for x in f]
+    @test all(x -> x["level"] == "warn", f)              # advisory only, never an error
+    # text comes from the catalog, and the INPUTS are persisted for read-time re-rendering
+    @test all(x -> haskey(x, "key") && haskey(Cecelia.QC_TEXT, x["key"]), f)
+    drift = f[findfirst(x -> x["code"] == "tracking.field_drift", f)]
+    @test occursin("drifting", lowercase(drift["short"]))
+    @test haskey(drift, "detail") && occursin("mean step", drift["detail"])
+
+    # …and the same walk WITHOUT the drift is quiet: no drift finding, and a slope that reads as a
+    # random walk rather than "barely displaces". The battery must not cry wolf on ordinary motion.
+    calm = _diag_df([_diag_walk(id, 40; x0 = 40.0 * id) for id in 1:10])
+    c = track_diagnostics(calm, _DIAG_XY; max_lag = 6)
+    @test c.summary.motionKind == "random walk"
+    @test isempty(track_diagnostic_findings(c))
+end
+
+# ── celltrackR GOLDEN VALUES for the diagnostics battery ──────────────────────
+#
+# Produced by running celltrackR 1.2.2 ITSELF (from the old R version's renv) over the fixture below
+# and printing to 10 decimals — the same discipline as the logicle transform's FlowUtils goldens, and
+# worth more than hand-derived numbers because it pins the CONVENTIONS as well as the arithmetic:
+# which lag a subtrack length means, what step.spacing strides by, which point a distance is measured
+# from. Every one of those was a guess until this ran.
+#
+# The generator is committed at `app/test/golden/celltrackr_golden.R` — NOT run by the suite or CI
+# (neither has R with celltrackR), but present so these numbers stay re-derivable. A golden value whose
+# generator is lost is just a magic constant.
+const _CTR_TRACKS = [   # (track_id, t, x, y, z) — 3 tracks x 8 frames, R seed 42
+    (1, 0, 0, 0, 10),
+    (1, 1, 2.4, -0.1, 9.9),
+    (1, 2, 2.8, 1.9, 10.3),
+    (1, 3, 4.2, 1.9, 10.1),
+    (1, 4, 5.8, 3.2, 8.8),
+    (1, 5, 7.2, 5.5, 7.6),
+    (1, 6, 8.1, 4.1, 8.2),
+    (1, 7, 10.6, 3.8, 8.1),
+    (2, 0, 0, 0, 10),
+    (2, 1, -0.8, 0.5, 9.1),
+    (2, 2, 0, -0.2, 8.7),
+    (2, 3, 2.3, 0.3, 8.3),
+    (2, 4, 5.2, 1, 7.1),
+    (2, 5, 5.7, 2, 7.1),
+    (2, 6, 6.5, 1.4, 7.2),
+    (2, 7, 5.7, 1.9, 7.1),
+    (3, 0, 0, 0, 10),
+    (3, 1, 1.8, 0.7, 10.3),
+    (3, 2, 2, 1, 10.4),
+    (3, 3, 1.7, 0.2, 8.9),
+    (3, 4, 3.1, 1.8, 9),
+    (3, 5, 3.3, 2.4, 8.8),
+    (3, 6, 5.7, 2.5, 8.9),
+    (3, 7, 6.3, 2.8, 9.2)]
+
+_ctr_df() = DataFrame(label = Float64.(1:length(_CTR_TRACKS)),
+                      track_id   = Float64[r[1] for r in _CTR_TRACKS],
+                      centroid_t = Float64[r[2] for r in _CTR_TRACKS],
+                      centroid_x = Float64[r[3] for r in _CTR_TRACKS],
+                      centroid_y = Float64[r[4] for r in _CTR_TRACKS],
+                      centroid_z = Float64[r[5] for r in _CTR_TRACKS])
+const _CTR_XY  = ["centroid_x", "centroid_y"]
+const _CTR_XYZ = ["centroid_x", "centroid_y", "centroid_z"]
+
+@testset "diagnostics golden — MSD matches celltrackR squareDisplacement" begin
+    m = track_msd(_ctr_df(), _CTR_XYZ; max_lag = 5)
+    @test m.lag == [1.0, 2.0, 3.0, 4.0, 5.0]
+    @test m.msd ≈ [3.6490476190, 9.8405555556, 19.2746666667, 33.8275000000, 45.9888888889] atol = 1e-9
+    # celltrackR's subtrack.length L IS lag L here: both count frames, both average over every
+    # overlapping subtrack of that length (21 = 3 tracks x 7 steps)
+    @test m.n == [21, 18, 15, 12, 9]
+end
+
+@testset "diagnostics golden — autocorrelation matches celltrackR overallNormDot" begin
+    a = track_autocorrelation(_ctr_df(), _CTR_XYZ; max_lag = 4)
+    # THE CONVENTION, pinned: celltrackR dots the FIRST and LAST step of an L-step subtrack, so its
+    # L maps to lag L-1 here — its L=1 is the trivial 1.0, which is our lag 0.
+    @test a.lag == [0.0, 1.0, 2.0, 3.0, 4.0]
+    @test a.acor ≈ [1.0000000000, 0.2384705125, 0.3443271054, 0.3646898028, 0.1748312958] atol = 1e-9
+end
+
+@testset "diagnostics golden — plane angle/distance match celltrackR angleToPlane" begin
+    prof = plane_angle_profile(_ctr_df(), _CTR_XYZ)
+    @test nrow(prof) == 21
+    @test minimum(_ctr_df().centroid_z) ≈ 7.1000000000        # R's boundingBox(X)["min","z"]
+    # compared as a SET of (distance, angle): what matters is the pairing, not which track's steps
+    # celltrackR happens to emit first
+    got  = sort([(round(d; digits = 6), round(a; digits = 6)) for (d, a) in zip(prof.distance, prof.angle)])
+    @test got == sort([(2.900000, 2.383878), (2.800000, 11.095803), (3.200000, 8.130102), (3.000000, 32.235229), (1.700000, 24.021042), (0.500000, 19.824490), (1.100000, 2.274311), (2.900000, 43.651366), (2.000000, 20.620734), (1.600000, 9.644911), (1.200000, 21.912009), (0.000000, 0.000000), (0.000000, 5.710593), (0.100000, 6.050746), (2.900000, 8.829426), (3.200000, 15.501360), (3.300000, 60.334150), (1.800000, 2.692982), (1.900000, 17.548401), (1.700000, 2.383878), (1.800000, 24.094843)])
+end
+
+@testset "diagnostics golden — drift p matches celltrackR hotellingsTest" begin
+    df = _ctr_df()
+    # spacing 0 = every step, as in R; xy only, as R's dim = c("x","y") default
+    every = drift_test(df, _CTR_XY; step_spacing = 0)
+    @test every.n == 21
+    @test every.p ≈ 0.0005222153718 rtol = 1e-8
+
+    # …and the entire reason the parameter exists: the SAME data, decorrelated, is not significant.
+    # step.spacing = 3 strides by 4 frames → 6 of the 21 steps.
+    spaced = drift_test(df, _CTR_XY; step_spacing = 3)
+    @test spaced.n == 6
+    @test spaced.p ≈ 0.1055968743 rtol = 1e-8
+    @test every.p < DRIFT_ALPHA && spaced.p > DRIFT_ALPHA
+end
+
+@testset "diagnostics golden — pair angles match celltrackR analyzeCellPairs" begin
+    prs = analyze_cell_pairs(_ctr_df(), _CTR_XYZ)
+    got = Dict((r.track1, r.track2) => round(r.angle; digits = 8) for r in eachrow(prs))
+    @test got == Dict((1, 2) => 16.23356100, (1, 3) => 5.13519680, (2, 3) => 19.85983511)
+    # every track starts at the origin here, so the min shared-time distance is 0 — which is also
+    # what celltrackR's distanceCells reports (it, too, is a min over shared timepoints)
+    @test all(r -> r.distance ≈ 0.0, eachrow(prs))
+end
+
+@testset "track_diagnostics — the O(n²) pair scan is guarded, and says when it skipped" begin
+    # 12 tracks with the cap set to 5: the curves must still be computed (they are cheap and linear),
+    # the pair half must be skipped, and `nDuplicatePairs == 0` must be accompanied by `pairsSkipped`
+    # so nobody reads it as "no duplicates on this image".
+    many = _diag_df([_diag_walk(id, 12; x0 = 40.0 * id) for id in 1:12])
+    d = track_diagnostics(many, _DIAG_XY; max_lag = 4, max_pair_tracks = 5)
+    @test d.summary.pairsSkipped
+    @test d.summary.nDuplicatePairs == 0
+    @test isnan(d.summary.pairAngleFar)                  # not "90°", not 0 — not measured
+    @test !isempty(d.msd.lag) && !isempty(d.acor.lag)    # the cheap half always runs
+    @test length(d.pairs.angle) == 0
+
+    # under the cap, the same data DOES get the pair scan
+    ok = track_diagnostics(many, _DIAG_XY; max_lag = 4, max_pair_tracks = 100)
+    @test !ok.summary.pairsSkipped
+    @test length(ok.pairs.angle) == 12 * 11 ÷ 2
+    # the shipped default is the measured one (see PAIR_SCAN_MAX_TRACKS): 2000 tracks = 25 s of scan
+    @test PAIR_SCAN_MAX_TRACKS == 800
 end
