@@ -37,6 +37,10 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       NOWHERE in the viewer, which is not the answer either. Being traced; the question is which list
       a tracked-but-maskless value name belongs in.
 
+- [ ] **The contribution model (Decisions 10–13) is DESIGN ONLY** — see *The contribution model* below.
+      Suggested order: the `contributions` block first (so the later tiers plug into one grammar),
+      then `views`, then `layers`. The component tier is deferred with a named trigger.
+
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
       called `ccia-importTracks` (Dominik). Now two single-purpose example plugins —
@@ -311,6 +315,192 @@ registers the tasks — hence "registers and runs, but has no form".)
    `_unregister_task!` only drops the registry entries; an in-flight `_run_task` already holds the
    instance, and deleting the directory pulls its `_run.py` out from under a live `run_py` subprocess.
    Uninstall must consult the running-task set and refuse (or offer to cancel) rather than race.
+
+## The contribution model — designed, not built
+
+**Status: design only.** Nothing here is implemented. Written 2026-08-19 after Dominik asked why a
+plugin cannot ship a component "the way napari plugins do", and the answer turned out to be more
+interesting than "the browser has a build step".
+
+### The wall we hit
+
+`plugin.json` is **metadata only** — `name`, `version`, `description`, `homepage`,
+`requiresCecelia`, `categories` (see `read_plugin_manifest`). What a plugin *contributes* is inferred
+from where its files sit:
+
+| On disk | Becomes |
+|---|---|
+| `<category>/<name>.jl` + `.json` | a task, `fun_name = "<category>.<name>"` |
+| `plotDefinitions/*.json` | a summary plot on `module: "<category>"`'s page |
+| `python/` | importable helpers on `PYTHONPATH` |
+
+Convention over configuration, and it earns its keep: a plugin author writes no manifest
+boilerplate, and both example plugins are a handful of files.
+
+**But there is nowhere to declare a KIND of contribution that has no directory.** Every question in
+this document that stayed open — "can a plugin draw its output as tracks", "can it add a napari
+layer" — is the same question: the plugin has something to say and the manifest has no grammar for
+it. Answering each one by inventing another magic folder is how a layout becomes folklore.
+
+### What napari does, precisely
+
+Worth being exact, because the part people remember is not the part doing the work
+([building_a_plugin](https://napari.org/stable/plugins/building_a_plugin/index.html)).
+
+Contribution types: `readers`, `writers`, `widgets`, `sample data`, `theme`, `menus`. The manifest
+declares them explicitly, with an indirection layer:
+
+```yaml
+contributions:
+  commands:
+    - id: napari-hello.say_hi
+      python_name: napari_hello:show_hello_message
+  widgets:
+    - command: napari-hello.say_hi
+      autogenerate: true
+```
+
+Three things to take:
+
+1. **`commands` names the callable ONCE**, and contributions reference it by id — so one function can
+   be a widget and a menu item without being declared twice.
+2. **`autogenerate: true` appears in the first tutorial.** A widget generated from a function
+   signature via magicgui is the *canonical* path, not a fallback. Our `params` → `ParamRenderer` is
+   the same pattern, arrived at independently — **we already have napari's most-used widget form.**
+3. **The central contract is a DATA TUPLE, not a drawing:**
+
+   ```
+   LayerData      = (data, [attributes, [layer_type]])
+   ReaderFunction = Callable[[PathOrPaths], list[LayerData]]
+   ```
+
+   A reader plugin writes no UI at all. It returns `[(arr, {"size": 3}, "points")]` and napari builds
+   the layer. `layer_type` is a string; `attributes` are constructor kwargs. **That is a declarative
+   description of a layer, passed as data** — and it is the primitive we are missing.
+
+Two things NOT to take:
+
+- **Discovery via pip entry points** (`[project.entry-points."napari.manifest"]`). It requires a
+  build backend and a `pip install` before anything works. Our directory drop is genuinely easier for
+  a bench scientist; keep it.
+- **A copier template.** Our equivalent — "copy `docs/examples/plugins/`" — is loaded *and executed*
+  by CI, which a scaffolding template never is.
+
+### The honest scorecard
+
+| napari | cecelia today | gap |
+|---|---|---|
+| `widgets` + `autogenerate: true` | task spec `params` → `ParamRenderer` | **none** |
+| `readers`/`sample data` → `list[LayerData]` | task writes an h5ad; the bridge derives layers from what it already understands | **the layer contract** |
+| plots on a plugin's own page | `plotDefinitions/*.json` → `SummaryCanvas` (summary charts only) | **naming a built-in view** |
+| `widgets` as a hand-written `QWidget` | — | the ABI question, deliberately deferred below |
+| `writers` | export tasks | roughly covered |
+| `theme` | view profiles | covered, decoupled (Open question 2) |
+
+**A cecelia plugin is not less powerful than a napari plugin in compute.** Both ship executable code
+unsandboxed — napari ships Python, we ship Julia plus a Python runner. We are narrower in exactly one
+place: *browser rendering*, because a `.vue` needs compiling and an installed app has no Node. That
+is a platform fact, not a design choice, and it is why the ABI tier is expensive for us and free for
+them.
+
+### Decision 10 — `plugin.json` grows an optional `contributions` block
+
+The filesystem convention **stays as the default and desugars into contributions**, so every plugin
+that works today keeps working and writes nothing new. A plugin declares contributions only when it
+needs a kind the layout cannot express.
+
+```json
+{
+  "name": "ccia-trackMeasures",
+  "contributions": {
+    "tasks":  [{ "funName": "trackTools.cumulativeChange" }],
+    "plots":  [{ "spec": "plotDefinitions/cumulative_change.json" }],
+    "views":  [{ "module": "trackTools", "view": "trackPaths", "label": "Tracks" }],
+    "layers": [{ "fromTask": "trackTools.cumulativeChange",
+                 "layerType": "points", "colorBy": "trackTools.cumulativeSpeed" }]
+  }
+}
+```
+
+`tasks` and `plots` are the desugared form of what the directory walk already produces — spelled out
+so the grammar is uniform, never required. `views` and `layers` are new.
+
+**No `commands` indirection.** napari needs it because one Python function can be surfaced several
+ways; our tasks are already addressable by `fun_name`, which is the same idea with no extra layer.
+Adopt it only if a second thing ever needs naming.
+
+### Decision 11 — `views`: a plot spec may NAME a built-in view
+
+`frontend/src/components/canvas/interactiveViews.ts` is already a registry keyed by stable id — 8
+entries today (`trackPaths`, `trackCorrection`, `trackDiagnostics`, `gatingStrategy`, `filmstrip`,
+three flow views) — and its own comment says adding a plot is "add ONE line here". The lookup exists;
+it is simply not reachable from a spec.
+
+A plugin names one; `CustomModule.vue` (51 lines, currently `<SummaryCanvas :module="category">`)
+renders it. So `ccia-trackMeasures` would show its cumulative measures *and* the track paths those
+numbers came from.
+
+**What this makes public: view IDS, not components.** Renaming `trackPaths` breaks installed plugins;
+rewriting `TrackPathsView.vue` does not, as long as the id and its data contract hold. That is a far
+smaller promise than a component ABI, and it is the whole reason to prefer it.
+
+A named id that does not exist must FAIL LOUDLY — a blank panel is the failure mode this codebase
+keeps producing (see the empty column mapping, the wrong-segmentation picker). Ratchet it the way
+`showIf` conditions are ratcheted.
+
+### Decision 12 — `layers`: the `LayerDataTuple` equivalent, and where it must differ
+
+A plugin declares what napari should draw from its task's output; the bridge builds the layer. Pure
+Python→Python, nothing compiled, and it is the tier that most closely matches what a napari plugin
+does.
+
+**This is the gap that made the points import work by accident rather than by design.** Imported
+tracks appear in napari only because they registered as a `label_props` value name that the existing
+tracks path already understood. A plugin wanting a shapes overlay, a vector field or a mesh has no
+route at all — verified: only `napari_bridge.py` calls the `napari_utils.add_*` helpers.
+
+**The one place we cannot copy napari.** A napari plugin runs *inside* the napari process and hands
+it a live numpy array. Our task runs in a subprocess and exits. So `data` cannot be an array — it is
+a REFERENCE the bridge resolves:
+
+| napari | here |
+|---|---|
+| `data` = ndarray | a value_name + column selection in the h5ad, or a file the task wrote |
+| `attributes` = layer kwargs | the same, restricted to a reviewed allow-list |
+| `layer_type` = any napari layer | an allow-list: `points`, `tracks`, `shapes`, `vectors` to start |
+
+The allow-list is the point. `attributes` reaching `viewer.add_*` unchecked is a plugin passing
+arbitrary kwargs into napari's constructors, which is an ABI by the back door — the thing Decision 11
+was chosen to avoid. Start with what the existing overlays already need and widen on request.
+
+### Decision 13 — the component tier stays deferred, with a named trigger
+
+Shipping a plugin's own renderable component (prebuilt ESM, since a `.vue` cannot be compiled in an
+installed app) needs: Vue externalised from the bundle so one instance is shared — it is currently
+bundled *inside* `frontend/dist`, checked — a route serving JS from the config dir, a runtime
+`import()`, and a version-skew story between a plugin built against Vue 3.5 and an app on 3.6.
+
+Beyond the plumbing it makes props, stores, composables and panel state a **public contract that
+cannot be refactored freely**, and unlike code that is not something you can take back once plugins
+depend on it.
+
+**Deferred, not rejected. The trigger to revisit: someone wants a picture cecelia genuinely cannot
+draw, and Decisions 11–12 cannot express it.** Until then, `views` covers "our plots pointed at their
+data", which is what most plugins actually want. Note that napari itself treats the hand-written
+widget as the escape hatch and puts `autogenerate` in the tutorial.
+
+### Suggested order
+
+1. **`contributions` block, desugaring only.** Parse it; make the directory walk emit the same shape.
+   Nothing changes for existing plugins — but every later tier plugs into one grammar instead of
+   inventing a folder. Ratchet: a declared contribution must resolve to something that exists.
+2. **`views`.** Smallest visible win, and it settles "a plugin gets a real, non-declarative page".
+3. **`layers`.** Biggest conceptual win, most design left — the reference vocabulary and the
+   `attributes` allow-list both want their own pass.
+
+Doing (1) first is the whole point of writing this down: `views` could be built tomorrow as another
+special case, and then `layers` would need retrofitting around it.
+
 
 ## Phases
 

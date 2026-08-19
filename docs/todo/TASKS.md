@@ -124,14 +124,27 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       of 4367 cells, straightness median 0.59. Until now the suite only checked that it registered
       and validated its params.
 
-- [ ] **It still would not prove the Vue question.**
-      Plugins currently ship **no Vue** (`app/src/tasks/plugins.jl:249`) — deliberately, because
-      renderable code makes the frontend a plugin ABI. So "custom task AND custom module page" is
-      true only in the declarative sense. Reusing `TrackPathsView` from `feat/correction-seg-tracks`
-      is the test that settles it, two ways:
-      **(a)** widen `SummaryCanvas` so a plot spec can name a BUILT-IN view kind — no ABI, the
-      component stays refactorable; **(b)** load plugin ESM — real custom components, and the ABI
-      decision reopened. (a) is a day and reversible. Blocked on that branch merging either way.
+- [ ] **The contribution model — designed, not built.** `PLUGINS_PLAN.md` → *The contribution model*
+      (Decisions 10–13), written after reading napari's plugin docs end to end.
+      The finding that reframed it: napari's most-used contributions put data on screen by RETURNING
+      A DATA TUPLE — `LayerData = (data, [attributes, [layer_type]])` — not by drawing, and its first
+      tutorial uses `autogenerate: true` to build the widget from a function signature. So the pattern
+      we already have (`params` → `ParamRenderer`) IS napari's canonical widget form, and the thing we
+      lack is their layer primitive.
+      Our wall is narrower than "a plugin cannot ship Vue": `plugin.json` is metadata only and every
+      contribution is inferred from file layout, so there is **nowhere to declare a kind that has no
+      directory**. Four tiers, in order:
+      **(1) a `contributions` block** that the existing layout desugars into — do this FIRST, or every
+      later tier is another special case;
+      **(2) `views`** — a plot spec names a built-in view from `interactiveViews.ts`, which is already
+      a registry keyed by stable id. Makes view IDS public, not components;
+      **(3) `layers`** — declare what napari draws from a task's output. This is the real gap: only
+      `napari_bridge.py` can add a layer, which is why the points import worked by accident;
+      **(4) the component tier stays DEFERRED** with a named trigger — someone wants a picture cecelia
+      genuinely cannot draw. Vue is bundled inside `frontend/dist` (checked), so it needs externalising
+      plus a runtime loader, and it makes props/stores/composables a contract that cannot be walked
+      back. napari treats the hand-written widget as the escape hatch too.
+      #590 landed, so `TrackPathsView` is available and (2) is unblocked whenever you want it.
 
 - [ ] **Does the crop line up?** The real export is of a cropped/smoothed OME-TIFF. In points mode the
       tracks carry their own coordinates so nothing has to align — but put them beside an image or a

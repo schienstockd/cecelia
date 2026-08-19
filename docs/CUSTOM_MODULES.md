@@ -263,7 +263,21 @@ precompiles SFCs, so a plugin's `.vue` file could not be compiled there — but 
 render functions would load fine. It is excluded because shipping renderable code makes the frontend a
 **plugin ABI**: a component contract that cannot be refactored freely, plus a loader and version skew
 between a plugin and the app drawing it. Declarative specs cost a plugin author far less to maintain
-across releases. See [`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md).
+across releases.
+
+**If you are coming from napari, this is less of a difference than it looks.** napari's own first
+tutorial builds its widget with `autogenerate: true` — generated from a function signature by
+magicgui — which is the same pattern as a task spec's `params` here. Hand-written widgets are its
+escape hatch, not its standard path. And napari's most-used contributions put data on screen by
+*returning a data tuple* (`LayerData = (data, [attributes, [layer_type]])`), not by drawing.
+
+What a cecelia plugin genuinely cannot do yet is say what its output should LOOK like — draw my
+tracks as tracks, add my points to the viewer. That is designed and not built:
+[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*.
+
+Worth being clear about what is **not** narrower: a plugin's compute. Both napari and cecelia run
+plugin code unsandboxed with full machine access — Python there, Julia plus a Python runner here. The
+only narrower surface is browser rendering, and only because a `.vue` needs compiling.
 
 Plot spec ids follow the same precedence as task names — **built-ins win**, so a plugin cannot replace
 a package plot by reusing its id.
