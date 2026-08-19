@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint,
   type TrackPathMap,
-  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote,
+  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote, trackEndpoints,
 } from './trackPaths'
 
 // two tracks in a straight line along x: A runs 0→2, B carries on 3→5
@@ -239,5 +239,30 @@ describe('trackCountNote', () => {
   it('is empty when everything is shown', () => {
     expect(trackCountNote(374, 374)).toBe('')
     expect(trackCountNote(0, 0)).toBe('')
+  })
+})
+
+describe('trackEndpoints', () => {
+  const paths = {
+    '1': { t: [0, 1, 2], x: [0, 1, 2], y: [0, 0, 0], label: [1, 2, 3] },
+    '2': { t: [0, 1], x: [5, 6], y: [1, 1], label: [4, 5] },
+  }
+
+  it('finds the first and last point of every track', () => {
+    const { starts, ends } = trackEndpoints(pathPoints(paths, ['1', '2']))
+    expect(starts.map(p => [p.track, p.x])).toEqual([['1', 0], ['2', 5]])
+    expect(ends.map(p => [p.track, p.x])).toEqual([['1', 2], ['2', 6]])
+  })
+
+  it('a one-point track is both its own start and its own end', () => {
+    const one = { '9': { t: [4], x: [3], y: [3], label: [7] } }
+    const { starts, ends } = trackEndpoints(pathPoints(one, ['9']))
+    expect(starts).toHaveLength(1)
+    expect(ends).toHaveLength(1)
+    expect(starts[0]).toEqual(ends[0])
+  })
+
+  it('is empty for no points', () => {
+    expect(trackEndpoints([])).toEqual({ starts: [], ends: [] })
   })
 })

@@ -1906,7 +1906,29 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
                 @warn "trackclust pops unavailable" value_name = vn exception = e
             end
         end
-    end   # empty want + no gated + no trackclust → empty pops → bridge removes existing track layers
+    end
+    # 4. AN EXPLICIT SET OF TRACK IDS — the track timeline's "Show". Selecting lanes there is a
+    #    question about specific tracks, and centring the camera on one of them does not answer
+    #    "which of the ribbons on screen are the ones I picked?" — at 300 tracks they are
+    #    indistinguishable. This puts exactly the selection on its own brightly-coloured layer.
+    #
+    #    Reuses the SAME pop shape as every other branch rather than inventing a second way to draw a
+    #    track: the bridge already knows how to render a `track_ids` list, so this is a caller, not a
+    #    feature. `/_selection` is a path no gating map can produce (a leading underscore is reserved),
+    #    so it can never collide with a real population.
+    sel_raw = get(data, :trackIds, nothing)
+    if sel_raw !== nothing
+        sel_ids = unique(Int[Int(t) for t in sel_raw if t isa Real && isfinite(t) && t > 0])
+        sel_vn  = String(get(data, :valueName, ""))
+        haskey(img.label_props, sel_vn) || (sel_vn = isempty(want) ? sel_vn : first(want))
+        if !isempty(sel_ids) && haskey(img.label_props, sel_vn)
+            push!(pops, Dict{String,Any}(
+                "value_name" => sel_vn, "path" => "/_selection", "name" => "selection",
+                "pop_type" => "track", "colour" => "#e8a33d", "show" => true,
+                "track_ids" => sel_ids))
+        end
+    end
+    # empty want + no gated + no trackclust + no selection → empty pops → bridge removes track layers
     # colour-by overrides: where a user pop FILTERS on the `color_by` column, use its colour (the
     # canonical "use the population's colour" rule); the bridge fills the rest with defaults. Scan ALL
     # pop types — a track can be coloured by a cell-level column (flow/clust pop) or a track-level one

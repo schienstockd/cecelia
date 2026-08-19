@@ -211,7 +211,33 @@ describe('manualActions', () => {
     // the engine refuses this; learning it only when the task fails after Apply is the bad trade
     const j = act([1, 3]).join
     expect(j.op).toBeNull()
-    expect(j.blocked).toMatch(/overlap in time \(frames 4–5\)/)
+    expect(j.blocked).toMatch(/frame 4, 5/)
+  })
+
+  // The engine's rule is a SET INTERSECTION of frames (`_op_join`), not a range test. Without an
+  // exact answer this falls back to ranges, which is conservative — and measurably so: on
+  // zolIMa/fXgbTl it refuses 395 pairs the engine would accept. A caller holding the frames passes
+  // `sharedFrames` and gets the engine's own verdict.
+  it('takes an exact shared-frame answer over the conservative range test', () => {
+    const rows = [
+      { track: 1, nFrames: 7, t0: 0, t1: 21, netDistance: 0 },
+      { track: 2, nFrames: 3, t0: 10, t1: 12, netDistance: 0 },
+    ]
+    // ranges overlap completely, so the fallback refuses
+    expect(manualActions([1, 2], rows, null)[0].blocked).toMatch(/Both have a cell/)
+    // …but the runs interleave and share no frame, so the engine would allow it
+    const exact = manualActions([1, 2], rows, null, () => [])[0]
+    expect(exact.blocked).toBeNull()
+    expect(exact.op).toEqual({ op: 'track.join', trackIds: [1, 2] })
+  })
+
+  it('names the shared frames the exact answer reports, truncating a long list', () => {
+    const rows = [
+      { track: 1, nFrames: 9, t0: 0, t1: 8, netDistance: 0 },
+      { track: 2, nFrames: 9, t0: 0, t1: 8, netDistance: 0 },
+    ]
+    const j = manualActions([1, 2], rows, null, () => [1, 2, 3, 4, 5, 6])[0]
+    expect(j.blocked).toBe('Both have a cell at frame 1, 2, 3, 4… — they are not one cell')
   })
 
   it('needs exactly two for a join — never silently uses the first two', () => {

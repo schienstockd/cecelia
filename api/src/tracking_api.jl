@@ -155,7 +155,11 @@ function api_track_paths(req::HTTP.Request)
         # Longest first, then capped. Built from the FULL path map rather than a second pass over
         # `track_id` — "which cells are tracked" has one answer (`track_path_dicts`), and a private
         # count loop here would be a second one, free to disagree about e.g. a 0 id.
-        all_paths = track_path_dicts(df, spatial)
+        # `occupancy=1` → timepoints only. The track scheme draws lanes over FRAMES and reads nothing
+        # but `t`, and unlike a path plot it wants every track: a capped lane list simply hides tracks
+        # 2001+ from a surface whose whole job is to show you which tracks exist and when.
+        occupancy = get(q, "occupancy", "") in ("1", "true")
+        all_paths = track_path_dicts(df, spatial; occupancy = occupancy)
         order = sort!(collect(keys(all_paths));
                       by = k -> (-length(all_paths[k]["t"]), parse(Int, k)))
 
@@ -167,7 +171,10 @@ function api_track_paths(req::HTTP.Request)
         if !isempty(wanted)
             ids = String[k for k in wanted if haskey(all_paths, k)]
         else
-            limit = Int(_num("limit", 500.0))
+            # occupancy mode is ~a third the bytes and is read by a scrolled list rather than drawn
+            # as a hairball, so its default cap is far higher — the cap exists to stop an unreadable
+            # plot, and a lane list does not become unreadable, only longer
+            limit = Int(_num("limit", occupancy ? 20000.0 : 500.0))
             ids   = first(order, max(limit, 0))
         end
         paths = Dict{String,Any}(k => all_paths[k] for k in ids)

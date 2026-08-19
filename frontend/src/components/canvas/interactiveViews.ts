@@ -6,9 +6,9 @@ import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
-import TrackCorrectionView from '../plots/TrackCorrectionView.vue'
 import TrackPathsView from '../plots/TrackPathsView.vue'
 import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
+import TrackSchemeView from '../plots/TrackSchemeView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -20,13 +20,14 @@ import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 // or canvas changes. Shared infra (not cluster-specific) so the future universal canvas reuses it.
 // See docs/UI.md "Interactive plots".
 export type BoardGroup = 'interactive' | 'clustering' | 'image'
-export type PageFlag = 'clusterPage' | 'opticalFlowPage'
+export type PageFlag = 'clusterPage' | 'opticalFlowPage' | 'trackPage'
 
 export interface InteractiveView {
   label: string
   component: Component
   clusterPage?: boolean       // offered on the Cluster module page's +Plot picker (UMAP only)
   opticalFlowPage?: boolean   // offered on the Optical Flow module page's +Plot picker
+  trackPage?: boolean         // offered in the Track canvas's "+ Track…" picker
   analysisBoard?: boolean     // offered on the Analysis board's +Plot picker
   boardGroup?: BoardGroup     // which optgroup it lands in on the board (default 'interactive')
   // WHICH MANAGER this plot needs in the host's rail (default 'pops'). The plot declares it; the host
@@ -69,22 +70,47 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability', component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
-  // Track page ONLY, via that canvas's own "+ Correct" button — so it carries no surface flag and
-  // the pickers offer it nowhere. It is the one view here that MUTATES, and the Analysis board is
-  // read-only (docs/ANALYSIS.md), so a board flag would be wrong rather than merely unused.
-  // It is registered nonetheless because that is how a canvas hosts a view THROUGH InteractivePanel
-  // — title bar, drag, resize, collapse, persist. Hand-mounting the component instead skips all of
-  // it: that is what this entry's absence cost on the first attempt.
-  trackCorrection: { label: 'Track correction', component: TrackCorrectionView, rail: 'none' },
-  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the worklist above it
+  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the timeline below it
   // belongs on the board. Self-contained — it picks its own image, segmentation and colour column in
   // its panel state, so a population rail would be dead chrome. `square` because its axes are µm on
   // both sides and a stretched track plot is a wrong one.
-  trackPaths: { label: 'Tracks', component: TrackPathsView, analysisBoard: true, square: true, rail: 'none' },
+  trackPaths: { label: 'Tracks', component: TrackPathsView, trackPage: true, analysisBoard: true, square: true, rail: 'none' },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
   // it belongs on the board: "is this movie comparable to its peers" is a board question. Its verdicts
   // come from the server, the same ones `tracking.track_measures` banks as QC.
-  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, analysisBoard: true, rail: 'none' },
+  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, trackPage: true, analysisBoard: true, rail: 'none' },
+  // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
+  // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
+  // SPATIAL axes and so could not answer the question every join turns on — are these two tracks in
+  // the same frames? Track page only, because it MUTATES and the board is read-only
+  // (docs/ANALYSIS.md); it is registered rather than hand-mounted so it gets the InteractivePanel
+  // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
+  trackScheme: {
+    label: 'Track timeline', component: TrackSchemeView, trackPage: true, rail: 'none',
+    initialState: () => ({ order: 'start', offset: 0, sel: [] }),
+  },
+}
+
+/**
+ * Renamed / replaced view keys, for canvases persisted before the change.
+ *
+ * A stored panel whose key no longer resolves does not fail loudly — `isInteractiveView` returns
+ * false and the host's `v-else` renders something else entirely (on the Track canvas, a gating plot
+ * with a correction panel's state in it). So a retired key must MAP, not vanish. Same contract as
+ * `SPEC_ALIASES` in plots/popTypes.ts and `KIND_ALIASES` in ClusterPlots.
+ *
+ * `trackCorrection` → `trackScheme`: the worklist was replaced by the timeline, which authors the
+ * same ops onto the same queue, so a saved worklist panel becomes the thing that replaced it rather
+ * than an empty slot.
+ */
+export const VIEW_ALIASES: Record<string, string> = { trackCorrection: 'trackScheme' }
+
+/** Apply `VIEW_ALIASES` to a persisted panel state in place; returns true when it changed. */
+export function migrateViewKey(state: { kind: string }): boolean {
+  const a = VIEW_ALIASES[state.kind]
+  if (!a) return false
+  state.kind = a
+  return true
 }
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */

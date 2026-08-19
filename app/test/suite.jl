@@ -12929,6 +12929,22 @@ end
     geo = track_path_dicts(iss, ["centroid_x", "centroid_y"]; ids = [1, 2])
     @test sort(collect(keys(geo))) == ["1", "2"]
     @test all(k -> issubset(["t", "x", "y", "label"], collect(keys(geo[k]))), keys(geo))
+
+    # OCCUPANCY MODE: timepoints only, for the track timeline — it draws lanes over frames and reads
+    # nothing but `t`, and unlike a path plot it must show EVERY track rather than a capped top-N.
+    # The keys stay put and the dropped arrays come back EMPTY, exactly as `y` already does for a 1-D
+    # segmentation — so one frontend reader handles both modes and no caller has to know which
+    # produced the response. A mode that omitted the keys would make that a type change.
+    occ = track_path_dicts(df, ["centroid_x", "centroid_y"]; occupancy = true)
+    @test Set(keys(occ)) == Set(["1", "2"])
+    @test issubset(["t", "x", "y", "label"], collect(keys(occ["1"])))
+    @test occ["1"]["t"] == [0.0, 1.0, 2.0]          # the timepoints are unchanged…
+    @test occ["1"]["x"] == Float64[]                # …and everything else is empty, not absent
+    @test occ["1"]["y"] == Float64[]
+    @test occ["1"]["label"] == Int[]
+    # occupancy composes with `ids` — the fly-to-napari button asks for one track WITH coordinates
+    @test collect(keys(track_path_dicts(df, ["centroid_x", "centroid_y"];
+                                        ids = [2], occupancy = true))) == ["2"]
 end
 
 # ── celltrackR diagnostics battery (app/src/tracking/track_diagnostics.jl) ────

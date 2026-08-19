@@ -113,6 +113,31 @@ of chart types whose appearance is well-defined for **one image / multiple image
 **numeric / categorical** measures. This is the agreed spec for the renderer; it also fixes the
 boxplot/bar oddities. **Decisions below are settled** (see §7).
 
+## Y grows downward for an image coordinate
+
+`centroid_y` is a **row index**: row 0 is the top of the frame. That is what napari draws and what
+every pixel index in the pipeline means. A chart's y axis grows *upward* — right for an intensity, and
+a **mirror** for a position: a cell drifting down-screen appears to drift up, so comparing a plot with
+the viewer silently means comparing a shape with its reflection.
+
+So any plot with `centroid_y` on y is drawn flipped. `centroid_z` and `centroid_t` are **not** flipped:
+depth and time are not screen axes in the viewer, so orienting them is a plotting convention rather
+than a disagreement with the image — flipping those would invent a mismatch instead of removing one.
+The predicate is `isImageYAxis` (`utils/gatingAxes.ts`), name-based like `isCentroidAxis` beside it.
+
+**One mapping, forward and inverse together** — `plots/axisMap.ts`. The same six lines had been copied
+into four files (`PlotLayers`, `GateOverlay`, `GateScatterCell` ×2), which is survivable only while the
+mapping never changes. The inverse is why it matters: `pxToData` is how a dragged rectangle becomes the
+numbers written to `gating/{value_name}.json`, so if the two directions ever disagreed about the flip,
+every new position gate would be stored **mirrored** — wrong on disk, applied to every future image,
+and nothing looking wrong on screen at the moment it happens. Both come from one `flipY` and
+`axisMap.test.ts` pins the round trip; a detector there fails a fifth private copy.
+
+Hosts declare it, renderers consume it: `GatePlotPanel` and `GateMontage` pass
+`:flip-y="isImageYAxis(yChan)"` down through `GateScatterCell`. `TrackPathsView` is always spatial, so
+it simply sets Observable Plot's `y: { reverse: true }`. `density.ts` is exempt — it bins the grid in
+DATA order and never touches pixels; `gridToPx` converts those back through the shared mapping.
+
 ## 0. Rendering engine — Observable Plot
 
 The summary canvas renders with **Observable Plot** (`@observablehq/plot`), NOT Vega-Lite. We started

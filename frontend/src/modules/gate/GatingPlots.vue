@@ -27,7 +27,9 @@ import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { isInteractiveView } from '../../components/canvas/interactiveViews'
+import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
+import { readCanvasTrackSelection, EMPTY_TRACK_SELECTION, type CanvasTrackSelection }
+  from '../../lib/trackSelection'
 import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
@@ -87,27 +89,49 @@ provide(CANVAS_ZOOM_KEY, zoom)
 const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
-// TRACK ONLY. The correction worklist is a panel on this canvas rather than a page of its own: it is
+// A canvas persisted before a view was renamed still holds the old key; without this its panel falls
+// through the template's `v-if` chain and renders as a GATING PLOT carrying someone else's state.
+for (const p of panels.value) migrateViewKey(p.state as { kind: string })
+
+// TRACK ONLY. The correction workspace is a panel on this canvas rather than a page of its own: it is
 // read beside the track gating it will change, and a canvas panel already collapses, persists, zooms
-// and exports. It is the one panel here that MUTATES — see TrackCorrectionView's header.
+// and exports. It is the one panel here that MUTATES — see TrackSchemeView's header.
 // the correction worklist needs the project it is correcting; the gating canvas otherwise never has
 // to name it (every gating call is keyed by image + value name).
 const projectMeta = useProjectMetaStore()
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
-function addView(key: string) { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = key }
+function addView(key: string) {
+  if (!key) return
+  const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = key
+}
+// what the "+ Track…" picker offers — the registry's `trackPage` flag, never a key list here
+const trackOptions = computed(() => pageViews('trackPage'))
 // what a registry view needs from the page (the panel's own state carries the rest) — the same
 // {projectUid, imageUids, setUid} contract the cluster and optical-flow canvases pass
 const viewCtx = computed(() => ({
   projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [], setUid: null,
+  // the shared selection, plus the one way to change it. A setter in the context rather than an event
+  // on InteractivePanel: the panel is generic infrastructure and must not learn what a track is.
+  trackSel: readCanvasTrackSelection(selTracks.value),
+  setTrackSel: (v: CanvasTrackSelection) => { selTracks.value = v },
 }))
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
 // option to the defaults below and it persists automatically — see useViewState.ts.
-const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZero } = useViewState(shared, {
+const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZero,
+        selTracks } = useViewState(shared, {
   scope: 'global' as 'global' | 'local',     // global = one value for every plot; local = active plot only
   hl: [] as string[],                         // global-scope highlighted pop paths
   lineWidth: 1.5, labels: true, fromZero: true,
+  // WHICH TRACKS THE CANVAS IS TALKING ABOUT — the cross-panel link. Selecting lanes in the timeline
+  // is the same act as choosing what the x/y track plot draws and what napari flies to, so the
+  // selection lives on the CANVAS rather than in one panel's state. Same mechanism the highlighted
+  // populations already use, so it persists across navigation with no extra wiring.
+  //
+  // It carries its SCOPE (image + segmentation), not just ids: a track id means nothing on its own —
+  // see lib/trackSelection.ts for the empty plot that taught us so.
+  selTracks: { ...EMPTY_TRACK_SELECTION },
 })
 
 // effective value for a given plot (what the panel renders with)
@@ -242,20 +266,16 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                 @click="addPairs">
           <i class="pi pi-plus" /> Pairs
         </button>
-        <!-- TRACK: the paths themselves, and what looks wrong in them. -->
-        <button v-if="isTrack" class="cc-btn cc-btn-primary"
-                v-tooltip.bottom="'Add a track-path plot'" @click="addView('trackPaths')">
-          <i class="pi pi-plus" /> Tracks
-        </button>
-        <button v-if="isTrack" class="cc-btn cc-btn-primary"
-                v-tooltip.bottom="'Check the tracking: drift, motion type, double tracking'"
-                @click="addView('trackDiagnostics')">
-          <i class="pi pi-plus" /> Checks
-        </button>
-        <button v-if="isTrack" class="cc-btn cc-btn-primary"
-                v-tooltip.bottom="'Review tracks that look wrong'" @click="addView('trackCorrection')">
-          <i class="pi pi-plus" /> Correct
-        </button>
+        <!-- TRACK: the paths themselves, and what looks wrong in them. ONE picker, not one button
+             each — four `+ Xxx` buttons made this bar wider than the window. Built from the registry's
+             `trackPage` flag (`pageViews`), so a new track view appears here with no edit to this file;
+             a hardcoded key list here is the same silently-dead-checkbox bug the registry warns about. -->
+        <select v-if="isTrack && trackOptions.length" class="gp-add"
+                v-tooltip.bottom="'Add a track plot'" aria-label="Add a track plot"
+                @change="addView(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
+          <option value="">+ Track…</option>
+          <option v-for="v in trackOptions" :key="v.key" :value="v.key">{{ v.label }}</option>
+        </select>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
         <div v-if="!isTrack" class="cc-btn-group">
           <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
@@ -297,7 +317,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
+        <!-- Shown only on an EMPTY canvas. `.gp-bar` is a nowrap flex row, so a text node at the end
+             of it is the one item with nothing to push against: it collapsed to a ~40px column and
+             wrapped over six lines, which is what set the bar's height. It is also orientation a user
+             needs exactly once (docs/UI.md → UI copy), so the fix and the right behaviour agree. -->
+        <span v-if="!panels.length" class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
@@ -340,7 +364,9 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
-.gp-hint { opacity: 0.7; }
+.gp-hint { opacity: 0.7; white-space: nowrap; }
+/* the picker sits with the + buttons, so it must not take the 9rem the segmentation select does */
+.gp-bar select.gp-add { min-width: auto; }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }

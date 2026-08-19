@@ -30,7 +30,6 @@ const MUST_REFRESH = [
   'modules/gate/GatePairsPanel.vue',
   'components/plots/TrackPathsView.vue',
   'components/plots/TrackDiagnosticsView.vue',
-  'components/plots/TrackCorrectionView.vue',
 ]
 
 // Fetches plot/population data but must NOT self-refresh — with the reason, so removing an entry is a

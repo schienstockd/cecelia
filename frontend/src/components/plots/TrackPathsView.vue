@@ -31,10 +31,14 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { debouncedLatest } from '../../utils/debouncedLatest'
+import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
+         type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { distinctColors } from '../../plots/plot'
 import {
   pathPoints, pathDomain, normalizeTracks, displacementVectors, pathCsvRows, trackCountNote,
+  trackEndpoints,
   type TrackPathMap, type PathPoint,
 } from '../../plots/trackPaths'
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
@@ -43,9 +47,27 @@ type Mode = 'paths' | 'star' | 'rose'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
+  // THE CROSS-PANEL LINK (canvas `shared` bag, provided by GatingPlots). When the timeline selects
+  // lanes, this plot draws exactly those tracks instead of the top-N — which is the whole point of
+  // having both panels open: the timeline answers WHEN, this one answers WHERE, about the same cells.
+  // Optional, so a host that does not share a selection (a board slot) still gets a working plot.
+  trackSel?: CanvasTrackSelection
+  setTrackSel?: (v: CanvasTrackSelection) => void
   // every user-settable option lives in the panel's persisted bag, not a bare ref
   state: { imageUid?: string; valueName?: string; mode?: Mode; colorBy?: string; limit?: number }
 }>()
+
+// `ids=` bypasses the endpoint's cap by NAMING the tracks — exactly what it was added for. Without it
+// a selected track outside the top-N would silently not be drawn, which reads as "that track has no
+// path" rather than "it is past the limit".
+const follow = computed(() =>
+  followSelection(props.trackSel ?? EMPTY_TRACK_SELECTION, imageUid.value))
+const pinned = computed(() => follow.value?.ids ?? [])
+// The selection ADOPTS this panel's segmentation to its own. A track id only means something within
+// one label set: with this panel on `memTom` (396 tracks) and the timeline on `importTest2` (314),
+// selecting lane 277 asked memTom for a track 277 it does not have and drew an empty box reading
+// "0 selected tracks of 396". Following the scope is what makes "select there, see it here" true.
+const effectiveValueName = computed(() => follow.value?.valueName || valueName.value)
 
 const imageUid = computed(() => (props.state.imageUid && props.imageUids.includes(props.state.imageUid))
   ? props.state.imageUid : (props.imageUids[0] ?? ''))
@@ -108,28 +130,50 @@ async function loadColumns() {
   }
 }
 
-async function load() {
+/**
+ * LAST REQUEST WINS. Selecting tracks in the timeline fires one `load` per click, and each is a
+ * different request (`ids=80` then `ids=80,277`) — so without this the older, smaller response can
+ * land last and the plot draws ONE track while two are selected. Dominik hit exactly that: the
+ * endpoint returned both (verified: `ids=80,277` → `shown 2`), the panel reported "1 selected track".
+ *
+ * `debouncedLatest` is the canonical scheduler for a REQUEST (docs/UI.md → Continuous controls) and is
+ * placed at the SINK, so every existing caller of `load()` is protected rather than each call site
+ * having to remember. `isCurrent()` after the await is the part a plain debounce misses: a burst
+ * collapses, but an in-flight response must also be refused once superseded.
+ */
+const runLoad = debouncedLatest<void>(async (_arg, isCurrent) => {
   if (!props.projectUid || !imageUid.value) { data.value = null; return }
-  loading.value = true; error.value = ''
+  error.value = ''
   try {
+    const vn = effectiveValueName.value
     const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-              (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '') +
-              `&colorBy=${encodeURIComponent(colorBy.value)}&limit=${limit.value}`
+              (vn ? `&valueName=${encodeURIComponent(vn)}` : '') +
+              `&colorBy=${encodeURIComponent(colorBy.value)}` +
+              (pinned.value.length ? `&ids=${encodeURIComponent(pinned.value.join(','))}`
+                                   : `&limit=${limit.value}`)
     const r = await fetch(`/api/tracking/paths?${q}`)
     const d = await r.json()
+    if (!isCurrent()) return                       // a newer selection is already on its way
     if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
     data.value = d as PathsResponse
     // the server falls a column this image lacks back to uncoloured — follow it rather than keeping
     // a picker that claims a colour the plot is not using
     if (data.value.colorBy !== colorBy.value) colorBy.value = data.value.colorBy
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof Error ? e.message : String(e)
     data.value = null
   } finally {
-    loading.value = false
-    await nextTick(); plotBox.redraw()
+    if (isCurrent()) { await nextTick(); plotBox.redraw() }
   }
-}
+}, {
+  // short: a click burst is milliseconds apart, and anything longer reads as the plot lagging
+  wait: 60,
+  onState: st => (loading.value = st !== 'idle'),
+  onError: e => (error.value = e instanceof Error ? e.message : String(e)),
+})
+
+function load() { runLoad.schedule() }
 
 onMounted(async () => { await loadColumns(); await load() })
 // a tracking or correction run rewrites exactly what this draws — the ONE refresh chokepoint, so the
@@ -137,6 +181,8 @@ onMounted(async () => { await loadColumns(); await load() })
 useDataRefresh(() => (imageUid.value ? [imageUid.value] : []), () => { loadColumns(); load() })
 watch([() => props.projectUid, imageUid], async () => { await loadColumns(); await load() })
 watch([valueName, colorBy, limit], load)
+// a selection change is a different REQUEST (ids= vs limit=), not just a redraw
+watch([pinned, effectiveValueName], load)
 
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
@@ -151,7 +197,17 @@ const raw = computed<PathPoint[]>(() => pathPoints(paths.value, ids.value))
 const shownPoints = computed<PathPoint[]>(() =>
   mode.value === 'paths' ? raw.value : normalizeTracks(raw.value))
 const values = computed(() => data.value?.values ?? {})
-const note = computed(() => trackCountNote(data.value?.shown ?? 0, data.value?.total ?? 0))
+// A capped plot that says nothing is a plot that lies — and so is one following a selection while
+// claiming "longest first", which is what `trackCountNote` would say. Two different truths.
+const missed = computed(() =>
+  selectionMissed(props.trackSel ?? EMPTY_TRACK_SELECTION, data.value?.shown ?? 0))
+const note = computed(() => {
+  if (!pinned.value.length) return trackCountNote(data.value?.shown ?? 0, data.value?.total ?? 0)
+  // an empty box under a selection is the worst outcome — it reads as "those tracks have no path"
+  if (missed.value) return `None of the ${pinned.value.length} selected tracks are in ${effectiveValueName.value}`
+  const n = data.value?.shown ?? 0
+  return `${n} selected track${n === 1 ? '' : 's'} of ${data.value?.total ?? 0}`
+})
 
 /** The colour value for a point's track — undefined when the plot is coloured by track identity. */
 const valueOf = (track: string) => values.value[track] ?? null
@@ -177,6 +233,7 @@ async function render() {
     : pts)
 
   const stroke = coloured ? 'v' : 'track'
+  const endpoints = trackEndpoints(pts)
   const withValue = <T extends { track: string }>(rows: T[]) =>
     rows.map(r => ({ ...r, v: valueOf(r.track) }))
 
@@ -193,9 +250,16 @@ async function render() {
                                         strokeWidth: 1.2, markerEnd: 'arrow' }),
       ]
     : [
-        Plot.line(withValue(pts), { x: 'x', y: 'y', z: 'track', stroke, strokeWidth: 1.2 }),
-        // where each track STARTS — without it a path is a line with no direction
-        Plot.dot(withValue(pts.filter(p => p.i === 0)), { x: 'x', y: 'y', fill: stroke, r: 1.8 }),
+        // START and END, told apart at a glance. A polyline says where a cell went and not which way
+        // along it, and the old filled dot at the start was the same colour and nearly the same size
+        // as the line — so it read as a bend, not a beginning. Now: a HOLLOW CIRCLE where the track
+        // starts, and an ARROWHEAD on the line itself where it ends (`markerEnd`, oriented by the
+        // final segment, so it also shows the heading). A single-point track gets its circle and no
+        // arrow, because there is no segment to put one on.
+        Plot.line(withValue(pts), { x: 'x', y: 'y', z: 'track', stroke, strokeWidth: 1.2,
+                                    markerEnd: 'arrow' }),
+        Plot.dot(withValue(endpoints.starts), { x: 'x', y: 'y', stroke, fill: 'none',
+                                                r: 6, strokeWidth: 1.6 }),
       ]
 
   node = Plot.plot({
@@ -203,7 +267,11 @@ async function render() {
     style: { background: bg, color: fg, fontSize: '11px' },
     // µm on both axes, same span — see the header: a stretched track plot is a wrong track plot
     x: { domain: domain?.x, label: 'x (µm)', grid: true },
-    y: { domain: domain?.y, label: 'y (µm)', grid: true },
+    // Y GROWS DOWNWARD. `centroid_y` is an IMAGE coordinate: row 0 is the top of the frame, which is
+    // what napari draws and what every pixel index in the pipeline means. A plot with y increasing
+    // upward is a MIRROR of the image — a cell moving down-screen appears to move up, and comparing
+    // this plot with the viewer silently means comparing a shape with its reflection.
+    y: { domain: domain?.y, label: 'y (µm)', grid: true, reverse: true },
     color: colourScale,
     marks,
   }) as SVGElement
@@ -285,7 +353,14 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 
     <div ref="host" class="tpv-host" />
     <PlotSpinner v-if="loading" label="Reading tracks" />
-    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">{{ note }}</span>
+    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">
+      {{ note }}
+      <button v-if="pinned.length && setTrackSel" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              v-tooltip.left="'Show all tracks again'"
+              @click="setTrackSel({ ...EMPTY_TRACK_SELECTION })">
+        <i class="pi pi-times" />
+      </button>
+    </span>
   </div>
 </template>
 

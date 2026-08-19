@@ -2403,6 +2403,21 @@ end
 end
 
 @testset "API: bad-param launch still emits [ERROR] + terminal failed frame" begin
+    # An explicit JSON `null` is ordinary for "I have no value" — a canvas panel legitimately has no
+    # set — and `String(get(data, :setUid, ""))` did NOT tolerate it: `get`'s default only fires for a
+    # MISSING key, so JSON3's `nothing` reached `String(::Nothing)` and aborted the whole handler.
+    # It shipped as `WS message error — MethodError: no method matching String(::Nothing)` on a track
+    # correction that then silently never ran.
+    @testset "_wstr absorbs an explicit null at the WS boundary" begin
+        d = JSON3.read(JSON3.write((; setUid = nothing, projectUid = "abc", mode = nothing)))
+        @test _wstr(d, :setUid) == ""
+        @test _wstr(d, :projectUid) == "abc"
+        @test _wstr(d, :missingKey) == ""
+        # a non-empty default still applies to both absent AND null
+        @test _wstr(d, :mode, "error") == "error"
+        @test _wstr(d, :alsoMissing, "error") == "error"
+    end
+
     # run_task validates params FIRST and throws before any job runs. handle_task_run must catch that
     # and STILL emit a task log + a terminal task:status:failed frame — otherwise the throw dies in
     # the @spawn silently and the observer's "Watch" auto-trigger (which keys off the terminal frame)
