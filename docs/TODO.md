@@ -122,12 +122,18 @@ to the on-demand path wherever no prebuilt image is present, and the freshness s
 image that predates the user's Julia/deps self-heals. Belongs with the packaging phase in
 `docs/ROADMAP.md`; not urgent, since one on-demand build already gives every user a fast cache.
 
-### Set-scope / incremental node subprocesses not killed on chain cancel
-The per-image cancel path kills running subprocesses. Set-scope (`_run_set_scope_node!`)
-and incremental (`_run_incremental_node!`) runners call the multi-image `_run_task` directly with
-`on_process = _ -> nothing` and are **not** registered in `_TASKS`, so `cancel_chain_run!` can't
-reach their subprocesses mid-run (the between-node flag still stops not-yet-started ones). No real
-set-scope subprocess task exists yet (only mock/plot tasks), so impact is currently nil. When the
-first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
-path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
+### Incremental node subprocesses not killed on chain cancel
+The per-image cancel path kills running subprocesses. `_run_incremental_node!` still calls the
+multi-image `_run_task` directly with `on_process = _ -> nothing` and is **not** registered in
+`_TASKS`, so `cancel_chain_run!` can't reach its subprocess mid-run (the between-node flag still stops
+not-yet-started ones) — and for the same reason it writes no task log and takes no pool slot.
+
+The set-scope half of this is **done**: `_run_set_scope_node!` now dispatches through
+`run_task(task, imgs, …)`, which was the prescribed fix. It stopped being "impact nil / no real
+set-scope subprocess task exists" when `opticalFlow.train` shipped — chain-run training wrote no log
+and ignored its `gpu` pool. See `docs/SCHEDULER.md` → *Set-scope nodes go through `run_task`*.
+
+Incremental was left because it re-invokes as images arrive, so a `TaskRecord` per node vs per
+invocation is a real design choice rather than the like-for-like swap set-scope was. Decide that, then
+route it the same way.
 

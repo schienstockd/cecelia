@@ -150,6 +150,7 @@ export CellposeCorrect
 export CellposeSegment
 export CoastalSegment, coastal_models_for_python
 export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
+export flow_model_filename
 export MeasureLabels
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops

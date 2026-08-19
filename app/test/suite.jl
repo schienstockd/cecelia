@@ -13239,3 +13239,91 @@ end
     # the shipped default is the measured one (see PAIR_SCAN_MAX_TRACKS): 2000 tracks = 25 s of scan
     @test PAIR_SCAN_MAX_TRACKS == 800
 end
+
+@testset "flow_model_filename" begin
+    # The two spellings of one model: the STEM `opticalFlow.train`'s `modelName` holds, and the vault
+    # FILENAME a consumer's `model` select carries. They meet whenever one chain node trains a model
+    # and a later node segments with it; appending `.pt` at each such site is how they drift.
+    @test flow_model_filename("flow.cytoFg") == "flow.cytoFg.pt"
+    @test flow_model_filename("flow.cyto")   == "flow.cyto.pt"
+    # Idempotent, so it is safe on a value that is already a filename (a re-validated chain dict).
+    @test flow_model_filename("flow.cytoFg.pt") == "flow.cytoFg.pt"
+    # Dots in the stem are normal here — real names use them — and must not be treated as extensions.
+    @test flow_model_filename("a.b.c") == "a.b.c.pt"
+    # Round-trips against the vault's own stem list rule (`flow_model_names` strips exactly this).
+    @test first(splitext(flow_model_filename("flow.cytoFg"))) == "flow.cytoFg"
+end
+
+@testset "a chain may name a model an upstream node trains" begin
+    # A chain that TRAINS a model and then segments with it names something the vault does not hold at
+    # author time. The `model` select's options are enumerated from the vault, so per-node validation
+    # read the forward reference as a typo and rejected the template — and the whiteboard's dropdown
+    # had the same blind spot, so the wiring could not be expressed at all. Only the template can tell
+    # a forward reference from a mistake, hence `_chain_produced_names` feeding `extra_options`.
+    train(name) = ChainNode(; id = "train", fn = "opticalFlow.train",
+                            params = Dict{String,Any}("modelName" => name,
+                                                      "valueName" => "smoothed"))
+    seg(model)  = ChainNode(; id = "seg", fn = "segment.coastal",
+                            params = Dict{String,Any}(
+                                "valueName" => "smoothed",
+                                "models" => Dict{String,Any}(
+                                    "0" => Dict{String,Any}("model" => model))))
+    tpl(nodes, edges) = ChainTemplate("t", nodes, edges, String[])
+
+    # The point of the whole change: train → seg, seg naming the model train will write.
+    @test validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")],
+            [ChainEdge("train", "seg")])) === nothing
+
+    # The producer holds a STEM; the consumer holds a FILENAME. Accepting only one spelling would make
+    # this depend on which side the user typed it on.
+    @test "flow.cytoFg.pt" in
+          Cecelia._chain_produced_names(tpl([train("flow.cytoFg"), seg("")],
+                                            [ChainEdge("train", "seg")]), "seg")
+
+    # ANCESTORS ONLY. Reversed, the segment node runs BEFORE the model exists — a real wiring mistake,
+    # and letting it through here would only defer it to a mid-run failure on an occupied GPU.
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")],
+            [ChainEdge("seg", "train")]))
+
+    # Unconnected is the same case: nothing guarantees the model is there when seg runs.
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")], ChainEdge[]))
+
+    # A genuine typo downstream of a producer must STILL fail — the allowance is exactly the set of
+    # names an ancestor writes, not "any string once a trainer is present".
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFgg.pt")],
+            [ChainEdge("train", "seg")]))
+
+    # A root node has no ancestors, so it produces nothing for itself.
+    @test isempty(Cecelia._chain_produced_names(
+        tpl([train("flow.cytoFg")], ChainEdge[]), "train"))
+end
+
+@testset "set-scope chain nodes run through run_task" begin
+    # `_run_set_scope_node!` called `_run_task` DIRECTLY, skipping everything `run_task` wraps around
+    # it — and skipping all of it silently: no `<img>/logs/<fun_name>.log` (`_wrap_log_with_file`), no
+    # task record (`_register_task!`) so the console and task-log view had nothing to attach to and the
+    # output fell through to the server's stdout, no run-log entry, and — worst — no
+    # `put!(pool.queue, job)`, so a node declaring `resource_pool: "gpu"` ran UNQUEUED beside whatever
+    # already held the GPU. Found when `opticalFlow.train` completed inside a chain and its log file
+    # was still weeks old while the image-scope node next to it had logged normally.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    body_start = findfirst("function _run_set_scope_node!", src)
+    @test body_start !== nothing
+    body = src[first(body_start):end]
+    # The next top-level function ends the body.
+    nxt  = findfirst("\nfunction ", body[10:end])
+    body = nxt === nothing ? body : body[1:first(nxt) + 8]
+
+    @test occursin(r"\brun_task\(task_struct", body) ||
+          error("_run_set_scope_node! must dispatch through `run_task`, not `_run_task` — see " *
+                "docs/SCHEDULER.md → *Set-scope nodes go through run_task*.")
+    @test !occursin(r"(?<!_)\b_run_task\(", body) ||
+          error("_run_set_scope_node! calls `_run_task` directly again. That bypasses the log file, " *
+                "the task record, the run log and the resource pool.")
+    # The pool the node declares must actually be handed over; a nothing/"" here silently means `cpu`.
+    @test occursin("pool_name        = node.resource_pool", body)
+end

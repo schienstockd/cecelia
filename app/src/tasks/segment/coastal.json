@@ -54,6 +54,7 @@
           "key": "model",
           "label": "Model",
           "type": "select",
+          "field": "models",
           "default": "",
           "tip": "Trained on the Optical Flow page",
           "options": [

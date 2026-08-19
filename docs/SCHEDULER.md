@@ -251,19 +251,44 @@ task's `on_process` callback records the subprocess handle, `cancel_task!` would
 nothing` and skip the kill. `_execute_job!`'s `on_process` wrapper closes this: right after storing
 `rec.proc`, it re-checks `is_cancelled(job.id)` and kills immediately if so.
 
-### Limitation — set-scope / incremental nodes *inside a chain*
+### Set-scope nodes go through `run_task`
 
-The per-image path is fully covered. It's specifically the **chain's** set-scope and incremental
-runners (`_run_set_scope_node!`, `_run_incremental_node!`) that call the multi-image `_run_task`
-**directly** — with `on_process = _ -> nothing` and no `_TASKS` entry — so `cancel_chain_run!` can't
-reach a subprocess they spawned mid-run (the between-node flag still stops not-yet-started ones). A
-set-scope task launched from a **module page** is unaffected: `handle_task_run` goes through the
-registered `run_task(task, imgs, …)` overload, so it has a `TaskRecord` and cancels normally.
+`_run_set_scope_node!` dispatches through the **`run_task(task, imgs::Vector, …)` overload**, exactly
+like the per-image path — not the inner `_run_task`. Do not reach for `_run_task` here; the
+`set-scope chain nodes run through run_task` testset fails if it comes back.
 
-Impact is currently nil — no real set-scope subprocess task exists (only mock/plot tasks). When the
-first one lands (e.g. HMM training), give the chain's multi-image path a `TaskRecord` + `chain_run_id`
-like the per-image path: `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on
-chain cancel*.
+It used to call `_run_task` directly, and skipped everything `run_task` wraps around it — silently,
+one wrapper each:
+
+| skipped | what it cost |
+|---|---|
+| `_wrap_log_with_file` | the node wrote **no `<img>/logs/<fun_name>.log`** — while the image-scope node beside it in the same chain wrote one normally |
+| `_register_task!` | no `TaskRecord`, so no task list entry, nothing for the console or task-log view to attach to, and the output fell through to the API server's **stdout** (the terminal `pixi run dev` was started from) |
+| `open_run_log!` | no run-log entry for the node |
+| `put!(pool.queue, job)` | a node declaring `resource_pool: "gpu"` ran **unqueued**, beside whatever already held the GPU |
+| `on_process` registration | `cancel_chain_run!` could not kill a subprocess it had spawned |
+
+The image vector still reaches `_run_task` as one joint fit: `run_task` carries it on the `TaskJob` and
+the pool worker dispatches on it (`job_target = isnothing(job.imgs) ? job.img : job.imgs`). `run_task`
+also flattens `section` params and injects `_task_id`, which the hand-rolled call was duplicating.
+Node state now starts `:queued` and flips to `:running` from `on_status_change` across every
+participating image, so the barrier row distinguishes "waiting for a GPU slot" from "running".
+
+This was found the way it would be: `opticalFlow.train` completed inside a chain and its log file was
+still weeks old. The prior note here said impact was nil because "no real set-scope subprocess task
+exists (only mock/plot tasks)" — `opticalFlow.train` is one (it calls `run_py`), so that premise had
+expired.
+
+#### Still open — incremental nodes
+
+`_run_incremental_node!` **still calls `_run_task` directly** (`on_process = _ -> nothing`, no `_TASKS`
+entry), so everything in the table above still applies to an incremental node: no log file, no task
+record, no pool slot, and `cancel_chain_run!` cannot reach a subprocess it spawned. It was left alone
+deliberately — an incremental node re-invokes as images arrive, so giving it a `TaskRecord` is a
+lifecycle question (one record per invocation? one per node?) rather than the like-for-like swap
+set-scope was. A set-scope or incremental task launched from a **module page** is unaffected either
+way: `handle_task_run` already goes through the registered overload. See `docs/TODO.md` →
+*Incremental node subprocesses not killed on chain cancel*.
 
 ---
 

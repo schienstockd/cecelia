@@ -305,6 +305,19 @@ flow_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
     String[first(splitext(m.name)) for m in list_coastal_models(dev_dir)]
 
 """
+    flow_model_filename(stem) -> String
+
+The vault FILENAME for a model stem — i.e. what a consumer's `model` select carries, built from the
+stem `opticalFlow.train`'s `modelName` holds. The inverse of [`flow_model_names`](@ref).
+
+Exists because those two spellings meet whenever one chain node trains a model and a later node
+segments with it, and appending `.pt` at each such site is how they drift apart. Idempotent, so it is
+safe on a value that is already a filename.
+"""
+flow_model_filename(stem::AbstractString)::String =
+    endswith(stem, ".pt") ? String(stem) : "$(stem).pt"
+
+"""
 Initialise Cecelia configuration. Merges the bundled `config.toml` with the user `custom.toml`
 found at [`custom_toml_path`](@ref) (see [`config_dir`](@ref) for how the location is resolved).
 """

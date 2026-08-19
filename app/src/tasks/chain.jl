@@ -281,7 +281,8 @@ function validate_chain_template(t::ChainTemplate)
             throw(ChainTemplateError("node '$(n.id)': resource_pool '$(n.resource_pool)' is not " *
                                      "configured — known pools: " * join(sort(collect(pools)), ", ")))
         try
-            validate_params(task, n.params)
+            validate_params(task, n.params;
+                            extra_options = _chain_produced_names(t, n.id))
         catch e
             e isa ParamValidationError || rethrow()
             throw(ChainTemplateError("node '$(n.id)' ($(n.fn)): $(e.msg)"))
@@ -761,9 +762,12 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     end
 
     tid = gen_uid()
+    # :queued, not :running — the same distinction the image-scope path makes. This node goes through
+    # `run_task` now, so it waits for a slot in its `resource_pool` like any other task, and only a
+    # pool worker picking it up means "running" (see `on_status_change` below).
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
-                            status=:running, task_id=tid,
+                            status=:queued, task_id=tid,
                             fn=node.fn, node_params=effective_params)
     end
 
@@ -803,14 +807,42 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     end
 
     result = try
-        # set-scope nodes call _run_task directly (not via run_task), so flatten nested `section`
-        # params here too — else a chain-saved section param (e.g. clustering options) is dropped.
-        _run_task(task_struct, imgs,
-                  _flatten_sections(task_struct, merge(effective_params, Dict("_task_id" => tid)));
-                  on_log      = line -> Base.invokelatest(on_log, "[set/$(node.id)] $line"),
-                  on_process  = _ -> nothing)
+        # Through `run_task`, exactly like the image-scope path above — NOT `_run_task` directly.
+        # Reaching for the inner function skipped everything `run_task` wraps around it, and skipped
+        # all of it SILENTLY:
+        #   * `_wrap_log_with_file` — so a set-scope node wrote no `<img>/logs/<fun_name>.log` at all,
+        #     while an image-scope node beside it in the same chain wrote one.
+        #   * `_register_task!` — so it appeared in no task list, and the console/task-log view had no
+        #     task to attach to. Its output fell through to the API server's stdout, i.e. onto the
+        #     terminal `pixi run dev` was called from, which is where it was found.
+        #   * the run-log entry the pool worker opens (`open_run_log!`).
+        #   * `put!(pool.queue, job)` — the worst of the four: a node declaring `resource_pool: "gpu"`
+        #     ran UNQUEUED, next to whatever already held the GPU.
+        # The image vector still reaches `_run_task` as one joint fit: `run_task`'s set-scope overload
+        # carries it on the job and the pool worker dispatches on it (`job_target = isnothing(job.imgs)
+        # ? job.img : job.imgs`). It also flattens `section` params and injects `_task_id` itself —
+        # which is what the hand-rolled `_flatten_sections`/`merge` here were duplicating.
+        run_task(task_struct, imgs, effective_params;
+                 task_id          = tid,
+                 pool_name        = node.resource_pool,
+                 chain_run_id     = run.id,
+                 chain_node_id    = node.id,
+                 on_log           = line -> Base.invokelatest(on_log, "[set/$(node.id)] $line"),
+                 on_status_change = rec -> begin
+                     # One task, N images: mirror the pool pick-up onto every participating image, so
+                     # the live view flips the whole barrier row :queued → :running together.
+                     if rec.status === :running
+                         for uid in participating_uids
+                             _update_node_state!(run, uid, node.id;
+                                                 status=:running, fn=node.fn,
+                                                 node_params=effective_params)
+                         end
+                     end
+                     Base.invokelatest(on_status_change, rec)
+                 end)
     catch e
         @warn "Set-scope task error" node=node.id fn=node.fn exception=e
+        Base.invokelatest(on_log, "ERROR [set/$(node.id)] $(sprint(showerror, e))")
         nothing
     end
 
@@ -952,6 +984,66 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
 end
 
 # ── Resume helpers ────────────────────────────────────────────────────────────
+
+# ── Forward references inside one template ────────────────────────────────────
+# A chain that TRAINS a model and then segments with it names something that is not in the vault at
+# author time. Per-node param validation only knows the vault — the `model` select's options are
+# injected from it by `_inject_dynamic_options!` — so it read a forward reference as a typo and
+# rejected the whole template. Only the template can tell the two apart, which is why this lives here
+# and is handed down as `validate_params(...; extra_options)`.
+#
+# ANCESTORS only, deliberately, not the whole template: a node segmenting with a model trained LATER
+# (or on a parallel branch that has not joined yet) is a real wiring mistake, and accepting it here
+# would only defer it to a mid-run failure with the GPU already occupied.
+#
+# `models` is the only namespace that needs this. The others are consumed by `valueNameSelection`
+# params, which carry no fixed option list to fail against.
+
+function _ancestors(template::ChainTemplate, node_id::String)::Set{String}
+    pred = Dict{String,Vector{String}}()
+    for e in template.edges
+        push!(get!(pred, e.to, String[]), e.from)
+    end
+    out   = Set{String}()
+    queue = String[node_id]
+    while !isempty(queue)
+        n = popfirst!(queue)
+        for pr in get(pred, n, String[])
+            if pr ∉ out
+                push!(out, pr)
+                push!(queue, pr)
+            end
+        end
+    end
+    out
+end
+
+function _chain_produced_names(template::ChainTemplate, node_id::String)::Set{String}
+    ups = _ancestors(template, node_id)
+    out = Set{String}()
+    isempty(ups) && return out
+    for n in template.nodes
+        n.id in ups || continue
+        task = try
+            _task_from_fun_name(n.fn)
+        catch
+            continue        # unknown fn is reported by validate_chain_template itself
+        end
+        spec = _task_spec(task)
+        isnothing(spec) && continue
+        for pspec in get(spec, "params", [])
+            pspec isa AbstractDict || continue
+            string(get(pspec, "namespace", "")) == "models" || continue
+            key  = string(get(pspec, "key", ""))
+            stem = strip(string(get(n.params, key, get(pspec, "default", ""))))
+            isempty(stem) && continue
+            # The stem the producer holds vs the filename the consumer's select carries — one helper,
+            # never an inline `* ".pt"`.
+            push!(out, flow_model_filename(stem))
+        end
+    end
+    out
+end
 
 # All nodes reachable downstream of `node_id` (successors, transitively) — NOT including itself.
 function _descendants(template::ChainTemplate, node_id::String)::Set{String}

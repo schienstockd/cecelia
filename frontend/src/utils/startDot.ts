@@ -16,6 +16,32 @@ export function startTargetsOf(edges: EdgeLite[]): string[] {
 export const isStartId = (id: string): boolean => id === START_ID
 export const touchesStart = (e: EdgeLite): boolean => e.source === START_ID || e.target === START_ID
 
+/** Where the dot sits when nothing better is known — a template with no targets AND no layout. */
+export const DEFAULT_START_POS = { x: 20, y: 40 }
+
+/**
+ * LOAD: where to park the dot when no position was persisted — which is every template authored
+ * outside the whiteboard (the REPL, or Claude via the MCP `create_chain`; `positions` is canvas-only
+ * sidecar data).
+ *
+ * The dot is not a template node, so `layoutDag` never sees it. That left the two placed by
+ * independent mechanisms: the tasks on the layout grid, the dot at a hardcoded constant — and with
+ * `EDITOR_GRID.originY` at 120 against the dot's y of 40, an authored chain always opened with the dot
+ * parked off in the corner and a long dashed swoop to the first task. It reads as "the start node is
+ * not connected", which is the one thing a reviewer must be able to see at a glance, and it was
+ * wrong: the edge was there all along.
+ *
+ * One depth step left of the first target, same lane, so it reads as the node that feeds it.
+ */
+export function startDotPosition(
+  targets: string[] | undefined,
+  layout: Record<string, { x: number; y: number }>,
+  depth: number,
+): { x: number; y: number } {
+  const anchor = (targets ?? []).map(t => layout[t]).find(Boolean)
+  return anchor ? { x: anchor.x - depth, y: anchor.y } : DEFAULT_START_POS
+}
+
 export interface StartNodeSpec { id: string; type: 'start'; position: { x: number; y: number }; data: Record<string, never> }
 export interface StartEdgeSpec { id: string; source: string; target: string; style: Record<string, string> }
 
