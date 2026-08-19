@@ -13353,3 +13353,50 @@ end
     @test length(collect(eachmatch(r"\[\$\(first\(imgs\)\.uid\)/\$\(node\.id\)\]", src))) == 3
     @test occursin("SKIP [\$uid/\$(node.id)]", src)
 end
+
+@testset "a chain node reports progress" begin
+    # No chain node ever reported progress, of any scope. The Python side emits `[PROGRESS] n/total`
+    # and `run_py` routes it to `on_progress`, but the LAST hop was missing: the standalone path wires
+    # `on_progress` when it calls `run_task` (`execute_task`, and the runner's own task handler), and
+    # the chain — which does not go through `execute_task` — wired it in neither of its two node
+    # runners, so `run_task` took its `(n, t) -> nothing` default.
+    #
+    # Fixed at the CARRIER, not the call sites: the node fires a `node:progress` chain event and the one
+    # frame builder both processes already subscribe to shapes it. Adding it per call site is what
+    # drifted in the first place.
+    frames = Dict{String,Any}[]
+    pairs  = Cecelia.subscribe_chain_frames!(f -> push!(frames, f))
+    try
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "opticalFlow.train", task_id = "T1", n = 3, total = 12))
+        @test length(frames) == 1
+        @test frames[1]["type"]     == "task:progress"
+        @test frames[1]["taskId"]   == "T1"
+        # A FRACTION, the shape both `ws_progress` and the runner's `_emit_progress` already send.
+        @test frames[1]["progress"] ≈ 0.25
+
+        # total = 0 must not divide by zero — a task that reports before it knows its scale.
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", task_id = "T1", n = 0, total = 0))
+        @test frames[1]["progress"] == 0.0
+
+        # No task id → DROPPED, not emitted with "". A blank id mints or clobbers a blank row, which is
+        # the failure the `task:log` handling already guards against.
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", task_id = "", n = 1, total = 2))
+        @test isempty(frames)
+    finally
+        for (ev, h) in pairs
+            Cecelia.unsubscribe_chain_events!(ev, h)
+        end
+    end
+
+    # Both node runners must actually wire it — the whole bug was that neither did.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    @test length(collect(eachmatch(r"on_progress\s+= \(n, t\) ->", src))) == 2
+end

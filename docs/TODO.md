@@ -122,6 +122,28 @@ to the on-demand path wherever no prebuilt image is present, and the freshness s
 image that predates the user's Julia/deps self-heals. Belongs with the packaging phase in
 `docs/ROADMAP.md`; not urgent, since one on-demand build already gives every user a fast cache.
 
+### Chain nodes should run through `execute_task`
+
+`execute_task` (`app/src/runner/execute.jl`) is the canonical single-task pathway: it resolves the
+task, dispatches on scope, wires `on_log`/`on_progress`/`on_status`/`on_result`, guarantees a terminal
+status on every exit path, and orders `on_result` before it. **Both** the API server (`run_in_process`)
+and the detached runner call it, so they cannot disagree.
+
+The chain executor does not. `_execute_image_chain!` and `_run_set_scope_node!` call `run_task`
+directly and re-assemble that wiring by hand — and **four bugs have come out of exactly that gap**: no
+task log file, no task record, no pool slot, a log prefix the frontend could not attribute, and no
+progress. Each was fixed where it was found; the shape keeps recurring because there are two
+implementations of "run one task and announce it".
+
+Route chain nodes through `execute_task`: extend `TaskRequest` with `chain_run_id` / `chain_node_id`
+(the shared component gains what chains need, rather than chains keeping their own copy), map
+`on_status` onto `_update_node_state!`, and capture the node result from `on_result`. Barriers, axis
+gating, resume and cancellation stay in `chain.jl` — those are chain concerns, not task ones.
+
+Not done in one go with the four fixes above because it is a rewrite of the executor that runs real
+pipelines, and each fix was verified against a live run on its own. Do it deliberately, with the
+chain testsets green before and after.
+
 ### Incremental node subprocesses not killed on chain cancel
 The per-image cancel path kills running subprocesses. `_run_incremental_node!` still calls the
 multi-image `_run_task` directly with `on_process = _ -> nothing` and is **not** registered in

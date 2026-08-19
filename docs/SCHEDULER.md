@@ -293,6 +293,25 @@ Set-scope now uses the **representative image's uid** (`first(imgs)`), which is 
 `a chain node's log prefix is [imageUid/nodeId]` testset, which also transcribes the frontend's regex
 so the two cannot drift apart silently.
 
+#### Per-node progress rides the event bus
+
+A node's progress reaches a client as a **`task:progress` frame built by `subscribe_chain_frames!`**,
+from a `node:progress` chain event — the same carrier as the four `node:*` transitions, and the same
+one builder both processes already subscribe to. Neither `sockets.jl` nor the runner learned anything
+new; both emit an identical frame because they share the builder.
+
+It is fired from the node runners rather than wired per call site **because that wiring is what
+drifted**. The standalone path passes `on_progress` to `run_task` in two places (`execute_task`, and
+the runner's own task handler); the chain does not go through `execute_task` and wired it in neither
+of its two node runners, so `run_task` took its `(n, t) -> nothing` default. The Python side has
+emitted `[PROGRESS] n/total` all along and `run_py` routes it — only the last hop was missing, so **no
+chain node had ever shown progress, of any scope**.
+
+`task:status` deliberately stays off this path: a chain node emits none, or the Task Manager would show
+a second row per node (see `subscribe_chain_frames!`). Progress attaches to the row the `/api/tasks`
+snapshot already publishes, so it adds telemetry without adding rows. A node with no task id is
+dropped rather than emitted with `""`, which would mint or clobber a blank row.
+
 #### Still open — incremental nodes
 
 `_run_incremental_node!` **still calls `_run_task` directly** (`on_process = _ -> nothing`, no `_TASKS`

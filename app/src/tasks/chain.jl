@@ -530,6 +530,36 @@ function _barrier_signal_done!(run::ChainRun, node_id::String)
     end
 end
 
+# ── Per-node progress ─────────────────────────────────────────────────────────
+# A node's progress reaches a client over the chain EVENT BUS, the same carrier as `node:queued/…`,
+# and is shaped into a `task:progress` frame by the one builder in `runner/chain_frames.jl`. That is
+# the whole point: both processes already subscribe to that builder, so the API server and the
+# detached runner emit an identical frame without either learning anything new.
+#
+# It is fired here rather than wired per call site because that wiring is exactly what drifted. The
+# standalone path passes `on_progress` to `run_task` in TWO places (`sockets.jl` → `execute_task` and
+# `runner/server.jl`), and the chain — which does not go through `execute_task` — passed it in none, so
+# no chain node had ever reported progress, of any scope. The Python side emits `[PROGRESS]` and
+# `run_py` routes it; only the last hop was missing.
+#
+# `task:status` deliberately stays off this path: a chain node emits none, or the Task Manager would
+# show a second row for every node (see `subscribe_chain_frames!`). Progress attaches to the row the
+# snapshot already publishes, so it adds telemetry without adding rows.
+function _fire_node_progress!(run::ChainRun, node::ChainNode, image_uid::String,
+                              task_id::String, n::Integer, total::Integer)
+    _fire_chain_event!("node:progress", (
+        run_id      = run.id,
+        chain_name  = run.chain_name,
+        project_uid = run.project_uid,
+        image_uid   = image_uid,
+        node_id     = node.id,
+        fn          = node.fn,
+        task_id     = task_id,
+        n           = Int(n),
+        total       = Int(total),
+    ))
+end
+
 # ── Per-image chain execution (runs in its own OS thread) ─────────────────────
 
 function _apply_overrides(params::Dict{String,Any}, node_id::String,
@@ -656,6 +686,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                      # `chain:node:*` events (the GUI keys a chain row `runId::nodeId::imageUid`).
                      chain_node_id    = node.id,
                      on_log           = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
+                     on_progress      = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
                      on_status_change = rec -> begin
                          # Mirror the pool worker picking up the job into the node state,
                          # so :queued → :running reflects the real GPU-slot acquisition.
@@ -838,6 +869,8 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                  # `run_task` keys it to `first(imgs)`.
                  on_log           = line -> Base.invokelatest(
                      on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
+                 on_progress      = (n, t) ->
+                     _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
                  on_status_change = rec -> begin
                      # One task, N images: mirror the pool pick-up onto every participating image, so
                      # the live view flips the whole barrier row :queued → :running together.
