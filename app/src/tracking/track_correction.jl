@@ -492,7 +492,13 @@ struct TrackIssue
     at_t::Float64                   # the timepoint to show
     centroid::Vector{Float64}       # µm, where to look
     severity::Float64               # for ranking — bigger = more suspicious
-    reason::String                  # the instruction shown to the user
+    # SHORT = what is wrong, in a phrase; ADVICE = what to do, one sentence. The same split as
+    # `QC_TEXT` (app/src/qc.jl), for the same reason: a worklist row is SCANNED, not read. The first
+    # version put both in one string — "Track 23 jumps 12.7 µm into t=22 — 17.1× its usual step. If
+    # that is a different cell, split it here." — and a list of those reads as wallpaper. The row
+    # shows `reason`; `advice` is its tooltip.
+    reason::String
+    advice::String
 end
 
 # Defaults, deliberately conservative: better to miss a candidate than to bury the real ones.
@@ -659,6 +665,7 @@ function find_track_issues(df::DataFrame, spatial::Vector{String};
                     [tid, b], t_end, c_end,
                     # closer + shorter gap = more likely one cell
                     (gap_um - d) / gap_um + (Float64(gap_frames) - dt + 1) / Float64(gap_frames),
+                    "ends t=$(Int(t_end)) → track $b starts $(dt)f later, $(round(d; digits = 1)) µm",
                     "Track $tid ends at t=$(Int(t_end)); track $b starts $(dt) frame(s) later, " *
                     "$(round(d; digits = 1)) µm away — $(round(d / scale; digits = 1))× a normal " *
                     "step. Check they are the same cell, then join."))
@@ -687,6 +694,8 @@ function find_track_issues(df::DataFrame, spatial::Vector{String};
             push!(out, TrackIssue("jump",
                 Dict{String,Any}("op" => "track.split", "trackId" => tid, "atT" => t_at),
                 [tid], t_at, p[i+1][2], s / med,
+                "jumps $(round(s; digits = 1)) µm at t=$(Int(t_at)) — $(round(s / med; digits = 1))× usual" *
+                (length(run) > 1 ? ", ×$(length(run))" : ""),
                 "Track $tid jumps $(round(s; digits = 1)) µm into t=$(Int(t_at)) — " *
                 "$(round(s / med; digits = 1))× its usual step" *
                 (length(run) > 1 ? " ($(length(run)) suspect steps in a row)" : "") *
@@ -701,8 +710,8 @@ function find_track_issues(df::DataFrame, spatial::Vector{String};
             Dict{String,Any}("op" => "track.remove", "trackIds" => [tid]),
             [tid], first(p)[1], first(p)[2],
             Float64(min_len - length(p)) / min_len,
-            "Track $tid is only $(length(p)) timepoint(s) — too short to measure. " *
-            "Join it to a neighbour, or remove it."))
+            "only $(length(p)) timepoint(s)",
+            "Track $tid is too short to measure. Join it to a neighbour, or remove it."))
     end
 
     sort!(out; by = i -> -i.severity)
@@ -735,7 +744,7 @@ end
 issue_to_dict(i::TrackIssue) = Dict{String,Any}(
     "kind" => i.kind, "op" => i.op, "trackIds" => i.track_ids,
     "atT" => i.at_t, "centroid" => i.centroid,
-    "severity" => round(i.severity; digits = 3), "reason" => i.reason)
+    "severity" => round(i.severity; digits = 3), "reason" => i.reason, "advice" => i.advice)
 
 # ── Cell-pair angle/distance analysis (celltrackR) ───────────────────────────────
 #
@@ -846,9 +855,9 @@ function find_duplicate_tracks(df::DataFrame, spatial::Vector{String};
             [keep, drop], first(p)[1], first(p)[2],
             # closer and more parallel = more certainly the same cell
             (dist_um - r.distance) / dist_um + (angle_deg - r.angle) / angle_deg,
-            "Tracks $keep and $drop move together — $(round(r.angle; digits = 1))° apart in " *
-            "direction and never more than $(round(r.distance; digits = 1)) µm apart over " *
-            "$(r.n_shared) frames. Likely one cell tracked twice: check, then remove $drop."))
+            "moves with track $keep — $(round(r.angle; digits = 1))° apart, " *
+            "≤$(round(r.distance; digits = 1)) µm for $(r.n_shared) frames",
+            "Likely one cell tracked twice. Check them, then remove track $drop."))
     end
     sort!(out; by = i -> -i.severity)
     out

@@ -7,7 +7,7 @@
   Drag/clamp/arrange come from useFloatingPanel so every floating panel behaves identically.
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, useTemplateRef, watch, useSlots } from 'vue'
+import { ref, onMounted, onBeforeUnmount, onUpdated, nextTick, useTemplateRef, watch, useSlots } from 'vue'
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
@@ -56,7 +56,29 @@ const CHROME_OPTIONS: CycleOption[] = [
   { value: 'hidden',  icon: 'pi pi-eye-slash', tip: 'Controls: always hidden' },
 ]
 const slots = useSlots()
-const hasControls = computed(() => !!slots.actions || !!slots.footer)
+// A view whose toolbar lives INSIDE the body tags it `.cc-panel-controls` (docs/UI.md) and gets the
+// auto-hide behaviour from the stylesheet — but the PIN was keyed only on the slots, so those views
+// auto-hid their controls with no way to pin them open. Reported as "why do these floating plots not
+// have the pin". Keying the pin on the same class the CSS keys on means the two cannot disagree.
+//
+// Detected from the DOM rather than declared, because the class is what the stylesheet acts on; a
+// parallel `hasControls` prop would be a second source of truth to forget. Re-checked on update only
+// until it is found, since a view may render its toolbar after its first data arrives.
+const bodyEl = useTemplateRef<HTMLElement>('bodyEl')
+const bodyControls = ref(false)
+const checkBodyControls = () => {
+  if (!bodyControls.value && bodyEl.value?.querySelector('.cc-panel-controls')) bodyControls.value = true
+}
+onMounted(() => nextTick(checkBodyControls))
+onUpdated(checkBodyControls)
+// A FUNCTION, not a computed, and that distinction is the whole bug: `slots` is not reactive, so a
+// computed caches whatever it saw on the FIRST render — and on that render an InteractivePanel has not
+// mounted its view yet, so `exportFormats` is empty, so the `#footer` template is not provided. The
+// panel then decided "no controls" forever and never showed the pin, even once the Export footer
+// appeared and started overlaying the body. Reported on the correction panel, whose only chrome is
+// that footer. Called from the template, it is re-evaluated whenever the panel re-renders — which is
+// exactly when its slots change.
+const hasControls = () => !!slots.actions || !!slots.footer || bodyControls.value
 const root = useTemplateRef<HTMLElement>('root')
 const mainEl = useTemplateRef<HTMLElement>('mainEl')   // .panel-main — the plot region kept square by :square
 const store = useCanvasPanelsStore()
@@ -117,7 +139,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
       <span class="panel-spacer" />
       <!-- 3-state cycle: auto (default, hover to show) → always visible → always hidden. Only
            renders when there ARE controls to reveal and auto-hide is active. -->
-      <CcCycleButton v-if="autoHide && hasControls && !collapsed"
+      <CcCycleButton v-if="autoHide && hasControls() && !collapsed"
                      class="panel-btn" v-model="chromeMode" :options="CHROME_OPTIONS"
                      @mousedown.stop />
       <button v-if="!docked" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
@@ -136,7 +158,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
     <div v-if="!autoHide && slots.actions && !collapsed" class="panel-controls cc-row cc-row-tight inflow"><slot name="actions" /></div>
     <!-- body always gets the whole box; in auto-hide mode the controls overlay it (see .cc-panel-controls) -->
     <div v-show="!collapsed" ref="mainEl" class="panel-main">
-      <div class="panel-body"><slot /></div>
+      <div ref="bodyEl" class="panel-body"><slot /></div>
       <template v-if="autoHide">
         <div v-if="slots.actions" class="panel-controls cc-row cc-row-tight cc-panel-controls"><slot name="actions" /></div>
         <div v-if="slots.footer" class="panel-foot cc-panel-controls bottom"><slot name="footer" /></div>

@@ -12663,8 +12663,10 @@ end
     g = only(gaps)
     @test g.op["op"] == "track.join" && g.op["trackIds"] == [1, 2]
     @test g.at_t == 2.0                              # where to look
-    @test occursin("join", g.reason)                 # the reason is an INSTRUCTION
-    @test occursin("t=2", g.reason)
+    # `reason` is the terse WHAT (a row is scanned); `advice` is the instruction (its tooltip)
+    @test occursin("t=2", g.reason) && !occursin("join", g.reason)
+    @test occursin("join", g.advice)
+    @test length(g.reason) < length(g.advice)
 
     # too far away in space → not a candidate
     far = _issue_df([(1, 0, 3, 0.0, 1.0), (2, 3, 3, 500.0, 1.0)])
@@ -12690,7 +12692,7 @@ end
     @test j.op["op"] == "track.split" && j.op["trackId"] == 1
     @test j.op["atT"] == 5.0                         # split AT the far cell
     @test j.at_t == 5.0
-    @test occursin("split", j.reason)
+    @test occursin("split", j.advice) && !occursin("split", j.reason)
 
     # a steady track is never a jump candidate, however fast it moves
     steady = _issue_df([(1, 0, 10, 0.0, 25.0)])
@@ -12706,7 +12708,8 @@ end
                 find_track_issues(ob, ["centroid_x", "centroid_y"];
                                   jump_factor = 4.0, jump_quantile = 0.5))
     @test length(cj) == 1
-    @test occursin("in a row", only(cj).reason)       # and it SAYS it collapsed them
+    @test occursin("in a row", only(cj).advice)       # and it SAYS it collapsed them
+    @test occursin("×2", only(cj).reason)             # …tersely, in the row itself
 end
 
 @testset "track issues — short, ordering, degenerate" begin
@@ -12769,7 +12772,7 @@ end
 
     # the dict form carries everything a UI needs to fly the viewer to the problem
     d = issue_to_dict(g)
-    @test Set(keys(d)) == Set(["kind", "op", "trackIds", "atT", "centroid", "severity", "reason"])
+    @test Set(keys(d)) == Set(["kind", "op", "trackIds", "atT", "centroid", "severity", "reason", "advice"])
     @test d["centroid"] isa Vector && length(d["centroid"]) == 2
 end
 
@@ -12840,8 +12843,8 @@ end
     @test d.kind == "duplicate"
     @test d.op == Dict{String,Any}("op" => "track.remove", "trackIds" => [2])  # drops the HIGHER id
     @test d.track_ids == [1, 2]                         # but names both, so the user can see the pair
-    @test occursin("one cell tracked twice", d.reason)
-    @test occursin("remove 2", d.reason)
+    @test occursin("one cell tracked twice", d.advice)
+    @test occursin("remove track 2", d.advice)
 
     # far apart → not a duplicate, however parallel
     far = copy(dup)

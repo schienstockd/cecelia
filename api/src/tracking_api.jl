@@ -64,12 +64,21 @@ function api_track_issues(req::HTTP.Request)
         t_col = first(temporal)
         t_col == "centroid_t" || (df[!, :centroid_t] = df[!, Symbol(t_col)])
 
+        # The thresholds are resolved ONCE and echoed back in the response. The panel seeds its knobs
+        # from what the server used and sends only what the user moved, so the measured defaults live
+        # exactly here — on the Julia constants — and are never copied into TypeScript to drift.
+        thr = (; gapFrames    = Int(_num("gapFrames", Float64(TRACK_GAP_MAX_FRAMES))),
+                 gapSteps     = _num("gapSteps", TRACK_GAP_STEPS),
+                 jumpFactor   = _num("jumpFactor", TRACK_JUMP_FACTOR),
+                 jumpQuantile = _num("jumpQuantile", TRACK_JUMP_QUANTILE),
+                 minLen       = Int(_num("minLen", Float64(MIN_USEFUL_TRACK_LENGTH))))
+
         issues = find_track_issues(df, spatial;
-            gap_frames    = Int(_num("gapFrames", Float64(TRACK_GAP_MAX_FRAMES))),
-            gap_steps     = _num("gapSteps", TRACK_GAP_STEPS),
-            jump_factor   = _num("jumpFactor", TRACK_JUMP_FACTOR),
-            jump_quantile = _num("jumpQuantile", TRACK_JUMP_QUANTILE),
-            min_len       = Int(_num("minLen", Float64(MIN_USEFUL_TRACK_LENGTH))))
+            gap_frames    = thr.gapFrames,
+            gap_steps     = thr.gapSteps,
+            jump_factor   = thr.jumpFactor,
+            jump_quantile = thr.jumpQuantile,
+            min_len       = thr.minLen)
 
         # cap what crosses the wire: the worklist is worked top-down, and shipping 1000 candidates
         # with their geometry to render 20 of them is the kind of quiet cost that shows up as a slow
@@ -89,7 +98,7 @@ function api_track_issues(req::HTTP.Request)
                             nTracks   = length(track_ids_present(df)),
                             stepScale = track_step_scale(df, spatial),
                             timeStep  = time_step,
-                            total     = length(issues), counts = counts,
+                            total     = length(issues), counts = counts, thresholds = thr,
                             issues    = [issue_to_dict(i) for i in shown],
                             paths     = paths)))
     catch e
@@ -111,6 +120,9 @@ end
 # The cap is by track LENGTH, longest first: an image with thousands of tracks is unreadable as a
 # hairball, and the one-or-two-point fragments are the least informative thing in it. `total` and
 # `shown` both come back so the plot can say what it is leaving out rather than quietly lying.
+#
+# `ids=3,17,4021` names tracks explicitly and ignores the cap, so "the track I need is not in the top
+# N" has an answer that is not "raise N for everybody".
 function api_track_paths(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -146,8 +158,18 @@ function api_track_paths(req::HTTP.Request)
         all_paths = track_path_dicts(df, spatial)
         order = sort!(collect(keys(all_paths));
                       by = k -> (-length(all_paths[k]["t"]), parse(Int, k)))
-        limit = Int(_num("limit", 500.0))
-        ids   = first(order, max(limit, 0))
+
+        # `ids` names tracks explicitly and BYPASSES the cap. The cap exists so a plot of thousands of
+        # tracks is not a hairball and a picker is not a 5000-row table — but "the track I need is not
+        # in the top N" then has no answer at all, and raising N is not one: it makes every request
+        # slower for everyone to serve one lookup. Naming the track is the answer.
+        wanted = [strip(x) for x in split(get(q, "ids", ""), ',') if !isempty(strip(x))]
+        if !isempty(wanted)
+            ids = String[k for k in wanted if haskey(all_paths, k)]
+        else
+            limit = Int(_num("limit", 500.0))
+            ids   = first(order, max(limit, 0))
+        end
         paths = Dict{String,Any}(k => all_paths[k] for k in ids)
 
         # One value per shown track for the colour scale (empty when nothing is asked for).
@@ -255,5 +277,65 @@ function api_track_diagnostics(req::HTTP.Request)
             findings = track_diagnostic_findings(d))))
     catch e
         _gerr(500, "could not compute track diagnostics: " * sprint(showerror, e))
+    end
+end
+
+# ── GET /api/tracking/selection — what is selected in napari, as TRACKS ───────
+# The bridge from "I can see that track is wrong" to an edit. Drawing a region in napari already
+# stores the enclosed label ids as the transient selection (`POST /api/napari/event` →
+# `_set_napari_selection!`); this resolves them to the TRACKS those cells belong to, which is the
+# vocabulary the correction ops speak.
+#
+# Without it the correction surface only answered "fix what the detector found". Finding the track you
+# can SEE meant reading its id off the viewer and hunting for it in a table — the exact chore the
+# worklist exists to remove, reintroduced for the case the detector misses.
+#
+# Read-only, and cheap: the selection is in memory and the cell table is read for one obs column.
+function api_track_selection(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", ""))
+
+    labels = _get_napari_selection(img._dir, vn)
+    (labels === nothing || isempty(labels)) &&
+        return 200, JSON3.write((; valueName = vn, labels = Int[], tracks = [],
+                                   nLabels = 0, nUntracked = 0))
+
+    props = img_label_props_path(img, vn)
+    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+    try
+        lp = label_props(props)
+        ("track_id" in col_names(lp; data_type = :obs)) ||
+            return 200, JSON3.write((; valueName = vn, labels = labels, tracks = [],
+                                       nLabels = length(labels), nUntracked = length(labels)))
+        select_cols(lp, ["track_id"])
+        df = as_df(lp; include_x = false, include_obs = true)
+
+        want = Set{Int}(labels)
+        counts = Dict{Int,Int}()
+        n_untracked = 0
+        # `length(df.label)`, not `nrow` — `api/` does not `using DataFrames`, and the empty-selection
+        # path returns before this line, so the 500 would only appear once someone actually drew
+        for r in 1:length(df.label)
+            Int(round(Float64(df[r, :label]))) in want || continue
+            v = df[r, :track_id]
+            # the same "is this tracked" rule the rest of the tracking code uses — a 0 or NaN id is
+            # a cell with no track, and those are exactly the ones `points.add` exists for
+            if v isa Real && !isnan(Float64(v)) && Float64(v) > 0
+                tid = Int(round(Float64(v)))
+                counts[tid] = get(counts, tid, 0) + 1
+            else
+                n_untracked += 1
+            end
+        end
+        # most-represented track first: the one the user drew around is the one with the most cells
+        # inside the region, not the one with the lowest id
+        order = sort!(collect(keys(counts)); by = t -> (-counts[t], t))
+        200, JSON3.write((; valueName = vn, labels = labels,
+                            tracks = [(; track = t, nCells = counts[t]) for t in order],
+                            nLabels = length(labels), nUntracked = n_untracked))
+    catch e
+        _gerr(500, "could not resolve the selection: " * sprint(showerror, e))
     end
 end

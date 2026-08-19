@@ -26,7 +26,10 @@ export interface TrackIssue {
   atT: number
   centroid: number[]
   severity: number
+  /** terse: WHAT is wrong (the row) */
   reason: string
+  /** one sentence: what to DO about it (the row's tooltip) */
+  advice?: string
 }
 
 export interface IssuesResponse {
@@ -37,6 +40,8 @@ export interface IssuesResponse {
   timeStep?: number
   total?: number
   counts?: Record<string, number>
+  /** the thresholds the server ACTUALLY used — the panel seeds its knobs from these (see P4e) */
+  thresholds?: TrackThresholds
   issues: TrackIssue[]
   paths: Record<string, { t: number[]; x: number[]; y: number[]; label: number[] }>
 }
@@ -180,4 +185,223 @@ export function worklistCsvRows(
     decision: queued.has(JSON.stringify(i.op)) ? 'queued'
             : dismissed.has(issueKey(i)) ? 'dismissed' : 'open',
   }))
+}
+
+// ── Authoring an op the DETECTOR did not suggest (CORRECTION_PLAN.md → P4d) ────
+//
+// The worklist inverts old R for the case a signature catches. For the case the user simply SEES —
+// a swap, a mid-track mis-link, a gap wider than `gapFrames` — there was no path at all, which made
+// this WORSE than old R rather than better: there you could at least name the tracks. These helpers
+// build the same op objects the detector emits, so a hand-authored edit and a suggested one are
+// indistinguishable downstream: same queue, same one task run, same journal.
+
+/** One track, summarised for the picker. `t0`/`t1` are frames; `netDistance` is µm. */
+export interface TrackRow {
+  track: number
+  nFrames: number
+  t0: number
+  t1: number
+  netDistance: number
+}
+
+/** Per-track rows from the path map, longest first — the picker's list. */
+export function trackRows(paths: Record<string, { t: number[]; x: number[]; y: number[] }>): TrackRow[] {
+  const out: TrackRow[] = []
+  for (const [id, p] of Object.entries(paths)) {
+    if (!p.t.length) continue
+    const n = p.t.length
+    const dx = (p.x[n - 1] ?? 0) - (p.x[0] ?? 0)
+    const dy = (p.y[n - 1] ?? 0) - (p.y[0] ?? 0)
+    out.push({
+      track: Number(id), nFrames: n,
+      t0: Math.min(...p.t), t1: Math.max(...p.t),
+      netDistance: Math.hypot(dx, dy),
+    })
+  }
+  return out.sort((a, b) => b.nFrames - a.nFrames || a.track - b.track)
+}
+
+/**
+ * Do two tracks occupy the same frame?
+ *
+ * The engine REFUSES a join with a temporal overlap — two tracks that both have a cell at one
+ * timepoint are not one cell — and it is right to. But finding that out only when the task fails,
+ * after Apply, is a bad trade: the user has queued several edits by then. So the same rule is checked
+ * here, from the frame ranges the picker already holds, and the button says why it is disabled.
+ *
+ * Ranges, not exact frames: a gappy pair could interleave without sharing a frame, so this is
+ * conservative — it can warn where the engine would have allowed it, never the reverse.
+ */
+export function tracksOverlap(a: TrackRow, b: TrackRow): boolean {
+  return a.t0 <= b.t1 && b.t0 <= a.t1
+}
+
+/** Join folds B into A; A must be the EARLIER track, so the result reads forward in time. */
+export function joinOrder(a: TrackRow, b: TrackRow): [number, number] {
+  return a.t0 <= b.t0 ? [a.track, b.track] : [b.track, a.track]
+}
+
+export const buildRemoveOp = (tracks: readonly number[]): TrackOp =>
+  ({ op: 'track.remove', trackIds: [...tracks] })
+export const buildJoinOp = (a: number, b: number): TrackOp =>
+  ({ op: 'track.join', trackIds: [a, b] })
+export const buildSplitOp = (track: number, atT: number): TrackOp =>
+  ({ op: 'track.split', trackId: track, atT })
+export const buildUntrackOp = (labels: readonly number[]): TrackOp =>
+  ({ op: 'points.remove', labels: [...labels] })
+
+/**
+ * The detector's OWN op for each ticked candidate.
+ *
+ * Removing the per-row buttons made the pre-picked fix unreachable: a jump candidate knows it should
+ * split track 116 at t=5, and the user was left to tick the row, read the frame out of the text and
+ * type it into a box. This is the primary path back — tick, then Fix.
+ */
+export function suggestedOps(picked: readonly string[], issues: readonly TrackIssue[]): TrackOp[] {
+  const byKey = new Map(issues.map(i => [issueKey(i), i]))
+  return picked.map(k => byKey.get(k)?.op).filter((o): o is TrackOp => !!o)
+}
+
+export interface ManualAction {
+  key: 'join' | 'split' | 'remove'
+  label: string
+  /** null when the action can be taken; otherwise WHY it cannot, for the disabled tooltip. */
+  blocked: string | null
+  op: TrackOp | null
+}
+
+/**
+ * Which edits the current selection allows, and why the others do not.
+ *
+ * Returns every action always, with a reason when blocked — a button that vanishes teaches nothing,
+ * and "why can't I join these" is the question this surface exists to answer.
+ *
+ * `splitAt` is a frame; it must fall strictly INSIDE the track, because splitting at the first frame
+ * would produce an empty first half and the engine rejects it.
+ */
+export function manualActions(
+  picked: readonly number[], rows: readonly TrackRow[], splitAt: number | null,
+): ManualAction[] {
+  const byId = new Map(rows.map(r => [r.track, r]))
+  const sel = picked.map(id => byId.get(id)).filter((r): r is TrackRow => !!r)
+
+  const join: ManualAction = { key: 'join', label: 'Join', blocked: null, op: null }
+  if (sel.length !== 2) {
+    join.blocked = 'Pick exactly two tracks'
+  } else if (tracksOverlap(sel[0], sel[1])) {
+    // the engine's own rule, checked before Apply rather than after
+    join.blocked = `Tracks overlap in time (frames ${Math.max(sel[0].t0, sel[1].t0)}–` +
+                   `${Math.min(sel[0].t1, sel[1].t1)}) — they are not one cell`
+  } else {
+    const [a, b] = joinOrder(sel[0], sel[1])
+    join.op = buildJoinOp(a, b)
+  }
+
+  const split: ManualAction = { key: 'split', label: 'Split', blocked: null, op: null }
+  if (sel.length !== 1) {
+    split.blocked = 'Pick one track'
+  } else if (splitAt === null || !Number.isFinite(splitAt)) {
+    split.blocked = 'Set the frame to split at'
+  } else if (splitAt <= sel[0].t0 || splitAt > sel[0].t1) {
+    split.blocked = `Frame must be inside ${sel[0].t0}–${sel[0].t1}, after the first`
+  } else {
+    split.op = buildSplitOp(sel[0].track, splitAt)
+  }
+
+  const remove: ManualAction = { key: 'remove', label: 'Remove', blocked: null, op: null }
+  if (!sel.length) remove.blocked = 'Pick at least one track'
+  else remove.op = buildRemoveOp(sel.map(r => r.track))
+
+  return [join, split, remove]
+}
+
+// ── Detector thresholds (CORRECTION_PLAN.md → P4e) ────────────────────────────
+
+/**
+ * The knobs `GET /api/tracking/issues` accepts. All optional: an absent value means "the server's
+ * default", and the server reports back what it used, so the DEFAULTS ARE NEVER DUPLICATED HERE — the
+ * numbers live on the Julia constants where they were measured.
+ */
+export interface TrackThresholds {
+  gapFrames?: number
+  gapSteps?: number
+  jumpFactor?: number
+  jumpQuantile?: number
+  minLen?: number
+}
+
+export const THRESHOLD_FIELDS: { key: keyof TrackThresholds; label: string; tip: string; step: number }[] = [
+  { key: 'gapFrames',    label: 'gap frames',  step: 1,
+    tip: 'Join candidates: how many frames may be missing between two tracks' },
+  { key: 'gapSteps',     label: 'gap steps',   step: 0.5,
+    tip: "Join candidates: how far apart the ends may be, in multiples of this image's median step" },
+  { key: 'jumpFactor',   label: 'jump ×',      step: 0.5,
+    tip: "Split candidates: a step this many times the track's OWN median step is suspect" },
+  { key: 'jumpQuantile', label: 'jump top',    step: 0.005,
+    tip: 'Split candidates: …and in this top quantile of every step in the image' },
+  { key: 'minLen',       label: 'min frames',  step: 1,
+    tip: 'Flag tracks shorter than this many timepoints' },
+]
+
+/** Only what the user actually changed — so an untouched panel takes the server's own defaults. */
+export function thresholdQuery(t: TrackThresholds, defaults: TrackThresholds): string {
+  return THRESHOLD_FIELDS
+    .filter(f => t[f.key] !== undefined && t[f.key] !== defaults[f.key])
+    .map(f => `&${f.key}=${t[f.key]}`)
+    .join('')
+}
+
+/** Have the knobs been moved off the server's defaults? Drives whether Reset is offered. */
+export function thresholdsChanged(t: TrackThresholds, defaults: TrackThresholds): boolean {
+  return thresholdQuery(t, defaults).length > 0
+}
+
+// ── The napari bridge (CORRECTION_PLAN.md → P4d, the other half) ───────────────
+
+/** `GET /api/tracking/selection` — what is drawn in napari, resolved to tracks. */
+export interface TrackSelection {
+  valueName: string
+  labels: number[]
+  tracks: { track: number; nCells: number }[]
+  nLabels: number
+  nUntracked: number
+}
+
+/**
+ * The selection in words: what was drawn, and what it resolved to.
+ *
+ * Says the UNTRACKED count separately because it is the actionable half for `points.add` and the
+ * confusing half otherwise — "8 cells, 2 tracks" hides that three of those cells belong to no track.
+ */
+export function selectionSummary(sel: TrackSelection | null): string {
+  if (!sel || !sel.nLabels) return ''
+  const bits = [`${sel.nLabels} cell${sel.nLabels === 1 ? '' : 's'}`]
+  if (sel.tracks.length) bits.push(`${sel.tracks.length} track${sel.tracks.length === 1 ? '' : 's'}`)
+  if (sel.nUntracked) bits.push(`${sel.nUntracked} untracked`)
+  return bits.join(' · ')
+}
+
+/**
+ * The tracks a napari selection touches, most-represented first.
+ *
+ * Order matters for the two-track ops: the tracks with the most cells inside the drawn region are the
+ * ones the user meant, so preselecting the top two makes "draw around the break, hit Join" work.
+ */
+export const selectedTracks = (sel: TrackSelection | null): number[] =>
+  (sel?.tracks ?? []).map(t => t.track)
+
+/**
+ * Parse a track-id lookup box: "12, 40 91" → [12, 40, 91].
+ *
+ * The picker caps how many tracks it lists (longest first), so a specific track can be outside it.
+ * Naming it fetches it regardless — better than raising the cap for everyone to serve one lookup.
+ */
+export function parseTrackIds(text: string): number[] {
+  const out: number[] = []
+  for (const part of text.split(/[\s,;]+/)) {
+    if (!part) continue
+    const n = Number(part)
+    if (Number.isInteger(n) && n > 0 && !out.includes(n)) out.push(n)
+  }
+  return out
 }

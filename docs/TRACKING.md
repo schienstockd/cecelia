@@ -293,6 +293,31 @@ Fixing a wrong track by hand. Design + the old-R ground truth it ports:
 journal and its QC (plan phase **P1**), and the worklist UI (**P4**). Segmentation correction (P2) is
 not built.
 
+**Two modes, because the detector is not the only source of a bad track.** *Suggested* is the ranked
+worklist; *All tracks* lists every track and turns a selection into the same op objects the detector
+emits — one queue, one task run, one journal, whether an edit was suggested or hand-authored. Without it
+the surface was WORSE than old R for the case a user simply sees: there you could at least name the
+tracks. Join is blocked with a reason when the two tracks share frames — the engine's own rule, checked
+before Apply instead of after, and the picked track can be flown to in napari like a suggested one.
+
+**From napari, not from a table.** *All tracks* also reads the viewer: draw a region around the cells
+(`POST /api/napari/start-selection`, the existing brush), then **Read selection** →
+`GET /api/tracking/selection` resolves the enclosed labels to their tracks and **Pick** selects them in
+the list, fetching them explicitly if they fall outside the picker's cap. That closes the loop the
+worklist could not: you see the bad track in the image and act on it there, instead of reading an id off
+the viewer and hunting for it. The same selection drives the one CELL-level op — **Untrack cells**
+(`points.remove`), which drops bad detections and leaves the rest of their tracks intact.
+
+**Naming beats raising a cap.** The picker lists 2000 tracks (longest first) because a 5000-row table is
+not a picker; `find` sends `ids=` to `/api/tracking/paths`, which bypasses the cap for exactly the tracks
+named. Raising the limit would make every request slower for everyone to serve one lookup.
+
+**The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
+default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
+and **309** at `minLen 15`. The panel seeds the knobs from what the server actually used
+(`thresholds` in the response) and sends only what the user moved, so the measured defaults live on the
+Julia constants and are never copied into TypeScript to drift.
+
 **The UI inverts the old version.** There you found the wrong track yourself, among hundreds, and
 then said how to fix it. Here `find_track_issues` ranks what looks wrong and pre-picks the op
 (`GET /api/tracking/issues`), each row draws its own geometry, and the user only judges it. Nothing is

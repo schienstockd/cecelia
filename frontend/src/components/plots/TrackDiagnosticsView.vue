@@ -30,6 +30,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import {
   availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine, axisLabels,
@@ -96,7 +97,7 @@ async function load() {
     data.value = null
   } finally {
     loading.value = false
-    await nextTick(); await render()
+    await nextTick(); plotBox.redraw()
   }
 }
 
@@ -111,7 +112,6 @@ const host = useTemplateRef<HTMLElement>('host')
 const forceLight = ref(false)
 let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
-let ro: ResizeObserver | null = null
 
 async function render() {
   if (!host.value) return
@@ -178,13 +178,11 @@ async function render() {
   host.value.append(node)
 }
 
-onMounted(() => {
-  if (host.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => render()); ro.observe(host.value)
-  }
-})
-onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null })
-watch([mode, data], () => nextTick(render))
+// the observer's callback appends into the element it observes — see usePlotResize for why
+// that loops, and what stops it
+const plotBox = usePlotResize(host, render)
+onBeforeUnmount(() => { node?.remove(); node = null })
+watch([mode, data], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -262,6 +260,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 /* .tdv-findings → .cc-row for the flex row; only the wrap and inset are its own */
 .tdv-findings { flex-wrap: wrap; padding: 0 6px; }
 .tdv-finding { white-space: nowrap; }
-.tdv-host { flex: 1; min-height: 0; }
+/* overflow:hidden so a plot sized to its own floor cannot GROW this box and
+   re-trigger the resize observer — see usePlotResize */
+.tdv-host { flex: 1; min-height: 0; overflow: hidden; }
 .tdv-note { position: absolute; right: 6px; bottom: 4px; }
 </style>

@@ -31,6 +31,7 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { usePlotResize } from '../../composables/usePlotResize'
 import { distinctColors } from '../../plots/plot'
 import {
   pathPoints, pathDomain, normalizeTracks, displacementVectors, pathCsvRows, trackCountNote,
@@ -126,7 +127,7 @@ async function load() {
     data.value = null
   } finally {
     loading.value = false
-    await nextTick(); await render()
+    await nextTick(); plotBox.redraw()
   }
 }
 
@@ -142,7 +143,6 @@ const host = useTemplateRef<HTMLElement>('host')
 const forceLight = ref(false)
 let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
-let ro: ResizeObserver | null = null
 
 const paths = computed<TrackPathMap>(() => data.value?.paths ?? {})
 const ids = computed(() => Object.keys(paths.value))
@@ -210,13 +210,11 @@ async function render() {
   host.value.append(node)
 }
 
-onMounted(() => {
-  if (host.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => render()); ro.observe(host.value)
-  }
-})
-onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null })
-watch([mode, shownPoints], () => nextTick(render))
+// the observer's callback appends into the element it observes — see usePlotResize for why
+// that loops, and what stops it
+const plotBox = usePlotResize(host, render)
+onBeforeUnmount(() => { node?.remove(); node = null })
+watch([mode, shownPoints], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the other views) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -296,6 +294,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .tpv { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tpv-ctrl { display: flex; flex-direction: column; gap: 0.35rem; padding: 4px 6px; }
 .tpv-spacer { flex: 1; }
-.tpv-host { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+/* overflow:hidden so a plot sized to its own floor cannot GROW this box and
+   re-trigger the resize observer — see usePlotResize */
+.tpv-host { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .tpv-note { position: absolute; right: 6px; bottom: 4px; }
 </style>

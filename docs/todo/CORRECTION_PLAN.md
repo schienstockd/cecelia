@@ -402,25 +402,35 @@ Both from `app/src/label_props.jl:657-692`:
   from an interactive-views registry entry that carries **no surface flag** — it mutates, and the
   Analysis board is read-only. The read-only track plots DO carry the board flag.
 
-- **P4d — authoring an op the detector did not find. NOT BUILT, and it is the real gap.** The worklist
-  inverts old R for the case the detector catches; for the case the user simply SEES, there is now no
-  GUI path at all, where old R at least let you name the tracks. A swap, a mid-track mis-link, a gap
-  wider than `gapFrames` — none of those reach the queue. Two candidate designs, both reusing shipped
-  machinery rather than new bridge work:
-  1. **From a napari selection.** `startCellSelection` already turns a drawn region into a transient
-     cell population (`napari/start-selection` + `napari/event`). Those labels are exactly the argument
-     `points.remove` / `points.add` take, so "untrack these detections" is a button over an existing
-     mechanism.
-  2. **From two picked tracks.** Picking two paths in the track plot and offering Join (with the same
-     temporal-overlap refusal the op already enforces) covers the mis-link case.
-  Until one of them exists, the honest statement is: **the worklist is complete for what the detector
-  finds, not for what the user sees.**
+- **P4d — authoring an op the detector did not find. ✅ BUILT (track-level).** An *All tracks* mode
+  beside *Suggested*: every track in a `SelectionTable` (multi-select, sortable, longest first, capped
+  at 2000 with the cap stated), and the selection becomes an op — **Join** (exactly two,
+  non-overlapping), **Split** (one, at a frame strictly inside it), **Remove** (any number). Blocked
+  actions stay visible and say WHY, because "why can't I join these" is the question this surface exists
+  to answer; the temporal-overlap refusal is the engine's own rule checked before Apply rather than
+  after. A picked track flies napari to its first frame, like a suggested row. Hand-authored and
+  suggested ops are indistinguishable downstream — same queue, same single task run, same journal.
+  Logic + tests: `frontend/src/lib/trackCorrection.ts` (`trackRows`, `tracksOverlap`, `joinOrder`,
+  `manualActions`, `build*Op`).
+  **✅ And from napari, which is the half that matters.** Reading a track id off the viewer and hunting
+  for it in a table is the chore the worklist exists to remove, so *All tracks* reads the selection
+  instead: Draw (the existing `start-selection` brush) → Read selection →
+  `GET /api/tracking/selection` resolves the enclosed labels to their tracks, ordered by how many
+  selected cells each holds → **Pick** selects them, fetching any that fall outside the picker's cap.
+  The same selection drives **Untrack cells** (`points.remove`), the one CELL-level op — a bad
+  detection dropped without destroying the rest of its track.
+  *Still open:* `points.add` (attach selected cells TO a track) has no button. It is the same
+  selection plus a target track, so it is small — but "which track should these join" needs a picker
+  of its own, and nobody has asked for it yet.
 
-- **P4e — detector thresholds in the GUI. NOT BUILT.** `GET /api/tracking/issues` accepts
-  `gapFrames`/`gapSteps`/`jumpFactor`/`jumpQuantile`/`minLen`, and the panel sends none of them. The
-  defaults are measured (374 tracks → 31 candidates on the reference image) but they describe one lab's
-  cell type; a stricter/looser control is the difference between a worklist someone finishes and one
-  they abandon.
+- **P4e — detector thresholds in the GUI. ✅ BUILT.** A collapsed *Sensitivity* section with the five
+  knobs the route accepts. Measured on the reference image, the same 374 tracks give **10** candidates
+  at `jumpQuantile 0.999`, 26 at `gapSteps 1`, **31** at the defaults, 96 at `gapSteps 8` +
+  `gapFrames 6`, 222 at `jumpFactor 2` + `jumpQuantile 0.9`, and **309** at `minLen 15` — a range no
+  single default covers, which is why this had to be a control rather than a better constant.
+  **The defaults are not duplicated in the frontend.** The route echoes the thresholds it actually used
+  (`thresholds` in the response); the panel seeds its inputs from those and sends only what the user
+  moved, so the measured numbers stay on the Julia constants where they were measured.
 
 ### Icons for the correction surface — checked against the glossary
 

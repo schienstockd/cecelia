@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   opLabel, opDescription, issueKey, visibleIssues, worklistSummary, undoLast, worklistCsvRows,
-  KIND_LABEL, type TrackIssue, type TrackOp, type IssuesResponse,
+  KIND_LABEL, trackRows, tracksOverlap, joinOrder, manualActions,
+  buildRemoveOp, buildJoinOp, buildSplitOp, buildUntrackOp,
+  thresholdQuery, thresholdsChanged, THRESHOLD_FIELDS,
+  selectionSummary, selectedTracks, parseTrackIds, suggestedOps,
+  type TrackIssue, type TrackOp, type IssuesResponse, type TrackRow,
 } from './trackCorrection'
 
 const issue = (over: Partial<TrackIssue> = {}): TrackIssue => ({
@@ -154,5 +158,190 @@ describe('worklistCsvRows', () => {
 
   it('is empty for an empty worklist', () => {
     expect(worklistCsvRows([], [], [])).toEqual([])
+  })
+})
+
+// ── Authoring an op the detector did not suggest (P4d) ─────────────────────────
+const row = (track: number, t0: number, t1: number): TrackRow =>
+  ({ track, nFrames: t1 - t0 + 1, t0, t1, netDistance: 10 })
+
+describe('trackRows', () => {
+  it('summarises each track, longest first', () => {
+    const rows = trackRows({
+      '7': { t: [0, 1], x: [0, 3], y: [0, 4] },
+      '2': { t: [5, 6, 7], x: [0, 1, 2], y: [0, 0, 0] },
+    })
+    expect(rows.map(r => r.track)).toEqual([2, 7])
+    expect(rows[0]).toMatchObject({ nFrames: 3, t0: 5, t1: 7 })
+    expect(rows[1].netDistance).toBeCloseTo(5, 10)      // 3-4-5 triangle
+  })
+
+  it('skips a track with no timepoints and handles an empty map', () => {
+    expect(trackRows({ '1': { t: [], x: [], y: [] } })).toEqual([])
+    expect(trackRows({})).toEqual([])
+  })
+})
+
+describe('tracksOverlap / joinOrder', () => {
+  it('detects a shared frame range', () => {
+    expect(tracksOverlap(row(1, 0, 5), row(2, 5, 9))).toBe(true)     // touching at 5
+    expect(tracksOverlap(row(1, 0, 4), row(2, 5, 9))).toBe(false)
+  })
+
+  it('orders a join so the EARLIER track is A', () => {
+    // the engine folds B into A, so A must be the one that comes first in time or the joined track
+    // reads backwards
+    expect(joinOrder(row(9, 10, 20), row(3, 0, 5))).toEqual([3, 9])
+    expect(joinOrder(row(3, 0, 5), row(9, 10, 20))).toEqual([3, 9])
+  })
+})
+
+describe('manualActions', () => {
+  const rows = [row(1, 0, 5), row(2, 6, 9), row(3, 4, 8)]
+  const act = (picked: number[], splitAt: number | null = null) =>
+    Object.fromEntries(manualActions(picked, rows, splitAt).map(a => [a.key, a]))
+
+  it('offers Join for two non-overlapping tracks, ordered by time', () => {
+    const j = act([2, 1]).join
+    expect(j.blocked).toBeNull()
+    expect(j.op).toEqual({ op: 'track.join', trackIds: [1, 2] })
+  })
+
+  it('BLOCKS a join whose tracks share frames, and says which', () => {
+    // the engine refuses this; learning it only when the task fails after Apply is the bad trade
+    const j = act([1, 3]).join
+    expect(j.op).toBeNull()
+    expect(j.blocked).toMatch(/overlap in time \(frames 4–5\)/)
+  })
+
+  it('needs exactly two for a join — never silently uses the first two', () => {
+    expect(act([1]).join.blocked).toMatch(/exactly two/)
+    expect(act([1, 2, 3]).join.blocked).toMatch(/exactly two/)
+  })
+
+  it('splits one track at a frame strictly inside it', () => {
+    expect(act([1], 3).split.op).toEqual({ op: 'track.split', trackId: 1, atT: 3 })
+    // the first frame would leave an empty first half, which the engine rejects
+    expect(act([1], 0).split.blocked).toMatch(/inside 0–5/)
+    expect(act([1], 6).split.blocked).toMatch(/inside 0–5/)
+    expect(act([1], null).split.blocked).toMatch(/Set the frame/)
+    expect(act([1, 2], 3).split.blocked).toMatch(/one track/)
+  })
+
+  it('removes any number of picked tracks', () => {
+    expect(act([1, 3]).remove.op).toEqual({ op: 'track.remove', trackIds: [1, 3] })
+    expect(act([]).remove.blocked).toMatch(/at least one/)
+  })
+
+  it('always returns every action, with a reason when blocked', () => {
+    // a button that vanishes teaches nothing — "why can't I join these" is the question the surface
+    // exists to answer
+    const all = manualActions([], rows, null)
+    expect(all.map(a => a.key)).toEqual(['join', 'split', 'remove'])
+    expect(all.every(a => a.op === null && a.blocked)).toBe(true)
+  })
+
+  it('ignores a picked id that is not in the rows', () => {
+    expect(act([1, 999]).join.blocked).toMatch(/exactly two/)
+  })
+})
+
+describe('hand-built ops are the same shape the engine accepts', () => {
+  it('uses the keys apply_track_op! reads', () => {
+    // `trackIds` for remove/join, `trackId`+`atT` for split, `labels` for points.* — mismatching any
+    // of these fails only at Apply, inside the task
+    expect(buildRemoveOp([4, 5])).toEqual({ op: 'track.remove', trackIds: [4, 5] })
+    expect(buildJoinOp(1, 2)).toEqual({ op: 'track.join', trackIds: [1, 2] })
+    expect(buildSplitOp(7, 12)).toEqual({ op: 'track.split', trackId: 7, atT: 12 })
+    expect(buildUntrackOp([9])).toEqual({ op: 'points.remove', labels: [9] })
+  })
+
+  it('every built op carries a label and a description, like a suggested one', () => {
+    for (const op of [buildRemoveOp([1]), buildJoinOp(1, 2), buildSplitOp(1, 2), buildUntrackOp([1])]) {
+      expect(opLabel(op)).toBeTruthy()
+      expect(opDescription(op).length).toBeGreaterThan(5)
+    }
+  })
+})
+
+// ── Detector thresholds (P4e) ─────────────────────────────────────────────────
+describe('thresholdQuery', () => {
+  const defaults = { gapFrames: 3, gapSteps: 3, jumpFactor: 4, jumpQuantile: 0.99, minLen: 5 }
+
+  it('sends only what the user moved', () => {
+    // an untouched panel must take the SERVER's defaults — duplicating them in TS is how the two
+    // drift apart
+    expect(thresholdQuery({ ...defaults }, defaults)).toBe('')
+    expect(thresholdQuery({}, defaults)).toBe('')
+    expect(thresholdQuery({ gapSteps: 5 }, defaults)).toBe('&gapSteps=5')
+  })
+
+  it('sends several, in a stable order', () => {
+    expect(thresholdQuery({ minLen: 8, gapFrames: 1 }, defaults)).toBe('&gapFrames=1&minLen=8')
+  })
+
+  it('knows whether anything changed', () => {
+    expect(thresholdsChanged({}, defaults)).toBe(false)
+    expect(thresholdsChanged({ jumpFactor: 2 }, defaults)).toBe(true)
+  })
+
+  it('every field is settable and explained', () => {
+    for (const f of THRESHOLD_FIELDS) {
+      expect(f.label).toBeTruthy()
+      expect(f.tip.length).toBeGreaterThan(20)
+      expect(f.step).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('the napari bridge', () => {
+  const sel = { valueName: 'memTom', labels: [1, 2, 3, 4], nLabels: 4, nUntracked: 1,
+                tracks: [{ track: 7, nCells: 2 }, { track: 9, nCells: 1 }] }
+
+  it('says what was drawn and what it resolved to, untracked cells separately', () => {
+    // "4 cells, 2 tracks" would hide that one of them belongs to no track — which is exactly the
+    // cell points.add exists for
+    expect(selectionSummary(sel)).toBe('4 cells · 2 tracks · 1 untracked')
+    expect(selectionSummary({ ...sel, nUntracked: 0 })).toBe('4 cells · 2 tracks')
+    expect(selectionSummary({ ...sel, nLabels: 1, labels: [1], tracks: [{ track: 7, nCells: 1 }],
+                              nUntracked: 0 })).toBe('1 cell · 1 track')
+  })
+
+  it('is empty when nothing is drawn', () => {
+    expect(selectionSummary(null)).toBe('')
+    expect(selectionSummary({ ...sel, nLabels: 0, labels: [], tracks: [] })).toBe('')
+  })
+
+  it('keeps the server order — most cells inside the region first', () => {
+    // so preselecting the top two makes "draw around the break, hit Join" do the obvious thing
+    expect(selectedTracks(sel)).toEqual([7, 9])
+    expect(selectedTracks(null)).toEqual([])
+  })
+})
+
+describe('parseTrackIds', () => {
+  it('accepts the separators someone actually types', () => {
+    expect(parseTrackIds('12, 40 91;3')).toEqual([12, 40, 91, 3])
+  })
+
+  it('drops nonsense and duplicates rather than querying for them', () => {
+    expect(parseTrackIds('12 12 abc -4 0 3.5')).toEqual([12])
+    expect(parseTrackIds('')).toEqual([])
+    expect(parseTrackIds('   ')).toEqual([])
+  })
+})
+
+describe('suggestedOps', () => {
+  const a = issue({ trackIds: [1, 2] })
+  const b = issue({ kind: 'jump', op: { op: 'track.split', trackId: 7, atT: 5 }, trackIds: [7] })
+
+  it('returns each ticked candidate\'s OWN op, in tick order', () => {
+    // the one-click path: removing the per-row buttons left the pre-picked fix unreachable
+    expect(suggestedOps([issueKey(b), issueKey(a)], [a, b])).toEqual([b.op, a.op])
+  })
+
+  it('ignores a key with no candidate behind it', () => {
+    expect(suggestedOps(['gone'], [a])).toEqual([])
+    expect(suggestedOps([], [a])).toEqual([])
   })
 })
