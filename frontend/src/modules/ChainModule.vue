@@ -1406,7 +1406,7 @@ onActivated(async () => {
             <i class="pi pi-refresh" />
           </button>
           <button
-            class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || saving"
             @click="saveChain"
             v-tooltip.right="'Save the current chain to disk'"
@@ -1427,7 +1427,7 @@ onActivated(async () => {
           @keydown.esc="closeNameInput"
           autofocus
         />
-        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
+        <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
           v-tooltip.right="nameMode === 'rename' ? 'Rename the chain' : 'Create the chain'"
           @click="submitName" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
