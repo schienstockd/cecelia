@@ -306,14 +306,10 @@ function api_plot_data(body_bytes::Vector{UInt8})
             # uID → combined attribute value (the chosen attributes' values joined with "."; empty
             # components dropped). Images with no value for any chosen attribute fall back to their uID
             # in _series_groups. Built once, passed to the aggregation.
-            attr_map = nothing
-            if !isempty(group_attrs)
-                attr_map = Dict{String,String}()
-                for (im, uid) in pairs
-                    v = join(filter(!isempty, String[string(get(im.attr, a, "")) for a in group_attrs]), ".")
-                    isempty(v) || (attr_map[string(uid)] = v)
-                end
-            end
+            # `image_attr_groups` (app/src/model/set.jl) is the ONE join rule — the track plots group by
+            # the same attributes for the same reason, so it is not spelled twice.
+            attr_map = isempty(group_attrs) ? nothing :
+                       image_attr_groups(first.(pairs), last.(pairs), group_attrs)
             result = targets === nothing ?
                 plot_summary_data(first.(pairs), last.(pairs), pop_type,
                                   [string(p) for p in get(body, "pops", String[])], chart;

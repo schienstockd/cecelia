@@ -8979,6 +8979,15 @@ end
         @test Set(unique(gc.track_id)) == Set(Int.(g.track_id))  # same tracks, expanded
         @test nrow(gc) > nrow(g)                                 # many cells per track
         @test all(in(Set(Int.(g.track_id))), Int.(gc.track_id))
+
+        # granularity=:cell + `centroids`: the member cells' COORDINATES come too. They are what the
+        # track PLOTS draw — a gated or clustered track's path — and the expansion used to carry only
+        # `pop_cols`, so the frame came back with no coordinates at all and `_pop_df_finish` could do
+        # nothing but warn about it. Resolved per value_name (a 2D segmentation has no centroid_z).
+        gcc = pop_df(img, "track", ["/fast"]; value_name="B", granularity=:cell, centroids=:pixel)
+        @test all(c -> c in names(gcc), ["centroid_x", "centroid_y", "centroid_t"])
+        @test nrow(gcc) == nrow(gc)
+        @test Set(unique(gcc.track_id)) == Set(Int.(g.track_id))
     end
 end
 
@@ -13239,3 +13248,215 @@ end
     # the shipped default is the measured one (see PAIR_SCAN_MAX_TRACKS): 2000 tracks = 25 s of scan
     @test PAIR_SCAN_MAX_TRACKS == 800
 end
+# ── Pooling several images into one reading (track_cohort.jl / pooled_track_frame) ─────────────
+#
+# The two track PLOTS compare conditions, so a group's images have to be judged together. Every
+# diagnostic in the battery except the pair scan is per-track or per-step arithmetic, so pooling is a
+# concatenation — but track ids are per IMAGE, and a plain `vcat` would merge two different cells into
+# one track and invent the step between them. That is the failure these tests exist for: it produces no
+# error, just a curve measured over a path that never happened.
+@testset "pooled_track_frame — ids made unique, groups kept" begin
+    a = _diag_df([1 => [(t, Float64(t), 0.0) for t in 0:5],
+                  2 => [(t, Float64(t), 10.0) for t in 0:5]])
+    b = _diag_df([1 => [(t, Float64(t), 20.0) for t in 0:5],
+                  2 => [(t, Float64(t), 30.0) for t in 0:5]])
+
+    p = pooled_track_frame([a, b])
+    @test nrow(p) == nrow(a) + nrow(b)
+    # FOUR tracks, not two — the whole point
+    @test length(track_ids_present(p)) == 4
+    @test Set(unique(p.__pool_grp)) == Set([1, 2])
+    # the first frame keeps its ids (readable in a CSV), the second is offset by a round stride
+    @test Set(Int.(p.track_id[p.__pool_grp .== 1])) == Set([1, 2])
+    @test minimum(Int.(p.track_id[p.__pool_grp .== 2])) >= 1000
+
+    # one frame in, one group out — and nothing renumbered
+    one = pooled_track_frame([a])
+    @test Set(Int.(one.track_id)) == Set([1, 2])
+    @test all(one.__pool_grp .== 1)
+    @test nrow(pooled_track_frame(DataFrame[])) == 0
+
+    # an untracked cell must not be MINTED into a track by the offset
+    u = copy(a); u[!, :track_id] = fill(NaN, nrow(u))
+    pu = pooled_track_frame([u, b])
+    @test all(isnan, pu.track_id[pu.__pool_grp .== 1])
+    @test length(track_ids_present(pu)) == 2
+end
+
+@testset "track_diagnostics — a pooled frame never pairs two movies" begin
+    one = _diag_df([_diag_walk(id, 12; x0 = 40.0 * id) for id in 1:4])
+    d1 = track_diagnostics(one, _DIAG_XY; max_lag = 4)
+    @test length(d1.pairs.angle) == 4 * 3 ÷ 2
+
+    pooled = pooled_track_frame([one, copy(one)])
+    d2 = track_diagnostics(pooled, _DIAG_XY; max_lag = 4, group_col = :__pool_grp)
+    # exactly the within-image pairs, twice — no cross-movie pair, which has no distance to report
+    @test length(d2.pairs.angle) == 2 * length(d1.pairs.angle)
+    # the evidence that the guard is doing something: without it the scan pairs across images
+    @test length(track_diagnostics(pooled, _DIAG_XY; max_lag = 4).pairs.angle) ==
+          8 * 7 ÷ 2
+
+    # the linear half pools exactly: same curve, twice the samples
+    @test d2.msd.msd ≈ d1.msd.msd
+    @test d2.msd.n == 2 .* d1.msd.n
+    @test d2.summary.nTracks == 2 * d1.summary.nTracks
+
+    # The O(n²) guard is on the biggest GROUP, not the pooled total. Guarding on the total would skip the
+    # pair half for every pooled condition — three ordinary movies already pass PAIR_SCAN_MAX_TRACKS — and
+    # the panel would report "not checked" for exactly the comparison the pooling was for.
+    three = pooled_track_frame([one, copy(one), copy(one)])
+    d3 = track_diagnostics(three, _DIAG_XY; max_lag = 4, max_pair_tracks = 5,
+                           group_col = :__pool_grp)
+    @test !d3.summary.pairsSkipped                        # 4 tracks per group, not 12
+    @test length(d3.pairs.angle) == 3 * length(d1.pairs.angle)
+    # …and a group that is genuinely too big is still skipped
+    @test track_diagnostics(three, _DIAG_XY; max_lag = 4, max_pair_tracks = 3,
+                            group_col = :__pool_grp).summary.pairsSkipped
+end
+
+# ── The (images × population) grouping the two track plots share (track_cohort.jl) ─────────────
+@testset "image_attr_groups — ONE attribute join for every plot" begin
+    imgs = [(; attr = Dict("Treatment" => "WT",    "Mouse" => "m1")),
+            (; attr = Dict("Treatment" => "WT",    "Mouse" => "m2")),
+            (; attr = Dict("Treatment" => "MerTK")),
+            (; attr = Dict{String,String}())]
+    uids = ["a", "b", "c", "d"]
+
+    @test image_attr_groups(imgs, uids, ["Treatment"]) ==
+          Dict("a" => "WT", "b" => "WT", "c" => "MerTK")      # "d" is ABSENT, not ""
+    # combined, empty components dropped (the old R paste0(axisX, ".", interaction))
+    m = image_attr_groups(imgs, uids, ["Treatment", "Mouse"])
+    @test m["a"] == "WT.m1" && m["b"] == "WT.m2" && m["c"] == "MerTK"
+    @test isempty(image_attr_groups(imgs, uids, String[]))
+end
+
+@testset "track plot grouping — images and populations, without touching disk" begin
+    imgs = [(; attr = Dict("Treatment" => "WT")), (; attr = Dict("Treatment" => "WT")),
+            (; attr = Dict("Treatment" => "MerTK"))]
+    uids = ["a", "b", "c"]
+
+    # per image (the default): one bundle each, labelled by uID
+    per = Cecelia._track_image_groups(collect(zip(imgs, uids)), String[], false)
+    @test [g.label for g in per] == uids
+    @test all(g -> length(g.items) == 1, per)
+
+    # by attribute: images sharing a value POOL, in first-appearance order
+    byattr = Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false)
+    @test [g.label for g in byattr] == ["WT", "MerTK"]
+    @test length(byattr[1].items) == 2 && length(byattr[2].items) == 1
+
+    # pooled: one unlabelled bundle (there is nothing to distinguish)
+    pooled = Cecelia._track_image_groups(collect(zip(imgs, uids)), String[], true)
+    @test length(pooled) == 1 && pooled[1].label == "" && length(pooled[1].items) == 3
+    # an attribute WINS over pooling — grouping by it is the pooling, and doing both would drop it
+    @test length(Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], true)) == 2
+
+    # populations: none = the whole segmentation; one bundle each; pooled = one bundle of all
+    @test Cecelia._track_pop_groups(String[], "B", false)[1].refs == [("B", "")]
+    pg = Cecelia._track_pop_groups(["B/tcells", "C/qc/_tracked"], "B", false)
+    @test [g.refs[1] for g in pg] == [("B", "/tcells"), ("C", "/qc/_tracked")]
+    # the LEAF is what a user calls a population; the path is a file path
+    @test [g.label for g in pg] == ["tcells", "_tracked"]
+    poolp = Cecelia._track_pop_groups(["B/a", "B/b"], "B", true)
+    @test length(poolp) == 1 && length(poolp[1].refs) == 2
+
+    # the label names both dimensions of the comparison, and stays empty when there is one group
+    @test Cecelia._track_group_label("WT", "CD4") == "WT · CD4"
+    @test Cecelia._track_group_label("", "") == ""
+end
+
+# A legend with the same entry twice, in two colours, is not a legend — and two groups can honestly want
+# the same NAME (image names are not unique, only uIDs are; a population leaf repeats across
+# segmentations). The collision gains the first dimension that actually differs.
+@testset "colliding group labels are disambiguated" begin
+    mkdf() = DataFrame(label = [1.0], track_id = [1.0], centroid_t = [0.0],
+                       centroid_x = [0.0], centroid_y = [0.0])
+    src(uid, vn, pop) = TrackPlotSource(uid, nothing, vn, pop, mkdf(), ["centroid_x", "centroid_y"])
+    grp(key, label, srcs) = TrackPlotGroup(key, label, "live", srcs,
+                                           ["centroid_x", "centroid_y"], NaN)
+
+    # two IMAGES that happen to share a name → the uID tells them apart
+    two_imgs = [grp("u1|B", "Image 1", [src("u1", "B", "")]),
+                grp("u2|B", "Image 1", [src("u2", "B", "")])]
+    @test [g.label for g in Cecelia._disambiguate_labels(two_imgs)] ==
+          ["Image 1 · u1", "Image 1 · u2"]
+
+    # the same population LEAF under two segmentations → the segmentation tells them apart
+    two_vns = [grp("u1|B/tcells", "tcells", [src("u1", "B", "/tcells")]),
+               grp("u1|C/tcells", "tcells", [src("u1", "C", "/tcells")])]
+    @test [g.label for g in Cecelia._disambiguate_labels(two_vns)] == ["tcells · B", "tcells · C"]
+
+    # distinct labels are left alone, and a blank one (the single-group case) is never decorated
+    fine = [grp("a", "WT", [src("u1", "B", "")]), grp("b", "MerTK", [src("u2", "B", "")])]
+    @test [g.label for g in Cecelia._disambiguate_labels(fine)] == ["WT", "MerTK"]
+    @test Cecelia._disambiguate_labels([grp("a", "", [src("u1", "B", "")])])[1].label == ""
+end
+
+@testset "track_plot_groups + the two readouts (KDIeEm B)" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "track_plot_groups (fixture missing)"
+    else
+        mkimg = function ()
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
+            cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+            img = CciaImage(uid = "KDIeEm", dir = td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+            img.attr["Treatment"] = "WT"
+            img
+        end
+        i1, i2 = mkimg(), mkimg()
+        i2.attr["Treatment"] = "MerTK"
+
+        # ONE image, no populations — one group, and the payload the route always sent
+        gs, dropped, vn = track_plot_groups([i1], ["u1"]; value_name = "B")
+        @test length(gs) == 1 && dropped == 0 && vn == "B"
+        g = gs[1]
+        @test g.label == ""                       # nothing to name: a legend of one is noise
+        @test track_group_images(g) == ["u1"] && track_group_value_name(g) == "B"
+        @test !isempty(g.spatial)
+        p = track_group_paths(g; limit = 3)
+        @test length(p.paths) == 3 && p.total > 3
+        @test all(k -> !occursin(":", k), keys(p.paths))   # single source → the plain track id
+
+        # TWO images, per image — two groups, each with its own uID as the label
+        gs2, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B")
+        @test [x.label for x in gs2] == ["u1", "u2"]
+
+        # by attribute — one group per treatment, and each pools its own images
+        gs3, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B",
+                                 group_attrs = ["Treatment"])
+        @test [x.label for x in gs3] == ["WT", "MerTK"]
+
+        # pooled — ONE group over both images, and its track keys say which movie each came from
+        gs4, = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B", pool_images = true)
+        @test length(gs4) == 1 && length(gs4[1].sources) == 2
+        pp = track_group_paths(gs4[1]; limit = 4)
+        @test all(k -> occursin(":", k), keys(pp.paths))
+        @test any(k -> startswith(k, "u1:"), keys(pp.paths))
+        @test any(k -> startswith(k, "u2:"), keys(pp.paths))
+        # …and the pooled group holds twice the tracks of one image
+        @test pp.total == 2 * p.total
+
+        # the group CAP is a stated omission, never a silent subset
+        gs5, dropped5 = track_plot_groups([i1, i2], ["u1", "u2"]; value_name = "B", max_groups = 1)
+        @test length(gs5) == 1 && dropped5 == 1
+
+        # colour values come from the per-track table, keyed the same way as the paths
+        col = track_group_paths(gs4[1]; limit = 4, color_by = "live.track.speed")
+        @test col.color_kind == "numeric"
+        @test !isempty(col.values) && Set(keys(col.values)) ⊆ Set(keys(col.paths))
+        # an unknown column is "uncoloured", not an error
+        @test track_group_paths(g; limit = 2, color_by = "nope.nope").color_kind == "none"
+
+        # the diagnostics battery over a group, pooled through pooled_track_frame
+        d = track_group_diagnostics(gs4[1]; max_lag = 4)
+        @test d !== nothing
+        d1 = track_group_diagnostics(g; max_lag = 4)
+        @test d.summary.nTracks == 2 * d1.summary.nTracks
+        @test !isempty(d.msd.lag)
+    end
+end
+

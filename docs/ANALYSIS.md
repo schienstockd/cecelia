@@ -179,10 +179,27 @@ registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCa
 
 | `rail` | rail shows | who declares it |
 |---|---|---|
-| `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; any view that doesn't say otherwise |
+| `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; the two track plots; any view that doesn't say otherwise |
 | `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `umap` + every `CLUSTER_PANELS` entry |
 | `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
-| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics`, `trackPaths`, `trackDiagnostics` |
+| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics` |
+
+**An INTERACTIVE plot on the `'pops'` rail declares its population FAMILIES.** The rail lists the
+*active* plot's family, resolved from a summary slot's spec — so an interactive slot with nothing to
+resolve from would have listed whichever family `specs[0]` happens to carry, i.e. populations the plot
+cannot draw. Such a view therefore carries `popTypes` on its registry entry (the same shape a spec's
+`dataSource.popTypes` has, read by the same `plots/popTypes.ts` functions), the host passes it through
+`popTypeSpecFor` as `useSummaryData`'s `activeFamily`, and the plot renders the family picker itself —
+one control, on the plot, exactly as a multi-family summary spec does. Today: the two track plots
+(`live` / `track` / `trackclust`).
+
+**And it receives the board's COMPARISON, not just its images.** `ctxFor` hands a `'pops'` slot the same
+four things a `SummaryPanel` gets: `series` (the rail's selection), `compareMode`, `groupAttr` and
+`poolGroups`. A view is free to ignore them; what it must not do is invent a second compare control of its
+own. It does NOT get `popColors` — the two track plots name a group with a facet title rather than a
+colour, so passing the map would be a prop wired to nothing (the same failure mode as a dead surface
+flag). What the track plots do with the four: `docs/TRACKING.md` → *Both track plots compare like every
+other plot on the board*.
 
 **A slot with no `vis` falls back to `DEFAULT_VIS`, never `defaultVis()`.** The factory mints a new bag
 per call, so a template-side `?? defaultVis()` gives every panel a "new" vis on every board render — the

@@ -15,6 +15,30 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+### Changed — the two track plots compare a cohort
+
+- **Tracks and the track diagnostics now put treatments and populations side by side**, like every other
+  plot on the Analysis board. Both shipped showing one image and no populations, so a figure comparing two
+  conditions had to be assembled by hand from per-image screenshots. They now read the board's own
+  controls — `compare` (this image / per image / pooled / by attribute), the population rail and *pool to
+  groups* — with one **group** per (images × population) cell of the comparison, drawn as small multiples
+  in a grid with the group's name as the cell title. No new control was added; the grouping resolves once
+  in the package (`track_plot_groups`), through the same attribute join the summary canvas uses.
+- **A group is named, never coloured.** Both plots always split rather than overlay (`Facet by` is
+  reported as overridden instead of being silently ignored): overlaid conditions are unreadable in every
+  mode, and a per-group colour would need the inline swatch legend the house style rules out and would
+  spend the colour channel `colorBy` exists for.
+- **Both routes are cohort-shaped.** `GET /api/tracking/paths` and `/api/tracking/diagnostics` return
+  `groups: [...]`, each entry carrying what the single-image response used to carry at its top level. A
+  single-image call is one group, so nothing about the Track page's own canvas changes.
+- **A group's images are pooled the way each plot needs.** Paths keep them apart (a track is labelled by
+  the movie it came from, and the per-group cap is taken round-robin so a pooled group shows each of its
+  replicates); the diagnostics battery pools the frames, offsetting track ids so two cells can never be
+  read as one track, and keeps its O(n²) pair scan inside a single movie.
+- **`pop_df(pop_type="track"|"trackclust", granularity=:cell, centroids=…)` now returns coordinates.** The
+  track→cell expansion carried only the requested columns, so a gated or clustered track's cells came back
+  with no centroids at all — which is exactly what a track plot draws.
+
 ## [0.1.3] — 2026-08-15
 
 41 pull requests since `v0.1.2`. Still `0.1.x`.

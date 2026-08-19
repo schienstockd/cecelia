@@ -4526,20 +4526,50 @@ end
             end
 
             # `ids=` names tracks and IGNORES the cap — "the one I need is not in the top N" must have
-            # an answer that is not "raise N for everyone"
+            # an answer that is not "raise N for everyone".
+            #
+            # NOTE the payload shape: one entry per (images × population) GROUP, each carrying what the
+            # single-image response used to carry at its top level. One image and no populations is one
+            # group — the plot compares like every other plot on the board (docs/TRACKING.md).
             st, body = api_track_paths(HTTP.Request("GET",
                 "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&limit=1"))
             capped = JSON3.read(body)
-            @test st == 200 && length(capped.paths) == 1
+            @test st == 200 && capped.tracked && length(capped.groups) == 1
+            g = capped.groups[1]
+            @test length(g.paths) == 1 && g.shown == 1 && g.total > 1
+            @test capped.shown == 1 && capped.dropped == 0
+            # the group's identity travels with it — the frontend labels/colours/facets from this
+            @test g.valueName == "B" && collect(String.(g.imageUids)) == ["KDIeEm"]
+            @test g.label == ""                      # one group: a legend of one entry is noise
             want = string(last(tids))
             st, body = api_track_paths(HTTP.Request("GET",
                 "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&limit=1&ids=$want"))
             named = JSON3.read(body)
-            @test st == 200 && collect(String.(keys(named.paths))) == [want]
+            @test st == 200 && collect(String.(keys(named.groups[1].paths))) == [want]
             # a track that does not exist is empty, not a 500
             st, body = api_track_paths(HTTP.Request("GET",
                 "/api/tracking/paths?projectUid=testpr&imageUid=KDIeEm&valueName=B&ids=999999"))
-            @test st == 200 && isempty(JSON3.read(body).paths)
+            @test st == 200 && isempty(JSON3.read(body).groups[1].paths)
+
+            # the cohort selectors reach the package resolver: `imageUids=` is the board's form, and
+            # pooling one image is still one group (the flags are not a second code path)
+            st, body = api_track_paths(HTTP.Request("GET",
+                "/api/tracking/paths?projectUid=testpr&imageUids=KDIeEm&valueName=B&limit=2&poolImages=1"))
+            pooled = JSON3.read(body)
+            @test st == 200 && length(pooled.groups) == 1 && length(pooled.groups[1].paths) == 2
+            # an image selector is REQUIRED — neither route may guess one
+            @test api_track_paths(HTTP.Request("GET", "/api/tracking/paths?projectUid=testpr"))[1] == 400
+            @test api_track_diagnostics(HTTP.Request("GET", "/api/tracking/diagnostics?projectUid=testpr"))[1] == 400
+
+            # the diagnostics battery, same shape: one group carrying the curves and the run's own
+            # findings (never re-derived in the frontend)
+            st, body = api_track_diagnostics(HTTP.Request("GET",
+                "/api/tracking/diagnostics?projectUid=testpr&imageUids=KDIeEm&valueName=B&maxLag=4"))
+            diag = JSON3.read(body)
+            @test st == 200 && diag.tracked && length(diag.groups) == 1
+            dg = diag.groups[1]
+            @test !isempty(dg.msd.lag) && !isempty(dg.acor.lag) && dg.nTracks > 0
+            @test haskey(dg, :findings) && haskey(dg, :summary)
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

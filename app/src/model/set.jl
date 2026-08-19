@@ -118,6 +118,29 @@ function attr_value_counts(imgs; included_only::Bool = false)
 end
 
 """
+    image_attr_groups(imgs, uids, attrs) -> Dict{String,String}
+
+uID → the COMBINED value of `attrs` on that image: each attribute's value in the order asked, empty
+components dropped, joined with `"."` (mirroring the old R `paste0(axisX, ".", interaction)`). An image
+with no value for any of them is ABSENT from the map — callers fall back to its uID, so a missing
+attribute reads as "its own group" rather than as an empty label shared with every other gap.
+
+THE one place "group these images by attribute" is answered. `POST /api/plot_data` built this inline for
+the summary canvas, and the track plots (`/api/tracking/paths`, `/api/tracking/diagnostics`) need the
+same grouping to put treatments side by side — three sites, so the join rule lives here instead of being
+re-spelled per route. Pairs with [`attr_value_counts`], which answers *which levels exist*.
+"""
+function image_attr_groups(imgs, uids, attrs)::Dict{String,String}
+    out = Dict{String,String}()
+    isempty(attrs) && return out
+    for (im, uid) in zip(imgs, uids)
+        v = join(filter(!isempty, String[string(get(im.attr, a, "")) for a in attrs]), ".")
+        isempty(v) || (out[string(uid)] = v)
+    end
+    out
+end
+
+"""
     image_by_uid(s::CciaSet; uid) -> Union{CciaImage,Nothing}
 
 Look up one image by `uid` within the set (nothing if absent).

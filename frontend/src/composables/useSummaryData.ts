@@ -3,7 +3,7 @@ import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
 import { tkey, parseTkey } from '../plots/series'
-import { resolvePopType, granularityFor, popTypeOptions } from '../plots/popTypes'
+import { resolvePopType, granularityFor, popTypeOptions, type PopTypeSpecLike } from '../plots/popTypes'
 import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
@@ -33,6 +33,12 @@ export function useSummaryData(opts: {
   // summary"). This is what makes the population manager a view of the active plot's family: the plot
   // owns the choice, the manager follows it. Ignored when the active spec offers only one.
   activePopType?: Ref<string | null>
+  // The ACTIVE slot's population FAMILIES when that slot is not a summary spec at all — an interactive
+  // plot that slices by population (the two track plots) declares them on its registry entry
+  // (`popTypeSpecFor`). Without this the picker would fall back to `specs[0]` — whichever summary spec the
+  // registry happens to return first — and list a family the active plot cannot draw. Same three readers
+  // (`resolvePopType`/`granularityFor`/`popTypeOptions`) either way; only where the list comes from differs.
+  activeFamily?: Ref<PopTypeSpecLike | null>
 }) {
   const { projectUid, imageUids, setUid, module } = opts
   const ws = useWsStore()
@@ -92,7 +98,8 @@ export function useSummaryData(opts: {
   // the panel's own pick (resolved against what this page offers, so a pick carried over from the board
   // can't ask for a family this page hasn't got); for a single-family spec it is simply that family.
   // Granularity always follows the pop type — never the spec — because they differ per family.
-  const effSpec = computed(() => activeSpec.value ?? specs.value[0])
+  // an interactive slot's declared families win over any spec: it IS the active plot
+  const effSpec = computed(() => opts.activeFamily?.value ?? activeSpec.value ?? specs.value[0])
   const popType = computed(() =>
     effSpec.value ? resolvePopType(effSpec.value, opts.activePopType?.value ?? null) : 'live')
   const granularity = computed(() =>
