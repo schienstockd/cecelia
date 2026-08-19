@@ -140,7 +140,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     on_progress(3, 4)
 
     ok = run_py("tasks/clustTracks/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] clustTracks: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments

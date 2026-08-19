@@ -121,7 +121,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
 
     # set-scope run config dir (consistent task dir under the project tree, never tmp)
     ok = run_py("tasks/clustPops/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments

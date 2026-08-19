@@ -89,7 +89,7 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_neighbour_stats_run.py", task_params, task_run_dir(img._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] neighbourStats: Python runner failed"); return nothing)
 
     try

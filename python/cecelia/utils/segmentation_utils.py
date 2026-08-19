@@ -46,6 +46,12 @@ class SegmentationUtils:
     def __init__(self, params, dim_utils):
         self.params = params
         self.dim_utils = dim_utils
+        # THE progress/log sink for this segmenter. `StdoutLogger.progress` coalesces to
+        # `PROGRESS_MIN_FRACTION` at the sink, which is why nothing here should `print('[PROGRESS] …')`
+        # by hand: a bare print is a second implementation that emits one line per unit however many
+        # that is (a 181-timepoint movie cut into one tile each = 181 uncoalesced lines, and every one
+        # is a stdout write, a Julia parse and a WS frame to every client).
+        self.logger = script_utils.get_logfile_utils(params)
         # Physical pixel size, for the params expressed in MICRONS. Those are the ones that describe
         # a CELL rather than a grid: the same number then means the same biology on every image of a
         # set, which is the whole point of one parameter value per set. A px value silently means
@@ -203,8 +209,14 @@ class SegmentationUtils:
         # Every timepoint's valid span, resolved UP FRONT rather than inside the loop. Two things
         # need it early: the XY span decides how many tiles a frame is cut into, and the progress
         # total has to be known before the first tile is reported. One cheap attr read per timepoint.
+        # …and reported, because it is not free. The comment above called it one cheap attr read; on a
+        # 181-timepoint movie it measured ~4 MINUTES, all of it before the tile loop can report
+        # anything, so the task looked wedged for its whole first phase. Two sequential scales (T here,
+        # then the tile total) is fine: `StdoutLogger.progress` treats a changed total as a new scale
+        # rather than a step along the old one, which is exactly this case.
         spans = {}
         for t in range(T):
+            self.logger.progress(t, T)
             box = (zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
                    if im_path_for_box else None)
             spans[t] = {
@@ -219,6 +231,9 @@ class SegmentationUtils:
                          for t, sp in spans.items()}
         total = sum(len(v) for v in xy_tiles_by_t.values())
         done = 0
+        # Re-scale to the tile total at once, so the bar switches to the phase that will actually take
+        # the time rather than sitting at the scan's 100% until the first tile lands.
+        self.logger.progress(0, total)
 
         _extent = {'Z': n_z, 'Y': H, 'X': W}
 
@@ -335,7 +350,7 @@ class SegmentationUtils:
                             frame[match_as], masks, 0, None, fa_y, fa_x, write_yx)
 
                     done += 1
-                    print(f'[PROGRESS] {done}/{total}', flush=True)
+                    self.logger.progress(done, total)
 
                 # Per-frame post-fill steps. Passing la_t=None, T=1 takes the whole-array branch of each
                 # helper — i.e. exactly one iteration of the loop each already ran over timepoints.

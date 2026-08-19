@@ -42,7 +42,7 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
         "propsPath" => img_label_props_path(img, value_name), "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_aggregates_mesh_run.py", task_params, task_run_dir(img._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] aggregatesMeshes: Python runner failed"); return nothing)
 
     # Auto-create the reusable "aggregated" population (Decision 14) — same as the points route

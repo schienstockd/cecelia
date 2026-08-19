@@ -108,7 +108,7 @@ class MeasureUtils:
             base_vol = self._extract_t(base_arr, l_la_t, t_idx)
             if base_vol.max() == 0:
                 log.log('   (no labels – skipping)')
-                print(f'[PROGRESS] {t_idx + 1}/{n_t}', flush=True)
+                log.progress(t_idx + 1, n_t)
                 continue
 
             im_vol = self._extract_t(im_arr, la_t, t_idx).astype(np.float32)
@@ -118,7 +118,7 @@ class MeasureUtils:
 
             morph_df = self._measure_morphology(base_vol, is_3d, log)
             if morph_df is None or len(morph_df) == 0:
-                print(f'[PROGRESS] {t_idx + 1}/{n_t}', flush=True)
+                log.progress(t_idx + 1, n_t)
                 continue
 
             morph_df = self._measure_intensities(
@@ -134,7 +134,7 @@ class MeasureUtils:
 
             morph_df['t'] = t_idx
             all_dfs.append(morph_df)
-            print(f'[PROGRESS] {t_idx + 1}/{n_t}', flush=True)
+            log.progress(t_idx + 1, n_t)
 
         if not all_dfs:
             log.log('[WARN] No cells found — no output written')
