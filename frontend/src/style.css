@@ -351,6 +351,27 @@ body {
 }
 .cc-btn-group > .cc-btn + .cc-btn { border-left: 1px solid var(--cc-border); }
 
+/* `ConfirmDeleteButton` is the one group member that is NOT a `.cc-btn` — it owns its own armed/danger
+   states, so it keeps `.cc-del` rather than composing. Inside a group it still has to LOOK like a
+   member: on its own it brings a radius, a transparent 1px border and no background, so it read as a
+   detached pill sitting beside the joined strip (chain whiteboard, top row). `button.cc-del`
+   outspecifies the component's scoped `.cc-del[data-v-…]`, so this holds whatever order the sheets
+   land in. Armed/hover keep winning — they carry a second class or a pseudo-class. */
+.cc-btn-group > button.cc-del {
+  border: 0;
+  border-radius: 0;
+  background: var(--cc-surface-2);
+}
+.cc-btn-group > .cc-btn + button.cc-del,
+.cc-btn-group > button.cc-del + .cc-btn { border-left: 1px solid var(--cc-border); }
+/* Match `.cc-btn-icon.cc-btn-dense`'s square — but only when it is icon-only. A labelled delete in a
+   group must still size to its text. */
+.cc-btn-group > button.cc-del:not(:has(.cc-del-lbl)) {
+  width: 1.25rem; height: 1.25rem; padding: 0;
+  justify-content: center;
+  font-size: var(--cc-fs-xs);
+}
+
 /* Section toggle — the chevron + heading row that expands/collapses a block. `CollapsibleSection` is
    the full component (a panel-rail bar: border-top, its own surface, a scrolling body); this is just
    the CLICKABLE ROW, for the sites that need the affordance without the chrome — a sub-section inside

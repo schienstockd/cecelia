@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   topoOrder, layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, COMPACT_GRID,
-  type DagNode, type DagEdge,
-} from './dagLayout'
+  type DagNode, type DagEdge, ancestorsOf } from './dagLayout'
 
 const N = (...ids: string[]): DagNode[] => ids.map(id => ({ id }))
 const E = (...pairs: [string, string][]): DagEdge[] => pairs.map(([from, to]) => ({ from, to }))
@@ -114,5 +113,35 @@ describe('LAYOUT_VARIANTS', () => {
     const compact = layoutDag(nodes, edges, 'LR', COMPACT_GRID)
     expect(Math.abs(compact.x.y - compact.y.y)).toBeLessThan(Math.abs(normal.x.y - normal.y.y))
     expect(compact.x.x - compact.root.x).toBeLessThan(normal.x.x - normal.root.x)
+  })
+})
+
+describe('ancestorsOf', () => {
+  // What a node may legitimately consume: only what has already been produced when it runs. Used to
+  // decide which trained models a segment node's picker may offer.
+  const nodes = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
+  const edges = [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'd', to: 'c' }]
+
+  it('walks transitively and excludes the node itself', () => {
+    expect(ancestorsOf(nodes, edges, 'c')).toEqual(new Set(['b', 'a', 'd']))
+    expect(ancestorsOf(nodes, edges, 'b')).toEqual(new Set(['a']))
+  })
+
+  it('is empty for a root — nothing has been produced yet', () => {
+    expect(ancestorsOf(nodes, edges, 'a')).toEqual(new Set())
+  })
+
+  it('does not see a sibling branch that has not joined', () => {
+    expect(ancestorsOf(nodes, edges, 'd')).toEqual(new Set())
+    expect(ancestorsOf(nodes, edges, 'b').has('d')).toBe(false)
+  })
+
+  it('ignores edges naming an unknown node, like topoOrder', () => {
+    expect(ancestorsOf(nodes, [...edges, { from: 'ghost', to: 'b' }], 'b')).toEqual(new Set(['a']))
+  })
+
+  it('terminates on a cycle', () => {
+    const cyc = [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }]
+    expect(ancestorsOf([{ id: 'a' }, { id: 'b' }], cyc, 'a')).toEqual(new Set(['a', 'b']))
   })
 })

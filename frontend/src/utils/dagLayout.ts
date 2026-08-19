@@ -45,6 +45,36 @@ export function topoOrder(nodes: DagNode[], edges: DagEdge[]): string[] {
   return out
 }
 
+/**
+ * Every node that can reach `id` — its transitive predecessors, `id` excluded.
+ *
+ * Here rather than in a caller because this is the graph-traversal util and `topoOrder` below already
+ * builds the same adjacency: a second hand-rolled BFS over `edges` is how the two drift. Mirrors
+ * Julia's `_ancestors` (app/src/tasks/chain.jl), which answers the same question for validation.
+ *
+ * Used to ask "what has already been produced by the time this node runs" — the only nodes whose
+ * output a node may legitimately consume. Edges naming an unknown node are ignored, matching
+ * `topoOrder`; a cycle terminates because a node is enqueued at most once.
+ */
+export function ancestorsOf(nodes: DagNode[], edges: DagEdge[], id: string): Set<string> {
+  const known = new Set(nodes.map(n => n.id))
+  const pred = new Map<string, string[]>()
+  for (const e of edges) {
+    if (!known.has(e.from) || !known.has(e.to)) continue
+    const arr = pred.get(e.to)
+    if (arr) arr.push(e.from)
+    else pred.set(e.to, [e.from])
+  }
+  const out = new Set<string>()
+  const queue = [id]
+  while (queue.length) {
+    for (const p of pred.get(queue.shift()!) ?? []) {
+      if (!out.has(p)) { out.add(p); queue.push(p) }
+    }
+  }
+  return out
+}
+
 export interface LayerLanes {
   order: string[]
   /** longest path from a root → the column (execution depth) */

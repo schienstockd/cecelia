@@ -595,7 +595,12 @@ function render()
                                    rpad("IMAGE", 8), rpad("POOL", 8), rpad("STATUS", 11),
                                    rpad("ELAPSED", 9), "PROGRESS")), "\n")
         for t in tasks[1:nShown]
-            chain = isempty(t.chain_run_id) ? "" : " ⛓"
+            # `·chain`, not U+26D3 CHAINS. That glyph is emoji-presentation in most fonts, so it
+            # rendered as tofu in a plain terminal — and it occupies two cells while `rpad` counts one,
+            # which skewed every column after FUNCTION. `·` is already this file's separator (see
+            # `elapsed_s`, the progress bar) and stays inside Latin-1. Kept to 7 chars so the longest
+            # real fun_name still fits the 24-char budget: `opticalFlow.train` (17) + 7 = 24 exactly.
+            chain = isempty(t.chain_run_id) ? "" : " ·chain"
             # ELAPSED is run time on a running row and queue wait on a queued one — the clock restarts
             # with the status (`_set_phase!`), so the column always reads "how long in this state".
             print(io,

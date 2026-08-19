@@ -13248,6 +13248,192 @@ end
     # the shipped default is the measured one (see PAIR_SCAN_MAX_TRACKS): 2000 tracks = 25 s of scan
     @test PAIR_SCAN_MAX_TRACKS == 800
 end
+
+@testset "flow_model_filename" begin
+    # The two spellings of one model: the STEM `opticalFlow.train`'s `modelName` holds, and the vault
+    # FILENAME a consumer's `model` select carries. They meet whenever one chain node trains a model
+    # and a later node segments with it; appending `.pt` at each such site is how they drift.
+    @test flow_model_filename("flow.cytoFg") == "flow.cytoFg.pt"
+    @test flow_model_filename("flow.cyto")   == "flow.cyto.pt"
+    # Idempotent, so it is safe on a value that is already a filename (a re-validated chain dict).
+    @test flow_model_filename("flow.cytoFg.pt") == "flow.cytoFg.pt"
+    # Dots in the stem are normal here — real names use them — and must not be treated as extensions.
+    @test flow_model_filename("a.b.c") == "a.b.c.pt"
+    # Round-trips against the vault's own stem list rule (`flow_model_names` strips exactly this).
+    @test first(splitext(flow_model_filename("flow.cytoFg"))) == "flow.cytoFg"
+end
+
+@testset "a chain may name a model an upstream node trains" begin
+    # A chain that TRAINS a model and then segments with it names something the vault does not hold at
+    # author time. The `model` select's options are enumerated from the vault, so per-node validation
+    # read the forward reference as a typo and rejected the template — and the whiteboard's dropdown
+    # had the same blind spot, so the wiring could not be expressed at all. Only the template can tell
+    # a forward reference from a mistake, hence `_chain_produced_names` feeding `extra_options`.
+    train(name) = ChainNode(; id = "train", fn = "opticalFlow.train",
+                            params = Dict{String,Any}("modelName" => name,
+                                                      "valueName" => "smoothed"))
+    seg(model)  = ChainNode(; id = "seg", fn = "segment.coastal",
+                            params = Dict{String,Any}(
+                                "valueName" => "smoothed",
+                                "models" => Dict{String,Any}(
+                                    "0" => Dict{String,Any}("model" => model))))
+    tpl(nodes, edges) = ChainTemplate("t", nodes, edges, String[])
+
+    # The point of the whole change: train → seg, seg naming the model train will write.
+    @test validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")],
+            [ChainEdge("train", "seg")])) === nothing
+
+    # The producer holds a STEM; the consumer holds a FILENAME. Accepting only one spelling would make
+    # this depend on which side the user typed it on.
+    @test "flow.cytoFg.pt" in
+          Cecelia._chain_produced_names(tpl([train("flow.cytoFg"), seg("")],
+                                            [ChainEdge("train", "seg")]), "seg")
+
+    # ANCESTORS ONLY. Reversed, the segment node runs BEFORE the model exists — a real wiring mistake,
+    # and letting it through here would only defer it to a mid-run failure on an occupied GPU.
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")],
+            [ChainEdge("seg", "train")]))
+
+    # Unconnected is the same case: nothing guarantees the model is there when seg runs.
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFg.pt")], ChainEdge[]))
+
+    # A genuine typo downstream of a producer must STILL fail — the allowance is exactly the set of
+    # names an ancestor writes, not "any string once a trainer is present".
+    @test_throws ChainTemplateError validate_chain_template(
+        tpl([train("flow.cytoFg"), seg("flow.cytoFgg.pt")],
+            [ChainEdge("train", "seg")]))
+
+    # A root node has no ancestors, so it produces nothing for itself.
+    @test isempty(Cecelia._chain_produced_names(
+        tpl([train("flow.cytoFg")], ChainEdge[]), "train"))
+end
+
+@testset "chain nodes run through execute_task" begin
+    # `execute_task` is the canonical single-task pathway — the same one `handle_task_run` and the
+    # runner's own task handler use. It resolves the task, dispatches on scope, wires
+    # log/progress/status/result, and guarantees a terminal status on every exit path.
+    #
+    # The chain used to re-assemble that by hand, and FIVE bugs came out of the gap: a set-scope node
+    # called the inner `_run_task` directly, so it wrote no `<img>/logs/<fun_name>.log`
+    # (`_wrap_log_with_file`), registered no `TaskRecord` (nothing for the console or task-log view to
+    # attach to — output fell through to the server's stdout), opened no run-log entry, registered no
+    # `on_process` for cancel, and took no pool slot, so a node declaring `resource_pool: "gpu"` ran
+    # UNQUEUED. Neither node runner wired `on_progress` either, so no chain node ever showed progress.
+    #
+    # The durable fix is that there is no longer a second implementation to drift from. This pins it.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+
+    for (fname, label) in (("_execute_image_chain!", "image-scope"),
+                           ("_run_set_scope_node!",  "set-scope"))
+        at = findfirst(fname * "(run::ChainRun", src)
+        @test at !== nothing
+        body = src[first(at):end]
+        nxt  = findfirst("\nfunction ", body[10:end])
+        body = nxt === nothing ? body : body[1:first(nxt) + 8]
+
+        @test occursin("execute_task(", body) ||
+              error("$label chain nodes must dispatch through `execute_task` — see " *
+                    "docs/SCHEDULER.md → *Chain nodes run through `execute_task`*.")
+        @test !occursin(r"(?<!_)\brun_task\(", body) ||
+              error("$label is calling `run_task` directly again. Everything a node needs beyond a " *
+                    "standalone task is a field on `TaskRequest`, not a second copy of the wiring.")
+        @test !occursin(r"\b_run_task\(", body) ||
+              error("$label is calling `_run_task` directly. That bypasses the log file, the task " *
+                    "record, the run log and the resource pool.")
+        # The pool the node declares must actually reach the request; "" silently means `cpu`.
+        @test occursin("pool_name    = node.resource_pool", body)
+        # …and the correlation pair, or the GUI cannot match the task to its node row.
+        @test occursin("chain_run_id = run.id", body)
+        @test occursin("chain_node_id = node.id", body)
+    end
+
+    # `TaskRequest` is where a chain node's extra needs live — the shared component grew, the chain did
+    # not fork. If these move back out, the fork is back.
+    @test :chain_run_id  in fieldnames(Cecelia.TaskRequest)
+    @test :chain_node_id in fieldnames(Cecelia.TaskRequest)
+    # They cross the process boundary too, or a runner-executed node loses its node identity.
+    rt = Cecelia.task_request(Cecelia.task_request_dict(
+        Cecelia.TaskRequest(; task_id="t", fun_name="f", project_uid="p",
+                              chain_run_id="R", chain_node_id="N")))
+    @test rt.chain_run_id  == "R"
+    @test rt.chain_node_id == "N"
+end
+
+@testset "a chain node's log prefix is [imageUid/nodeId]" begin
+    # The prefix on a `chain:log` line is a WIRE FORMAT, not decoration. A `chain:log` frame carries no
+    # taskId, so `frontend/src/stores/ws.ts` parses `[imageUid/nodeId]` off the line and attributes it
+    # to the task row with that (imageUid, chainNodeId). The set-scope path emitted `[set/<node>]` — the
+    # literal string "set" where a uid belongs — so the lookup matched nothing and a set-scope node's
+    # Tasks-page log read "no output yet" while the same line reached the console and the log file
+    # perfectly well. It was invisible until the node HAD a task row to attribute to.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+
+    # The regex the frontend uses, transcribed: prefix, slash, node id, space.
+    fe = r"^\[([^/\]]+)/([^\]]+)\] (.*)$"
+    @test match(fe, "[fXgbTl/train] Epoch 1/30").captures[1] == "fXgbTl"
+
+    # No `[set/...]` literal may come back — it parses as a uid of "set" and silently matches no task.
+    @test !occursin("[set/\$(node.id)]", src) ||
+          error("a set-scope node is emitting `[set/<node>]`; the frontend reads that first field as " *
+                "an imageUid. Use the representative image's uid — see docs/SCHEDULER.md.")
+
+    # Both the log and the error line interpolate a real uid.
+    @test occursin("[\$(first(imgs).uid)/\$(node.id)]", src)
+    # log line, error line, and the set-wide axis SKIP. The per-image SKIP uses the loop's own `uid`,
+    # which is the same rule the image-scope path follows.
+    @test length(collect(eachmatch(r"\[\$\(first\(imgs\)\.uid\)/\$\(node\.id\)\]", src))) == 3
+    @test occursin("SKIP [\$uid/\$(node.id)]", src)
+end
+
+@testset "a chain node reports progress" begin
+    # No chain node ever reported progress, of any scope. The Python side emits `[PROGRESS] n/total`
+    # and `run_py` routes it to `on_progress`, but the LAST hop was missing: the standalone path wires
+    # `on_progress` when it calls `run_task` (`execute_task`, and the runner's own task handler), and
+    # the chain — which does not go through `execute_task` — wired it in neither of its two node
+    # runners, so `run_task` took its `(n, t) -> nothing` default.
+    #
+    # Fixed at the CARRIER, not the call sites: the node fires a `node:progress` chain event and the one
+    # frame builder both processes already subscribe to shapes it. Adding it per call site is what
+    # drifted in the first place.
+    frames = Dict{String,Any}[]
+    pairs  = Cecelia.subscribe_chain_frames!(f -> push!(frames, f))
+    try
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "opticalFlow.train", task_id = "T1", n = 3, total = 12))
+        @test length(frames) == 1
+        @test frames[1]["type"]     == "task:progress"
+        @test frames[1]["taskId"]   == "T1"
+        # A FRACTION, the shape both `ws_progress` and the runner's `_emit_progress` already send.
+        @test frames[1]["progress"] ≈ 0.25
+
+        # total = 0 must not divide by zero — a task that reports before it knows its scale.
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", task_id = "T1", n = 0, total = 0))
+        @test frames[1]["progress"] == 0.0
+
+        # No task id → DROPPED, not emitted with "". A blank id mints or clobbers a blank row, which is
+        # the failure the `task:log` handling already guards against.
+        empty!(frames)
+        Cecelia._fire_chain_event!("node:progress", (
+            run_id = "r1", chain_name = "c", project_uid = "p", image_uid = "img1",
+            node_id = "train", fn = "f", task_id = "", n = 1, total = 2))
+        @test isempty(frames)
+    finally
+        for (ev, h) in pairs
+            Cecelia.unsubscribe_chain_events!(ev, h)
+        end
+    end
+
+    # Both node runners must actually wire it — the whole bug was that neither did.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+    @test length(collect(eachmatch(r"on_progress\s+= \(n, t\) ->", src))) == 2
+end
 # ── Pooling several images into one reading (track_cohort.jl / pooled_track_frame) ─────────────
 #
 # The two track PLOTS compare conditions, so a group's images have to be judged together. Every
