@@ -1,13 +1,13 @@
 export interface ParamDef {
   key: string
   label: string
-  type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'select' | 'chipSelect'
+  type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'filePath' | 'select' | 'chipSelect'
        | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
-       | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
+       | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'group' | 'section'
   tip?: string
-  placeholder?: string  // text / dirPath: shown when empty — for dirPath, the default destination
+  placeholder?: string  // text / dirPath / filePath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
@@ -24,6 +24,36 @@ export interface ParamDef {
   // option is chosen. Distinct from `tip`, which describes the PARAM: a label like "Gated" says
   // nothing on its own and the answer differs per option, so one param-level tip cannot carry it.
   options?: { label: string; value: string; help?: string }[]
+  // When true, editing THIS param re-resolves the task's options against the current form — for a
+  // param whose value other params' options are derived from (an importer's file path, whose columns
+  // become the mapping fields' suggestions). The refetch is debounced at the sink; see TaskRunner.
+  // Options obtained this way are SUGGESTIONS only: validation never depends on the form, so a field
+  // fed this way must stay valid on its own (`_inject_dynamic_options!` in app/src/tasks/task.jl).
+  triggersOptions?: boolean
+  // Set by the SERVER (`_inject_dynamic_options!`), never authored in a spec file: this param does
+  // not apply to the form as it currently stands, so it renders nowhere. A spec-file `hidden: true`
+  // would just be a param nobody can ever set — delete it instead. Chosen over a declarative
+  // `showIf` because the condition is often not expressible in the form alone: "the file you picked
+  // is an XML export, which has no columns" needs the file read.
+  hidden?: boolean
+  /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown. */
+  variant?: 'chips'
+  // Show this param only while the form satisfies these conditions: `{ "mode": "attach" }`, or
+  // `{ "method": ["gaussian", "bilateral"] }` for one-of. Keys AND, values within a key OR, compared
+  // as strings (a spec is JSON; a control's value is a string). This is the DECLARATIVE half of
+  // conditional visibility — the half that can be decided from the form alone. A condition needing a
+  // file read stays a server hook setting `hidden`. See `showIfSatisfied` in paramValues.ts.
+  showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
+                        | { endsWith?: string | string[]; notEndsWith?: string | string[] }>
+  // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in
+  // `validate_params`, so it holds for a chain and the REPL too — not only for a form that drew it.
+  required?: boolean
+  // The sentence shown when `required` is unmet. "Required param 'pops' is missing" is a key, not a
+  // sentence — the tasks that hand-rolled this check said things like "select at least 2
+  // populations", which is the part worth keeping.
+  requiredMessage?: string
+  /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
+  extensions?: string[]
   multiple?: boolean
   field?: string        // valueNameSelection: which image field to read names from ('filepaths' | 'labels' | 'spatialGraphs')
   // valueNameInput: which storage namespace this param NAMES INTO — the registry entry that makes

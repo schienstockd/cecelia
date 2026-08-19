@@ -17,6 +17,8 @@
     },
     {
       "key": "popsToCluster",
+      "required": true,
+      "requiredMessage": "Select at least one track population",
       "label": "Track populations",
       "type": "popSelection",
       "popScope": "tracks",

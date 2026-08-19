@@ -14,7 +14,8 @@ import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
-import { isChosenValueName, preferredValueName, valueNameOptions } from './paramValues'
+import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
+         scopeValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -27,6 +28,9 @@ export interface ParamContext {
   images: CciaImage[]
   projectUid?: string        // popSelection: needed to query the gating popmap
   values?: ParamValues       // sibling param values (popSelection reads valueName)
+  params?: ParamDef[]        // the WHOLE task's params, so a widget can find a sibling by TYPE rather
+                             // than by a hardcoded key. See `scopeValueName` in paramValues.ts —
+                             // resolving by name silently scoped two specs to the wrong segmentation.
   extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
                              // of an upstream whiteboard node ("cpCorrected") that only exists once
                              // the chain runs. Merged into the option list so it can be selected.
@@ -47,11 +51,20 @@ const emit = defineEmits<{
   (e: 'commit', key: string, v: unknown): void
 }>()
 
+// Two ways a param can not apply, and they are deliberately separate:
+//   `hidden`  — the SERVER ruled it out, from something only it can see (the file you picked is an
+//               XML export, which has no columns). Set by `_inject_dynamic_options!`.
+//   `showIf`  — the SPEC ruled it out, from the form alone (`{ "mode": "attach" }`). No Julia.
+// Either one means it renders nowhere rather than sitting there empty and looking broken.
+const notApplicable = computed(() =>
+  props.param.hidden === true || !showIfSatisfied(props.param.showIf, props.context?.values))
+
 // section (collapsible box) state
 const sectionOpen = ref(!props.param.collapsed)
 
 // dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
 const showDirBrowser = ref(false)
+const showFileBrowser = ref(false)
 
 
 const val = computed({
@@ -210,15 +223,18 @@ async function loadPops() {
     } catch { /* gating may not exist yet */ }
     return
   }
-  // single mode — scoped to the sibling valueName
-  const valueName = (props.context?.values?.valueName as string) ?? 'default'
+  // single mode — scoped to the sibling segmentation, found by TYPE (a spec may call it anything)
+  const valueName = scopeValueName(props.context?.params, props.context?.values,
+                                   Object.keys(img?.labels ?? {}))
   popOptions.value = [{ label: 'NONE (whole segmentation)', value: 'NONE' }]
   if (!img || !projectUid) return
   popOptions.value.push(...(await fetchPopPaths(img, projectUid, valueName, popType)).map(p => ({ label: p, value: p })))
 }
 
 // reload when the image or the chosen segmentation changes
-watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName],
+watch(() => [props.context?.images?.[0]?.uid,
+             scopeValueName(props.context?.params, props.context?.values,
+                            Object.keys(props.context?.images?.[0]?.labels ?? {}))],
   () => { loadPops() }, { immediate: true })
 
 // Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
@@ -237,18 +253,8 @@ const popAllValues = computed(() => popMultiOptions.value.map(o => o.value))
 // image's first segmentation. This is why the picker now lists A/B/C measures (and HMM-state
 // columns) correctly — previously it was hardcoded to "default", which the tracked sets don't have.
 function resolveColValueName(): string {
-  const pops = props.context?.values?.pops
-  if (Array.isArray(pops) && pops.length) {
-    const first = String(pops[0])
-    if (!first.startsWith('/')) {
-      const idx = first.indexOf('/')
-      if (idx > 0) return first.slice(0, idx)
-    }
-  }
-  const vn = props.context?.values?.valueName as string | undefined
-  if (vn) return vn
-  const keys = Object.keys(props.context?.images?.[0]?.labels ?? {})
-  return keys[0] ?? 'default'
+  return scopeValueName(props.context?.params, props.context?.values,
+                        Object.keys(props.context?.images?.[0]?.labels ?? {}))
 }
 
 // Map a var intensity column to its channel name, mirroring Julia `_channel_label`
@@ -471,11 +477,22 @@ const pct = computed(() => {
 </script>
 
 <template>
+  <!-- `hidden` — a param the task itself has ruled out for the CURRENT form state, so it renders
+       nowhere rather than sitting there empty and looking broken. Set by `_inject_dynamic_options!`,
+       which already re-runs on every `triggersOptions` edit and already sees the form, so nothing new
+       has to reach the frontend. The driving case: pick a TrackMate XML and the "Column mapping"
+       section had no columns to offer — because that export has none — but still drew five empty
+       dropdowns. "Not applicable" and "failed to load" looked identical.
+
+       Guarded here, at the component root, so it holds for every caller at once: TaskRunner's list,
+       ChainModule's list, and section/group sub-params, which each iterate separately. -->
+  <template v-if="notApplicable" />
+
   <!-- Not for `section`/`group`: each renders its own heading below (the collapsible's toggle, the
        group's title), so the generic row put the label on screen TWICE — a plain "Advanced" sitting
        above a collapsible headed "ADVANCED". They are siblings of this row, not children of it, so
        the row was contributing a duplicate label and an empty body. -->
-  <div v-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
+  <div v-else-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
     <label class="param-label" v-tooltip.left="param.tip">
       {{ param.label }}
       <i v-if="param.tip" class="pi pi-info-circle tip-icon" />
@@ -505,13 +522,23 @@ const pct = computed(() => {
     <CcToggle v-else-if="param.type === 'bool'" :aria-label="param.label"
       :model-value="val as boolean" @update:model-value="val = $event" />
 
-    <!-- text -->
-    <input v-else-if="param.type === 'text'"
-      type="text" class="text-input"
-      :value="val as string"
-      @input="val = ($event.target as HTMLInputElement).value"
-      v-tooltip.right="param.tip"
-    />
+    <!-- text — with SUGGESTIONS when the spec carries options (a datalist, so the field stays free
+         text). Deliberately not a `select`/`chipSelect`: those validate the value against the spec's
+         options (task.jl), and options injected from the current form are absent at validation time
+         (`_task_spec` resolves without form state), so a picked value would fail to validate. This is
+         the same shape as `valueNameInput`'s suggestions — offer, never constrain. -->
+    <template v-else-if="param.type === 'text'">
+      <input
+        type="text" class="text-input"
+        :value="val as string"
+        :list="param.options?.length ? `dl-${param.key}` : undefined"
+        @input="val = ($event.target as HTMLInputElement).value"
+        v-tooltip.right="param.tip"
+      />
+      <datalist v-if="param.options?.length" :id="`dl-${param.key}`">
+        <option v-for="o in param.options" :key="o.value" :value="o.value" />
+      </datalist>
+    </template>
 
     <!-- valueNameInput: the name this task WRITES under. Free text, with the names already in that
          namespace offered as you type. `valueNameSelection` (a strict <select>) is the INPUT-side
@@ -541,6 +568,20 @@ const pct = computed(() => {
       </button>
     </div>
 
+    <!-- filePath: one file on the machine running the server. Same shape as dirPath — still typeable,
+         because a remembered path is faster to paste than to browse to — but Browse opens the shared
+         FileBrowser in file mode, filtered to the param's `extensions`. A path that has to be typed
+         exactly is a task that fails after the user has filled in everything else. -->
+    <div v-else-if="param.type === 'filePath'" class="cc-row cc-row-tight dir-path">
+      <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
+        @input="val = ($event.target as HTMLInputElement).value"
+        v-tooltip.right="param.tip" />
+      <button type="button" class="cc-btn cc-btn-ghost" @click="showFileBrowser = true"
+        v-tooltip.top="'Browse for a file'">
+        <i class="pi pi-folder-open" />
+      </button>
+    </div>
+
     <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
          parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
          for "pick from a set" (docs/UI.md). -->
@@ -550,6 +591,19 @@ const pct = computed(() => {
       multiple select-all
       :aria-label="param.label"
       @update:model-value="v => val = v as string[]"
+    />
+
+    <!-- select, as a segmented control. Same param type and so the SAME validation (value ∈ options)
+         — only the rendering differs, opted into per param with `variant: "chips"`. For a short,
+         closed set the chips show every choice at once, where a dropdown hides all but one and makes
+         a binary look like a list that might be long. Kept opt-in rather than auto-applied by option
+         count, so no existing dropdown silently changes shape. -->
+    <ChipSelect v-else-if="param.type === 'select' && param.variant === 'chips'"
+      variant="segmented"
+      :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
+      :model-value="String(val ?? '')"
+      :aria-label="param.label"
+      @update:model-value="v => val = v as string"
     />
 
     <!-- select -->
@@ -667,7 +721,7 @@ const pct = computed(() => {
   </div>
 
   <!-- section rendered outside .param-row so it spans full width -->
-  <div v-if="param.type === 'section'" class="param-section">
+  <div v-if="param.type === 'section' && !notApplicable" class="param-section">
     <button class="section-toggle cc-section-toggle cc-eyebrow cc-fs-sm" @click="sectionOpen = !sectionOpen"
       v-tooltip.left="sectionOpen ? 'Collapse advanced parameters' : 'Expand advanced parameters'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
@@ -687,7 +741,7 @@ const pct = computed(() => {
   </div>
 
   <!-- group: repeatable set of sub-params keyed by string index -->
-  <div v-if="param.type === 'group'" class="param-group">
+  <div v-if="param.type === 'group' && !notApplicable" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
       <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
@@ -761,6 +815,10 @@ const pct = computed(() => {
        transform/filter/will-change becomes the containing block for a fixed child and traps it.
        Teleport removes the dependency on what happens to be above this row. -->
   <Teleport to="body">
+    <FileBrowser v-if="showFileBrowser" mode="file" :extensions="param.extensions ?? []"
+      :title="param.label ? `Select ${param.label.toLowerCase()}` : ''"
+      @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showFileBrowser = false }"
+      @close="showFileBrowser = false" />
     <FileBrowser v-if="showDirBrowser" mode="dir"
       @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showDirBrowser = false }"
       @close="showDirBrowser = false" />

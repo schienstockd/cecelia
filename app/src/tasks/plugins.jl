@@ -1,0 +1,811 @@
+# ── plugins.jl — distributable custom-module sets ─────────────────────────────────────────────────
+#
+# A PLUGIN is ONE directory: `<config_dir>/modules/plugins/<plugin>/`, holding a `plugin.json`
+# manifest plus the same co-located `<category>/<name>.{jl,json,_run.py}` layout a hand-dropped
+# module already uses. One directory = one git repo = one unit to install, update and remove.
+#
+#   <config_dir>/modules/<category>/<name>.json                    hand-dropped (unchanged)
+#   <config_dir>/modules/plugins/<plugin>/plugin.json              the manifest
+#   <config_dir>/modules/plugins/<plugin>/<category>/<name>.json   a plugin's task
+#
+# This file is the LAYOUT half (PLUGINS_PLAN P1): where plugins live, what the manifest says, and the
+# ONE enumerator both API scans consume. Install/remove over the network is P2 and lives nowhere yet.
+# Full design + locked decisions: docs/todo/PLUGINS_PLAN.md.
+#
+# **Why an enumerator and not a recursive walk.** `api_task_definitions` and
+# `_custom_module_categories` each hand-rolled a one-level `readdir` plus its own copy of the legacy
+# skip list — two implementations of one rule, which is how the two halves came to scan at different
+# depths in the first place. Making them blindly recursive instead would turn any stray nested folder
+# into a phantom category (PLUGINS_PLAN Decision 2), so the depth stays EXPLICIT: exactly the two
+# shapes above, enumerated here, consumed by both.
+#
+# Trust model is unchanged and deliberately not softened: plugin code is arbitrary Julia `Base.include`d
+# into `Cecelia` with full machine access, exactly like a hand-dropped module. There is no sandbox.
+# What P2 adds is that the FETCH is pinned and user-confirmed — not that the code is contained.
+
+using Dates: now
+
+const PLUGINS_SUBDIR        = "plugins"
+const PLUGIN_MANIFEST       = "plugin.json"
+# A plugin's plot specs, mirroring the package's own `app/src/plotDefinitions/`. This is the half that
+# makes a plugin more than "custom modules in a directory": a plugin ships a custom TASK *and* the
+# custom MODULE PAGE that inspects its output. Both are declarative JSON — see `user_plot_specs`.
+const PLOT_DEFS_SUBDIR      = "plotDefinitions"
+# P2 writes the pinned install record (repo + ref) here, beside the manifest rather than INTO it:
+# `plugin.json` ships from the plugin's own repo, so writing the resolved ref into it would dirty the
+# checkout and be overwritten by the next update. Named here so both halves agree on the spelling.
+const PLUGIN_INSTALL_RECORD = ".install.json"
+
+# Directory names under a modules root (or a plugin root) that are NOT categories: leftovers from the
+# old R split layout, which the shipped co-located loader no longer uses. `python` doubles as a
+# plugin's shared-code dir (see `_custom_modules_pydirs` in py_runner.jl), which must likewise never
+# be read as a category.
+const LEGACY_LAYOUT_DIRS = ("sources", "inputDefinitions", "python")
+
+# Precedence tiers for a `fun_name` clash — PLUGINS_PLAN Decision 3: built-in > hand-dropped > plugin.
+# A user's own file outranks anything they installed, so a plugin can never silently take over a name
+# they are already using.
+const TIER_PLUGIN  = 1
+const TIER_USER    = 2
+const TIER_BUILTIN = 3
+
+tier_name(t::Integer)::String =
+    t == TIER_BUILTIN ? "built-in" : t == TIER_USER ? "hand-dropped" : "plugin"
+
+"""
+    plugins_dir([dev_dir]) -> String
+
+The plugin root, `<config_dir>/modules/plugins` (see [`custom_modules_dir`](@ref)).
+"""
+plugins_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(custom_modules_dir(dev_dir), PLUGINS_SUBDIR)
+
+"""
+    plugin_roots(; dev_dir=nothing) -> Vector{String}
+
+Absolute path of every installed plugin directory, **sorted**.
+
+Sorted on purpose: precedence between two same-tier plugins is first-wins, and `readdir` yields
+filesystem order — which differs between machines. Without the sort, which plugin won a `fun_name`
+clash would depend on the disk.
+"""
+function plugin_roots(; dev_dir::Union{String,Nothing} = nothing)::Vector{String}
+    root = plugins_dir(dev_dir)
+    isdir(root) || return String[]
+    sort!(String[e for e in readdir(root; join = true) if isdir(e)])
+end
+
+"""
+    plugin_name_of(path; dev_dir=nothing) -> Union{String,Nothing}
+
+The plugin a path belongs to, or `nothing` for a hand-dropped module or anything outside the tree.
+Compares path COMPONENTS rather than string prefixes, so it behaves on Windows separators and cannot
+match a sibling directory that merely shares a prefix.
+"""
+function plugin_name_of(path::AbstractString; dev_dir::Union{String,Nothing} = nothing)
+    rootparts = splitpath(abspath(plugins_dir(dev_dir)))
+    pathparts = splitpath(abspath(String(path)))
+    length(pathparts) > length(rootparts)             || return nothing
+    pathparts[1:length(rootparts)] == rootparts       || return nothing
+    String(pathparts[length(rootparts) + 1])
+end
+
+"""
+    read_plugin_manifest(dir) -> NamedTuple
+
+Parse `<dir>/plugin.json` into
+`(; name, version, description, homepage, requiresCecelia, categories, contributions, error)`.
+
+**Never throws.** A missing or malformed manifest yields the directory name as `name` and a populated
+`error`, because a plugin whose tasks nonetheless loaded must still be nameable in Settings — the
+manifest is descriptive metadata, not the thing that makes a plugin work.
+
+`contributions` is handed back RAW (`Dict()` when absent) rather than parsed here — see
+[`plugin_contributions`](@ref), which is the half that needs the directory too.
+"""
+function read_plugin_manifest(dir::AbstractString)
+    fallback = basename(rstrip(String(dir), ['/', '\\']))
+    path     = joinpath(String(dir), PLUGIN_MANIFEST)
+    empty    = Dict{String,Any}()
+    isfile(path) || return (; name = fallback, version = "", description = "", homepage = "",
+                              requiresCecelia = "", categories = String[], contributions = empty,
+                              error = "no $PLUGIN_MANIFEST")
+    try
+        m    = JSON3.read(read(path, String), Dict{String,Any})
+        _str(k) = string(get(m, k, ""))
+        cats = get(m, "categories", nothing)
+        cont = get(m, "contributions", nothing)
+        (; name            = isempty(_str("name")) ? fallback : _str("name"),
+           version         = _str("version"),
+           description     = _str("description"),
+           homepage        = _str("homepage"),
+           requiresCecelia = _str("requiresCecelia"),
+           categories      = cats isa AbstractVector ? String[string(c) for c in cats] : String[],
+           contributions   = cont isa AbstractDict ? Dict{String,Any}(cont) : empty,
+           error           = nothing)
+    catch e
+        (; name = fallback, version = "", description = "", homepage = "",
+           requiresCecelia = "", categories = String[], contributions = empty,
+           error = sprint(showerror, e))
+    end
+end
+
+"""
+    plugin_version_warning(requires, running) -> Union{String,Nothing}
+
+`nothing` when the plugin's `requiresCecelia` is satisfied, absent, or **unenforceable**; otherwise a
+one-line message for the Settings panel.
+
+Warn-only by design (PLUGINS_PLAN Decision 4): refusing to load on a version mismatch would make every
+cecelia release break every plugin at once.
+
+**Skipped entirely when `running` is `"dev"` or empty.** The running version is `"dev"` for every
+source checkout — there is no `VERSION` file outside a release bundle (`api/src/update_api.jl`) — so
+comparing would print a warning for every plugin on every developer's machine, forever. `running` is a
+parameter rather than something read here because the version resolver lives in the API layer; keeping
+this function pure is also what makes it testable in `test-pkg`.
+"""
+function plugin_version_warning(requires, running)
+    req = strip(string(something(requires, "")))
+    isempty(req) && return nothing
+    run = strip(string(something(running, "")))
+    (isempty(run) || run == "dev") && return nothing
+
+    m = match(r"^(>=|>|==|=)?\s*v?(.+)$", req)
+    m === nothing && return "unreadable requiresCecelia \"$req\""
+    op   = something(m.captures[1], ">=")
+    want = try VersionNumber(strip(m.captures[2])) catch; nothing end
+    have = try VersionNumber(lstrip(run, 'v'))     catch; nothing end
+    (want === nothing || have === nothing) && return "unreadable requiresCecelia \"$req\""
+
+    ok = op in (">=",) ? have >= want :
+         op == ">"     ? have >  want :
+                         have == want
+    ok ? nothing : "needs cecelia $req, running $run"
+end
+
+const SpecFile = @NamedTuple{category::String, path::String, plugin::Union{String,Nothing}, tier::Int}
+
+"""
+One root's task specs, exactly one level deep: `<root>/<category>/<name>.json`, path-sorted.
+
+Split out from [`_user_spec_files`](@ref) so ONE directory — a single plugin — can be enumerated with
+the identical rule, which is what [`plugin_contributions`](@ref) needs. Re-deriving "which folders are
+categories" there would put a second copy of the skip list in the file whose header explains that the
+last such copy is exactly how the two API scans came to disagree.
+"""
+function _spec_files_in(dir::AbstractString, plugin::Union{String,Nothing}, tier::Int)::Vector{SpecFile}
+    out = SpecFile[]
+    isdir(dir) || return out
+    for cat_dir in sort(readdir(dir; join = true))
+        isdir(cat_dir) || continue
+        cat = basename(cat_dir)
+        cat in LEGACY_LAYOUT_DIRS && continue
+        cat == PLOT_DEFS_SUBDIR   && continue   # plot specs are not tasks — see `user_plot_specs`
+        plugin === nothing && cat == PLUGINS_SUBDIR && continue   # the plugin root is not a category
+        for f in sort(readdir(cat_dir; join = true))
+            endswith(f, ".json") || continue
+            push!(out, (; category = cat, path = f, plugin, tier))
+        end
+    end
+    out
+end
+
+# Every user task spec on disk, in PRECEDENCE ORDER: hand-dropped first (sorted), then plugins
+# (sorted by plugin, then category, then filename). Path-sorted throughout so nothing about the
+# outcome depends on filesystem order. Depth is fixed at exactly the two documented shapes — a plugin
+# manifest sits at the plugin ROOT and so is never mistaken for a task spec, and `python/` is skipped
+# by the legacy list so a plugin's shared-code dir is never read as a category.
+function _user_spec_files(dev_dir::Union{String,Nothing})
+    out = _spec_files_in(custom_modules_dir(dev_dir), nothing, TIER_USER)
+    for proot in plugin_roots(; dev_dir)
+        append!(out, _spec_files_in(proot, basename(proot), TIER_PLUGIN))
+    end
+    out
+end
+
+"""
+    user_task_specs(; dev_dir=nothing, category="", exclude_funs=Set{String}()) -> Vector{NamedTuple}
+
+Every user-supplied task spec — hand-dropped **and** plugin — as
+`(; category, path, plugin, fun_name, tier, spec)`, already parsed and **deduped by `fun_name`** under
+the precedence in PLUGINS_PLAN Decision 3: a strictly higher tier displaces the incumbent, and within
+a tier the first (path-sorted) wins.
+
+This is THE enumerator for the user modules tree; `api_task_definitions` and
+`_custom_module_categories` both consume it rather than each walking the directory themselves. The
+dedupe is why they agree with dispatch: two clashing specs used to render two forms on one page while
+`_task_from_fun_name` resolved exactly one of them.
+
+`exclude_funs` drops names owned by built-ins (built-ins win, and the API is the half that knows what
+they are). A malformed spec is warned about and skipped, never fatal.
+"""
+function user_task_specs(; dev_dir::Union{String,Nothing} = nothing,
+                           category::AbstractString = "",
+                           exclude_funs = Set{String}())
+    out  = Any[]
+    seen = Dict{String,Int}()
+    for e in _user_spec_files(dev_dir)
+        (!isempty(category) && e.category != category) && continue
+        spec = try
+            JSON3.read(read(e.path, String), Dict{String,Any})
+        catch err
+            @warn "Skipping malformed custom task spec" path = e.path exception = err
+            continue
+        end
+        fn = string(get(spec, "fun_name", ""))
+        (isempty(fn) || fn ∈ exclude_funs) && continue
+        rec = (; e.category, e.path, e.plugin, fun_name = fn, e.tier, spec)
+        i   = get(seen, fn, 0)
+        if i == 0
+            push!(out, rec)
+            seen[fn] = length(out)
+        elseif rec.tier > out[i].tier
+            out[i] = rec        # a higher tier displaces; same tier keeps the incumbent (first wins)
+        end
+    end
+    out
+end
+
+"""
+    user_plot_specs(; dev_dir=nothing, exclude_ids=Set{String}()) -> Vector{Dict{String,Any}}
+
+Plot specs shipped by hand-dropped modules and plugins, from `<modules>/plotDefinitions/` and
+`<modules>/plugins/<plugin>/plotDefinitions/` — the same shape and schema as the package's own
+`app/src/plotDefinitions/`.
+
+**This is what makes a plugin worth having.** The custom-module loader already gave a user a custom
+TASK; on its own, packaging tasks into a directory is only distribution. A plugin also ships the
+**module page** that inspects the task's output — and it does so with no Vue and no compiled code,
+because both halves of a page are already declarative:
+
+| Half of the page | Declared by | Rendered by |
+|---|---|---|
+| the task form | a task spec's `params` | `ParamRenderer` |
+| the plot canvas | a plot spec here (`module: "<category>"`) | `SummaryCanvas` |
+
+A plugin therefore does not ship Vue. That is a decision rather than a hard limit — a stable install
+precompiles SFCs so a plugin's `.vue` could not be compiled there, but pre-compiled ESM would load
+fine. It is excluded because shipping renderable code makes the frontend a **plugin ABI**: a component
+contract that cannot be refactored freely, plus a loader and version skew between a plugin and the app
+drawing it. See `docs/todo/PLUGINS_PLAN.md` for the full trade-off.
+
+`exclude_ids` drops ids owned by the package registry — **built-ins win**, the same rule as tasks. A
+malformed spec is warned about and skipped, never fatal.
+"""
+function user_plot_specs(; dev_dir::Union{String,Nothing} = nothing, exclude_ids = Set{String}())
+    out  = Dict{String,Any}[]
+    seen = Set{String}()
+    root = custom_modules_dir(dev_dir)
+    isdir(root) || return out
+    # Hand-dropped first, then plugins (path-sorted) — the same precedence order tasks use, so a
+    # plugin cannot displace a plot the user defined themselves.
+    for dir in vcat([joinpath(root, PLOT_DEFS_SUBDIR)],
+                    [joinpath(p, PLOT_DEFS_SUBDIR) for p in plugin_roots(; dev_dir)])
+        for e in _plot_specs_in(dir)
+            id = string(get(e.spec, "id", ""))
+            (isempty(id) || id ∈ exclude_ids || id ∈ seen) && continue
+            push!(seen, id)
+            push!(out, e.spec)
+        end
+    end
+    out
+end
+
+"""
+One `plotDefinitions/` directory's specs as `(; path, spec)`, path-sorted, malformed skipped.
+
+Carries the PATH alongside the parsed spec because [`plugin_contributions`](@ref) has to answer
+"does `plotDefinitions/x.json` exist" for a declared contribution, and a spec dict alone cannot say
+where it came from. Stapling the path INTO the dict was the obvious alternative and is wrong: that
+dict is served verbatim to the client as a plot definition, so the bookkeeping field would become
+part of the plot schema.
+"""
+function _plot_specs_in(dir::AbstractString)
+    out = @NamedTuple{path::String, spec::Dict{String,Any}}[]
+    isdir(dir) || return out
+    for f in sort(readdir(dir; join = true))
+        endswith(f, ".json") || continue
+        spec = try
+            JSON3.read(read(f, String), Dict{String,Any})
+        catch e
+            @warn "Skipping malformed plot spec" path = f exception = e
+            continue
+        end
+        push!(out, (; path = f, spec))
+    end
+    out
+end
+
+# ── The contribution model ────────────────────────────────────────────────────────────────────────
+#
+# What a plugin CONTRIBUTES is inferred from where its files sit — `<category>/<name>.json` is a task,
+# `plotDefinitions/*.json` is a plot. Convention over configuration, and it earns its keep: both
+# example plugins write no manifest boilerplate at all.
+#
+# The limit is that there is nowhere to declare a kind of contribution that has NO directory. "Draw
+# this task's output as tracks", "show the built-in track-paths plot on my page" — each one answered
+# by inventing another magic folder is how a layout turns into folklore.
+#
+# So `plugin.json` grows an OPTIONAL `contributions` block, and the directory walk DESUGARS into the
+# same shape (PLUGINS_PLAN Decision 10). A plugin that declares nothing is described by exactly the
+# records the walk produces; a plugin that declares something gets it checked against what is on disk.
+# Declaring is never required and never restricts — a task on disk is a task whether or not the
+# manifest mentions it, so no author can hide their own work by adding a block and forgetting a line.
+#
+# Modelled on napari's `contributions` (npe2), with its `commands` indirection deliberately dropped:
+# napari needs it because one Python function can surface as a widget AND a menu item, whereas our
+# tasks are already addressable by `fun_name`.
+#
+# **`views` and `layers` are parsed and validated but not yet acted on** — Decisions 11 and 12. They
+# are here now so the grammar is settled before anything renders through it; a plugin declaring one
+# is TOLD it does nothing yet (`problems`) rather than shipping a silently blank panel.
+
+const CONTRIBUTION_KINDS = ("tasks", "plots", "views", "layers")
+
+# Kinds this version actually honours. The rest are parsed, shape-checked, and reported as "not acted
+# on yet". Moving a kind across this line is what Decisions 11/12 landing looks like — `views` crossed
+# it when the custom module page learned to host one.
+const CONTRIBUTIONS_HONOURED = ("tasks", "plots", "views")
+
+# Layer kinds a `layers` contribution may ask napari for — an ALLOW-LIST, not a passthrough
+# (Decision 12). `layerType` reaching `viewer.add_*` unchecked would make napari's constructor
+# signatures a plugin ABI by the back door, which is the thing the whole design avoids.
+const CONTRIBUTION_LAYER_TYPES = ("points", "tracks", "shapes", "vectors")
+
+_contrib_relpath(root::AbstractString, path::AbstractString)::String =
+    replace(relpath(abspath(String(path)), abspath(String(root))), '\\' => '/')
+
+"""
+    plugin_contributions(dir; manifest=read_plugin_manifest(dir))
+        -> (; tasks, plots, views, layers, problems)
+
+Everything one plugin contributes, in ONE grammar: what the directory layout implies, merged with
+what `plugin.json`'s optional `contributions` block declares.
+
+- `tasks`  — `(; funName, category, path, declared)`, one per `<category>/<name>.json` that names a
+  `fun_name`. `path` is relative to the plugin root.
+- `plots`  — `(; id, spec, moduleName, declared)`, one per readable `plotDefinitions/*.json`.
+- `views`  — `(; moduleName, view, label)`, declared only. Decision 11; nothing renders these yet.
+- `layers` — `(; fromTask, layerType, options)`, declared only. Decision 12; nothing draws these yet.
+- `problems` — human-readable strings for Settings: a declaration that resolves to nothing, a
+  malformed entry, an unknown kind, or a kind this version does not act on yet.
+
+`declared` is the interesting bit on the first two: it says the manifest ALSO named this, which is
+what makes the ratchet possible in both directions — a declared name that no file defines is a
+problem here, and a file that nothing declares is simply fine.
+
+**Never throws**, for the same reason `read_plugin_manifest` does not: a plugin whose tasks loaded
+must stay describable in Settings even if its manifest is nonsense.
+"""
+function plugin_contributions(dir::AbstractString; manifest = read_plugin_manifest(dir))
+    root  = String(dir)
+    name  = basename(rstrip(root, ['/', '\\']))
+    probs = String[]
+
+    # ── what the layout says ──────────────────────────────────────────────────────────────────────
+    tasks = @NamedTuple{funName::String, category::String, path::String, declared::Bool}[]
+    for e in _spec_files_in(root, name, TIER_PLUGIN)
+        fn = try
+            string(get(JSON3.read(read(e.path, String), Dict{String,Any}), "fun_name", ""))
+        catch; "" end
+        isempty(fn) && continue     # malformed or fun_name-less: `user_task_specs` already warns
+        push!(tasks, (; funName = fn, category = e.category,
+                        path = _contrib_relpath(root, e.path), declared = false))
+    end
+
+    plots = @NamedTuple{id::String, spec::String, moduleName::String, declared::Bool}[]
+    for e in _plot_specs_in(joinpath(root, PLOT_DEFS_SUBDIR))
+        id = string(get(e.spec, "id", ""))
+        isempty(id) && continue
+        push!(plots, (; id, spec = _contrib_relpath(root, e.path),
+                        moduleName = string(get(e.spec, "module", "")), declared = false))
+    end
+
+    # ── what the manifest says ────────────────────────────────────────────────────────────────────
+    decl = manifest.contributions
+    for k in sort(String[string(k) for k in keys(decl)])
+        k ∈ CONTRIBUTION_KINDS ||
+            push!(probs, "unknown contribution kind `$k` (known: $(join(CONTRIBUTION_KINDS, ", ")))")
+    end
+    # Parsed ONCE per kind: the "not acted on yet" check below re-reads them, and a lazy re-parse
+    # would push every malformed-entry problem twice.
+    entries = Dict{String,Vector{Any}}()
+    for k in CONTRIBUTION_KINDS
+        v = get(decl, k, nothing)
+        if v === nothing
+            entries[k] = Any[]
+        elseif v isa AbstractVector
+            entries[k] = Any[e for e in v if e isa AbstractDict]
+            length(entries[k]) == length(v) ||
+                push!(probs, "some `contributions.$k` entries are not objects and were ignored")
+        else
+            entries[k] = Any[]
+            push!(probs, "`contributions.$k` must be a list")
+        end
+    end
+
+    for e in entries["tasks"]
+        fn = string(get(e, "funName", ""))
+        if isempty(fn)
+            push!(probs, "a `contributions.tasks` entry has no `funName`")
+        else
+            i = findfirst(t -> t.funName == fn, tasks)
+            i === nothing ?
+                push!(probs, "declares task `$fn`, but no `<category>/<name>.json` here defines it") :
+                (tasks[i] = (; tasks[i].funName, tasks[i].category, tasks[i].path, declared = true))
+        end
+    end
+
+    for e in entries["plots"]
+        sp = replace(string(get(e, "spec", "")), '\\' => '/')
+        if isempty(sp)
+            push!(probs, "a `contributions.plots` entry has no `spec`")
+        else
+            i = findfirst(pl -> pl.spec == sp, plots)
+            i === nothing ?
+                push!(probs, "declares plot spec `$sp`, which is not a readable plot definition here") :
+                (plots[i] = (; plots[i].id, plots[i].spec, plots[i].moduleName, declared = true))
+        end
+    end
+
+    views = @NamedTuple{moduleName::String, view::String, label::String}[]
+    for e in entries["views"]
+        vw = string(get(e, "view", ""))
+        isempty(vw) && (push!(probs, "a `contributions.views` entry has no `view`"); continue)
+        push!(views, (; moduleName = string(get(e, "module", "")), view = vw,
+                        label = string(get(e, "label", ""))))
+    end
+
+    layers = @NamedTuple{fromTask::String, layerType::String, options::Dict{String,Any}}[]
+    for e in entries["layers"]
+        ft = string(get(e, "fromTask", ""))
+        lt = string(get(e, "layerType", ""))
+        isempty(ft) && push!(probs, "a `contributions.layers` entry has no `fromTask`")
+        lt ∈ CONTRIBUTION_LAYER_TYPES ||
+            push!(probs, "layer type `$lt` is not one of $(join(CONTRIBUTION_LAYER_TYPES, ", "))")
+        opts = Dict{String,Any}(String(k) => v for (k, v) in pairs(e)
+                                if String(k) ∉ ("fromTask", "layerType"))
+        push!(layers, (; fromTask = ft, layerType = lt, options = opts))
+    end
+
+    # Declared, understood, and DOES NOTHING. Said out loud because the alternative is the failure
+    # mode this codebase keeps producing: a blank panel and no explanation.
+    for k in CONTRIBUTION_KINDS
+        (k ∈ CONTRIBUTIONS_HONOURED || isempty(entries[k])) && continue
+        push!(probs, "declares `$k`, which this version of cecelia understands but does not act on yet")
+    end
+
+    (; tasks, plots, views, layers, problems = probs)
+end
+
+"""
+    plugin_views(; dev_dir=nothing) -> Vector{NamedTuple}
+
+Every `contributions.views` entry across installed plugins, as `(; moduleName, view, label, plugin)`,
+deduped on `(moduleName, view)` and plugin-sorted so first-wins is reproducible rather than
+filesystem-dependent — the same rule `user_task_specs` uses for a `fun_name` clash.
+
+A `view` is the STABLE ID of a built-in interactive plot (PLUGINS_PLAN Decision 11). The registry it
+names lives in the frontend (`components/canvas/interactiveViews.ts`), so this layer cannot check that
+the id exists — it carries the declaration; the page that renders it says so when it resolves to
+nothing. Making view IDS public is a far smaller promise than a component contract, which is the whole
+reason to prefer it.
+"""
+function plugin_views(; dev_dir::Union{String,Nothing} = nothing)
+    out  = @NamedTuple{moduleName::String, view::String, label::String, plugin::String}[]
+    seen = Set{Tuple{String,String}}()
+    for d in plugin_roots(; dev_dir)
+        name = basename(d)
+        for v in plugin_contributions(d).views
+            key = (v.moduleName, v.view)
+            key ∈ seen && continue
+            push!(seen, key)
+            push!(out, (; v.moduleName, v.view, v.label, plugin = name))
+        end
+    end
+    out
+end
+
+# ── P2: install / update / remove ─────────────────────────────────────────────────────────────────
+#
+# Source is a URL plus a **pinned ref**, fetched as a TARBALL — never `git`. An installed app has no
+# git: both installers fetch tarballs over plain HTTP, and `_is_installed` is literally defined as
+# "has a VERSION file and has NO `.git`". The download + unpack path here is the same one the in-app
+# updater uses (`Downloads` stdlib + `Cecelia._run_tar`, the one tar runner, which registers the
+# process so an extract can be cancelled and checks `termsignal` — a bare `run` reads a killed extract
+# as success). See docs/todo/PLUGINS_PLAN.md → R1.
+
+"""GitHub repo URL + ref → the archive tarball. Any other URL is returned unchanged (already a tarball)."""
+function plugin_tarball_url(url::AbstractString, ref::AbstractString)::String
+    u = strip(String(url))
+    m = match(r"^https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?$", u)
+    m === nothing && return u
+    r = isempty(strip(String(ref))) ? "HEAD" : strip(String(ref))
+    "https://github.com/$(m.captures[1])/$(m.captures[2])/archive/$r.tar.gz"
+end
+
+"""Plugin directory name for a source URL — the repo name, so one repo maps to one directory."""
+function plugin_name_from_url(url::AbstractString)::String
+    u = strip(String(url))
+    m = match(r"github\.com/[^/]+/([^/#?]+?)(?:\.git)?/?$", u)
+    m !== nothing && return String(m.captures[1])
+    safe_name_part(splitext(basename(rstrip(u, '/')))[1])
+end
+
+install_record_path(dir::AbstractString) = joinpath(String(dir), PLUGIN_INSTALL_RECORD)
+
+"""
+    read_install_record(dir) -> Dict{String,Any}
+
+Where the plugin came from: `(url, ref, installedAt)`. `Dict()` when hand-installed — a `git clone`
+into `plugins/` is a first-class way to install, and must not look broken for lacking a record.
+"""
+function read_install_record(dir::AbstractString)::Dict{String,Any}
+    p = install_record_path(dir)
+    isfile(p) || return Dict{String,Any}()
+    try JSON3.read(read(p, String), Dict{String,Any}) catch; Dict{String,Any}() end
+end
+
+"""
+Put a VERIFIED plugin directory at `target`, replacing whatever was there, and record where it came
+from. The shared half of both installers — over the network (`plugin_unpack!`) and from a directory
+already on disk (`plugin_install_local!`) — because "replace the tree, then write the record" is one
+decision and two copies of it would drift on the next change to either.
+
+`move = true` when the source is a scratch extraction we own; `false` copies, which is what a local
+install must do (its source is the user's checkout).
+"""
+function _plugin_place!(root::AbstractString, target::AbstractString;
+                        url::AbstractString, ref::AbstractString, move::Bool)
+    mkpath(dirname(target))
+    isdir(target) && rm(target; recursive = true, force = true)
+    move ? mv(root, target) : cp(root, target)
+    # The record is a SIBLING of plugin.json, never inside it: plugin.json ships from the plugin's
+    # own repo, so writing the resolved ref into it would dirty the checkout and be overwritten by
+    # the next update. Decision 5.
+    write_json_atomic(install_record_path(target),
+                      Dict{String,Any}("url" => String(url), "ref" => String(ref),
+                                       "installedAt" => string(now())))
+    target
+end
+
+"""
+    bundled_plugins_dir() -> String
+
+`docs/examples/plugins` in this checkout — the in-repo SOURCE of the example plugins.
+"""
+bundled_plugins_dir()::String =
+    normpath(joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins"))
+
+"""
+    bundled_plugins() -> Vector{NamedTuple}
+
+Example plugins that ship IN THIS CHECKOUT, as `(; name, dir, description, version)` — installable
+without touching the network.
+
+**Why this exists.** `docs/examples/plugins/<name>/` is the source; the GitHub repo is a mirror
+published at release time (`scripts/publish_plugin.jl`). So on a dev checkout the newest copy of a
+plugin is already on disk, and installing it "properly" meant pushing to GitHub and pulling the same
+files back — with a window in which the two disagree. That window is not hypothetical: Dominik
+installed `ccia-trackMeasures` from GitHub and got a form three commits stale, while the fixed spec
+sat in his own worktree.
+
+Empty when the directory is absent, which is the honest test for "is this a checkout" — structural,
+like `series_base`, rather than a dev flag that has to be kept in step with reality. An installed app
+without `docs/` simply offers nothing here.
+"""
+function bundled_plugins()
+    root = bundled_plugins_dir()
+    isdir(root) || return @NamedTuple{name::String, dir::String, description::String, version::String}[]
+    out = @NamedTuple{name::String, dir::String, description::String, version::String}[]
+    for name in sort(readdir(root))
+        d = joinpath(root, name)
+        (isdir(d) && isfile(joinpath(d, PLUGIN_MANIFEST))) || continue
+        m = read_plugin_manifest(d)
+        push!(out, (; name, dir = d, description = m.description, version = m.version))
+    end
+    out
+end
+
+"""
+    plugin_install_local!(name; dev_dir=nothing, on_log=…) -> NamedTuple
+
+Install one of the [`bundled_plugins`](@ref) straight from this checkout. Returns `(; ok, name, dir,
+error)`, and never throws — same contract as `plugin_unpack!`.
+
+Takes a NAME from the bundled list rather than an arbitrary path: the list is a closed set read off
+disk, so there is no path to sanitise and nothing a request can point at outside the checkout. A
+general install-from-anywhere is a different feature with a different threat model.
+
+The install record says `url = "bundled:<name>"` rather than a GitHub URL — the copy came from the
+checkout, and recording the repo it *would* have come from would make an out-of-date published mirror
+look like the installed source.
+"""
+function plugin_install_local!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing,
+                               on_log::Function = _ -> nothing)
+    n = String(name)
+    src = findfirst(p -> p.name == n, bundled_plugins())
+    src === nothing && return (; ok = false, name = n, dir = "",
+                                 error = "not a bundled plugin: $n")
+    dir = bundled_plugins()[src].dir
+    try
+        target = _plugin_place!(dir, joinpath(plugins_dir(dev_dir), n);
+                                url = "bundled:$n", ref = "", move = false)
+        on_log("Installed $n from this checkout")
+        (; ok = true, name = n, dir = target, error = nothing)
+    catch e
+        (; ok = false, name = n, dir = "", error = sprint(showerror, e))
+    end
+end
+
+"""
+    plugin_unpack!(tarball, url; ref="", dev_dir=nothing, job_id=…, on_log=…) -> NamedTuple
+
+Unpack an already-downloaded plugin tarball into place: extract to a temp dir → verify it looks like a
+plugin → **replace** the target directory → write `.install.json`. Returns `(; ok, name, dir, error)`.
+
+Verification before the move is the point: extracting straight into `plugins/<name>/` would leave a
+half-written directory that the loader walks on the next reload. A tarball with no `plugin.json` is
+rejected here rather than becoming a directory that registers nothing and explains nothing.
+
+The DOWNLOAD is the caller's job (`api/src/plugins_api.jl`) — `Downloads` is not an `app/` dependency
+and adding one would mean re-resolving three manifests for an HTTP fetch that is an API-layer concern
+anyway. This half is the part worth unit-testing, so it takes a local file and stays in the package.
+
+Never throws: install is user-driven and every failure is a message, not a stacktrace.
+"""
+function plugin_unpack!(tarball::AbstractString, url::AbstractString;
+                        ref::AbstractString = "",
+                        dev_dir::Union{String,Nothing} = nothing,
+                        job_id::AbstractString = "plugin-install",
+                        on_log::Function = _ -> nothing)
+    _tar_available() ||
+        return (; ok = false, name = "", dir = "", error = "`tar` was not found on PATH")
+    isfile(tarball) ||
+        return (; ok = false, name = "", dir = "", error = "no such archive: $tarball")
+    name = plugin_name_from_url(url)
+    isempty(name) &&
+        return (; ok = false, name = "", dir = "", error = "could not derive a plugin name from $url")
+    target = joinpath(plugins_dir(dev_dir), name)
+    tmp    = mktempdir()
+    try
+        payload = joinpath(tmp, "payload"); mkpath(payload)
+        _run_tar(_tar_unpack_cmd(tarball; into = payload), String(job_id)) ||
+            return (; ok = false, name, dir = "",
+                      error = "unpacking failed (tar exited non-zero or was cancelled)")
+
+        # A GitHub archive wraps everything in one `<repo>-<ref>/` directory; a hand-rolled tarball may
+        # not. Take the wrapper only when it IS the single entry, rather than assuming either shape.
+        entries = readdir(payload; join = true)
+        root = (length(entries) == 1 && isdir(entries[1])) ? entries[1] : payload
+        isfile(joinpath(root, PLUGIN_MANIFEST)) ||
+            return (; ok = false, name, dir = "",
+                      error = "not a plugin: no $PLUGIN_MANIFEST at the archive root")
+
+        _plugin_place!(root, target; url, ref, move = true)
+        on_log("Installed $name")
+        (; ok = true, name, dir = target, error = nothing)
+    catch e
+        (; ok = false, name, dir = "", error = sprint(showerror, e))
+    finally
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+"""
+    plugin_remove!(name; dev_dir=nothing) -> NamedTuple
+
+Unregister the plugin's tasks, then delete its directory. Returns `(; ok, removed, error)`.
+
+**Refuses while any of its tasks is running.** Deleting the directory under a live run pulls the
+runner's own `_run.py` out from under a `run_py` subprocess, and `_unregister_task!` only drops the
+registry entry — an in-flight `_run_task` already holds the instance. Decision 9.
+"""
+function plugin_remove!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing)
+    dir = joinpath(plugins_dir(dev_dir), String(name))
+    isdir(dir) || return (; ok = false, removed = String[], error = "no such plugin: $name")
+
+    mine = String[e.fun_name for e in user_task_specs(; dev_dir) if e.plugin == String(name)]
+    busy = [t.fun_name for t in list_tasks() if t.fun_name ∈ mine]
+    isempty(busy) ||
+        return (; ok = false, removed = String[],
+                  error = "still running: $(join(unique(busy), ", ")) — cancel it first")
+
+    removed = String[]
+    for fn in mine
+        _unregister_task!(fn) && push!(removed, fn)
+    end
+    rm(dir; recursive = true, force = true)
+    (; ok = true, removed, error = nothing)
+end
+
+"""
+    plugin_registry() -> Vector{Dict{String,Any}}
+
+The curated list of plugins we vouch for (`app/src/pluginRegistry.json`), each
+`(name, url, description, categories, ref)`, with `installed` stamped on by `plugin_registry_status`.
+
+**Curated, not a search index** (Decision 6): anything not listed installs by explicit URL, and cecelia
+never browses GitHub. The list SHIPS with the app rather than being fetched, so an offline install
+behaves like an online one and the catalogue cannot change under a running server — the trade is that
+adding a plugin needs a release, which is the thing to revisit if the list grows.
+
+A malformed registry yields an empty list rather than taking Settings down: the catalogue is a
+convenience, and install-by-URL works without it.
+"""
+function plugin_registry()::Vector{Dict{String,Any}}
+    path = joinpath(@__DIR__, "..", "pluginRegistry.json")
+    isfile(path) || return Dict{String,Any}[]
+    try
+        doc = JSON3.read(read(path, String), Dict{String,Any})
+        ps  = get(doc, "plugins", nothing)
+        ps isa AbstractVector ? Dict{String,Any}[Dict{String,Any}(p) for p in ps] : Dict{String,Any}[]
+    catch e
+        @warn "Skipping malformed plugin registry" path exception = e
+        Dict{String,Any}[]
+    end
+end
+
+"""
+    plugin_registry_status(; dev_dir=nothing) -> Vector{Dict{String,Any}}
+
+The registry with `installed` set per entry, matched on the DIRECTORY the entry's url would install to
+— not on the manifest `name`, which a plugin author controls and could set to anything. One repo maps
+to one directory, which is what makes the check unambiguous.
+"""
+function plugin_registry_status(; dev_dir::Union{String,Nothing} = nothing)
+    have = Set(basename.(plugin_roots(; dev_dir)))
+    map(plugin_registry()) do e
+        d = copy(e)
+        d["installed"] = plugin_name_from_url(string(get(e, "url", ""))) ∈ have
+        d
+    end
+end
+
+"""
+    plugins_report(; dev_dir=nothing, running_version="") -> Vector{NamedTuple}
+
+One entry per installed plugin for the Settings panel: `(; name, dir, version, description, homepage,
+categories, contributions, error, warning, problems, stale)`. `categories` is what the plugin actually ships
+on disk, not what its manifest claims — the manifest is descriptive, the directory is the truth.
+
+The three fault fields are kept APART rather than merged into one string, because they fail for
+unrelated reasons and a caller may care about one and not the others: `error` is a manifest that would
+not parse, `warning` is a `requiresCecelia` mismatch, `problems` is a `contributions` block that does
+not match the directory. Settings joins them into one tooltip; the API does not have to.
+
+`stale` is a fourth, and a different kind: nothing is *wrong*, the RUNNING code is simply older than
+the files on disk because a `.jl` is `include`d once per session. It cannot be repaired from here —
+Julia cannot redefine a struct — so it is reported rather than fixed, and the only action is a
+restart, which is the user's to take.
+"""
+function plugins_report(; dev_dir::Union{String,Nothing} = nothing,
+                          running_version::AbstractString = "")
+    specs = _user_spec_files(dev_dir)
+    # A plugin is stale when ANY of its `.jl` files changed since it was `include`d — updating one in
+    # place leaves the form new and the handler old, and only a restart fixes that.
+    stale_of = Dict{String,Bool}()
+    for e in custom_modules_report()
+        e.plugin === nothing && continue
+        stale_of[String(e.plugin)] = get(stale_of, String(e.plugin), false) || e.stale
+    end
+    map(plugin_roots(; dev_dir)) do d
+        name = basename(d)
+        m    = read_plugin_manifest(d)
+        c    = plugin_contributions(d; manifest = m)
+        (; name       = m.name,
+           dir        = d,
+           version    = m.version,
+           description = m.description,
+           homepage   = m.homepage,
+           categories = sort(unique(String[e.category for e in specs if e.plugin == name])),
+           contributions = (; c.tasks, c.plots, c.views, c.layers),
+           error      = m.error,
+           warning    = plugin_version_warning(m.requiresCecelia, running_version),
+           problems   = c.problems,
+           # `name` here is the MANIFEST name; staleness is keyed by the DIRECTORY, which is what the
+           # loader sees and what an author cannot rename out from under us.
+           stale      = get(stale_of, name, false))
+    end
+end

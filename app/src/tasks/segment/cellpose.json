@@ -46,6 +46,7 @@
       "params": [
         {
           "key": "model",
+          "optionsFrom": "cellposeModels",
           "label": "Model",
           "type": "select",
           "default": "cyto3",

@@ -1,0 +1,34 @@
+{
+  "task": "cumulativeChange",
+  "fun_name": "trackTools.cumulativeChange",
+  "label": "Cumulative change",
+  "category": "trackTools",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "scope": "image",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "pops",
+      "label": "Track populations",
+      "type": "popSelection",
+      "popScope": "tracks",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "required": true,
+      "requiredMessage": "Select at least one track population",
+      "default": [],
+      "tip": "Tracks to measure; the whole set is the segmentation's tracked pop"
+    },
+    {
+      "key": "gap",
+      "label": "Gap",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 3,
+      "tip": "Positions to look back along each track; larger smooths out jitter"
+    }
+  ]
+}

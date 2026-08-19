@@ -10,10 +10,11 @@
   "params": [
     {
       "key": "valueName",
-      "label": "Segmentation",
+      "label": "Measurements",
       "type": "valueNameSelection",
+      "field": "labelPropsNames",
       "default": "default",
-      "tip": "Which segmentation's label properties to read/write"
+      "tip": "Which measurement table to read and write"
     },
     {
       "key": "column",

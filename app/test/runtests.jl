@@ -67,6 +67,9 @@ end
 
 # Custom drop-in task fixture — structs must live at module top level, not inside a @testset block.
 struct _TestCustomTask <: CciaTask end
+# A SECOND distinct type, so a fun_name precedence test can tell which registration actually won
+# (`_CUSTOM_SPEC_PATHS` is keyed by concrete type, so two types is also the realistic case).
+struct _TestCustomTask2 <: CciaTask end
 
 # A task whose _run_task always throws — used to assert the scheduler tees a crash into the task log.
 struct _CrashTask <: CciaTask end

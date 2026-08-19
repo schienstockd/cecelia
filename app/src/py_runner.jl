@@ -46,13 +46,37 @@ function task_run_dir(base_dir::AbstractString)::String
     joinpath(base_dir, "tasks")
 end
 
-# The user modules root (`<config_dir>/modules`) — put on PYTHONPATH for run_py so a custom
-# (drop-in) task's `_run.py` can import across the modules tree. (A runner's OWN category dir is
-# already on `sys.path[0]` because it's launched by absolute path, so co-located siblings import
-# without this; the root just makes the wider tree reachable.) Standalone (NOT inlined in run_py) on
-# purpose: run_py's `task_dir` param must never be able to shadow the `config_dir()` function again —
-# that shadow silently made `config_dir()` call the task-dir string, breaking EVERY Python task.
-_custom_modules_pydir()::String = joinpath(config_dir(), "modules")
+# The user modules root (`<config_dir>/modules`) PLUS each installed plugin's `python/` dir — put on
+# PYTHONPATH for run_py so a custom (drop-in) task's `_run.py` can import across the modules tree, and
+# a PLUGIN's shared helpers are importable at all.
+#
+# (A runner's OWN directory is already `sys.path[0]` because it's launched by absolute path, so
+# co-located siblings import without any of this; these entries make the wider tree reachable.)
+#
+# **Why each plugin's `python/` and not the plugin root.** Reached via the modules root alone, a
+# plugin's shared code spells `plugins.<plugin>.python.<mod>` — and `<plugin>` is a DIRECTORY name, not
+# a Python identifier, so a perfectly ordinary plugin called `trackimport-smithlab` could never import
+# its own helpers at all. Naming the `python/` dir directly makes that a plain `import <mod>`: the
+# plugin's directory name never appears in an import, so it is free to be anything a repo may be
+# called. Pointing at the plugin ROOT instead would have worked too, but every category dir would then
+# become an importable top-level package. See docs/todo/PLUGINS_PLAN.md → R2.
+#
+# `python/` is also in `LEGACY_LAYOUT_DIRS`, so this one directory is skipped by the category scans —
+# a plugin's shared code can never be mistaken for a module category.
+#
+# Standalone (NOT inlined in run_py) on purpose: run_py's `task_dir` param must never be able to
+# shadow the `config_dir()` function again — that shadow silently made `config_dir()` call the
+# task-dir string, breaking EVERY Python task.
+function _custom_modules_pydirs()::Vector{String}
+    root = joinpath(config_dir(), "modules")
+    isdir(root) || return String[]
+    dirs = [root]
+    for p in plugin_roots()
+        d = joinpath(p, "python")
+        isdir(d) && push!(dirs, d)
+    end
+    dirs
+end
 
 # ── The BLAS thread budget every Python task inherits ─────────────────────────────────────────────
 #
@@ -134,9 +158,7 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     out_pipe = Pipe()
     # PYTHONPATH: python/ (so `import cecelia.*` resolves everywhere) + the user modules python dir
     # (so a custom task's dropped `_run.py` can import its own siblings). See docs/CUSTOM_MODULES.md.
-    pythonpath = py_root
-    custom_py  = _custom_modules_pydir()
-    isdir(custom_py) && (pythonpath = string(custom_py, Sys.iswindows() ? ";" : ":", py_root))
+    pythonpath = join(vcat(_custom_modules_pydirs(), py_root), Sys.iswindows() ? ";" : ":")
     # The configured image-store compressor travels as an env var rather than a param, so every
     # runner's zarr write picks it up through `zarr_utils.store_compressor` without each task having
     # to declare and forward it. Read per call on the Python side, so flipping the Settings choice

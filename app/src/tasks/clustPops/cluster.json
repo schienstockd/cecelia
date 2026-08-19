@@ -17,6 +17,8 @@
     },
     {
       "key": "popsToCluster",
+      "required": true,
+      "requiredMessage": "Select at least one population",
       "label": "Populations",
       "type": "popSelection",
       "accepts": ["live", "clust", "region", "track", "trackclust"],
@@ -30,7 +32,6 @@
       "label": "Cluster on",
       "type": "labelPropsColsSelection",
       "multiple": true,
-      "includeChannels": true,
       "default": [],
       "tip": "Feature columns to cluster on"
     },

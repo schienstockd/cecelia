@@ -2015,11 +2015,11 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 **Two registries carry the surface "checkboxes":**
 - `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
   `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
-  `interactive` (default) / `clustering` / `image`), the `rail` the plot needs, an optional
-  `initialState()` seed for a new panel's state bag, and — for a view that slices by population —
-  `popTypes`, the population FAMILIES it offers (same shape as a summary spec's `dataSource.popTypes`,
-  read by the same `plots/popTypes.ts` functions, so the rail lists the family the ACTIVE plot can draw).
-  See `docs/ANALYSIS.md` → *The rail*.
+  `interactive` (default) / `clustering` / `image`), the plugin flag `pluginPage`, the `rail` the plot
+  needs, an optional `initialState()` seed for a new panel's state bag, and — for a view that slices by
+  population — `popTypes`, the population FAMILIES it offers (same shape as a summary spec's
+  `dataSource.popTypes`, read by the same `plots/popTypes.ts` functions, so the rail lists the family
+  the ACTIVE plot can draw). See `docs/ANALYSIS.md` → *The rail*.
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
@@ -2035,6 +2035,14 @@ registries rather than re-wiring plots per node.
 a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
 the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
 `interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.
+
+**`pluginPage` is the one flag a PLUGIN can tick.** A plugin names a view by its stable id in
+`plugin.json` → `contributions.views`, and `SummaryCanvas` offers it under **Interactive** on that
+plugin's custom module page (`docs/CUSTOM_MODULES.md`; PLUGINS_PLAN Decision 11). This is why the flag
+is an opt-in rather than "any registered id": that page renders the summary canvas's own population
+picker and no other rail, so a plugin-nameable view must be self-contained (`rail: 'none'`, ratcheted),
+and `trackCorrection` MUTATES — a manifest must not be able to request it. Ticking it makes that view's
+**id** public: rename it and installed plugins get a "Plot not available here" notice instead of a plot.
 
 **`docked` is the contract's chrome switch** — a panel reads it to hide what only makes sense
 free-floating (its own Export dropdown), since the board exports via PDF/CSV instead. Details:

@@ -26,7 +26,15 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
                            on_log::Function      = line -> println(line),
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function  = _ -> nothing)
-    vn      = string(get(params, "valueName", Cecelia.VERSIONED_DEFAULT_VAL))
+    # TRACK POPULATIONS, not a segmentation. Anything measured along tracks takes a `popSelection`
+    # with `popScope: "tracks"` and NO `valueName` dropdown beside it — each picker value already
+    # carries its segmentation as a prefix, so a second dropdown is redundant and can disagree with
+    # the pick. docs/MODULES.md → *Which picker* / *Derive the segmentation from the pops*.
+    raw     = get(params, "pops", String[])
+    pops    = filter(p -> !isempty(p) && p != "NONE",
+                     raw isa AbstractString ? String[raw] : String[string(x) for x in raw])
+    isempty(pops) && (on_log("[ERROR] Select at least one track population"); return nothing)
+    vn      = Cecelia.pops_value_name(pops)
     measure = string(get(params, "measure", "live.cell.speed"))
     # `section` params are flattened to the top level by the scheduler before _run_task runs.
     minlen  = Int(get(params, "minTrackLength", 1))
@@ -37,10 +45,12 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
 
     # ── Julia: per-track mean of `measure`, broadcast back to each cell ────────────
     on_progress(0, 2)
-    cell = Cecelia.label_props(img; value_name = vn) |>
-           Cecelia.select_cols(["track_id", measure]) |> Cecelia.as_df
+    # `pop_df` is THE accessor (docs/POPULATION.md): it resolves which cells are in the chosen
+    # populations AND reads the columns in one narrow read. Reading the whole table and filtering
+    # afterwards would be a second, divergent membership implementation.
+    cell = Cecelia.pop_df(img, "live", pops; pop_cols = ["track_id", measure], granularity = :cell)
     "track_id" in Cecelia.DataFrames.names(cell) ||
-        (on_log("[ERROR] Segmentation '$vn' is not tracked (no track_id)"); return nothing)
+        (on_log("[ERROR] '$vn' is not tracked (no track_id)"); return nothing)
     measure in Cecelia.DataFrames.names(cell) ||
         (on_log("[ERROR] Measure '$measure' not found"); return nothing)
 

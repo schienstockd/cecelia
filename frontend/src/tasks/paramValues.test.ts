@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
-  resolveInitialParams, valueNameOptions, imageNamesForField } from './paramValues'
-import type { TaskDef, ParamValues } from './types'
+  resolveInitialParams, valueNameOptions, imageNamesForField,
+  showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
+  missingRequired } from './paramValues'
+import type { TaskDef, ParamValues, ParamDef } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
 const DEF = {
@@ -163,6 +165,10 @@ describe('preferredValueName', () => {
     expect(isKnownValueNameField('imFilepath')).toBe(false)   // R version
     expect(isKnownValueNameField('filepath')).toBe(false)     // ccid.json, singular
     expect(isKnownValueNameField('filepaths')).toBe(true)
+    // The two registries are independent: `labels` = mask pixels, `labelPropsNames` = a measurement
+    // table. `imageNamesForField` always understood the second; only this allow-list rejected it, so
+    // no picker could offer an imported points-only track set. See VALUE_NAME_FIELDS.
+    expect(isKnownValueNameField('labelPropsNames')).toBe(true)
     expect(isKnownValueNameField(undefined)).toBe(true)       // absent = image versions
     for (const f of VALUE_NAME_FIELDS) expect(isKnownValueNameField(f)).toBe(true)
   })
@@ -384,5 +390,192 @@ describe('imageNamesForField', () => {
 
   it('answers ["default"] for an image with no filepaths at all', () => {
     expect(imageNamesForField({} as never, undefined)).toEqual(['default'])
+  })
+})
+
+// ── showIf: conditional params declared in the spec ────────────────────────────────────────────────
+//
+// The declarative half of "this param does not apply here". The other half — a condition needing a
+// file read — stays a server hook setting `hidden`; see `showIfSatisfied`'s comment for the line
+// between them.
+describe('showIfSatisfied', () => {
+  it('no condition is always shown', () => {
+    expect(showIfSatisfied(undefined, {})).toBe(true)
+    expect(showIfSatisfied({}, {})).toBe(true)
+  })
+
+  it('matches a single value', () => {
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: 'attach' })).toBe(true)
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: 'create' })).toBe(false)
+  })
+
+  it('a list of values is OR-ed within one key', () => {
+    const cond = { method: ['gaussian', 'bilateral'] }
+    expect(showIfSatisfied(cond, { method: 'bilateral' })).toBe(true)
+    expect(showIfSatisfied(cond, { method: 'median' })).toBe(false)
+  })
+
+  it('keys are AND-ed', () => {
+    const cond = { mode: 'attach', method: 'gaussian' }
+    expect(showIfSatisfied(cond, { mode: 'attach', method: 'gaussian' })).toBe(true)
+    expect(showIfSatisfied(cond, { mode: 'attach', method: 'median' })).toBe(false)
+  })
+
+  it('compares as strings, so a spec can gate on a number a slider produced', () => {
+    // A spec is JSON and a control's value is whatever the widget emits. Without this, the same
+    // condition would work behind a select and silently fail behind an int slider.
+    expect(showIfSatisfied({ frameBase: '1' }, { frameBase: 1 })).toBe(true)
+    expect(showIfSatisfied({ nz: 1 }, { nz: '1' })).toBe(true)
+    expect(showIfSatisfied({ on: true }, { on: 'true' })).toBe(true)
+  })
+
+  it('an ABSENT value satisfies nothing', () => {
+    // Not "absent matches everything": that would flash every conditional param on first render,
+    // before defaults are applied.
+    expect(showIfSatisfied({ mode: 'attach' }, {})).toBe(false)
+    expect(showIfSatisfied({ mode: 'attach' }, undefined)).toBe(false)
+    expect(showIfSatisfied({ mode: 'attach' }, { mode: null as unknown as string })).toBe(false)
+  })
+})
+
+describe('showIfKeys', () => {
+  it('collects conditions from params and section sub-params', () => {
+    const def = {
+      params: [
+        { key: 'mode', type: 'select' },
+        { key: 'maxDistance', type: 'float', showIf: { mode: 'attach' } },
+        { key: 'adv', type: 'section', params: [
+          { key: 'skipRows', type: 'int', showIf: { template: 'imaris', mode: 'attach' } },
+        ] },
+      ],
+    } as unknown as TaskDef
+    expect(showIfKeys(def).sort()).toEqual(['mode', 'mode', 'template'])
+  })
+})
+
+// ── Finding a sibling param by TYPE ────────────────────────────────────────────────────────────────
+//
+// This existed as a hardcoded key lookup (`values.pops`, then `values.valueName`) and was already
+// wrong for half the specs that use it: `clustPops.cluster` and `clustTracks.cluster` call their
+// picker `popsToCluster` and declare no `valueName`, so both fell through to "the image's first label
+// set" and listed the WRONG segmentation's measure columns on any multi-segmentation project.
+describe('scopeValueName', () => {
+  const CLUSTER = [                                   // the real clustPops.cluster shape
+    { key: 'popsToCluster', type: 'popSelection' },
+    { key: 'clusterMeasures', type: 'labelPropsColsSelection' },
+  ] as unknown as ParamDef[]
+  const HMM = [                                       // the real hmm_states shape
+    { key: 'pops', type: 'popSelection' },
+    { key: 'modelMeasurements', type: 'labelPropsColsSelection' },
+  ] as unknown as ParamDef[]
+
+  it('takes the segmentation prefix off the first selected population, whatever the key is called', () => {
+    expect(scopeValueName(CLUSTER, { popsToCluster: ['B/tcells'] }, ['A', 'B'])).toBe('B')
+    expect(scopeValueName(HMM, { pops: ['B/tcells'] }, ['A', 'B'])).toBe('B')
+  })
+
+  it('THE BUG: a differently-named pop param used to fall through to the first label set', () => {
+    // Same selection, same image; before this it returned 'A' for CLUSTER and 'B' for HMM.
+    expect(scopeValueName(CLUSTER, { popsToCluster: ['B/tcells'] }, ['A', 'B']))
+      .toBe(scopeValueName(HMM, { pops: ['B/tcells'] }, ['A', 'B']))
+  })
+
+  it('falls back to a sibling valueNameSelection, then to the first label set', () => {
+    const def = [{ key: 'seg', type: 'valueNameSelection' },
+                 { key: 'cols', type: 'labelPropsColsSelection' }] as unknown as ParamDef[]
+    expect(scopeValueName(def, { seg: 'C' }, ['A', 'B'])).toBe('C')
+    expect(scopeValueName(def, {}, ['A', 'B'])).toBe('A')
+    expect(scopeValueName(def, {}, [])).toBe('default')
+  })
+
+  it('a root-relative population carries no segmentation prefix', () => {
+    expect(scopeValueName(HMM, { pops: ['/tcells'] }, ['A', 'B'])).toBe('A')
+  })
+
+  it('finds a sibling nested in a section — sub-values are stored flat', () => {
+    const def = [{ key: 'adv', type: 'section', params: [{ key: 'seg', type: 'valueNameSelection' }] }
+                ] as unknown as ParamDef[]
+    expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
+    expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
+  })
+})
+
+// ── required, checked before the run ───────────────────────────────────────────────────────────────
+describe('missingRequired', () => {
+  const DEF = {
+    params: [
+      { key: 'mode', type: 'select' },
+      { key: 'pops', type: 'popSelection', required: true,
+        requiredMessage: 'Select at least 2 populations' },
+      { key: 'seg', type: 'valueNameSelection', required: true, label: 'Segmentation',
+        showIf: { mode: 'attach' } },
+      { key: 'note', type: 'text' },
+    ],
+  } as unknown as TaskDef
+
+  it('an EMPTY COLLECTION is missing — the case `required` could not express', () => {
+    // Julia compared against "" only, and `Any[] == ""` is false, so `required` never fired for any
+    // multi-pick type. That is exactly where "pick at least one" is meant to apply.
+    expect(missingRequired(DEF, { mode: 'create', pops: [] }))
+      .toEqual(['Select at least 2 populations'])
+    expect(missingRequired(DEF, { mode: 'create', pops: ['A/x'] })).toEqual([])
+  })
+
+  it('uses requiredMessage, else the label — never the wire key', () => {
+    const msgs = missingRequired(DEF, { mode: 'attach', pops: ['A/x'] })
+    expect(msgs).toEqual(['Segmentation is required'])
+  })
+
+  it('a param showIf has ruled out is NOT required', () => {
+    // Otherwise the two combine into a form that cannot be submitted and shows no reason why.
+    expect(missingRequired(DEF, { mode: 'create', pops: ['A/x'] })).toEqual([])
+    expect(missingRequired(DEF, { mode: 'attach', pops: ['A/x'], seg: 'B' })).toEqual([])
+  })
+
+  it('descends into a section, but not into one that does not apply', () => {
+    const def = {
+      params: [
+        { key: 'mode', type: 'select' },
+        { key: 'adv', type: 'section', showIf: { mode: 'on' },
+          params: [{ key: 'k', type: 'text', required: true, label: 'K' }] },
+      ],
+    } as unknown as TaskDef
+    expect(missingRequired(def, { mode: 'on' })).toEqual(['K is required'])
+    expect(missingRequired(def, { mode: 'off' })).toEqual([])
+  })
+})
+
+// ── showIf suffix operators ────────────────────────────────────────────────────────────────────────
+//
+// Reported on screen: pick a TrackMate track XML, run it, and the Column mapping section reappeared —
+// on the finished form, and again when the form was restored from that run. The rule lived in the
+// server hook, which only re-resolves when the user EDITS the path, so any other route to a populated
+// form skipped it. But "is this an XML export" is decided by the file's EXTENSION — a property of the
+// string the form already holds — so it never needed the server at all.
+describe('showIfSatisfied — suffix operators', () => {
+  const NOT_XML = { csvPath: { notEndsWith: '.xml' } }
+
+  it('hides for the suffix, shows for anything else', () => {
+    expect(showIfSatisfied(NOT_XML, { csvPath: '/data/tracks.xml' })).toBe(false)
+    expect(showIfSatisfied(NOT_XML, { csvPath: '/data/spots.csv' })).toBe(true)
+  })
+
+  it('is case-insensitive — a path from Windows may shout', () => {
+    expect(showIfSatisfied(NOT_XML, { csvPath: 'C:\\data\\Tracks.XML' })).toBe(false)
+  })
+
+  it('endsWith accepts a list', () => {
+    const cond = { csvPath: { endsWith: ['.csv', '.tsv'] } }
+    expect(showIfSatisfied(cond, { csvPath: 'a.tsv' })).toBe(true)
+    expect(showIfSatisfied(cond, { csvPath: 'a.xml' })).toBe(false)
+  })
+
+  it('an absent path still satisfies nothing, operator or not', () => {
+    expect(showIfSatisfied(NOT_XML, {})).toBe(false)
+  })
+
+  it('an operator nobody implements does not silently pass', () => {
+    // Better a control that is missing and reported than one that renders on a rule that was ignored.
+    expect(showIfSatisfied({ csvPath: { matches: '.*' } } as never, { csvPath: 'a.csv' })).toBe(false)
   })
 })

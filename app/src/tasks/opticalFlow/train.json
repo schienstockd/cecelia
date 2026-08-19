@@ -18,6 +18,7 @@
     },
     {
       "key": "modelName",
+      "optionsFrom": "flowModels",
       "label": "Model name",
       "type": "valueNameInput",
       "namespace": "models",

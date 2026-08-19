@@ -13,7 +13,7 @@
 // left those keys absent. Reconcile a draft through `buildParamValues` (same as a server record) and the
 // gap closes: known keys survive, new params get their defaults, params that no longer exist drop out.
 
-import type { TaskDef, ParamValues } from './types'
+import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 
 /**
@@ -134,6 +134,149 @@ export function missingParamKeys(def: TaskDef, payload: ParamValues): string[] {
   return want.filter(k => !keys.has(k) || payload[k] === undefined)
 }
 
+// ── showIf: a param that only applies under some other param's value ───────────────────────────────
+//
+// Declared in the SPEC, beside the param it is about:
+//
+//     { "key": "maxDistance", "showIf": { "mode": "attach" } }
+//     { "key": "sigma",       "showIf": { "method": ["gaussian", "bilateral"] } }
+//
+// Keys are AND-ed; a list of values is OR-ed within one key. Comparison is on the STRING form,
+// because a spec is JSON and a form control's value is a string: `"1"` in a spec has to match the
+// number 1 that a slider produced, or the same condition would work in one widget and not another.
+//
+// **Why this exists at all.** `ParamRenderer` already honoured a `hidden` flag, but nothing could set
+// it from a spec — the policy was hand-written Julia in each task's `_inject_dynamic_options!`, with
+// the param keys as literals. A plugin author ships JSON and a task `.jl`, so making a param
+// disappear meant writing a Julia hook: the highest-friction way to express the thing most tightly
+// bound to the param itself.
+//
+// **Where the line is, and why both sides are needed.** `showIf` decides from the FORM alone. A
+// condition that needs to read a file, the filesystem or Python — the track importer's "this XML
+// export has no columns to map" — cannot be a spec field at any price, and stays a server hook
+// setting `hidden`. The question to ask of a new condition is exactly that: is the form enough?
+//
+// An ABSENT value satisfies nothing: a param gated on `mode` stays hidden until `mode` has a value.
+// The alternative (absent matches everything) would flash every conditional param on first render,
+// before defaults are applied.
+export function showIfSatisfied(
+  showIf: Record<string, unknown> | undefined,
+  values: ParamValues | undefined,
+): boolean {
+  if (!showIf) return true            // no condition declared → always shown
+  for (const [key, want] of Object.entries(showIf)) {
+    const have = values?.[key]
+    if (have === undefined || have === null) return false
+    const got = String(have)
+    // Operator form: `{ "csvPath": { "notEndsWith": ".xml" } }`. Suffix matching earns its place
+    // because a FILE PATH's meaning often lives in its extension, and that is a property of the
+    // string the form already holds — no server round-trip, so it stays correct when the form is
+    // restored from a previous run rather than typed.
+    if (want && typeof want === 'object' && !Array.isArray(want)) {
+      const ops = want as Record<string, unknown>
+      const suffixes = (k: string) => {
+        const v = ops[k]
+        return v === undefined ? null : (Array.isArray(v) ? v : [v]).map(x => String(x).toLowerCase())
+      }
+      const ends = suffixes('endsWith')
+      if (ends && !ends.some(sfx => got.toLowerCase().endsWith(sfx))) return false
+      const notEnds = suffixes('notEndsWith')
+      if (notEnds && notEnds.some(sfx => got.toLowerCase().endsWith(sfx))) return false
+      if (ends === null && notEnds === null) return false     // an operator nobody implements
+      continue
+    }
+    const accepted = (Array.isArray(want) ? want : [want]).map(String)
+    if (!accepted.includes(got)) return false
+  }
+  return true
+}
+
+// ── Finding a sibling param BY TYPE, not by name ───────────────────────────────────────────────────
+//
+// Several widgets need another param's value: a measure picker has to know which segmentation to list
+// columns for, a `popSelection` in single mode has to know which segmentation to scope to. That was
+// resolved by hardcoded KEY — `values.pops`, then `values.valueName` — which is a naming convention
+// the specs do not actually share.
+//
+// It was already wrong. Of the four specs using `labelPropsColsSelection`, `hmm_states` and
+// `hmm_transitions` call their picker `pops`, but `clustPops.cluster` and `clustTracks.cluster` call
+// theirs `popsToCluster` and declare no `valueName` — so both fell through to "the image's FIRST
+// label set", and on any project with more than one segmentation the Cluster cells / Cluster tracks
+// measure picker listed the wrong segmentation's columns. Silently: a populated dropdown of plausible
+// column names is indistinguishable from the right one.
+//
+// By TYPE there is nothing to keep in step and nothing for a plugin author to know — a spec that
+// declares a `popSelection` gets scoped by it whatever it is called.
+export function siblingKeyOfType(params: ParamDef[] | undefined, type: string): string | undefined {
+  for (const p of params ?? []) {
+    if (p.type === type) return p.key
+    const nested = siblingKeyOfType(p.params, type)   // sections/groups store sub-values FLAT
+    if (nested) return nested
+  }
+  return undefined
+}
+
+/** The segmentation a measure/population picker is scoped to, given the whole form. */
+export function scopeValueName(
+  params: ParamDef[] | undefined,
+  values: ParamValues | undefined,
+  labelKeys: string[],
+): string {
+  // 1. the segmentation prefix carried by the first selected population ("A/_tracked" → "A")
+  const popKey = siblingKeyOfType(params, 'popSelection')
+  const pops = popKey ? values?.[popKey] : undefined
+  const first = Array.isArray(pops) && pops.length ? String(pops[0]) : ''
+  if (first && !first.startsWith('/')) {
+    const idx = first.indexOf('/')
+    if (idx > 0) return first.slice(0, idx)
+  }
+  // 2. an explicit sibling segmentation picker
+  const vnKey = siblingKeyOfType(params, 'valueNameSelection')
+  const vn = vnKey ? values?.[vnKey] : undefined
+  if (typeof vn === 'string' && vn) return vn
+  // 3. the image's first label set — a guess, and the reason 1 and 2 are tried by type first
+  return labelKeys[0] ?? 'default'
+}
+
+// ── Required params, checked BEFORE the run ────────────────────────────────────────────────────────
+//
+// `required` was declared in specs, enforced only server-side, and read by the frontend NOWHERE — no
+// marker, no Run gate. So nine tasks re-implemented it as a runtime log line and the user learned
+// they had picked nothing AFTER pressing Run, from the log, having waited for a pool slot.
+//
+// A param `showIf` has ruled out is NOT required: the two would otherwise combine into a form that
+// cannot be submitted and gives no way to see why. Julia's `validate_params` applies the same rule.
+export function missingRequired(def: TaskDef, values: ParamValues | undefined): string[] {
+  const out: string[] = []
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      const applies = p.hidden !== true && showIfSatisfied(p.showIf, values)
+      if (applies && p.required) {
+        const v = values?.[p.key]
+        const empty = v === undefined || v === null || v === '' ||
+                      (Array.isArray(v) && v.length === 0)
+        if (empty) out.push(p.requiredMessage || `${p.label || p.key} is required`)
+      }
+      applies && walk(p.params)
+    }
+  }
+  walk(def.params)
+  return out
+}
+
+/** Every param key a spec's `showIf` conditions refer to — for a ratchet that they exist. */
+export function showIfKeys(def: TaskDef): string[] {
+  const out: string[] = []
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      if (p.showIf) out.push(...Object.keys(p.showIf))
+      walk(p.params)
+    }
+  }
+  walk(def.params)
+  return out
+}
+
 // ── valueNameSelection: which image field, and which name to preselect ─────────────────────────────
 //
 // A `valueNameSelection` param reads its options from ONE field of the image, named by `param.field`.
@@ -150,7 +293,16 @@ export function missingParamKeys(def: TaskDef, payload: ParamValues): string[] {
 // rather than having it degrade quietly.
 
 /** Every `field` a `valueNameSelection` param may name. */
-export const VALUE_NAME_FIELDS = ['filepaths', 'labels', 'spatialGraphs'] as const
+// `labels` vs `labelPropsNames` is the choice that keeps going wrong, so state it once: they are two
+// INDEPENDENT ccid.json registries. `labels` = value names with mask PIXELS; `labelPropsNames` =
+// value names with a measurement TABLE. A directly-imported track set registers only the second (there
+// are no mask pixels to register), and a freshly segmented image only the first (until it is measured).
+//
+// A picker gates on `labels` only when the task genuinely needs the MASK. Every track-consuming task
+// reads the h5ad and nothing else — so gating those on `labels` silently dropped exactly the sets the
+// track importer creates: you could import tracks and then not measure them, in either the plugin or
+// the built-in `tracking.track_measures`.
+export const VALUE_NAME_FIELDS = ['filepaths', 'labels', 'labelPropsNames', 'spatialGraphs'] as const
 export type ValueNameField = typeof VALUE_NAME_FIELDS[number]
 
 /** Fields that hold IMAGE VERSIONS — the ones where the active version is the right default. */
@@ -166,6 +318,9 @@ export function isKnownValueNameField(field: string | undefined): boolean {
 /** The names one image carries under `field`. */
 export function imageNamesForField(img: CciaImage, field: string | undefined | null): string[] {
   if (field === 'labels') return Object.keys(img.labels ?? {})
+  // Value names with a measurement table — a superset of `labels`, and the only list a direct track
+  // import appears in (it registers a table and no mask).
+  if (field === 'labelPropsNames') return img.labelPropsNames ?? []
   // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
   // across the selected images is exactly the set of graphs a pooled analysis can run over.
   if (field === 'spatialGraphs') return Object.keys(img.spatialGraphs ?? {})

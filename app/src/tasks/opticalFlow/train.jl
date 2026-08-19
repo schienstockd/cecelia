@@ -8,18 +8,7 @@ struct TrainFlowModel <: CciaTask end
 #
 # The param stays a `valueNameInput`, NOT a select: the whole point is naming a NEW model, and
 # training onto an existing name is the deliberate overwrite `flow_model_target(; overwrite)` guards.
-_needs_dynamic_options(::TrainFlowModel) = true
 
-function _inject_dynamic_options!(spec::Dict{String,Any}, ::TrainFlowModel)::Dict{String,Any}
-    params = get(spec, "params", nothing)
-    params isa AbstractVector || return spec
-    for p in params
-        p isa AbstractDict && string(get(p, "key", "")) == "modelName" || continue
-        # value == label: the user types the stem, so the suggestion IS what goes in the field
-        p["options"] = [Dict{String,Any}("label" => n, "value" => n) for n in flow_model_names()]
-    end
-    spec
-end
 
 """
     parse_temporal_scales(s) -> Vector{Int}
@@ -205,7 +194,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            zSpacing         = Int(get(params, "zSpacing", 0)),
            cropSize         = Int(get(params, "cropSize", 0)),
            maxFrames        = Int(get(params, "maxFrames", 0)),
-           trainRatio       = Float64(get(params, "trainRatio", 1.0)),
+           trainRatio       = Float64(get(params, "trainRatio", 0.8)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
            droppedMetrics   = dropped,

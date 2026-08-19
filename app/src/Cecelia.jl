@@ -136,6 +136,13 @@ export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
 export task_requires_axes, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
+export custom_task_clashes
+export plugins_dir, plugin_roots, plugin_name_of, read_plugin_manifest, plugin_version_warning
+export user_task_specs, user_plot_specs, plugins_report, tier_name, plugin_contributions, plugin_views, bundled_plugins, plugin_install_local!
+export plugin_unpack!, plugin_remove!, plugin_tarball_url, plugin_name_from_url
+export read_install_record, install_record_path, plugin_registry, plugin_registry_status
+export PLUGINS_SUBDIR, PLUGIN_MANIFEST, PLUGIN_INSTALL_RECORD, LEGACY_LAYOUT_DIRS, PLOT_DEFS_SUBDIR
+export TIER_PLUGIN, TIER_USER, TIER_BUILTIN
 
 # ── View profiles (curated sidebar) ───────────────────────────────────────────
 export view_profiles_dir, read_view_profiles, parse_view_profile,
@@ -293,6 +300,7 @@ include("tasks/clustRegions/cluster.jl")
 include("storage.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
+include("tasks/plugins.jl")
 # User drop-in sidebar profiles — the other <config_dir> data surface beside modules/. Read + written
 # here; the ROUTE TABLE it filters lives in the frontend, so this validates shape only.
 # See docs/todo/VIEW_PROFILES_PLAN.md.

@@ -24,6 +24,8 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
+import InteractivePanel from './InteractivePanel.vue'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor } from './interactiveViews'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -31,11 +33,19 @@ import type { SeriesTarget, ChartType } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
+import PlotNotice from './PlotNotice.vue'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
 // independently; parents that switch the key MUST also `:key` this component by it so setup re-runs.
-const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey?: string }>()
+// `views` = interactive plots this page ALSO offers, named by their stable registry id. A plugin
+// declares them in `plugin.json` → `contributions.views` (PLUGINS_PLAN Decision 11) and the custom
+// module page passes them through; every other host passes none and is unchanged. What this makes
+// public is view IDS, not components — renaming `trackPaths` breaks installed plugins, rewriting
+// `TrackPathsView.vue` does not.
+export interface DeclaredView { view: string; label?: string; plugin?: string }
+const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey?: string
+                            views?: DeclaredView[] }>()
 const project = useProjectStore()
 const meta = useProjectMetaStore()
 
@@ -60,7 +70,14 @@ const ckey = computed(() => props.canvasKey ?? `summary:${props.module ?? 'unive
 // per-plot state (edited inside SummaryPanel; persists in the panel objects). Canvas-level view state
 // + all shared data (specs/pops/attrs, compare/scope/global sel+vis) come from useSummaryData below.
 interface PanelState {
+  // Index signature so a panel's state is assignable to the generic InteractivePanel's
+  // `Record<string, unknown>` — the same shape GatingPlots' panel state carries, for the same reason.
+  [key: string]: unknown
   specId: string; sel: string[]; vis: VisProps
+  // set → this panel is an INTERACTIVE view (interactiveViews.ts) rather than a summary spec. Every
+  // panel keeps `sel`/`vis` regardless, so the selection/prune/duplicate helpers below need no
+  // interactive-only branches; the picker simply says the eye toggles do nothing on such a panel.
+  kind?: string
   popType?: string        // which population family this plot shows (specs that offer a choice)
   chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'
   groupBy?: string; smooth?: number; interval?: boolean
@@ -96,12 +113,51 @@ const {
   // page would silently offer the wrong population family for the selected plot.
   activeSpecId: computed(() => activePanel.value?.state.specId ?? null),
   // the active plot's chosen population family — the manager lists THAT family (one control, on the plot)
-  activePopType: computed(() => activePanel.value?.state.popType ?? null) })
+  activePopType: computed(() => activePanel.value?.state.popType ?? null),
+  // An INTERACTIVE panel that slices by population declares its families on its registry entry, so the
+  // rail lists THAT plot's family rather than whichever one `specs[0]` happens to carry. Same
+  // resolution the board uses — a second path here could disagree about what the plot is showing.
+  activeFamily: computed(() => {
+    const k = activePanel.value?.state.kind
+    return k ? popTypeSpecFor(String(k)) : null
+  }) })
 
 // Migrate canvases persisted before the four per-popType population summaries collapsed into one spec
 // with a family picker. Without this a saved panel's specId no longer resolves and the panel silently
 // renders nothing (`v-if="specById[...]"` below). Mirrors ClusterPlots' KIND_ALIASES.
-for (const p of panels.value) migrateSpecId(p.state)
+for (const p of panels.value) if (!p.state.kind) migrateSpecId(p.state)
+
+// ── interactive views (PLUGINS_PLAN Decision 11) ──────────────────────────────────────────────────
+// A declared id is resolved against the registry HERE, because the registry is a frontend module and
+// the manifest that names it is read in Julia. Two ways it can fail to resolve, deliberately reported
+// as one line: the id does not exist in this Cecelia, or it exists but is not offered to plugins
+// (`pluginPage` — e.g. `trackCorrection`, which mutates, or a view needing a rail this canvas does not
+// render). Either way it must be SAID: a view silently missing from the picker is exactly the
+// blank-panel failure this codebase keeps producing. (A panel already holding an unusable kind is
+// covered too — InteractivePanel renders "Unknown interactive plot".)
+const VIEW_OPT_PREFIX = 'view:'   // option values are namespaced so a view id cannot collide with a spec id
+const declaredViews = computed(() => (props.views ?? []).filter(v => isPluginView(v.view)))
+const unusableViews = computed(() => (props.views ?? []).filter(v => !isPluginView(v.view)))
+const viewLabel = (v: DeclaredView) => v.label || INTERACTIVE_VIEWS[v.view]?.label || v.view
+const unusableViewText = computed(() =>
+  `Plot not available here: ` +
+  unusableViews.value.map(v => v.plugin ? `${v.view} (${v.plugin})` : v.view).join(', '))
+// The bag an interactive view receives (docs/UI.md → generic plot-integration interface). Views pick
+// their own image out of `imageUids` and keep the rest in their panel state.
+//
+// A view on the POPULATION rail is part of THIS canvas's comparison and gets the same four things a
+// SummaryPanel gets — selection, compare mode + its attributes, pool toggle — exactly as the board
+// builds it (`LayoutCanvas.ctxFor`). A self-contained view declares `rail: 'none'` and never sees them.
+// Both branches exist because #593 moved the two track plots onto the pops rail: before it, every
+// plugin-nameable view was self-contained and this was one object.
+const viewContext = (id: number, st: PanelState) => {
+  const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value,
+                 vis: panelVis(st) }
+  return railFor(String(st.kind)) === 'pops'
+    ? { ...base, series: panelSeries(id, st), popTypes: popTypesFor(String(st.kind)),
+        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value }
+    : base
+}
 
 // global/local scope governs BOTH the eye-selection AND the visual properties (like the gating
 // PopulationManager): global = one value shared by every plot, local = the active plot's own.
@@ -118,6 +174,11 @@ const activeReadout = computed<PlotReadout>(() => readouts.value[activeId.value]
 // the active plot is PRECOMPUTED — its populations come from an analysis run, so the picker says so
 // instead of offering eye toggles that do nothing (see isPrecomputedSpec)
 const activeIsPrecomputed = computed(() => {
+  // An interactive view on the POPS rail consumes the eye-selection (the two track plots do). One on
+  // any other rail brings its own data and controls, so the picker says the selection is unused
+  // rather than offering toggles that do nothing.
+  const kind = activePanel.value?.state.kind
+  if (kind) return railFor(String(kind)) !== 'pops' 
   const id = activePanel.value?.state.specId
   const spec = id ? specById.value[id] : null
   return !!spec && isPrecomputedSpec(spec)
@@ -140,7 +201,16 @@ function setVis(patch: Partial<VisProps>) {
 const memoSeries = seriesMemo<number>()
 const panelSeries = (id: number, s: PanelState): SeriesTarget[] => memoSeries(id, panelSel(s))
 
-function addPanel(specId: string) { if (specId) { add(); const p = panels.value.at(-1); if (p) p.state.specId = specId } }
+function addPanel(value: string) {
+  if (!value) return
+  add()
+  const p = panels.value.at(-1)
+  if (!p) return
+  if (value.startsWith(VIEW_OPT_PREFIX)) {
+    const kind = value.slice(VIEW_OPT_PREFIX.length)
+    p.state = { ...p.state, ...(INTERACTIVE_VIEWS[kind]?.initialState?.() ?? {}), kind }
+  } else p.state.specId = value
+}
 
 // Duplicate a panel: new panel with a deep copy of the source's state (spec, series selection,
 // chart type/measure/groupBy/vis) — so the user can change one thing (e.g. measure speed → angle).
@@ -180,6 +250,14 @@ watch(segPops, () => {
                 @change="addPanel(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
           <option value="">+ Plot…</option>
           <option v-for="s in specs" :key="s.id" :value="s.id">{{ s.label }}</option>
+          <!-- Interactive views a plugin asked for on this page. In their own group so it is obvious
+               they are a different kind of plot: they fetch their own data and carry their own
+               controls, so the population picker does not drive them. -->
+          <optgroup v-if="declaredViews.length" label="Interactive">
+            <option v-for="v in declaredViews" :key="v.view" :value="`${VIEW_OPT_PREFIX}${v.view}`">
+              {{ viewLabel(v) }}
+            </option>
+          </optgroup>
         </select>
         <!-- compare cluster: mode + (by attribute) its attribute selects, kept tight in one group -->
         <!-- the row's tip belongs on the mode select (the control it describes, and the only one here
@@ -218,14 +296,24 @@ watch(segPops, () => {
           </button>
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span v-if="!specs.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
-        <span v-else class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
+        <!-- A declared view that resolves to nothing: say which id, and which plugin asked for it.
+             Silently dropping it from the picker is the failure Decision 11 exists to avoid. -->
+        <PlotNotice v-if="unusableViews.length" :text="unusableViewText"
+                    tip="The plugin names a plot this Cecelia does not offer — update the plugin, or ask its author." />
+        <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
+        <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
       <div ref="canvasRef" class="sc-canvas">
         <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
         <div ref="zoomRef" class="sc-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
-          <SummaryPanel v-if="specById[p.state.specId]" :index="i" :arrange="p.arrange"
+          <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
+                            :active="p.id === activeId" :view="p.state.kind"
+                            :context="viewContext(p.id, p.state)" :state="p.state" :duplicable="true"
+                            :persist-key="`${ckey}:${p.id}`"
+                            @activate="activeId = p.id" @remove="removePanel(p.id)"
+                            @duplicate="duplicatePanel(p)" />
+          <SummaryPanel v-else-if="specById[p.state.specId]" :index="i" :arrange="p.arrange"
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"

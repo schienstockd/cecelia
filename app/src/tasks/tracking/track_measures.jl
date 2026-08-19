@@ -402,7 +402,7 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         return nothing
     end
 
-    force = Bool(get(params, "forceRecompute", false))
+    force = Bool(get(params, "forceRecompute", true))
     if !force && _track_measures_cached(props_path, track_path)
         on_log("[INFO] Track measures already cached — skipping (set forceRecompute=true to override)")
         return Dict{String,Any}("valueName" => value_name, "cached" => true)

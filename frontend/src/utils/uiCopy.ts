@@ -469,6 +469,11 @@ function scanTooltips(src: string, path = ''):
       }
       continue
     }
+    // KNOWN BLIND SPOT: only the `v-tooltip` DIRECTIVE is seen. A component that takes a tooltip as a
+    // PROP and renders it around caller-supplied content — `SelectionTable`'s `row-tooltip`, which
+    // wraps each <tr> — is invisible here, so a tipped control in one of its slots fires two tooltips
+    // and this scan says nothing. Treating that prop as tipping the subtree finds 52 real pre-existing
+    // instances across 6 files; see docs/todo/PLUGINS_PLAN.md → Open items.
     const tipped = /v-tooltip/.test(attrs!)
     const settable = CONTROL.test(tag!) && !NOT_A_SETTING.test(attrs!)
     const perOption = HEADING_COVERED.test(tag!) ? hasPerOptionTips(script, attrs!) : null
