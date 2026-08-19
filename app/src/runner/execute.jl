@@ -42,6 +42,14 @@ Base.@kwdef struct TaskRequest
     pool_name::String            = ""
     params::Dict{String,Any}     = Dict{String,Any}()
     target::String               = "local"
+    # Set when this task IS a chain node, so the `TaskRecord` carries the correlation handles a client
+    # needs to match it to the node it sees in `chain:node:*` (the GUI keys a chain row
+    # `runId::nodeId::imageUid`). They live here rather than in the chain executor because the chain
+    # runs its nodes THROUGH this request: everything a node needs that a standalone task does not is
+    # an addition to the shared request, never a second copy of the run-and-announce logic. That copy
+    # is what produced five separate bugs — see docs/SCHEDULER.md.
+    chain_run_id::String         = ""
+    chain_node_id::String        = ""
 end
 
 # JSON round-trip — the request IS the wire format, so it gets one canonical encoder/decoder rather
@@ -50,7 +58,8 @@ end
 task_request_dict(r::TaskRequest)::Dict{String,Any} = Dict{String,Any}(
     "taskId"     => r.task_id,   "funName"    => r.fun_name, "projectUid" => r.project_uid,
     "imageUid"   => r.image_uid, "imageUids"  => r.image_uids,
-    "poolName"   => r.pool_name, "params"     => r.params,   "target"     => r.target)
+    "poolName"   => r.pool_name, "params"     => r.params,   "target"     => r.target,
+    "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id)
 
 function task_request(d::AbstractDict)::TaskRequest
     s(k, dflt = "") = string(get(d, k, dflt))
@@ -62,7 +71,9 @@ function task_request(d::AbstractDict)::TaskRequest
         image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
         pool_name   = s("poolName"),
         params      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "params", Dict{String,Any}())),
-        target      = s("target", "local"))
+        target      = s("target", "local"),
+        chain_run_id  = s("chainRunId"),
+        chain_node_id = s("chainNodeId"))
 end
 
 """
@@ -141,6 +152,8 @@ function _execute_set_task(req::TaskRequest, task_struct;
         result = run_task(task_struct, imgs, req.params;
                           task_id          = req.task_id,
                           pool_name        = req.pool_name,
+                          chain_run_id     = req.chain_run_id,
+                          chain_node_id    = req.chain_node_id,
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
@@ -176,6 +189,8 @@ function _execute_image_task(req::TaskRequest, task_struct;
         result = run_task(task_struct, img, req.params;
                           task_id          = req.task_id,
                           pool_name        = req.pool_name,
+                          chain_run_id     = req.chain_run_id,
+                          chain_node_id    = req.chain_node_id,
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin

@@ -13302,30 +13302,55 @@ end
         tpl([train("flow.cytoFg")], ChainEdge[]), "train"))
 end
 
-@testset "set-scope chain nodes run through run_task" begin
-    # `_run_set_scope_node!` called `_run_task` DIRECTLY, skipping everything `run_task` wraps around
-    # it — and skipping all of it silently: no `<img>/logs/<fun_name>.log` (`_wrap_log_with_file`), no
-    # task record (`_register_task!`) so the console and task-log view had nothing to attach to and the
-    # output fell through to the server's stdout, no run-log entry, and — worst — no
-    # `put!(pool.queue, job)`, so a node declaring `resource_pool: "gpu"` ran UNQUEUED beside whatever
-    # already held the GPU. Found when `opticalFlow.train` completed inside a chain and its log file
-    # was still weeks old while the image-scope node next to it had logged normally.
+@testset "chain nodes run through execute_task" begin
+    # `execute_task` is the canonical single-task pathway — the same one `handle_task_run` and the
+    # runner's own task handler use. It resolves the task, dispatches on scope, wires
+    # log/progress/status/result, and guarantees a terminal status on every exit path.
+    #
+    # The chain used to re-assemble that by hand, and FIVE bugs came out of the gap: a set-scope node
+    # called the inner `_run_task` directly, so it wrote no `<img>/logs/<fun_name>.log`
+    # (`_wrap_log_with_file`), registered no `TaskRecord` (nothing for the console or task-log view to
+    # attach to — output fell through to the server's stdout), opened no run-log entry, registered no
+    # `on_process` for cancel, and took no pool slot, so a node declaring `resource_pool: "gpu"` ran
+    # UNQUEUED. Neither node runner wired `on_progress` either, so no chain node ever showed progress.
+    #
+    # The durable fix is that there is no longer a second implementation to drift from. This pins it.
     src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
-    body_start = findfirst("function _run_set_scope_node!", src)
-    @test body_start !== nothing
-    body = src[first(body_start):end]
-    # The next top-level function ends the body.
-    nxt  = findfirst("\nfunction ", body[10:end])
-    body = nxt === nothing ? body : body[1:first(nxt) + 8]
 
-    @test occursin(r"\brun_task\(task_struct", body) ||
-          error("_run_set_scope_node! must dispatch through `run_task`, not `_run_task` — see " *
-                "docs/SCHEDULER.md → *Set-scope nodes go through run_task*.")
-    @test !occursin(r"(?<!_)\b_run_task\(", body) ||
-          error("_run_set_scope_node! calls `_run_task` directly again. That bypasses the log file, " *
-                "the task record, the run log and the resource pool.")
-    # The pool the node declares must actually be handed over; a nothing/"" here silently means `cpu`.
-    @test occursin("pool_name        = node.resource_pool", body)
+    for (fname, label) in (("_execute_image_chain!", "image-scope"),
+                           ("_run_set_scope_node!",  "set-scope"))
+        at = findfirst(fname * "(run::ChainRun", src)
+        @test at !== nothing
+        body = src[first(at):end]
+        nxt  = findfirst("\nfunction ", body[10:end])
+        body = nxt === nothing ? body : body[1:first(nxt) + 8]
+
+        @test occursin("execute_task(", body) ||
+              error("$label chain nodes must dispatch through `execute_task` — see " *
+                    "docs/SCHEDULER.md → *Chain nodes run through `execute_task`*.")
+        @test !occursin(r"(?<!_)\brun_task\(", body) ||
+              error("$label is calling `run_task` directly again. Everything a node needs beyond a " *
+                    "standalone task is a field on `TaskRequest`, not a second copy of the wiring.")
+        @test !occursin(r"\b_run_task\(", body) ||
+              error("$label is calling `_run_task` directly. That bypasses the log file, the task " *
+                    "record, the run log and the resource pool.")
+        # The pool the node declares must actually reach the request; "" silently means `cpu`.
+        @test occursin("pool_name    = node.resource_pool", body)
+        # …and the correlation pair, or the GUI cannot match the task to its node row.
+        @test occursin("chain_run_id = run.id", body)
+        @test occursin("chain_node_id = node.id", body)
+    end
+
+    # `TaskRequest` is where a chain node's extra needs live — the shared component grew, the chain did
+    # not fork. If these move back out, the fork is back.
+    @test :chain_run_id  in fieldnames(Cecelia.TaskRequest)
+    @test :chain_node_id in fieldnames(Cecelia.TaskRequest)
+    # They cross the process boundary too, or a runner-executed node loses its node identity.
+    rt = Cecelia.task_request(Cecelia.task_request_dict(
+        Cecelia.TaskRequest(; task_id="t", fun_name="f", project_uid="p",
+                              chain_run_id="R", chain_node_id="N")))
+    @test rt.chain_run_id  == "R"
+    @test rt.chain_node_id == "N"
 end
 
 @testset "a chain node's log prefix is [imageUid/nodeId]" begin

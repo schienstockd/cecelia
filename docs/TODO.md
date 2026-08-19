@@ -122,40 +122,19 @@ to the on-demand path wherever no prebuilt image is present, and the freshness s
 image that predates the user's Julia/deps self-heals. Belongs with the packaging phase in
 `docs/ROADMAP.md`; not urgent, since one on-demand build already gives every user a fast cache.
 
-### Chain nodes should run through `execute_task`
-
-`execute_task` (`app/src/runner/execute.jl`) is the canonical single-task pathway: it resolves the
-task, dispatches on scope, wires `on_log`/`on_progress`/`on_status`/`on_result`, guarantees a terminal
-status on every exit path, and orders `on_result` before it. **Both** the API server (`run_in_process`)
-and the detached runner call it, so they cannot disagree.
-
-The chain executor does not. `_execute_image_chain!` and `_run_set_scope_node!` call `run_task`
-directly and re-assemble that wiring by hand — and **four bugs have come out of exactly that gap**: no
-task log file, no task record, no pool slot, a log prefix the frontend could not attribute, and no
-progress. Each was fixed where it was found; the shape keeps recurring because there are two
-implementations of "run one task and announce it".
-
-Route chain nodes through `execute_task`: extend `TaskRequest` with `chain_run_id` / `chain_node_id`
-(the shared component gains what chains need, rather than chains keeping their own copy), map
-`on_status` onto `_update_node_state!`, and capture the node result from `on_result`. Barriers, axis
-gating, resume and cancellation stay in `chain.jl` — those are chain concerns, not task ones.
-
-Not done in one go with the four fixes above because it is a rewrite of the executor that runs real
-pipelines, and each fix was verified against a live run on its own. Do it deliberately, with the
-chain testsets green before and after.
-
 ### Incremental node subprocesses not killed on chain cancel
-The per-image cancel path kills running subprocesses. `_run_incremental_node!` still calls the
-multi-image `_run_task` directly with `on_process = _ -> nothing` and is **not** registered in
-`_TASKS`, so `cancel_chain_run!` can't reach its subprocess mid-run (the between-node flag still stops
-not-yet-started ones) — and for the same reason it writes no task log and takes no pool slot.
+`_run_incremental_node!` is the **only** chain runner still calling the multi-image `_run_task`
+directly (`on_process = _ -> nothing`, no `_TASKS` entry). So an incremental node writes no task log,
+gets no task record, opens no run-log entry, takes no pool slot, reports no progress, and
+`cancel_chain_run!` cannot reach a subprocess it spawned mid-run (the between-node flag still stops
+not-yet-started ones).
 
-The set-scope half of this is **done**: `_run_set_scope_node!` now dispatches through
-`run_task(task, imgs, …)`, which was the prescribed fix. It stopped being "impact nil / no real
-set-scope subprocess task exists" when `opticalFlow.train` shipped — chain-run training wrote no log
-and ignored its `gpu` pool. See `docs/SCHEDULER.md` → *Set-scope nodes go through `run_task`*.
+The image- and set-scope runners now go through `execute_task`, which supplies all of that — see
+`docs/SCHEDULER.md` → *Chain nodes run through `execute_task`*. Incremental was left out because it
+**re-invokes as images arrive**, so "a `TaskRequest` per invocation or per node" is a real lifecycle
+decision — one record per invocation floods the task list, one per node lies about which run is in
+flight. The other two were like-for-like swaps precisely because neither has that problem.
 
-Incremental was left because it re-invokes as images arrive, so a `TaskRecord` per node vs per
-invocation is a real design choice rather than the like-for-like swap set-scope was. Decide that, then
-route it the same way.
-
+Decide the lifecycle, then route it the same way: build a `TaskRequest` (it already carries
+`chain_run_id` / `chain_node_id`), call `execute_task`, map `on_status` onto `_update_node_state!`, and
+capture the result from `on_result`.

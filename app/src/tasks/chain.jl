@@ -573,7 +573,6 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                                 ordered_nodes::Vector{ChainNode},
                                 overrides::Dict{String,Any};
                                 on_log::Function,
-                                on_status_change::Function,
                                 is_cancelled::Function = () -> false)
     img = try
         obj = init_object(run.project_uid, image_uid)
@@ -670,42 +669,48 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # Mark :queued, not :running. Concurrency is enforced by the global scheduler
         # pool (run_task → _pool, sized from config [pools]); a node whose resource_pool
         # is saturated blocks inside run_task. The node flips to :running only when a pool
-        # worker actually picks it up (via on_status_change below) — so the live view
+        # worker actually picks it up (`execute_task`'s `on_status`) — so the live view
         # distinguishes "waiting for a GPU slot" from "running on the GPU", and elapsed
         # time counts from the real start, not from when the image thread reached here.
         _update_node_state!(run, image_uid, node.id;
                             status=:queued, task_id=tid,
                             fn=node.fn, node_params=effective_params)
 
-        result = try
-            run_task(task_struct, img, effective_params;
-                     task_id          = tid,
-                     pool_name        = node.resource_pool,
-                     chain_run_id     = run.id,
-                     # …and WHICH node, so a client can match this task to the node it sees in
-                     # `chain:node:*` events (the GUI keys a chain row `runId::nodeId::imageUid`).
-                     chain_node_id    = node.id,
-                     on_log           = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
-                     on_progress      = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
-                     on_status_change = rec -> begin
-                         # Mirror the pool worker picking up the job into the node state,
-                         # so :queued → :running reflects the real GPU-slot acquisition.
-                         if rec.status === :running
-                             _update_node_state!(run, image_uid, node.id;
-                                                 status=:running, fn=node.fn,
-                                                 node_params=effective_params)
-                         end
-                         Base.invokelatest(on_status_change, rec)
-                     end)
+        # THROUGH `execute_task`, the canonical single-task pathway — the same one `handle_task_run`
+        # and the runner's own task handler use. A chain node is a task; the only thing it needs that
+        # a standalone run does not is the chain correlation pair, and that is a field on the shared
+        # `TaskRequest` rather than a second implementation here. See docs/SCHEDULER.md.
+        result = Ref{Any}(nothing)
+        status = try
+            execute_task(
+                TaskRequest(; task_id      = tid,
+                              fun_name     = node.fn,
+                              project_uid  = run.project_uid,
+                              image_uid    = image_uid,
+                              pool_name    = node.resource_pool,
+                              params       = effective_params,
+                              chain_run_id = run.id,
+                              chain_node_id = node.id);
+                on_log      = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
+                on_progress = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
+                # Only `running` is mirrored into node state: `queued` is already set above, and the
+                # terminal one is decided below (the chain's cancel check outranks the task's).
+                on_status   = (st, _uid, _uids) -> st == "running" &&
+                    _update_node_state!(run, image_uid, node.id;
+                                        status=:running, fn=node.fn,
+                                        node_params=effective_params),
+                on_result   = (_uid, meta) -> (result[] = meta))
         catch e
             @warn "Task error in chain" uid=image_uid node=node.id exception=e
             Base.invokelatest(on_log, "ERROR [$image_uid/$(node.id)] $(sprint(showerror, e))")
-            nothing
+            :failed
         end
 
-        # Cancelled mid-run (subprocess killed by cancel_chain_run!) → :cancelled, not :failed.
-        final_status = is_cancelled()   ? :cancelled :
-                       isnothing(result) ? :failed    : :done
+        # The CHAIN's cancel check, not the task registry's: `cancel_chain_run!` sets a chain flag, so a
+        # node killed that way comes back `:failed` from the task's own accounting. Keeping this
+        # override is why routing through `execute_task` is behaviour-preserving here.
+        final_status = is_cancelled() ? :cancelled : Symbol(status)
+        result = result[]
         _update_node_state!(run, image_uid, node.id;
                             fn          = node.fn,
                             node_params = effective_params,
@@ -723,7 +728,6 @@ end
 function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                                overrides::Dict{String,Any};
                                on_log::Function,
-                               on_status_change::Function,
                                is_cancelled::Function = () -> false)
     # Block until every image thread signals arrival
     _barrier_wait_all!(run, node.id)
@@ -795,7 +799,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     tid = gen_uid()
     # :queued, not :running — the same distinction the image-scope path makes. This node goes through
     # `run_task` now, so it waits for a slot in its `resource_pool` like any other task, and only a
-    # pool worker picking it up means "running" (see `on_status_change` below).
+    # pool worker picking it up means "running" (`execute_task`'s `on_status`, below).
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
                             status=:queued, task_id=tid,
@@ -837,66 +841,54 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         participating_uids = keep_uids
     end
 
-    result = try
-        # Through `run_task`, exactly like the image-scope path above — NOT `_run_task` directly.
-        # Reaching for the inner function skipped everything `run_task` wraps around it, and skipped
-        # all of it SILENTLY:
-        #   * `_wrap_log_with_file` — so a set-scope node wrote no `<img>/logs/<fun_name>.log` at all,
-        #     while an image-scope node beside it in the same chain wrote one.
-        #   * `_register_task!` — so it appeared in no task list, and the console/task-log view had no
-        #     task to attach to. Its output fell through to the API server's stdout, i.e. onto the
-        #     terminal `pixi run dev` was called from, which is where it was found.
-        #   * the run-log entry the pool worker opens (`open_run_log!`).
-        #   * `put!(pool.queue, job)` — the worst of the four: a node declaring `resource_pool: "gpu"`
-        #     ran UNQUEUED, next to whatever already held the GPU.
-        # The image vector still reaches `_run_task` as one joint fit: `run_task`'s set-scope overload
-        # carries it on the job and the pool worker dispatches on it (`job_target = isnothing(job.imgs)
-        # ? job.img : job.imgs`). It also flattens `section` params and injects `_task_id` itself —
-        # which is what the hand-rolled `_flatten_sections`/`merge` here were duplicating.
-        run_task(task_struct, imgs, effective_params;
-                 task_id          = tid,
-                 pool_name        = node.resource_pool,
-                 chain_run_id     = run.id,
-                 chain_node_id    = node.id,
-                 # `[imageUid/nodeId]` — a WIRE FORMAT, not decoration. `stores/ws.ts` parses this
-                 # prefix off a `chain:log` frame and attributes the line to the task row with that
-                 # (imageUid, chainNodeId); a `chain:log` frame carries no taskId of its own. This said
-                 # `[set/...]` — the literal string "set" where a uid belongs — so the lookup matched no
-                 # task and a set-scope node's Tasks-page log read "no output yet" while the line was
-                 # reaching the console and the log file perfectly well. It only became visible once the
-                 # node HAD a task row to attribute to (i.e. once it went through `run_task`).
-                 # The representative image is the right one: a set node has exactly ONE task record and
-                 # `run_task` keys it to `first(imgs)`.
-                 on_log           = line -> Base.invokelatest(
-                     on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
-                 on_progress      = (n, t) ->
-                     _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
-                 on_status_change = rec -> begin
-                     # One task, N images: mirror the pool pick-up onto every participating image, so
-                     # the live view flips the whole barrier row :queued → :running together.
-                     if rec.status === :running
-                         for uid in participating_uids
-                             _update_node_state!(run, uid, node.id;
-                                                 status=:running, fn=node.fn,
-                                                 node_params=effective_params)
-                         end
-                     end
-                     Base.invokelatest(on_status_change, rec)
-                 end)
+    # THROUGH `execute_task`, exactly like the image-scope path — it dispatches on the task's own
+    # `scope`, so passing the image VECTOR lands in `_execute_set_task` and the members still get one
+    # joint fit. This used to call `_run_task` directly and skipped every wrapper `run_task` provides:
+    # no `<img>/logs/<fun_name>.log`, no `TaskRecord` (so nothing for the console or task-log view to
+    # attach to, and the output fell through to the server's stdout), no run-log entry, no
+    # `on_process` registration for cancel, and no `put!(pool.queue, job)` — so a node declaring
+    # `resource_pool: "gpu"` ran UNQUEUED. Four bugs from one shortcut; the point of routing through
+    # the shared executor is that there is no longer a place to take it.
+    result = Ref{Any}(nothing)
+    status = try
+        execute_task(
+            TaskRequest(; task_id      = tid,
+                          fun_name     = node.fn,
+                          project_uid  = run.project_uid,
+                          image_uid    = first(imgs).uid,
+                          image_uids   = participating_uids,
+                          pool_name    = node.resource_pool,
+                          params       = effective_params,
+                          chain_run_id = run.id,
+                          chain_node_id = node.id);
+            on_log      = line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
+            on_progress = (n, t) -> _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
+            # One task, N images: mirror the pool pick-up onto every participating image, so the whole
+            # barrier row flips :queued → :running together.
+            on_status   = (st, _uid, _uids) -> st == "running" && for uid in participating_uids
+                _update_node_state!(run, uid, node.id;
+                                    status=:running, fn=node.fn, node_params=effective_params)
+            end,
+            on_result   = (_uid, meta) -> (result[] = meta))
     catch e
         @warn "Set-scope task error" node=node.id fn=node.fn exception=e
         Base.invokelatest(on_log, "ERROR [$(first(imgs).uid)/$(node.id)] $(sprint(showerror, e))")
-        nothing
+        :failed
     end
+    result = result[]
 
-    final_status = isnothing(result) ? :failed : :done
+    # Same rule as the image-scope path, including the chain's own cancel check outranking the task's:
+    # `cancel_chain_run!` sets a chain flag, so a node killed that way comes back `:failed` from the
+    # task's accounting alone. This path previously had no cancel branch at all — a cancelled set node
+    # was recorded as a failure.
+    final_status = is_cancelled() ? :cancelled : Symbol(status)
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
                             fn          = node.fn,
                             node_params = effective_params,
                             status      = final_status,
                             result      = result,
-                            params_hash = isnothing(result) ? nothing : ph)
+                            params_hash = final_status == :done ? ph : nothing)
     end
 
     # Unblock all image threads so they can continue to downstream nodes
@@ -913,7 +905,6 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
                                  upstream_id::String,
                                  overrides::Dict{String,Any};
                                  on_log::Function,
-                                 on_status_change::Function,
                                  is_cancelled::Function = () -> false)
     effective_params = _apply_overrides(node.params, node.id, overrides)
     ph               = _params_hash(effective_params)
@@ -1289,7 +1280,6 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    start_node::Union{String,Nothing} = nothing,
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
                    on_log::Function               = line -> println(line),
-                   on_status_change::Function     = _ -> nothing,
                    on_cancel_check::Function      = _ -> false)::ChainRun
 
     if !isnothing(run_id)
@@ -1355,14 +1345,14 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     image_tasks = [
         Threads.@spawn _execute_image_chain!(
             run, uid, ordered_nodes, overrides;
-            on_log, on_status_change, is_cancelled=_is_cancelled)
+            on_log, is_cancelled=_is_cancelled)
         for uid in run.image_uids
     ]
 
     # One set-scope runner per picnic node — waits for all images then runs once
     set_tasks = [
         Threads.@spawn _run_set_scope_node!(run, node, overrides;
-            on_log, on_status_change, is_cancelled=_is_cancelled)
+            on_log, is_cancelled=_is_cancelled)
         for node in ordered_nodes if node.scope == "set"
     ]
 
@@ -1370,7 +1360,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     incr_tasks = [
         Threads.@spawn _run_incremental_node!(
             run, node, incr_upstream[node.id], overrides;
-            on_log, on_status_change, is_cancelled=_is_cancelled)
+            on_log, is_cancelled=_is_cancelled)
         for node in ordered_nodes
         if node.scope == "incremental" && haskey(incr_upstream, node.id)
     ]
