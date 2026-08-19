@@ -51,6 +51,13 @@ import {
 } from '../../lib/trackCorrection'
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import type { TrackPathMap } from '../../plots/trackPaths'
+
+/** One entry of the grouped paths response — the timeline uses its own image's group. */
+interface PathsGroup {
+  key: string; label: string; imageUids?: string[]; valueName?: string
+  tracked?: boolean; total?: number; shown?: number; timeStep?: number | null
+  paths?: TrackPathMap
+}
 import {
   buildLanes, frameDomain, orderLanes, filterLanes, laneWindow, windowNote,
   issueMarkers, laneSeverity, candidateTracks, selectionOverlaps,
@@ -219,8 +226,19 @@ async function load() {
     const r = await fetch(`/api/tracking/paths?${q}&occupancy=1&limit=20000`)
     const d = await r.json()
     if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
-    paths.value = (d.paths ?? {}) as TrackPathMap
-    meta.value = { tracked: !!d.tracked, total: d.total ?? 0, shown: d.shown ?? 0, timeStep: d.timeStep }
+    // THE RESPONSE IS GROUPED (one entry per images × population — see docs/TRACKING.md). The
+    // timeline edits ONE image's tracks, so it takes the group that matches its own image and falls
+    // back to the first: a track id is only unique within a segmentation, and merging groups here
+    // would put two different cells on one lane. Reading the old flat `paths` would report "no
+    // tracks" on an image full of them — the same bug the worklist had to be fixed for.
+    const gs = (d.groups ?? []) as PathsGroup[]
+    const g = gs.find(x => (x.imageUids ?? []).includes(imageUid.value)) ?? gs[0]
+    paths.value = (g?.paths ?? {}) as TrackPathMap
+    meta.value = { tracked: !!g?.tracked, total: g?.total ?? 0, shown: g?.shown ?? 0,
+                   timeStep: g?.timeStep }
+    // the server resolves which segmentation a group actually came from; follow it rather than
+    // keeping a picker that names one the data did not come from
+    if (g?.valueName && g.valueName !== valueName.value) props.state.valueName = g.valueName
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     paths.value = {}; meta.value = null
@@ -686,7 +704,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                 v-tooltip.top="'Tracks missing a detection in some frame'"
                 @click="state.gapsOnly = !gapsOnly">Gaps</button>
         <select v-if="valueNames.length > 1" v-model="valueName"
-                v-tooltip.top="'Which segmentation'" aria-label="Segmentation">
+                v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
           <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
         </select>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload the tracks'"

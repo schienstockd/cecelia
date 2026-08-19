@@ -53,7 +53,8 @@ The curves (MSD, autocorrelation) are 0.45 s at 2000 tracks.
 `track_diagnostics` therefore SKIPS the pair half above `PAIR_SCAN_MAX_TRACKS` (800) and reports
 `summary.pairsSkipped` — so `tracking.track_measures` QC never quietly costs half a minute, and the
 panel says "not checked above 800 tracks" instead of drawing an empty scatter that would read as
-"nothing suspicious".
+"nothing suspicious". The cap is per SCAN, i.e. per pooled group's largest movie (`_pair_scan_size`) —
+the scan never crosses movies, so the cost of a pooled condition is Σ nᵢ² and not (Σ nᵢ)².
 
 To lift the cap: bucket each timepoint's cells into a spatial grid with side `TRACK_DUP_DIST_UM` and
 test only the 3×3 neighbourhood — near-linear, and it finds exactly the pairs the duplicate detector
@@ -122,12 +123,19 @@ to the on-demand path wherever no prebuilt image is present, and the freshness s
 image that predates the user's Julia/deps self-heals. Belongs with the packaging phase in
 `docs/ROADMAP.md`; not urgent, since one on-demand build already gives every user a fast cache.
 
-### Set-scope / incremental node subprocesses not killed on chain cancel
-The per-image cancel path kills running subprocesses. Set-scope (`_run_set_scope_node!`)
-and incremental (`_run_incremental_node!`) runners call the multi-image `_run_task` directly with
-`on_process = _ -> nothing` and are **not** registered in `_TASKS`, so `cancel_chain_run!` can't
-reach their subprocesses mid-run (the between-node flag still stops not-yet-started ones). No real
-set-scope subprocess task exists yet (only mock/plot tasks), so impact is currently nil. When the
-first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
-path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
+### Incremental node subprocesses not killed on chain cancel
+`_run_incremental_node!` is the **only** chain runner still calling the multi-image `_run_task`
+directly (`on_process = _ -> nothing`, no `_TASKS` entry). So an incremental node writes no task log,
+gets no task record, opens no run-log entry, takes no pool slot, reports no progress, and
+`cancel_chain_run!` cannot reach a subprocess it spawned mid-run (the between-node flag still stops
+not-yet-started ones).
 
+The image- and set-scope runners now go through `execute_task`, which supplies all of that — see
+`docs/SCHEDULER.md` → *Chain nodes run through `execute_task`*. Incremental was left out because it
+**re-invokes as images arrive**, so "a `TaskRequest` per invocation or per node" is a real lifecycle
+decision — one record per invocation floods the task list, one per node lies about which run is in
+flight. The other two were like-for-like swaps precisely because neither has that problem.
+
+Decide the lifecycle, then route it the same way: build a `TaskRequest` (it already carries
+`chain_run_id` / `chain_node_id`), call `execute_task`, map `on_status` onto `_update_node_state!`, and
+capture the result from `on_result`.

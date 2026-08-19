@@ -203,22 +203,25 @@ export function normalizeTracks(pts: readonly PathPoint[]): PathPoint[] {
  * each cell wandered, the displacement vectors show WHERE the population ended up. A rose plot with
  * hundreds of tracks becomes unreadable as paths and stays readable as vectors.
  */
-export function displacementVectors(
-  pts: readonly PathPoint[],
-): { track: string; x: number; y: number; angle: number; distance: number }[] {
-  const first = new Map<string, PathPoint>()
-  const last = new Map<string, PathPoint>()
+export function displacementVectors<T extends PathPoint>(
+  pts: readonly T[],
+): (T & { angle: number; distance: number })[] {
+  const first = new Map<string, T>()
+  const last = new Map<string, T>()
   for (const p of pts) {
     if (!first.has(p.track)) first.set(p.track, p)
     last.set(p.track, p)
   }
-  const out: { track: string; x: number; y: number; angle: number; distance: number }[] = []
-  for (const [track, f] of first) {
-    const l = last.get(track)!
+  const out: (T & { angle: number; distance: number })[] = []
+  for (const [, f] of first) {
+    const l = last.get(f.track)!
     const x = l.x - f.x
     const y = l.y - f.y
+    // the FIRST point's row carried through (its group, its colour value, its label) with x/y replaced
+    // by the net vector: a rose plot needs to be coloured and faceted like every other mark, and
+    // re-joining the group back on by track id afterwards is a lookup that can go wrong.
     out.push({
-      track, x, y,
+      ...f, x, y,
       // degrees CCW from +x, in [0, 360) — a compass bearing for the fan, not a signed angle
       angle: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360,
       distance: Math.hypot(x, y),
@@ -235,15 +238,66 @@ export function displacementVectors(
  * and the reason to export this at all is to take one track's coordinates into another tool.
  */
 export function pathCsvRows(
-  pts: readonly PathPoint[],
+  pts: readonly (PathPoint & { g?: string; gl?: string; id?: string; v?: number | string | null })[],
   values: Record<string, number | string | null> = {},
   valueLabel = 'value',
 ): Record<string, unknown>[] {
-  const hasValues = Object.keys(values).length > 0
+  const hasValues = Object.keys(values).length > 0 || pts.some(p => p.v !== undefined && p.v !== null)
+  const grouped = pts.some(p => !!p.g)
   return pts.map(p => ({
-    track: p.track, t: p.t, x: p.x, y: p.y, label: p.label,
-    ...(hasValues ? { [valueLabel]: values[p.track] ?? '' } : {}),
+    // the group's READABLE name (its label), the same column the diagnostics CSV carries — a key is an
+    // internal identity. `id` is the track as the server named it; `track` may be namespaced by group,
+    // which is an implementation detail of drawing several groups in one plot, not a track identity
+    ...(grouped ? { group: p.gl || p.g || '' } : {}),
+    track: p.id ?? p.track, t: p.t, x: p.x, y: p.y, label: p.label,
+    ...(hasValues ? { [valueLabel]: p.v ?? values[p.id ?? p.track] ?? '' } : {}),
   }))
+}
+
+/** One group of the cohort response: its geometry and its per-track colour values. */
+export interface PathGroup {
+  key: string
+  /** the group's display name — what a legend and a facet title say ("WT · CD4") */
+  label?: string
+  paths: TrackPathMap
+  values?: Record<string, number | string | null>
+}
+
+/** A plot row that also knows which group it belongs to, and its colour value. */
+export interface GroupedPathPoint extends PathPoint {
+  /** the group key — the facet channel, and unique */
+  g: string
+  /** the group LABEL — the colour channel, because a legend has to be readable */
+  gl: string
+  /** the track id as the SERVER named it (`track` is namespaced by group; this is not) */
+  id: string
+  v: number | string | null
+}
+
+/**
+ * Every group's points in one array, ready to hand to Observable Plot as a single mark.
+ *
+ * Track keys are namespaced with the group key. Two groups can hold the same track id — the same movie
+ * under two populations, or two movies each with a track 17 — and `z: 'track'` would then draw ONE
+ * polyline zig-zagging between them. The un-namespaced id rides along as `id` for the CSV and the
+ * colour-value join, which are about the track and not about the drawing.
+ *
+ * `normalise` translates each track to a common origin (the star/rose transform, `normalizeTracks`) — done
+ * here so it happens per track within its group rather than across the concatenation.
+ */
+export function groupedPathPoints(
+  groups: readonly PathGroup[], opts: { normalise?: boolean } = {},
+): GroupedPathPoint[] {
+  const out: GroupedPathPoint[] = []
+  for (const g of groups) {
+    const pts = pathPoints(g.paths, Object.keys(g.paths))
+    const rows = (opts.normalise ? normalizeTracks(pts) : pts).map(p => ({
+      ...p, g: g.key, gl: g.label || g.key, id: p.track, track: `${g.key}#${p.track}`,
+      v: g.values?.[p.track] ?? null,
+    }))
+    out.push(...rows)
+  }
+  return out
 }
 
 /**

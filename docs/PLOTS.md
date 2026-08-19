@@ -83,6 +83,10 @@ Four rules make this work; each one was a bug before it was a rule.
    hold keys for a family it no longer shows, so it narrows at request time (`filterSeriesToPopType`).
    Keeping them means switching family and back restores the previous pick.
 
+**An INTERACTIVE view may declare the same table.** `popTypes` on an `interactiveViews.ts` entry is read
+by these same functions, so a self-rendering plot that slices by population (the two track plots) gets the
+family picker and the rail's family list with no second mechanism — see `docs/ANALYSIS.md` → *The rail*.
+
 Pure logic + the persisted-canvas migration live in `frontend/src/plots/popTypes.ts` (`popTypeOptions`,
 `granularityFor`, `resolvePopType`, `filterSeriesToPopType`, `isPrecomputedSpec`,
 `SPEC_ALIASES`/`migrateSpecId`), unit-tested in `popTypes.test.ts`. `SPEC_ALIASES` maps the four removed
@@ -112,6 +116,15 @@ Design for the analysis-plot canvas (behaviour module today; universal canvas la
 of chart types whose appearance is well-defined for **one image / multiple images / pooled**, and for
 **numeric / categorical** measures. This is the agreed spec for the renderer; it also fixes the
 boxplot/bar oddities. **Decisions below are settled** (see §7).
+
+## A track's start and end are named shapes
+
+A polyline says where a cell went, not which way along it. The track plot marks the **start with a
+hollow circle** and the **end with an X** — two distinct shapes, so direction is readable without an
+arrowhead competing with them, and neither can be mistaken for a bend in the path. Before this the
+only marker was a filled dot at the start, in the line's own colour at r=1.8; it read as a kink, and
+the end was unmarked entirely. `trackEndpoints` (`plots/trackPaths.ts`) finds both; a one-point track
+is legitimately its own start and end.
 
 ## Y grows downward for an image coordinate
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint,
   type TrackPathMap,
-  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote, trackEndpoints,
+  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote, groupedPathPoints, trackEndpoints,
 } from './trackPaths'
 
 // two tracks in a straight line along x: A runs 0→2, B carries on 3→5
@@ -242,24 +242,117 @@ describe('trackCountNote', () => {
   })
 })
 
+// ── the cohort shape: several groups drawn in one plot ────────────────────────
+describe('groupedPathPoints', () => {
+  const groups = [
+    { key: 'wt', label: 'WT', paths: straight, values: { '1': 4.5 } },
+    { key: 'ko', label: 'MerTK', paths: straight, values: { '1': 1.2 } },
+  ]
+
+  // two groups can hold the SAME track id — the same movie under two populations, or two movies each
+  // with a track 17. `z: 'track'` would then draw one polyline zig-zagging between them.
+  it('namespaces the track key per group, and keeps the real id beside it', () => {
+    const rows = groupedPathPoints(groups)
+    expect(new Set(rows.map(r => r.track))).toEqual(new Set(['wt#1', 'wt#2', 'ko#1', 'ko#2']))
+    expect(new Set(rows.map(r => r.id))).toEqual(new Set(['1', '2']))
+  })
+
+  it('carries the group key (facet channel) and label (colour channel)', () => {
+    const rows = groupedPathPoints(groups)
+    expect(rows.filter(r => r.g === 'wt').every(r => r.gl === 'WT')).toBe(true)
+    expect(rows.filter(r => r.g === 'ko').every(r => r.gl === 'MerTK')).toBe(true)
+  })
+
+  it('joins each group\'s OWN colour values', () => {
+    const rows = groupedPathPoints(groups)
+    expect(rows.find(r => r.g === 'wt' && r.id === '1')!.v).toBe(4.5)
+    expect(rows.find(r => r.g === 'ko' && r.id === '1')!.v).toBe(1.2)
+    expect(rows.find(r => r.id === '2')!.v).toBeNull()
+  })
+
+  // normalising must happen WITHIN a group, per track — not across the concatenation
+  it('normalises per track when asked (the star transform)', () => {
+    const rows = groupedPathPoints(groups, { normalise: true })
+    for (const k of ['wt#1', 'wt#2', 'ko#1', 'ko#2']) {
+      const first = rows.find(r => r.track === k)!
+      expect(first).toMatchObject({ x: 0, y: 0 })
+    }
+  })
+
+  it('falls back to the key when a group has no label', () => {
+    expect(groupedPathPoints([{ key: 'k', paths: straight }])[0].gl).toBe('k')
+  })
+
+  it('is empty for no groups', () => {
+    expect(groupedPathPoints([])).toEqual([])
+  })
+})
+
+describe('pathCsvRows over groups', () => {
+  const rows = () => groupedPathPoints([
+    { key: 'wt', label: 'WT', paths: straight, values: { '1': 4.5, '2': 9 } },
+    { key: 'ko', label: 'MerTK', paths: straight },
+  ])
+
+  // a cohort export is useless without the arm each row came from
+  it('adds a group column, and exports the REAL track id', () => {
+    const csv = pathCsvRows(rows(), {}, 'speed')
+    expect(csv[0]).toMatchObject({ group: 'WT', track: '1' })
+    expect(csv.some(r => r.group === 'MerTK')).toBe(true)
+    expect(csv.every(r => r.track === '1' || r.track === '2')).toBe(true)
+  })
+
+  it('takes the value off the row, so each group keeps its own', () => {
+    const csv = pathCsvRows(rows(), {}, 'speed')
+    expect(csv.find(r => r.group === 'WT' && r.track === '1')!.speed).toBe(4.5)
+    expect(csv.find(r => r.group === 'MerTK' && r.track === '1')!.speed).toBe('')
+  })
+
+  it('a single-group export keeps the old shape — no group column', () => {
+    expect(Object.keys(pathCsvRows(pathPoints(straight, [1]))[0])).not.toContain('group')
+  })
+})
+
+describe('displacementVectors carries the row through', () => {
+  it('keeps the group and colour value on the arrow', () => {
+    const pts = groupedPathPoints([{ key: 'wt', label: 'WT', paths: straight, values: { '1': 4.5 } }],
+                                  { normalise: true })
+    const v = displacementVectors(pts).find(r => r.id === '1')!
+    expect(v).toMatchObject({ g: 'wt', gl: 'WT', v: 4.5 })
+    expect(v.distance).toBeCloseTo(2, 10)
+  })
+})
+
 describe('trackEndpoints', () => {
-  const paths = {
-    '1': { t: [0, 1, 2], x: [0, 1, 2], y: [0, 0, 0], label: [1, 2, 3] },
-    '2': { t: [0, 1], x: [5, 6], y: [1, 1], label: [4, 5] },
-  }
+  const grp = (paths: Record<string, { t: number[]; x: number[]; y: number[]; label: number[] }>) =>
+    groupedPathPoints([{ key: 'g', label: 'g', paths, values: {} }])
 
   it('finds the first and last point of every track', () => {
-    const { starts, ends } = trackEndpoints(pathPoints(paths, ['1', '2']))
-    expect(starts.map(p => [p.track, p.x])).toEqual([['1', 0], ['2', 5]])
-    expect(ends.map(p => [p.track, p.x])).toEqual([['1', 2], ['2', 6]])
+    const { starts, ends } = trackEndpoints(grp({
+      '1': { t: [0, 1, 2], x: [0, 1, 2], y: [0, 0, 0], label: [1, 2, 3] },
+      '2': { t: [0, 1], x: [5, 6], y: [1, 1], label: [4, 5] },
+    }))
+    expect(starts.map(p => p.x)).toEqual([0, 5])
+    expect(ends.map(p => p.x)).toEqual([2, 6])
   })
 
   it('a one-point track is both its own start and its own end', () => {
-    const one = { '9': { t: [4], x: [3], y: [3], label: [7] } }
-    const { starts, ends } = trackEndpoints(pathPoints(one, ['9']))
+    const { starts, ends } = trackEndpoints(grp({ '9': { t: [4], x: [3], y: [3], label: [7] } }))
     expect(starts).toHaveLength(1)
     expect(ends).toHaveLength(1)
     expect(starts[0]).toEqual(ends[0])
+  })
+
+  // keys are namespaced by group, so the same track id in two groups keeps two endpoints rather than
+  // collapsing into one — the same reason `z: 'track'` uses the namespaced key
+  it('does not merge the same track id across groups', () => {
+    const pts = groupedPathPoints([
+      { key: 'a', label: 'a', paths: { '1': { t: [0, 1], x: [0, 1], y: [0, 0], label: [1, 2] } }, values: {} },
+      { key: 'b', label: 'b', paths: { '1': { t: [0, 1], x: [9, 8], y: [0, 0], label: [3, 4] } }, values: {} },
+    ])
+    const { starts, ends } = trackEndpoints(pts)
+    expect(starts).toHaveLength(2)
+    expect(ends.map(p => p.x).sort()).toEqual([1, 8])
   })
 
   it('is empty for no points', () => {

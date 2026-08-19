@@ -180,10 +180,41 @@ function api_chains_save(body_bytes::Vector{UInt8})
     isempty(name)     && return 400, JSON3.write((; error="template.name required"))
     _valid_chain_name(name) || return _bad_chain_name(name)
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
+
+    # SAME CHECKER AS THE CREATE ROUTE. This wrote verbatim on the premise recorded below in
+    # `api_chains_create` — "the whiteboard cannot express an invalid template, but an outside author
+    # can". It can: deleting the start dot's edge leaves `startTargets: []`, and `_prune_to_start`
+    # reads that as "run the whole chain", so an unwired dot surfaced NOWHERE between the canvas and
+    # the executor. One checker, both doors.
+    template = try
+        chain_template_from_raw(tmpl; name = name)
+    catch e
+        return 400, JSON3.write((; error="Could not read template: $(sprint(showerror, e))"))
+    end
+
+    # REPAIR, not reject, for the empty start — same as the create route. An empty list is a
+    # legitimate run-everything, so filling it with the roots is identical in semantics and merely
+    # says so out loud, as a dot the user can see. Rejecting would break that documented mode and
+    # hard-fail every chain saved before this route validated (two in the MERTK project alone).
+    # Only this one field is ever rewritten; everything else is written back as it arrived.
+    out = Dict{String,Any}(String(k) => v for (k, v) in tmpl)
+    if isempty(template.start_targets)
+        roots    = chain_root_ids(template)
+        template = ChainTemplate(template.name, template.nodes, template.edges, roots)
+        out["startTargets"] = roots
+    end
+
+    try
+        validate_chain_template(template)
+    catch e
+        e isa ChainTemplateError || rethrow()
+        return 400, JSON3.write((; error=e.msg))
+    end
+
     dir  = _chains_dir_for_project(uid)
     mkpath(dir)
-    # Write verbatim — preserves any extra fields (positions, etc.) the whiteboard added.
-    write_json_atomic(joinpath(dir, "$(name).json"), tmpl)
+    # Still the whiteboard's own body — `positions` and any other canvas-only sidecar field survive.
+    write_json_atomic(joinpath(dir, "$(name).json"), out)
     200, JSON3.write((; ok=true))
 end
 

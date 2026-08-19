@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
+import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
 import UmapView from '../plots/UmapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
@@ -35,9 +36,25 @@ export interface InteractiveView {
   // so a plot needing the model vault had no way to say so and `flowProbability` was simply dead
   // there. See canvasManager.ts + docs/todo/CANVAS_MANAGER_RAIL_PLAN.md.
   rail?: RailKind
+  // The population FAMILIES this plot can slice by, exactly as a summary spec's `dataSource.popTypes`
+  // (`plots/popTypes.ts` reads both through one function). Declaring them is what makes a `rail: 'pops'`
+  // view usable: the rail lists the ACTIVE plot's family, and without this it would list whichever
+  // family the first registered summary spec happens to carry — a picker full of populations the plot
+  // cannot draw. One family at a time, per docs/PLOTS.md; the plot owns the choice.
+  popTypes?: PopTypeOption[]
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
+
+// The three TRACK families, shared by both track plots — the same set (and the same labels) the
+// population summary declares for the behaviour page, because it is the same question: which populations
+// of tracks. `granularity: 'track'` is what the picker lists; the plots then read those tracks' CELLS to
+// draw a path or measure a displacement, which is a property of the plot, not of the family.
+const TRACK_FAMILIES: PopTypeOption[] = [
+  { popType: 'live', granularity: 'track', label: 'Tracked' },
+  { popType: 'track', granularity: 'track', label: 'Tracked (gated)' },
+  { popType: 'trackclust', granularity: 'track', label: 'Track clusters' },
+]
 
 // The flags are the surface "checkboxes": each host builds its picker with `pageViews`/`boardViews`
 // below, so a view appears on a surface with no host-side wiring (see docs/UI.md).
@@ -71,14 +88,18 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability', component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
   // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the timeline below it
-  // belongs on the board. Self-contained — it picks its own image, segmentation and colour column in
-  // its panel state, so a population rail would be dead chrome. `square` because its axes are µm on
-  // both sides and a stretched track plot is a wrong one.
-  trackPaths: { label: 'Tracks', component: TrackPathsView, trackPage: true, analysisBoard: true, square: true, rail: 'none' },
+  // belongs on the board. It takes the board's COMPARISON (`rail: 'pops'` + `TRACK_FAMILIES`): one group
+  // per (images × population), so treatments and populations sit side by side like every other plot here
+  // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
+  // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
+  trackPaths: { label: 'Tracks', component: TrackPathsView, trackPage: true, analysisBoard: true,
+                square: true, rail: 'pops', popTypes: TRACK_FAMILIES },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
-  // it belongs on the board: "is this movie comparable to its peers" is a board question. Its verdicts
-  // come from the server, the same ones `tracking.track_measures` banks as QC.
-  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, trackPage: true, analysisBoard: true, rail: 'none' },
+  // it belongs on the board: "is this movie comparable to its peers" is a board question, and it answers
+  // it as a cohort — one curve per group, a group's images POOLED. Its verdicts come from the server, the
+  // same ones `tracking.track_measures` banks as QC.
+  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, trackPage: true,
+                      analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES },
   // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
   // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
   // SPATIAL axes and so could not answer the question every join turns on — are these two tracks in
@@ -115,6 +136,21 @@ export function migrateViewKey(state: { kind: string }): boolean {
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */
 export const railFor = (key: string): RailKind => INTERACTIVE_VIEWS[key]?.rail ?? DEFAULT_RAIL
+
+/** The population families a view offers (empty when it does not slice by population). */
+export const popTypesFor = (key: string): PopTypeOption[] => INTERACTIVE_VIEWS[key]?.popTypes ?? []
+
+/**
+ * A view's families in the shape every `plots/popTypes.ts` reader takes, or null.
+ *
+ * The host passes this to `useSummaryData` so the rail lists the ACTIVE interactive plot's family — the
+ * same mechanism a summary slot uses through its spec, rather than a second resolution path that could
+ * disagree about which populations a plot is showing.
+ */
+export const popTypeSpecFor = (key: string): PopTypeSpecLike | null => {
+  const popTypes = popTypesFor(key)
+  return popTypes.length ? { dataSource: { popTypes } } : null
+}
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS
 

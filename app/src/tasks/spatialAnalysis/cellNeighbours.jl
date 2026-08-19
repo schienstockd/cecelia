@@ -108,7 +108,7 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_neighbours_run.py", task_params, task_run_dir(img._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] cellNeighbours: Python runner failed"); return nothing)
 
     # QC (advisory): the runner banks objective graph metrics; findings + metrics recorded here. Keyed on

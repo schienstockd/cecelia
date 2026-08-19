@@ -85,9 +85,11 @@ export async function showTracksInNapari(
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: o.projectUid, imageUid: o.imageUid, valueName: o.valueName,
-        // the whole-segmentation overlay stays on underneath, so the selection reads as a highlight
-        // ON the tracks rather than as the only thing in the image
-        valueNames: [o.valueName],
+        // `valueNames: []` — the SELECTION LAYER ONLY. Sending the segmentation as well drew every
+        // track in the image on a second layer, which puts the picked ones back in the haystack they
+        // were picked out of: "i get the selected tracks but i also get all tracks in a separate
+        // layer. and then it's again not obvious."
+        valueNames: [],
         trackIds: o.trackIds.map(Number).filter(n => Number.isFinite(n) && n > 0),
       }),
     })

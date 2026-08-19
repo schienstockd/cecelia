@@ -1,16 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import {
   availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine,
-  axisLabels, diagnosticsSummary, pairCapNote, diagnosticsCsvRows, DIAG_LABEL,
+  axisLabels, diagnosticsSummary, cohortSummary, cohortFindings, pairCapNote,
+  diagnosticsCsvRows, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
   resolveTrackValueName,
-  type DiagnosticsResponse, type DiagMode,
+  type DiagnosticsResponse, type DiagGroup, type DiagMode,
 } from './trackDiagnostics'
 
 const curve = (lag: number[], value: (number | null)[]) =>
   ({ lag, value, sem: lag.map(() => 0.1), n: lag.map(() => 10) })
 
-const full: DiagnosticsResponse = {
-  valueName: 'memTom', tracked: true, timeStep: 0.25, nTracks: 374,
+/** One group, with the meta the server sends beside its battery. */
+const group = (over: Partial<DiagGroup> = {}): DiagGroup => ({
+  key: 'g1', label: '', imageUids: ['fXgbTl'], valueName: 'memTom', pop: '', popType: 'live',
+  nSources: 1, timeStep: 0.25, tracked: true, nTracks: 374,
   msd: curve([1, 2, 3], [7.4, 9.97, 11.12]),
   acor: curve([0, 1, 2], [1, -0.1, 0.05]),
   plane: { distance: [1, 20], angle: [30, 45], expected: 32.7, angleNear: 30, angleFar: 45, suspect: false },
@@ -18,7 +21,15 @@ const full: DiagnosticsResponse = {
   drift: { p: 0.31, n: 576, meanStep: [0.054, -0.019], drifting: false, stepSpacing: 10, alpha: 0.05 },
   summary: { msdSlope: 0.462, motionKind: 'confined', persistenceLag: 0.57, nDuplicatePairs: 0 },
   findings: [],
-}
+  ...over,
+})
+
+const resp = (...groups: DiagGroup[]): DiagnosticsResponse =>
+  ({ valueName: 'memTom', tracked: true, dropped: 0, groups })
+
+const full = resp(group())
+const g1 = group()
+const untracked: DiagnosticsResponse = { valueName: 'x', tracked: false, groups: [] }
 
 describe('availableModes', () => {
   it('offers every mode that has data', () => {
@@ -28,13 +39,21 @@ describe('availableModes', () => {
   it('drops the volume-edge mode for 2D data rather than showing an empty box', () => {
     // celltrackR's angleToPlane refuses 2D, and a 2D timelapse is the common case — an absent mode
     // beats a mode that explains why it is blank
-    const twoD = { ...full, plane: { ...full.plane!, distance: [], angle: [] } }
+    const twoD = resp(group({ plane: { ...g1.plane!, distance: [], angle: [] } }))
     expect(availableModes(twoD)).toEqual(['msd', 'acor', 'pairs'])
+  })
+
+  // the cohort rule: ANY group, not every one. A 2D movie pooled beside a 3D one has no plane profile,
+  // and hiding the mode for the whole plot would hide the arm that CAN answer the question.
+  it('offers a mode that only one group has', () => {
+    const mixed = resp(group({ key: 'a', plane: { ...g1.plane!, distance: [], angle: [] } }),
+                       group({ key: 'b' }))
+    expect(availableModes(mixed)).toContain('plane')
   })
 
   it('is empty for an untracked or missing response', () => {
     expect(availableModes(null)).toEqual([])
-    expect(availableModes({ valueName: 'x', tracked: false })).toEqual([])
+    expect(availableModes(untracked)).toEqual([])
   })
 })
 
@@ -45,7 +64,7 @@ describe('resolveMode', () => {
 
   it('falls back rather than rendering a mode with nothing in it', () => {
     // navigating from a 3D image to a 2D one leaves `plane` persisted in the panel
-    const twoD = { ...full, plane: { ...full.plane!, distance: [], angle: [] } }
+    const twoD = resp(group({ plane: { ...g1.plane!, distance: [], angle: [] } }))
     expect(resolveMode(twoD, 'plane')).toBe('msd')
     expect(resolveMode(full, 'nonsense')).toBe('msd')
   })
@@ -110,7 +129,7 @@ describe('reference lines and labels', () => {
   })
 
   it('takes the plane expectation from the server when it sends one', () => {
-    const d = { ...full, plane: { ...full.plane!, expected: 31.0 } }
+    const d = resp(group({ plane: { ...g1.plane!, expected: 31.0 } }))
     expect(referenceLine('plane', d)!.value).toBe(31.0)
   })
 
@@ -131,7 +150,7 @@ describe('reference lines and labels', () => {
 
 describe('diagnosticsSummary', () => {
   it('reads the scalars in words', () => {
-    const s = diagnosticsSummary(full)
+    const s = diagnosticsSummary(g1)
     expect(s).toMatch(/374 tracks/)
     expect(s).toMatch(/confined \(slope 0.46\)/)
     expect(s).toMatch(/persistence 0.6 frames/)
@@ -139,30 +158,86 @@ describe('diagnosticsSummary', () => {
 
   it('never shows a drift p without the spacing it was computed at', () => {
     // the whole celltrackR caveat: the same data is significant or not depending on the spacing
-    expect(diagnosticsSummary(full)).toMatch(/drift p 0.310 @10f/)
+    expect(diagnosticsSummary(g1)).toMatch(/drift p 0.310 @10f/)
   })
 
   it('omits what was not assessed instead of printing a placeholder', () => {
-    const partial: DiagnosticsResponse = {
-      ...full,
+    const partial = group({
       summary: { msdSlope: null, motionKind: 'unknown', persistenceLag: null, nDuplicatePairs: 0 },
-      drift: { ...full.drift!, p: null },
-    }
+      drift: { ...g1.drift!, p: null },
+    })
     expect(diagnosticsSummary(partial)).toBe('374 tracks')
   })
 
   it('is empty when nothing is computed', () => {
     expect(diagnosticsSummary(null)).toBe('')
-    expect(diagnosticsSummary({ valueName: 'x', tracked: false })).toBe('')
+    expect(diagnosticsSummary(group({ summary: undefined }))).toBe('')
+  })
+})
+
+// The comparison IS the readout: one line naming each arm, because "WT random walk vs MerTK confined"
+// is the sentence the plot exists to support.
+describe('cohortSummary', () => {
+  it('names each group when there are several', () => {
+    const d = resp(group({ key: 'a', label: 'WT' }),
+                   group({ key: 'b', label: 'MerTK', nTracks: 210 }))
+    const s = cohortSummary(d)
+    expect(s).toMatch(/WT: 374 tracks/)
+    expect(s).toMatch(/MerTK: 210 tracks/)
+  })
+
+  it('keeps the bare reading for a single group — no label to repeat', () => {
+    expect(cohortSummary(full)).toBe(diagnosticsSummary(g1))
+  })
+
+  it('is empty with no groups', () => {
+    expect(cohortSummary(untracked)).toBe('')
+    expect(cohortSummary(null)).toBe('')
+  })
+})
+
+describe('cohortFindings', () => {
+  it('says WHICH group raised each finding — a cohort\'s arms fail differently', () => {
+    const f = { code: 'tracking.field_drift', level: 'warn', short: 'field drift', long: 'the field moves' }
+    const d = resp(group({ key: 'a', label: 'WT', findings: [] }),
+                   group({ key: 'b', label: 'MerTK', findings: [f] }))
+    expect(cohortFindings(d)).toEqual([{ ...f, group: 'MerTK' }])
+  })
+})
+
+describe('plot rows are tagged by group', () => {
+  const d = resp(group({ key: 'a', label: 'WT' }), group({ key: 'b', label: 'MerTK' }))
+
+  it('curve rows carry the group key and label', () => {
+    const rows = diagCurveRows(d, 'msd')
+    expect(rows).toHaveLength(6)
+    expect(new Set(rows.map(r => r.g))).toEqual(new Set(['a', 'b']))
+    expect(rows[0].label).toBe('WT')
+  })
+
+  it('cloud rows carry the group too', () => {
+    expect(diagCloudRows(d, 'pairs').map(r => r.g)).toEqual(['a', 'a', 'b', 'b'])
+    expect(diagCloudRows(d, 'msd')).toEqual([])          // wrong mode → no rows, not a crash
+  })
+
+  it('each group gets a fit line from its OWN slope', () => {
+    const steep = resp(group({ key: 'a', summary: { ...g1.summary!, msdSlope: 2 } }),
+                       group({ key: 'b', summary: { ...g1.summary!, msdSlope: 1 } }))
+    const rows = diagFitRows(steep)
+    const slopeOf = (k: string) => {
+      const [p, q] = rows.filter(r => r.g === k)
+      return (Math.log(q.value) - Math.log(p.value)) / (Math.log(q.lag) - Math.log(p.lag))
+    }
+    expect(slopeOf('a')).toBeCloseTo(2, 8)
+    expect(slopeOf('b')).toBeCloseTo(1, 8)
   })
 })
 
 describe('a skipped pair scan is not an empty one', () => {
-  const skipped: DiagnosticsResponse = {
-    ...full,
+  const skipped = resp(group({
     pairs: { angle: [], distance: [], shown: 0, total: 0, meanAngleFar: null,
              drifting: false, skipped: true, maxTracks: 800 },
-  }
+  }))
 
   it('does not offer the mode', () => {
     // an empty scatter reads as "nothing suspicious", which is the opposite of "never looked"
@@ -179,8 +254,12 @@ describe('pairCapNote', () => {
     expect(pairCapNote(full)).toMatch(/2 of 69,751 pairs/)
   })
 
+  it('sums across groups — the cap is per group, the omission is one statement', () => {
+    expect(pairCapNote(resp(group({ key: 'a' }), group({ key: 'b' })))).toMatch(/4 of 139,502 pairs/)
+  })
+
   it('is empty when everything is shown', () => {
-    const all = { ...full, pairs: { ...full.pairs!, shown: 2, total: 2 } }
+    const all = resp(group({ pairs: { ...g1.pairs!, shown: 2, total: 2 } }))
     expect(pairCapNote(all)).toBe('')
     expect(pairCapNote(null)).toBe('')
   })
@@ -198,6 +277,15 @@ describe('diagnosticsCsvRows', () => {
       { distance: 5, angle: 89 }, { distance: 60, angle: 91 },
     ])
     expect(diagnosticsCsvRows('plane', full)[0]).toEqual({ distance: 1, angle: 30 })
+  })
+
+  // a single-group export keeps the old shape; a cohort export is useless without the arm it came from
+  it('adds a group column only when there is more than one group', () => {
+    expect(Object.keys(diagnosticsCsvRows('msd', full)[0])).not.toContain('group')
+    const rows = diagnosticsCsvRows('msd', resp(group({ key: 'a', label: 'WT' }),
+                                                group({ key: 'b', label: 'MerTK' })))
+    expect(rows[0]).toMatchObject({ group: 'WT' })
+    expect(rows[rows.length - 1]).toMatchObject({ group: 'MerTK' })
   })
 
   it('is empty with no data', () => {

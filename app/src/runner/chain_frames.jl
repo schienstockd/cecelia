@@ -1,6 +1,7 @@
 # ── Chain events → wire frames, in one place ──────────────────────────────────
 #
-# The four `chain:node:*` frames a client sees, built once and emitted through a callback so the SAME
+# The four `chain:node:*` transitions a client sees — plus a node's `task:progress` telemetry — built
+# once and emitted through a callback so the SAME
 # builder serves both processes: the API server broadcasting to browsers (the in-process path), and the
 # detached runner emitting to the API server (which relays them on). See
 # docs/todo/TASK_RUNNER_PLAN.md.
@@ -17,7 +18,7 @@
 The scheduler task a chain node ran as — the correlation handle a consumer uses to attribute the
 node's real outcome. Read defensively, and a named function rather than a closure because the
 degradation IS the contract: two real payloads have no usable id (a node with no task yet — skipped
-before submission, or a set-scope/incremental node that bypasses `run_task` — carries `nothing`; a
+before submission, or an INCREMENTAL node, which still bypasses `run_task` — carries `nothing`; a
 hand-fired REPL or test event omits the field entirely). Either must become `""`. A frame builder that
 throws here takes down chain telemetry for every connected client.
 """
@@ -52,6 +53,25 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         "fn"         => p.fn,
         "taskId"     => ev_task_id(p))
 
+    # Per-node PROGRESS, shaped as a `task:progress` frame so it lands on the row the task snapshot
+    # already publishes for this node. No `chain:node:progress` type: a progress tick is not a node
+    # transition, it is telemetry for a task that already exists, and the console/GUI already know how
+    # to read `task:progress` by `taskId`. Emitting it here rather than wiring `on_progress` at each
+    # call site is what stops the drift — this builder is the ONE place both processes share.
+    #
+    # A node with no task id is dropped rather than emitted with `""`: an empty id would create (or
+    # worse, update) a blank row, which is the failure `task:log` handling already guards against.
+    progress = function(p)
+        tid = ev_task_id(p)
+        isempty(tid) && return
+        total = Int(get(p, :total, 0))
+        n     = Int(get(p, :n, 0))
+        emit(Dict{String,Any}(
+            "type"     => "task:progress",
+            "taskId"   => tid,
+            "progress" => clamp(total > 0 ? n / total : 0.0, 0.0, 1.0)))
+    end
+
     queued = function(p)
         f = base(p); f["type"] = "chain:node:queued"; f["params"] = p.params; emit(f)
     end
@@ -81,7 +101,8 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
     end
 
     pairs = ["node:queued" => queued, "node:running" => running,
-             "node:done" => done, "node:failed" => failed]
+             "node:done" => done, "node:failed" => failed,
+             "node:progress" => progress]
     for (ev, h) in pairs
         subscribe_chain_events!(ev, h)
     end
