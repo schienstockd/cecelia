@@ -42,6 +42,9 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
+import { cohortParams, type CompareMode } from '../../plots/trackGroups'
+import { popTypeOptions, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import type { SeriesTarget } from '../../plots/types'
 import { centreNapariOnTrack, showTracksInNapari } from '../../lib/napariView'
 import { EMPTY_TRACK_SELECTION, type CanvasTrackSelection } from '../../lib/trackSelection'
 import {
@@ -75,9 +78,18 @@ const props = defineProps<{
   // to the panel's own state and simply talks to nobody.
   trackSel?: CanvasTrackSelection
   setTrackSel?: (v: CanvasTrackSelection) => void
+  // THE CANVAS'S POPULATION MANAGER drives which tracks this shows — the same `series` vocabulary the
+  // Analysis board hands its cohort plots. A track POPULATION is what a user picks; the segmentation
+  // is the storage detail underneath it, and a private picker for it was a second control for a job
+  // this canvas already has a canonical one for.
+  series?: SeriesTarget[]
+  popTypes?: PopTypeOption[]
+  compareMode?: CompareMode
+  poolGroups?: boolean
   state: {
     imageUid?: string; valueName?: string; order?: string
     candidatesOnly?: boolean; gapsOnly?: boolean; offset?: number; sel?: string[]
+    popType?: string
     // the uncommitted queue — a correction is ONE task run, not one per click
     pending?: TrackOp[]; splitAt?: number | null
     thr?: TrackThresholds
@@ -97,6 +109,13 @@ const valueName = computed({
                                    activeName.value),
   set: v => (props.state.valueName = v),
 })
+
+// the population FAMILY, resolved through the same helper the rail uses so the two cannot disagree
+const familyOptions = computed<PopTypeOption[]>(() =>
+  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
+const popType = computed(() => (familyOptions.value.length
+  ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
+  : 'track'))
 
 const order = computed<LaneOrder>(() => (props.state.order as LaneOrder) ?? 'pair')
 const candidatesOnly = computed(() => !!props.state.candidatesOnly)
@@ -213,8 +232,14 @@ async function loadValueNames() {
 async function load() {
   if (!props.projectUid || !imageUid.value) { paths.value = {}; meta.value = null; return }
   loading.value = true; error.value = ''
-  const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-            (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
+  // the same request shape as the other two track views (`cohortParams`), so the population manager's
+  // selection means the same thing on every panel of this canvas
+  const cp = cohortParams({ imageUids: [imageUid.value], compareMode: props.compareMode ?? 'image',
+                            poolGroups: props.poolGroups, series: props.series,
+                            popType: popType.value })
+  cp.set('projectUid', props.projectUid)
+  if (valueName.value) cp.set('valueName', valueName.value)
+  const q = cp.toString()
   try {
     // `occupancy=1` → timepoints only, ~a third the bytes, because this panel reads nothing but `t`.
     // The explicit high `limit` is sent as well so an API server that predates the flag still returns
@@ -244,7 +269,11 @@ async function load() {
     paths.value = {}; meta.value = null
   }
   try {
-    const r = await fetch(`/api/tracking/issues?${q}${thresholdQuery(thr.value, serverThresholds.value)}`)
+    // the detector is per IMAGE and per segmentation — it has no cohort shape, so it takes the
+    // resolved pair rather than the group params
+    const iq = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
+               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
+    const r = await fetch(`/api/tracking/issues?${iq}${thresholdQuery(thr.value, serverThresholds.value)}`)
     const d = await r.json()
     issues.value = r.ok ? ((d.issues ?? []) as TrackIssue[]) : []
     // what the server ACTUALLY used — the panel seeds its knobs from this rather than from a copy of
@@ -260,6 +289,9 @@ onMounted(async () => { await loadValueNames(); await load() })
 useDataRefresh(() => (imageUid.value ? [imageUid.value] : []), () => { loadValueNames(); load() })
 watch([() => props.projectUid, imageUid], async () => { await loadValueNames(); await load() })
 watch(valueName, load)
+// the canvas's population manager IS the picker for this panel — a change there is a different
+// request, not just a redraw
+watch(() => [props.series, props.compareMode, props.poolGroups, popType.value], load, { deep: true })
 // a narrower lane set can leave the window past the end; `laneWindow` clamps, and this writes the
 // clamped value back so the pager and the note agree with what is drawn
 watch(filtered, () => { if (win.value.offset !== (props.state.offset ?? 0)) props.state.offset = win.value.offset })

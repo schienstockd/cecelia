@@ -378,6 +378,13 @@ just a lie — "pick track 2001" has no answer if 2001 was never sent, and the p
 exists. So occupancy mode defaults to a 20000 cap, and the fly-to-napari button fetches that one
 track's geometry on demand with `ids=`.
 
+**The canvas's POPULATION MANAGER picks what the track panels show.** All three track views sit on the
+population rail (`rail: 'pops'` + `TRACK_FAMILIES`) and take the same `series` the Analysis board hands
+its cohort plots — so the picker already on the Track canvas is the picker, rather than each panel
+growing a private segmentation `<select>`. A track population is what a user chooses; the segmentation
+is the storage detail underneath it. `compareMode: 'image'` on this canvas, because it is one image by
+construction — the cohort comparison is the board's job.
+
 **The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
 default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
 and **309** at `minLen 15`. The panel seeds the knobs from what the server actually used

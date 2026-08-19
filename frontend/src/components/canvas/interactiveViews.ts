@@ -107,8 +107,13 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // (docs/ANALYSIS.md); it is registered rather than hand-mounted so it gets the InteractivePanel
   // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
   trackScheme: {
-    label: 'Track timeline', component: TrackSchemeView, trackPage: true, rail: 'none',
-    initialState: () => ({ order: 'start', offset: 0, sel: [] }),
+    label: 'Track timeline', component: TrackSchemeView, trackPage: true,
+    // `'pops'` like its two siblings: the Track canvas already carries a POPULATION MANAGER, and a
+    // track population is what a user picks — the segmentation is the storage detail underneath it.
+    // A private segmentation `<select>` here was a second picker for a job the canvas already has a
+    // canonical one for.
+    rail: 'pops', popTypes: TRACK_FAMILIES,
+    initialState: () => ({ order: 'pair', offset: 0, sel: [] }),
   },
 }
 

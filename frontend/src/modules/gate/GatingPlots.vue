@@ -27,7 +27,8 @@ import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
+import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor }
+  from '../../components/canvas/interactiveViews'
 import { readCanvasTrackSelection, EMPTY_TRACK_SELECTION, type CanvasTrackSelection }
   from '../../lib/trackSelection'
 import GatePairsPanel from './GatePairsPanel.vue'
@@ -108,8 +109,29 @@ function addView(key: string) {
 const trackOptions = computed(() => pageViews('trackPage'))
 // what a registry view needs from the page (the panel's own state carries the rest) — the same
 // {projectUid, imageUids, setUid} contract the cluster and optical-flow canvases pass
-const viewCtx = computed(() => ({
-  projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [], setUid: null,
+/**
+ * What a registry view gets from this page.
+ *
+ * A view on the POPULATION rail is driven by the canvas's own PopulationManager — the picker already
+ * sitting on this canvas — in the same vocabulary the Analysis board uses (`series`: which population,
+ * of which segmentation, under which family). Without it the track views fell back to a private
+ * segmentation `<select>`, which is a second picker for a job this page already has a canonical one
+ * for, and the wrong noun besides: you pick TRACKS, not the label set they were measured on.
+ *
+ * `compareMode: 'image'` because this canvas is one image by construction — the cohort comparison is
+ * the board's job, and pretending otherwise here would silently widen what a gating plot shows.
+ */
+function ctxForView(key: string) {
+  const base = { projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [],
+                 setUid: null }
+  const pops = railFor(key) === 'pops'
+    ? { series: activeHL.value.map(pop => ({ valueName: g.valueName, pop, popType: props.popType })),
+        popTypes: popTypesFor(key), compareMode: 'image' as const, poolGroups: false }
+    : {}
+  return { ...base, ...pops, ...trackLink.value }
+}
+
+const trackLink = computed(() => ({
   // the shared selection, plus the one way to change it. A setter in the context rather than an event
   // on InteractivePanel: the panel is generic infrastructure and must not learn what a track is.
   trackSel: readCanvasTrackSelection(selTracks.value),
@@ -331,7 +353,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                same host the cluster and optical-flow canvases use -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
-                            :context="viewCtx" :state="p.state" :persist-key="`${ckey}:${p.id}`"
+                            :context="ctxForView(p.state.kind)" :state="p.state" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" />
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
