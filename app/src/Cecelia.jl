@@ -64,7 +64,7 @@ export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_IN
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
-export attr_value_counts
+export attr_value_counts, image_attr_groups
 export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 export channel_index, channel_indices, ccid_channel_names
@@ -122,7 +122,9 @@ export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
 export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
 export plane_angle_profile, plane_artefact, drift_test
-export track_diagnostics, track_diagnostics_for, track_diagnostic_findings
+export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
+export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
+export track_group_images, track_group_value_name, track_group_pop
 export MSD_SLOPE_RANDOM, MSD_SLOPE_DIRECTED, MSD_SLOPE_CONFINED, ACOR_PERSIST_LEVEL
 export PLANE_ANGLE_UNBIASED, DRIFT_STEP_SPACING, DRIFT_ALPHA, PAIR_SCAN_MAX_TRACKS
 export TRACK_DUP_ANGLE_DEG, TRACK_DUP_DIST_UM, TRACK_DUP_MIN_SHARED
@@ -239,6 +241,7 @@ include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
+include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")

@@ -2015,8 +2015,11 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 **Two registries carry the surface "checkboxes":**
 - `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
   `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
-  `interactive` (default) / `clustering` / `image`), plus an optional `initialState()` seed for a new
-  panel's state bag.
+  `interactive` (default) / `clustering` / `image`), the `rail` the plot needs, an optional
+  `initialState()` seed for a new panel's state bag, and — for a view that slices by population —
+  `popTypes`, the population FAMILIES it offers (same shape as a summary spec's `dataSource.popTypes`,
+  read by the same `plots/popTypes.ts` functions, so the rail lists the family the ACTIVE plot can draw).
+  See `docs/ANALYSIS.md` → *The rail*.
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.

@@ -8,6 +8,19 @@
   diagnostic nobody has. So the battery now arrives two ways from ONE package roll-up — this panel, and
   QC findings that `tracking.track_measures` banks on every run whether or not anyone opens it.
 
+  **It compares like every other plot on the board.** One cell per GROUP — per image, per treatment
+  (the board's `compare by attribute`), per population — so "is WT's motion different from MerTK's" is
+  one plot instead of two screenshots. A group's images are POOLED, which is exactly right for every
+  diagnostic here (MSD at a lag is the mean over every segment of that lag, from whichever movie it came)
+  and is handled where it belongs: the pair scan never pairs two tracks from different movies
+  (`app/src/tracking/track_cohort.jl`).
+
+  **A cohort SPLITS, it does not overlay** — the same rule as the track plot (`facetPlan`), and for the
+  same two reasons: identifying a group by colour needs a swatch legend the house style rules out (Plot's
+  inline legend wraps the svg in a `<figure>` that clips the bottom axis — `plots/plot.ts`), and the
+  curves' own colours (blue for the measurement, amber for the fit it is read against) mean something
+  already. The group's name is its facet title; the header line and the findings name it too.
+
   **The verdicts come from the server.** "Drifting", "confined", "artefact near the edge" are computed
   in `track_diagnostics` and shipped as `findings`, the same objects the QC doc holds. Nothing here
   re-derives a threshold from the curves — that is how a panel ends up disagreeing with the QC line
@@ -21,7 +34,7 @@
     its direction; flat at zero means it doesn't.
   - *Volume edge* — step angle against distance to the lower z boundary, with 32.7° marked. Angles that
     sag ONLY near the edge are a tracking artefact there. 3D only, so the mode is absent for 2D data
-    rather than an empty box.
+    rather than an empty box — offered if ANY group has it, since a mixed cohort has one arm that can answer.
   - *Track pairs* — angle between two tracks' paths against how far apart they were. Unrelated cells
     average 90°; a lower average among the FAR pairs means the whole field moves together.
 -->
@@ -32,19 +45,34 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
+import { facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { popTypeOptions, popTypeLabel, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
-  availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine, axisLabels,
-  diagnosticsSummary, pairCapNote, diagnosticsCsvRows, resolveTrackValueName, DIAG_LABEL,
+  availableModes, resolveMode, modeHint, referenceLine, axisLabels,
+  cohortSummary, cohortFindings, pairCapNote, diagnosticsCsvRows, resolveTrackValueName,
+  diagGroups, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
+import {
+  cohortParams, cohortKey, facetPlan, groupLabel, type CompareMode,
+} from '../../plots/trackGroups'
+import type { SeriesTarget } from '../../plots/types'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { imageUid?: string; valueName?: string; mode?: string }
+  // the board's comparison context — absent on a module page, which is then exactly the old behaviour
+  vis?: VisProps
+  series?: SeriesTarget[]
+  compareMode?: CompareMode
+  groupAttr?: string[]
+  poolGroups?: boolean
+  popTypes?: PopTypeOption[]
+  state: { valueName?: string; mode?: string; popType?: string }
 }>()
 
-const imageUid = computed(() => (props.state.imageUid && props.imageUids.includes(props.state.imageUid))
-  ? props.state.imageUid : (props.imageUids[0] ?? ''))
+// the FIRST selected image answers "which segmentations" — the picker is about the vocabulary
+const imageUid = computed(() => props.imageUids[0] ?? '')
 // a TRACKED segmentation, never 'default' or the active one — see resolveTrackValueName
 const trackedNames = ref<string[]>([])
 const activeName = ref('')            // the segmentation the rest of the app is pointed at
@@ -53,6 +81,16 @@ const valueName = computed({
                                    activeName.value),
   set: v => (props.state.valueName = v),
 })
+// the population FAMILY, one per plot (docs/PLOTS.md) — resolved through the same helper the rail uses
+const familyOptions = computed<PopTypeOption[]>(() =>
+  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
+const popType = computed({
+  get: () => (familyOptions.value.length
+    ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
+    : 'live'),
+  set: v => (props.state.popType = v),
+})
+const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 const data = ref<DiagnosticsResponse | null>(null)
 const valueNames = ref<string[]>([])
@@ -62,9 +100,11 @@ const error = ref('')
 const mode = computed<DiagMode | null>(() => resolveMode(data.value, props.state.mode))
 const modeOptions = computed<ChipOption[]>(() =>
   availableModes(data.value).map(m => ({ value: m, label: DIAG_LABEL[m] })))
-const summary = computed(() => diagnosticsSummary(data.value))
+const summary = computed(() => cohortSummary(data.value))
 const capNote = computed(() => (mode.value === 'pairs' ? pairCapNote(data.value) : ''))
-const findings = computed(() => data.value?.findings ?? [])
+const findings = computed(() => cohortFindings(data.value))
+const groups = computed(() => diagGroups(data.value))
+const dropped = computed(() => data.value?.dropped ?? 0)
 
 /** Which segmentations this image has — the same list the track-gating axes read. */
 async function loadValueNames() {
@@ -78,17 +118,24 @@ async function loadValueNames() {
                                   valueName?: string }
     valueNames.value = d.valueNames ?? []
     trackedNames.value = d.trackedValueNames ?? []
-    activeName.value = d.valueName ?? ''    
+    activeName.value = d.valueName ?? ''
   } catch { /* the diagnostics request reports its own failure */ }
 }
+
+/** The cohort query: the board's compare/population context, translated once (plots/trackGroups.ts). */
+const cohort = computed(() => ({
+  imageUids: props.imageUids, compareMode: props.compareMode, groupAttr: props.groupAttr,
+  poolGroups: props.poolGroups, series: props.series, popType: popType.value,
+}))
 
 async function load() {
   if (!props.projectUid || !imageUid.value) { data.value = null; return }
   loading.value = true; error.value = ''
   try {
-    const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-              (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
-    const r = await fetch(`/api/tracking/diagnostics?${q}`)
+    const p = cohortParams(cohort.value)
+    p.set('projectUid', props.projectUid)
+    if (valueName.value) p.set('valueName', valueName.value)
+    const r = await fetch(`/api/tracking/diagnostics?${p}`)
     const d = await r.json()
     if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
     data.value = d as DiagnosticsResponse
@@ -103,9 +150,11 @@ async function load() {
 
 onMounted(async () => { await loadValueNames(); await load() })
 // tracking, correction and re-measuring all change what this judges — the ONE refresh chokepoint
-useDataRefresh(() => (imageUid.value ? [imageUid.value] : []), () => { loadValueNames(); load() })
+useDataRefresh(() => props.imageUids, () => { loadValueNames(); load() })
 watch([() => props.projectUid, imageUid], async () => { await loadValueNames(); await load() })
-watch(valueName, load)
+// one watcher over the whole cohort query — see TrackPathsView for why it is the params and not a
+// per-prop list
+watch([() => cohortKey(cohort.value), valueName], load)
 
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
@@ -113,52 +162,76 @@ const forceLight = ref(false)
 let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
 
+// curves and clouds share one domain across facets — two conditions on two scales are not a comparison
+const plan = computed(() => facetPlan(facetMode(vis.value), groups.value.length))
+const slots = computed(() => {
+  const grid = facetGrid(groups.value.length)
+  const m = new Map<string, { fx: number; fy: number }>()
+  groups.value.forEach((g, i) => m.set(g.key, facetSlot(i, grid.cols)))
+  return m
+})
+
 async function render() {
   if (!host.value) return
   if (!Plot) Plot = await import('@observablehq/plot')
-  node?.remove(); node = null
+  // emptied and refilled in ONE step at the end (`replaceChildren`) — see TrackPathsView for the
+  // interleaved-render ghost this prevents
   const m = mode.value
   const d = data.value
-  if (!m || !d) return
+  if (!m || !d || !groups.value.length) { host.value.replaceChildren(); node = null; return }
 
   const dark = !forceLight.value
   const fg = dark ? '#e6e6e6' : '#111'
   const bg = dark ? '#1f2226' : 'white'
-  const w = Math.max(220, host.value.clientWidth || 360)
-  const h = Math.max(160, host.value.clientHeight || 240)
+  const facet = plan.value.facet
+  const grid = facetGrid(facet ? groups.value.length : 1)
+  const ML = 54, MB = 36, MT = 10, MR = 12
+  const box = facetBox({ cols: grid.cols, rows: grid.rows,
+                         w: Math.max(220, host.value.clientWidth || 360),
+                         h: Math.max(160, host.value.clientHeight || 240),
+                         mx: ML + MR, my: MB + MT, square: false })
   const [xLabel, yLabel] = axisLabels(m)
   const refLine = referenceLine(m, d)
+
+  const fxOf = (r: { g: string }) => slots.value.get(r.g)?.fx ?? 0
+  const fyOf = (r: { g: string }) => slots.value.get(r.g)?.fy ?? 0
+  const fch = facet ? { fx: fxOf, fy: fyOf } : {}
+  // ONE colour vocabulary, whatever the group count: blue is the measurement, amber the expectation it
+  // is read against. Groups are told apart by their facet title, not by a colour and a legend.
+  const stroke = '#5aa9e6'
+  const fill = '#5aa9e6'
 
   const marks: unknown[] = []
   let xOpts: Record<string, unknown> = { label: xLabel, grid: true }
   let yOpts: Record<string, unknown> = { label: yLabel, grid: true }
 
   if (m === 'msd' || m === 'acor') {
-    const pts = curvePoints(m === 'msd' ? d.msd : d.acor)
+    const pts = diagCurveRows(d, m)
     if (m === 'msd') {
       // log-log, because the SLOPE is the readout — on linear axes a power law is just "a curve"
       xOpts = { ...xOpts, type: 'log' }
       yOpts = { ...yOpts, type: 'log' }
-      const fit = msdFitLine(pts, d.summary?.msdSlope)
-      if (fit) marks.push(Plot.line(fit, { x: 'lag', y: 'value', stroke: '#e8a33d', strokeDasharray: '4,3' }))
+      const fit = diagFitRows(d)
+      if (fit.length) marks.push(Plot.line(fit, { x: 'lag', y: 'value', z: 'g',
+                                                 stroke: '#e8a33d', strokeDasharray: '4,3', ...fch }))
     } else {
       // the sign matters here (a negative lag-1 is the jitter signature), so zero stays on screen
       yOpts = { ...yOpts, domain: [Math.min(-0.2, ...pts.map(p => p.value)), 1] }
     }
     if (pts.some(p => p.sem !== null))
       marks.push(Plot.ruleX(pts.filter(p => p.sem !== null),
-        { x: 'lag', y1: p => p.value - (p.sem ?? 0), y2: p => p.value + (p.sem ?? 0), stroke: fg, strokeOpacity: 0.35 }))
-    marks.push(Plot.line(pts, { x: 'lag', y: 'value', stroke: '#5aa9e6', strokeWidth: 1.5 }))
-    marks.push(Plot.dot(pts, { x: 'lag', y: 'value', fill: '#5aa9e6', r: 2.5, tip: true }))
+        { x: 'lag', y1: p => p.value - (p.sem ?? 0), y2: p => p.value + (p.sem ?? 0),
+          stroke: fg, strokeOpacity: 0.35, ...fch }))
+    marks.push(Plot.line(pts, { x: 'lag', y: 'value', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
+    marks.push(Plot.dot(pts, { x: 'lag', y: 'value', fill, r: 2.5, tip: true, ...fch,
+                               channels: { group: 'label' } }))
   } else {
-    const cloud = m === 'plane'
-      ? (d.plane?.distance ?? []).map((distance, i) => ({ distance, angle: d.plane!.angle[i] }))
-      : (d.pairs?.distance ?? []).map((distance, i) => ({ distance, angle: d.pairs!.angle[i] }))
-    marks.push(Plot.dot(cloud, { x: 'distance', y: 'angle', fill: '#5aa9e6', r: 1.3, fillOpacity: 0.35 }))
+    const cloud = diagCloudRows(d, m)
+    marks.push(Plot.dot(cloud, { x: 'distance', y: 'angle', fill, r: 1.3, fillOpacity: 0.35, ...fch }))
     // the trend is what the vignette reads off this plot, not the individual points
     if (cloud.length > 5)
-      marks.push(Plot.line(cloud, { x: 'distance', y: 'angle', stroke: '#e8a33d', strokeWidth: 1.5,
-                                    curve: 'basis', sort: 'distance' }))
+      marks.push(Plot.line(cloud, { x: 'distance', y: 'angle', z: 'g', stroke: '#e8a33d',
+                                    strokeWidth: 1.5, curve: 'basis', sort: 'distance', ...fch }))
     yOpts = { ...yOpts, domain: [0, 90] }
   }
 
@@ -168,21 +241,29 @@ async function render() {
     marks.push(Plot.text([refLine], { y: 'value', text: 'label', frameAnchor: 'right',
                                       dx: -4, dy: -6, fill: '#d9534f', fontSize: 10 }))
   }
+  if (facet) {
+    // a facet HEADER is per column and cannot name a cell of a grid — so the title is a mark
+    marks.push(Plot.text(groups.value.map(g => ({ ...slots.value.get(g.key)!, t: groupLabel(g) })),
+                         { fx: 'fx', fy: 'fy', text: 't', frameAnchor: 'top-left',
+                           dx: 4, dy: 4, fill: fg, fontSize: 10 }))
+  }
 
   node = Plot.plot({
-    width: w, height: h, marginLeft: 54, marginBottom: 36, marginTop: 10, marginRight: 12,
+    width: box.width, height: box.height,
+    marginLeft: ML, marginBottom: MB, marginTop: MT, marginRight: MR,
     style: { background: bg, color: fg, fontSize: '11px' },
     x: xOpts, y: yOpts,
+    ...(facet ? { fx: { axis: null }, fy: { axis: null } } : {}),
     marks: marks as never[],
   }) as SVGElement
-  host.value.append(node)
+  host.value.replaceChildren(node)
 }
 
 // the observer's callback appends into the element it observes — see usePlotResize for why
 // that loops, and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([mode, data], () => nextTick(() => plotBox.redraw()))
+watch([mode, data, plan], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -223,6 +304,11 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                     v-tooltip.top="mode ? modeHint(mode) : 'Which diagnostic to show'"
                     @update:model-value="v => (state.mode = v as string)" />
         <span class="tdv-spacer" />
+        <select v-if="familyOptions.length > 1" :value="popType" v-tooltip.top="'Which populations'"
+                aria-label="Population family"
+                @change="popType = ($event.target as HTMLSelectElement).value">
+          <option v-for="o in familyOptions" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
+        </select>
         <select v-if="valueNames.length > 1" v-model="valueName"
                 v-tooltip.top="'Which segmentation'" aria-label="Segmentation">
           <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
@@ -240,15 +326,17 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 
     <!-- what the run already concluded, in its own words. Not re-derived here. -->
     <div v-if="findings.length" class="cc-row tdv-findings">
-      <span v-for="f in findings" :key="f.code" class="cc-muted-warn cc-fs-xs tdv-finding"
-            v-tooltip.bottom="f.long">
-        <i class="pi pi-exclamation-triangle" /> {{ f.short }}
+      <span v-for="(f, i) in findings" :key="`${f.group}:${f.code}:${i}`"
+            class="cc-muted-warn cc-fs-xs tdv-finding" v-tooltip.bottom="f.long">
+        <i class="pi pi-exclamation-triangle" /> {{ f.group ? `${f.group}: ${f.short}` : f.short }}
       </span>
     </div>
 
     <div ref="host" class="tdv-host" />
     <PlotSpinner v-if="loading" label="Running the checks" />
-    <span v-if="capNote" class="tdv-note cc-muted cc-fs-2xs">{{ capNote }}</span>
+    <span v-if="capNote || dropped" class="tdv-note cc-muted cc-fs-2xs">
+      {{ [capNote, dropped ? `${dropped} more group${dropped === 1 ? '' : 's'} not shown` : ''].filter(Boolean).join(' · ') }}
+    </span>
   </div>
 </template>
 

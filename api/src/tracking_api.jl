@@ -106,10 +106,70 @@ function api_track_issues(req::HTTP.Request)
     end
 end
 
+# ── The two track PLOTS: one cohort vocabulary, two readouts ──────────────────
+#
+# `/api/tracking/paths` and `/api/tracking/diagnostics` are both plots on the Analysis board, and a board
+# compares things: treatments side by side, populations side by side. They therefore take the SAME
+# selectors the summary aggregator takes (`POST /api/plot_data`), in the query form these GET routes
+# already speak:
+#
+#   imageUids=a,b,c        the board's selected images (`imageUid=` alone still works, unchanged)
+#   groupAttr=Treatment    image ATTRIBUTES to group by — images sharing the combined value pool into one
+#                          group labelled by it, the same join as the summary canvas
+#   poolImages=1           no attribute, but pool every image into one group (compare = "pooled")
+#   popType=live&pops=B/qc/_tracked,B/qc/other   the population family + value-name-prefixed refs
+#   poolPops=1             the selected populations as ONE group instead of one each
+#   maxGroups=12           cap on the returned groups (the cost is linear in them)
+#
+# Everything above resolves in the PACKAGE (`app/src/tracking/track_cohort.jl` → `track_plot_groups`),
+# which is where the data work belongs: this layer only names JSON fields. Each response is a list of
+# `groups`, and each group carries exactly what the single-image response used to carry at its top level.
+#
+# NOTE the deliberate asymmetry between the two: paths keep a group's images APART (a track is labelled
+# by the movie it came from), diagnostics POOL them (a condition is judged on all its replicates). Both
+# are `track_cohort.jl`'s job, not a branch here.
+
+# Shared parse: the group selectors → resolved `TrackPlotGroup`s. Returns `(groups, dropped, vn, nothing)`
+# or `(nothing, 0, "", err)` — including for a THROW inside the resolver, which reads cell tables and so
+# can fail on a stale column or an unreadable file. A panel must get its own message, not the server's
+# generic 500 page.
+function _track_plot_groups(q)
+    proj = get(q, "projectUid", "")
+    uids = String[strip(x) for x in split(get(q, "imageUids", ""), ',') if !isempty(strip(x))]
+    isempty(uids) && (uids = String[strip(x) for x in split(get(q, "imageUid", ""), ',') if !isempty(strip(x))])
+    isempty(uids) && return (nothing, 0, "", _gerr(400, "imageUid or imageUids required"))
+    imgs = Any[]
+    for u in uids
+        img, err = _gating_image(proj, u)
+        err === nothing || return (nothing, 0, "", err)
+        push!(imgs, img)
+    end
+    _csv(key) = String[strip(x) for x in split(get(q, key, ""), ',') if !isempty(strip(x))]
+    _flag(key) = get(q, key, "") in ("1", "true")
+    max_groups = something(tryparse(Int, get(q, "maxGroups", "")), 12)
+    try
+        groups, dropped, vn = track_plot_groups(imgs, uids;
+            group_attrs = _csv("groupAttr"), pool_images = _flag("poolImages"),
+            pops = _csv("pops"), pop_type = get(q, "popType", "live"),
+            value_name = get(q, "valueName", ""), pool_pops = _flag("poolPops"),
+            max_groups = max(max_groups, 1))
+        (groups, dropped, vn, nothing)
+    catch e
+        (nothing, 0, "", _gerr(500, "could not read the tracks to plot: " * sprint(showerror, e)))
+    end
+end
+
+# The group's identity, on every group of every response — so the frontend labels, colours and facets
+# from one place rather than re-deriving "which image / which population" per plot.
+_track_group_meta(g) = (; key = g.key, label = g.label, imageUids = track_group_images(g),
+                         valueName = track_group_value_name(g), pop = track_group_pop(g),
+                         popType = g.pop_type, nSources = length(g.sources),
+                         timeStep = g.time_step)
+
 # ── GET /api/tracking/paths — track geometry for the track plot ───────────────
 # The napari tracks layer, as a plot: every track's polyline in µm, optionally coloured by one
 # per-track property. Same wire shape as /api/tracking/issues' `paths` (both call `track_path_dicts`),
-# so `plots/trackPaths.ts` reads either without a branch.
+# so `plots/trackPaths.ts` reads either without a branch — per GROUP since the cohort selectors above.
 #
 # `colorBy` is any per-track column — a motility measure from the track table, a lineage/cluster obs,
 # or a cell measure the track table aggregates on read (`track_cell_measures`, e.g.
@@ -117,99 +177,43 @@ end
 # return the list of them — the plot's picker reads `/api/gating/channels?popType=track`, the one the
 # gating axes already read, so there is no second vocabulary to drift out of step with it.
 #
-# The cap is by track LENGTH, longest first: an image with thousands of tracks is unreadable as a
-# hairball, and the one-or-two-point fragments are the least informative thing in it. `total` and
-# `shown` both come back so the plot can say what it is leaving out rather than quietly lying.
+# The cap is by track LENGTH, longest first, and is PER GROUP: an image with thousands of tracks is
+# unreadable as a hairball, and the one-or-two-point fragments are the least informative thing in it.
+# `total` and `shown` both come back, per group and summed, so the plot can say what it is leaving out
+# rather than quietly lying.
 #
 # `ids=3,17,4021` names tracks explicitly and ignores the cap, so "the track I need is not in the top
 # N" has an answer that is not "raise N for everybody".
 function api_track_paths(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
-    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    groups, dropped, vn, err = _track_plot_groups(q)
     err === nothing || return err
-    vn = _resolve_vn(img, get(q, "valueName", ""))
-    props = img_label_props_path(img, vn)
-    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+    isempty(groups) &&
+        return 200, JSON3.write((; valueName = vn, tracked = false, groups = [], dropped = dropped,
+                                   total = 0, shown = 0, colorBy = "", colorKind = "none"))
 
-    _num(key, default) = (v = get(q, key, ""); isempty(v) ? default : something(tryparse(Float64, v), default))
+    limit = something(tryparse(Int, get(q, "limit", "")), 500)
+    ids   = String[strip(x) for x in split(get(q, "ids", ""), ',') if !isempty(strip(x))]
     color_by = get(q, "colorBy", "")
-    pixel_res, time_step = img_physical_sizes(img)
-
     try
-        lp = label_props(props)
-        # NOTE the parens: `() -> 200, JSON3.write(…)` parses as a TUPLE of (lambda, string), not a
-        # lambda returning a tuple — a probe against real data caught it as "Tuple is not callable".
-        _untracked() = (200, JSON3.write((; valueName = vn, tracked = false, paths = Dict(),
-                                            total = 0, shown = 0)))
-        ("track_id" in col_names(lp; data_type = :obs)) || return _untracked()
-
-        spatial  = centroid_columns(lp; order = [:x, :y, :z])
-        temporal = temporal_columns(lp)
-        isempty(temporal) && return _untracked()
-        select_cols(lp, vcat(spatial, temporal, ["track_id"]))
-        df = as_df(lp; include_x = false, include_obs = true)
-        scale_centroids!(df, pixel_res)          # µm, via the ONE shared conversion
-        t_col = first(temporal)
-        t_col == "centroid_t" || (df[!, :centroid_t] = df[!, Symbol(t_col)])
-
-        # Longest first, then capped. Built from the FULL path map rather than a second pass over
-        # `track_id` — "which cells are tracked" has one answer (`track_path_dicts`), and a private
-        # count loop here would be a second one, free to disagree about e.g. a 0 id.
-        all_paths = track_path_dicts(df, spatial)
-        order = sort!(collect(keys(all_paths));
-                      by = k -> (-length(all_paths[k]["t"]), parse(Int, k)))
-
-        # `ids` names tracks explicitly and BYPASSES the cap. The cap exists so a plot of thousands of
-        # tracks is not a hairball and a picker is not a 5000-row table — but "the track I need is not
-        # in the top N" then has no answer at all, and raising N is not one: it makes every request
-        # slower for everyone to serve one lookup. Naming the track is the answer.
-        wanted = [strip(x) for x in split(get(q, "ids", ""), ',') if !isempty(strip(x))]
-        if !isempty(wanted)
-            ids = String[k for k in wanted if haskey(all_paths, k)]
-        else
-            limit = Int(_num("limit", 500.0))
-            ids   = first(order, max(limit, 0))
-        end
-        paths = Dict{String,Any}(k => all_paths[k] for k in ids)
-
-        # One value per shown track for the colour scale (empty when nothing is asked for).
-        #
-        # Only columns the per-track table provides DIRECTLY: the motility measures and the track
-        # table's own obs (`clusters.{suffix}` from clustTracks). A cell measure would first have to
-        # be aggregated, which means choosing WHICH aggregate — a decision this plot has no way to
-        # ask about, and `track_cell_measures` throws on a name it cannot invert (a probe against real
-        # data returned a 500 for a stale column). An unknown column comes back as `colorBy: ""`.
-        values = Dict{String,Any}()
-        color_kind = "none"
-        if !isempty(color_by)
-            tp = track_props(img; value_name = vn)
-            if color_by in names(tp)
-                col = tp[!, color_by]
-                # the ONE measure-type detector (`track_props`' own) — `eltype <: Real` is not it: a
-                # joined column decodes as Union{Missing,Float64}, and the probe duly reported
-                # `live.track.speed` as categorical, which would paint 50 distinct colours instead of
-                # a gradient
-                cat = Cecelia._is_categorical_col(col, color_by)
-                color_kind = cat ? "categorical" : "numeric"
-                want = Set(ids)                      # String keys, as `paths` is
-                for (r, tid) in enumerate(tp[!, :track_id])
-                    key = string(Int(tid))
-                    key in want || continue
-                    v = col[r]
-                    values[key] = cat ? string(v) :
-                        (v isa Real && !isnan(Float64(v)) ? Float64(v) : nothing)
-                end
-            else
-                color_by = ""
+        out = Any[]
+        eff_color, eff_kind = "", "none"
+        for g in groups
+            p = track_group_paths(g; limit = limit, ids = ids, color_by = color_by)
+            # a column this image lacks falls back to uncoloured for THAT group; the top-level answer is
+            # what the picker should show, so it reports the colour any group actually resolved
+            if p.color_kind != "none" && eff_kind == "none"
+                eff_color, eff_kind = p.color_by, p.color_kind
             end
+            push!(out, (; _track_group_meta(g)..., tracked = true,
+                          total = p.total, shown = p.shown, stepScale = p.step_scale,
+                          colorBy = p.color_by, colorKind = p.color_kind,
+                          values = p.values, paths = p.paths))
         end
-
-        200, JSON3.write(_json_safe((; valueName = vn, tracked = true,
-                            total = length(order), shown = length(ids),
-                            nTracks = length(order), timeStep = time_step,
-                            stepScale = track_step_scale(df, spatial),
-                            colorBy = color_by, colorKind = color_kind,
-                            values = values, paths = paths)))
+        200, JSON3.write(_json_safe((; valueName = vn, tracked = true, groups = out,
+                            dropped = dropped,
+                            total = sum(g -> g.total, out), shown = sum(g -> g.shown, out),
+                            colorBy = eff_color, colorKind = eff_kind)))
     catch e
         _gerr(500, "could not read tracks: " * sprint(showerror, e))
     end
@@ -217,7 +221,7 @@ end
 
 # ── GET /api/tracking/diagnostics — the celltrackR QC battery ─────────────────
 # MSD, velocity autocorrelation, step-angle-to-the-volume-edge, pair angle-vs-distance, and the
-# Hotelling drift test — the whole battery from ONE package roll-up (`track_diagnostics_for`), which is
+# Hotelling drift test — the whole battery from ONE package roll-up (`track_diagnostics`), which is
 # the same call `tracking.track_measures` banks as QC. The plot and the finding therefore cannot
 # disagree about whether an image drifts.
 #
@@ -225,56 +229,60 @@ end
 # rather than re-deriving a verdict in TypeScript from the numbers, which is how a second, quietly
 # different threshold gets introduced.
 #
+# Cohort-shaped like the paths route above (see the shared header): one entry per group, each group's
+# images POOLED — a condition is judged on all of its replicates, and every diagnostic here is per-track
+# or per-step arithmetic, so pooling is the concatenation. The one exception is handled where it belongs:
+# `track_group_diagnostics` keeps the pair scan inside one movie.
+#
 # The pair cloud is DOWNSAMPLED by a stride and reports its total — 374 tracks is ~70k pairs, and
-# shipping all of them to draw a scatter nobody reads at that density is a slow page for nothing.
+# shipping all of them to draw a scatter nobody reads at that density is a slow page for nothing. The cap
+# is per group, so a two-arm plot is not half a plot.
 function api_track_diagnostics(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
-    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    groups, dropped, vn, err = _track_plot_groups(q)
     err === nothing || return err
-    vn = _resolve_vn(img, get(q, "valueName", ""))
-    props = img_label_props_path(img, vn)
-    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+    isempty(groups) &&
+        return 200, JSON3.write((; valueName = vn, tracked = false, groups = [], dropped = dropped))
 
     _num(key, default) = (v = get(q, key, ""); isempty(v) ? default : something(tryparse(Float64, v), default))
-    pixel_res, time_step = img_physical_sizes(img)
-
+    cap = Int(_num("pairLimit", 5000.0))
     try
-        d = track_diagnostics_for(props, pixel_res;
-                                 max_lag = Int(_num("maxLag", 10.0)),
-                                 step_spacing = Int(_num("stepSpacing", Float64(DRIFT_STEP_SPACING))))
-        d === nothing &&
-            return 200, JSON3.write((; valueName = vn, tracked = false))
-
-        cap    = Int(_num("pairLimit", 5000.0))
-        pr     = d.pairs                      # a DataFrame; `api/` does not `using DataFrames`
-        npairs = length(pr.angle)
-        stride = max(1, cld(npairs, max(cap, 1)))
-        rows   = 1:stride:npairs
-
+        out = Any[]
+        for g in groups
+            d = track_group_diagnostics(g; max_lag = Int(_num("maxLag", 10.0)),
+                                          step_spacing = Int(_num("stepSpacing", Float64(DRIFT_STEP_SPACING))))
+            d === nothing && continue
+            pr     = d.pairs                      # a DataFrame; `api/` does not `using DataFrames`
+            npairs = length(pr.angle)
+            stride = max(1, cld(npairs, max(cap, 1)))
+            rows   = 1:stride:npairs
+            push!(out, (; _track_group_meta(g)..., tracked = true,
+                nTracks = d.summary.nTracks,
+                msd  = (; lag = d.msd.lag, value = d.msd.msd, sem = d.msd.sem, n = d.msd.n),
+                acor = (; lag = d.acor.lag, value = d.acor.acor, sem = d.acor.sem, n = d.acor.n),
+                plane = (; distance = d.plane.profile.distance, angle = d.plane.profile.angle,
+                           expected = PLANE_ANGLE_UNBIASED,
+                           angleNear = d.plane.verdict.mean_angle_near,
+                           angleFar  = d.plane.verdict.mean_angle_far,
+                           suspect   = d.plane.verdict.suspect),
+                pairs = (; angle = Float64[pr.angle[r] for r in rows],
+                           distance = Float64[pr.distance[r] for r in rows],
+                           shown = length(rows), total = npairs,
+                           meanAngleFar = d.drift.pairs.mean_angle_far,
+                           drifting = d.drift.pairs.drifting,
+                           skipped = d.summary.pairsSkipped, maxTracks = PAIR_SCAN_MAX_TRACKS),
+                drift = (; p = d.drift.test.p, statistic = d.drift.test.statistic, n = d.drift.test.n,
+                           meanStep = d.drift.test.mean_step, drifting = d.drift.test.drifting,
+                           stepSpacing = d.drift.test.step_spacing, alpha = DRIFT_ALPHA),
+                summary = (; msdSlope = d.summary.msdSlope, motionKind = d.summary.motionKind,
+                             persistenceLag = d.summary.persistenceLag,
+                             nDuplicatePairs = d.summary.nDuplicatePairs),
+                findings = track_diagnostic_findings(d)))
+        end
         # `_json_safe` (plotting_api.jl): "not assessed" is NaN in the package and MUST be null on the
         # wire — JSON has no NaN literal, so an unassessable drift p would 500 the whole panel
-        200, JSON3.write(_json_safe((; valueName = vn, tracked = true, timeStep = time_step,
-            nTracks = d.summary.nTracks,
-            msd  = (; lag = d.msd.lag, value = d.msd.msd, sem = d.msd.sem, n = d.msd.n),
-            acor = (; lag = d.acor.lag, value = d.acor.acor, sem = d.acor.sem, n = d.acor.n),
-            plane = (; distance = d.plane.profile.distance, angle = d.plane.profile.angle,
-                       expected = PLANE_ANGLE_UNBIASED,
-                       angleNear = d.plane.verdict.mean_angle_near,
-                       angleFar  = d.plane.verdict.mean_angle_far,
-                       suspect   = d.plane.verdict.suspect),
-            pairs = (; angle = Float64[pr.angle[r] for r in rows],
-                       distance = Float64[pr.distance[r] for r in rows],
-                       shown = length(rows), total = npairs,
-                       meanAngleFar = d.drift.pairs.mean_angle_far,
-                       drifting = d.drift.pairs.drifting,
-                       skipped = d.summary.pairsSkipped, maxTracks = PAIR_SCAN_MAX_TRACKS),
-            drift = (; p = d.drift.test.p, statistic = d.drift.test.statistic, n = d.drift.test.n,
-                       meanStep = d.drift.test.mean_step, drifting = d.drift.test.drifting,
-                       stepSpacing = d.drift.test.step_spacing, alpha = DRIFT_ALPHA),
-            summary = (; msdSlope = d.summary.msdSlope, motionKind = d.summary.motionKind,
-                         persistenceLag = d.summary.persistenceLag,
-                         nDuplicatePairs = d.summary.nDuplicatePairs),
-            findings = track_diagnostic_findings(d))))
+        200, JSON3.write(_json_safe((; valueName = vn, tracked = !isempty(out),
+                                       groups = out, dropped = dropped)))
     catch e
         _gerr(500, "could not compute track diagnostics: " * sprint(showerror, e))
     end

@@ -53,7 +53,8 @@ The curves (MSD, autocorrelation) are 0.45 s at 2000 tracks.
 `track_diagnostics` therefore SKIPS the pair half above `PAIR_SCAN_MAX_TRACKS` (800) and reports
 `summary.pairsSkipped` — so `tracking.track_measures` QC never quietly costs half a minute, and the
 panel says "not checked above 800 tracks" instead of drawing an empty scatter that would read as
-"nothing suspicious".
+"nothing suspicious". The cap is per SCAN, i.e. per pooled group's largest movie (`_pair_scan_size`) —
+the scan never crosses movies, so the cost of a pooled condition is Σ nᵢ² and not (Σ nᵢ)².
 
 To lift the cap: bucket each timepoint's cells into a spatial grid with side `TRACK_DUP_DIST_UM` and
 test only the 3×3 neighbourhood — near-linear, and it finds exactly the pairs the duplicate detector
