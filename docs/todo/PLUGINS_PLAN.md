@@ -318,7 +318,8 @@ registers the tasks — hence "registers and runs, but has no form".)
 
 ## The contribution model — designed, not built
 
-**Status: Decisions 10 and 11 are built; 12–13 are design only.** Written 2026-08-19 after Dominik asked why a
+**Status: Decisions 10 and 11 are built. 12 has had its design pass and is blocked on the viewer's
+overlay model; 13 stays deferred.** Written 2026-08-19 after Dominik asked why a
 plugin cannot ship a component "the way napari plugins do", and the answer turned out to be more
 interesting than "the browser has a build step".
 
@@ -487,6 +488,55 @@ The allow-list is the point. `attributes` reaching `viewer.add_*` unchecked is a
 arbitrary kwargs into napari's constructors, which is an ABI by the back door — the thing Decision 11
 was chosen to avoid. Start with what the existing overlays already need and widen on request.
 
+#### What reading the bridge and the viewer changed (2026-08-19)
+
+Three findings, all of which move the cost. **Nothing above this line was checked against the code
+when it was written; everything below was.**
+
+**1. Two of the four layer types have no data path, and one is free.** Every overlay the bridge draws
+today comes from ONE source — `_centroid_matrix(value_name)` / `_tracks_matrix(value_name)`, i.e. the
+label-props `.h5ad`:
+
+| `layerType` | Source | Cost |
+|---|---|---|
+| `points` | centroids + a label-id subset — `show_populations` already builds exactly this | free |
+| `tracks` | `_tracks_matrix` + `napari_utils.add_tracks`, colour-by any obs column already supported | free |
+| `vectors` | a per-cell `(dz,dy,dx)` is three obs columns — no existing path, but **no new IO** | small |
+| `shapes` | **nothing to resolve.** Per-cell polygons are not stored; meshes are separate files on their own path | drop it |
+
+`shapes` should come off the allow-list until something stores polygons. A grammar that accepts a
+declaration it can never resolve is the blank panel again, one layer down.
+
+**2. The reference vocabulary falls out of that, and is three fields.** Everything the bridge draws is
+"the centroids of `valueName`, subset by label ids, coloured by an obs column", so:
+
+```json
+{ "fromTask": "trackTools.cumulativeChange", "layerType": "points",
+  "valueName": "$output", "filter": { "column": "cc_speed", "gt": 5 }, "colorBy": "cc_speed" }
+```
+
+resolves entirely against the table the plugin's task already wrote. No new reader, no new IO, and
+`data` is a reference rather than an array — which was the one place the plan already knew we could
+not copy napari.
+
+**3. The blocker is not the bridge. It is the viewer's overlay model.** `ViewerPanel.vue` has one
+HARDCODED button per overlay kind, and each carries its own visibility map, its own settings key and
+its own push path — `visibleLabels`/`show_labels`, `trackVns`/`show_tracks`,
+`branchVns`/`show_branch_labels`, plus the live-preview toggle. Three near-identical triples. A plugin
+layer is the **fourth**, and adding it as a fourth special case is precisely the "another magic
+folder" mistake that Decision 10 was written to stop, transposed onto the viewer.
+
+So the honest order is: **generalise the overlay model first** — one registry of overlay kinds
+(`{ id, icon, tooltip, visibility key, push }`), the three built-ins as entries in it — and then a
+plugin layer is one more entry rather than a fourth branch. That is a real refactor of a surface with
+no test coverage below the composable, on a panel whose correctness is judged by eye.
+
+**Recommendation: do not start Decision 12 by writing `layers`.** Either generalise the viewer's
+overlay model as its own piece of work (with Dominik looking at the result), or park Decision 12
+until something actually wants a layer a plugin cannot already get by registering a tracked
+`label_props` value name — which is how the points import works today, and is why it worked by
+accident.
+
 ### Decision 13 — the component tier stays deferred, with a named trigger
 
 Shipping a plugin's own renderable component (prebuilt ESM, since a `.vue` cannot be compiled in an
@@ -516,8 +566,11 @@ widget as the escape hatch and puts `autogenerate` in the tutorial.
    actually declare something or the first ratchet passes vacuously.
 2. **`views`.** ✅ **BUILT** — see Decision 11. It settles "a plugin gets a real, non-declarative
    page" without making any component a contract.
-3. **`layers`.** Biggest conceptual win, most design left — the reference vocabulary and the
-   `attributes` allow-list both want their own pass.
+3. **`layers`.** Design pass done (see above) and it moved the cost: the reference vocabulary is
+   three fields resolving against a table that already exists, `shapes` has no source and should come
+   off the allow-list, and the actual blocker is that `ViewerPanel.vue` hardcodes one button per
+   overlay kind. **Blocked on generalising the viewer's overlay model**, which wants to be its own
+   piece of work.
 
 Doing (1) first is the whole point of writing this down: `views` could be built tomorrow as another
 special case, and then `layers` would need retrofitting around it.

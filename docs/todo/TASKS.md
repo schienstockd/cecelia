@@ -148,8 +148,15 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       registered id" would have shipped two ways to get a broken panel. Four are offered
       (`trackPaths`, `trackDiagnostics`, `gatingStrategy`, `filmstrip`), ratcheted to `rail: 'none'`.
       An unresolvable id is reported on the canvas, not silently dropped;
-      **(3) `layers`** — declare what napari draws from a task's output. This is the real gap: only
-      `napari_bridge.py` can add a layer, which is why the points import worked by accident;
+      **(3) `layers`** — declare what napari draws from a task's output. Design pass DONE and it
+      moved the cost. `shapes` has no source at all (per-cell polygons are not stored) and comes off
+      the allow-list; `points`/`tracks` are free (`_centroid_matrix`/`_tracks_matrix` already build
+      exactly those) and `vectors` is three obs columns. The reference vocabulary is
+      `{valueName, filter, colorBy}` against the table the task already wrote — no new reader.
+      **The blocker is the viewer, not the bridge**: `ViewerPanel.vue` hardcodes one button per
+      overlay kind, each with its own visibility map, settings key and push path — labels, tracks,
+      branches, preview. A plugin layer is the fourth copy. Blocked on generalising that into one
+      overlay registry, which wants to be its own piece of work and needs Dominik's eyes;
       **(4) the component tier stays DEFERRED** with a named trigger — someone wants a picture cecelia
       genuinely cannot draw. Vue is bundled inside `frontend/dist` (checked), so it needs externalising
       plus a runtime loader, and it makes props/stores/composables a contract that cannot be walked
