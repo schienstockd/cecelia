@@ -38,6 +38,19 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
 
 ## Now
 
+- [ ] **Staleness is reported for the BACKEND only; task code runs in the RUNNER.** A `.jl` is
+      `include`d once per process, so updating a plugin in place leaves a new form driving old code.
+      `custom_modules_report` now flags that (`stale`, from the mtime recorded at load) and Settings
+      says so — but it is the backend's view, and `api/runner.jl` is a second process with its own
+      `load_custom_modules!` that deliberately survives a backend restart. So after restarting the
+      backend the flag goes FALSE while the runner is still old, which is exactly the state that cost
+      Dominik ~40 minutes: restarted the server, same error, because the task ran in the runner
+      (verified by process start times — runner 14:19, backend 15:01, plugin reinstalled 14:50).
+      Mitigated in wording only: the message names both processes. The real fix is asking the runner
+      for its own module report, which needs a status channel the backend does not have today.
+
+
+
 ### Reported on screen — the import round-trip
 
 - [x] ~~**Imported tracks toggled in the viewer but never reached napari.**~~ Not the h5ad (verified

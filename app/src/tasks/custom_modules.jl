@@ -16,6 +16,18 @@
 
 # path => :ok | "<error message>", for the load report / a Settings panel.
 const _CUSTOM_MODULES_LOADED = Dict{String, Any}()
+
+# mtime of each source file AT THE MOMENT IT WAS `include`d. A separate dict rather than a richer
+# value in `_CUSTOM_MODULES_LOADED`, whose value is `:ok`-or-error-message and is compared as such in
+# three places.
+#
+# Why record it at all: a `.jl` is `include`d ONCE per session (Julia cannot redefine a struct), while
+# a task's `.json` spec is re-read on every request. So updating a plugin in place leaves the FORM new
+# and the HANDLER old — and the two then disagree about which params exist. That is not theoretical:
+# the first update through Settings → Plugins produced a form asking for track populations and a
+# handler still reading a `valueName` that the form no longer sent, which failed with a message about
+# a param the user could not see. Nothing said why, because nothing was looking.
+const _CUSTOM_MODULES_MTIME = Dict{String, Float64}()
 # path => [fun_name, …] it registered, so a deleted file's tasks can be unregistered on reload.
 const _CUSTOM_MODULE_FUNS    = Dict{String, Vector{String}}()
 const _CUSTOM_MODULES_LOCK   = ReentrantLock()
@@ -91,6 +103,7 @@ function load_custom_modules!(; dev_dir::Union{String,Nothing} = nothing)
                 _unregister_task!(fn)
             end
             delete!(_CUSTOM_MODULES_LOADED, path)
+            delete!(_CUSTOM_MODULES_MTIME, path)
             delete!(_CUSTOM_MODULE_FUNS, path)
             push!(removed, path)
         end
@@ -118,10 +131,12 @@ function load_custom_modules!(; dev_dir::Union{String,Nothing} = nothing)
                 end
                 _CUSTOM_MODULE_FUNS[path] = collect(setdiff(_custom_task_keys(), before))
                 _CUSTOM_MODULES_LOADED[path] = :ok
+                _CUSTOM_MODULES_MTIME[path]  = mtime(path)
                 push!(loaded, path)
             catch e
                 msg = sprint(showerror, e)
                 _CUSTOM_MODULES_LOADED[path] = msg
+                _CUSTOM_MODULES_MTIME[path]  = mtime(path)
                 push!(failed, (path, msg))
                 @warn "Failed to load custom module" path exception = (e, catch_backtrace())
             end
@@ -136,9 +151,15 @@ end
 """
     custom_modules_report() -> Vector{NamedTuple}
 
-The load status of every custom module seen this session: `(; path, plugin, status, error)` where
-`status` is `"ok"` or `"error"` and `plugin` names the owning plugin (`nothing` for a hand-dropped
-module). Backs the `/api/tasks/custom-modules` status endpoint.
+The load status of every custom module seen this session: `(; path, plugin, status, error, stale,
+funNames)` where `status` is `"ok"` or `"error"` and `plugin` names the owning plugin (`nothing` for a
+hand-dropped module). Backs the `/api/tasks/custom-modules` status endpoint.
+
+**`stale`** = the file on disk has changed since it was `include`d, so the RUNNING handler is older
+than the one on disk and only a restart can pick it up. Its `.json` spec, by contrast, is re-read on
+every request — so a stale module shows a NEW form driving OLD code, which is how an update produced
+an error naming a param the form no longer had. `funNames` is what that module registered, so a
+caller can map the warning onto the task the user is actually looking at.
 
 Path-sorted so the Settings list has a stable order — `_CUSTOM_MODULES_LOADED` is a Dict, and its
 iteration order would otherwise reshuffle the panel on every reload.
@@ -151,7 +172,9 @@ function custom_modules_report()
         sort!([(; path = k,
                  plugin = plugin_name_of(k),
                  status = v === :ok ? "ok" : "error",
-                 error  = v === :ok ? nothing : String(v))
+                 error  = v === :ok ? nothing : String(v),
+                 stale  = mtime(k) > get(_CUSTOM_MODULES_MTIME, k, Inf),
+                 funNames = sort(get(_CUSTOM_MODULE_FUNS, k, String[])))
                for (k, v) in _CUSTOM_MODULES_LOADED
                if isfile(k)],   # a deleted-but-not-yet-reloaded file must not still report as loaded
               by = e -> e.path)

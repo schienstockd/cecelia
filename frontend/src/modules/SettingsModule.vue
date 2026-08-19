@@ -177,7 +177,14 @@ const REGISTRY_COLUMNS: SelectionColumn[] = [
 // that would not parse, a version mismatch, and a `contributions` block that disagrees with the
 // directory fail for unrelated reasons — but the user is asking one question, "is this thing OK".
 const pluginFaults = (row: PluginEntry): string =>
-  [row.warning, ...(row.problems ?? [])].filter(Boolean).join(' · ')
+  [row.stale ? STALE_MSG : null, row.warning, ...(row.problems ?? [])].filter(Boolean).join(' · ')
+
+// Both processes on purpose. Task code runs in the detached runner (docs/RUNNER.md), which loaded its
+// own copy and does NOT come back on a backend restart — so naming only the backend sends the user to
+// restart the one process that was not the problem. That is the exact 40 minutes this message exists
+// to save: an updated plugin ran its OLD handler against its NEW form, and the error named a param
+// the form no longer had.
+const STALE_MSG = 'updated on disk — restart the backend, then the runner row, to load it'
 
 const pluginUrl  = ref('')
 const pluginRef  = ref('')

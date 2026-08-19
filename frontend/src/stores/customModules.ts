@@ -5,7 +5,14 @@ import { ref } from 'vue'
 // /api/tasks/custom-modules payload: the load report + the categories present among the user's
 // custom specs. `categories` with builtin === false drive a generic page + a "Custom" nav group;
 // tasks in a builtin category already surface on that category's existing page.
-export interface CustomModuleEntry { path: string; plugin: string | null; status: 'ok' | 'error'; error: string | null }
+// `stale` = the file changed on disk since this process `include`d it. A `.jl` loads ONCE per session
+// (Julia cannot redefine a struct) while its `.json` spec is re-read every request, so a stale module
+// shows a NEW form driving OLD code. `funNames` is what it registered, so a caller can map that onto
+// the task the user is looking at.
+export interface CustomModuleEntry {
+  path: string; plugin: string | null; status: 'ok' | 'error'; error: string | null
+  stale?: boolean; funNames?: string[]
+}
 // `views` = interactive plots a plugin asked for on this category's page, by stable registry id
 // (PLUGINS_PLAN Decision 11). Resolved against `interactiveViews.ts` by the canvas, which is also
 // where an id that resolves to nothing is reported — Julia cannot see that registry.
@@ -34,6 +41,11 @@ export interface PluginEntry {
   name: string; dir: string; version: string; description: string; homepage: string
   categories: string[]; contributions: PluginContributions
   error: string | null; warning: string | null; problems: string[]
+  // A fourth, and a different kind: nothing is WRONG, the running code is just older than the files.
+  // Reported rather than repaired — Julia cannot redefine a struct, so only a restart picks it up, and
+  // that is the user's to take. NOTE this is the BACKEND's view; the detached task runner is a second
+  // process with its own loaded copy, so it can be stale while this says fresh (docs/RUNNER.md).
+  stale?: boolean
 }
 // A fun_name a module registered but did NOT get, because a higher tier already owned it
 // (built-in > hand-dropped > plugin). NOT a load failure — the file loaded fine, so this is the only

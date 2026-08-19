@@ -767,17 +767,29 @@ end
     plugins_report(; dev_dir=nothing, running_version="") -> Vector{NamedTuple}
 
 One entry per installed plugin for the Settings panel: `(; name, dir, version, description, homepage,
-categories, contributions, error, warning, problems)`. `categories` is what the plugin actually ships
+categories, contributions, error, warning, problems, stale)`. `categories` is what the plugin actually ships
 on disk, not what its manifest claims — the manifest is descriptive, the directory is the truth.
 
 The three fault fields are kept APART rather than merged into one string, because they fail for
 unrelated reasons and a caller may care about one and not the others: `error` is a manifest that would
 not parse, `warning` is a `requiresCecelia` mismatch, `problems` is a `contributions` block that does
 not match the directory. Settings joins them into one tooltip; the API does not have to.
+
+`stale` is a fourth, and a different kind: nothing is *wrong*, the RUNNING code is simply older than
+the files on disk because a `.jl` is `include`d once per session. It cannot be repaired from here —
+Julia cannot redefine a struct — so it is reported rather than fixed, and the only action is a
+restart, which is the user's to take.
 """
 function plugins_report(; dev_dir::Union{String,Nothing} = nothing,
                           running_version::AbstractString = "")
     specs = _user_spec_files(dev_dir)
+    # A plugin is stale when ANY of its `.jl` files changed since it was `include`d — updating one in
+    # place leaves the form new and the handler old, and only a restart fixes that.
+    stale_of = Dict{String,Bool}()
+    for e in custom_modules_report()
+        e.plugin === nothing && continue
+        stale_of[String(e.plugin)] = get(stale_of, String(e.plugin), false) || e.stale
+    end
     map(plugin_roots(; dev_dir)) do d
         name = basename(d)
         m    = read_plugin_manifest(d)
@@ -791,6 +803,9 @@ function plugins_report(; dev_dir::Union{String,Nothing} = nothing,
            contributions = (; c.tasks, c.plots, c.views, c.layers),
            error      = m.error,
            warning    = plugin_version_warning(m.requiresCecelia, running_version),
-           problems   = c.problems)
+           problems   = c.problems,
+           # `name` here is the MANIFEST name; staleness is keyed by the DIRECTORY, which is what the
+           # loader sees and what an author cannot rename out from under us.
+           stale      = get(stale_of, name, false))
     end
 end

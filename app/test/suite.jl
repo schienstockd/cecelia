@@ -3773,6 +3773,51 @@ end
     @test "ccia-trackMeasures" ∈ [p.name for p in Cecelia.plugins_report(; dev_dir = cfg)]
 end
 
+@testset "A module edited after loading reports STALE" begin
+    # A `.jl` is `include`d once per session — Julia cannot redefine a struct — while a task's `.json`
+    # spec is re-read on every request. So updating a plugin in place leaves the FORM new and the
+    # HANDLER old, and the two then disagree about which params exist.
+    #
+    # That is exactly what the first update through the new checkout-install produced: a form asking
+    # for track populations, and a handler still reading a `valueName` the form no longer sent, failing
+    # with a message about a param the user could not see. Nothing said why, because nothing looked.
+    # It cannot be REPAIRED (hence a report, not a fix) — only a restart picks the new code up.
+    cfg  = mktempdir()
+    mods = joinpath(cfg, "modules", "staleCat"); mkpath(mods)
+    jl   = joinpath(mods, "staleMod.jl")
+    write(jl, "# no registration; loading is all this test needs\n")
+    write(joinpath(mods, "staleMod.json"),
+          JSON3.write(Dict("fun_name" => "staleCat.staleMod", "label" => "s",
+                           "resource_pool" => "cpu", "scope" => "image", "params" => [])))
+
+    Cecelia.load_custom_modules!(; dev_dir = cfg)
+    row() = only(filter(e -> e.path == jl, Cecelia.custom_modules_report()))
+    @test row().status == "ok"
+    @test row().stale == false
+
+    # The mtime was RECORDED at load — that is the whole mechanism.
+    @test haskey(Cecelia._CUSTOM_MODULES_MTIME, jl)
+
+    # Edit it the way an install does. Then wind the RECORDED mtime back rather than trying to push the
+    # file's forward: mtime resolution differs per filesystem (1 s on HFS+, ns on ext4), so asserting
+    # on a fresh write would be a timing race in CI on one OS and not the others. This tests the rule
+    # itself — "disk newer than what we recorded" — with no clock in it.
+    write(jl, "# edited\n")
+    Cecelia._CUSTOM_MODULES_MTIME[jl] -= 5
+    @test row().stale == true
+
+    # A reload does NOT clear it: the file was already loaded, so it is skipped and the running code is
+    # still the old one. Reporting it as fresh here would be the lie the whole check exists to prevent.
+    res = Cecelia.load_custom_modules!(; dev_dir = cfg)
+    @test jl ∈ res.skipped
+    @test row().stale == true
+
+    # Deleting the file drops the row entirely rather than leaving a stale ghost.
+    rm(jl)
+    Cecelia.load_custom_modules!(; dev_dir = cfg)
+    @test isempty(filter(e -> e.path == jl, Cecelia.custom_modules_report()))
+end
+
 @testset "Plugin fun_name precedence (built-in > hand-dropped > plugin)" begin
     # This is the rule that stops an installed plugin silently taking over a name the user's own
     # drop-in module already uses. Before it, `register_task!` overwrote unconditionally and the
