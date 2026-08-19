@@ -3765,6 +3765,15 @@ end
         # disagrees with its url would install under one name and be looked up under another.
         @test Cecelia.plugin_name_from_url(url) == name
         @test !isempty(String(get(e, "description", "")))
+
+        # The published repo's landing page comes from the IN-REPO README — that copy is the source,
+        # so a plugin without one publishes a repo that explains nothing.
+        @test isfile(joinpath(root, name, "README.md"))
+        # …and its manifest must point at its OWN repo, not cecelia's. Both examples shipped with
+        # `homepage` pointing at schienstockd/cecelia, so "Homepage" in the plugin table sent the
+        # user to the app rather than to the thing they were about to install.
+        m = Cecelia.read_plugin_manifest(joinpath(root, name))
+        @test m.error === nothing && String(m.homepage) == url
     end
     # Nothing in the curated list may point somewhere the name cannot be derived from.
     for e in reg

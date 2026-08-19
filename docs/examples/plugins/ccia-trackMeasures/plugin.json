@@ -2,7 +2,9 @@
   "name": "ccia-trackMeasures",
   "version": "0.1.0",
   "description": "Track behaviour measures over a temporal gap, with its own module page",
-  "homepage": "https://github.com/schienstockd/cecelia",
+  "homepage": "https://github.com/schienstockd/ccia-trackMeasures",
   "requiresCecelia": ">=0.1.3",
-  "categories": ["trackTools"]
+  "categories": [
+    "trackTools"
+  ]
 }

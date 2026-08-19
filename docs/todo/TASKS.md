@@ -105,9 +105,15 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
 
 ## Next
 
-- [ ] **The importer exists twice** — the CI-loaded example under `docs/examples/plugins/` and the
-      published `schienstockd/ccia-importTracks` are copies that will drift. One has to become the
-      source. (`ccia-trackMeasures` is in-repo only, so this is one plugin, not two.)
+- [x] ~~**The importer existed twice and had already drifted.**~~ It was not hypothetical: the
+      published copy was **70 lines behind** — no `showIf`, no `labelProps` namespace, no chips, no
+      `notEndsWith` — so anyone installing from GitHub got exactly the bugs reported that morning,
+      while CI was green on the fixed version it was testing. Both publications had been made by hand
+      (`cp -r`, `git init`, push): a snapshot with no link back.
+      `docs/examples/plugins/<name>/` is now formally the source — CI loads and RUNS it, and a
+      framework change lands with the example that uses it in one commit — and
+      `scripts/publish_plugin.jl` is the repeatable sync, added to the release checklist. Both repos
+      verified byte-identical to the in-repo copy afterwards.
 
 - [x] ~~**`ccia-trackMeasures` had no published repo**~~ — so Settings → Plugins could not install
       it, and nothing failed: it shipped in our checkout, loaded in CI, and was unreachable for

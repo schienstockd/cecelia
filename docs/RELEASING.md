@@ -179,10 +179,21 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
    channel only, and the `dev` channel keeps working — which is how v0.1.1 shipped without `pluto/`
    and died at launch for every installer (#540). CI pins the same list, but this is the one that
    runs the thing. See `docs/SHIPPING.md` → *Building & releasing*.
-6. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
-7. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
+6. **`julia scripts/publish_plugin.jl --all`** — push the example plugins to their own repos.
+   `docs/examples/plugins/<name>/` is the SOURCE (CI loads and runs it, and a framework change lands
+   with the example that uses it), while `github.com/schienstockd/<name>` is what a user installs.
+   The two only converge when someone syncs them, and the first publications were done by hand:
+   `ccia-importTracks` was 70 lines behind within days, so the version a user could install was
+   missing every fix made to the version CI was testing. Run `--dry-run` first if you want to see
+   what will move; "already up to date" is the common answer and costs nothing.
+
+   The suite checks the structure (every example is in the registry, has a README, and its manifest
+   points at its own repo) but NOT the drift — comparing against a published repo needs the network,
+   so it belongs here rather than in CI.
+7. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
+8. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
    fresh machine + the target dataset before relying on it.
-8. Only at a coarse boundary: add a MILESTONES entry (append-only).
+9. Only at a coarse boundary: add a MILESTONES entry (append-only).
 
 ### Regenerating the CHANGELOG section
 
