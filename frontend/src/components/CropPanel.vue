@@ -4,6 +4,7 @@
 // existing editImages.cropImage task (→ a new image in the set). See docs/todo/CROP_PANEL_PLAN.md.
 import { ref, watch, computed, onUnmounted } from 'vue'
 import { useTaskStore } from '../stores/tasks'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
@@ -17,6 +18,7 @@ const props = defineProps<{ projectUid: string; imageUid: string; imageName: str
 const emit = defineEmits<{ (e: 'submitted'): void }>()
 
 const taskStore = useTaskStore()
+const taskDefs  = useTaskDefsStore()
 const ws        = useWsStore()
 const settings  = useSettingsStore()
 const log       = useLogStore()
@@ -133,7 +135,11 @@ function save() {
   })
   ws.send({
     type: 'task:run', taskId: task.id, funName: 'editImages.cropImage', params,
-    imageUid: props.imageUid, projectUid: props.projectUid, setUid: props.setUid, poolName: 'io',
+    // Pool comes from the SPEC (`resource_pool`), not a literal here: the panel is a second launcher
+    // for a task the module page also runs, and a hardcoded pool is one that silently stops matching
+    // the moment the spec's changes.
+    imageUid: props.imageUid, projectUid: props.projectUid, setUid: props.setUid,
+    poolName: taskDefs.byFn.get('editImages.cropImage')?.resource_pool || 'io',
   })
   log.info('Cropping image → new image in the set (runs in the background; watch the task console).', { source: 'crop' })
   rect.value = null

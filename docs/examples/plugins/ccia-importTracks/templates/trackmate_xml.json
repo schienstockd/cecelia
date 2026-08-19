@@ -1,0 +1,11 @@
+{
+  "name": "TrackMate (track XML)",
+  "note": "TrackMate's 'Export tracks to XML': <Tracks><particle><detection t x y z/>. There are no columns to map — each <particle> IS a track, its id is its position in the file, t is the frame, and coordinates are in the file's spaceUnits (micron in every export seen). Detected from the .xml extension, so the mapping fields below are ignored.",
+  "trackColumn": "",
+  "frameColumn": "",
+  "xColumn": "",
+  "yColumn": "",
+  "zColumn": "",
+  "frameBase": 0,
+  "spotUnit": "physical"
+}

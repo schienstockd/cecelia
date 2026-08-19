@@ -21,6 +21,7 @@ include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
 include("update_api.jl")
+include("plugins_api.jl")   # plugin install/remove; uses update_api.jl's Downloads + routes.jl's payload
 include("maintenance_api.jl")
 include("repl_api.jl")
 include("runner_api.jl")     # detached task runner; uses repl_api.jl's _GIT_COMMIT for staleness
@@ -247,6 +248,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
+    "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
+    "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
+    "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),
     "/api/profiles/save" => (req, body_bytes) -> (api_view_profile_save(body_bytes)),
     "/api/profiles/delete" => (req, body_bytes) -> (api_view_profile_delete(body_bytes)),
     "/api/projects/create" => (req, body_bytes) -> (api_projects_create(body_bytes)),

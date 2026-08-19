@@ -1,0 +1,205 @@
+{
+  "task": "importCsvTracks",
+  "fun_name": "tracking.importCsvTracks",
+  "label": "Import external tracks",
+  "category": "tracking",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "cpu",
+  "scope": "image",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "mode",
+      "label": "Import as",
+      "type": "select",
+      "triggersOptions": true,
+      "default": "attach",
+      "options": [
+        {
+          "value": "attach",
+          "label": "Attach to a segmentation",
+          "help": "Match each spot to the nearest segmented cell in its frame"
+        },
+        {
+          "value": "create",
+          "label": "New points segmentation",
+          "help": "No segmentation needed — each detection becomes a cell. Motility only: no shape or intensity"
+        }
+      ],
+      "tip": "Whether the tracks attach to existing cells or become their own"
+    },
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "showIf": { "mode": "attach" },
+      "field": "labels",
+      "default": "default",
+      "tip": "Which segmentation the tracks attach to"
+    },
+    {
+      "key": "outputValueName",
+      "label": "Name",
+      "type": "valueNameInput",
+      "showIf": { "mode": "create" },
+      "namespace": "labelProps",
+      "default": "",
+      "tip": "Name for the new points segmentation"
+    },
+    {
+      "key": "csvPath",
+      "label": "Track file",
+      "type": "filePath",
+      "default": "",
+      "required": true,
+      "tip": "TrackMate XML, or a delimited table — its columns fill the mapping below",
+      "triggersOptions": true,
+      "extensions": [
+        ".xml",
+        ".csv",
+        ".tsv",
+        ".txt"
+      ],
+      "placeholder": "Browse for the exported track file"
+    },
+    {
+      "key": "template",
+      "showIf": { "csvPath": { "notEndsWith": ".xml" } },
+      "label": "Exported from",
+      "type": "select",
+      "default": "imagej_manual",
+      "options": [
+        {
+          "value": "imagej_manual",
+          "label": "ImageJ Manual Tracking"
+        },
+        {
+          "value": "trackmate_xml",
+          "label": "TrackMate (track XML)"
+        },
+        {
+          "value": "trackmate",
+          "label": "TrackMate"
+        },
+        {
+          "value": "imaris",
+          "label": "Imaris"
+        },
+        {
+          "value": "custom",
+          "label": "Custom (map columns below)"
+        }
+      ],
+      "tip": "Preset column mapping; XML needs none"
+    },
+    {
+      "key": "maxDistance",
+      "showIf": { "mode": "attach" },
+      "label": "Match distance (px)",
+      "type": "float",
+      "min": 0.5,
+      "max": 200,
+      "step": 0.5,
+      "default": 10,
+      "tip": "Cells further than this from any spot stay untracked"
+    },
+    {
+      "key": "columnMapping",
+      "showIf": { "csvPath": { "notEndsWith": ".xml" } },
+      "label": "Column mapping",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "trackColumn",
+          "label": "Track id",
+          "type": "select",
+          "default": "",
+          "tip": "Column holding the track id",
+          "options": []
+        },
+        {
+          "key": "frameColumn",
+          "label": "Frame",
+          "type": "select",
+          "default": "",
+          "tip": "Column holding the frame/slice",
+          "options": []
+        },
+        {
+          "key": "xColumn",
+          "label": "X",
+          "type": "select",
+          "default": "",
+          "tip": "Column holding X",
+          "options": []
+        },
+        {
+          "key": "yColumn",
+          "label": "Y",
+          "type": "select",
+          "default": "",
+          "tip": "Column holding Y",
+          "options": []
+        },
+        {
+          "key": "zColumn",
+          "label": "Z",
+          "type": "select",
+          "default": "",
+          "tip": "Column holding Z (leave empty for 2D)",
+          "options": []
+        },
+        {
+          "key": "frameBase",
+          "label": "First frame is",
+          "type": "select",
+          "variant": "chips",
+          "default": "1",
+          "tip": "Which number the file calls the first frame",
+          "options": [
+            {
+              "value": "0",
+              "label": "0"
+            },
+            {
+              "value": "1",
+              "label": "1"
+            }
+          ]
+        },
+        {
+          "key": "skipRows",
+          "label": "Skip rows",
+          "type": "int",
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "default": 0,
+          "tip": "Lines above the header row (Imaris writes 3)",
+          "triggersOptions": true
+        },
+        {
+          "key": "spotUnit",
+          "label": "Coordinates in",
+          "type": "select",
+          "variant": "chips",
+          "default": "physical",
+          "options": [
+            {
+              "value": "physical",
+              "label": "µm"
+            },
+            {
+              "value": "pixel",
+              "label": "px"
+            }
+          ],
+          "tip": "How the file stores X/Y/Z"
+        }
+      ]
+    }
+  ]
+}

@@ -30,6 +30,15 @@ export interface InteractiveView {
   opticalFlowPage?: boolean   // offered on the Optical Flow module page's +Plot picker
   trackPage?: boolean         // offered in the Track canvas's "+ Track…" picker
   analysisBoard?: boolean     // offered on the Analysis board's +Plot picker
+  // NAMEABLE BY A PLUGIN, in `plugin.json` → `contributions.views` (PLUGINS_PLAN Decision 11), to show
+  // on that plugin's custom module page. A separate opt-in rather than "any registered id", for two
+  // reasons a plugin author cannot be expected to know: that page is the SUMMARY canvas, which renders
+  // the population picker and nothing else, so a view wanting the cluster manager or the model vault
+  // would be handed the wrong rail (ratcheted below); and `trackScheme` MUTATES, so it must not
+  // become a panel a manifest can request. Flagging one makes its ID public — see the registry comment.
+  // (It was `trackCorrection` when this rule was written; the timeline replaced that worklist and
+  // inherited the rule, which is the point of stating it about the BEHAVIOUR rather than the id.)
+  pluginPage?: boolean
   boardGroup?: BoardGroup     // which optgroup it lands in on the board (default 'interactive')
   // WHICH MANAGER this plot needs in the host's rail (default 'pops'). The plot declares it; the host
   // resolves it. Before this, the board hardcoded `activeIsCluster ? PopulationManager : SeriesPicker`,
@@ -72,8 +81,8 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
   // reads `vis.fontSize` from it.
-  gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true, rail: 'none' },
-  filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none' },
+  gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true },
+  filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none', pluginPage: true },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
   // from `filmstrip`, which is a napari SCREENSHOT montage — these planes are computed, are not
   // viewer layers, and have no reason to become any.
@@ -93,13 +102,13 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
   // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
   trackPaths: { label: 'Tracks', component: TrackPathsView, trackPage: true, analysisBoard: true,
-                square: true, rail: 'pops', popTypes: TRACK_FAMILIES },
+                square: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
   // it belongs on the board: "is this movie comparable to its peers" is a board question, and it answers
   // it as a cohort — one curve per group, a group's images POOLED. Its verdicts come from the server, the
   // same ones `tracking.track_measures` banks as QC.
   trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, trackPage: true,
-                      analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES },
+                      analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
   // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
   // SPATIAL axes and so could not answer the question every join turns on — are these two tracks in
@@ -108,10 +117,10 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
   trackScheme: {
     label: 'Track timeline', component: TrackSchemeView, trackPage: true,
-    // `'pops'` like its two siblings: the Track canvas already carries a POPULATION MANAGER, and a
-    // track population is what a user picks — the segmentation is the storage detail underneath it.
-    // A private segmentation `<select>` here was a second picker for a job the canvas already has a
-    // canonical one for.
+    // `'pops'` like its two siblings, and NOT `pluginPage`: this one mutates. A track population is
+    // what a user picks — the segmentation is the storage detail underneath it — so the Track canvas
+    // shows the series picker whenever one of these three is the active panel, rather than each panel
+    // growing a private segmentation `<select>` (docs/TRACKING.md → Which picker).
     rail: 'pops', popTypes: TRACK_FAMILIES,
     initialState: () => ({ order: 'pair', offset: 0, sel: [] }),
   },
@@ -158,6 +167,9 @@ export const popTypeSpecFor = (key: string): PopTypeSpecLike | null => {
 }
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS
+
+/** May a PLUGIN name this view on its own module page? See `pluginPage` above. */
+export const isPluginView = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.pluginPage
 
 export interface ViewOption { key: string; label: string }
 

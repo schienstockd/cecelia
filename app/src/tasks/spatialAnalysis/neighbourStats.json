@@ -26,6 +26,8 @@
     },
     {
       "key": "basisPops",
+      "required": true,
+      "requiredMessage": "Select at least 2 populations",
       "label": "Populations",
       "type": "popSelection",
       "accepts": [

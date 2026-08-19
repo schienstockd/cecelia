@@ -497,6 +497,17 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "outputName", "label": "Output name", "type": "text", "default": "result" }
 ```
 
+**`filePath`** — one **existing file**: the same shape as `dirPath`, but Browse opens the shared
+`FileBrowser` in `mode="file"`, filtered to the param's `extensions` (case-insensitive; omit for any
+file). Still typeable, for the same reason. Validation requires an existing file, so a path typo is
+named at the field rather than reaching the runner.
+```json
+{ "key": "csvPath", "label": "Track file", "type": "filePath", "required": true,
+  "extensions": [".xml", ".csv", ".tsv"], "placeholder": "Browse for the exported file" }
+```
+`FileBrowser`'s `file` mode is the generalisation of its `bundle` mode (`.ccbundle`) — one predicate
+for "which entries may be picked", so a new format is a prop rather than another branch.
+
 **`dirPath`** — a destination **folder**: a text field plus a Browse button opening the shared
 `FileBrowser` in `mode="dir"` (the same picker the `.ccbundle` project export uses). Still typeable,
 since pasting a remembered path beats browsing to it. `placeholder` describes what an empty value
@@ -548,10 +559,28 @@ suite detector fails a handler that skips them:
 > counterpart is `script_utils.channel_indices`, which catches the mirror-image failure: a *name*
 > arriving where an index was due, meaning this translation never ran.
 
-**`valueNameSelection`** — picks from registered image versions. Add `"field": "labels"` to list segmentation label sets (`img.labels` keys) instead of the default image-version keys:
+**`valueNameSelection`** — picks from registered image versions. `"field"` names which list:
+
+| `field` | Lists | Use when the task |
+|---|---|---|
+| omitted | image versions (`img.filepaths`) | takes an image |
+| `"labels"` | value names with **mask pixels** (`img.labels`) | reads or writes the mask |
+| `"labelPropsNames"` | value names with a **measurement table** (`img.labelPropsNames`) | reads or writes the `.h5ad` and nothing else |
+| `"spatialGraphs"` | neighbour graphs by run suffix | takes a graph |
+
 ```json
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }
+{ "key": "valueName", "label": "Tracks",       "type": "valueNameSelection", "field": "labelPropsNames", "default": "default" }
 ```
+
+**`labels` and `labelPropsNames` are two independent registries, and picking the wrong one loses
+data silently.** `labels` is written when a mask is produced; `label_props` when a table is. A
+directly-imported track set registers only the second — there are no mask pixels to register — and a
+freshly segmented image only the first, until it is measured. Five specs gated a track-consuming
+picker on `labels`, so tracks imported by `ccia-importTracks` simply did not appear in
+`tracking.track_measures`, `tracking.correct` or the plugin's own measure task, with nothing saying
+why. Ratcheted both ways: a param whose label calls itself a *segmentation* must read `labels`, and a
+task that never touches a mask must not.
 
 **`valueNameInput`** — the INPUT-side twin's opposite: the name this task **writes under**. Free text
 with the names already in that namespace offered (an `<input>` + native `<datalist>`), so re-running
@@ -602,6 +631,28 @@ Reach for it whenever a param is "some of these", instead of asking the user to 
 list — a text field there is a parse error waiting to happen, and the values usually reach a runner
 that fails much later and much less clearly.
 
+### Which picker — decide this before writing the param
+
+Every picker below already documents *how it works*. This table is the question that comes first:
+**what does the task consume?** Getting it wrong is not a cosmetic slip — a `valueNameSelection`
+labelled "Segmentation" on a task that measures tracks was both the wrong control and the wrong word,
+and it shipped in an example plugin.
+
+| The task consumes | Use | Why |
+|---|---|---|
+| an image / a version of one | `valueNameSelection`, `field` omitted | |
+| a segmentation's **mask pixels** | `valueNameSelection`, `field: "labels"` | `labels` is the mask registry |
+| one **whole measured set**, tracked or not (a producer/maintainer of measures) | `valueNameSelection`, `field: "labelPropsNames"` | the whole set, not a subset of it — `tracking.track_measures`, `tracking.correct` |
+| **cells of chosen populations** | `popSelection`, `popScope: "cells"` | |
+| **tracks** — anything measured or modelled *along* a track | `popSelection`, `popScope: "tracks"` | `behaviour.hmm_states`, `behaviour.hmm_transitions`, `clustTracks.cluster`, `trackTools.cumulativeChange` |
+| any population, resolved to cells | `popSelection`, `accepts: [...]` + `pop_df_multi` | spatial analysis, clustering |
+
+**"On tracks" means a track population, not a segmentation.** The whole set is available as the
+derived `/_tracked` pop (`track_id > 0`), which the picker offers at the root whenever tracking was
+run **ungated** — including every directly imported track set — so choosing the pop picker does not
+cost you the "just measure everything" case. And do not add a `valueName` dropdown beside it: see
+*Derive the segmentation from the pops* below.
+
 **`popSelection`** — two modes.
 
 - **Single** (default): a dropdown of populations for the selected image + sibling `valueName`, plus `"NONE (whole segmentation)"`. The widget fetches `GET /api/gating/popmap`, flattens the tree to paths, and emits one path (or `"NONE"`). Used by `tracking.bayesian_tracking`.
@@ -642,6 +693,155 @@ Current users: `behaviour.hmm_states` / `behaviour.hmm_transitions` / `clustTrac
   ]
 }
 ```
+
+### Fields any param may carry
+
+The types above answer *what control is drawn*. These answer *when* and *how*, and apply to every
+type — including `section` and `group`, where they hide the whole box.
+
+**`showIf` — this param only applies under another param's value.** Declared in the spec, beside the
+param it is about. Keys are AND-ed; a list within one key is OR-ed:
+
+```json
+{ "key": "maxDistance", "label": "Match distance (px)", "type": "float", "showIf": { "mode": "attach" } }
+{ "key": "sigma",       "label": "Sigma",  "type": "float", "showIf": { "method": ["gaussian", "bilateral"] } }
+```
+
+Comparison is on the **string** form: a spec is JSON and a control's value is whatever the widget
+emits, so `"1"` in a spec matches the number `1` a slider produced. Without that the same condition
+would work behind a `select` and silently fail behind an `int`.
+
+An **absent** value satisfies nothing — a param gated on `mode` stays hidden until `mode` has a value.
+The alternative would flash every conditional param on first render, before defaults are applied.
+
+A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
+with no error. The suite rejects that (`showIf conditions name a param that exists`).
+
+**`hidden` — the SERVER ruled this param out.** Set by `_inject_dynamic_options!`, never authored in
+a spec file (a spec-file `hidden: true` is just a param nobody can set — delete it instead).
+
+**Which of the two to reach for is one question: is the form enough?**
+
+| The condition | Where it goes |
+|---|---|
+| "applies only when `mode` is `attach`" | `showIf` — the form knows |
+| "the file you picked is an XML export, which has no columns" | a server hook setting `hidden` — needs to READ the file |
+| "this image has no second channel" | a server hook — needs the image |
+
+Keep that line. Anything decidable from the form belongs in the JSON, so a **plugin author never
+writes Julia to make a field disappear** — they ship a spec and a task `.jl`, and the spec is the
+half they can reason about. `_inject_dynamic_options!` must **assign** `hidden`, not only set it: the
+spec is resolved once against an empty form and again on every `triggersOptions` edit, so a hook that
+only ever sets `true` can never take a flag back.
+
+**`variant`** — `"chips"` on a `select` renders the same closed set as a segmented `ChipSelect`
+instead of a dropdown. Same type, same validation; only the rendering differs. For a short closed set
+every choice shows at once, where a dropdown hides all but one and makes a binary look like a list
+that might be long. Keep the labels short — the row label already carries the question:
+
+```json
+{ "key": "frameBase", "label": "First frame is", "type": "select", "variant": "chips",
+  "default": "1", "options": [{ "value": "0", "label": "0" }, { "value": "1", "label": "1" }] }
+```
+
+**`optionsFrom`** — fill a picker's `options` from a named runtime source, instead of writing a Julia
+hook to walk the spec and do it by hand:
+
+```json
+{ "key": "model", "type": "select", "optionsFrom": "cellposeModels" }
+```
+
+Registered sources live in `_OPTION_SOURCES` (`app/src/tasks/task.jl`): `cellposeModels`,
+`coastalModels`, `flowModels`. Vault options are **appended** to any literal `options` the spec
+already declares — which is how coastal keeps `None` first and selectable, so a vault that is empty
+until you train something is a legible choice rather than a select that rejects its own default.
+
+Resolved for every task before the dispatch hook, so no `_needs_dynamic_options` overload is needed.
+An unregistered name is warned about once and leaves the declared options alone, rather than emptying
+the picker.
+
+**`defaultFrom`** — the other half of the picker: a `default` that comes from a SETTING rather than a
+literal in the spec.
+
+```json
+{ "key": "ngffVersion", "type": "select", "defaultFrom": "zarr.ngffVersion" }
+```
+
+Registered sources are in `_DEFAULT_SOURCES`. This is not cosmetic: the import form carried a literal
+`"0.4"` while a comment claimed it pre-filled from `store_layout()`. It did not — and since the GUI
+submits every declared param, choosing zarr v3 in Settings and importing from the form silently
+produced a v2 store. A source that is unregistered or throws leaves the spec's own `default` alone.
+
+**`triggersOptions: true`** — editing this param re-resolves the whole task's options against the
+current form (debounced at the sink). For a param whose value other params' options derive from: an
+importer's file path, whose columns become the mapping fields' suggestions. Options obtained this way
+are **suggestions only** — validation never depends on the form, so a field fed this way must stay
+valid on its own.
+
+**`tip`** — required on every param; one line, under 90 characters. Ratcheted.
+
+**`required`** / **`requiredMessage`** — the run is refused if the value is missing OR an empty
+collection, both server-side (`validate_params`, so it holds for a chain and the REPL) and on the Run
+button, which shows the reason instead of `Run on N images`.
+
+`requiredMessage` is the sentence to show. Prefer it: `Required param 'basisPops' is missing` is a
+wire key, not something a user can act on, and the nine tasks that hand-rolled this check as a
+post-run log line were already saying the useful thing —
+
+```json
+{ "key": "basisPops", "label": "Populations", "type": "popSelection",
+  "required": true, "requiredMessage": "Select at least 2 populations" }
+```
+
+A param `showIf` has ruled out is **not** required, on both sides. Otherwise the two combine into a
+form that cannot be submitted and shows nothing explaining why.
+
+A required param's `default` is unusable by definition — that is what required means — so it is
+exempt from the suite's "the spec's own defaults satisfy the spec" check.
+
+**`multiple`** — on a picker type (`select`, `channelSelection`, `popSelection`,
+`labelPropsColsSelection`), the value becomes an ARRAY and the widget multi-picks.
+
+**`step`** — slider granularity for `int` / `float`, alongside `min` and `max`.
+
+**`collapsed`** — a `section` starts closed. Use for Advanced; a section the user needs on first run
+should not be collapsed.
+
+**`repeatable`** / **`labelKey`** — on a `group`: whether entries can be added and reordered, and
+which sub-param's value is shown in each entry's header so the list is readable when collapsed.
+
+**`acrossSegmentations`** — on a `popSelection`, list populations from EVERY segmentation
+(value_name-prefixed) rather than just the sibling `valueName`'s.
+
+**`trimPrefix`** — on a `labelPropsColsSelection`, collapse to one flat group filtered to that prefix,
+with the prefix stripped from the labels (display only — the stored value stays the raw column name).
+
+**`params`** — the child params of a `section` or `group`. Their values are stored FLAT in the values
+dict, not nested, which is why a `showIf` may cross that boundary in either direction.
+
+**`$include`** — not a param but an item IN the params array: `{ "$include": "imageTiling" }` splices
+in every param from `app/src/tasks/fragments/imageTiling.json`. For a block repeated verbatim across
+tasks (tiling is in three). Expanded server-side by `_expand_params_array`, so the frontend only ever
+sees the flattened result.
+
+---
+
+### Keeping this reference honest
+
+Two ratchets, because spec fields drift in both directions:
+
+- **`every task spec field is declared and documented`** — a field used in any spec must be declared
+  in `frontend/src/tasks/types.ts` (`ParamDef`) **or** read by Julia, AND appear backticked in this
+  section. It caught `includeChannels` in `clustPops/cluster.json`: authored, plausible-looking, and
+  read by **nothing** — the frontend match was `napariOverlays.ts`, an unrelated movie-overlay
+  concept. A spec that declares something no consumer reads is a lie about the form.
+- **`showIf conditions name a param that exists`** — a condition on a key no param declares can never
+  be satisfied, so the control is hidden forever with no error anywhere.
+
+Both walk `spec_dirs()` in `app/test/suite.jl`, which covers built-ins, `docs/examples/custom-modules`
+and `docs/examples/plugins`. Add a field here when you add it to `ParamDef`, not afterwards.
+
+---
 
 **`group`** — repeatable/sortable list of sub-param sets. Each entry is keyed `"0"`, `"1"`, … in the values dict. Use for things like "one denoise model per set of channels":
 ```json

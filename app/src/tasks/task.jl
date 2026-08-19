@@ -51,7 +51,9 @@ function _resolve_spec_includes(obj::Dict, fdir::String)::Dict{String,Any}
     result
 end
 
-function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
+_task_spec(task::CciaTask) = _task_spec(task, Dict{String,Any}())
+
+function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any}, Nothing}
     key = string(typeof(task))
     lock(_SPEC_CACHE_LOCK) do
         cached = get(_SPEC_CACHE, key, nothing)
@@ -66,8 +68,120 @@ function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
         # picker over the filesystem) get a fresh, mutated deepcopy on every call — a user's
         # newly-dropped checkpoint reflects in `validate_params` and the definitions API without
         # a server restart or a manual invalidate. Everything else returns the cached spec as-is.
-        _needs_dynamic_options(task) ? _inject_dynamic_options!(deepcopy(cached), task) : cached
+        # `optionsFrom` is spec-declared and resolved for every task; the dispatch hook is for what a
+        # spec cannot say. Both mutate a fresh deepcopy, so a newly-dropped checkpoint shows up in
+        # `validate_params` and the definitions API with no restart.
+        hooked = _needs_dynamic_options(task)
+        opts   = _spec_has_options_from(cached)
+        dflts  = _spec_has_default_from(cached)
+        (hooked || opts || dflts) || return cached
+        out = deepcopy(cached)
+        opts  && _apply_options_from!(out)
+        dflts && _apply_defaults_from!(out)
+        hooked ? _inject_dynamic_options!(out, task, form) : out
     end
+end
+
+"""
+`optionsFrom` — a named, runtime-enumerated option source, declared in the SPEC.
+
+    { "key": "model", "type": "select", "optionsFrom": "cellposeModels" }
+
+Three tasks each carried twenty lines of identical dict-walking to do this — cellpose, coastal and
+opticalFlow.train — differing only in which lister they called. Worse for the reason plugins exist: a
+plugin author ships JSON and a task `.jl`, so offering a model vault meant writing a Julia hook, and
+a fourth task (`cleanupImages.cellposeCorrect`) hardcodes its model list with no hook at all, which
+is why a user-dropped denoise checkpoint is unreachable there.
+
+Vault options are **appended** to any literal `options` the spec already declares, rather than
+replacing them. That is how coastal keeps `None` first and selectable: the vault is empty until the
+user trains something, and an empty state should be a legible choice, not a select that rejects
+everything including its own default.
+
+Resolved for EVERY task, before the per-task hook, so a spec needs no `_needs_dynamic_options`
+overload to use one. A name with no registered source is left alone and warned about once — a spec
+naming a vault that does not exist should not empty the picker.
+"""
+const _OPTION_SOURCES = Dict{String,Function}(
+    # value = what the runner resolves; label = what the user reads.
+    "cellposeModels" => () -> [(value = String(m.name), label = String(m.label))
+                               for m in list_cellpose_models()],
+    "coastalModels"  => () -> [(value = String(m.name), label = String(m.label))
+                               for m in list_coastal_models()],
+    # value == label: the user types the stem, so the suggestion IS what goes in the field.
+    "flowModels"     => () -> [(value = n, label = n) for n in flow_model_names()],
+)
+
+"""
+`defaultFrom` — a param whose DEFAULT comes from a setting rather than a literal in the spec.
+
+    { "key": "ngffVersion", "type": "select", "defaultFrom": "zarr.ngffVersion" }
+
+The same shape as `optionsFrom`, for the other half of the picker. The import form's OME-NGFF version
+carried a literal `"0.4"` while a comment in `omezarr.jl` claimed it pre-filled from `store_layout()`.
+It did not: nothing read the setting on the way in, and the GUI submits every declared param, so the
+Settings choice reached only REPL and chain runs. Choosing zarr v3 in Settings and importing from the
+form silently produced a v2 store.
+
+A source that throws or is unregistered leaves the spec's own `default` in place — a setting that
+cannot be read must not empty the field.
+"""
+const _DEFAULT_SOURCES = Dict{String,Function}(
+    "zarr.ngffVersion" => ngff_version,
+)
+
+_spec_has_options_from(spec)::Bool = occursin("optionsFrom", JSON3.write(spec))
+_spec_has_default_from(spec)::Bool = occursin("defaultFrom", JSON3.write(spec))
+
+function _apply_defaults_from!(spec::Dict{String,Any})::Dict{String,Any}
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            src = strip(string(get(p, "defaultFrom", "")))
+            if !isempty(src)
+                if haskey(_DEFAULT_SOURCES, src)
+                    try
+                        p["default"] = _DEFAULT_SOURCES[src]()
+                    catch e
+                        @warn "defaultFrom source failed; keeping the spec default" source = src exception = e
+                    end
+                else
+                    @warn "Unknown defaultFrom source; keeping the spec default" source = src
+                end
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    spec
+end
+
+function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            src = strip(string(get(p, "optionsFrom", "")))
+            if !isempty(src)
+                if haskey(_OPTION_SOURCES, src)
+                    fixed = get(p, "options", nothing)
+                    base  = fixed isa AbstractVector ?
+                            Dict{String,Any}[Dict{String,Any}(string(k) => v for (k, v) in o)
+                                             for o in fixed if o isa AbstractDict] :
+                            Dict{String,Any}[]
+                    p["options"] = vcat(base,
+                        [Dict{String,Any}("label" => o.label, "value" => o.value)
+                         for o in _OPTION_SOURCES[src]()])
+                else
+                    @warn "Unknown optionsFrom source; leaving the declared options alone" source = src
+                end
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    spec
 end
 
 # Dispatch hooks for tasks whose spec has runtime-enumerated options (e.g. a select whose
@@ -76,6 +190,27 @@ end
 # task struct is included) so the module load order works.
 _needs_dynamic_options(::CciaTask) = false
 _inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
+
+"""
+    _inject_dynamic_options!(spec, task, form) -> spec
+
+Three-argument form: options that depend on **what the user has typed so far**, not just on what is on
+disk. `form` is the current param values from the open task form (empty when there are none yet).
+
+The existing overloads enumerate from the filesystem — cellpose checkpoints, flow models — and need
+nothing from the form, so the base method here drops `form` and calls the two-argument one. Only a task
+whose options come from a file the user just pointed at needs to overload this (an importer offering
+that file's own column names).
+
+**`validate_params` passes the params it is validating, so the picker and the validator see the SAME
+options.** That is what lets a form-derived list back a real `select` rather than a free-text field
+with suggestions: choosing a column that is not in the chosen file now fails validation by name,
+instead of reaching a runner that can only fail later and less clearly. Keeping the two in agreement
+is the whole reason `_task_spec` owns this — an injector that ran for the form only would recreate
+exactly the disagreement it exists to prevent.
+"""
+_inject_dynamic_options!(spec::Dict{String,Any}, task::CciaTask, ::AbstractDict) =
+    _inject_dynamic_options!(spec, task)
 
 # ── Live outputs (watch a store while the task is still writing it) ───────────
 # What a task writes to disk *as it runs*, i.e. an output a viewer can already show before the task
@@ -222,21 +357,107 @@ const _CUSTOM_TASKS      = Dict{String, CciaTask}()   # fun_name       => instan
 const _CUSTOM_SPEC_PATHS = Dict{String, String}()     # string(type)   => spec .json path
 const _CUSTOM_TASK_LOCK  = ReentrantLock()
 
+# ── fun_name precedence: built-in > hand-dropped > plugin (PLUGINS_PLAN Decision 3) ───────────────
+#
+# Who currently owns each registered fun_name, so a later registration can be judged against it
+# instead of blindly overwriting it (which is what `register_task!` used to do — silent last-one-wins,
+# with the winner decided by `walkdir`'s filesystem order).
+const _CUSTOM_TASK_SOURCE = Dict{String, @NamedTuple{path::String, tier::Int,
+                                                     plugin::Union{String,Nothing}}}()
+
+# Set by `load_custom_modules!` around each `Base.include` so `register_task!` can tell WHICH file is
+# registering without changing its signature — a dropped module's `.jl` calls `register_task!` exactly
+# as documented, and stays unaware that tiers exist.
+const _LOADING_SOURCE = Ref{Any}(nothing)
+
+# Refused registrations, keyed by losing-path + fun_name so re-running the loader cannot double-count.
+const _CUSTOM_TASK_CLASHES = Dict{String, Any}()
+
+function _record_task_clash!(fn, path, plugin, tier, winner, winner_tier)
+    lock(_CUSTOM_TASK_LOCK) do
+        _CUSTOM_TASK_CLASHES[string(path, "::", fn)] =
+            (; fun_name = String(fn), path = String(path), plugin, tier,
+               winner = winner === nothing ? nothing : String(winner), winner_tier)
+    end
+    @warn "Custom task name clash — this task was NOT registered" fun_name = fn losing = path winner =
+        something(winner, "(built-in)")
+    nothing
+end
+
+"""
+    custom_task_clashes() -> Vector{NamedTuple}
+
+Every `fun_name` collision seen this session: `(; funName, path, plugin, tier, winner, winnerTier)`,
+tiers already rendered as words for display. Backs the clash list in Settings → Custom modules.
+
+A clash is NOT a load failure — the losing file `include`s perfectly well, it just doesn't get the
+name — so it cannot be reported through `custom_modules_report`, which only knows `ok` vs `error`.
+Without this the losing task is simply absent from the UI with nothing anywhere saying why.
+
+Entries whose losing file no longer exists are dropped, so deleting a module stops it being reported
+without needing a restart (same rule `custom_modules_report` uses).
+"""
+function custom_task_clashes()
+    lock(_CUSTOM_TASK_LOCK) do
+        [(; funName    = c.fun_name,
+            path       = c.path,
+            plugin     = c.plugin,
+            tier       = tier_name(c.tier),
+            winner     = c.winner,
+            winnerTier = tier_name(c.winner_tier))
+         for c in values(_CUSTOM_TASK_CLASHES) if isfile(c.path)]
+    end
+end
+
 """
     register_task!(fun_name, task; spec) -> CciaTask
 
 Register a user/custom task at runtime — called from a dropped module's `.jl` at include time. Records
 the instance under `fun_name` and its JSON spec path (keyed by concrete type) so `_task_from_fun_name`
 and `_spec_path` resolve it exactly like a built-in. `spec` must be an existing `.json` file.
-Idempotent: re-registering the same type/`fun_name` replaces the entry. See `load_custom_modules!` and
+Idempotent: re-registering from the SAME file replaces the entry. See `load_custom_modules!` and
 docs/CUSTOM_MODULES.md.
+
+**A clash with a different file does not overwrite** (PLUGINS_PLAN Decision 3). Precedence is
+built-in > hand-dropped > plugin, and within a tier the first file loaded wins — `load_custom_modules!`
+loads in a fixed, path-sorted order so "first" is stable rather than whatever the filesystem returned.
+The loser is recorded in [`custom_task_clashes`](@ref) and surfaced in Settings; it is never silently
+dropped. This is what stops an installed plugin quietly taking over a name the user's own drop-in
+module already uses.
+
+Always returns `task`, registered or not: a module's `.jl` must not fail to load merely because it
+lost a name — its other tasks may be fine, and the clash is reported rather than thrown.
 """
 function register_task!(fun_name::AbstractString, task::CciaTask; spec::AbstractString)
     isfile(spec) ||
         throw(ArgumentError("register_task!(\"$fun_name\"): spec file not found: $spec"))
+    fn  = String(fun_name)
+    src = _LOADING_SOURCE[]
+    # No loading context = a direct call (REPL, a test). Treat it as hand-dropped: it is the user
+    # acting on their own machine, which is exactly that tier.
+    tier   = src === nothing ? TIER_USER    : src.tier
+    path   = src === nothing ? String(spec) : src.path
+    plugin = src === nothing ? nothing      : src.plugin
+
+    # Built-ins outrank everything and are resolved AHEAD of this registry by `_task_from_fun_name`,
+    # so such a registration is already inert. Record it so Settings can say why the task never shows
+    # up, rather than leaving the author to guess.
+    if haskey(_fun_name_map(), fn)
+        _record_task_clash!(fn, path, plugin, tier, nothing, TIER_BUILTIN)
+        return task
+    end
     lock(_CUSTOM_TASK_LOCK) do
-        _CUSTOM_TASKS[String(fun_name)]          = task
+        prev = get(_CUSTOM_TASK_SOURCE, fn, nothing)
+        if prev !== nothing && prev.path != path
+            if prev.tier >= tier
+                _record_task_clash!(fn, path, plugin, tier, prev.path, prev.tier)
+                return   # incumbent keeps the slot
+            end
+            _record_task_clash!(fn, prev.path, prev.plugin, prev.tier, path, tier)
+        end
+        _CUSTOM_TASKS[fn]                        = task
         _CUSTOM_SPEC_PATHS[string(typeof(task))] = String(spec)
+        _CUSTOM_TASK_SOURCE[fn]                  = (; path, tier, plugin)
     end
     task
 end
@@ -255,6 +476,9 @@ function _unregister_task!(fun_name::AbstractString)::Bool
         isnothing(t) && return false
         delete!(_CUSTOM_TASKS, String(fun_name))
         delete!(_CUSTOM_SPEC_PATHS, string(typeof(t)))
+        # Drop the ownership record too, or the name stays "taken" by a file that is gone and the
+        # module that was losing the clash could never take it over on a later reload.
+        delete!(_CUSTOM_TASK_SOURCE, String(fun_name))
         true
     end
 end
@@ -323,6 +547,15 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         p = strip(String(value))
         (!isempty(p) && ispath(p) && !isdir(p)) &&
             throw(ParamValidationError("'$key' is a file, not a folder: $p"))
+    elseif type_str == "filePath"
+        # Mirrors dirPath, for a param that names ONE existing file (an external export to import).
+        # Checked here rather than in the task: a path typo is the most likely thing to go wrong, and
+        # failing at validation names the field, where failing in the runner names a stack.
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a path, got: $value"))
+        isfile(String(value)) ||
+            throw(ParamValidationError("'$key' is not a file: $value"))
+
     elseif type_str == "valueNameInput"
         # The name this task WRITES under. Unlike `text` it is not free-form: it becomes a filename
         # stem (`spatialGraph/{suffix}.h5ad`), a versioned-dict key (`labels[name]`) or a column
@@ -370,16 +603,66 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
             continue
         end
 
+        # A param `showIf` has ruled out is NOT required — otherwise the two combine into a form that
+        # cannot be submitted, with nothing on screen explaining why. Same rule as the frontend's
+        # `missingRequired`, so the Run button and the server agree on which params are in play.
+        _show_if_satisfied(p, params) || continue
         required = get(p, "required", false)
         val = get(params, key, nothing)
 
-        if isnothing(val) || val == ""
-            required && throw(ParamValidationError("Required param '$key' is missing"))
+        # An EMPTY COLLECTION is missing too. `Any[] == ""` is false, so `required` could not express
+        # "pick at least one" for the multi-pick types — `channelSelection`, `popSelection`,
+        # `labelPropsColsSelection`, `chipSelect` — which is exactly where the requirement bites.
+        # Every such task therefore re-implemented it as a runtime log line, so the user learned they
+        # had picked nothing AFTER pressing Run, from the log, having waited for a pool slot.
+        # `_validate_leaf` has no branch for these types, so nothing else covers it.
+        if isnothing(val) || val == "" || (val isa Union{AbstractVector,AbstractDict} && isempty(val))
+            required && throw(ParamValidationError(_required_message(p, key)))
             continue  # optional and absent — skip range/type checks
         end
 
         _validate_leaf(key, val, Dict{String,Any}(string(k) => v for (k, v) in p); extra_options)
     end
+end
+
+# Is this param in play, given the form? Mirrors the frontend `showIfSatisfied`: keys AND, values
+# within a key OR, compared as STRINGS because a spec is JSON and a submitted value may be a number.
+# An absent value satisfies nothing.
+function _show_if_satisfied(p::AbstractDict, params::AbstractDict)::Bool
+    cond = get(p, "showIf", nothing)
+    cond isa AbstractDict || return true
+    for (k, want) in cond
+        have = get(params, string(k), nothing)
+        isnothing(have) && return false
+        got = string(have)
+        # Operator form — `{"csvPath": {"notEndsWith": ".xml"}}`. Mirrors the frontend exactly, or the
+        # Run button and the server would disagree about which params are in play.
+        if want isa AbstractDict
+            sfx(key) = (v = get(want, key, nothing);
+                        isnothing(v) ? nothing :
+                        lowercase.(v isa AbstractVector ? string.(v) : [string(v)]))
+            ends, nends = sfx("endsWith"), sfx("notEndsWith")
+            isnothing(ends) && isnothing(nends) && return false   # an operator nobody implements
+            isnothing(ends)  || any(e -> endswith(lowercase(got), e), ends) || return false
+            isnothing(nends) || !any(e -> endswith(lowercase(got), e), nends) || return false
+            continue
+        end
+        accepted = want isa AbstractVector ? string.(want) : [string(want)]
+        got in accepted || return false
+    end
+    true
+end
+
+# The message a missing required param produces. `requiredMessage` in the spec overrides it, because
+# "Required param 'pops' is missing" is a key, not a sentence — the tasks that hand-rolled this check
+# were saying things like "select at least two populations to compare", which is the thing worth
+# keeping. Falls back to the param's own label, so an un-customised message still names what the user
+# sees rather than the wire key.
+function _required_message(p::AbstractDict, key::AbstractString)::String
+    msg = strip(string(get(p, "requiredMessage", "")))
+    isempty(msg) || return msg
+    label = strip(string(get(p, "label", "")))
+    isempty(label) ? "Required param '$key' is missing" : "$label is required"
 end
 
 """
@@ -389,7 +672,9 @@ No-ops if the spec file is not found (allows tasks without a spec).
 """
 function validate_params(task::CciaTask, params::Dict{String,Any};
                          extra_options::Set{String} = Set{String}())
-    spec = _task_spec(task)
+    # Pass the params through: a task whose options come from a file the user picked resolves them
+    # against THESE values, so the validator checks against the same list the form offered.
+    spec = _task_spec(task, params)
     isnothing(spec) && return
     spec_params = get(spec, "params", [])
     isempty(spec_params) && return
@@ -738,6 +1023,59 @@ function _flatten_sections(task::CciaTask, params::Dict{String,Any})::Dict{Strin
     end
     out
 end
+
+"""
+    _apply_spec_defaults(task, params) -> Dict
+
+Fill in every param the caller did not supply, from the spec's own `default`.
+
+**Why this has to be central.** `run_task` flattened sections and then handed the bag straight to
+`_run_task`, which meant every handler carried its own fallback — `get(params, "minTracklength", 1)`
+— and the spec's `default` was authoritative for the FORM only. 215 such fallbacks exist across 31
+task files; 210 agree with their spec and are pure duplication, and **five did not**:
+
+| task | param | the handler said | the spec says |
+|---|---|---|---|
+| `clustTracks.cluster` | `minTracklength` | 1 | 5 |
+| `opticalFlow.train` | `trainRatio` | 1.0 | 0.8 |
+| `segment.coastal` | `labelSmoothing` | 0.0 | 0.5 |
+| `spatialAnalysis.contactsMeshes` | `maxContactDist` | 10.0 | 5 |
+| `tracking.track_measures` | `forceRecompute` | false | true |
+
+The GUI always submits every declared param (`flattenParams`), so those five only bit REPL, chain and
+MCP callers — the callers least able to notice that the form promises one number and the run uses
+another. Applied here, the spec is the single source and the surviving fallbacks are dead weight
+rather than a rival answer.
+
+Only ABSENT keys are filled: an explicit `nothing` is a caller's choice, and `""` may be meaningful
+(an empty `valueNameSelection` means "the active version"). Sub-params of a section are filled too,
+since `_flatten_sections` has already lifted them.
+"""
+function _apply_spec_defaults(task::CciaTask, params::Dict{String,Any})::Dict{String,Any}
+    spec = _task_spec(task)
+    isnothing(spec) && return params
+    out = params; copied = false
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            key = string(get(p, "key", ""))
+            if !isempty(key) && haskey(p, "default") && !haskey(out, key)
+                copied || (out = copy(out); copied = true)
+                out[key] = _spec_value(p["default"])
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    out
+end
+
+# JSON3 hands back its own array/object views; a handler doing `Float64(...)` or `push!` on one of
+# those fails in ways that look like a task bug. Materialise to plain Julia containers.
+_spec_value(v) = v isa AbstractVector ? Any[_spec_value(x) for x in v] :
+                 v isa AbstractDict   ? Dict{String,Any}(string(k) => _spec_value(x) for (k, x) in v) :
+                 v
 
 """
     task_scope(task) -> "image" | "set"

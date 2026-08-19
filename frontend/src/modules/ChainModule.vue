@@ -29,7 +29,7 @@ import { useProjectStore } from '../stores/project'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
-import type { TaskDef, ChainTemplate } from '../tasks/types'
+import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
@@ -922,11 +922,18 @@ function propagateValueName(sourceId: string, targetId: string) {
   if (!out) return
   const def = taskDefFor(target.data.fn)
   if (!def) return
+  // RECURSES into sections and groups: their sub-values are stored FLAT in the params dict, so a
+  // `valueNameSelection` inside an Advanced section is addressable here — it just was not reached,
+  // and so was never prefilled from an upstream edge while its top-level twin was.
   const patch: Record<string, unknown> = {}
-  for (const p of def.params ?? []) {
-    if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
-      patch[p.key] = out.name
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
+        patch[p.key] = out.name
+      walk(p.params)
+    }
   }
+  walk(def.params)
   if (Object.keys(patch).length) {
     updateNode(targetId, {
       data: { ...target.data, params: { ...target.data.params, ...patch } },
@@ -1052,7 +1059,15 @@ const paramContext = computed(() => {
         .map(e => { const s = findNode(e.source); return s ? nodeOutputValueName(s)?.name : null })
         .filter((n): n is string => !!n)
     : []
-  return { images: imgs, extraValueNames }
+  // `values` — the node's own params. Without them a `showIf` condition can never be satisfied here,
+  // so a conditional param would be permanently hidden in the chain editor while showing correctly in
+  // the task runner: the same spec, two behaviours, no error. (TaskRunner has always passed them.)
+  // `projectUid` — WITHOUT it `loadPops`/`loadCols` early-return, so every `popSelection` (13 specs)
+  // and `labelPropsColsSelection` (4 specs) param rendered EMPTY in the chain editor while working in
+  // the task runner: same spec, two behaviours, no error. `params` lets a widget find its sibling by
+  // type rather than by a hardcoded key.
+  return { images: imgs, extraValueNames, values: selectedNode.value?.data.params,
+           projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params }
 })
 
 const runAllSelected = computed(() =>

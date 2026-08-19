@@ -21,7 +21,7 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
                    on_process::Function  = _ -> nothing)
     popsA      = _str_list(params, "popsA")
     popsB      = _str_list(params, "popsB")
-    max_dist   = Float64(get(params, "maxContactDist", 10.0))
+    max_dist   = Float64(get(params, "maxContactDist", 5.0))
     (isempty(popsA) || isempty(popsB)) &&
         (on_log("[ERROR] contactsMeshes: select both an A and a B population"); return nothing)
     # A and B segmentations derived from their own populations (value_name-prefixed picks); each is ONE

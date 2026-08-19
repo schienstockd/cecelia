@@ -47,6 +47,39 @@ end
 _post(f, obj) = f(Vector{UInt8}(JSON3.write(obj)))
 _repl(code) = _post(api_repl, Dict("code" => code))
 
+@testset "API: a points-only value name reaches the client" begin
+    # `labels` and `label_props` are two independent ccid.json registries. A track set imported
+    # directly — ImageJ, TrackMate — for an image nothing has segmented registers only the second:
+    # there are no mask pixels to register. The payload carried `labels` alone, so such a set was
+    # invisible to the client: no viewer row, and therefore no tracks toggle, while gating and the
+    # observer listed it happily. Reported from the screen ("the imported tracks do not show up").
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-points-only")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        mkpath(joinpath(img._dir, "labelProps"))
+        img.labels      = Dict("seg" => ["seg.zarr"])            # a real segmentation, with pixels
+        img.label_props = Dict("seg" => "seg.h5ad",              # …its measurement table
+                               "trackmate" => "trackmate.h5ad")  # …and an import with NO mask
+        save!(img)
+
+        payload = _image_payload(img)
+        @test collect(keys(payload.labels)) == ["seg"]                    # unchanged: masks only
+        @test Set(payload.labelPropsNames) == Set(["seg", "trackmate"])   # the union is derivable
+        # Both registries are surfaced SEPARATELY rather than merged server-side: the client needs the
+        # difference to decide which toggles a row can offer (tracks need only a `track_id` column;
+        # the show-labels eye needs pixels).
+        @test "trackmate" ∉ collect(keys(payload.labels))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: diagnostics" begin
     st, body = api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))
     @test st == 200
@@ -2551,19 +2584,128 @@ end
 end
 
 @testset "API: custom modules status/reload" begin
-    # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
+    # Read-only status: shape is { dir, modules, plugins, clashes, categories }; dir is <config_dir>/modules.
     st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
     @test st == 200
     d = JSON3.read(body)
     @test endswith(String(d.dir), joinpath("modules"))
     @test haskey(d, :modules)
     @test haskey(d, :categories)   # drives the generic new-category page + "Custom" nav group
+    @test haskey(d, :plugins)      # installed plugin sets — docs/todo/PLUGINS_PLAN.md
+    @test haskey(d, :clashes)      # fun_names a module registered but did NOT get
 
-    # Reload rescans; with no modules dir present it returns empty lists, never errors.
+    # Reload rescans; with no modules dir present it returns empty lists, never errors. It returns the
+    # SAME payload as status plus the run's outcome, so the two can't drift.
     st2, body2 = api_custom_modules_reload(Vector{UInt8}("{}"))
     @test st2 == 200
     d2 = JSON3.read(body2)
     @test haskey(d2, :loaded) && haskey(d2, :failed) && haskey(d2, :categories)
+    @test haskey(d2, :plugins) && haskey(d2, :clashes)
+end
+
+@testset "API: a plugin task's options can depend on the form" begin
+    # The import builder (docs/todo/PLUGINS_PLAN.md → P1.5): the column fields offer the columns of
+    # the file the user just picked. Two things this pins, both previously broken:
+    #   1. dynamic options resolved through `_fun_name_map()` — BUILT-INS ONLY — so a plugin task
+    #      overloading the hooks got its options at validation time (via `_task_spec`, which
+    #      dispatches on the instance) but never in the served form. Picker and validator disagreed.
+    #   2. options could only come from disk, never from what the user had typed.
+    mods = joinpath(Cecelia.config_dir(), "modules")
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "ccia-importTracks")
+    src  = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),
+                    "docs", "examples", "plugins", "ccia-importTracks")
+    mkpath(dirname(pdir)); cp(src, pdir; force = true)
+    csv = joinpath(mods, "spots.csv")
+    write(csv, "Nb,Track n°,Slice n°,X,Y,Z\n1,7,1,10.0,20.0,3.0\n")
+    Cecelia.load_custom_modules!()
+    try
+        _cols(body, key) = begin
+            defs = JSON3.read(body)
+            spec = only(filter(s -> String(get(s, :fun_name, "")) == "tracking.importCsvTracks",
+                               collect(defs.tracking)))
+            found = Ref{Any}(nothing)
+            walk(ps) = for p in ps
+                String(get(p, :key, "")) == key && (found[] = get(p, :options, nothing))
+                haskey(p, :params) && walk(p.params)
+            end
+            walk(spec.params)
+            found[]
+        end
+
+        # with the file in hand, the column fields offer ITS headers — including the non-ASCII `°`
+        q = "/api/tasks/definitions?category=tracking&params=" *
+            HTTP.escapeuri(JSON3.write(Dict("csvPath" => csv)))
+        st, body = api_task_definitions(HTTP.Request("GET", q))
+        @test st == 200
+        opts = _cols(body, "trackColumn")
+        @test opts !== nothing
+        vals = String[String(o.value) for o in opts]
+        @test "Track n°" ∈ vals && "Slice n°" ∈ vals && "X" ∈ vals
+        @test String.(getproperty.(_cols(body, "yColumn"), :value)) == vals   # every column field
+
+        # without form state there is nothing to offer, and the request still succeeds — a fresh page
+        # load must render the form, just with an empty column picker until a file is chosen
+        st2, body2 = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=tracking"))
+        @test st2 == 200
+        @test isempty(something(_cols(body2, "trackColumn"), []))
+
+        # malformed form state degrades to no options rather than 400-ing the page
+        st3, body3 = api_task_definitions(
+            HTTP.Request("GET", "/api/tasks/definitions?category=tracking&params=not-json"))
+        @test st3 == 200
+        @test isempty(something(_cols(body3, "trackColumn"), []))
+    finally
+        Cecelia._unregister_task!("tracking.importCsvTracks")
+        rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+        rm(csv; force = true)
+    end
+end
+
+@testset "API: a plugin's task gets a form and a nav entry" begin
+    # THE P1 blocker, end to end (docs/todo/PLUGINS_PLAN.md). The Julia loader walks the modules tree
+    # recursively, but both API scans did a one-level readdir — so a plugin's task registered and ran
+    # while its `.json` sat one level too deep to be seen: no form, no nav entry. Both scans now go
+    # through Cecelia.user_task_specs, which knows the plugins/<plugin>/<category>/ shape explicitly.
+    mods = joinpath(Cecelia.config_dir(), "modules")
+    pdir = joinpath(mods, Cecelia.PLUGINS_SUBDIR, "trackimport-smithlab")
+    mkpath(joinpath(pdir, "tracking"))
+    write(joinpath(pdir, "plugin.json"),
+          JSON3.write(Dict("name" => "trackimport-smithlab", "version" => "0.2.0")))
+    write(joinpath(pdir, "tracking", "importSmith.json"),
+          JSON3.write(Dict("fun_name" => "tracking.importSmith", "label" => "Import Smith tracks",
+                           "resource_pool" => "cpu", "scope" => "image", "params" => [])))
+    try
+        # 1) the FORM: the spec is merged into the tracking category, not a category named after the plugin
+        st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=tracking"))
+        @test st == 200
+        defs = JSON3.read(body)
+        @test haskey(defs, :tracking)
+        @test any(s -> String(get(s, :fun_name, "")) == "tracking.importSmith", defs.tracking)
+
+        # 2) the NAV entry: the category is `tracking` (the dir BELOW the plugin root), never the
+        #    plugin name — PLUGINS_PLAN Decision 2.
+        cats = _custom_module_categories()
+        byname = Dict(String(c.name) => c for c in cats)
+        @test haskey(byname, "tracking")
+        @test "tracking.importSmith" ∈ byname["tracking"].funNames
+        @test byname["tracking"].builtin == true          # tracking is a built-in page; no generic page
+        @test !haskey(byname, "trackimport-smithlab")     # the plugin name is not a category
+        @test !haskey(byname, "plugins")                  # nor is the plugin root
+
+        # 3) it shows up as an installed plugin, with what it actually ships on disk
+        st3, body3 = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
+        plugs = JSON3.read(body3).plugins
+        smith = only(filter(p -> String(p.name) == "trackimport-smithlab", collect(plugs)))
+        @test String(smith.version) == "0.2.0"
+        @test "tracking" ∈ String.(smith.categories)
+        # …and what it CONTRIBUTES reaches the client, so Settings can show it without a second call
+        # (PLUGINS_PLAN Decision 10). The layout desugars: this plugin declares no `contributions`
+        # block at all, and its task is listed anyway.
+        @test "tracking.importSmith" ∈ [String(t.funName) for t in smith.contributions.tasks]
+        @test isempty(smith.problems)
+    finally
+        rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
+    end
 end
 
 # Observer (in-app AI assistant) — status shape + request validation. The actual agent spawn (a real
@@ -4261,6 +4403,7 @@ end
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/profiles/save", "/api/profiles/delete",
         "/api/tasks/custom-modules/reload",
+        "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
     ]
     UNSAFE = [
@@ -4303,7 +4446,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 110
+    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 113
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

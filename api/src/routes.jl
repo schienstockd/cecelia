@@ -336,6 +336,22 @@ end
 
 const _TASK_SPECS_ROOT = joinpath(@__DIR__, "..", "..", "app", "src", "tasks")
 
+# The task form's CURRENT values, for options that depend on what the user just typed (see
+# `_inject_dynamic_options!`'s three-argument method). Sent as one JSON blob rather than flattened into
+# the query string, because param keys are the task's own and would collide with `category`/`params`.
+# Malformed input yields an empty form rather than a 400: these values only ever add SUGGESTIONS, so
+# losing them degrades the picker instead of failing the request that draws the whole page.
+function _form_params(query::AbstractDict)::Dict{String,Any}
+    raw = get(query, "params", "")
+    isempty(raw) && return Dict{String,Any}()
+    try
+        JSON3.read(String(raw), Dict{String,Any})
+    catch e
+        @warn "Ignoring malformed task-form params" exception=e
+        Dict{String,Any}()
+    end
+end
+
 function api_task_definitions(req::HTTP.Request)
     uri    = HTTP.URI(req.target)
     query  = HTTP.queryparams(uri)
@@ -357,6 +373,12 @@ function api_task_definitions(req::HTTP.Request)
             endswith(f, ".json") || continue
             try
                 parsed = JSON3.read(read(f, String), Dict{String,Any})
+                # A task spec is identified by its `fun_name`, exactly as the user/plugin scan below
+                # requires. Not every .json beside a task IS one: `tracking/cell_config.json` is the
+                # vendored btrack TrackerConfig, and without this it was served as a task — rendering
+                # a BLANK entry in the function picker that threw `def.params is undefined` the moment
+                # it was selected. The two scans now agree on what a spec is.
+                isempty(string(get(parsed, "fun_name", ""))) && continue
                 resolved = Cecelia._resolve_spec_includes(parsed, frag_dir)
                 push!(specs, resolved)
             catch e
@@ -367,34 +389,28 @@ function api_task_definitions(req::HTTP.Request)
     end
 
     # ── User drop-in modules (custom tasks) ────────────────────────────────────
-    # Same directory-driven contract as the built-ins, and the SAME co-located layout, but rooted at
-    # the per-user config dir (<config_dir>/modules/<category>/<name>.json). Category = subdir name, so
-    # a custom task in an existing category (e.g. behaviour/) appears in that module page automatically.
-    # Built-ins win on a fun_name clash. See docs/CUSTOM_MODULES.md and Cecelia.load_custom_modules!.
+    # Same directory-driven contract as the built-ins, and the SAME co-located layout, rooted at the
+    # per-user config dir — in BOTH shapes:
+    #   <config_dir>/modules/<category>/<name>.json                    hand-dropped
+    #   <config_dir>/modules/plugins/<plugin>/<category>/<name>.json   a plugin (one directory)
+    # Category = the subdir name in both, so a custom task in an existing category (e.g. behaviour/)
+    # appears on that module page automatically.
+    #
+    # Enumeration, the legacy skip list and fun_name precedence all live in ONE place —
+    # `Cecelia.user_task_specs` — shared with `_custom_module_categories` below. They each used to
+    # hand-roll the same one-level `readdir`, which is how the scans drifted from the (recursive)
+    # Julia loader and why a plugin could register a task that had no form. Built-ins still win, which
+    # is what `exclude_funs` says. See docs/CUSTOM_MODULES.md, docs/todo/PLUGINS_PLAN.md.
     builtin_funs = Set{String}()
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))
         isempty(fn) || push!(builtin_funs, fn)
     end
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
-    if isdir(user_defs_root)
-        for entry in readdir(user_defs_root; join=true)
-            isdir(entry) || continue
-            category = basename(entry)
-            category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
-            (!isempty(cat) && category != cat) && continue
-            for f in readdir(entry; join=true)
-                endswith(f, ".json") || continue
-                try
-                    parsed = JSON3.read(read(f, String), Dict{String,Any})
-                    fn     = string(get(parsed, "fun_name", ""))
-                    (isempty(fn) || fn ∈ builtin_funs) && continue   # need a fun_name; built-ins win
-                    resolved = Cecelia._resolve_spec_includes(parsed, frag_dir)
-                    push!(get!(raw, category, Any[]), resolved)
-                catch e
-                    @warn "Skipping malformed custom task spec" path=f exception=e
-                end
-            end
+    for e in Cecelia.user_task_specs(; category = cat, exclude_funs = builtin_funs)
+        try
+            push!(get!(raw, e.category, Any[]), Cecelia._resolve_spec_includes(e.spec, frag_dir))
+        catch err
+            @warn "Skipping malformed custom task spec" path=e.path exception=err
         end
     end
 
@@ -402,24 +418,33 @@ function api_task_definitions(req::HTTP.Request)
     # <install>/models/cellposeModels/ + <config_dir>/models/cellposeModels/) — mutate specs in
     # place via the same dispatch hook `validate_params` uses (`_inject_dynamic_options!`), so
     # picker and validation stay in sync. See docs/SEGMENTATION.md → Custom cellpose checkpoints.
-    fun_map = Cecelia._fun_name_map()
+    # Resolution goes through `_task_from_fun_name` — the canonical resolver, which falls back to the
+    # custom/plugin registry — NOT `_fun_name_map`, which holds built-ins only. That gate was a real
+    # desync: a custom or plugin task overloading these hooks DID get its options at validation time
+    # (via `_task_spec`, which dispatches on the instance) but not in the served form, so the picker
+    # and the validator disagreed — the one thing this block exists to prevent.
+    #
+    # `form` is the values currently in the open task form, for options that depend on what the user
+    # just typed (an importer offering the columns of the file they picked) rather than on what is on
+    # disk. Empty for a plain fetch, and ignored by every option source that doesn't need it.
+    # …and the task-preview trait is stamped in the SAME pass. It is declared in Julia beside the task
+    # (`task_previewable`, task.jl) rather than written into the JSON, because the JSON is the PARAM
+    # spec — a capability of the compute doesn't belong in it, and duplicating it there would let the
+    # two disagree. Composites resolve through their own overload, so `segment.cellposeMeasure` reports
+    # true. One loop, one resolution: this used to be a second pass with its own `_fun_name_map`
+    # lookup, carrying the identical built-ins-only bug (a plugin task was never stamped at all).
+    form = _form_params(query)
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))
-        (isempty(fn) || !haskey(fun_map, fn)) && continue
-        Cecelia._needs_dynamic_options(fun_map[fn]) || continue
-        Cecelia._inject_dynamic_options!(spec, fun_map[fn])
-    end
+        isempty(fn) && continue
+        task = try Cecelia._task_from_fun_name(fn) catch; nothing end
+        task === nothing && continue
 
-    # Stamp the task-preview trait onto each spec. Declared in Julia beside the task
-    # (`task_previewable`, task.jl) and stamped here rather than written into the JSON, because the JSON
-    # is the PARAM spec — a capability of the compute doesn't belong in it, and duplicating it there
-    # would let the two disagree. The frontend reads `previewable` instead of guessing from the params.
-    # Composites resolve through their own overload, so `segment.cellposeMeasure` reports true.
-    for specs in values(raw), spec in specs
-        fn = string(get(spec, "fun_name", ""))
-        haskey(fun_map, fn) || continue
+        Cecelia._needs_dynamic_options(task) &&
+            Cecelia._inject_dynamic_options!(spec, task, form)
+
         spec["previewable"] = try
-            Cecelia.task_previewable(fun_map[fn])
+            Cecelia.task_previewable(task)
         catch e
             # a task's own overload must never take the whole picker down (same guard as
             # `_live_outputs_for`): report not-previewable and carry on
@@ -502,50 +527,56 @@ end
 # that category (a matching dir under app/src/tasks). The frontend renders a generic page + nav entry
 # only for the NEW categories (builtin == false); tasks in an existing category already show there.
 function _custom_module_categories()
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
-    isdir(user_defs_root) || return Any[]
+    specs = Cecelia.user_task_specs()   # both layouts, deduped by precedence — see api_task_definitions
+    isempty(specs) && return Any[]
     builtin = Set(basename(e) for e in readdir(_TASK_SPECS_ROOT; join=true) if isdir(e))
+    # Interactive plots a plugin asked for on its page (PLUGINS_PLAN Decision 11). The id names a
+    # built-in view; the registry it names is in the frontend, so this route carries the declaration
+    # and the canvas is the half that can tell whether it resolves.
+    views = Cecelia.plugin_views()
     cats = Any[]
-    for entry in readdir(user_defs_root; join=true)
-        isdir(entry) || continue
-        category = basename(entry)
-        category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
-        funs = String[]
-        for f in readdir(entry; join=true)
-            endswith(f, ".json") || continue
-            try
-                parsed = JSON3.read(read(f, String), Dict{String,Any})
-                fn = string(get(parsed, "fun_name", ""))
-                isempty(fn) || push!(funs, fn)
-            catch
-            end
-        end
+    for category in unique(String[e.category for e in specs])
+        funs = String[e.fun_name for e in specs if e.category == category]
         isempty(funs) && continue
         # cohortFuns = the category's funs that bank cohort-comparable metrics (Cecelia.COHORT_METRICS,
         # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
         # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
         # declares its metrics gets the button automatically.
         cohort_funs = String[f for f in funs if haskey(Cecelia.COHORT_METRICS, f)]
-        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs, cohortFuns = cohort_funs))
+        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs,
+                       cohortFuns = cohort_funs,
+                       views = [(; v.view, v.label, v.plugin) for v in views if v.moduleName == category]))
     end
     cats
 end
 
+# `plugins` = the installed plugin sets (docs/todo/PLUGINS_PLAN.md); `clashes` = fun_names a module
+# registered but did NOT get, which loading alone cannot report — the file `include`s fine, it just
+# lost the name to a higher tier. Without it the task is simply missing from the UI with nothing
+# saying why. The running version is passed in because `requiresCecelia` is checked here, not in the
+# package (and is skipped outright for a "dev" checkout — see Cecelia.plugin_version_warning).
+_custom_modules_payload() = (; dir        = Cecelia.custom_modules_dir(),
+                               modules    = Cecelia.custom_modules_report(),
+                               plugins    = Cecelia.plugins_report(; running_version = _running_version()),
+                               clashes    = Cecelia.custom_task_clashes(),
+                               registry   = Cecelia.plugin_registry_status(),
+                               # Example plugins in THIS checkout (docs/examples/plugins) — installable
+                               # with no network, because that copy is the SOURCE the GitHub mirror is
+                               # published from. Empty in an installed app with no `docs/`.
+                               bundled    = Cecelia.bundled_plugins(),
+                               categories = _custom_module_categories())
+
 function api_custom_modules_status(::HTTP.Request)
-    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
-                        modules    = Cecelia.custom_modules_report(),
-                        categories = _custom_module_categories()))
+    200, JSON3.write(_custom_modules_payload())
 end
 
 function api_custom_modules_reload(::Vector{UInt8})
     res = Cecelia.load_custom_modules!()
-    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
+    200, JSON3.write((; _custom_modules_payload()...,
                         loaded     = res.loaded,
                         skipped    = res.skipped,
                         removed    = res.removed,
-                        failed     = [(; path = p, error = m) for (p, m) in res.failed],
-                        modules    = Cecelia.custom_modules_report(),
-                        categories = _custom_module_categories()))
+                        failed     = [(; path = p, error = m) for (p, m) in res.failed]))
 end
 
 # ── View profiles (curated sidebar) ───────────────────────────────────────────
@@ -2650,6 +2681,12 @@ function _image_payload(img::CciaImage)
         activeValueName = active_vn,
         filepaths       = fps,
         labels          = img.labels,
+        # Value names that have a MEASUREMENT TABLE but not necessarily a mask. `labels` and
+        # `label_props` are two independent registries (see model/image.jl) written by two different
+        # tasks, and a directly-imported track set registers only the second: there are no mask pixels
+        # to register. Without this the client could not tell such a set exists at all — it had no
+        # viewer row, so no tracks toggle, while gating and the observer listed it happily.
+        labelPropsNames = [v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)],
         # Skeleton labels written by segment.branching — kept separate from `labels` on purpose
         # so the generic labels picker (measure / segment / tracking) never lists them
         # (BRANCHING_PLAN Decision 6). The Viewer surfaces them as a separate toggle.

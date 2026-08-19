@@ -155,10 +155,20 @@ _tar_available()::Bool = Sys.which("tar") !== nothing
 #
 # Windows' own System32\tar.exe is bsdtar and doesn't do remote at all; but under `shell: bash` —
 # CI, and any Git Bash — `tar` resolves to Git-for-Windows' GNU tar.
+#
+# Compression rides on the archive's own extension rather than a caller flag, so `.tar` and
+# `.tar.gz` are packed and unpacked by the same two functions. Plugin install downloads a
+# `.tar.gz` from GitHub; project export writes a plain `.tar` (zarr is already compressed).
+_tar_gz(path::AbstractString)::Bool = endswith(path, ".tar.gz") || endswith(path, ".tgz")
+
 _tar_pack_cmd(out_tar::AbstractString, sdir::AbstractString)::Cmd =
-    Cmd(`tar -cf $(basename(out_tar)) -C $(dirname(sdir)) $(basename(sdir))`; dir = dirname(out_tar))
-_tar_unpack_cmd(tar_path::AbstractString)::Cmd =
-    Cmd(`tar -xf $(basename(tar_path))`; dir = dirname(tar_path))   # extracts into the cwd
+    Cmd(`tar $(_tar_gz(out_tar) ? "-czf" : "-cf") $(basename(out_tar)) -C $(dirname(sdir)) $(basename(sdir))`;
+        dir = dirname(out_tar))
+# `into` extracts elsewhere than the archive's own directory — again via `-C`, which is safe to
+# leave absolute. Empty means "into the cwd", i.e. beside the archive.
+_tar_unpack_cmd(tar_path::AbstractString; into::AbstractString = "")::Cmd =
+    Cmd(`tar $(_tar_gz(tar_path) ? "-xzf" : "-xf") $(basename(tar_path)) $(isempty(into) ? [] : ["-C", into])`;
+        dir = dirname(tar_path))
 
 function _run_tar(cmd::Cmd, task_id::AbstractString; on_err::Function = _ -> nothing)::Bool
     err  = IOBuffer()

@@ -15,21 +15,48 @@ const emit = defineEmits<{
 }>()
 
 // Selection mode: 'image' (default, multi-select image files — the image-import flow, unchanged),
-// 'dir' (pick the current folder — e.g. an export destination), or 'bundle' (single-select a
-// `.ccbundle` directory — project import). 'dir'/'bundle' reuse the same server-side browser so mounted
-// network drives / servers are reachable via the shortcuts.
-const props = withDefaults(defineProps<{ mode?: 'image' | 'dir' | 'bundle' }>(), { mode: 'image' })
+// 'dir' (pick the current folder — e.g. an export destination), or 'file' (single-select one entry
+// whose name ends with one of `extensions`). They reuse the same server-side browser so mounted
+// network drives / servers stay reachable via the shortcuts.
+//
+// 'bundle' is 'file' with `.ccbundle` — kept as a named mode because project import reads better for
+// it, but implemented THROUGH the extension filter rather than beside it, so there is one predicate
+// for "which entries may be picked" and adding a format is a prop, not a branch.
+const props = withDefaults(defineProps<{
+  mode?: 'image' | 'dir' | 'bundle' | 'file'
+  /** 'file' mode: pickable suffixes, matched case-insensitively. Empty = any file. */
+  extensions?: string[]
+  /** 'file'/'bundle' mode: modal title, when "Select a file" is too vague to be useful. */
+  title?: string
+}>(), { mode: 'image', extensions: () => [], title: '' })
+
+// A `.ccbundle` is a DIRECTORY, so the bundle preset has to accept one; a plain file pick must not,
+// or every folder becomes selectable and navigation breaks.
+const pickExtensions = computed(() =>
+  props.mode === 'bundle' ? ['.ccbundle'] : props.extensions)
 
 const title = computed(() =>
-  props.mode === 'dir'    ? 'Select a folder'
+  props.title ? props.title
+  : props.mode === 'dir'    ? 'Select a folder'
   : props.mode === 'bundle' ? 'Select a project bundle'
+  : props.mode === 'file'   ? 'Select a file'
   : 'Select images')
 
 // Which entries the current mode lets you pick (dir mode picks the current folder, not an entry).
 function isSelectable(e: FsEntry): boolean {
   if (props.mode === 'image')  return e.isimage
-  if (props.mode === 'bundle') return e.isdir && e.name.endsWith('.ccbundle')
+  if (props.mode === 'bundle') return e.isdir && matchesExtension(e)
+  if (props.mode === 'file')   return !e.isdir && matchesExtension(e)
   return false
+}
+
+// Case-insensitive: an export is as likely to be `.XML` as `.xml`, and a filter that silently shows
+// nothing reads as "the browser is broken", not "wrong case".
+function matchesExtension(e: FsEntry): boolean {
+  const exts = pickExtensions.value
+  if (!exts.length) return true
+  const name = e.name.toLowerCase()
+  return exts.some(x => name.endsWith(x.toLowerCase()))
 }
 
 interface FsEntry {
@@ -95,7 +122,7 @@ function toggleSelect(entry: FsEntry) {
     else selected.value.add(entry.path)
     selected.value = new Set(selected.value)
   } else {
-    // bundle: single-select
+    // bundle / file: single-select
     selected.value = selected.value.has(entry.path) ? new Set() : new Set([entry.path])
   }
 }

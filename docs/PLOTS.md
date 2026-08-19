@@ -12,6 +12,13 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    single `POST /api/plot_data` aggregator (`plot_summary_data`). `whiteboardCompatible: true` makes
    the same definition available on the whiteboard too.
 
+3. `SummaryCanvas` may ALSO host an interactive view (`interactiveViews.ts` → `InteractivePanel`),
+   offered under an **Interactive** optgroup in its `+ Plot…` picker. Today only a plugin's custom
+   module page asks for one — `plugin.json` → `contributions.views` names a view by its stable id, and
+   the view must be flagged `pluginPage` + `rail: 'none'` (self-contained: it fetches its own data and
+   the canvas's population picker does not drive it). See `docs/CUSTOM_MODULES.md` and
+   `docs/todo/PLUGINS_PLAN.md` → Decision 11.
+
 Reusing `PlotChart` alone inside a hand-rolled panel is **not** compliance — that's the anti-pattern.
 A new data source is normally a new `popType` in `pop_df` (e.g. `labels` = ungated all-cells), **not** a
 new route.

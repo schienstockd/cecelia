@@ -1,0 +1,24 @@
+{
+  "id": "tracktools_cumulative_change",
+  "label": "Cumulative change",
+  "module": "trackTools",
+  "family": "summary",
+  "chartTypes": ["histogram", "boxplot", "violin", "bar", "strip"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "live",  "granularity": "cell" },
+      { "popType": "track", "granularity": "cell" }
+    ],
+    "measure": "trackTools.cumulativeSpeed",
+    "measureOptions": [
+      "trackTools.cumulativeSpeed",
+      "trackTools.cumulativeDisplacement",
+      "trackTools.cumulativeStraightness"
+    ]
+  },
+  "scopeModes": ["per_image", "summarised"],
+  "params": [
+    { "key": "bins", "label": "Bins", "type": "int", "min": 10, "max": 100, "step": 5, "default": 30 }
+  ]
+}

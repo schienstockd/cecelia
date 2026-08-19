@@ -16,6 +16,26 @@
 // row and the autoshow both derive from it, so adding a pop type can't restore-but-not-show (or the
 // reverse).
 export const CELL_POP_TYPES = ['flow', 'clust', 'region'] as const
+
+
+// ── Which value names can have TRACKS ──────────────────────────────────────────────────────────────
+//
+// `labels` ∪ `labelPropsNames`, and the union is the whole point. They are two independent ccid.json
+// registries: `labels` is segmentations with mask PIXELS, `labelPropsNames` is anything with a
+// measurement table. A track set imported directly — ImageJ, TrackMate — for an unsegmented image is
+// only in the second, and tracks need nothing but a `track_id` column.
+//
+// ONE helper because getting it wrong is invisible: the viewer seeded its toggles from the union
+// while `pushTracksNow` re-derived the same record from `labels` alone, so toggling an imported set
+// stored `true`, `getTrackVisibility` dropped the key on the way back out (it returns only names in
+// the list it is given), and napari was asked to show nothing. The toggle looked live and did
+// nothing.
+export function trackableValueNames(img: { labels?: Record<string, unknown>
+                                           labelPropsNames?: string[] } | null | undefined): string[] {
+  const masks = Object.keys(img?.labels ?? {})
+  const seen = new Set(masks)
+  return [...masks, ...(img?.labelPropsNames ?? []).filter(vn => !seen.has(vn))]
+}
 export type CellPopType = typeof CELL_POP_TYPES[number]
 
 export interface AutoShowInput {

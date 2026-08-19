@@ -17,13 +17,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
-import { flattenParams, resolveInitialParams } from './paramValues'
+import { flattenParams, resolveInitialParams, missingRequired } from './paramValues'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -41,7 +42,8 @@ const props = defineProps<{
   module: string
   selectedUids: string[]
   selectedNames: string[]
-  onReloadDefs?: () => Promise<void>
+  // `form` (optional) re-resolves param options against the current form — see optionRefetch.
+  onReloadDefs?: (form?: Record<string, unknown>) => Promise<void>
 }>()
 
 const taskStore    = useTaskStore()
@@ -61,7 +63,8 @@ const paramContext = computed<ParamContext>(() => ({
     return []
   }),
   projectUid: projectMeta.current?.uid ?? '',
-  values: paramValues.value,     // popSelection reads the sibling valueName
+  values: paramValues.value,     // showIf conditions + sibling lookups read these
+  params: taskDef.value?.params, // so a widget finds its sibling by TYPE, not by a hardcoded key
 }))
 
 // selected function — starts empty; resolved reactively when defs load from the API
@@ -175,7 +178,11 @@ async function initParams(def: TaskDef | undefined) {
   // from the run payload AND from the funParams record. All of that decision is `resolveInitialParams`.
   // Early-returned rather than folded into the call below so a draft costs no request — but the
   // DECISION is still the one helper, so the draft path cannot drift from the saved-record path.
-  if (draft) { paramValues.value = resolveInitialParams(def, draft, null) as ParamValues; return }
+  if (draft) {
+    paramValues.value = resolveInitialParams(def, draft, null) as ParamValues
+    refreshOptionsForForm(def)
+    return
+  }
   const seq = ++paramReqSeq
   // The name the form is about to show — its own defaults on a first render, or whatever the last
   // scope change left. Asking WITH it means a form that opens on "Tcell" opens with Tcell's params.
@@ -186,7 +193,21 @@ async function initParams(def: TaskDef | undefined) {
   // The watches below re-run this once the project/set/selection is known, which is the case that used
   // to arrive too late and find the form already reset.
   const next = resolveInitialParams(def, undefined, saved)
-  if (next !== null) paramValues.value = next
+  if (next !== null) { paramValues.value = next; refreshOptionsForForm(def) }
+}
+
+// Options were re-resolved only when the user EDITED a `triggersOptions` param, so a form POPULATED
+// with one — restored from the last run, or from a draft — carried whatever the un-resolved spec had:
+// an importer's column dropdowns came back empty for a file whose headers were read fine a minute
+// earlier. Anything the form can decide for itself belongs in `showIf` and needs no request; this is
+// only for what genuinely requires the server to look at something.
+function refreshOptionsForForm(def: TaskDef) {
+  const keys = collectTriggerKeys(def.params ?? [])
+  const armed = keys.some(k => {
+    const v = paramValues.value[k]
+    return v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)
+  })
+  if (armed) optionRefetch.schedule(null)
 }
 
 // A `valueNameInput` the user has FINISHED entering (blur, or picking a suggestion) — the moment to
@@ -219,7 +240,39 @@ async function onParamCommit(key: string, value: unknown) {
 function onParamEdit(key: string, value: unknown) {
   paramValues.value[key] = value
   drafts.set(currentDraftKey.value, paramValues.value)
+  if (optionTriggerKeys.value.has(key)) optionRefetch.schedule(null)
 }
+
+// ── Options that depend on the form ───────────────────────────────────────────────────────────────
+// A param marked `triggersOptions` re-resolves the task's options server-side against the current
+// form — an importer's file path, whose columns become the mapping fields' suggestions.
+//
+// Coalesced at the SINK, not the call site (docs/UI.md → Continuous controls): a path is TYPED, so a
+// per-keystroke refetch would fire a request per character and land them out of order. `debouncedLatest`
+// is the canonical scheduler for a request; the `isCurrent` guard means a superseded response is
+// discarded rather than overwriting the options for the path the user has since finished typing.
+function collectTriggerKeys(ps: TaskDef['params']): string[] {
+  const out: string[] = []
+  for (const p of ps ?? []) {
+    if (p.triggersOptions) out.push(p.key)
+    if (p.params) out.push(...collectTriggerKeys(p.params))   // sections nest
+  }
+  return out
+}
+
+const optionTriggerKeys = computed(
+  () => new Set(taskDef.value ? collectTriggerKeys(taskDef.value.params ?? []) : []))
+
+const optionRefetch = debouncedLatest<null>(async () => {
+  const def = taskDef.value
+  if (!def || !props.onReloadDefs) return
+  // Read the form INSIDE the run, not at schedule time: the debounce means several keystrokes collapse
+  // into one run, and it must resolve against the value the user ended on, not the one that first
+  // triggered it.
+  await props.onReloadDefs(flattenParams(def, paramValues.value) as Record<string, unknown>)
+}, { wait: 400 })
+
+onUnmounted(() => optionRefetch.cancel())
 
 watch(selectedTask, (task) => {
   localStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
@@ -281,9 +334,17 @@ const activeTaskGatingReason = computed(() =>
   taskDef.value ? gatingReasonFor(taskDef.value) : ''
 )
 
+// A `required` param left empty, checked HERE rather than after the run. The server refuses these
+// too, but only once the task has been queued and given a pool slot — so the user learned they had
+// picked nothing from a log line, minutes later. First message only: the button is one line, and
+// fixing the first usually reveals whether the rest matter.
+const missingRequiredReason = computed(() =>
+  taskDef.value ? (missingRequired(taskDef.value, paramValues.value)[0] ?? '') : '')
+
 // run
 const canRun = computed(() =>
-  props.selectedUids.length > 0 && !!taskDef.value && !activeTaskGatingReason.value
+  props.selectedUids.length > 0 && !!taskDef.value &&
+  !activeTaskGatingReason.value && !missingRequiredReason.value
 )
 
 function run() {
@@ -358,6 +419,7 @@ const runLabel = computed(() => {
   const n = props.selectedUids.length
   if (n === 0) return 'Select images to run'
   if (activeTaskGatingReason.value) return activeTaskGatingReason.value
+  if (missingRequiredReason.value) return missingRequiredReason.value
   return `Run on ${n} image${n > 1 ? 's' : ''}`
 })
 
@@ -410,7 +472,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
     <section v-if="!defs.length" class="runner-section defs-empty">
       <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
-      <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="onReloadDefs">
+      <!-- Called with NO argument on purpose: `onReloadDefs(form?)` treats an argument as form state
+           to resolve options against, and `@click="onReloadDefs"` would hand it the PointerEvent. -->
+      <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="() => onReloadDefs?.()">
         <i class="pi pi-refresh" /> Reload
       </button>
     </section>

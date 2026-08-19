@@ -10,6 +10,8 @@
   "params": [
     {
       "key": "pops",
+      "required": true,
+      "requiredMessage": "Select at least one population",
       "label": "Populations",
       "type": "popSelection",
       "popScope": "tracks",
@@ -27,6 +29,8 @@
     },
     {
       "key": "modelMeasurements",
+      "required": true,
+      "requiredMessage": "Select the measures to model",
       "label": "Properties",
       "type": "labelPropsColsSelection",
       "multiple": true,

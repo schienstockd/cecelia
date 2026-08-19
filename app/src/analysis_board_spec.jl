@@ -55,20 +55,29 @@ plot_specs_dir() = joinpath(@__DIR__, "plotDefinitions")
 """
     plot_specs() -> Vector{Dict{String,Any}}
 
-Every plot spec in the registry. A malformed file is skipped with a warning rather than taking the
-whole registry down — the same tolerance the HTTP route had.
+Every plot spec in the registry: the package's own, then any shipped by hand-dropped modules and
+plugins (`user_plot_specs`). A malformed file is skipped with a warning rather than taking the whole
+registry down — the same tolerance the HTTP route had.
+
+**Built-ins win on an `id` clash**, the same rule as task `fun_name`s — a plugin must not be able to
+replace a package plot by reusing its id. This is the ONE reader, so a plugin's plot reaches the
+module page, the Analysis board and the board expander without any of them knowing plugins exist.
+See `docs/todo/PLUGINS_PLAN.md` and `docs/PLOTS.md` → *Hosting*.
 """
 function plot_specs()
     out = Dict{String,Any}[]
-    isdir(plot_specs_dir()) || return out
-    for f in sort(readdir(plot_specs_dir(); join = true))
-        endswith(f, ".json") || continue
-        try
-            push!(out, JSON3.read(read(f, String), Dict{String,Any}))
-        catch e
-            @warn "Skipping malformed plot spec" path = f exception = e
+    if isdir(plot_specs_dir())
+        for f in sort(readdir(plot_specs_dir(); join = true))
+            endswith(f, ".json") || continue
+            try
+                push!(out, JSON3.read(read(f, String), Dict{String,Any}))
+            catch e
+                @warn "Skipping malformed plot spec" path = f exception = e
+            end
         end
     end
+    builtin_ids = Set{String}(string(get(s, "id", "")) for s in out)
+    append!(out, user_plot_specs(; exclude_ids = builtin_ids))
     out
 end
 

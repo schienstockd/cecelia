@@ -9,10 +9,10 @@
   "params": [
     {
       "key": "valueName",
-      "label": "Segmentation",
+      "label": "Tracks",
       "type": "valueNameSelection",
-      "field": "labels",
-      "tip": "Tracked label set to correct"
+      "field": "labelPropsNames",
+      "tip": "Which tracked cells to correct"
     },
     {
       "key": "trackOps",

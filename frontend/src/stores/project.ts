@@ -28,6 +28,10 @@ export interface CciaImage {
   activeValueName?: string                // active value name (the _active key from versioned dict)
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)
   labels?: Record<string, string[]>        // valueName → [filename, …] (segmentation outputs)
+  // Value names with a MEASUREMENT TABLE, which is not the same set as `labels`: they are two
+  // independent ccid.json registries. A directly-imported track set has a table and NO mask, so it
+  // appears here and not in `labels` — the viewer unions the two so it is not invisible.
+  labelPropsNames?: string[]
   // Skeleton-labels from segment.branching — kept separate from `labels` so the generic labels
   // picker never lists them (see BRANCHING_PLAN Decision 6). Napari surfaces them as a distinct toggle.
   branchLabels?: Record<string, string[]>

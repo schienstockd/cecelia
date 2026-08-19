@@ -25,6 +25,8 @@
     },
     {
       "key": "basisPops",
+      "required": true,
+      "requiredMessage": "Select the population basis — what defines the neighbourhood",
       "label": "Population basis",
       "type": "popSelection",
       "accepts": ["live", "clust", "region", "track", "trackclust"],

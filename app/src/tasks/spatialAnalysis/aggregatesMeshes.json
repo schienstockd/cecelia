@@ -8,6 +8,8 @@
   "params": [
     {
       "key": "pops",
+      "required": true,
+      "requiredMessage": "Select a population",
       "label": "Population",
       "type": "popSelection",
       "accepts": ["live", "clust", "region", "track", "trackclust"],
