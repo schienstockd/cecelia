@@ -13594,6 +13594,34 @@ end
     @test Cecelia._disambiguate_labels([grp("a", "", [src("u1", "B", "")])])[1].label == ""
 end
 
+# The detector EDITS, so its cells may not come from a pooled group: a `track_id` is unique only within
+# one (image, segmentation), so an op built from pooled cells would name two different ones and corrupt
+# whichever it was not meant for. `track_group_frame` refuses instead of returning a frame that reads fine
+# and cannot be acted on — the route then reports the ranking as unavailable rather than wrong.
+@testset "track_group_frame refuses to pool cells an EDIT would name" begin
+    mkdf(tid) = DataFrame(label = [1.0], track_id = [Float64(tid)], centroid_t = [0.0],
+                          centroid_x = [0.0], centroid_y = [0.0])
+    sp  = ["centroid_x", "centroid_y"]
+    src(uid, vn, tid) = TrackPlotSource(uid, nothing, vn, "", mkdf(tid), sp)
+    grp(srcs) = TrackPlotGroup("k", "", "live", srcs, sp, NaN)
+
+    # one source → the cells, with the segmentation they actually came from
+    one = track_group_frame(grp([src("u1", "memTom", 7)]))
+    @test one !== nothing
+    @test one.value_name == "memTom"
+    @test one.spatial == sp
+    @test nrow(one.df) == 1
+
+    # two sources (a pooled cohort, or two segmentations) → nothing, however plausible the frame would look
+    @test track_group_frame(grp([src("u1", "memTom", 7), src("u2", "memTom", 7)])) === nothing
+    @test track_group_frame(grp([src("u1", "memTom", 7), src("u1", "importTest2", 7)])) === nothing
+
+    # a source with no cells is not a frame either — the detector would report "0 candidates" for an
+    # image it never read
+    empty_src = TrackPlotSource("u1", nothing, "memTom", "", mkdf(1)[1:0, :], sp)
+    @test track_group_frame(grp([empty_src])) === nothing
+end
+
 @testset "track_plot_groups + the two readouts (KDIeEm B)" begin
     h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")

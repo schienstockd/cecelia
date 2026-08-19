@@ -37,6 +37,13 @@ end
 # they have to judge — do these two pieces of track look like one cell. Sending the polylines with the
 # candidate keeps it a single request per page load rather than one per row.
 #
+# **`pops` scopes it, exactly as it scopes the lanes.** The timeline draws from
+# `/api/tracking/paths`, which honours the picked population; this route read `label_props` for the whole
+# segmentation, so ticking a population narrowed the PICTURE and not the RANKING — candidates naming
+# tracks outside the population, and the panel's two counts ("23 candidates · 306 with gaps") tallied over
+# two different track sets. With `pops` given, the cells come from the same `track_plot_groups` resolution
+# the paths route uses (`track_group_frame`); without it, from `label_props` exactly as before.
+#
 # Read-only. Finding an issue never changes anything; applying the fix is `tracking.correct`.
 function api_track_issues(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -48,21 +55,42 @@ function api_track_issues(req::HTTP.Request)
 
     _num(key, default) = (v = get(q, key, ""); isempty(v) ? default : something(tryparse(Float64, v), default))
     pixel_res, time_step = img_physical_sizes(img)
+    # POPULATION SCOPE. Resolved through the same grouping the paths route uses, so "which cells" has one
+    # answer on this page; `nothing` (no `pops`) keeps the whole-segmentation read below.
+    scoped = nothing
+    if !isempty(get(q, "pops", ""))
+        groups, _, gvn, gerr = _track_plot_groups(q)
+        gerr === nothing || return gerr
+        isempty(groups) &&
+            return 200, JSON3.write((; valueName = gvn, tracked = false, issues = [], paths = Dict()))
+        scoped = first(groups)
+    end
 
+    # the cells to scan, one of two ways — the untracked / pooled / no-timecourse cases all answer
+    # `tracked = false` rather than an empty issue list, so the panel can say WHY it has no ranking
     try
-        lp = label_props(props)
-        ("track_id" in col_names(lp; data_type = :obs)) ||
+        cells = nothing
+        if scoped !== nothing
+            f = track_group_frame(scoped)
+            f === nothing ||
+                (cells = (; df = f.df, spatial = f.spatial,
+                            value_name = isempty(f.value_name) ? vn : f.value_name))
+        else
+            lp = label_props(props)
+            spatial  = centroid_columns(lp; order = [:x, :y, :z])
+            temporal = temporal_columns(lp)
+            if ("track_id" in col_names(lp; data_type = :obs)) && !isempty(temporal)
+                select_cols(lp, vcat(spatial, temporal, ["track_id"]))
+                d = as_df(lp; include_x = false, include_obs = true)
+                scale_centroids!(d, pixel_res)          # µm, via the ONE shared conversion
+                t_col = first(temporal)
+                t_col == "centroid_t" || (d[!, :centroid_t] = d[!, Symbol(t_col)])
+                cells = (; df = d, spatial = spatial, value_name = vn)
+            end
+        end
+        cells === nothing &&
             return 200, JSON3.write((; valueName = vn, tracked = false, issues = [], paths = Dict()))
-
-        spatial  = centroid_columns(lp; order = [:x, :y, :z])
-        temporal = temporal_columns(lp)
-        isempty(temporal) &&
-            return 200, JSON3.write((; valueName = vn, tracked = false, issues = [], paths = Dict()))
-        select_cols(lp, vcat(spatial, temporal, ["track_id"]))
-        df = as_df(lp; include_x = false, include_obs = true)
-        scale_centroids!(df, pixel_res)          # µm, via the ONE shared conversion
-        t_col = first(temporal)
-        t_col == "centroid_t" || (df[!, :centroid_t] = df[!, Symbol(t_col)])
+        df, spatial, vn = cells.df, cells.spatial, cells.value_name
 
         # The thresholds are resolved ONCE and echoed back in the response. The panel seeds its knobs
         # from what the server used and sends only what the user moved, so the measured defaults live

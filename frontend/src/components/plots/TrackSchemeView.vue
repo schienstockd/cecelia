@@ -41,9 +41,11 @@ import { useLogStore } from '../../stores/log'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
-import { resolveTrackValueName } from '../../plots/trackDiagnostics'
+import { resolveTrackValueName, trackSetOptions } from '../../plots/trackDiagnostics'
 import { cohortParams, type CompareMode } from '../../plots/trackGroups'
-import { popTypeOptions, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import type { PopTypeOption } from '../../plots/popTypes'
+import { usePopFamily } from '../../composables/usePopFamily'
+import PopFamilySelect from './PopFamilySelect.vue'
 import type { SeriesTarget } from '../../plots/types'
 import { centreNapariOnTrack, showTracksInNapari } from '../../lib/napariView'
 import { EMPTY_TRACK_SELECTION, type CanvasTrackSelection } from '../../lib/trackSelection'
@@ -53,6 +55,7 @@ import {
   type TrackIssue, type TrackOp, type TrackThresholds, type TrackSelection,
 } from '../../lib/trackCorrection'
 import { submitTrackOps } from '../../lib/trackOpsRun'
+import { useTrackOpsQueueStore, trackOpsKey } from '../../stores/trackOpsQueue'
 import type { TrackPathMap } from '../../plots/trackPaths'
 
 /** One entry of the grouped paths response — the timeline uses its own image's group. */
@@ -90,7 +93,9 @@ const props = defineProps<{
     imageUid?: string; valueName?: string; order?: string
     candidatesOnly?: boolean; gapsOnly?: boolean; offset?: number; sel?: string[]
     popType?: string
-    // the uncommitted queue — a correction is ONE task run, not one per click
+    // `pending` is LEGACY ONLY — the uncommitted queue moved to `stores/trackOpsQueue.ts`, keyed by the
+    // (image, segmentation) the ops edit rather than by the canvas the panel sits on. Read once, to
+    // adopt what a canvas persisted mid-edit, then cleared. Do not write it.
     pending?: TrackOp[]; splitAt?: number | null
     thr?: TrackThresholds
   }
@@ -110,12 +115,16 @@ const valueName = computed({
   set: v => (props.state.valueName = v),
 })
 
-// the population FAMILY, resolved through the same helper the rail uses so the two cannot disagree
-const familyOptions = computed<PopTypeOption[]>(() =>
-  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
-const popType = computed(() => (familyOptions.value.length
-  ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
-  : 'track'))
+// The population FAMILY, through the same helper the rail and its two sibling views use. WRITABLE, and
+// that is the fix: it was a read-only computed, so this panel was pinned to whichever family the
+// registry listed first (`live`) while the canvas offers `track` populations — `filterSeriesToPopType`
+// then correctly dropped every population the user had ticked, and the timeline silently showed the
+// whole segmentation. A picker the user cannot move is not a resolution, it is a hardcoded default.
+const { options: familyOptions, popType } =
+  usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
+
+// what the picker may offer — the TRACKED label sets (plots/trackDiagnostics.ts)
+const trackSets = computed(() => trackSetOptions(trackedNames.value, valueNames.value))
 
 const order = computed<LaneOrder>(() => (props.state.order as LaneOrder) ?? 'pair')
 const candidatesOnly = computed(() => !!props.state.candidatesOnly)
@@ -269,10 +278,13 @@ async function load() {
     paths.value = {}; meta.value = null
   }
   try {
-    // the detector is per IMAGE and per segmentation — it has no cohort shape, so it takes the
-    // resolved pair rather than the group params
-    const iq = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
+    // THE SAME SCOPE AS THE LANES. The detector has no cohort shape — it reports track ids and an op
+    // built from one — so it still takes ONE resolved image (`imageUid`), but it takes the POPULATION
+    // too: with the lanes narrowed to a population and the ranking left on the whole segmentation, a
+    // candidate could name a track that is not on screen, and the two counts this panel prints beside
+    // each other would be tallied over two different track sets.
+    const iq = new URLSearchParams(cp)
+    iq.set('imageUid', imageUid.value)
     const r = await fetch(`/api/tracking/issues?${iq}${thresholdQuery(thr.value, serverThresholds.value)}`)
     const d = await r.json()
     issues.value = r.ok ? ((d.issues ?? []) as TrackIssue[]) : []
@@ -368,10 +380,29 @@ async function readSelection() {
 // downstream knows this surface exists, and a hand-authored edit is indistinguishable from a
 // suggested one — one queue, one `tracking.correct_measures` run, one journal (Decision 5).
 
+// THE QUEUE LIVES IN A STORE, keyed by what the ops edit (project, image, segmentation) — not in this
+// panel's state, which is keyed by the CANVAS. The Track canvas keys itself on the page-level
+// segmentation select, so changing it rebound the canvas and took this panel and its queued edits out of
+// view: an un-run task draft was being stored as a view option (`stores/trackOpsQueue.ts`).
+const opsQueue = useTrackOpsQueueStore()
+const opsKey = computed(() => trackOpsKey(props.projectUid, imageUid.value, valueName.value))
 const pending = computed<TrackOp[]>({
-  get: () => props.state.pending ?? [],
-  set: v => (props.state.pending = v),
+  get: () => opsQueue.get(opsKey.value),
+  set: v => opsQueue.set(opsKey.value, v),
 })
+// Ops queued against the OLD storage, so a canvas persisted mid-edit does not drop them on this upgrade.
+// Waits for a REAL key rather than running on mount: `valueName` resolves through `resolveTrackValueName`,
+// which needs the tracked-names fetch, so at mount the key can still be empty — and filing carried ops
+// under the wrong segmentation would be worse than the bug being fixed. One-shot, then the panel state's
+// copy is dropped so the store is the only one.
+const carriedDone = ref(false)
+watch(opsKey, k => {
+  if (carriedDone.value || !k) return
+  carriedDone.value = true
+  const carried = props.state.pending
+  if (carried?.length) opsQueue.set(k, [...opsQueue.get(k), ...carried])
+  props.state.pending = undefined
+}, { immediate: true })
 
 /** The frame the user last clicked — where a Split would cut. */
 const splitAt = computed<number | null>({
@@ -735,9 +766,10 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
         <button class="cc-btn cc-btn-bare cc-btn-dense" :class="{ 'cc-btn-on': gapsOnly }"
                 v-tooltip.top="'Tracks missing a detection in some frame'"
                 @click="state.gapsOnly = !gapsOnly">Gaps</button>
-        <select v-if="valueNames.length > 1" v-model="valueName"
+        <PopFamilySelect :options="familyOptions" v-model="popType" />
+        <select v-if="trackSets.length > 1" v-model="valueName"
                 v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
-          <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
+          <option v-for="vn in trackSets" :key="vn" :value="vn">{{ vn }}</option>
         </select>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload the tracks'"
                 :disabled="loading" @click="load">

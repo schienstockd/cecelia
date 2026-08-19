@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, VIEW_ALIASES, migrateViewKey }
+import { cohortParams } from '../../plots/trackGroups'
+import { tkey, parseTkey } from '../../plots/series'
+import { resolvePopType } from '../../plots/popTypes'
+import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, popTypesFor, VIEW_ALIASES, migrateViewKey }
   from './interactiveViews'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 
@@ -120,5 +123,43 @@ describe('interactive view surface flags', () => {
       Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.trackPage).map(([k]) => k))
     for (const k of ['trackPaths', 'trackDiagnostics', 'trackScheme'])
       expect(offered).toContain(k)
+  })
+})
+
+// ── The rail's selection must actually REACH the plot it was picked for ──────────────────────────
+//
+// This is the shape of a bug that shipped: the Track canvas built its `series` by tagging every ticked
+// population with the CANVAS's popType (`track`), while a track panel resolves its family from this
+// registry (so `live`, the first one declared). `filterSeriesToPopType` then dropped all of them and the
+// panels silently drew the whole segmentation — a picker on screen, clicked, reaching nothing.
+//
+// The fix is that the picker's rows carry their own family (`tkey`), so what follows is the round trip
+// that must hold for EVERY family a track view declares.
+describe('a picked population survives the trip to the request', () => {
+  const TRACK_VIEWS = ['trackPaths', 'trackDiagnostics', 'trackScheme']
+
+  it('every track view declares its families (without them the rail lists another plot’s)', () => {
+    for (const key of TRACK_VIEWS) expect(popTypesFor(key).length).toBeGreaterThan(0)
+  })
+
+  it('a row ticked under any declared family arrives as `pops`', () => {
+    for (const key of TRACK_VIEWS) {
+      for (const fam of popTypesFor(key)) {
+        // what the picker emits → what the canvas stores → what the panel asks under
+        const target = parseTkey(tkey(fam.popType, 'memTom', '/T cells'))
+        const resolved = resolvePopType({ dataSource: { popTypes: popTypesFor(key) } }, fam.popType)
+        const p = cohortParams({ imageUids: ['i'], compareMode: 'image', series: [target],
+                                 popType: resolved })
+        expect([key, fam.popType, p.get('pops')])
+          .toEqual([key, fam.popType, 'memTom/T cells'])
+      }
+    }
+  })
+
+  it('a series tagged with a family the panel is NOT showing is dropped — the old bug, pinned', () => {
+    // 'track' populations asked for under the 'live' family: no error, no pops, whole segmentation
+    const p = cohortParams({ imageUids: ['i'], compareMode: 'image', popType: 'live',
+                             series: [{ popType: 'track', valueName: 'memTom', pop: '/T cells' }] })
+    expect(p.get('pops')).toBeNull()
   })
 })

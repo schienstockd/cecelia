@@ -75,6 +75,15 @@ enough, because the rail swaps on "can be docked with a scope footer", not on th
    (`GatingPlots`, `ClusterPlots`, `SummaryCanvas`, `FlowPlots`) each render one manager and should
    keep doing so — making them registry-driven would be indirection with no second case.
 
+   > **Superseded for `GatingPlots` (2026-08-19).** The second case arrived: the Track canvas hosts a
+   > gating tree that is EDITED *and* three registry views that slice by population, and one manager
+   > cannot serve both — the tree has no `popType` to put on a series, so the canvas invented one and
+   > every population the user ticked was filtered back out again, leaving three panels quietly showing
+   > the whole segmentation. Its rail now follows the active panel via `railFor`, exactly as the board's
+   > does. The decision was contingent on the absence of a second case, so the premise expired rather
+   > than the rule being broken; the other four call sites still render one manager each. See
+   > `docs/TRACKING.md` → *Which picker, and why not the gating tree*.
+
 6. **CSS prefix = owning component; no shared row vocabulary.** Scoped styles mean slotted rows carry
    the *consumer's* scope id, so `CanvasSidePanel`'s rules can never reach a consumer's rows. The
    shared `pm-` prefix is therefore a **vocabulary** artefact, not a CSS dependency — renaming is

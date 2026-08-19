@@ -68,3 +68,31 @@ describe('selectionMissed', () => {
     expect(selectionMissed(sel({ ids: [] }), 0)).toBe(false)
   })
 })
+
+// ── The link must be WATCHED, not just read ─────────────────────────────────────────────────────────
+//
+// A source-level ratchet, because the failure is invisible in the component: `followSelection` was
+// called, `pinned` was correct, and the panel never refetched — a `watch([pinned, effectiveValueName])`
+// had been dropped when the load watchers were consolidated onto `cohortKey`, which covers the cohort
+// params and knows nothing about `ids=`. Selecting a lane in the timeline changed a computed and
+// nothing else, so the two panels looked as if they had never been wired together.
+//
+// A cheap string scan is the right instrument here: the bug is a MISSING line, and no unit test of a
+// pure function can see one.
+const SFC = import.meta.glob('/src/components/plots/*.vue',
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+describe('a panel that follows the canvas track selection also watches it', () => {
+  const followers = Object.entries(SFC).filter(([, src]) => src.includes('followSelection('))
+
+  it('at least one panel follows (else this guard is watching nothing)', () => {
+    expect(followers.length).toBeGreaterThan(0)
+  })
+
+  it('every follower watches the ids it follows', () => {
+    const unwatched = followers
+      .filter(([, src]) => !/watch\(\s*\[[^\]]*\bpinned\b/.test(src))
+      .map(([p]) => p)
+    expect(unwatched).toEqual([])
+  })
+})

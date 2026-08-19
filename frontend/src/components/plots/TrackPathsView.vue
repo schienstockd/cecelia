@@ -51,7 +51,9 @@ import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
          type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { distinctColors, facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
-import { popTypeOptions, popTypeLabel, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import type { PopTypeOption } from '../../plots/popTypes'
+import { usePopFamily } from '../../composables/usePopFamily'
+import PopFamilySelect from './PopFamilySelect.vue'
 import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
   pathDomain, displacementVectors, pathCsvRows, groupedPathPoints, trackEndpoints,
@@ -61,7 +63,7 @@ import {
   cohortParams, cohortKey, facetPlan, groupLabel, cohortNote,
   type CompareMode, type TrackGroupMeta,
 } from '../../plots/trackGroups'
-import { resolveTrackValueName } from '../../plots/trackDiagnostics'
+import { trackSetOptions, resolveTrackValueName } from '../../plots/trackDiagnostics'
 import type { SeriesTarget } from '../../plots/types'
 
 type Mode = 'paths' | 'star' | 'rose'
@@ -82,7 +84,8 @@ const props = defineProps<{
   trackSel?: CanvasTrackSelection
   setTrackSel?: (v: CanvasTrackSelection) => void
   // every user-settable option lives in the panel's persisted bag, not a bare ref
-  state: { valueName?: string; mode?: Mode; colorBy?: string; limit?: number; popType?: string }
+  state: { valueName?: string; mode?: Mode; colorBy?: string; limit?: number; popType?: string
+           ends?: boolean }
 }>()
 
 // the FIRST selected image answers "which segmentations / which columns" — the pickers are about the
@@ -96,22 +99,24 @@ const valueName = computed({
                                    activeName.value),
   set: v => (props.state.valueName = v),
 })
+// what the picker may offer — the TRACKED label sets (plots/trackDiagnostics.ts)
+const trackSets = computed(() => trackSetOptions(trackedNames.value, valueNames.value))
 const mode = computed({ get: () => props.state.mode ?? 'paths',
                         set: v => (props.state.mode = v) })
 const colorBy = computed({ get: () => props.state.colorBy ?? '',
                            set: v => (props.state.colorBy = v) })
 const limit = computed({ get: () => props.state.limit ?? 500,
                          set: v => (props.state.limit = v) })
+// START/END MARKERS, on by default. They carry the direction a bare polyline cannot — but on a dense
+// cohort they are two extra marks per track, and at 500 tracks the circles and crosses are most of the
+// ink. So it is a toggle rather than a judgement made once for every image: the plot that answers "which
+// way did they go" and the plot that answers "how much did they cover" want opposite answers.
+const showEnds = computed({ get: () => props.state.ends ?? true,
+                            set: v => (props.state.ends = v) })
 // the population FAMILY, one per plot (docs/PLOTS.md) — the rail lists whichever this is, so the pick
 // resolves through the same `resolvePopType` the rail uses and cannot disagree with it
-const familyOptions = computed<PopTypeOption[]>(() =>
-  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
-const popType = computed({
-  get: () => (familyOptions.value.length
-    ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
-    : 'live'),
-  set: v => (props.state.popType = v),
-})
+const { options: familyOptions, popType } =
+  usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 interface PathGroupResponse extends TrackGroupMeta {
@@ -228,6 +233,12 @@ watch([() => props.projectUid, imageUid], async () => { await loadColumns(); awa
 // one watcher over the whole cohort query, so a compare-mode / population / family change refetches
 // without a per-prop list that can fall behind the params it builds
 watch([() => cohortKey(cohort.value), valueName, colorBy, limit], load)
+// THE CROSS-PANEL LINK, and it must be its own watcher: `cohortKey` covers the cohort params and knows
+// nothing about `ids=` or the segmentation this panel ADOPTS from the selection. It was dropped when the
+// watch list above was rewritten around `cohortKey`, and the panel then answered a lane click by
+// changing `pinned` and never refetching — the timeline selected, this plot sat still, and the two
+// looked like they had never been connected.
+watch([pinned, effectiveValueName], load)
 
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
@@ -306,6 +317,9 @@ async function render() {
     // one colour per track and a legend of 500 entries is not a legend
     : { domain: tracks, range: distinctColors(tracks.length), legend: false as const }
 
+  // ONE pass over the points, not one per mark — `trackEndpoints` walks every point to find each
+  // track's last index, and it was being called twice for the two marks that share its answer.
+  const endpoints = mode.value !== 'rose' && showEnds.value ? trackEndpoints(pts) : null
   const marks = mode.value === 'rose'
     ? [
         Plot.link(vectors, { x1: 0, y1: 0, x2: 'x', y2: 'y', stroke,
@@ -318,10 +332,12 @@ async function render() {
         // shapes carry the direction, so the line needs no arrowhead competing with them.
         Plot.line(pts, { x: 'x', y: 'y', z: 'track', stroke, strokeWidth: 1.2, ...fch }),
         // where each track STARTS — without it a path is a line with no direction
-        Plot.dot(trackEndpoints(pts).starts,
-                 { x: 'x', y: 'y', stroke, fill: 'none', r: 6, strokeWidth: 1.6, ...fch }),
-        Plot.dot(trackEndpoints(pts).ends,
-                 { x: 'x', y: 'y', stroke, symbol: 'times', r: 5, strokeWidth: 1.8, ...fch }),
+        ...(endpoints ? [
+          Plot.dot(endpoints.starts,
+                   { x: 'x', y: 'y', stroke, fill: 'none', r: 6, strokeWidth: 1.6, ...fch }),
+          Plot.dot(endpoints.ends,
+                   { x: 'x', y: 'y', stroke, symbol: 'times', r: 5, strokeWidth: 1.8, ...fch }),
+        ] : []),
       ]
   if (facet) {
     marks.push(Plot.text(groups.value.map(g => ({ ...slots.value.get(g.key)!, t: groupLabel(g) })),
@@ -351,7 +367,9 @@ async function render() {
 // that loops, and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([mode, rows, plan], () => nextTick(() => plotBox.redraw()))
+// `showEnds` is a REDRAW, not a refetch — the endpoints are derived from points the panel already
+// holds, so the toggle must be in this list and not in the load watchers above.
+watch([mode, rows, plan, showEnds], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the other views) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -400,14 +418,14 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         </button>
       </div>
       <div class="cc-row">
-        <select v-if="familyOptions.length > 1" :value="popType" v-tooltip.top="'Which populations'"
-                aria-label="Population family"
-                @change="popType = ($event.target as HTMLSelectElement).value">
-          <option v-for="o in familyOptions" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
-        </select>
-        <select v-if="valueNames.length > 1" v-model="valueName"
+        <PopFamilySelect :options="familyOptions" v-model="popType" />
+        <button v-if="mode !== 'rose'" class="cc-btn cc-btn-bare cc-btn-dense"
+                :class="{ 'cc-btn-on': showEnds }"
+                v-tooltip.top="'Mark where each track starts (circle) and ends (×)'"
+                @click="showEnds = !showEnds">ends</button>
+        <select v-if="trackSets.length > 1" v-model="valueName"
                 v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
-          <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
+          <option v-for="vn in trackSets" :key="vn" :value="vn">{{ vn }}</option>
         </select>
         <select v-model="colorBy" v-tooltip.top="'Colour each track by one of its properties'"
                 aria-label="Colour by">
@@ -429,7 +447,16 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
                 tip="Overlaid tracks from two images are not comparable." />
     <div ref="host" class="tpv-host" />
     <PlotSpinner v-if="loading" label="Reading tracks" />
-    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">{{ note }}</span>
+    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">
+      {{ note }}
+      <!-- the way BACK from a selection. Without it a canvas-wide pick can only be undone in whichever
+           other panel made it, and the note reads "3 selected tracks" with no way out. -->
+      <button v-if="pinned.length && setTrackSel" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              v-tooltip.left="'Show all tracks again'"
+              @click="setTrackSel({ ...EMPTY_TRACK_SELECTION })">
+        <i class="pi pi-times" />
+      </button>
+    </span>
   </div>
 </template>
 

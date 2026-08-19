@@ -1,6 +1,6 @@
 # Track scheme — a timeline-first correction workspace
 
-**Status:** Phases 1–2 built; the worklist is deleted · branch `feat/track-scheme`
+**Status:** Phases 1–2 built (+ P2b, the rail audit); the worklist is deleted · branch `feat/track-scheme`
 
 Successor to the correction UI that shipped in #590. The **engine** from that PR stands
 (`app/src/tracking/track_correction.jl`, `tracking.correct`, the detector, the journal, the QC); this
@@ -143,6 +143,31 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
   - Retired keys migrate (`VIEW_ALIASES`): a saved `trackCorrection` panel becomes a `trackScheme`
     one. Without it `isInteractiveView` returns false and the canvas's `v-else` renders a GATING PLOT
     holding the old panel's state.
+- **P2b — the rail, after an audit.** The population picker on the Track canvas was wired to the gating
+  tree and reached nothing: the tree has no `popType`, so the canvas tagged every ticked population with
+  its own (`track`) while a panel resolved its family from the registry (`live`), and
+  `filterSeriesToPopType` dropped all of them — three panels silently showing the whole segmentation with
+  a picker on screen. The rail now follows the ACTIVE panel (`SeriesPicker` for a track view, the tree for
+  a gating plot), which makes this the second polymorphic rail host and retires
+  `CANVAS_MANAGER_RAIL_PLAN.md` Decision 5's premise ("no second case"). Also from the same audit:
+  - the timeline gained the family `<select>` its siblings had (`usePopFamily` + `PopFamilySelect`, one
+    resolution shared by the control and the request);
+  - `GET /api/tracking/issues` takes `pops`, so the CANDIDATES are scoped like the LANES
+    (`track_group_frame`; a pooled group yields no ranking rather than a wrong one);
+  - "which set of tracks" offers only TRACKED label sets (`trackSetOptions`) — all three pickers were
+    listing `default`;
+  - **a regression, restored**: `TrackPathsView` lost `watch([pinned, effectiveValueName])` when its load
+    watchers were consolidated onto `cohortKey`, which knows nothing about `ids=`. Selecting lanes changed
+    a computed and refetched nothing, so the cross-panel link looked as if it had never been built. Its
+    clear button went the same way. Both are now ratcheted (`trackSelection.test.ts` scans for the watch).
+  - **The uncommitted queue moved out of panel state** (`stores/trackOpsQueue.ts`). The canvas key is
+    `gate:{popType}:{image}:{g.valueName}`, so changing the page-level segmentation select rebinds the
+    canvas and took the timeline panel — with its queued edits — out of view. That looked like an argument
+    for the correction workspace having its own page, and it was not: the queue becomes `params.trackOps`
+    of one `tracking.correct_measures` run, so it is an un-run TASK DRAFT being stored as a view option,
+    and any page hosting the panel would inherit the same bug. It is now keyed by what the ops edit —
+    (project, image, segmentation) — on the same principle as `stores/taskDrafts.ts`. Two panels on one
+    tracked label set therefore share ONE queue, which is what the engine already assumed.
 - **P3 — the untracked lane + `points.add`.** The new route, the lane, and drag-onto-a-bar. First UI
   for the op that has never had one.
 - **P4 — morphology-aware candidates.** Add appearance/size continuity to the gap score, borrowing

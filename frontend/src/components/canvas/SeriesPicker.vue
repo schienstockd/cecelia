@@ -21,7 +21,15 @@ const props = defineProps<{
   groups: SegmentationPops[]          // populations available, grouped by segmentation
   selected: string[]                  // selected target keys (tkey), in the current scope
   scope: 'global' | 'local'
-  vis: VisProps                       // visual properties for the current scope
+  // The shared plot-styling block, OPT-IN as `CanvasSidePanel` documents it: omit the bag and the
+  // block does not render. The Track canvas's rail is the case that needs the omission — its track
+  // panels read no `vis`, so offering layout/points/colours there would be five controls wired to
+  // nothing, which is the dead-chrome failure the rail plan exists to avoid.
+  vis?: VisProps
+  // header identity, when this picker is not "Populations" — the Track canvas swaps this box in for the
+  // gating tree, and two boxes that differ only in their rows are two boxes a user cannot tell apart.
+  title?: string
+  icon?: string
   readout?: PlotReadout               // active plot's last render: stats test + auto-overridden settings
   docked?: boolean                    // render in a fixed rail (Analysis board) instead of floating
   // the active plot doesn't use this selection — either it is PRECOMPUTED (plots/popTypes.ts
@@ -45,6 +53,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 
 <template>
   <CanvasSidePanel :count="total" :scope="scope" :vis="vis" :docked="docked" :readout="readout"
+                        v-bind="{ ...(title ? { title } : {}), ...(icon ? { icon } : {}) }"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <div v-if="selectionUnused" class="pick-empty cc-muted">

@@ -7,6 +7,7 @@ import { resolvePopType, granularityFor, popTypeOptions, type PopTypeSpecLike } 
 import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
+import { fetchSegmentationPops } from '../plots/populations'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -125,16 +126,14 @@ export function useSummaryData(opts: {
     for (const g of groups) for (const p of g.populations) m.set(`${g.valueName}${p.path}`, p.colour)
     popColors.value = m
   }
-  function popsUrl(pt: string, gran: string) {
-    const p = new URLSearchParams({ projectUid: projectUid.value, popType: pt, granularity: gran })
-    if (setUid.value) { p.set('setUid', setUid.value); if (imageUids.value.length) p.set('imageUids', imageUids.value.join(',')) }
-    else if (imageUid.value) p.set('imageUid', imageUid.value)
-    return `/api/plots/populations?${p}`
-  }
+  // The query grammar lives in `plots/populations.ts` — ONE reader, because the Track canvas's rail asks
+  // the same question and a second copy of the setUid/imageUid branch is how the two would drift.
+  const popsQuery = (pt: string, gran: string) =>
+    ({ projectUid: projectUid.value, imageUids: imageUids.value, setUid: setUid.value,
+       popType: pt, granularity: gran as 'cell' | 'track' })
   async function loadPops() {
     if (!imageUid.value && !imageUids.value.length) { segPops.value = []; return }
-    try { segPops.value = await (await fetch(popsUrl(popType.value, granularity.value))).json() }
-    catch { segPops.value = [] }
+    segPops.value = await fetchSegmentationPops(popsQuery(popType.value, granularity.value))
     mergeColors(segPops.value)
     warmColors()
   }
@@ -151,7 +150,7 @@ export function useSummaryData(opts: {
         combos.set(`${o.popType}|${o.granularity}`, { pt: o.popType, gran: o.granularity })
     if (combos.size <= 1) return
     await Promise.all([...combos.values()].map(async c => {
-      try { mergeColors(await (await fetch(popsUrl(c.pt, c.gran))).json()) } catch { /* ignore */ }
+      mergeColors(await fetchSegmentationPops(popsQuery(c.pt, c.gran)))
     }))
   }
 

@@ -30,6 +30,11 @@ const MUST_REFRESH = [
   'modules/gate/GatePairsPanel.vue',
   'components/plots/TrackPathsView.vue',
   'components/plots/TrackDiagnosticsView.vue',
+  // the correction timeline: tracking, correction and re-measuring all rewrite exactly what it draws
+  'components/plots/TrackSchemeView.vue',
+  // the gating canvas owns its rail's POPULATION LIST — a run that creates or drops a population
+  // changes what can be picked, not just what a panel draws
+  'modules/gate/GatingPlots.vue',
 ]
 
 // Fetches plot/population data but must NOT self-refresh — with the reason, so removing an entry is a

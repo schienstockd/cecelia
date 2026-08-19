@@ -29,6 +29,13 @@ import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor }
   from '../../components/canvas/interactiveViews'
+import SeriesPicker from '../../components/canvas/SeriesPicker.vue'
+import { fetchSegmentationPops } from '../../plots/populations'
+import { granularityFor } from '../../plots/popTypes'
+import { usePopFamily } from '../../composables/usePopFamily'
+import { tkey, seriesMemo } from '../../plots/series'
+import { useDataRefresh } from '../../composables/useDataRefresh'
+import type { SegmentationPops } from '../../plots/types'
 import { readCanvasTrackSelection, EMPTY_TRACK_SELECTION, type CanvasTrackSelection }
   from '../../lib/trackSelection'
 import GatePairsPanel from './GatePairsPanel.vue'
@@ -112,20 +119,28 @@ const trackOptions = computed(() => pageViews('trackPage'))
 /**
  * What a registry view gets from this page.
  *
- * A view on the POPULATION rail is driven by the canvas's own PopulationManager — the picker already
- * sitting on this canvas — in the same vocabulary the Analysis board uses (`series`: which population,
- * of which segmentation, under which family). Without it the track views fell back to a private
- * segmentation `<select>`, which is a second picker for a job this page already has a canonical one
- * for, and the wrong noun besides: you pick TRACKS, not the label set they were measured on.
+ * A view on the POPULATION rail is driven by the rail's SERIES PICKER (below), in the same vocabulary
+ * the Analysis board uses: a series is `{popType, valueName, pop}` and the picker's rows carry all
+ * three. Without it the track views fell back to a private segmentation `<select>`, which is a second
+ * picker for a job this page already has a canonical one for, and the wrong noun besides: you pick
+ * TRACKS, not the label set they were measured on.
+ *
+ * **It was wired to the gating tree first, and that could not work.** The tree has no popType — the
+ * canvas had to invent one (`props.popType`, so `track`) while a track panel resolves its family from
+ * its registry entry (so `live`, the first one declared). `filterSeriesToPopType` then correctly
+ * dropped every population the user had ticked, and the panels silently fell back to the whole
+ * segmentation: the picker was on screen, was clicked, and reached nothing. Two managers is not
+ * chrome, it is the difference between "which tree am I editing" (one, mutated) and "which
+ * populations am I plotting" (any number, across segmentations).
  *
  * `compareMode: 'image'` because this canvas is one image by construction — the cohort comparison is
  * the board's job, and pretending otherwise here would silently widen what a gating plot shows.
  */
-function ctxForView(key: string) {
+function ctxForView(key: string, id: number) {
   const base = { projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [],
                  setUid: null }
   const pops = railFor(key) === 'pops'
-    ? { series: activeHL.value.map(pop => ({ valueName: g.valueName, pop, popType: props.popType })),
+    ? { series: memoSeries(id, panelPopSel(id)),
         popTypes: popTypesFor(key), compareMode: 'image' as const, poolGroups: false }
     : {}
   return { ...base, ...pops, ...trackLink.value }
@@ -142,10 +157,15 @@ const trackLink = computed(() => ({
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
 // option to the defaults below and it persists automatically — see useViewState.ts.
 const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZero,
-        selTracks } = useViewState(shared, {
+        selTracks, trackPops } = useViewState(shared, {
   scope: 'global' as 'global' | 'local',     // global = one value for every plot; local = active plot only
   hl: [] as string[],                         // global-scope highlighted pop paths
   lineWidth: 1.5, labels: true, fromZero: true,
+  // WHICH POPULATIONS the registry views plot (`popType::valueName/pop` keys, the board's own
+  // vocabulary). Separate from `hl` above: that one is "overlay this population on the gating
+  // scatter", which is a different question with a different answer, and reusing it is what left the
+  // track panels unable to say which family their populations belonged to.
+  trackPops: [] as string[],
   // WHICH TRACKS THE CANVAS IS TALKING ABOUT — the cross-panel link. Selecting lanes in the timeline
   // is the same act as choosing what the x/y track plot draws and what napari flies to, so the
   // selection lives on the CANVAS rather than in one panel's state. Same mechanism the highlighted
@@ -170,6 +190,67 @@ const activeFromZero = computed(() => scope.value === 'global' ? gFromZero.value
 
 // edits route to the global value or the active plot depending on scope
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+
+// ── The rail's SECOND manager: which track populations the track panels plot ──────────────────
+//
+// `CANVAS_MANAGER_RAIL_PLAN.md` Decision 5 says module pages render ONE manager statically, and its
+// stated reason is "indirection with no second case". This canvas is the second case: it hosts three
+// registry views that slice by population and one gating tree that is edited, and those are two
+// different questions asked of two different components (see `ctxForView`). So the rail follows the
+// ACTIVE panel, exactly as the board's does — via `railFor`, never a key list here.
+const activeIsPopsView = computed(() =>
+  !!activePanel.value && isInteractiveView(activePanel.value.state.kind)
+  && railFor(activePanel.value.state.kind) === 'pops')
+
+// The active panel's FAMILY, through the same `usePopFamily` the panel itself uses — so the rail lists
+// the populations that panel can actually draw, and the two cannot name different families.
+const { popType: activeFamily } = usePopFamily(
+  () => (activePanel.value && isInteractiveView(activePanel.value.state.kind)
+    ? popTypesFor(activePanel.value.state.kind) : undefined),
+  () => activePanel.value?.state.popType as string | undefined,
+  v => { if (activePanel.value) activePanel.value.state.popType = v })
+const activeGranularity = computed<'cell' | 'track'>(() => {
+  const pt = activePanel.value && isInteractiveView(activePanel.value.state.kind)
+    ? popTypesFor(activePanel.value.state.kind) : []
+  return pt.length ? granularityFor({ dataSource: { popTypes: pt } }, activeFamily.value) : 'track'
+})
+
+// the populations available, grouped by segmentation — the picker's rows. ONE reader
+// (`plots/populations.ts`), shared with every summary canvas.
+const segPops = ref<SegmentationPops[]>([])
+async function loadSegPops() {
+  if (!activeIsPopsView.value) { segPops.value = []; return }
+  segPops.value = await fetchSegmentationPops({
+    projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [],
+    setUid: null, popType: activeFamily.value, granularity: activeGranularity.value })
+}
+watch([() => props.imageUid, projectUid, activeIsPopsView, activeFamily, activeGranularity], loadSegPops,
+      { immediate: true })
+// gating, tracking and correction all change which populations EXIST — the one refresh chokepoint, so
+// the global autoRefreshOnTask setting governs this list like every plot on the page.
+useDataRefresh(() => (props.imageUid ? [props.imageUid] : []), loadSegPops)
+// a population the user gates by hand appears on the popmap broadcast, not on a task completion
+watch(() => g.flat.length, () => { if (activeIsPopsView.value) loadSegPops() })
+
+// The ticked series, obeying the canvas's existing global/local scope: one set for every panel, or the
+// active panel's own. Same shape as the board's `gSel` / per-slot `sel`.
+//
+// The per-panel key is `popSel`, NOT `sel` — `TrackSchemeView` already owns `state.sel` for the LANES
+// it has selected, and two different selections under one key is a silent collision.
+function panelPopSel(id: number): string[] {
+  if (scope.value === 'global') return trackPops.value
+  return (panels.value.find(p => p.id === id)?.state.popSel as string[] | undefined) ?? []
+}
+const activePopSel = computed(() => activePanel.value ? panelPopSel(activePanel.value.id) : [])
+function togglePop(valueName: string, pop: string, pt: string) {
+  const k = tkey(pt, valueName, pop)
+  if (scope.value === 'global') trackPops.value = toggle(trackPops.value, k)
+  else if (activePanel.value) activePanel.value.state.popSel = toggle(panelPopSel(activePanel.value.id), k)
+}
+// keyed by PANEL ID so each panel keeps one series array while its ticks are unchanged — a
+// template-built `.map(parseTkey)` would hand every panel a "new" list on every canvas render.
+const memoSeries = seriesMemo<number>()
+
 function toggleHighlight(path: string) {
   if (scope.value === 'global') gHL.value = toggle(gHL.value, path)
   else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl, path)
@@ -326,7 +407,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="gate.popManager"
                   :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
                   @click="showManager = !showManager"
-                  v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
+                  v-tooltip.bottom="showManager ? 'Hide the populations rail' : 'Show the populations rail'">
             <i class="pi pi-sitemap" />
           </button>
         </div>
@@ -353,7 +434,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                same host the cluster and optical-flow canvases use -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
-                            :context="ctxForView(p.state.kind)" :state="p.state" :persist-key="`${ckey}:${p.id}`"
+                            :context="ctxForView(p.state.kind, p.id)" :state="p.state" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" />
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
@@ -367,7 +448,16 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
         </div>
-        <PopulationManager v-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
+        <!-- THE RAIL, following the ACTIVE panel (railFor, never a key list here). A track view slices by
+             population, so it gets the SERIES PICKER — populations grouped by segmentation, each row
+             carrying its family; a gating plot is a tree being edited, so it gets the tree. The gating
+             tree could not serve both: it has no popType to give, so every series it built was filtered
+             out again (see ctxForView). No `vis`: the track panels read none of the styling block, and
+             five controls wired to nothing is what the rail plan calls dead chrome. -->
+        <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
+                      :groups="segPops" :selected="activePopSel" :scope="scope"
+                      @toggle="togglePop" @update:scope="scope = $event" />
+        <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                            @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
                            @update:line-width="setLineWidth" @update:gate-labels="setLabels"

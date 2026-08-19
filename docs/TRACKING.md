@@ -357,6 +357,13 @@ is a comparison the user set up deliberately. Sharing ids alone was shipped firs
 the timeline on `importTest2` (314 tracks) and the Tracks plot on `memTom` (396), selecting lane 277
 asked `memTom` for a track it does not have and drew an empty box reading "0 selected tracks of 396".
 
+**The uncommitted queue is a task DRAFT, not a view option.** It lives in `stores/trackOpsQueue.ts`,
+keyed by the (project, image, segmentation) the ops edit — the same principle as `stores/taskDrafts.ts`,
+because the queue becomes `params.trackOps` of one `tracking.correct_measures` run. It used to live in the
+timeline panel's persisted state, which is keyed by the CANVAS: the Track canvas keys itself on the
+page-level segmentation select, so changing that select rebound the canvas and put queued edits out of
+reach. Two panels on one tracked label set now share one queue, which is what the engine already assumed.
+
 **Editing is the same vocabulary as before.** Select lanes → **Join** / **Split** / **Remove**, or
 **Fix** to queue the op the detector already picked. Split takes its frame from the bar you clicked —
 the worklist made you read the frame out of a sentence and type it into a box. Everything lands in one
@@ -378,12 +385,39 @@ just a lie — "pick track 2001" has no answer if 2001 was never sent, and the p
 exists. So occupancy mode defaults to a 20000 cap, and the fly-to-napari button fetches that one
 track's geometry on demand with `ids=`.
 
-**The canvas's POPULATION MANAGER picks what the track panels show.** All three track views sit on the
+**A TRACK POPULATION PICKER picks what the track panels show.** All three track views sit on the
 population rail (`rail: 'pops'` + `TRACK_FAMILIES`) and take the same `series` the Analysis board hands
-its cohort plots — so the picker already on the Track canvas is the picker, rather than each panel
-growing a private segmentation `<select>`. A track population is what a user chooses; the segmentation
-is the storage detail underneath it. `compareMode: 'image'` on this canvas, because it is one image by
+its cohort plots — so a picker already on the Track canvas is the picker, rather than each panel growing
+a private segmentation `<select>`. A track population is what a user chooses; the segmentation is the
+storage detail underneath it. `compareMode: 'image'` on this canvas, because it is one image by
 construction — the cohort comparison is the board's job.
+
+**Which picker, and why not the gating tree.** The Track canvas's rail follows the ACTIVE panel
+(`railFor`, as the board's does): a gating plot gets the mutating `PopulationManager`, a track view gets
+the read-only `SeriesPicker` — populations grouped by segmentation, each row carrying its family. Wiring
+the track views to the gating tree was tried first and could not work: the tree has no `popType`, so the
+canvas had to invent one (its own `props.popType`, i.e. `track`) while a track panel resolves its family
+from the registry (`live`, the first declared). `filterSeriesToPopType` then correctly dropped every
+ticked population and the panels silently fell back to the whole segmentation — the picker was on screen,
+was clicked, and reached nothing. `interactiveViews.test.ts` now pins the round trip for every declared
+family, and the timeline gained the family `<select>` its siblings already had (`PopFamilySelect` +
+`usePopFamily`, one resolution for the control and the request).
+
+This makes the Track canvas the SECOND polymorphic rail host. `docs/todo/CANVAS_MANAGER_RAIL_PLAN.md`
+Decision 5 says module pages stay static, and its stated reason is "indirection with no second case" —
+this is that case: one canvas hosting both a tree that is edited and three views that slice by population.
+
+**The candidate list is scoped like the lanes.** `GET /api/tracking/issues` takes `pops` and resolves its
+cells through the same `track_plot_groups` the paths route uses (`track_group_frame`). Without it, ticking
+a population narrowed the picture and not the ranking: candidates could name tracks that were not on
+screen, and the two counts the panel prints beside each other were tallied over two different track sets.
+A POOLED group yields no ranking rather than a wrong one — a `track_id` is unique only within one (image,
+segmentation), so an op built from pooled cells would name two different cells.
+
+**"Which set of tracks" offers only TRACKED label sets** (`trackSetOptions`). All three pickers were
+listing every `value_name`, so on the reference image `default` and `three` were offered as sets of tracks
+and answered "Not tracked". `resolveTrackValueName` already refuses to *default* to an untracked set;
+offering one by hand was the same mistake one control along.
 
 **The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
 default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
@@ -458,6 +492,11 @@ Three modes, because "the tracks" is three questions:
 - **Axes are always square** (`pathDomain` in `frontend/src/plots/trackPaths.ts`). A track plot
   stretched to its panel turns a straight run into a diagonal, destroying the one thing these modes
   exist to show.
+- **Start and end markers are a toggle** (*ends*, on by default). A hollow circle where a track starts
+  and an X where it ends carry the direction a bare polyline cannot — but they are two extra marks per
+  track, and on a 500-track cohort they are most of the ink. "Which way did they go" and "how much ground
+  did they cover" want opposite answers, so it is a per-panel setting rather than one decision for every
+  image. Absent in *rose*, which has arrowheads instead.
 - **Geometry comes from `GET /api/tracking/paths`**, in the same wire shape the correction surface
   reads — one Julia helper (`track_path_dicts`) builds it for both routes, so they cannot drift.
 - **The colour-by list is not a second vocabulary.** It comes from
