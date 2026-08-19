@@ -109,7 +109,16 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       published `schienstockd/ccia-importTracks` are copies that will drift. One has to become the
       source. (`ccia-trackMeasures` is in-repo only, so this is one plugin, not two.)
 
-- [ ] **`ccia-trackMeasures` has no published repo, and would not prove much if it had.**
+- [x] ~~**`ccia-trackMeasures` had no published repo**~~ — so Settings → Plugins could not install
+      it, and nothing failed: it shipped in our checkout, loaded in CI, and was unreachable for
+      anyone else. Published at `schienstockd/ccia-trackMeasures` and added to the curated registry.
+      Ratcheted: every directory under `docs/examples/plugins/` must appear in the registry with a
+      url the directory name derives from.
+      Also RUN for the first time, against a copy of the real TrackMate import — 3 measures for 3469
+      of 4367 cells, straightness median 0.59. Until now the suite only checked that it registered
+      and validated its params.
+
+- [ ] **It still would not prove the Vue question.**
       Plugins currently ship **no Vue** (`app/src/tasks/plugins.jl:249`) — deliberately, because
       renderable code makes the frontend a plugin ABI. So "custom task AND custom module page" is
       true only in the declarative sense. Reusing `TrackPathsView` from `feat/correction-seg-tracks`

@@ -3749,6 +3749,29 @@ end
     end
 end
 
+@testset "every example plugin is installable" begin
+    # `ccia-trackMeasures` shipped in the repo, loaded in CI, and had **no GitHub page** — so the one
+    # route a user actually has (Settings → Plugins) could not install it, and nothing failed. A
+    # plugin that exists only as a directory in our own checkout is a plugin nobody else can run.
+    reg  = Cecelia.plugin_registry()
+    byname = Dict(String(get(e, "name", "")) => e for e in reg)
+    root = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "plugins")
+    for name in sort(readdir(root))
+        isdir(joinpath(root, name)) || continue
+        @test haskey(byname, name)
+        e = get(byname, name, Dict{String,Any}())
+        url = String(get(e, "url", ""))
+        # The DIRECTORY an install creates is derived from the url, so a registry entry whose name
+        # disagrees with its url would install under one name and be looked up under another.
+        @test Cecelia.plugin_name_from_url(url) == name
+        @test !isempty(String(get(e, "description", "")))
+    end
+    # Nothing in the curated list may point somewhere the name cannot be derived from.
+    for e in reg
+        @test Cecelia.plugin_name_from_url(String(get(e, "url", ""))) == String(get(e, "name", ""))
+    end
+end
+
 @testset "The shipped example plugin loads end to end" begin
     # The example under docs/examples/plugins/ is the reference a user copies, so CI has to actually
     # LOAD it. (The custom-module examples are covered by the testset above — they were the older gap:
