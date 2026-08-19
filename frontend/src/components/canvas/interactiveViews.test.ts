@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView, popTypesFor } from './interactiveViews'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 
 const SFC = import.meta.glob('/src/components/canvas/LayoutCanvas.vue', {
@@ -94,12 +94,26 @@ describe('interactive view surface flags', () => {
     expect(declared).toBeGreaterThan(0)
   })
 
-  // A plugin's page renders the SUMMARY canvas — its own population picker, no other rail — so a
-  // plugin-nameable view must be self-contained. This is the check the author of the next view will
-  // not think to make.
-  it('every plugin-nameable view is self-contained (rail: none)', () => {
+  // A plugin's page IS the summary canvas, which renders the population picker and nothing else. So a
+  // plugin-nameable view must want a rail that canvas actually has: `none` (self-contained) or `pops`.
+  // `clusterPops`/`flowModels` would be silently handed the wrong manager.
+  //
+  // This started as "must be rail: 'none'" and was wrong within a day — #593 moved both track plots
+  // onto the pops rail so they could take the board's comparison, which would have made the two most
+  // useful plugin plots un-nameable. The rule is the HOST's capability, not a fixed value.
+  const SUMMARY_CANVAS_RAILS = ['none', 'pops']
+  it('every plugin-nameable view wants a rail the summary canvas renders', () => {
     for (const [key, v] of Object.entries(INTERACTIVE_VIEWS))
-      if (v.pluginPage) expect(railFor(key), `view "${key}"`).toBe('none')
+      if (v.pluginPage) expect(SUMMARY_CANVAS_RAILS, `view "${key}"`).toContain(railFor(key))
+  })
+
+  // …and a pops-rail view must declare its families, or the rail lists whichever family `specs[0]`
+  // happens to carry — a picker full of populations the plot cannot draw. Already true on the board;
+  // pinned here for the plugin surface too, which resolves the family the same way.
+  it('a plugin-nameable view on the pops rail declares its families', () => {
+    for (const [key, v] of Object.entries(INTERACTIVE_VIEWS))
+      if (v.pluginPage && railFor(key) === 'pops')
+        expect(popTypesFor(key).length, `view "${key}"`).toBeGreaterThan(0)
   })
 
   // The recurrence guard. `flowMetrics` shipped with `analysisBoard: true` and never showed up, because

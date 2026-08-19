@@ -188,8 +188,12 @@ async function loadAll() {
     const r = await fetch(`/api/tracking/paths?${q}`)
     const d = await r.json()
     if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
-    allPaths.value = (d.paths ?? {}) as TrackPathMap
-    allTotal.value = Number(d.total ?? 0)
+    // The route is COHORT-shaped (one entry per images × population group, for the board's comparison —
+    // docs/TRACKING.md). This is a single-image, no-population call, so there is exactly one group, and
+    // the worklist wants exactly that one: it is about editing THIS image, not comparing anything.
+    const g = (d.groups ?? [])[0]
+    allPaths.value = ((g?.paths ?? {}) as TrackPathMap)
+    allTotal.value = Number(g?.total ?? 0)
     // a named track that does not exist is worth saying — silently showing an empty table reads as
     // "this image has no tracks"
     const missing = ids.filter(i => !(String(i) in allPaths.value))

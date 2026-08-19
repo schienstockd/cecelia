@@ -36,7 +36,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
@@ -166,8 +166,14 @@ const {
   // computed can be evaluated during useSummaryData's own setup (temporal dead zone).
   activePopType: computed(() => {
     const c = entry.value.contents[entry.value.activeIndex]
-    if (!c || c.kind !== 'summary') return null
+    if (!c) return null
     return ((c.state as Record<string, unknown> | undefined)?.popType as string | undefined) ?? null
+  }),
+  // an INTERACTIVE slot that slices by population declares its families on its registry entry (the two
+  // track plots) — so the rail lists that plot's family, exactly as it follows a summary slot's spec.
+  activeFamily: computed(() => {
+    const c = entry.value.contents[entry.value.activeIndex]
+    return c && c.kind === 'interactive' ? popTypeSpecFor(c.ref) : null
   }),
 })
 
@@ -343,14 +349,24 @@ function setFlowModel(v: string) {
 // context handed to an interactive slot: cluster views get the board cluster run + shown pops; flow
 // views get the vault's model; the self-contained views (gating strategy, filmstrip) just get the
 // image/project context.
-function ctxFor(c: SlotContent) {
+function ctxFor(c: SlotContent, i: number) {
   if (isClusterSlot(c)) return {
     projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
-  return railOf(c) === 'flowModels' ? { ...base, model: panelFlowModel(c) } : base
+  if (railOf(c) === 'flowModels') return { ...base, model: panelFlowModel(c) }
+  // A plot on the POPULATION rail is part of the board's comparison, so it gets the same four things a
+  // SummaryPanel gets: the selection, the compare mode + its attributes, and the pool toggle. The plot
+  // decides what to do with them; a self-contained view declares `rail: 'none'` and never sees them.
+  // (No `popColors`: the two track plots identify a group by its facet TITLE, not by a colour, so
+  // passing the map would be a prop wired to nothing — the failure this file's rail comments warn about.)
+  if (railOf(c) === 'pops') return {
+    ...base, series: panelSeries(i, c), popTypes: popTypesFor(c.ref),
+    compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value,
+  }
+  return base
 }
 
 // props for a cluster PANEL slot (CLUSTER_PANELS): the common bag + the panel-specific props its registry
@@ -606,7 +622,7 @@ defineExpose({ capturePage, collectCsvs })
             <InteractivePanel v-else-if="entry.contents[i]?.kind === 'interactive' && INTERACTIVE_VIEWS[entry.contents[i]!.ref]"
                               :ref="el => setInteractiveRef(i, el)"
                               :index="i" :active="i === entry.activeIndex" :docked="true"
-                              :view="entry.contents[i]!.ref" :context="ctxFor(entry.contents[i]!)" :state="entry.contents[i]!.state"
+                              :view="entry.contents[i]!.ref" :context="ctxFor(entry.contents[i]!, i)" :state="entry.contents[i]!.state"
                               :duplicable="true" :persist-key="`${canvasKey}:slot:${i}`"
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->

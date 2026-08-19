@@ -25,7 +25,7 @@ import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView } from './interactiveViews'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor } from './interactiveViews'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -113,7 +113,14 @@ const {
   // page would silently offer the wrong population family for the selected plot.
   activeSpecId: computed(() => activePanel.value?.state.specId ?? null),
   // the active plot's chosen population family — the manager lists THAT family (one control, on the plot)
-  activePopType: computed(() => activePanel.value?.state.popType ?? null) })
+  activePopType: computed(() => activePanel.value?.state.popType ?? null),
+  // An INTERACTIVE panel that slices by population declares its families on its registry entry, so the
+  // rail lists THAT plot's family rather than whichever one `specs[0]` happens to carry. Same
+  // resolution the board uses — a second path here could disagree about what the plot is showing.
+  activeFamily: computed(() => {
+    const k = activePanel.value?.state.kind
+    return k ? popTypeSpecFor(String(k)) : null
+  }) })
 
 // Migrate canvases persisted before the four per-popType population summaries collapsed into one spec
 // with a family picker. Without this a saved panel's specId no longer resolves and the panel silently
@@ -135,11 +142,22 @@ const viewLabel = (v: DeclaredView) => v.label || INTERACTIVE_VIEWS[v.view]?.lab
 const unusableViewText = computed(() =>
   `Plot not available here: ` +
   unusableViews.value.map(v => v.plugin ? `${v.view} (${v.plugin})` : v.view).join(', '))
-// The bag every interactive view receives (docs/UI.md → generic plot-integration interface). Views
-// pick their own image out of `imageUids` and keep the rest in their panel state.
-const viewContext = computed(() => ({
-  projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: gVis.value,
-}))
+// The bag an interactive view receives (docs/UI.md → generic plot-integration interface). Views pick
+// their own image out of `imageUids` and keep the rest in their panel state.
+//
+// A view on the POPULATION rail is part of THIS canvas's comparison and gets the same four things a
+// SummaryPanel gets — selection, compare mode + its attributes, pool toggle — exactly as the board
+// builds it (`LayoutCanvas.ctxFor`). A self-contained view declares `rail: 'none'` and never sees them.
+// Both branches exist because #593 moved the two track plots onto the pops rail: before it, every
+// plugin-nameable view was self-contained and this was one object.
+const viewContext = (id: number, st: PanelState) => {
+  const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value,
+                 vis: panelVis(st) }
+  return railFor(String(st.kind)) === 'pops'
+    ? { ...base, series: panelSeries(id, st), popTypes: popTypesFor(String(st.kind)),
+        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value }
+    : base
+}
 
 // global/local scope governs BOTH the eye-selection AND the visual properties (like the gating
 // PopulationManager): global = one value shared by every plot, local = the active plot's own.
@@ -156,7 +174,11 @@ const activeReadout = computed<PlotReadout>(() => readouts.value[activeId.value]
 // the active plot is PRECOMPUTED — its populations come from an analysis run, so the picker says so
 // instead of offering eye toggles that do nothing (see isPrecomputedSpec)
 const activeIsPrecomputed = computed(() => {
-  if (activePanel.value?.state.kind) return true   // an interactive view brings its own data + controls
+  // An interactive view on the POPS rail consumes the eye-selection (the two track plots do). One on
+  // any other rail brings its own data and controls, so the picker says the selection is unused
+  // rather than offering toggles that do nothing.
+  const kind = activePanel.value?.state.kind
+  if (kind) return railFor(String(kind)) !== 'pops' 
   const id = activePanel.value?.state.specId
   const spec = id ? specById.value[id] : null
   return !!spec && isPrecomputedSpec(spec)
@@ -287,7 +309,7 @@ watch(segPops, () => {
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
-                            :context="viewContext" :state="p.state" :duplicable="true"
+                            :context="viewContext(p.id, p.state)" :state="p.state" :duplicable="true"
                             :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="removePanel(p.id)"
                             @duplicate="duplicatePanel(p)" />

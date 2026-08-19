@@ -390,8 +390,57 @@ Three modes, because "the tracks" is three questions:
 - **The colour-by list is not a second vocabulary.** It comes from
   `/api/gating/channels?popType=track`, the same call the track-gating axes read, so anything you can
   gate on you can colour by (motility measures + the per-track cell aggregates).
-- **The cap is stated, not silent.** Longest-first, capped, and the plot reports `shown of total` —
-  a hairball of 500 tracks looks exactly like a hairball of 5000.
+- **The cap is stated, not silent.** Longest-first, capped PER GROUP, and the plot reports
+  `shown of total` — a hairball of 500 tracks looks exactly like a hairball of 5000.
+
+### Both track plots compare like every other plot on the board
+
+They shipped showing ONE image and no populations, on a board whose entire purpose is comparison —
+every summary plot there can already put treatments side by side and populations side by side. So both
+now take the **same selectors the summary aggregator takes**, and a two-condition figure is one plot
+instead of two screenshots.
+
+A **group** is one (images × population) cell of the comparison, and it is what the plot facets or
+colours by:
+
+| The board's control | What it means here |
+|---|---|
+| `compare` = *this image* | one group, the first selected image (the mode that exists to focus on one) |
+| `compare` = *per image* | one group per selected image |
+| `compare` = *pooled* | one group over every selected image |
+| `compare` = *by attribute* | one group per attribute value; images sharing it pool into it |
+| the population rail | one group per selected population (the plot declares its FAMILY — `live` / `track` / `trackclust` — on its registry entry, and the rail lists that family) |
+| *pool to groups* | the selected populations collapse into one group |
+| `Facet by` | small multiples versus one box |
+
+- **One resolver, in the package.** `track_plot_groups` (`app/src/tracking/track_cohort.jl`) turns those
+  selectors into `TrackPlotGroup`s — the frames each group draws from — and both routes are then thin
+  JSON shapers. The attribute join is `image_attr_groups` (`model/set.jl`), the SAME one
+  `POST /api/plot_data` uses, so "Treatment.Mouse" means one thing on every plot of a board; the
+  population refs are `pop_df`'s own prefix grammar, read by `pop_df` itself.
+- **The two plots pool a group differently, on purpose.** Paths keep a group's images APART (a track is
+  labelled by the movie it came from, and its key is prefixed so two movies' track 17 are not one
+  polyline); diagnostics POOL them (a condition is judged on all its replicates).
+- **A cohort SPLITS; it never overlays, and there is no per-group colour.** Both plots draw one cell per
+  group named by its facet TITLE, whatever `Facet by` says — the override reports itself in a
+  `PlotNotice` rather than quietly disagreeing with the control (`facetPlan`,
+  `frontend/src/plots/trackGroups.ts`). Two reasons, and the second is the load-bearing one:
+  overlaying two conditions is unreadable in every mode (paths have unrelated coordinate frames; a
+  star/rose fan turns to scribble — the SHAPE is the readout), and telling groups apart by colour needs a
+  swatch legend, which costs the colour channel `colorBy` exists for **and** breaks the house rule that
+  we never use Plot's inline legend (it wraps the svg in a `<figure>` whose swatch div eats height and
+  clips the bottom axis in a fixed-height panel — `plots/plot.ts`). So the diagnostics keep their two
+  meaningful colours (blue = the measurement, amber = the expectation) at any group count.
+  *(Dominik, 2026-08-19: star and rose split too — the first cut overlaid them with an image colour per
+  track and a two-swatch legend, and it read as one scribble.)*
+- **Facets share ONE domain, and their cells stay square** (`facetGrid`/`facetBox`,
+  `frontend/src/plots/facetGrid.ts` — also what the UMAP's small multiples measure with). Two conditions
+  on two scales are not a comparison, and a stretched track plot is a wrong track plot. The title is a
+  `Plot.text` mark inside each cell, not a facet header: a header is per COLUMN and cannot name a cell of
+  a grid, and the grid is what keeps four conditions readable instead of four slivers.
+- **The group cap is a stated omission.** `maxGroups` (12) bounds the work — a 5-image cohort crossed
+  with four populations is 20 diagnostics batteries on one click — and `dropped` comes back so the plot
+  says how many it left off. Silent truncation reads as "covered everything".
 
 ### A track view never defaults to `default` — or to the active segmentation
 
@@ -447,7 +496,26 @@ two ways:
   as a cohort outlier. `driftP` deliberately does NOT: a p-value is not a quantity to take a median of.
 - **The `trackDiagnostics` plot** (Track page → **+ Checks**, and the Analysis board) draws the curves
   and shows the SAME findings, rendered from the same objects. The panel cannot disagree with the QC
-  line, because neither computes a threshold of its own.
+  line, because neither computes a threshold of its own. On the board it draws one curve per group (see
+  *Both track plots compare like every other plot on the board*), each group's arms named in the header
+  line and in its findings.
+
+**Pooling a group's images is a concatenation — except for the pair scan.** Every diagnostic here is
+per-track or per-step arithmetic: MSD at a lag IS the mean over every subtrack of that lag, from
+whichever movie it came, so pooling the FRAMES is exact and combining per-image curves afterwards would
+mean re-deriving that weighted mean (and its SEM) a second, quietly different way. Two things then have
+to be true, and neither announces itself when broken:
+
+- **Track ids are per image.** `pooled_track_frame` offsets each frame's ids by a round decimal stride
+  (so `1_000_017` is readably image 1's track 17) — a plain `vcat` merges two different cells into one
+  track and invents the step between them, which is a curve measured over a path that never happened.
+- **A pair of tracks from different movies is not a quantity.** The two cells were never in the same
+  field, so `track_diagnostics(…; group_col = :__pool_grp)` runs the O(n²) scan within each group; the
+  far-pair angle would otherwise be dragged to a meaningless average. Pinned by the *a pooled frame never
+  pairs two movies* testset, which asserts the pair count is exactly twice a single movie's. The
+  `PAIR_SCAN_MAX_TRACKS` guard follows: it is measured on the LARGEST group (`_pair_scan_size`), because
+  the cost of a pooled condition is Σ nᵢ² and not (Σ nᵢ)² — guarding on the total would report "not
+  checked" for every pooled arm, three ordinary movies being enough to pass 800.
 
 ## Track-property gating — backend done, frontend/napari deferred
 

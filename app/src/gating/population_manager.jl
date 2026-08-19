@@ -828,7 +828,8 @@ end
 # granularity=:cell)` so a track gate can hand napari / downstream the cells of the gated tracks
 # (the "selecting a track pulls in all its cells" behaviour). Cell measures are NOT re-attached —
 # the gate is over track properties; callers wanting cell measures read them via a `:cell` pop_df.
-function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=String[])::DataFrame
+function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=String[],
+                                centroids::Union{Bool,Symbol}=false)::DataFrame
     # the per-track frame identifies each track by `label` (label == track_id on the track table);
     # older callers may pass an explicit `track_id` column. Accept either.
     tidcol = "track_id" in names(trackdf) ? "track_id" : ("label" in names(trackdf) ? "label" : nothing)
@@ -840,13 +841,24 @@ function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=S
         # read member cells' track_id (+ any requested CELL columns, e.g. `live.cell.hmm.state.*`
         # for the HMM plots — these are per-cell obs, not on the per-track table, so they must be
         # carried here); unknown columns are ignored by the reader.
-        co = label_props(img; value_name=vn) |> lp -> select_cols(lp, unique(vcat("track_id", ccols))) |> as_df
+        #
+        # `centroids` widens that read to the member cells' COORDINATES, resolved per value_name by the
+        # same rule as `_fetch_with_centroids` (never a hardcoded column list — a 2D segmentation has no
+        # `centroid_z`). Without it `pop_df(pop_type="track", granularity=:cell, centroids=:physical)`
+        # returned a frame with no coordinates at all and `_pop_df_finish` could only warn about it —
+        # which is what the track PLOTS need (a gated/clustered track's path is drawn from these).
+        lp = label_props(img; value_name=vn)
+        want = centroids === false ? unique(vcat("track_id", ccols)) :
+               unique(vcat("track_id", ccols, centroid_columns(lp), temporal_columns(lp)))
+        co = select_cols(lp, want) |> as_df
         keep = [r isa Number && !isnan(r) && Int(r) > 0 for r in co.track_id]
         co = co[keep, :]; nrow(co) == 0 && continue
         co[!, :track_id] = Int.(co.track_id)
         tid_rows = Dict{Int,Vector{Int}}()
         for (i, t) in enumerate(co.track_id); push!(get!(tid_rows, t, Int[]), i); end
-        present = intersect(ccols, names(co))                 # requested cols living on the CELL table
+        # requested cols living on the CELL table — plus the coordinate columns when they were asked
+        # for, which are per-cell by definition (the whole point of the :cell expansion)
+        present = intersect(filter(!=("track_id"), want), names(co))
         # requested cols that live on the TRACK table instead (e.g. `clusters.{suffix}` for the HMM
         # plots' per-cluster mode) — carried onto every member cell as a per-track constant.
         track_cols = intersect(setdiff(ccols, present), names(sub))
@@ -876,7 +888,8 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
                               pop_type::AbstractString="track",
                               cell_measures=String[], categorical=String[], pop_cols=nothing,
                               unique_labels::Bool=true, drop_na::Bool=false,
-                              granularity::Symbol=:track)::DataFrame
+                              granularity::Symbol=:track,
+                              centroids::Union{Bool,Symbol}=false)::DataFrame
     # one track_props table per value_name (label == track_id); cache within this call. The
     # cluster column (`clusters.{suffix}`, written by clustTracks into the track table obs) comes
     # free via track_props' motility leftjoin, so `trackclust` membership needs no cell_measures.
@@ -898,7 +911,8 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
     # :cell expansion carries the requested cell columns (pop_cols that are per-cell obs, e.g. the
     # HMM state/transition columns for the HMM plots) onto the member cells.
     granularity === :track ? trackdf :
-        _expand_tracks_to_cells(img, trackdf; cell_cols=(pop_cols === nothing ? String[] : pop_cols))
+        _expand_tracks_to_cells(img, trackdf; cell_cols=(pop_cols === nothing ? String[] : pop_cols),
+                                centroids=centroids)
 end
 
 # ── Derived populations ──────────────────────────────────────────────────────────
@@ -1578,7 +1592,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                                   cell_measures=cell_measures,
                                   categorical=categorical, pop_cols=pop_cols,
                                   unique_labels=unique_labels, drop_na=drop_na,
-                                  granularity=granularity)
+                                  granularity=granularity, centroids=centroids)
         img._pop_df_cache[ckey] = df
         return _pop_df_finish(copy(df), img, centroids)
     end

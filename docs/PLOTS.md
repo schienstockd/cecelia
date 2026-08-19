@@ -90,6 +90,10 @@ Four rules make this work; each one was a bug before it was a rule.
    hold keys for a family it no longer shows, so it narrows at request time (`filterSeriesToPopType`).
    Keeping them means switching family and back restores the previous pick.
 
+**An INTERACTIVE view may declare the same table.** `popTypes` on an `interactiveViews.ts` entry is read
+by these same functions, so a self-rendering plot that slices by population (the two track plots) gets the
+family picker and the rail's family list with no second mechanism — see `docs/ANALYSIS.md` → *The rail*.
+
 Pure logic + the persisted-canvas migration live in `frontend/src/plots/popTypes.ts` (`popTypeOptions`,
 `granularityFor`, `resolvePopType`, `filterSeriesToPopType`, `isPrecomputedSpec`,
 `SPEC_ALIASES`/`migrateSpecId`), unit-tested in `popTypes.test.ts`. `SPEC_ALIASES` maps the four removed
