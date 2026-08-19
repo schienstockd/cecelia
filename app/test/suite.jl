@@ -3641,6 +3641,88 @@ end
     @test length(rep) == 3                     # sorted, and the two broken ones still appear
 end
 
+@testset "A plugin's contributions: the layout desugars, the manifest is checked" begin
+    # PLUGINS_PLAN Decision 10. The directory layout IS the contribution list; a `contributions` block
+    # is optional and buys a CHECK, never a capability. The rule that matters most is the last one
+    # here: declaring must not restrict, or a plugin author who adds a block and forgets a line
+    # silently hides their own task.
+    cfg  = mktempdir(); _mk_plugin_tree(cfg)
+    pdir = joinpath(cfg, "modules", "plugins", "trackimport-smithlab")
+    mkpath(joinpath(pdir, Cecelia.PLOT_DEFS_SUBDIR))
+    write(joinpath(pdir, Cecelia.PLOT_DEFS_SUBDIR, "smith.json"),
+          JSON3.write(Dict("id" => "smith_speed", "module" => "tracking", "title" => "Speed")))
+
+    # ── no block at all: still fully described ────────────────────────────────────────────────────
+    c = Cecelia.plugin_contributions(pdir)
+    @test [t.funName for t in c.tasks] == ["tracking.importSmith"]
+    @test only(c.tasks).category == "tracking"
+    @test only(c.plots).id == "smith_speed"
+    # Paths are relative to the plugin root and use `/` on every platform — they are compared against
+    # what a manifest declares, and a manifest cannot spell a Windows separator.
+    @test only(c.plots).spec == "plotDefinitions/smith.json"
+    @test !occursin('\\', only(c.tasks).path)
+    @test all(!t.declared for t in c.tasks) && isempty(c.problems)
+    # `python/` is shared code, not a category — the same rule the task enumerator uses, because it is
+    # literally the same function.
+    @test !any(t -> t.funName == "should.neverAppear", c.tasks)
+
+    _manifest(d) = write(joinpath(pdir, Cecelia.PLUGIN_MANIFEST), JSON3.write(d))
+    base = Dict("name" => "trackimport-smithlab", "version" => "0.2.0")
+
+    # ── a block that matches the disk ─────────────────────────────────────────────────────────────
+    _manifest(merge(base, Dict("contributions" => Dict(
+        "tasks" => [Dict("funName" => "tracking.importSmith")],
+        "plots" => [Dict("spec" => "plotDefinitions/smith.json")]))))
+    c = Cecelia.plugin_contributions(pdir)
+    @test isempty(c.problems)
+    @test only(c.tasks).declared && only(c.plots).declared
+
+    # ── a block that does NOT ─────────────────────────────────────────────────────────────────────
+    _manifest(merge(base, Dict("contributions" => Dict(
+        "tasks" => [Dict("funName" => "tracking.renamedAwhileAgo")],
+        "plots" => [Dict("spec" => "plotDefinitions/gone.json")]))))
+    c = Cecelia.plugin_contributions(pdir)
+    @test any(m -> occursin("tracking.renamedAwhileAgo", m), c.problems)
+    @test any(m -> occursin("gone.json", m), c.problems)
+    # …but the task on disk is STILL a task. Declaring is descriptive, never a filter.
+    @test [t.funName for t in c.tasks] == ["tracking.importSmith"]
+    @test only(c.plots).id == "smith_speed"
+
+    # ── kinds that are understood but not acted on yet (Decisions 11/12) ──────────────────────────
+    _manifest(merge(base, Dict("contributions" => Dict(
+        "views"  => [Dict("module" => "tracking", "view" => "trackPaths", "label" => "Tracks")],
+        "layers" => [Dict("fromTask" => "tracking.importSmith", "layerType" => "points",
+                          "colorBy" => "speed")]))))
+    c = Cecelia.plugin_contributions(pdir)
+    @test only(c.views).view == "trackPaths" && only(c.views).moduleName == "tracking"
+    @test only(c.layers).layerType == "points"
+    # Extra keys survive as `options` — the vocabulary is Decision 12's job, not the parser's.
+    @test only(c.layers).options["colorBy"] == "speed"
+    # Declared, understood, and does nothing: SAY so. A blank panel with no explanation is the
+    # failure mode this codebase keeps producing.
+    @test any(m -> occursin("views", m) && occursin("does not act on", m), c.problems)
+    @test any(m -> occursin("layers", m) && occursin("does not act on", m), c.problems)
+
+    # ── malformed, never fatal ────────────────────────────────────────────────────────────────────
+    _manifest(merge(base, Dict("contributions" => Dict(
+        "tasks"   => "tracking.importSmith",                       # not a list
+        "layers"  => [Dict("fromTask" => "x", "layerType" => "mesh")],
+        "widgets" => [Dict("id" => "x")]))))                       # not a kind we know
+    c = Cecelia.plugin_contributions(pdir)
+    @test any(m -> occursin("must be a list", m), c.problems)
+    # The layer type allow-list is the point (Decision 12): unchecked, `layerType` would make napari's
+    # constructor signatures a plugin ABI by the back door.
+    @test any(m -> occursin("mesh", m), c.problems)
+    @test any(m -> occursin("widgets", m), c.problems)
+    @test [t.funName for t in c.tasks] == ["tracking.importSmith"]   # still described
+
+    # A malformed manifest cannot take the report down — same contract read_plugin_manifest has.
+    write(joinpath(pdir, Cecelia.PLUGIN_MANIFEST), "{not json")
+    @test [t.funName for t in Cecelia.plugin_contributions(pdir).tasks] == ["tracking.importSmith"]
+    rep = Cecelia.plugins_report(; dev_dir = cfg, running_version = "dev")
+    @test all(haskey(p, :problems) for p in rep)
+end
+
 @testset "Plugin fun_name precedence (built-in > hand-dropped > plugin)" begin
     # This is the rule that stops an installed plugin silently taking over a name the user's own
     # drop-in module already uses. Before it, `register_task!` overwrote unconditionally and the
@@ -3774,6 +3856,28 @@ end
         # user to the app rather than to the thing they were about to install.
         m = Cecelia.read_plugin_manifest(joinpath(root, name))
         @test m.error === nothing && String(m.homepage) == url
+
+        # Whatever a shipped example DECLARES must resolve to something on disk. `ccia-trackMeasures`
+        # carries a `contributions` block precisely so this ratchet is not vacuous: rename its
+        # `fun_name` or its plot spec and CI says which line of the manifest disagrees.
+        c = Cecelia.plugin_contributions(joinpath(root, name); manifest = m)
+        @test isempty(c.problems)
+        @test !isempty(c.tasks)
+    end
+    # …and at least one example must actually exercise the declared path, or the check above passes
+    # for every plugin by declaring nothing.
+    @test any(readdir(root)) do name
+        isdir(joinpath(root, name)) &&
+            any(t -> t.declared, Cecelia.plugin_contributions(joinpath(root, name)).tasks)
+    end
+
+    # The examples README is the landing page for "how do I write one of these", and it went stale
+    # without anyone noticing: it described a single `tracktools-example` plugin, with an install
+    # command naming a directory that no longer existed, long after the examples had been split in
+    # two and published separately. Naming every directory is the cheapest check that catches it.
+    readme = read(joinpath(root, "README.md"), String)
+    for name in sort(readdir(root))
+        isdir(joinpath(root, name)) && @test occursin(name, readme)
     end
     # Nothing in the curated list may point somewhere the name cannot be derived from.
     for e in reg

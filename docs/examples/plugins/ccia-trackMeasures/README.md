@@ -56,6 +56,12 @@ trackTools/cumulativeChange.json         its form
 plotDefinitions/cumulative_change.json   the page's plot canvas
 ```
 
+The layout above is the whole contribution list — nothing else is needed. This manifest nonetheless
+repeats it in a `contributions` block, which buys a **check**, not a capability: rename the task's
+`fun_name` or move the plot spec and Cecelia reports which line of the manifest now disagrees. See
+[Custom modules and plugins](https://github.com/schienstockd/cecelia/blob/main/docs/CUSTOM_MODULES.md)
+→ *Declaring what you contribute*. `ccia-importTracks` declares nothing and is equally complete.
+
 ## Not sandboxed
 
 A plugin's Julia is `include`d into Cecelia with full access to your machine, exactly like an R

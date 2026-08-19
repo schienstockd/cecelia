@@ -8,7 +8,7 @@ import ConfirmButton from '../components/ConfirmButton.vue'
 import { napariState, notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
-import { useCustomModulesStore } from '../stores/customModules'
+import { useCustomModulesStore, type PluginEntry } from '../stores/customModules'
 import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
 import ViewProfileEditor from '../components/ViewProfileEditor.vue'
 import ChipSelect from '../components/ChipSelect.vue'
@@ -172,6 +172,12 @@ const REGISTRY_COLUMNS: SelectionColumn[] = [
   { key: 'name',        label: 'Plugin' },
   { key: 'description', label: 'What it does' },
 ]
+
+// Everything wrong with a plugin, as ONE line. The API keeps the three apart on purpose — a manifest
+// that would not parse, a version mismatch, and a `contributions` block that disagrees with the
+// directory fail for unrelated reasons — but the user is asking one question, "is this thing OK".
+const pluginFaults = (row: PluginEntry): string =>
+  [row.warning, ...(row.problems ?? [])].filter(Boolean).join(' · ')
 
 const pluginUrl  = ref('')
 const pluginRef  = ref('')
@@ -896,7 +902,8 @@ async function switchWt(path: string) {
                       :columns="PLUGIN_COLUMNS" :rows="customModules.plugins">
         <template #cell-name="{ row }">
           <span v-tooltip.top="row.error || row.description || row.dir">{{ row.name }}</span>
-          <i v-if="row.warning" class="pi pi-exclamation-triangle" v-tooltip.top="row.warning" />
+          <i v-if="pluginFaults(row)" class="pi pi-exclamation-triangle"
+             v-tooltip.top="pluginFaults(row)" />
         </template>
         <!-- categories is an array; the table renders values verbatim by design, so join it here
              rather than teaching the table to format (it would become a second formatter). -->

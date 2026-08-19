@@ -236,6 +236,7 @@ drop-in loader above already gives you the task, so packaging alone would add no
 ```
 <config_dir>/modules/plugins/<plugin>/
   plugin.json                      # manifest: name, version, description, homepage, requiresCecelia
+                                   # + OPTIONAL `contributions` — see below
   <category>/<name>.{jl,json,_run.py}   # the same co-located layout as above
   plotDefinitions/<id>.json        # OPTIONAL plot specs — the page's canvas
   python/                          # OPTIONAL shared Python, importable as a top-level module
@@ -243,6 +244,34 @@ drop-in loader above already gives you the task, so packaging alone would add no
 
 A complete runnable example (loaded by CI, so it cannot rot):
 [`examples/plugins/`](examples/plugins/).
+
+### Declaring what you contribute — optional
+
+**You never have to.** The layout above already says everything: a `<category>/<name>.json` is a task,
+a `plotDefinitions/*.json` is a plot. `ccia-importTracks` declares nothing and is complete.
+
+The manifest may nonetheless spell it out, in a `contributions` block:
+
+```json
+"contributions": {
+  "tasks": [{ "funName": "trackTools.cumulativeChange" }],
+  "plots": [{ "spec": "plotDefinitions/cumulative_change.json" }]
+}
+```
+
+What you get for writing it is a **check**, not a capability: a declared task whose `fun_name` no file
+defines, or a declared plot spec that is not there, is reported against your plugin in Settings. It is
+useful when you rename something — the manifest is the second place that has to change, and it says
+so instead of silently disagreeing. `ccia-trackMeasures` declares its two contributions for exactly
+that reason.
+
+Declaring never *restricts*. A task on disk is a task whether or not the manifest mentions it, so
+adding a block and forgetting a line cannot hide your own work.
+
+Two further kinds — `views` (show a built-in interactive plot on your page) and `layers` (say how your
+task's output should be drawn in napari) — are **understood but not yet acted on**. Declaring one
+today gets you a message saying so rather than a silently blank panel. The design is
+[`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*, Decisions 11 and 12.
 
 ### The module page
 
@@ -272,7 +301,8 @@ escape hatch, not its standard path. And napari's most-used contributions put da
 *returning a data tuple* (`LayerData = (data, [attributes, [layer_type]])`), not by drawing.
 
 What a cecelia plugin genuinely cannot do yet is say what its output should LOOK like — draw my
-tracks as tracks, add my points to the viewer. That is designed and not built:
+tracks as tracks, add my points to the viewer. The *grammar* for it exists (`contributions.layers`,
+above) and is checked; nothing renders through it yet. Designed, not built:
 [`todo/PLUGINS_PLAN.md`](todo/PLUGINS_PLAN.md) → *The contribution model*.
 
 Worth being clear about what is **not** narrower: a plugin's compute. Both napari and cecelia run

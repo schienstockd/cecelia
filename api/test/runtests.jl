@@ -2682,6 +2682,11 @@ end
         smith = only(filter(p -> String(p.name) == "trackimport-smithlab", collect(plugs)))
         @test String(smith.version) == "0.2.0"
         @test "tracking" ∈ String.(smith.categories)
+        # …and what it CONTRIBUTES reaches the client, so Settings can show it without a second call
+        # (PLUGINS_PLAN Decision 10). The layout desugars: this plugin declares no `contributions`
+        # block at all, and its task is listed anyway.
+        @test "tracking.importSmith" ∈ [String(t.funName) for t in smith.contributions.tasks]
+        @test isempty(smith.problems)
     finally
         rm(joinpath(mods, Cecelia.PLUGINS_SUBDIR); recursive = true, force = true)
     end

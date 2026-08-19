@@ -37,9 +37,10 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       NOWHERE in the viewer, which is not the answer either. Being traced; the question is which list
       a tracked-but-maskless value name belongs in.
 
-- [ ] **The contribution model (Decisions 10–13) is DESIGN ONLY** — see *The contribution model* below.
-      Suggested order: the `contributions` block first (so the later tiers plug into one grammar),
-      then `views`, then `layers`. The component tier is deferred with a named trigger.
+- [ ] **The contribution model: Decision 10 is BUILT, 11–13 are design only** — see *The contribution
+      model* below. The `contributions` block and its desugaring landed, so the later tiers plug into
+      one grammar; `views` is next (unblocked by #590), then `layers`. The component tier is deferred
+      with a named trigger.
 
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
@@ -318,7 +319,7 @@ registers the tasks — hence "registers and runs, but has no form".)
 
 ## The contribution model — designed, not built
 
-**Status: design only.** Nothing here is implemented. Written 2026-08-19 after Dominik asked why a
+**Status: Decision 10 is built; 11–13 are design only.** Written 2026-08-19 after Dominik asked why a
 plugin cannot ship a component "the way napari plugins do", and the answer turned out to be more
 interesting than "the browser has a build step".
 
@@ -403,7 +404,7 @@ place: *browser rendering*, because a `.vue` needs compiling and an installed ap
 is a platform fact, not a design choice, and it is why the ABI tier is expensive for us and free for
 them.
 
-### Decision 10 — `plugin.json` grows an optional `contributions` block
+### Decision 10 — `plugin.json` grows an optional `contributions` block  ✅ BUILT
 
 The filesystem convention **stays as the default and desugars into contributions**, so every plugin
 that works today keeps working and writes nothing new. A plugin declares contributions only when it
@@ -491,9 +492,15 @@ widget as the escape hatch and puts `autogenerate` in the tutorial.
 
 ### Suggested order
 
-1. **`contributions` block, desugaring only.** Parse it; make the directory walk emit the same shape.
-   Nothing changes for existing plugins — but every later tier plugs into one grammar instead of
-   inventing a folder. Ratchet: a declared contribution must resolve to something that exists.
+1. **`contributions` block, desugaring only.** ✅ **BUILT** — `Cecelia.plugin_contributions(dir)`
+   returns `(; tasks, plots, views, layers, problems)`. The layout half is enumerated by the same
+   `_spec_files_in`/`_plot_specs_in` the task and plot scans use, so "which folders are categories"
+   has exactly one implementation. A manifest block is CHECKED against it and never restricts: a task
+   on disk is a task whether or not the manifest names it, so an author cannot hide their own work by
+   adding a block and forgetting a line. `views`/`layers` parse and shape-check (including the
+   `layerType` allow-list) but report that nothing acts on them yet, rather than shipping a blank
+   panel. Ratchets: every shipped example's declarations must resolve, and at least one example must
+   actually declare something or the first ratchet passes vacuously.
 2. **`views`.** Smallest visible win, and it settles "a plugin gets a real, non-declarative page".
 3. **`layers`.** Biggest conceptual win, most design left — the reference vocabulary and the
    `attributes` allow-list both want their own pass.

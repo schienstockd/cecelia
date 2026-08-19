@@ -8,12 +8,26 @@ import { ref } from 'vue'
 export interface CustomModuleEntry { path: string; plugin: string | null; status: 'ok' | 'error'; error: string | null }
 export interface CustomCategory { name: string; builtin: boolean; funNames: string[]; cohortFuns?: string[] }
 
+// What one plugin contributes, in one grammar: what its directory layout implies, merged with what
+// its manifest's OPTIONAL `contributions` block declares (PLUGINS_PLAN Decision 10). `declared` says
+// the manifest also named it — a declaration that resolves to nothing lands in `problems` instead.
+// `views` and `layers` are understood but not acted on yet (Decisions 11/12).
+export interface PluginContributions {
+  tasks:  { funName: string; category: string; path: string; declared: boolean }[]
+  plots:  { id: string; spec: string; moduleName: string; declared: boolean }[]
+  views:  { moduleName: string; view: string; label: string }[]
+  layers: { fromTask: string; layerType: string; options: Record<string, unknown> }[]
+}
 // An installed plugin: one directory under <modules>/plugins/ (docs/todo/PLUGINS_PLAN.md).
-// `categories` is what it actually ships on disk, not what its manifest claims. `warning` is the
-// advisory requiresCecelia mismatch — never a hard block, and absent on a dev checkout.
+// `categories` is what it actually ships on disk, not what its manifest claims.
+//
+// THREE fault fields, kept apart because they fail for unrelated reasons: `error` is a manifest that
+// would not parse, `warning` is the advisory requiresCecelia mismatch (never a hard block, absent on
+// a dev checkout), `problems` is a `contributions` block that disagrees with the directory.
 export interface PluginEntry {
   name: string; dir: string; version: string; description: string; homepage: string
-  categories: string[]; error: string | null; warning: string | null
+  categories: string[]; contributions: PluginContributions
+  error: string | null; warning: string | null; problems: string[]
 }
 // A fun_name a module registered but did NOT get, because a higher tier already owned it
 // (built-in > hand-dropped > plugin). NOT a load failure — the file loaded fine, so this is the only

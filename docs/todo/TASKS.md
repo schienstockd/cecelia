@@ -135,7 +135,11 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       contribution is inferred from file layout, so there is **nowhere to declare a kind that has no
       directory**. Four tiers, in order:
       **(1) a `contributions` block** that the existing layout desugars into — do this FIRST, or every
-      later tier is another special case;
+      later tier is another special case. ✅ **BUILT** — `plugin_contributions` in `plugins.jl`; the
+      layout is enumerated by the same `_spec_files_in` the task scan uses, a manifest block is
+      checked against it and never restricts, `views`/`layers` parse and shape-check but say out loud
+      that nothing acts on them yet. Reaches Settings as `contributions` + `problems`.
+      `ccia-trackMeasures` declares its two, so the ratchet is not vacuous;
       **(2) `views`** — a plot spec names a built-in view from `interactiveViews.ts`, which is already
       a registry keyed by stable id. Makes view IDS public, not components;
       **(3) `layers`** — declare what napari draws from a task's output. This is the real gap: only

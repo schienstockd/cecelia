@@ -94,32 +94,39 @@ end
     read_plugin_manifest(dir) -> NamedTuple
 
 Parse `<dir>/plugin.json` into
-`(; name, version, description, homepage, requiresCecelia, categories, error)`.
+`(; name, version, description, homepage, requiresCecelia, categories, contributions, error)`.
 
 **Never throws.** A missing or malformed manifest yields the directory name as `name` and a populated
 `error`, because a plugin whose tasks nonetheless loaded must still be nameable in Settings — the
 manifest is descriptive metadata, not the thing that makes a plugin work.
+
+`contributions` is handed back RAW (`Dict()` when absent) rather than parsed here — see
+[`plugin_contributions`](@ref), which is the half that needs the directory too.
 """
 function read_plugin_manifest(dir::AbstractString)
     fallback = basename(rstrip(String(dir), ['/', '\\']))
     path     = joinpath(String(dir), PLUGIN_MANIFEST)
+    empty    = Dict{String,Any}()
     isfile(path) || return (; name = fallback, version = "", description = "", homepage = "",
-                              requiresCecelia = "", categories = String[],
+                              requiresCecelia = "", categories = String[], contributions = empty,
                               error = "no $PLUGIN_MANIFEST")
     try
         m    = JSON3.read(read(path, String), Dict{String,Any})
         _str(k) = string(get(m, k, ""))
         cats = get(m, "categories", nothing)
+        cont = get(m, "contributions", nothing)
         (; name            = isempty(_str("name")) ? fallback : _str("name"),
            version         = _str("version"),
            description     = _str("description"),
            homepage        = _str("homepage"),
            requiresCecelia = _str("requiresCecelia"),
            categories      = cats isa AbstractVector ? String[string(c) for c in cats] : String[],
+           contributions   = cont isa AbstractDict ? Dict{String,Any}(cont) : empty,
            error           = nothing)
     catch e
         (; name = fallback, version = "", description = "", homepage = "",
-           requiresCecelia = "", categories = String[], error = sprint(showerror, e))
+           requiresCecelia = "", categories = String[], contributions = empty,
+           error = sprint(showerror, e))
     end
 end
 
@@ -157,18 +164,20 @@ function plugin_version_warning(requires, running)
     ok ? nothing : "needs cecelia $req, running $run"
 end
 
-# Every user task spec on disk, in PRECEDENCE ORDER: hand-dropped first (sorted), then plugins
-# (sorted by plugin, then category, then filename). Path-sorted throughout so nothing about the
-# outcome depends on filesystem order. Depth is fixed at exactly the two documented shapes — a plugin
-# manifest sits at the plugin ROOT and so is never mistaken for a task spec, and `python/` is skipped
-# by the legacy list so a plugin's shared-code dir is never read as a category.
-function _user_spec_files(dev_dir::Union{String,Nothing})
-    T    = @NamedTuple{category::String, path::String, plugin::Union{String,Nothing}, tier::Int}
-    out  = T[]
-    root = custom_modules_dir(dev_dir)
-    isdir(root) || return out
+const SpecFile = @NamedTuple{category::String, path::String, plugin::Union{String,Nothing}, tier::Int}
 
-    _specs_in(dir, plugin, tier) = for cat_dir in sort(readdir(dir; join = true))
+"""
+One root's task specs, exactly one level deep: `<root>/<category>/<name>.json`, path-sorted.
+
+Split out from [`_user_spec_files`](@ref) so ONE directory — a single plugin — can be enumerated with
+the identical rule, which is what [`plugin_contributions`](@ref) needs. Re-deriving "which folders are
+categories" there would put a second copy of the skip list in the file whose header explains that the
+last such copy is exactly how the two API scans came to disagree.
+"""
+function _spec_files_in(dir::AbstractString, plugin::Union{String,Nothing}, tier::Int)::Vector{SpecFile}
+    out = SpecFile[]
+    isdir(dir) || return out
+    for cat_dir in sort(readdir(dir; join = true))
         isdir(cat_dir) || continue
         cat = basename(cat_dir)
         cat in LEGACY_LAYOUT_DIRS && continue
@@ -179,10 +188,18 @@ function _user_spec_files(dev_dir::Union{String,Nothing})
             push!(out, (; category = cat, path = f, plugin, tier))
         end
     end
+    out
+end
 
-    _specs_in(root, nothing, TIER_USER)
+# Every user task spec on disk, in PRECEDENCE ORDER: hand-dropped first (sorted), then plugins
+# (sorted by plugin, then category, then filename). Path-sorted throughout so nothing about the
+# outcome depends on filesystem order. Depth is fixed at exactly the two documented shapes — a plugin
+# manifest sits at the plugin ROOT and so is never mistaken for a task spec, and `python/` is skipped
+# by the legacy list so a plugin's shared-code dir is never read as a category.
+function _user_spec_files(dev_dir::Union{String,Nothing})
+    out = _spec_files_in(custom_modules_dir(dev_dir), nothing, TIER_USER)
     for proot in plugin_roots(; dev_dir)
-        _specs_in(proot, basename(proot), TIER_PLUGIN)
+        append!(out, _spec_files_in(proot, basename(proot), TIER_PLUGIN))
     end
     out
 end
@@ -265,22 +282,200 @@ function user_plot_specs(; dev_dir::Union{String,Nothing} = nothing, exclude_ids
     # plugin cannot displace a plot the user defined themselves.
     for dir in vcat([joinpath(root, PLOT_DEFS_SUBDIR)],
                     [joinpath(p, PLOT_DEFS_SUBDIR) for p in plugin_roots(; dev_dir)])
-        isdir(dir) || continue
-        for f in sort(readdir(dir; join = true))
-            endswith(f, ".json") || continue
-            spec = try
-                JSON3.read(read(f, String), Dict{String,Any})
-            catch e
-                @warn "Skipping malformed plot spec" path = f exception = e
-                continue
-            end
-            id = string(get(spec, "id", ""))
+        for e in _plot_specs_in(dir)
+            id = string(get(e.spec, "id", ""))
             (isempty(id) || id ∈ exclude_ids || id ∈ seen) && continue
             push!(seen, id)
-            push!(out, spec)
+            push!(out, e.spec)
         end
     end
     out
+end
+
+"""
+One `plotDefinitions/` directory's specs as `(; path, spec)`, path-sorted, malformed skipped.
+
+Carries the PATH alongside the parsed spec because [`plugin_contributions`](@ref) has to answer
+"does `plotDefinitions/x.json` exist" for a declared contribution, and a spec dict alone cannot say
+where it came from. Stapling the path INTO the dict was the obvious alternative and is wrong: that
+dict is served verbatim to the client as a plot definition, so the bookkeeping field would become
+part of the plot schema.
+"""
+function _plot_specs_in(dir::AbstractString)
+    out = @NamedTuple{path::String, spec::Dict{String,Any}}[]
+    isdir(dir) || return out
+    for f in sort(readdir(dir; join = true))
+        endswith(f, ".json") || continue
+        spec = try
+            JSON3.read(read(f, String), Dict{String,Any})
+        catch e
+            @warn "Skipping malformed plot spec" path = f exception = e
+            continue
+        end
+        push!(out, (; path = f, spec))
+    end
+    out
+end
+
+# ── The contribution model ────────────────────────────────────────────────────────────────────────
+#
+# What a plugin CONTRIBUTES is inferred from where its files sit — `<category>/<name>.json` is a task,
+# `plotDefinitions/*.json` is a plot. Convention over configuration, and it earns its keep: both
+# example plugins write no manifest boilerplate at all.
+#
+# The limit is that there is nowhere to declare a kind of contribution that has NO directory. "Draw
+# this task's output as tracks", "show the built-in track-paths plot on my page" — each one answered
+# by inventing another magic folder is how a layout turns into folklore.
+#
+# So `plugin.json` grows an OPTIONAL `contributions` block, and the directory walk DESUGARS into the
+# same shape (PLUGINS_PLAN Decision 10). A plugin that declares nothing is described by exactly the
+# records the walk produces; a plugin that declares something gets it checked against what is on disk.
+# Declaring is never required and never restricts — a task on disk is a task whether or not the
+# manifest mentions it, so no author can hide their own work by adding a block and forgetting a line.
+#
+# Modelled on napari's `contributions` (npe2), with its `commands` indirection deliberately dropped:
+# napari needs it because one Python function can surface as a widget AND a menu item, whereas our
+# tasks are already addressable by `fun_name`.
+#
+# **`views` and `layers` are parsed and validated but not yet acted on** — Decisions 11 and 12. They
+# are here now so the grammar is settled before anything renders through it; a plugin declaring one
+# is TOLD it does nothing yet (`problems`) rather than shipping a silently blank panel.
+
+const CONTRIBUTION_KINDS = ("tasks", "plots", "views", "layers")
+
+# Kinds this version actually honours. The rest are parsed, shape-checked, and reported as "not acted
+# on yet". Moving a kind across this line is what Decisions 11/12 landing looks like.
+const CONTRIBUTIONS_HONOURED = ("tasks", "plots")
+
+# Layer kinds a `layers` contribution may ask napari for — an ALLOW-LIST, not a passthrough
+# (Decision 12). `layerType` reaching `viewer.add_*` unchecked would make napari's constructor
+# signatures a plugin ABI by the back door, which is the thing the whole design avoids.
+const CONTRIBUTION_LAYER_TYPES = ("points", "tracks", "shapes", "vectors")
+
+_contrib_relpath(root::AbstractString, path::AbstractString)::String =
+    replace(relpath(abspath(String(path)), abspath(String(root))), '\\' => '/')
+
+"""
+    plugin_contributions(dir; manifest=read_plugin_manifest(dir))
+        -> (; tasks, plots, views, layers, problems)
+
+Everything one plugin contributes, in ONE grammar: what the directory layout implies, merged with
+what `plugin.json`'s optional `contributions` block declares.
+
+- `tasks`  — `(; funName, category, path, declared)`, one per `<category>/<name>.json` that names a
+  `fun_name`. `path` is relative to the plugin root.
+- `plots`  — `(; id, spec, moduleName, declared)`, one per readable `plotDefinitions/*.json`.
+- `views`  — `(; moduleName, view, label)`, declared only. Decision 11; nothing renders these yet.
+- `layers` — `(; fromTask, layerType, options)`, declared only. Decision 12; nothing draws these yet.
+- `problems` — human-readable strings for Settings: a declaration that resolves to nothing, a
+  malformed entry, an unknown kind, or a kind this version does not act on yet.
+
+`declared` is the interesting bit on the first two: it says the manifest ALSO named this, which is
+what makes the ratchet possible in both directions — a declared name that no file defines is a
+problem here, and a file that nothing declares is simply fine.
+
+**Never throws**, for the same reason `read_plugin_manifest` does not: a plugin whose tasks loaded
+must stay describable in Settings even if its manifest is nonsense.
+"""
+function plugin_contributions(dir::AbstractString; manifest = read_plugin_manifest(dir))
+    root  = String(dir)
+    name  = basename(rstrip(root, ['/', '\\']))
+    probs = String[]
+
+    # ── what the layout says ──────────────────────────────────────────────────────────────────────
+    tasks = @NamedTuple{funName::String, category::String, path::String, declared::Bool}[]
+    for e in _spec_files_in(root, name, TIER_PLUGIN)
+        fn = try
+            string(get(JSON3.read(read(e.path, String), Dict{String,Any}), "fun_name", ""))
+        catch; "" end
+        isempty(fn) && continue     # malformed or fun_name-less: `user_task_specs` already warns
+        push!(tasks, (; funName = fn, category = e.category,
+                        path = _contrib_relpath(root, e.path), declared = false))
+    end
+
+    plots = @NamedTuple{id::String, spec::String, moduleName::String, declared::Bool}[]
+    for e in _plot_specs_in(joinpath(root, PLOT_DEFS_SUBDIR))
+        id = string(get(e.spec, "id", ""))
+        isempty(id) && continue
+        push!(plots, (; id, spec = _contrib_relpath(root, e.path),
+                        moduleName = string(get(e.spec, "module", "")), declared = false))
+    end
+
+    # ── what the manifest says ────────────────────────────────────────────────────────────────────
+    decl = manifest.contributions
+    for k in sort(String[string(k) for k in keys(decl)])
+        k ∈ CONTRIBUTION_KINDS ||
+            push!(probs, "unknown contribution kind `$k` (known: $(join(CONTRIBUTION_KINDS, ", ")))")
+    end
+    # Parsed ONCE per kind: the "not acted on yet" check below re-reads them, and a lazy re-parse
+    # would push every malformed-entry problem twice.
+    entries = Dict{String,Vector{Any}}()
+    for k in CONTRIBUTION_KINDS
+        v = get(decl, k, nothing)
+        if v === nothing
+            entries[k] = Any[]
+        elseif v isa AbstractVector
+            entries[k] = Any[e for e in v if e isa AbstractDict]
+            length(entries[k]) == length(v) ||
+                push!(probs, "some `contributions.$k` entries are not objects and were ignored")
+        else
+            entries[k] = Any[]
+            push!(probs, "`contributions.$k` must be a list")
+        end
+    end
+
+    for e in entries["tasks"]
+        fn = string(get(e, "funName", ""))
+        if isempty(fn)
+            push!(probs, "a `contributions.tasks` entry has no `funName`")
+        else
+            i = findfirst(t -> t.funName == fn, tasks)
+            i === nothing ?
+                push!(probs, "declares task `$fn`, but no `<category>/<name>.json` here defines it") :
+                (tasks[i] = (; tasks[i].funName, tasks[i].category, tasks[i].path, declared = true))
+        end
+    end
+
+    for e in entries["plots"]
+        sp = replace(string(get(e, "spec", "")), '\\' => '/')
+        if isempty(sp)
+            push!(probs, "a `contributions.plots` entry has no `spec`")
+        else
+            i = findfirst(pl -> pl.spec == sp, plots)
+            i === nothing ?
+                push!(probs, "declares plot spec `$sp`, which is not a readable plot definition here") :
+                (plots[i] = (; plots[i].id, plots[i].spec, plots[i].moduleName, declared = true))
+        end
+    end
+
+    views = @NamedTuple{moduleName::String, view::String, label::String}[]
+    for e in entries["views"]
+        vw = string(get(e, "view", ""))
+        isempty(vw) && (push!(probs, "a `contributions.views` entry has no `view`"); continue)
+        push!(views, (; moduleName = string(get(e, "module", "")), view = vw,
+                        label = string(get(e, "label", ""))))
+    end
+
+    layers = @NamedTuple{fromTask::String, layerType::String, options::Dict{String,Any}}[]
+    for e in entries["layers"]
+        ft = string(get(e, "fromTask", ""))
+        lt = string(get(e, "layerType", ""))
+        isempty(ft) && push!(probs, "a `contributions.layers` entry has no `fromTask`")
+        lt ∈ CONTRIBUTION_LAYER_TYPES ||
+            push!(probs, "layer type `$lt` is not one of $(join(CONTRIBUTION_LAYER_TYPES, ", "))")
+        opts = Dict{String,Any}(String(k) => v for (k, v) in pairs(e)
+                                if String(k) ∉ ("fromTask", "layerType"))
+        push!(layers, (; fromTask = ft, layerType = lt, options = opts))
+    end
+
+    # Declared, understood, and DOES NOTHING. Said out loud because the alternative is the failure
+    # mode this codebase keeps producing: a blank panel and no explanation.
+    for k in CONTRIBUTION_KINDS
+        (k ∈ CONTRIBUTIONS_HONOURED || isempty(entries[k])) && continue
+        push!(probs, "declares `$k`, which this version of cecelia understands but does not act on yet")
+    end
+
+    (; tasks, plots, views, layers, problems = probs)
 end
 
 # ── P2: install / update / remove ─────────────────────────────────────────────────────────────────
@@ -459,8 +654,13 @@ end
     plugins_report(; dev_dir=nothing, running_version="") -> Vector{NamedTuple}
 
 One entry per installed plugin for the Settings panel: `(; name, dir, version, description, homepage,
-categories, error, warning)`. `categories` is what the plugin actually ships on disk, not what its
-manifest claims — the manifest is descriptive, the directory is the truth.
+categories, contributions, error, warning, problems)`. `categories` is what the plugin actually ships
+on disk, not what its manifest claims — the manifest is descriptive, the directory is the truth.
+
+The three fault fields are kept APART rather than merged into one string, because they fail for
+unrelated reasons and a caller may care about one and not the others: `error` is a manifest that would
+not parse, `warning` is a `requiresCecelia` mismatch, `problems` is a `contributions` block that does
+not match the directory. Settings joins them into one tooltip; the API does not have to.
 """
 function plugins_report(; dev_dir::Union{String,Nothing} = nothing,
                           running_version::AbstractString = "")
@@ -468,13 +668,16 @@ function plugins_report(; dev_dir::Union{String,Nothing} = nothing,
     map(plugin_roots(; dev_dir)) do d
         name = basename(d)
         m    = read_plugin_manifest(d)
+        c    = plugin_contributions(d; manifest = m)
         (; name       = m.name,
            dir        = d,
            version    = m.version,
            description = m.description,
            homepage   = m.homepage,
            categories = sort(unique(String[e.category for e in specs if e.plugin == name])),
+           contributions = (; c.tasks, c.plots, c.views, c.layers),
            error      = m.error,
-           warning    = plugin_version_warning(m.requiresCecelia, running_version))
+           warning    = plugin_version_warning(m.requiresCecelia, running_version),
+           problems   = c.problems)
     end
 end
