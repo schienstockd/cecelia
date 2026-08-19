@@ -370,6 +370,85 @@ function drift_test(df::DataFrame, spatial::Vector{String}; step_spacing::Int = 
     end
 end
 
+# ── Pooling several images into ONE reading ────────────────────────────────────
+#
+# A cohort plot compares CONDITIONS, not files: "WT vs MerTK", each arm pooling its replicates. Every
+# diagnostic in this file except one is per-track or per-step arithmetic, so pooling is exactly a
+# concatenation of the frames — MSD at a lag IS the mean over every segment of that lag, from whichever
+# movie it came. Combining per-image CURVES afterwards would mean re-deriving that weighted mean (and
+# its SEM) here, i.e. a second, quietly different definition of the same number.
+#
+# The exception is the PAIR scan: an angle-and-distance between two tracks in DIFFERENT movies is not a
+# quantity — the two cells were never in the same field — and letting those pairs in would drag the
+# far-pair angle straight to a meaningless average. So the pooled frame carries a group column and the
+# scan runs within each group; `group_col` on `track_diagnostics` is that, and nothing else.
+
+_empty_pairs() = DataFrame(track1 = Int[], track2 = Int[], angle = Float64[],
+                           distance = Float64[], n_shared = Int[])
+
+# The pair scan, restricted to WITHIN-group pairs (`group_col = nothing` → one group, today's behaviour).
+function _pairs_within_groups(df::DataFrame, spatial::Vector{String},
+                              group_col::Union{Nothing,Symbol})::DataFrame
+    _has_groups(df, group_col) || return analyze_cell_pairs(df, spatial)
+    frames = DataFrame[]
+    for g in unique(df[!, group_col])
+        sub = df[df[!, group_col] .== g, :]
+        nrow(sub) == 0 && continue
+        push!(frames, analyze_cell_pairs(sub, spatial))
+    end
+    isempty(frames) ? _empty_pairs() : reduce(vcat, frames)
+end
+
+_has_groups(df, group_col) = !(group_col === nothing || !(String(group_col) in names(df)))
+
+# What the O(n²) guard has to be measured against: the LARGEST group, not the total.
+#
+# The scan runs per group, so pooling four 300-track movies costs 4 × 300² and not 1200² — guarding on
+# the total would skip the pair half for every pooled condition (three ordinary movies already exceed
+# `PAIR_SCAN_MAX_TRACKS`) and the panel would report "not checked" for exactly the comparison the pooling
+# was for.
+function _pair_scan_size(df::DataFrame, group_col::Union{Nothing,Symbol})::Int
+    _has_groups(df, group_col) || return length(track_ids_present(df))
+    n = 0
+    for g in unique(df[!, group_col])
+        sub = df[df[!, group_col] .== g, :]
+        n = max(n, length(track_ids_present(sub)))
+    end
+    n
+end
+
+"""
+    pooled_track_frame(frames; group_col = :__pool_grp) -> DataFrame
+
+Several images' cell frames as ONE frame ready for [`track_diagnostics`]: `track_id`s made unique
+across the inputs, and a `group_col` naming which input each row came from.
+
+Track ids are per-image, so a plain `vcat` merges two different cells into one track and invents steps
+between them — every curve in the battery would then be measured over a path that never happened. Each
+frame is therefore offset by a common stride (one past the largest id in the whole set), which keeps the
+ids readable (`1_000_017` is image 1's track 17) and cannot collide.
+
+Pass the returned frame with `group_col = ` to `track_diagnostics` so the pair scan stays within images.
+"""
+function pooled_track_frame(frames::AbstractVector{<:DataFrame};
+                            group_col::Symbol = :__pool_grp)::DataFrame
+    use = [d for d in frames if nrow(d) > 0 && "track_id" in names(d)]
+    isempty(use) && return DataFrame()
+    length(use) == 1 && return (d = copy(use[1]); d[!, group_col] = fill(1, nrow(d)); d)
+    maxid = maximum(isempty(track_ids_present(d)) ? 0 : maximum(track_ids_present(d)) for d in use)
+    stride = 10^max(3, ndigits(max(maxid, 1)))          # a round decimal stride: readable in a CSV
+    out = DataFrame[]
+    for (i, d) in enumerate(use)
+        e = copy(d)
+        # untracked stays untracked (NaN) — offsetting a 0 would MINT a track out of a cell that has none
+        e[!, :track_id] = Float64[_is_untracked(v) ? NaN : Float64(v) + (i - 1) * stride
+                                  for v in e.track_id]
+        e[!, group_col] = fill(i, nrow(e))
+        push!(out, e)
+    end
+    reduce((a, b) -> vcat(a, b; cols = :union), out)
+end
+
 # ── The one roll-up both the plot and the QC read ──────────────────────────────
 
 """
@@ -383,10 +462,15 @@ diagnostics cannot go back to being exported functions with no caller.
 
 `summary` carries the readable scalars: `msdSlope`, `motionKind`, `persistenceLag`, `driftP`,
 `planeAngleNear`, `nDuplicatePairs`, `nTracks`.
+
+`group_col` names a column of a POOLED frame (see [`pooled_track_frame`]) and restricts the O(n²) pair
+scan to pairs within one group. Every other diagnostic here is per-track or per-step, so pooling them is
+just the concatenation; two tracks from different movies have no distance between them.
 """
 function track_diagnostics(df::DataFrame, spatial::Vector{String};
                            max_lag::Int = 10, step_spacing::Int = DRIFT_STEP_SPACING,
-                           max_pair_tracks::Int = PAIR_SCAN_MAX_TRACKS)
+                           max_pair_tracks::Int = PAIR_SCAN_MAX_TRACKS,
+                           group_col::Union{Nothing,Symbol} = nothing)
     msd  = track_msd(df, spatial; max_lag = max_lag)
     acor = track_autocorrelation(df, spatial; max_lag = max_lag)
     prof = plane_angle_profile(df, spatial)
@@ -394,12 +478,11 @@ function track_diagnostics(df::DataFrame, spatial::Vector{String};
     # xy only, as celltrackR's `hotellingsTest(dim = c("x","y"))` default — see `drift_test`
     dr   = drift_test(df, first(spatial, min(2, length(spatial))); step_spacing = step_spacing)
 
-    # the pair half, guarded — see PAIR_SCAN_MAX_TRACKS for the measurements
+    # the pair half, guarded — see PAIR_SCAN_MAX_TRACKS for the measurements. The guard is on the biggest
+    # GROUP (`_pair_scan_size`), since that is what the quadratic cost is in.
     n_tracks = length(track_ids_present(df))
-    skip_pairs = n_tracks > max_pair_tracks
-    prs = skip_pairs ? DataFrame(track1 = Int[], track2 = Int[], angle = Float64[],
-                                 distance = Float64[], n_shared = Int[]) :
-                       analyze_cell_pairs(df, spatial)
+    skip_pairs = _pair_scan_size(df, group_col) > max_pair_tracks
+    prs = skip_pairs ? _empty_pairs() : _pairs_within_groups(df, spatial, group_col)
     # `pairs = prs` so the scan runs ONCE for both the duplicate finder and the drift verdict —
     # at 374 tracks that is ~70k pairs, and doing it twice is a visible cost for nothing
     dup  = skip_pairs ? TrackIssue[] : find_duplicate_tracks(df, spatial; pairs = prs)
