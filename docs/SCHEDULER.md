@@ -279,6 +279,20 @@ still weeks old. The prior note here said impact was nil because "no real set-sc
 exists (only mock/plot tasks)" — `opticalFlow.train` is one (it calls `run_py`), so that premise had
 expired.
 
+#### The node log prefix is a wire format
+
+A node's log line is prefixed `[imageUid/nodeId]`, and that is **parsed**, not decoration: a
+`chain:log` frame carries no taskId, so `frontend/src/stores/ws.ts` reads the prefix off the line and
+attributes it to the task row with that `(imageUid, chainNodeId)`. The set-scope path used to emit
+`[set/<node>]` — the literal string `set` where a uid belongs — so the lookup matched no task and the
+Tasks page read *"no output yet"* while the identical line reached the console and the log file
+perfectly well. It only became visible once the node HAD a task row to attribute to.
+
+Set-scope now uses the **representative image's uid** (`first(imgs)`), which is the same image
+`run_task` keys its single `TaskRecord` to — one task, one row, one uid. Pinned by the
+`a chain node's log prefix is [imageUid/nodeId]` testset, which also transcribes the frontend's regex
+so the two cannot drift apart silently.
+
 #### Still open — incremental nodes
 
 `_run_incremental_node!` **still calls `_run_task` directly** (`on_process = _ -> nothing`, no `_TASKS`

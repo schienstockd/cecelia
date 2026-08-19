@@ -13327,3 +13327,29 @@ end
     # The pool the node declares must actually be handed over; a nothing/"" here silently means `cpu`.
     @test occursin("pool_name        = node.resource_pool", body)
 end
+
+@testset "a chain node's log prefix is [imageUid/nodeId]" begin
+    # The prefix on a `chain:log` line is a WIRE FORMAT, not decoration. A `chain:log` frame carries no
+    # taskId, so `frontend/src/stores/ws.ts` parses `[imageUid/nodeId]` off the line and attributes it
+    # to the task row with that (imageUid, chainNodeId). The set-scope path emitted `[set/<node>]` — the
+    # literal string "set" where a uid belongs — so the lookup matched nothing and a set-scope node's
+    # Tasks-page log read "no output yet" while the same line reached the console and the log file
+    # perfectly well. It was invisible until the node HAD a task row to attribute to.
+    src = read(joinpath(@__DIR__, "..", "src", "tasks", "chain.jl"), String)
+
+    # The regex the frontend uses, transcribed: prefix, slash, node id, space.
+    fe = r"^\[([^/\]]+)/([^\]]+)\] (.*)$"
+    @test match(fe, "[fXgbTl/train] Epoch 1/30").captures[1] == "fXgbTl"
+
+    # No `[set/...]` literal may come back — it parses as a uid of "set" and silently matches no task.
+    @test !occursin("[set/\$(node.id)]", src) ||
+          error("a set-scope node is emitting `[set/<node>]`; the frontend reads that first field as " *
+                "an imageUid. Use the representative image's uid — see docs/SCHEDULER.md.")
+
+    # Both the log and the error line interpolate a real uid.
+    @test occursin("[\$(first(imgs).uid)/\$(node.id)]", src)
+    # log line, error line, and the set-wide axis SKIP. The per-image SKIP uses the loop's own `uid`,
+    # which is the same rule the image-scope path follows.
+    @test length(collect(eachmatch(r"\[\$\(first\(imgs\)\.uid\)/\$\(node\.id\)\]", src))) == 3
+    @test occursin("SKIP [\$uid/\$(node.id)]", src)
+end

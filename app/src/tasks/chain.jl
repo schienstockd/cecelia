@@ -792,13 +792,13 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             if task_applies(task_struct, img)
                 push!(keep_imgs, img); push!(keep_uids, uid)
             else
-                Base.invokelatest(on_log, "SKIP [set/$(node.id)] $(task_applicability_reason(task_struct, img))")
+                Base.invokelatest(on_log, "SKIP [$uid/$(node.id)] $(task_applicability_reason(task_struct, img))")
                 _update_node_state!(run, uid, node.id; status=:skipped, fn=node.fn, node_params=effective_params)
             end
         end
         if isempty(keep_imgs)
             axs = join(sort!(collect(task_requires_axes(task_struct))), ", ")
-            Base.invokelatest(on_log, "SKIP [set/$(node.id)] no images satisfy required axes: $axs")
+            Base.invokelatest(on_log, "SKIP [$(first(imgs).uid)/$(node.id)] no images satisfy required axes: $axs")
             _barrier_signal_done!(run, node.id)
             return
         end
@@ -827,7 +827,17 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                  pool_name        = node.resource_pool,
                  chain_run_id     = run.id,
                  chain_node_id    = node.id,
-                 on_log           = line -> Base.invokelatest(on_log, "[set/$(node.id)] $line"),
+                 # `[imageUid/nodeId]` — a WIRE FORMAT, not decoration. `stores/ws.ts` parses this
+                 # prefix off a `chain:log` frame and attributes the line to the task row with that
+                 # (imageUid, chainNodeId); a `chain:log` frame carries no taskId of its own. This said
+                 # `[set/...]` — the literal string "set" where a uid belongs — so the lookup matched no
+                 # task and a set-scope node's Tasks-page log read "no output yet" while the line was
+                 # reaching the console and the log file perfectly well. It only became visible once the
+                 # node HAD a task row to attribute to (i.e. once it went through `run_task`).
+                 # The representative image is the right one: a set node has exactly ONE task record and
+                 # `run_task` keys it to `first(imgs)`.
+                 on_log           = line -> Base.invokelatest(
+                     on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
                  on_status_change = rec -> begin
                      # One task, N images: mirror the pool pick-up onto every participating image, so
                      # the live view flips the whole barrier row :queued → :running together.
@@ -842,7 +852,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                  end)
     catch e
         @warn "Set-scope task error" node=node.id fn=node.fn exception=e
-        Base.invokelatest(on_log, "ERROR [set/$(node.id)] $(sprint(showerror, e))")
+        Base.invokelatest(on_log, "ERROR [$(first(imgs).uid)/$(node.id)] $(sprint(showerror, e))")
         nothing
     end
 
