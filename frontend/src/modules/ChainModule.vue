@@ -33,8 +33,9 @@ import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
-import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
-import { layerLanes, layoutDag, LAYOUT_VARIANTS, type LayoutVariant } from '../utils/dagLayout'
+import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
+import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
+import { withChainProducedModels } from '../utils/chainModelOptions'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -579,7 +580,7 @@ const hasStartNode = computed(() => nodes.value.some(n => n.id === START_ID))
 // Add the start dot once, near the top-left; the user drags it and links it to the first task(s).
 function addStartNode() {
   if (hasStartNode.value) return
-  addNodes([{ id: START_ID, type: 'start', position: { x: 20, y: 40 }, data: {} }])
+  addNodes([{ id: START_ID, type: 'start', position: DEFAULT_START_POS, data: {} }])
 }
 
 function applyTemplate(
@@ -638,7 +639,7 @@ function applyTemplate(
   const start = buildStartGraph(
     tmpl.startTargets,
     new Set(tmpl.nodes.map(n => n.id)),
-    positions[START_ID] ?? { x: 20, y: 40 },
+    positions[START_ID] ?? startDotPosition(tmpl.startTargets, autoPos, EDITOR_GRID.depth),
     START_ID in positions,
   )
   if (start) { newNodes.push(start.node); newEdges.push(...start.edges) }
@@ -968,9 +969,32 @@ const selectedNode = computed(() => {
   return findNode(selectedNodeId.value) ?? null
 })
 
+// The models an UPSTREAM node of `id` will have trained by the time that node runs — stems, as
+// `opticalFlow.train`'s `modelName` holds them. Ancestors only: a model trained later, or on a branch
+// that has not joined yet, is not available here and offering it would wire a run that cannot work.
+function upstreamModelStems(id: string): string[] {
+  const ups = ancestorsOf(
+    nodes.value.filter(n => !isStartId(n.id)).map(n => ({ id: n.id })),
+    edges.value.filter(e => !touchesStart(e)).map(e => ({ from: e.source, to: e.target })),
+    id,
+  )
+  const out: string[] = []
+  for (const n of nodes.value) {
+    if (!ups.has(n.id)) continue
+    const out_ = taskOutput(taskDefFor(n.data.fn), n.data.params)
+    if (out_?.namespace === 'models') out.push(out_.name)
+  }
+  return out
+}
+
 const selectedTaskDef = computed<TaskDef | null>(() => {
   if (!selectedNode.value) return null
-  return allTaskDefs.value.find(d => d.fun_name === selectedNode.value!.data.fn) ?? null
+  const def = allTaskDefs.value.find(d => d.fun_name === selectedNode.value!.data.fn) ?? null
+  if (!def) return null
+  // A `model` select is enumerated from the vault, which cannot see a model this very chain trains.
+  // Extend it so the wiring is expressible; `validate_chain_template` accepts the same forward
+  // reference server-side (`_chain_produced_names`).
+  return withChainProducedModels(def, upstreamModelStems(selectedNode.value!.id))
 })
 
 onNodeClick(({ node }: NodeMouseEvent) => {
@@ -1397,7 +1421,7 @@ onActivated(async () => {
             <i class="pi pi-refresh" />
           </button>
           <button
-            class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || saving"
             @click="saveChain"
             v-tooltip.right="'Save the current chain to disk'"
@@ -1418,7 +1442,7 @@ onActivated(async () => {
           @keydown.esc="closeNameInput"
           autofocus
         />
-        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
+        <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
           v-tooltip.right="nameMode === 'rename' ? 'Rename the chain' : 'Create the chain'"
           @click="submitName" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />

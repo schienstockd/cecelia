@@ -297,7 +297,7 @@ function _write_track_props(track_path::String, track_ids::Vector{Int},
         (; outPath = track_path, trackIds = track_ids,
            measureNames = measure_names, X = X, lineage = lineage),
         task_run_dir(dirname(dirname(track_path)));
-        on_log = on_log, on_process = on_process)
+        on_log = on_log, on_progress = on_progress, on_process = on_process)
 end
 
 # ── Motion dimensionality detection (in-plane 2D vs full 3D) ────────────────────────

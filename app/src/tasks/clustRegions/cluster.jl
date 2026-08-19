@@ -107,7 +107,7 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     on_progress(3, 4)
 
     ok = run_py("tasks/clustRegions/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] clustRegions: Python runner failed"); return nothing)
 
     # Record the run per segment — reuse the cluster sidecar so region pops auto-share across

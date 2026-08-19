@@ -490,7 +490,8 @@ struct ParamValidationError <: Exception
 end
 Base.showerror(io::IO, e::ParamValidationError) = print(io, "ParamValidationError: ", e.msg)
 
-function _validate_leaf(key, value, spec::Dict{String,Any})
+function _validate_leaf(key, value, spec::Dict{String,Any};
+                        extra_options::Set{String} = Set{String}())
     type_str = get(spec, "type", "")
 
     if type_str == "int"
@@ -515,7 +516,12 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
     elseif type_str == "select"
         options = get(spec, "options", [])
         valid   = [string(get(o, "value", "")) for o in options]
-        string(value) ∈ valid ||
+        # `extra_options` carries values that do not exist YET but will by the time this runs — a chain
+        # node naming a model an upstream node trains. The options for a `model` select are injected
+        # from the vault (`_inject_dynamic_options!`), so a forward reference is indistinguishable from
+        # a typo here; only the whole template knows the difference, so `validate_chain_template`
+        # supplies it. See `_chain_produced_names` in tasks/chain.jl.
+        (string(value) ∈ valid || string(value) ∈ extra_options) ||
             throw(ParamValidationError("'$key' = \"$value\" is not a valid option. Valid: $(join(valid, ", "))"))
 
     elseif type_str == "chipSelect"
@@ -569,7 +575,8 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
 
-function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Vector)
+function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Vector;
+                                       extra_options::Set{String} = Set{String}())
     for p in spec_params
         p isa AbstractDict || continue
         key      = string(get(p, "key", ""))
@@ -578,7 +585,7 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
 
         if type_str == "section"
             inner = get(p, "params", [])
-            isempty(inner) || _validate_params_against_spec(params, inner)
+            isempty(inner) || _validate_params_against_spec(params, inner; extra_options)
             continue
         end
 
@@ -590,7 +597,7 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
                 for (_, entry) in val
                     entry isa AbstractDict || continue
                     entry_dict = Dict{String,Any}(string(k) => v for (k, v) in entry)
-                    _validate_params_against_spec(entry_dict, inner)
+                    _validate_params_against_spec(entry_dict, inner; extra_options)
                 end
             end
             continue
@@ -614,7 +621,7 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
             continue  # optional and absent — skip range/type checks
         end
 
-        _validate_leaf(key, val, Dict{String,Any}(string(k) => v for (k, v) in p))
+        _validate_leaf(key, val, Dict{String,Any}(string(k) => v for (k, v) in p); extra_options)
     end
 end
 
@@ -663,14 +670,15 @@ Validate params against the task's co-located JSON spec.
 Throws ParamValidationError with a clear message if any constraint is violated.
 No-ops if the spec file is not found (allows tasks without a spec).
 """
-function validate_params(task::CciaTask, params::Dict{String,Any})
+function validate_params(task::CciaTask, params::Dict{String,Any};
+                         extra_options::Set{String} = Set{String}())
     # Pass the params through: a task whose options come from a file the user picked resolves them
     # against THESE values, so the validator checks against the same list the form offered.
     spec = _task_spec(task, params)
     isnothing(spec) && return
     spec_params = get(spec, "params", [])
     isempty(spec_params) && return
-    _validate_params_against_spec(params, spec_params)
+    _validate_params_against_spec(params, spec_params; extra_options)
 end
 
 # ── The name a run writes under ───────────────────────────────────────────────
@@ -1079,11 +1087,12 @@ which fits across the set. Used by the API to route a `task:run` to the single- 
 task_scope(task::CciaTask)::String =
     (s = _task_spec(task); isnothing(s) ? "image" : string(get(s, "scope", "image")))
 
-function validate_params(task::CompositeTask, params::Dict{String,Any})
+function validate_params(task::CompositeTask, params::Dict{String,Any};
+                         extra_options::Set{String} = Set{String}())
     # An unresolvable step is skipped here (`_composite_steps`) and hard-errors in `_run_task`, where
     # the run can actually be stopped — validation stays about the PARAMS.
     for sub_task in _composite_steps(task)
-        validate_params(sub_task, params)
+        validate_params(sub_task, params; extra_options)
     end
 end
 

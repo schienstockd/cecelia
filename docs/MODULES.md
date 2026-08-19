@@ -325,21 +325,50 @@ if __name__ == '__main__':
     main()
 ```
 
-### Progress protocol
+### Progress protocol — REQUIRED, and enforced on both sides
 
-Write `[PROGRESS] n/total` to stdout. Julia's `eachline` loop parses this and calls `on_progress(n, total)` which drives the task's progress bar. Every other stdout line is forwarded to `on_log` and appears in the GUI task log and in the per-task log file (`{img._dir}/logs/<fun_name>.log`).
+A task reports progress as `[PROGRESS] n/total` on stdout. `run_py`'s reader parses that line and calls
+`on_progress(n, total)`; every other line goes to `on_log`. **Two halves, and both are now tests** —
+this was documented as required for a long time and was still missing from **10 of 24** `run_py` call
+sites, because a convention nobody checks is a suggestion.
+
+**1. Python: emit through the logger, never a bare print.**
 
 ```python
-# log utility (wraps print to stdout)
-class Log:
-    def __init__(self, params): pass
-    def log(self, msg): print(msg, flush=True)
-    def progress(self, n, total): print(f'[PROGRESS] {n}/{total}', flush=True)
+log = script_utils.get_logfile_utils(params)
+log.progress(0, total)          # sizes the bar
+...
+log.progress(done, total)       # every unit you finish
 ```
 
-`script_utils.Log` is already implemented this way in `python/cecelia/utils/script_utils.py`.
+`StdoutLogger.progress` coalesces to `PROGRESS_MIN_FRACTION` (1%) **at the sink**, so a runner reports
+every unit it does and one place decides what is worth emitting — the same rule the frontend's
+continuous controls follow. A bare `print('[PROGRESS] …')` opts out of that: `segmentation_utils`
+printed one line per tile, which on a 181-timepoint movie cut into one tile each is 181 uncoalesced
+lines, each a stdout write, a Julia parse and a WS frame to every connected client. Pinned by
+`ProgressGoesThroughTheLoggerTest` (`python/cecelia/tests/test_atomic_io.py`).
 
-> **Required for every Python task.** The GUI progress bar only moves when `[PROGRESS]` lines are emitted. Without them the bar stays at 0% for the full duration of the task. Call `log.progress(n, total)` at the start (0/total) and after each major step. Three to five steps is typical — open, process, save. Tasks that omit this will silently show no progress.
+A maintenance patch is the exception: it receives an injected `log` callable and runs as a background
+job over the task rail rather than through `run_py`, so it formats the line itself.
+
+**Report the slow phase, not just the obvious loop.** Coastal segmentation resolved every timepoint's
+valid box *before* the tile loop — described in its own comment as "one cheap attr read per timepoint",
+measured at ~4 minutes on a 181-timepoint movie — and reported nothing for the whole of it, so the task
+looked wedged. Two sequential scales are fine: `StdoutLogger.progress` treats a changed `total` as a new
+scale, not a step along the old one.
+
+**2. Julia: forward the callback.**
+
+```julia
+ok = run_py("tasks/<cat>/<name>_run.py", params, task_run_dir(img._dir);
+            on_log = on_log, on_progress = on_progress, on_process = on_process)
+```
+
+Omitting `on_progress` throws away every line the runner emits — `run_py` parses them and calls a
+no-op, so the Python phase (usually the long one) reports nothing however carefully it counts. Pinned
+by the `every run_py call forwards on_progress` testset, which balances parens rather than scanning a
+line window (some `run_py` kwarg lists run to 25 lines) and exempts only two single-value metadata
+reads by name.
 
 ### Zarr conventions
 

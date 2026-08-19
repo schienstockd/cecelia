@@ -56,7 +56,7 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_contacts_mesh_run.py", task_params, task_run_dir(img._dir);
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] contactsMeshes: Python runner failed"); return nothing)
 
     try

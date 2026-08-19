@@ -251,19 +251,98 @@ task's `on_process` callback records the subprocess handle, `cancel_task!` would
 nothing` and skip the kill. `_execute_job!`'s `on_process` wrapper closes this: right after storing
 `rec.proc`, it re-checks `is_cancelled(job.id)` and kills immediately if so.
 
-### Limitation — set-scope / incremental nodes *inside a chain*
+### Chain nodes run through `execute_task`
 
-The per-image path is fully covered. It's specifically the **chain's** set-scope and incremental
-runners (`_run_set_scope_node!`, `_run_incremental_node!`) that call the multi-image `_run_task`
-**directly** — with `on_process = _ -> nothing` and no `_TASKS` entry — so `cancel_chain_run!` can't
-reach a subprocess they spawned mid-run (the between-node flag still stops not-yet-started ones). A
-set-scope task launched from a **module page** is unaffected: `handle_task_run` goes through the
-registered `run_task(task, imgs, …)` overload, so it has a `TaskRecord` and cancels normally.
+**`execute_task` (`app/src/runner/execute.jl`) is the canonical single-task pathway**, and a chain node
+is a task. It resolves the `fun_name`, dispatches on the task's own `scope` (so a set node lands in
+`_execute_set_task` and its members still get one joint fit), wires `on_log`/`on_progress`/`on_status`/
+`on_result`, and guarantees a terminal status on every exit path. The API server (`handle_task_run` →
+`run_in_process`), the detached runner's task handler, and **both chain node runners** all go through
+it, so they cannot disagree.
 
-Impact is currently nil — no real set-scope subprocess task exists (only mock/plot tasks). When the
-first one lands (e.g. HMM training), give the chain's multi-image path a `TaskRecord` + `chain_run_id`
-like the per-image path: `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on
-chain cancel*.
+Everything a node needs beyond a standalone run is a **field on the shared `TaskRequest`** —
+`chain_run_id` and `chain_node_id`, which carry into the `TaskRecord` so a client can match the task to
+the node it sees in `chain:node:*` (the GUI keys a chain row `runId::nodeId::imageUid`). They ride the
+wire format too, so a runner-executed node keeps its node identity. **Grow the request; never fork the
+executor.** The `chain nodes run through execute_task` testset fails if either runner calls `run_task`
+or `_run_task` directly again, or if those fields leave `TaskRequest`.
+
+#### Why — five bugs came out of the fork
+
+The chain used to re-assemble that wiring by hand. Every one of these was found in production, none
+was caught by a type or a test, and all five have the same shape — *"the standalone path wires X, the
+chain path forgot X"*:
+
+| bug | cause |
+|---|---|
+| a set-scope node wrote **no `<img>/logs/<fun_name>.log`** | called the inner `_run_task`, skipping `_wrap_log_with_file` |
+| it appeared in **no task list**, and its output fell through to the server's **stdout** | no `_register_task!`, so no `TaskRecord` for the console or task-log view to attach to |
+| **no run-log entry** | the pool worker's `open_run_log!` never ran |
+| a node declaring `resource_pool: "gpu"` ran **unqueued** | no `put!(pool.queue, job)` |
+| **no chain node ever showed progress**, any scope | neither runner passed `on_progress`, so `run_task` took its `(n, t) -> nothing` default |
+
+Two behaviours are deliberately kept by the chain rather than delegated, because they are chain
+concerns and `execute_task` cannot know them:
+
+- **The chain's cancel check outranks the task's.** `cancel_chain_run!` sets a chain flag, not a task
+  one, so a node killed that way comes back `:failed` from the task's own accounting. Both runners
+  apply `is_cancelled() ? :cancelled : …` over the returned status. (The set-scope path previously had
+  no cancel branch at all — a cancelled set node was recorded as a failure.)
+- **Barriers, axis gating, resume and node state** stay in `chain.jl`. Only *run one task and announce
+  it* moved.
+
+`run_chain`'s `on_status_change` kwarg was **removed**: its only job was forwarding per-node
+`TaskRecord`s, which is now `execute_task`'s, and nothing had ever passed one. Node status reaches
+clients over the chain event bus (`chain:node:*`), which is what every real client reads.
+
+#### The node log prefix is a wire format
+
+A node's log line is prefixed `[imageUid/nodeId]`, and that is **parsed**, not decoration: a
+`chain:log` frame carries no taskId, so `frontend/src/stores/ws.ts` reads the prefix off the line and
+attributes it to the task row with that `(imageUid, chainNodeId)`. The set-scope path used to emit
+`[set/<node>]` — the literal string `set` where a uid belongs — so the lookup matched no task and the
+Tasks page read *"no output yet"* while the identical line reached the console and the log file
+perfectly well. It only became visible once the node HAD a task row to attribute to.
+
+Set-scope now uses the **representative image's uid** (`first(imgs)`), which is the same image
+`run_task` keys its single `TaskRecord` to — one task, one row, one uid. Pinned by the
+`a chain node's log prefix is [imageUid/nodeId]` testset, which also transcribes the frontend's regex
+so the two cannot drift apart silently.
+
+#### Per-node progress rides the event bus
+
+A node's progress reaches a client as a **`task:progress` frame built by `subscribe_chain_frames!`**,
+from a `node:progress` chain event — the same carrier as the four `node:*` transitions, and the same
+one builder both processes already subscribe to. Neither `sockets.jl` nor the runner learned anything
+new; both emit an identical frame because they share the builder.
+
+It is fired from the node runners rather than wired per call site **because that wiring is what
+drifted**. The standalone path passes `on_progress` to `run_task` in two places (`execute_task`, and
+the runner's own task handler); the chain does not go through `execute_task` and wired it in neither
+of its two node runners, so `run_task` took its `(n, t) -> nothing` default. The Python side has
+emitted `[PROGRESS] n/total` all along and `run_py` routes it — only the last hop was missing, so **no
+chain node had ever shown progress, of any scope**.
+
+`task:status` deliberately stays off this path: a chain node emits none, or the Task Manager would show
+a second row per node (see `subscribe_chain_frames!`). Progress attaches to the row the `/api/tasks`
+snapshot already publishes, so it adds telemetry without adding rows. A node with no task id is
+dropped rather than emitted with `""`, which would mint or clobber a blank row.
+
+#### Still open — incremental nodes
+
+`_run_incremental_node!` is now the **only** runner that still calls `_run_task` directly
+(`on_process = _ -> nothing`, no `_TASKS` entry), so the whole table above still applies to an
+incremental node: no log file, no task record, no run-log entry, no pool slot, no progress, and
+`cancel_chain_run!` cannot reach a subprocess it spawned.
+
+It was left deliberately rather than swept in with the others. An incremental node **re-invokes as
+images arrive**, so "a `TaskRequest` per invocation or per node" is a real lifecycle decision — one
+record per invocation floods the task list, one per node lies about which run is in flight — and the
+set/image swap was like-for-like precisely because neither has that problem. Decide it, then route it
+the same way. See `docs/TODO.md` → *Incremental node subprocesses not killed on chain cancel*.
+
+A set-scope or incremental task launched from a **module page** is unaffected either way:
+`handle_task_run` already goes through `execute_task`.
 
 ---
 
