@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { reactive } from 'vue'
 import type { TrackOp } from '../lib/trackCorrection'
 
@@ -42,3 +42,6 @@ export const useTrackOpsQueueStore = defineStore('trackOpsQueue', () => {
 
   return { queues, get, set, clear }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useTrackOpsQueueStore, import.meta.hot))

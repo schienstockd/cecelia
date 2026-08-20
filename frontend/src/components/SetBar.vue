@@ -15,7 +15,7 @@ const log         = useLogStore()
 const newSetName    = ref('')
 const showNewInput  = ref(false)
 const confirmDelete = ref(false)
-// Copy set UID — shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+// Copy set UID — shared copy+flash helper (docs/ui/PRIMITIVES.md)
 const { isCopied: copiedSetUid, copy: copySetUid } = useCopyFlash()
 const busy          = ref(false)
 

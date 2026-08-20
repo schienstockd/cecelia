@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 import { DEFAULT_GROUPS, gapBefore, logGroup, type LogGroup, type LogLevel } from '../utils/logFilter'
 
@@ -194,3 +194,6 @@ export const useLogStore = defineStore('log', () => {
     openConsole, closeConsole, toggleConsole, clear,
   }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useLogStore, import.meta.hot))

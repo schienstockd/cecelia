@@ -3,21 +3,31 @@
 Frontend conventions, component catalog, and how to add new UI features. Purely Vue/CSS — the
 language boundary and WS protocol are in `ARCHITECTURE.md`.
 
-**Start here:** *UX primitive catalog* and *UI copy — keep it short* are the two mandatory lookups
-before you render anything. Both are enforced by tests, so skipping them fails the build.
+> **This file is large — read a slice, not the whole thing.** `grep -n '^#\{2,3\} ' docs/UI.md`
+> gives you the section index with line numbers, then `sed -n 'START,ENDp' docs/UI.md` reads just the
+> one you need. See the routing table below to pick the section.
 
-| Looking for | Go to |
+**The two MANDATORY lookups now live in their own files** (they are read on every frontend task, so
+they are not buried in here):
+
+| Mandatory before you… | Read |
 |---|---|
-| Which component/class to use for a control | **UX primitive catalog — CHECK BEFORE BUILDING** |
-| How much text a tooltip / tip / empty state may carry | **UI copy — keep it short** |
-| Whether a control needs a tooltip *at all* | **Tooltip coverage — the presence half** |
+| render **any** button, toggle, slider, dialog, popover, tabs, chips, empty state, spinner, badge, collapsible | [`docs/ui/PRIMITIVES.md`](ui/PRIMITIVES.md) — the UX primitive catalog |
+| write **any** user-facing text: labels, tooltips, tips, empty states, QC findings | [`docs/ui/COPY.md`](ui/COPY.md) — copy budgets + tooltip coverage |
+
+Both are enforced by tests, so skipping them fails the build.
+
+## Section routing — the rest of this file
+
+| Looking for | Section |
+|---|---|
 | Colours, radii, font sizes, fixed dimensions | **Design tokens** |
 | Buttons · inputs · toggles · chips | **Button utilities** · **Form controls** |
-| Modals · confirms · deletes · popovers | **Modals & dialogs** · **No native browser dialogs** |
+| Modals · confirms · deletes · popovers | **Modals & dialogs** |
 | Floating windows, legends | **Floating panels** · **View legend** |
 | Building a new module page (route, sidebar, layout) | **Adding a new module page** |
 | The image table, task runner, sidebar, viewer | **ImageTable** · **TaskRunner** · **AppSidebar** · **ViewerPanel** |
-| Adding a plot to a page or the board | **Adding a plot or visualization panel** · **Generic plot-integration interface** |
+| Adding a plot to a page or the board | **Adding a plot or visualization panel** |
 | Floating/draggable plot panels, tile & cascade | **Shared canvas shell** |
 | Making a plot option survive navigation | **Persisting view state — the three scopes** |
 | Keeping a plot fresh after a task | **Data freshness — task-refresh** |
@@ -27,478 +37,6 @@ before you render anything. Both are enforced by tests, so skipping them fails t
 types), `docs/ANALYSIS.md` (the Analysis board: tabs, plates, export), `docs/POPULATION.md` (gating
 model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param widgets),
 `docs/NAPARI.md` (viewer process + layers), `docs/todo/UX_PRIMITIVES_PLAN.md` (unification status).
-
----
-
-## UX primitive catalog — CHECK BEFORE BUILDING (mandatory)
-
-Before you render **any** of these controls, use the canonical component/utility below — **do not
-hand-roll a variant**. A new copy of a primitive that already has a canonical form is a bug (same rule
-as the H5AD/zarr/`run_py` single-helpers; see `CLAUDE.md` → *Before implementing anything*). This is
-the one glanceable lookup; each row links to its detailed section. Unification status for the few
-primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
-
-| Need | Use | Never |
-|------|-----|-------|
-| Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
-| Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
-| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
-| Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
-| On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
-| Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
-| Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
-| Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
-| A field whose value is user-invented but usually a REPEAT — an output name, an attribute value, a tag | `components/SuggestInput.vue` (task specs reach it via param type `valueNameInput` + a `namespace`) | a bare text input (no recall, and a typo silently creates a second thing), a `<select>` (you can never enter a new one), or a native `<datalist>` (see below) |
-| Filtering rows by their attributes | `components/AttrFilterPanel.vue` + `utils/attrFilter.ts` (`v-model` an `AttrFilterState`, `:rows` anything with an `attr` bag) | a second set of chip rows + Apply/Reset/Invert, or a per-page matching clause |
-| **ANY table of rows and columns** — pick one, pick many, or a plain list | `components/SelectionTable.vue` — `selectionMode` `single` (default, a radio) / `multi` (checkboxes, `v-model:selected`) / `none` (a list; `@row-click` is what a row means). Per-column `sortable`, `sortKey` for a formatted cell, `ellipsis` for a long one; `#cell-<key>` to render one cell yourself, `#actions` for row buttons | a `<select>` that hides the trade-off, or a hand-rolled `<table>` — four of those existed only because `multi`/`none` didn't, and none of them could sort or resize |
-| Sorting a list by a clicked header | `utils/sortRows.ts` — `sortRows(rows, valueOf, dir)` + `cycleSort`/`sortIconFor` | a per-table comparator, or an inline asc/desc/off cycle |
-| A dense list in a panel with no width to spare | `SelectionTable`'s `density="compact"` — one step down the type scale, ~half the cell padding, a narrower radio gutter. Nothing else changes, so a compact list still agrees with every other one about selection and sorting | `:deep()` on `th`/`td` from the caller, rediscovering a padding number per panel |
-| Drag-resizable table columns | `composables/useColumnResize.ts` (`SelectionTable` opts in via `columnWidthKey`; per-column `width` for the starting size, `actionsWidth` for the trailing button column, and a reset-widths button appears in the header). Pair it with `fit="content"` + an `overflow-x: auto` wrapper when the columns must keep their declared width and the panel should SCROLL — **mandatory with `sticky` columns**, since a squeezed table renders its columns narrower than the offsets the pinning is computed from. Otherwise leave `fit` at `fill`: the declared widths are then starting hints and the table is exactly its panel. Choose by what should give — `content` makes the panel scroll, `fill` makes the columns squeeze. Picking `content` for a table that ought to fit is what put a horizontal scrollbar in the 280px task sidebar and pushed the manager's Time column off-screen | a per-table mousemove drag + an unpersisted widths `ref`, or `width: max-content` in the caller's stylesheet (a single class loses to `.sel-table.sized`) |
-| Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
-| Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
-| The ⚙ that holds those two blocks | `components/MovieOptionsButton.vue` — the button + tooltip + popover; the blocks go in its slot | a second gear, or the blocks laid out flat in a page header |
-| Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
-| Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
-| Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
-| Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
-| Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
-| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
-| Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
-| Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
-| Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
-| Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
-| **Determinate progress** (a 0–1 fraction — a task, a patch, an export) | `components/CcProgressBar.vue` — `:value` (0–1, clamped, NaN-safe), `size` `thin` (3px, flush in a row/card) \| `bar` (4px, rounded, standalone). Width maths in `utils/progress.ts`. Caller keeps its own geometry (`flex`, `margin`) | a per-file track+fill pair — four of those existed on two heights, two radii, two transitions and three different fraction→width sums |
-| "Working", with no fraction to show | nothing, or the surface's existing cue — a running task row already says it via `lib/taskStatus.ts` | animating `CcProgressBar` to fake an indeterminate bar |
-| Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
-| Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
-| Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
-| Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels*. **The content inside fills it (`flex: 1; min-width: 0`) and must not set a width of its own** | an inline handle + `v-show` + its own mousemove drag, or a slot child with its own `usePanelResize` — two widths and two handles on one edge, so dragging the outer one shifts the content instead of reflowing it |
-| A panel resized from its RIGHT edge (a left-hand pane, e.g. the `/tasks` list) | `usePanelResize({ edge: 'right' })` — the same composable; `edge` only flips the sign of the drag | a second composable, or negating the delta at the call site |
-| Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
-| Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
-| A short line with its reasoning on hover | `components/InlineNote.vue` | an `<i class="pi …"/> {{ text }}` + `v-tooltip` by hand (four sites had one each, two already drifted off the severity model) |
-| Explaining what a dropdown OPTION means | a `help` field on the option in the task JSON (`utils/optionHelp.ts` renders it) | overloading the param `tip`, or a param advisory — an advisory carries a severity, and `ok` draws a green check claiming a verdict nobody reached |
-| Teaching a multi-step workflow | a `GuideDef` in `lib/guides/` (a `moduleTaskGuide({…})` call when the page is ModuleLayout + TaskRunner) — see *Guides* | a page full of explanatory prose, a bespoke tour component, or hand-writing the five standard task-runner steps a fourth time |
-| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover` and `GuideBubble` both call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
-| "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
-| QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
-| Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
-| Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
-| Choosing an ICON for anything | `frontend/src/lib/iconLegend.ts` — find the meaning, use its glyph | a glyph that "looks right", or a second glyph for a meaning that already has one |
-| Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
-| Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
-
-**Semantic role utilities** (global classes in `style.css` — *compose* them, add only layout in scoped CSS). These generalise recurring text/surface **scenarios** rather than a component per widget:
-
-| Scenario | Use | Never |
-|------|-----|-------|
-| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
-| Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
-| Meta line carrying a WARNING or an ERROR | `.cc-muted-warn` / `.cc-muted-error` (+ a `.cc-fs-*` step) | `.cc-muted` plus a scoped `color:`, or an inline `style="color: var(--cc-sev-fail)"` |
-| Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
-| A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
-| A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
-| An on/off toggle whose caption sits OUTSIDE it (a row label, an eyebrow) | `CcToggle` + `aria-label` — a tooltip is not a name, and the hidden `<input>` has no text of its own (enforced by `unnamedToggles`) | relying on the row's `v-tooltip`, which covers hover help but leaves the control unnamed |
-| Several such groups STACKED, whose labels should read as a column | `.cc-lbl-col` on each label (+ `.cc-row-group-top` on a group whose content wraps); override the width with `--cc-lbl-col` | letting each label size itself, so every control starts at a different x |
-| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; + a `.cc-fs-*` step) | a bespoke `.*-val`/`.*-num` |
-| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + a `.cc-fs-*` step) | a scoped uppercase-heading rule |
-| Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
-| Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
-| Small text size | the `--cc-fs-*` token in CSS, or the `.cc-fs-*` class in markup | a raw `rem`/`px` font-size (incl. inline `style=`) |
-| Compact input / select / textarea | `.cc-input-xs` (11px) / `.cc-input-2xs` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
-| A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
-
-**Pick a scenario, then a size.** `.cc-muted .cc-fs-xs` · `.cc-eyebrow .cc-fs-2xs` ·
-`.cc-readout .cc-fs-2xs` · `.cc-empty-inline .cc-fs-3xs`. The size ladder is ONE shared set of classes
-(`.cc-fs-lg/-md/-sm/-xs/-2xs/-3xs`, the same steps as the `--cc-fs-*` tokens), not a per-scenario one:
-`.cc-muted-2xs`, `.cc-eyebrow-2xs` and `.cc-readout-2xs` were three names for one declaration, and
-naming them per scenario only made you guess which to reach for. Modifiers that carry real semantics
-DO stay on their scenario — `.cc-readout-strong` is prominence, `.cc-empty-inline` is layout.
-
-**The step is named, not relative** (`-xs`, not `-dense`). A relative name can only express the steps
-someone thought of: `.cc-muted` had no 11px step — the single largest cluster of hand-rolled muted text
-in the app — because "dense" was already spent on 10px, and nothing named the step *above* the base. Reach for the modifier instead of re-declaring the
-scenario locally: baking a value into the base is what stranded ~10 sites as "bespoke" before. Per-site
-*emphasis* (`font-style: italic`) and *geometry* (width/margin/flex/padding) still belong in scoped CSS.
-
-**There are no raw sizes or radii left, and the tests keep it that way.** Both scales were derived from
-the actual distribution rather than guessed: 33 distinct font-size spellings collapsed onto 6 steps (98%
-of them were already within 0.5px of a step), and 15 radius spellings onto 5. `--cc-radius-sm` was retuned
-`0.25rem`→`0.3rem` because 4.8px is the modal radius, which halved the worst-case shift. A literal
-`font-size`/`border-radius` anywhere — scoped CSS **or** an inline `style=` — now fails
-`utils/cssScenarios.test.ts`. Exempt by rule: display type (>15px), pill radii, `0`, and `em` (which is
-deliberately container-relative, e.g. `ViewLegend` scaling with the export).
-
-**Icon buttons are a fixed square**, so a toolbar row lines up regardless of glyph width — that's why
-`-icon` is a modifier rather than per-site padding (48 sites had each discovered they needed a fixed box,
-at nine different sizes). `-bare` is transparent/dim-until-hover, `-ghost` is its boxed counterpart; tone
-comes from `-danger-ghost` or a scoped `color` for the one-offs (the napari viewer green). A `<button>`
-whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssScenarios.test.ts`.
-
-> **Where the checks live:** `frontend/src/utils/cssScenarios.ts` and `cssTokens.ts`, each with a
-> `.test.ts` beside it (`pixi run test-frontend`). Full index of what each detector owns and what its
-> bar is: [`docs/todo/UX_PRIMITIVES_PLAN.md`](todo/UX_PRIMITIVES_PLAN.md) → *The detectors*. Need a
-> count for this area? Read those — never re-derive one by grep.
-
-**Never re-declare a utility in scoped CSS — compose it.** A `<style scoped>` rule whose selector *is*
-a global utility (`.cc-muted { color: …; font-size: … }`) outranks the global one on specificity, because
-scoping adds `[data-v-…]`. The component then silently stops tracking the utility: change the global and
-this one place doesn't follow. It happens by accident during migration — rename the class in the template,
-rename the *rule* alongside it instead of deleting it — which is exactly how `LegacyMigrateDialog` ended up
-shadowing `.cc-muted` with a byte-identical copy. `utils/cssScenarios.test.ts` now fails on it, with no
-allow-list: per-site layout (`.cc-muted { margin-top: 0.3rem }`), descendants (`.panel .cc-muted`) and
-modifier compounds (`.cc-btn-bare.viewer-green`) are all legal by construction, so anything it reports is
-the bug. Add layout in scoped CSS; never re-state a property the utility itself declares.
-
-**A reason is not an exemption.** The shadowed-utility allow-list carried nine entries, each with a note
-that read as settled — "a tier down", "muted layout, danger colour" — and six of them were scenarios the
-axis already had room for: four wanted `.cc-muted` + a `.cc-fs-*` step, one restated the utility's own
-value, and one wanted `.cc-muted-error`, which did not exist only because `-warn` had shipped alone. That
-last one is the tell: a missing family member gets hand-rolled, so the SECOND site spells it a way no
-ratchet can see (an inline `style="color: …"`). Three entries remain, on the two grounds no utility can
-express: a size driven by a runtime CSS var (`--gate-font`, the vis Font size slider) and a deliberate
-`color: inherit`. Before adding an entry, check the utility does not already exist, or is not one
-modifier away from existing.
-
-**Declare before you watch.** A `watch` SOURCE runs immediately — that first call is how Vue
-collects the dependencies, with or without `immediate: true` — so a source naming a `const` declared
-below it throws `ReferenceError: can't access lexical declaration 'x' before initialization` during
-`setup`. TypeScript cannot see it (the binding exists, it is just not initialised), the dev server
-serves the module, and every test passes. What you get is a blank page and a console-only clue.
-
-It is worth its own checker because of the blast radius: the throw aborts the PARENT's patch, so
-innocent siblings vanish with it. One mis-ordered line in `FlowMetricsView` blanked the whole flow
-canvas — the plot panels and the model vault, which is a sibling and had nothing to do with it — and
-it read as a data problem. `utils/setupOrder.ts` (`setupOrderHazards`) ratchets it to zero with no
-allow-list. It checks the source only (a callback runs later and may name anything), all of
-`watchEffect`, and top-level calls only.
-
-**A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
-and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was
-not another opt-in class: **33 form controls across 24 files had each hand-written
-`font-size: var(--cc-fs-sm)`**, while exactly *one* site had ever adopted the density class. When two
-thirds of the population corrects the default by hand, the default is wrong. The base is `--cc-fs-sm`
-(12px) now, the density steps re-pitched below it, and those 33 declarations are gone as provable no-ops.
-The same rounding caused the tooltip regression (`0.72rem` → nearest step, which happened to be the larger
-one → now `--cc-fs-xs`). **When tokenising a value that sits between two steps, check which side the
-element belongs on** — dense chrome rounds down, not to the nearest.
-
-**Re-implementing a scenario is a test failure, not a style opinion.** `utils/cssScenarios.test.ts`
-detects a scoped rule that spells out a canonical utility's defining declarations — a dim colour plus a
-hard-coded size *is* `.cc-muted` — and holds a per-file baseline that **may shrink and must never grow**.
-Touch a file, migrate its rules and lower its number; add a new one and the suite names it. Card chrome
-is deliberately *not* checked: `surface + border + radius` is the shape of a card, an input, a chip, a
-badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
-review-time rule.
-
-**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 16 of the 23 module
-pages are built on `ModuleLayout` and were already consistent. The standalone ones were not: Notebooks,
-Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
-two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under
-different names. (The h1 sizes escaped the size sweep because `findRawValues` exempts anything over 15px
-as display type.) `ModulePage` fixes controls and spacing; `layout="flow|scroll|fill"` is the one
-real axis — whether the page flows, scrolls itself, or is a full-height pane whose child scrolls. Per-page
-extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
-still applies).
-
-**A page whose work is per-image belongs on `ModuleLayout`, however it started.** Animation moved
-across (Dominik, 2026-08-10): as a standalone page it read whichever image napari happened to have
-open, so its empty state — *"open an image in napari to start capturing keyframes"* — could only be
-acted on by navigating to some other page, picking an image there, and coming back. The image table IS
-that action, and it carries the set bar, the filters and the eye with it. Which changes what the page's
-own chrome is for: with a side panel, the render options no longer need the `MovieOptionsButton` gear
-(that exists for the viewer, which has no panel), and the timeline goes in the standard `#plots` canvas.
-The test: if the page acts on one image, the table is the picker — do not invent a second one, and do
-not make "it's open elsewhere" a precondition the page cannot satisfy.
-
-**Do not write a page subtitle — or a page title.** All three carried a paragraph explaining the feature
-to a first-time reader: permanent noise on a screen its owner uses daily, and the clearest tell that a
-page was AI-written. The `<h1>` went the same way (Dominik, 2026-08-10) — the sidebar names the page and
-highlights it, so a heading repeating that word is chrome the daily user reads past forever. `ModulePage`
-therefore has neither, and Settings dropped its own `.page-title` to match. The controls say what the
-page is; the explanation belongs in `docs/`. Same rule as tooltips and QC findings: if you are tempted to
-explain in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
-
-**Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
-(`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
-nothing declared there. PrimeVue's tooltip does exactly that — so while the scale sat on `.cc-dark`,
-every `var(--cc-*)` in the tooltip override was invalid at computed-value time and the tooltip rendered
-at the browser default **16px**, with `<body>`'s own `font-size` dead the same way. Declared ≠ reachable,
-and the symptoms are identical, which is why the token guard stayed green throughout. If you style
-anything that mounts outside the app shell (a portal, teleport, or library overlay), check that the
-properties it references resolve *there*. `utils/cssTokens.test.ts` now fails if the global scale is
-declared anywhere but `:root`.
-
-**Every custom property you reference must be declared somewhere.** An undeclared one does not warn —
-it makes the whole declaration invalid at computed-value time, so `var(--cc-text-muted, #888)` silently
-freezes a hard-coded grey that never tracks the theme, and a fallback-less `background: var(--cc-surface)`
-drops the *entire* `background` shorthand (a `<select>` lost both its fill and the global custom caret this
-way). `utils/cssTokens.test.ts` fails the build on any such reference — add the token, don't add a fallback.
-It checks **all** `--*` properties, not just `--cc-*` (a stray `--text-muted` had been hiding behind the
-prefix), and counts a component-local declaration — including an inline `:style="{ '--foo': … }"` for a
-dynamic value — as valid.
-
-If what you need isn't here and isn't obviously covered by an existing component, grep first
-(`INVENTORY.md` → *Frontend*); only build new if the search is genuinely empty, and then add it here +
-to `INVENTORY.md` in the same change.
-
----
-
-## UI copy — keep it short (mandatory)
-
-**Default to no explanatory text.** The sidebar entry plus the page's controls almost always says what
-the page is. Where orientation genuinely isn't self-evident, one short phrase — **under ~10 words, never
-two sentences**.
-
-Why: a paragraph written to explain a feature once sits permanently on a page its owner uses daily,
-so it buys clarity once and costs noise forever. Verbose in-app prose is also the most reliable tell
-that a screen was generated rather than designed — it makes the whole app read that way. The real
-explanation belongs in `docs/`, which is where it actually gets looked up.
-
-| Surface | Budget |
-|---|---|
-| Page title / subtitle | **none** — the sidebar already names the page (`ModulePage` has no title slot) |
-| Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
-| Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*). Lead with a recommended value where one exists (`Start ~5 µm; …`): a tip that only names the trade-off leaves "what do I put here?" unanswered |
-| Param advisory (`tasks/paramAdvisors.ts`) | one muted line under the control + the reasoning on hover. For when the right value depends on the user's DATA rather than on wording — e.g. the grid a spacing produces and what it costs to store. See `docs/MODULES.md` → *Param advisories* |
-| QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
-| Data-patch `description` (`app/src/maintenance.jl`) | title = what it does, description = one line + the one caveat that matters. Capped at 160 chars by `app/test/suite.jl`. Never restate Dry-run/Apply (both are buttons) and never explain HOW it detects — that belongs in the runner |
-| Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** the two *first-run* states (no projects / no images) get title + ≤2 lines + one CTA — bounded in *Onboarding*, which is the rule for them |
-| First-use hint (`HintCallout`) | one line, by construction |
-| Guide step (`lib/guides/*.ts`) | **the second carve-out**, and bounded the same way: an optional short `title`, **one** sentence of `text` (≤140 chars), plus **at most four** imperative `bullets` (≤110 chars each). Enforced by `lib/guides/guides.test.ts`. Same reasoning as the first-run states — a guide step is read once, by someone who does not yet know the app, and then never again; it is not sitting on a page they use daily. Anything past the shape is what the budget exists to stop. See *Guides* |
-
-Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
-explaining, put it in the relevant `docs/<AREA>.md` and leave the UI silent.
-
-### House style — how it's written
-
-Length is only half of it. The other half is writing the same thing the same way twice, which nothing
-watched until `pixi run ui-copy` could show the whole corpus at once. It found the two halves of the
-app had drifted apart along the storage boundary: **task specs had gone Title Case while the frontend
-stayed sentence case**, 60 phrases had picked up a second spelling, and one action had up to four
-verbs. None of that is visible a file at a time — which is the argument for the inventory.
-
-| Rule | Do | Not |
-|---|---|---|
-| **Sentence case** for every label, button, header and menu item. Acronyms and proper nouns keep their case. | `Bayesian tracking`, `Drift correction`, `Calculate UMAP` | `Bayesian Tracking`, `Drift Correction` |
-| **No trailing period** on a tooltip or a task-spec `tip`. It's a fragment, not a sentence. | `Which image version to crop` | `Which image version to crop.` |
-| **One verb per action** — see the table below. | `Select channels` | `Choose channels`, `Pick channels` |
-
-Full sentences still take a period: QC `long` text is imperative prose and keeps its punctuation, as
-do multi-sentence notifications.
-
-**Verb vocabulary.** Where two words mean the same thing, one wins. Where they mean different things,
-both stay — the distinction is the point, so it's written down rather than left to taste.
-
-| Use | For | Not |
-|---|---|---|
-| **Select** | choosing from options that already exist | ~~Choose~~, ~~Pick~~ |
-| **Show** | toggling visibility | ~~Display~~ |
-| **Create** | making a new object | — |
-| **Add** | attaching an existing object to a collection | — |
-| **Delete** | destroying data permanently | — |
-| **Remove** | detaching from a list; the data survives | — |
-| **Run** | a task or chain | ~~Execute~~ |
-| **Start** | a long-lived service (napari, Pluto) | ~~Launch~~ (as a verb; the noun "on launch" is fine) |
-
-`Create`/`Add`, `Delete`/`Remove` and `Run`/`Start` are **not** synonyms — picking the wrong one is a
-copy bug, not a style preference.
-
-**Two of these are now enforced, not just asked for.** `utils/uiCopy.test.ts` fails the build on a
-`v-tooltip` literal, a `ModuleLayout` `hint`, or a task-JSON `tip` that runs past **90 characters** or
-into a **second sentence** — across every SFC and every task spec. It holds an **exact allow-list**,
-not a count (the `cssScenarios` lesson: a count silently permits swapping one violation for another,
-and stops meaning anything at zero). Both surfaces were swept to zero, so the bar is that list and
-nothing else, and the current single entry is a *notification* whose second sentence is a call to
-action rather than an explanation. Before adding an entry, check whether the fact belongs in
-`docs/<AREA>.md` instead — that was true of every one of the ~100 strings the sweeps shortened.
-
-**Reading the whole corpus.** `pixi run ui-copy` (`scripts/ui_copy_inventory.mjs`) dumps every
-front-facing string — SFCs, task specs, Julia QC text and the What's-New/tip cards, ~1,700 of them —
-to a git-ignored `UI_COPY_INVENTORY.md`, grouped by kind, with the drift signals over the top. Use it
-to review the app's language end-to-end; the build-failing subset stays the ratchet. It imports
-`utils/uiCopy.ts`, which is the one canonical parser — add an extractor there rather than writing a
-second scraper.
-
-**Visibility is not enforcement.** Two surfaces are in the inventory on purpose and ratcheted on
-purpose *not*: bare template text nodes (the largest bucket — extraction is heuristic, so a guard
-would fail builds on parse noise) and the **tip cards** in `lib/tips.ts` (long-form explainers with a
-sketch; there is no agreed length, tone or punctuation rule to hold them to, and they are excluded
-from the length signal for that reason). A ratchet needs a decided rule — without one it grows an
-allow-list until it stops meaning anything, which is the `cssScenarios` lesson. So these are here to
-be *read* and judged by a person, not to break CI.
-
-> **Measure the rendered string, not the binding.** A tooltip binding is an *expression*, so
-> `v-tooltip="flagged ? 'Deselect flagged images' : 'Select all N flagged image(s)'"` is 95 characters
-> while both branches a user actually sees are well inside budget. Counting expressions over-reports by
-> roughly 80% (73 "violations" against a true 41) and sends you off to rewrite ternaries that were
-> already fine. `uiCopy.tooltipStrings` extracts the string literals inside each binding and strips
-> `${…}`, whose rendered width is unknowable at check time; page subtitles, empty states and QC text
-> are not machine-checked at all and stay a review question.
-
-### Tooltip coverage — the presence half
-
-Everything above polices the copy that *exists*. This polices the copy that **doesn't**: an input a
-user can change with no hover help anywhere on it. Length had a ratchet from the start; presence
-didn't, and presence is the half that drifted — a panel picks up tooltips on six of its ten rows and
-nothing can see the four. The first sweep found **94** bare controls across 32 SFCs, **4** icon-only
-buttons, and **18** task params with no `tip` — `segment/branching.json` worst at twelve of twelve.
-
-**The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
-a `tip`.** Both are ratcheted to zero with an empty allow-list.
-
-**One exception, and it is a real one: chips, swatches and toggles are covered by their heading.**
-`ChipSelect`/`SwatchSelect` are not one hit target but many small ones, and `CcToggle` is a switch you
-aim at — a tooltip anchored there renders **on top of the control**, so the hover help hides the thing
-you were about to click. Here the blanket rule is actively wrong rather than merely redundant
-(Dominik, 2026-08-07, on the channel selection and then the bool params' switch). Such a control
-counts as covered when a tipped label or heading precedes it inside the same row, including one
-wrapper deeper — the ordinary label-then-control shape, and where the explanation belongs anyway. One
-with no tipped heading anywhere is still reported, and the exemption is these three: a plain `select`
-beside a tipped label still needs its own.
-
-**Enforced from BOTH sides, because fixing one re-breaks the other.** The presence ratchet is what put
-a second `param.tip` on every bool param's switch in the first place. So `duplicateTooltips` fails on
-a chip row / swatch / toggle that repeats its heading's tooltip **expression for expression** —
-`<label v-tooltip.left="param.tip">` above `<CcToggle v-tooltip.right="param.tip">` is the same tip
-twice, and the second one is the one that covers the switch. Comparison is on the source text, so it
-catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
-directions pinned in `uiCopy.test.ts`.
-
-**Never put a `v-tooltip` on a CONTAINER that also holds tipped controls.** Hovering the inner button
-then fires both — the row's tip and the button's — and they overlap on screen. This is a different
-failure from the duplicate-tip rule above (the texts differ, so no detector catches it): it is about
-*hover areas nesting*, not about repeated words. Anchor the row's tip on a leaf that no control sits
-on top of — the status pill, or the truncated text that actually needs expanding — and leave every
-button owning its own. Sibling anchors are fine: two tips on two elements side by side can never both
-be hovered. Example: the MCP-connections rows in `SettingsModule.vue`.
-
-Enforced by `nestedTooltips` (`utils/uiCopy.ts`, pinned in `uiCopy.test.ts`), which reads the same
-ancestor stack the coverage check uses — a tipped ancestor makes a child *covered* and, at the same
-time, makes its own tip a double. 29 pre-existing sites were fixed when the rule landed, so the check
-is now a plain "none". Two shapes account for almost all of them, and the fix differs:
-
-| The container tip is… | Fix |
-|---|---|
-| repeating what the buttons already say (`<div class="cc-btn-group" v-tooltip="'Arrange windows'">` over *Tile* / *Cascade*) | delete it |
-| the ONLY cover for an untipped control in the row (a slider, a mode `<select>`) | move it **onto that control** — deleting it trips the coverage rule instead |
-
-Rows whose tip describes the row itself ("drag to reorder", "click to sort") anchor it on the row's
-**text** — the title, the tab name, the column label — never on the row element.
-
-**A chip row carries ONE tooltip — group or per-option, never both**, and `duplicateTooltips` now
-reports either double. The second one is the reason the coverage rule above had to be amended rather
-than extended: the group tooltip and the per-option `tip`s say the same thing in *different words*, so
-no comparison finds them, and the tips live in the SCRIPT (`const AXIS_OPTIONS = [{…, tip}]`), where a
-template pass cannot see them — `hasPerOptionTips` resolves the `:options` identifier back into the
-script block, and answers "cannot tell" (never "no tips") for a prop it cannot follow.
-
-**Which one to keep is per-row, and the label decides it.** On an ICON-ONLY row the per-option tip is
-the only thing naming a glyph, so the group tooltip goes (six rows: scope, axis, render mode, draw
-tool, movie overlays, delete scope). On a WORD-labelled row where the tips only restate the label —
-`Show info messages` on a chip that already says `info` — the tips go and the group tooltip stays. If
-both say something, put the row's explanation on its heading, where it does not cover anything
-(`BatchMoviesPanel`'s filename attrs).
-
-The eight rows this found were previously *required* to have that group tooltip by the presence
-ratchet, which is why the amendment and the sweep are one change: enforcing either half alone turns
-correct code red.
-
-| Surface | Checker | Ratchet |
-|---|---|---|
-| SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |
-| **Icon-only buttons** — a `<button>` whose whole content is an `<i>` glyph | same | same |
-| A chip/swatch/toggle repeating its heading's tooltip | `duplicateTooltips` (same file) | same |
-| `params[].tip` in `app/src/tasks/**` and `docs/examples/custom-modules/**` | `each_spec` + `collect_settable!` | `app/test/runtests.jl` |
-
-Both land in `pixi run ui-copy` as *Settable control or task param with NO tooltip*, with a
-`file:line` per hit, and the report prints task-param coverage as a fraction.
-
-What is deliberately **out of scope**, so the signal stays worth reading:
-
-- **Buttons with a caption.** "Run" / "Delete set" is already its own help, so requiring a tooltip
-  on all 152 of them buys tautologies — the generated-screen noise the copy budget exists to
-  prevent. An input's *value* has no caption, which is why inputs are in. **Icon-only buttons have
-  no caption either, so they ARE checked** — a bare trash glyph is the CellProfiler case at its
-  purest. This is a rule the codebase already followed unasked (139 of 150 carried a tooltip before
-  anything checked), so the handful that didn't read as oversights, not as a new imposition.
-  An `aria-label` is not coverage: it is read out, never shown on hover.
-- **`section` / `group` params.** Container headers ("Advanced", "Filters"), not inputs. Their
-  children are checked normally.
-- **The wrapper primitives' own definitions.** `CcToggle.vue` holds the checkbox every toggle renders
-  through; its tooltip belongs at the call site, so the internal input is skipped.
-- **`app/src/plotDefinitions/**`.** These carry a `params` array of the same *shape*, which makes
-  them look like another spec surface — they aren't. It is a **defaults bag, not a form**: the only
-  consumer is `SummaryPanel.vue`, `props.spec.params?.find(p => p.key === k)?.default ?? d`, which
-  reads `default` and nothing else. A `label` or `tip` there renders to nobody, so requiring one
-  buys strings that look maintained and reach no user. The controls a user really operates for those
-  plots are hand-rolled in the SFC, and the frontend ratchet already covers them. (The top-level
-  `spec.label` *is* rendered, in the plot picker, and is unchecked — a small separate gap. Don't
-  close it by dragging the whole directory into the param walk.)
-
-`docs/examples/custom-modules/**` is the opposite case and IS in scope: those are real task specs
-that `load_custom_modules!` loads and `ParamRenderer` renders, living in `docs/` only because they
-are the template a user copies.
-
-**Only `v-tooltip` counts.** A native `title=` is not coverage — it renders as the browser's own
-unstyled tooltip, appears on a delay we don't control, and is invisible to the copy ratchets, so
-accepting it would let a control pass the check looking nothing like the rest of the app. (Most
-`title=` in the codebase is a component *prop* — `BaseModal`, `ConfirmDeleteButton` —
-not a native tooltip.) **Per-option `tip`s don't count either**: `ChipSelect`/`CcCycleButton` options
-may each carry one, and they're worth having, but they explain the individual choices, not what the
-control as a whole is for — so the control still needs its own `v-tooltip`.
-
-> **…but not BOTH.** A chip row with per-option tips *and* its own `v-tooltip` shows two tooltips at
-> once, the control's landing on top of the chip's. `duplicateTooltips` flags that (`why: 'per-option'`),
-> and `hasPerOptionTips` is what feeds it — so **how the `:options` binding is written decides whether
-> the rule can see anything at all.** It resolves a bare identifier, an inline literal, and (since
-> 2026-08-17) the root of a call or member expression — `optionsFor(g.heading)`, `byGroup[k]`. Before
-> that last case a function-built options list answered a flat `false`, which broke the rule in **both**
-> directions at once: coverage called the row unexplained and pushed a `v-tooltip` onto it, then the
-> duplicate check stayed silent about the pair that created. That is how `ViewProfileEditor` shipped a
-> double tooltip. If your options come from somewhere none of those forms can follow, the answer is
-> `null` — "cannot tell" — and you get no help from either half; prefer a followable binding.
-
-> **A tooltip on an ANCESTOR counts.** Most of this app puts it on the row, not the control —
-> `<label class="po-row" v-tooltip.left="'X tick angle'"><span>X angle</span><input type="range" /></label>`
-> — and the user does get help on hover. Checking the tag alone calls that a violation and
-> over-reports by ~90% (155 hits against a true 82), which is enough noise to make the signal
-> ignorable. Same failure mode, and same fix, as measuring the rendered string above.
-
-One knock-on: `ParamRenderer` used to bind `v-tooltip="param.tip ?? ''"` (and, for some types, a
-generic fallback like `?? 'Select channels to process'`). With every param now guaranteed a `tip`
-those are dead, and worse than dead — they render an *empty* tooltip, or a plausible generic one,
-where a missing tip should be visibly missing. All ten are gone; the binding is plain `param.tip`.
-
-Presence is the half a machine can decide. Whether a tip is the *right* tip is still a review
-question — exactly as the length check can't tell you a short line is a good one.
-
-### A picker shows the QUANTITY, not the column name
-
-A control that offers data columns must label them with what they *are*. The stored name is an
-implementation detail of the `.h5ad`, and a user picking an axis to gate on has no reason to know it.
-
-Two mappings exist, both display-only:
-
-| Raw column | Shown as | Where |
-|---|---|---|
-| `mean_intensity_0`, … | the channel name (`CD3`) | `gating.colLabel` |
-| `centroid_x` / `_y` / `_z` | `X position` / `Y position` / `Z position` | `utils/gatingAxes.ts` → `centroidLabel` |
-| `centroid_t` | `Time` (`Time (frames)` on a frame axis, `Time (s)` once converted) | `centroidLabel`, `timeAxis.ts` → `frameAxisLabel` |
-
-`centroid_t` is the one that made the rule: it was the option you pick to split a movie into
-timepoints, and it read as neither "time" nor anything else a biologist measures. `centroid_x` had the
-same problem more quietly — `x` is only obviously spatial if you already know the schema.
-
-**Display-only, and that is the point.** The stored column, CSV exports and the REPL keep the raw
-name, so a rename here cannot desynchronise anything downstream — the same split `colLabel` already
-made for intensity columns. Compose with the unit rather than baking one in
-(`axisLabelWithUnit(colLabel(c), unit)` → `X position (µm)`), so a label never carries two bracketed
-clauses.
-
-**A frame axis must keep its unit.** `frameAxisLabel` returns `Time (frames)`, never a bare `Time` —
-that is the claim the seconds axis makes, and this is the axis whose interval was unknown
-(`docs/ARCHITECTURE.md` → *Calibration*).
 
 ---
 
@@ -571,7 +109,7 @@ identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 **Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** Place
 it where it reads best (`.left` / `.top` / `.bottom` / `.right`) — there is no default side. A button
 with a visible caption does **not** need one. CellProfiler is the reference for *density*, one line
-each. The exact scope, what counts as coverage, and the ratchet are in *Tooltip coverage* above —
+each. The exact scope, what counts as coverage, and the ratchet are in [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* —
 **that section is the rule; this is the pointer.** Don't restate it here.
 
 All errors go to `useLogStore().error(msg, { source, detail })`.
@@ -1250,7 +788,7 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   button.
 - **Empty states** — exactly two, and they already exist: `ProjectPanel.vue` (`.pp-empty.cc-empty`,
   no projects) and `ImageTable.vue` (`.cc-empty.cc-empty-lg`, no images). Extend the copy there;
-  don't add a parallel component. These are the ONE carve-out from *UI copy — keep it short*: that
+  don't add a parallel component. These are the ONE carve-out from [`docs/ui/COPY.md`](ui/COPY.md): that
   budget exists because prose on a page you use daily is noise forever, which doesn't apply to a
   state a user sees once, before they know the app reads CZI. Everywhere else the budget holds.
 
@@ -1455,7 +993,7 @@ and keep the locked sha. Meanwhile **dev resolves feijoa through the sibling-che
 grey placeholder. Verify with `ls frontend/node_modules/feijoa/src/sketches/` after the update, not by
 looking at the dev server.
 
-Tip copy follows *UI copy — keep it short*: a one-paragraph description plus 2-4 imperative steps. The
+Tip copy follows [`docs/ui/COPY.md`](ui/COPY.md): a one-paragraph description plus 2-4 imperative steps. The
 sketch carries the explanation; the card is not the place for prose.
 
 Rationale + the sketch-act format: `docs/todo/SKETCH_ENGINE_PLAN.md`.
@@ -2207,7 +1745,7 @@ by the scheduler's own id.
   can't be written as JSON — the route publishes `null` rather than a partial one) sets `paramsUnknown`
   on the row, which withholds the button. **No badge marks that**: it needs a backend older than the
   field to happen at all, and a permanent icon on every adopted row to explain a case nobody meets is
-  the kind of standing UI noise `UI copy — keep it short` exists to prevent.
+  the kind of standing UI noise [`docs/ui/COPY.md`](ui/COPY.md) exists to prevent.
 - **One predicate decides it — `canRerunTask` (`utils/taskRerun.ts`).** Both surfaces that draw the
   button (the per-module `TaskList`, the `/tasks` manager) call it. They had their own copies and had
   already drifted: the manager offered Re-run on a **chain node**, whose `params` are `{}` because chain
@@ -2671,7 +2209,7 @@ page — and the Analysis board — reuses them unchanged:
   where every stacked canvas **re-renders its content at export scale** rather than being upscaled, so a
   dot plot exports crisp and cannot clip. Full API + the two subtleties
   that bit us (clearing ancestor backgrounds in the overlay pass; capturing the axis-margin wrapper, not
-  the inner plot box) are indexed in `INVENTORY.md` → *Plot export*; board figure export is `docs/ANALYSIS.md`.
+  the inner plot box) are indexed in `docs/inventory/FRONTEND.md` → *Plot export*; board figure export is `docs/ANALYSIS.md`.
 - **`plots/overlays.ts`** — the **shared** themed legend / title overlays (`legendOverlay`,
   `titleOverlay`). Canvas plots render a BARE `<svg>` and float the legend/title as absolute overlays
   with the theme ink — Observable Plot's inline `legend: true` wraps the chart in a `<figure>` whose
@@ -2808,6 +2346,40 @@ factored out of the gating page so every module canvas reuses them unchanged:
   every remount (the Gate↔Tracking 2→4→6 bug).
 
 ---
+
+## Stores are HMR-aware — one line per store, and it is not optional
+
+Every Pinia store ends with
+
+```ts
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useThingStore, import.meta.hot))
+```
+
+A setup-store instance is **not** replaced when its module hot-reloads — it keeps the shape it had at
+page load. So adding a field to a store and saving leaves the *component* reloaded into the version that
+reads the new field, while the live store still lacks it, and the page dies on code that is correct in
+the source:
+
+```
+UI error (render function): can't access property "length", $setup.customModules.clashes is undefined
+```
+
+`clashes` is `ref([])` and cannot be undefined from a cold load, which is exactly what makes this
+expensive: nothing is wrong, a reload fixes it, so it reads as a ghost. `acceptHMRUpdate` must be called
+in the store's OWN module (it needs that module's `import.meta.hot`), so it is per-file boilerplate and
+will be forgotten — `stores/hmr.test.ts` fails when a store lacks the line, or names a different store
+in it (registering A's updater in B corrupts A and leaves B stale).
+
+Dev-only, like the proxy note below: nothing in a production build reaches either.
+
+## The dev proxy is quiet when the backend is down
+
+`vite.config.ts` gives both proxies a `configure` hook that swallows `ECONNREFUSED`/`ECONNRESET` as one
+line and answers 503. `pixi run dev` supervises the backend and Settings → System Restart stops and
+starts it, so every session has windows where :8080 is not listening — and `TaskRunner.vue` polls
+`/api/runner/status` on a timer from every module page, so the default handler printed a Node stack per
+poll into the same terminal the log rail writes to. Noise on a normal action teaches you to ignore the
+log, and then a real proxy error goes unread. Anything that is not those two codes still prints in full.
 
 ## Persisting view state — the three scopes (important; read before adding any plot option)
 

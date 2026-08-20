@@ -33,7 +33,7 @@ const router      = useRouter()
 const projectMeta = useProjectMetaStore()
 
 const expanded  = ref<Set<string>>(new Set())
-// shared copy+flash helper, keyed per task row (docs/UI.md → UX-primitive catalog)
+// shared copy+flash helper, keyed per task row (docs/ui/PRIMITIVES.md)
 const { isCopied, copy } = useCopyFlash()
 
 // Scoped to the current project — otherwise switching projects leaves the previous project's

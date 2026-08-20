@@ -1,5 +1,7 @@
 # Task-completion data refresh + napari data-vs-image reload
 
+**Status: BUILT** — confirmed done 2026-08-20 (Dominik). Kept as the record of the design; for how it works now read the permanent `docs/<AREA>.md`.
+
 **Goal.** When a task finishes, dependent views should refresh **without** per-plot "reload" buttons,
 and the napari viewer should reload **data (overlays) only** — never the (expensive) image pyramid —
 unless the user explicitly asks to reset. Kills the "weird reload buttons" on plots.

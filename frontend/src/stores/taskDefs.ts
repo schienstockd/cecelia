@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import type { TaskDef } from '../tasks/types'
 
@@ -42,3 +42,6 @@ export const useTaskDefsStore = defineStore('taskDefs', () => {
 
   return { byFn, ensureLoaded, labelFor, defaultParamsFor, all }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useTaskDefsStore, import.meta.hot))

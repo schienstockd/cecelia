@@ -8,7 +8,7 @@
   boot landed on the fallback and then bounced. A neutral page removes the problem instead of timing
   around it: nothing to resolve, nothing to race, and no page is privileged as "the start".
 
-  Deliberately empty of copy (docs/UI.md → UI copy). The sidebar beside it already says what this
+  Deliberately empty of copy (docs/ui/COPY.md). The sidebar beside it already says what this
   install can do, and whatever a paragraph here said would be read once and skipped forever. The
   wordmark is not copy — it is the mark.
 */

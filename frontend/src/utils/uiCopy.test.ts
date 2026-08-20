@@ -304,7 +304,7 @@ const SFC = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default'
   Record<string, string>
 
 
-describe('UI copy stays short (docs/UI.md → UI copy — keep it short)', () => {
+describe('UI copy stays short (docs/ui/COPY.md)', () => {
   const sfcs = Object.entries(SFC)
 
   it('found the sources it is meant to police', () => {

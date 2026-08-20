@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 
 // Tab metadata for the multipage Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A). Each
@@ -75,3 +75,6 @@ export const useAnalysisTabsStore = defineStore('analysisTabs', () => {
 
   return { entries, ensure, addTab, renameTab, removeTab, setActive, reorderTab, clear, serialize, load }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAnalysisTabsStore, import.meta.hot))

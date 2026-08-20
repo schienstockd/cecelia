@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { useLogStore } from './log'
 import { useProjectMetaStore } from './projectMeta'
@@ -347,3 +347,6 @@ export const useGatingStore = defineStore('gating', () => {
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useGatingStore, import.meta.hot))

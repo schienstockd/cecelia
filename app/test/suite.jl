@@ -11846,7 +11846,7 @@ end
 
 # ── UI copy budget: task-spec `tip` fields ────────────────────────────────────────────────────
 #
-# The enforceable half of `docs/UI.md` → *UI copy — keep it short*, for the surface Julia owns.
+# The enforceable half of `docs/ui/COPY.md`, for the surface Julia owns.
 # A `tip` renders as a tooltip on the task form, so it carries the same bar as any other tooltip:
 # one line, under 90 characters, no second sentence explaining itself. This lives here rather than
 # in the frontend suite because task specs are backend files and the frontend never holds a copy.
@@ -12974,7 +12974,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
                    joinpath(repo, "python", "cecelia", p.script)
             @test isfile(path)
             @test !isnothing(Cecelia.maintenance_patch(p.id))
-            # Copy budget (docs/UI.md → UI copy). This description sits in Settings and is read every
+            # Copy budget (docs/ui/COPY.md). This description sits in Settings and is read every
             # time, so it gets one line + the one caveat that matters — the store-debris entry had
             # grown to 674 characters explaining its own detection strategy, which belongs in the
             # runner. 160 leaves room for a caveat and none for an essay.
@@ -13521,6 +13521,13 @@ end
 #
 # Uses an EPHEMERAL port held by a plain socket, never the real 7657 — a test must not touch a runner
 # the developer has running.
+#
+# It caught a THIRD way to get this wrong, on macOS CI only: `HTTP.listen!` builds a `Server` and
+# spawns a task that does the bind, and the failure path notifies its ready `Event` BEFORE it rethrows —
+# so `listen!` returned normally, the state file was claimed, and the EADDRINUSE surfaced at `wait` as
+# a `TaskFailedException`. Both original symptoms, back. Ownership is therefore proven by asking
+# `/ping` for the responder's PID (`_runner_owns_port`), which no scheduler ordering can fake — the
+# raw socket this test holds never speaks HTTP, so nothing answers and the runner stands down.
 @testset "runner_serve stands down when the port is taken" begin
     using Sockets: listen as sock_listen, getsockname, localhost
 

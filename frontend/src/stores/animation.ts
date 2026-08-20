@@ -3,7 +3,7 @@
 // it came from + a duration. A timeline is per-image (keyframes interpolate views of ONE image); the
 // page filters to the open image, in list order. Debounced autosave → settings/animations.json (mirrors
 // the boards autosave). See AnimationModule.vue and docs/todo/ANIMATION_PLAN.md (F2).
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
@@ -99,3 +99,6 @@ export const useAnimationStore = defineStore('animation', () => {
 
   return { snapshots, selectedId, fps, sizeX, sizeY, suffix, titleCard, load, add, remove, move, reorder }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAnimationStore, import.meta.hot))

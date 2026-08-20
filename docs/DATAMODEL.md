@@ -368,3 +368,51 @@ gating engine, and gate↔track composition.
 ## Future
 
 **Tracking**: `obs["track_id"]` column linking cells across timepoints; spatial coordinates per timepoint in `obsm["spatial"]` with `t` in `obsm["temporal"]`. A tracking task will write `track_id` for the cells of a (gated) population — see gate↔track composition in [`POPULATION.md`](POPULATION.md).
+
+---
+
+## Reading and writing `.h5ad` — the full rule
+
+> Moved here from `CLAUDE.md` (2026-08-20), which keeps the short form. This is the rationale half:
+> the sanctioned exceptions, why raw HDF5 is banned, and why every write is atomic.
+
+
+**Never touch `.h5ad` (or its HDF5 internals) directly. There are dedicated readers and writers
+in both languages — use them. This applies to every cell-level read and write.** See
+[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading `.h5ad`* for the full idiom.
+
+The interface is the same chain in both languages — build a view, refine it, finish with a
+terminal verb. `as_df` reads a label-keyed DataFrame; `add_obs(df).save!`/`.save()` writes one
+back (aligned by `label`, correct AnnData encoding). You read a labeled DataFrame, you write a
+labeled DataFrame — one idiom, no guessing.
+
+| | Julia (`app/src/label_props.jl`) | Python (`python/cecelia/utils/label_props_utils.py`) |
+|---|---|---|
+| **Read**  | `label_props(img\|path) \|> select_cols/view_centroid_cols/filter_rows \|> as_df` | `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()` |
+| **Write** (append obs cols to an existing file) | `label_props(path) \|> v -> add_obs(v, df) \|> save!` | `LabelPropsView(path).add_obs(df).save()` |
+
+- **Do not** call `h5open`/`HDF5.*` (Julia) or `h5py`/`anndata` (Python) on cell data, and **do
+  not** read the whole table and filter in memory — push the column/row selection into the view.
+- **Deviate only when it is measurably more efficient/faster** to hit HDF5 directly (e.g. a
+  cheap one-attribute metadata peek). When you do, **add an inline comment on that exact line**
+  explaining why the view was bypassed. No silent raw access.
+- The only place raw `HDF5.jl` lives is the reader/writer itself (`label_props.jl`).
+- **One sanctioned exception — file *creation*.** Building a *new* `.h5ad` from scratch (the `X`
+  matrix + `var` + `obsm`, e.g. segmentation measurement output in `python/cecelia/utils/measure_utils.py`)
+  is the producing task's job and uses `anndata` directly — the view wraps an *existing* file
+  (read + obs-append), it does not create one. Structural changes to `X`/`var` likewise go through
+  the producing Python task, not the view.
+- **Every `.h5ad` write goes through `write_h5ad_atomic`** (`python/cecelia/utils/atomic_io.py`) —
+  creating one *or* rewriting one. Never `adata.write_h5ad(final_path)`: that truncates the destination
+  before the new bytes land, and `task:cancel` kills the Python process **by design**, so a cancelled
+  clustering/tracking run could leave a truncated cell table. A truncated HDF5 is not partially
+  readable and the previous content is gone. (A half-written *new* file is bad too — discovery is a
+  directory listing, so it would be presented as a real segmentation.) The `no_bare_write_h5ad`
+  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare call. Same family for other
+  durable output: `write_json_atomic`, `write_atomic`, `atomic_path`. This is the Python counterpart of
+  Julia's `write_atomic` (#420); for a multiscales **store** the equivalent is `staged_store` (see the
+  zarr section below) — a separate helper because replacing a directory has different atomic-rename
+  mechanics than replacing a file.
+
+---
+

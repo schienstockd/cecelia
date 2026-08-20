@@ -156,7 +156,7 @@ can fill with their own models based on their own data."* So: **a trained model 
 artefact the user owns**, not something a segmentation run produces and throws away.
 
 **Discovery — do not design this from scratch.** cecelia already ships exactly this pattern for
-custom cellpose checkpoints (`INVENTORY.md` → *Custom cellpose checkpoints (drop-in)*):
+custom cellpose checkpoints (`docs/inventory/JULIA_APP.md` → *Custom cellpose checkpoints (drop-in)*):
 
 | piece | cellpose (exists) | coastal (mirror it) |
 |---|---|---|

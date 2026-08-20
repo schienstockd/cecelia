@@ -56,7 +56,7 @@ describe('mcpRows', () => {
 
   it('keeps every row to ONE line: a short detail, with the why in the tooltip', () => {
     // The row is a status line, not an explanation — a long detail wrapped it onto a second line and
-    // made the panel look crowded (docs/UI.md → UI copy). Pin it so it can't creep back.
+    // made the panel look crowded (docs/ui/COPY.md). Pin it so it can't creep back.
     for (const r of mcpRows([{ name: 'other', scope: 'user', transport: 'stdio' }], 'stale')) {
       expect(r.detail.length).toBeLessThanOrEqual(34)
       if (r.tone === 'warn') expect(r.hint.length).toBeGreaterThan(r.detail.length)

@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { computed, ref } from 'vue'
 import { useSettingsStore } from './settings'
 import type { ViewProfile } from '../utils/viewProfiles'
@@ -103,3 +103,6 @@ export const useViewProfilesStore = defineStore('viewProfiles', () => {
     ensureLoaded, refresh, select, save, remove,
   }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewProfilesStore, import.meta.hot))

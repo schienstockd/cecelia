@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import type { CanvasItem } from '../composables/useCanvasPanels'
 import { debouncedSave } from '../utils/debouncedSave'
@@ -119,3 +119,6 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
 
   return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, copyEntry, clear, load }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useCanvasPanelsStore, import.meta.hot))

@@ -20,7 +20,7 @@ const loading = ref(true)
 const error   = ref<string | null>(null)
 const data    = ref<PkgResp | null>(null)
 const q       = ref('')
-// shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+// shared copy+flash helper (docs/ui/PRIMITIVES.md)
 const { isCopied: copied, copy } = useCopyFlash()
 
 async function load() {

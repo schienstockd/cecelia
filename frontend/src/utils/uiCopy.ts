@@ -1,4 +1,4 @@
-// UI copy budget — the enforceable half of `docs/UI.md` → *UI copy — keep it short*.
+// UI copy budget — the enforceable half of `docs/ui/COPY.md`.
 //
 // The rule ("default to no explanatory text; one short line where orientation isn't self-evident")
 // was review-only, and review does not hold: 56 of 175 task-parameter tips and 41 of 568 tooltip

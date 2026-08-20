@@ -234,7 +234,7 @@ defaulting — but as an *option* it is clearly worth exposing.
 Surfaced per image version and label set: **zarr format**, **NGFF version**, **chunk shape**,
 **shard shape** (or "none"), the **chunk-key style**, and the codec. Served by the existing
 `store_compression` → `GET /api/images/stores` path the modal already rendered; no new route. Copy is
-values, not prose (`docs/UI.md` → *UI copy*).
+values, not prose (`docs/ui/COPY.md`).
 
 **Presentation — three shapes were tried, and the failure of the first two is the reason for the
 third.** Six technical facts per stored version is more than a table row holds: as extra columns it

@@ -164,7 +164,7 @@ Because the runner outlives the API server, a fresh `pixi run dev` frequently fi
 precompilation (~45 s) before it binds, and during that window it answers neither a ping nor a state
 file. So a second launch looks justified, and one of the two then loses the bind.
 
-Two things used to go wrong at that point, and both are fixed:
+Three things used to go wrong at that point, and all three are fixed:
 
 - The loser died with a `TaskFailedException` stack trace out of `HTTP.listen`, which reads as a broken
   app. It now checks for an incumbent first and, failing that, catches the bind and **exits 0 with one
@@ -172,9 +172,22 @@ Two things used to go wrong at that point, and both are fixed:
 - Worse, the loser wrote `runner.json` with its OWN pid *before* binding — clobbering the incumbent's
   record — and its `atexit` hook then **deleted** the file. A collision therefore left the *surviving*
   runner with no state file, which is exactly the "a stray runner is folklore" case the file exists to
-  prevent. The order is now **bind first, claim second** (`HTTP.listen!` + `wait`), so a runner only
-  ever writes the record for a port it actually owns. Pinned by *"runner_serve stands down when the
-  port is taken"* in `app/test/suite.jl`.
+  prevent. The order is now **own first, claim second**, so a runner only ever writes the record for a
+  port it actually owns.
+- And "bind first" was not enough, because **a returned `Server` is not proof of a bound port.**
+  `HTTP.listen!(handler, host, port)` builds a `Server` and spawns a task that does the bind; that
+  task's failure path `notify`s the ready `Event` *before* it rethrows, so the caller can resume while
+  the doomed task is still unwinding and `listen!`'s own `istaskdone && istaskfailed` guard sees a task
+  that has not finished failing. The `EADDRINUSE` then arrives at `wait(server)` — after the state file
+  was claimed. Both original symptoms, back, and scheduler-dependent: green on Linux and Windows CI,
+  red on macOS. Ownership is therefore proven by **asking**: `/ping` reports the responder's PID, so
+  "something answers" and "*we* answer" are distinguishable (`_runner_owns_port`) — which is the
+  distinction that matters, since the failure mode is another runner holding the port. A lost race pays
+  that deadline (~3 s) before exiting, which costs nothing: that process is leaving.
+
+All three are pinned by *"runner_serve stands down when the port is taken"* in `app/test/suite.jl`,
+which holds an ephemeral port with a plain socket that never speaks HTTP — so nothing answers, and the
+stand-down path is exercised on every platform rather than only where the scheduler loses.
 
 `runner_launch!` also reports **whose** runner answered: it compares the pid on the wire with
 `Libc.getpid` of the child it spawned, and says "adopted" rather than "started" when they differ. It

@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
@@ -160,3 +160,6 @@ export const useAppControlStore = defineStore('appControl', () => {
            checkUpdate, applyUpdate, dismissUpdate,
            refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppControlStore, import.meta.hot))

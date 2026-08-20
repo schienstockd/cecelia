@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// THE determinate progress bar for the app (docs/UI.md → UX-primitive catalog). A track with a fill
+// THE determinate progress bar for the app (docs/ui/PRIMITIVES.md). A track with a fill
 // whose width is a 0–1 fraction: a task's `[PROGRESS] n/total`, a data patch, an export/import job.
 //
 // Use it whenever you know HOW FAR ALONG something is. When you don't — "working, no number" — this is

@@ -38,139 +38,103 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 - **Promotion**: once the feature ships, move the durable "how it works" content into a permanent
   `docs/<AREA>.md` and either delete the plan or leave it as history (note which at the top).
 
-## Current parked plans
+## Index of every plan in here
 
-- `TRACK_SCHEME_PLAN.md` — **planning** (`feat/track-scheme`). A timeline-first correction workspace:
-  lanes over frames, so "can these two merge" is answered by the picture rather than by a greyed
-  button. Successor to the correction *surface* shipped in #590 (the engine stands); records why the
-  per-row and XY-only designs failed, and the three alternatives that were not chosen.
-- `VIEW_PROFILES_PLAN.md` — **BUILT**; kept as the rationale record. A named, ordered subset of the
-  existing 20 sidebar items, dropped in as `<config_dir>/profiles/*.json` and built in a GUI editor,
-  selected **per user** (`cc.viewProfile`) — definitions and selection are separate axes, which the
-  originating brief conflated. Live-reactive (`allGroups` was already a computed), and hidden pages stay
-  reachable by URL: it declutters, it is not access control. The one real downstream assumption of the
-  static menu was `/` redirecting to `/manage-images`, which a profile can hide — `/` is now its own
-  welcome page instead, because a record `redirect` resolves before any guard and so bounced on a cold
-  boot. Also extracted the nav catalogue to `frontend/src/lib/navGroups.ts` (three surfaces read it) and
-  closed a `hasPerOptionTips` blind spot that had pushed a duplicate tooltip onto a chip row.
-  Supersedes `docs/archive/view-profiles-prompt.md`.
-- `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.smooth` (σ=1 gaussian + centred 3-frame
-  temporal median, one shared kernel per channel); the `smooth → AF → drift` composite is still open.
-  Needed because AF's triangle background
-  lands **inside the signal** on resonance-scanner data: the reference channel kept **8.6%** of its
-  signal, ~80% after. Effectively the port of R's `slidingWindowCorrect` (whose window was off-by-one and
-  off-centre). Deliberately not called "denoise" — that word belongs to the learned restorers.
-  Measured on `zolIMa/fXgbTl` (16-bit, the operative case) + `eQRnwU` (8-bit). Negative results worth not
-  re-deriving: coastal's `denoise_preserving_ratio` is the *worst* arm here, the Cellpose-3 net was
-  **repaired and still dropped** (ties on ratio preservation once normalised through one shared window —
-  that objection is retracted — but inflates masks 199 vs 140 px, 2 merges vs 0, at 31x the cost),
-  **16-bit does not fix it** (max 522 of 65535 — photon-limited, not
-  bit-depth-limited), a **spatial** median is catastrophic (it rejects sparse photon counts as outliers),
-  and a "cells are merging" claim was **retracted** — the overlap test found 1 true merge and 0 lost
-  objects, the count drop was 74 noise specks. Status: task built and run on a full movie; composite,
-  and the drift-on-smoothed / smooth-the-trajectory follow-ups, still open.
-- `SEG_QUALITY_PLAN.md` — **make segmentation better, measured objectively** (supersedes "drop the
-  cellpose-3 pin so we can move to Cellpose 4" — that assumed v4 is the fix). Decision 1 is the
-  yardstick: **QC-gate pass-yield**, so no hand annotation is needed. Ran to a conclusion — v3 is at
-  its ceiling (`EaMaVq` 13.4% T / 7.9% B pass, i.e. ~87–92% of labels rejected as over-segmentation),
-  and **Cellpose-SAM is categorically worse on intravital** (0/65 objects pass; no out-of-the-box
-  config found), so **v4 migration is DROPPED** and the `cellpose==3` pin stays. Phase 3 set the north
-  star: coastal as cecelia's own denoise + segmentation engine. Read alongside
-  `SEGMENTATION_OPEN_PROBLEM.md`, which narrows Phase 3's flow premise.
-- `SEGMENTATION_OPEN_PROBLEM.md` — **negative result, not a plan.** Two sessions failed to segment
-  CD169⁺ macrophages on `zolIMa/fXgbTl`; written so the next attempt doesn't re-derive the dead ends.
-  The load-bearing finding **challenges `SEG_QUALITY_PLAN.md` Phase 3's premise**: these cells are
-  effectively sessile (0.27 µm/min), so *every* velocity field — coastal's Farneback **and**
-  OpticalFlow3D's Lucas–Kanade — sits at 0.53–0.61 AUC for cell-vs-background, i.e. chance. Only
-  **spatial-structure** fields separate, and a plain 3D structure tensor gets 0.941 with no flow at
-  all. coastal's flow segmenter over-segmented **7×** versus a six-line intensity baseline (167 vs 22
-  objects). Also ruled out: AF ordering (both directions fail, two different causes), AF competitor
-  reconfiguration (5.0 → 5.4%), exponent, scale normalisation. Open: which channels are genuinely
-  mutually exclusive, whether dendrites are a deliverable, and **scoring any of this on the QC-gate
-  yardstick** (`SEG_QUALITY_PLAN.md` Decision 1) — which this session did not do.
-- `CLUSTERING_PLAN.md` — Leiden clustering (cells + tracks), GPU/RAPIDS parked. Cited from
-  `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
-- `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export
-  (branch `feat/multipage-analysis-canvas`).
-- `SERVICE_PANEL_PLAN.md` — Settings control panel: live status + start/stop/restart for backend /
-  napari / notebooks, global Quit, and a separate-window "pixi console" (reuses the existing log
-  console). Branch `feat/settings-service-panel`; phased (panel → console → backend restart).
-- `SPATIAL_ANISOTROPY_PLAN.md` — branching-port audit (A1–A8) + the structure-anisotropy readouts
-  behind Figure 4 panels B (SHG quiver + tracks) and D (per-image anisotropy). **Notebook, not app
-  plots** — the app computes and stores, `docs/NOTEBOOKS.md` plots. The audit is the substance: the
-  anisotropy `uns` contract was *not* ILEE-compatible (the structure tensor's **minor** eigenvector
-  is the fibre direction, so the docs invited a silent 90° error), the σ/box defaults gave a
-  near-random field, `flattenBranching` dropped the time axis, and the branch labels zarr declared
-  the wrong axes so Y inherited the Z step. Worktree `spatial-anisotropy`, branch
-  `feat/spatial-anisotropy`. Supersedes `docs/archive/spatial-anisotropy-quiver-prompt.md`.
-- `SPATIAL_REGIONS_PLAN.md` — spatial analysis port + region clustering + CytoMAP parity + live
-  behaviour-region extension. New `region` poptype (reuses cluster machinery), squidpy re-added,
-  per-cell neighbourhoods primary, cross-poptype query in Julia. Status: planning, no branch.
-- `PY_PACKAGING_PLAN.md` — make `app/py` an installable package (rename `py` → `cecelia`,
-  `pyproject.toml` + extras, editable pixi install) so external consumers (`coastal`) can
-  `import cecelia.utils.*` without a `sys.path` hack. Touches `app/src/py_runner.jl` (1 line),
-  19 Python imports, `pixi.toml`.
-- `WHATS_NEW_PLAN.md` — surface release notes + tips inside the app; reuses the existing
-  `/api/update/check` plumbing (only the release-notes `body` field is new). No new notification
-  surface, no in-app feedback capture (GitHub issue link instead). Supersedes
-  `docs/archive/update-modal-prompt.md`.
-- `STATS_ANNOTATIONS_PLAN.md` — server-side hypothesis tests (Mann-Whitney / Kruskal-Wallis
-  defaults, t/ANOVA opt-in) rendered as marks inside existing Observable Plot summary charts;
-  extends `PlotDataResponse` with `comparisons?` — no new route. Sets the `StatsResult` contract
-  reused by `WHATS_NEW_PLAN.md` and `SKETCH_ENGINE_PLAN.md`. Supersedes
-  `docs/archive/stats-on-plots-prompt.md`.
-- `IMAGE_DELETE_PLAN.md` — **BUILT** (2026-08-04; kept as the rationale record). Collapsed the five image-deletion entry points to **two**: a structured
-  delete modal on the Import page (whole images / versions + new active / label sets / all analysis)
-  and Settings for automatic whole-project reclaim. Unlists the `importImages.remove` task rather than
-  deleting it (the chain suite's real-task workhorse) and scraps the ViewerPanel label delete. New core
-  `reset_image_analysis!` (keep-list, not delete-list). Grew out of a since-deleted `docs/TODO.md` item.
-- `SKETCH_ENGINE_PLAN.md` — the **feijoa** play repo
-  (`github.com/schienstockd/feijoa`, `~/cc-workspace/feijoa`) where sketches are authored for
-  cecelia's tip cards. Not yet wired into cecelia — the plan documents the git-dep + conditional
-  Vite alias to add at the first commit that swaps a WhatNewCard's grey placeholder for
-  `<SketchCanvas>`. Rough.js + animejs; sketches are JSON; R Cecelia logo is the smoke-test port.
-  Supersedes `docs/archive/sketch-engine-prompt.md`.
-- `MCP_BOARD_AUTHORING_PLAN.md` — **planning** (`work/mcp-boards`). Let Claude ADD an Analysis board
-  (one per call, create-only, never modify/delete) — the third artefact after notebooks and chains,
-  same design-but-don't-run split. The naive version (allowlist the existing autosave route) is wrong
-  three ways: it is a *verbatim whole-document overwrite*, the on-disk `LayoutEntry` is unreadable in a
-  preview and unvalidatable, and it races the browser's 800 ms autosave. So: a **semantic spec expanded
-  and validated server-side**, a separate create-only route, and a versioned+merged boards document —
-  which also fixes the existing bug where **two browser tabs clobber each other's boards**. Phase 0
-  (image attributes + board read-back) is a prerequisite with a hard stop: probing `4kS67f` showed the
-  metadata is good enough to plot well, but five cluster runs (three junk-named) and no exposed
-  attributes mean it would currently miss the comparison that matters.
-- `MOVIE_MANAGEMENT_PLAN.md` — **built** (Phases 0–6). Movies become a managed
-  collection: `settings/movies.json` keyed by filename (the `notebooks.json` shape), display-name
-  rename that never touches the file, free-form tags + a recorder-written `producedBy`, star, delete,
-  filters. The audit is the substance: there was **no per-movie record at all**, the generation config
-  was **browser-local** (`cc.napariSetPrefs`), movies **overwrite silently**, and the napari protocol
-  versions are the wrong shape to reuse (they reject and relaunch; saved config needs migration). Both
-  generation configs already round-trip — `seedConfigFromViewState` ↔ `apply-movie-config` — so no new
-  capture mechanism was needed. Also flips `napariAutoSaveLayerProps` to true, without which a saved
-  look is not reproducible. Phase 5 answered the ONE-TABLE question with counts and then did it: all
-  eight surfaces are on `SelectionTable` bar `FileBrowser` (a stated exception — its row click is
-  per-row semantics and its `..` row is synthetic). Phase 6 reopens a movie's config on the page that
-  authored it, prefilled, with an Undo and a line naming whatever no longer resolves — and fixed three
-  gaps the banking phase left: no image reference, an animation banking the render payload rather than
-  the editor's model, and a per-image timeline that must be replaced per image rather than wholesale.
-- `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
-  manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
-  instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why
-  `flowProbability` is currently **dead on the board** and `flowTraining` carries a second, bespoke
-  model picker. The chrome was already shared (`CanvasSidePanel`); what was missing is the **role
-  contract** (`{selected, scope, docked}`), because until the board no host ever held two managers
-  behind one variable. Also cleans the half-renamed `pm-` CSS vocabulary the generalisation left
-  behind (`CanvasSidePanel` → `csp-`, `SeriesPicker` → `pick-`).
-- `TASK_LIST_UNIFICATION_PLAN.md` — **planning** (`refactor/task-list-canonical`). The two task
-  surfaces — the module-page sidebar (`tasks/TaskList.vue`, a card stack) and the Task Manager page
-  (`modules/TasksModule.vue`, a flat row list) — are **two hand-rolled lists**, neither using
-  `SelectionTable`, the canonical list per `docs/UI.md`. The visible symptom is that `/tasks`
-  highlights the selected row in **purple** (`--cc-accent`, form-control chrome) using a hand-rolled
-  copy of `SelectionTable`'s own left-rule idiom, which is **amber** (`--cc-selected`). Dated as
-  drift, not a decision: the rule is from the initial commit, `--cc-selected` arrived 2026-07-14 and
-  `SelectionTable` 2026-08-03. Both surfaces move onto `SelectionTable`; the sidebar becomes a real
-  table, header and all (Dominik, 2026-08-15). Phase 0 is separable and lands first: **four**
-  hand-rolled determinate progress bars (`TaskList`, `TasksModule`, `SettingsModule`, `ProjectPanel`)
-  that have drifted to two heights, two radii, two transitions and three different fraction→width
-  sums, extracted to `CcProgressBar`.
+**Complete as of 2026-08-20 — 57 files.** `docs/todo/` is **excluded from
+default search** (see `CLAUDE.md` → *How to read the docs*): 1.2 MB of design docs contributed ~40–50%
+of doc grep hits, and 349 citations from code already reach these files **by name**. So this index is
+the search surface. Grep *this file*, then open the one plan you need.
+
+**Statuses are copied from each plan's own header**, because this list previously drifted out of sync
+with them (five plans were listed "planning" here while their headers said BUILT). If a row and a plan
+disagree, the plan's header wins — and fix the row.
+
+### Open — design not fully built. Check here before designing anything nearby.
+
+| Plan | Status (from its own header) | What it covers |
+|---|---|---|
+| [`CORRECTION_PLAN.md`](CORRECTION_PLAN.md) | P1+P4a built (#590); P2, P3 open | Fix a wrong mask / wrong track in napari and have the correction become the data everything downstream uses |
+| [`VALUE_NAME_INPUT_PLAN.md`](VALUE_NAME_INPUT_PLAN.md) | P1–2 built; **P3 open** | One canonical "what does this task write to" input; P3 tracked in `docs/TODO.md` → *Value-name input* |
+| [`QC_PLAN.md`](QC_PLAN.md) | Phase 1 landed; **2–3 open** | Objective per-task QC: convention + producers + badges. Durable parts in `docs/ARCHITECTURE.md` |
+| [`ZARR_V3_PLAN.md`](ZARR_V3_PLAN.md) | P1–3 built, P4 measured | Read/write/report zarr v3 (NGFF 0.5) + sharding. **Default stays `nested` (NGFF 0.4 / v2)** |
+| [`TASK_RUNNER_PLAN.md`](TASK_RUNNER_PLAN.md) | P1–2 built + verified, dev-only | Move task execution out of the API process so a backend restart doesn't lose work in flight |
+| [`PLUGINS_PLAN.md`](PLUGINS_PLAN.md) | P1–P4 built on `feat/plugins`; not browser-verified | Drop-in plugin layout, scans, precedence, PYTHONPATH, Settings surface, curated registry |
+| [`CENTROID_AXES_PLAN.md`](CENTROID_AXES_PLAN.md) | partly shipped (P0, P4 done) | Explicit centroid axis names from the writer; the one-off converter was retired |
+| [`SERVICE_PANEL_PLAN.md`](SERVICE_PANEL_PLAN.md) | in-progress, P1–2 verified live; **P3 open** | Settings control panel: live per-service status + start/stop/restart, global Quit, pixi console |
+| [`PROJECT_IO_PLAN.md`](PROJECT_IO_PLAN.md) | in progress (`feat/project-io`) | Project export/import (`.ccbundle`); per-store pack/unpack foundation first, then task + routes + UI |
+| [`LEGACY_MIGRATION_PLAN.md`](LEGACY_MIGRATION_PLAN.md) | in progress | Bring an old R-version project into the Julia stack **without recomputing** — images, segmentation, tracking only |
+| [`SPATIAL_REGIONS_PLAN.md`](SPATIAL_REGIONS_PLAN.md) | in-progress (`feat/spatial-regions`) | Spatial-analysis port + region clustering; new `region` poptype reusing the cluster machinery |
+| [`OBSERVER_INTEGRATION_PLAN.md`](OBSERVER_INTEGRATION_PLAN.md) | **not built** (Phase 1 done elsewhere) | Bring the MCP observer inside Cecelia so the assistant runs from the app |
+| [`TRACK_SCHEME_PLAN.md`](TRACK_SCHEME_PLAN.md) | P1–P2 built + P2b (`feat/track-scheme`); **P3–P5 open** | Timeline-first track correction: lanes over frames, so "can these two merge" is answered by the picture rather than by a greyed button. Records why the per-row and XY-only surfaces failed |
+| [`SEGMENTATION_OPEN_PROBLEM.md`](SEGMENTATION_OPEN_PROBLEM.md) | active — **negative result, not a plan** | Why CD169⁺ macrophage segmentation keeps failing; written so the next attempt doesn't re-derive the dead ends |
+| [`ANALYSIS_CANVAS_PLAN.md`](ANALYSIS_CANVAS_PLAN.md) | planning (`feat/multipage-analysis-canvas`) | Multipage tabbed analysis board + gating-strategy plot + PDF export |
+| [`CLUSTERING_PLAN.md`](CLUSTERING_PLAN.md) | UNBLOCKED (2026-06-30) — living plan | Leiden clustering for cells + tracks; GPU/RAPIDS parked. Cited from `pixi.toml`, `cluster.jl`, `clustering_utils.py` |
+| [`CLUSTER_POOLING_PLAN.md`](CLUSTER_POOLING_PLAN.md) | design lock / status snapshot | How cluster runs pool across images; rides with the population-summary branch |
+| [`POPULATION_SUMMARY_PLAN.md`](POPULATION_SUMMARY_PLAN.md) | design lock / status snapshot | One generalised population-summary surface |
+| [`COASTAL_SEGMENTATION_PLAN.md`](COASTAL_SEGMENTATION_PLAN.md) | planning (2026-08-06) | coastal as cecelia's own denoise + segmentation engine. Read with `SEGMENTATION_OPEN_PROBLEM.md` |
+| [`OPTICAL_FLOW_MODULE_PLAN.md`](OPTICAL_FLOW_MODULE_PLAN.md) | design (2026-08-06) | Training + inference surface for flow models; companion to `COASTAL_SEGMENTATION_PLAN.md` |
+| [`SEG_QUALITY_PLAN.md`](SEG_QUALITY_PLAN.md) | planning — ran to a conclusion | Better segmentation measured by QC-gate pass-yield. **Cellpose-4 migration DROPPED; the v3 pin stays** |
+| [`SEGMENTATION_QC_PLOT_PLAN.md`](SEGMENTATION_QC_PLOT_PLAN.md) | planned (2026-07-04) | A segmentation-integrity QC plot, per image and per timepoint |
+| [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) | planned (2026-07-22) | In-app 3D crop UI; supersedes the napari-driven crop, which has a low ceiling |
+| [`STATS_ANNOTATIONS_PLAN.md`](STATS_ANNOTATIONS_PLAN.md) | planning · no branch | Server-side hypothesis tests rendered as marks inside existing Observable Plot charts; no new route |
+| [`WHATS_NEW_PLAN.md`](WHATS_NEW_PLAN.md) | planning · no branch | In-app What's New modal reusing the `/api/update/check` plumbing |
+| [`OBSERVER_DATA_ACCESS_PLAN.md`](OBSERVER_DATA_ACCESS_PLAN.md) | parked (scoped, not started) | Let the observer read actual cell data, not just QC/logs/meta |
+| [`QC_OBSERVER_PLAN.md`](QC_OBSERVER_PLAN.md) | parked | Observer-side QC surface; supersedes three exploratory prompts in `docs/ai-assist/` |
+
+### Built — the plan is a record of *why*, not a spec of *what is*
+
+For how these actually work, read the permanent `docs/<AREA>.md`. A built plan describes the design as
+*intended*; where it shipped differently, the area doc is right.
+
+| Plan | Status (from its own header) | What it covers |
+|---|---|---|
+| [`BRANCHING_PLAN.md`](BRANCHING_PLAN.md) | SHIPPED | `segment.branching` — skeletonise a segmentation into a branch/path network and measure each path |
+| [`TASK_PREVIEW_PLAN.md`](TASK_PREVIEW_PLAN.md) | BUILT — #437 (2026-08-01) | Run a task's real compute over the visible region so params can be judged before a full run |
+| [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md) | BUILT (P1–P4); promoted to `docs/UI.md` → *Guides* | In-app click-through guides behind the compass button |
+| [`LABARCHIVES_SYNC_PLAN.md`](LABARCHIVES_SYNC_PLAN.md) | BUILT — all three phases (2026-08-10) | Pull LabArchives ELN context (cohort, protocol, the question) into a cecelia project |
+| [`MCP_BOARD_AUTHORING_PLAN.md`](MCP_BOARD_AUTHORING_PLAN.md) | BUILT (2026-08-08); Phase 4 cut | Let Claude ADD an Analysis board — create-only, semantic spec validated server-side |
+| [`CANVAS_MANAGER_RAIL_PLAN.md`](CANVAS_MANAGER_RAIL_PLAN.md) | BUILT (2026-08-08); Decision 5 superseded for `GatingPlots` | A plot declares which manager it needs; the host resolves it instead of hardcoding the branch. The Track canvas is the second polymorphic host |
+| [`MOVIE_MANAGEMENT_PLAN.md`](MOVIE_MANAGEMENT_PLAN.md) | BUILT — Phases 0–6 | Movies as a managed collection: `settings/movies.json`, rename, tags, star, delete, filters |
+| [`MOVIE_COMPARE_PLAN.md`](MOVIE_COMPARE_PLAN.md) | BUILT P1–P6, then generalised (2026-08-08) | Compare image versions and segmentations side by side |
+| [`TASK_LIST_UNIFICATION_PLAN.md`](TASK_LIST_UNIFICATION_PLAN.md) | built, phases 0–4 (#576 + follow-ups) | Both task surfaces onto `SelectionTable`; Phase 0 extracted `CcProgressBar` |
+| [`IMAGE_DELETE_PLAN.md`](IMAGE_DELETE_PLAN.md) | BUILT (2026-08-04) — kept as the rationale record | Five image-deletion entry points collapsed to two; new `reset_image_analysis!` |
+| [`VIEW_PROFILES_PLAN.md`](VIEW_PROFILES_PLAN.md) | BUILT (P1+P2+P2b + welcome page) | A named, ordered subset of sidebar pages, per user. Declutter, not access control |
+| [`CUSTOM_MODULES_PLAN.md`](CUSTOM_MODULES_PLAN.md) | P1–P3 BUILT | User adds a task by dropping files into their config dir — no package edit, no rebuild |
+| [`SMOOTHING_PLAN.md`](SMOOTHING_PLAN.md) | built as `cleanupImages.smooth` | Gaussian + centred 3-frame temporal median. The `smooth → AF → drift` composite is still open |
+| [`PY_PACKAGING_PLAN.md`](PY_PACKAGING_PLAN.md) | DONE, verified in-env | `python/cecelia` as an installable package so coastal can `pip install` it |
+| [`ZARR_STREAMING_PLAN.md`](ZARR_STREAMING_PLAN.md) | COMPLETE — #315, #317, #319 | Bounded-memory store writers; Phase 2 measured out, 3.2/3.3 parked |
+| [`SPATIAL_GATE_UNITS_PLAN.md`](SPATIAL_GATE_UNITS_PLAN.md) | built, four suites green | Gate on calibrated spatial units; Phase 5 written then deliberately dropped (decision 8) |
+| [`SPATIAL_ANISOTROPY_PLAN.md`](SPATIAL_ANISOTROPY_PLAN.md) | done, uncommitted (worktree `spatial-anisotropy`) | Branching-port audit + structure-anisotropy readouts. **Notebook, not app plots** |
+| [`UMAP_COLOUR_FACET_PLAN.md`](UMAP_COLOUR_FACET_PLAN.md) | all phases built (#127 + follow-ups) | Colour the cluster UMAP by cluster / population / attribute |
+| [`STORAGE_RECLAIM_PLAN.md`](STORAGE_RECLAIM_PLAN.md) | built (`feat/storage-reclaim`) | Surface reclaimable space instead of telling users to delete originals by hand |
+| [`RESOURCE_POOLS_PLAN.md`](RESOURCE_POOLS_PLAN.md) | Slice 1+2 done | Pools per real bottleneck + live per-pool sliders. Durable parts in `docs/SCHEDULER.md` |
+| [`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md) | wired | The `feijoa` sketch repo behind tip cards; git-dep + conditional Vite alias |
+| [`MOVIE_SEGMENTATION_AUDIT.md`](MOVIE_SEGMENTATION_AUDIT.md) | (a)+(b) BUILT (2026-08-08) | Audit record of what was wrong with movie segmentation overlays |
+| [`TASK_DATA_REFRESH_PLAN.md`](TASK_DATA_REFRESH_PLAN.md) | BUILT (confirmed 2026-08-20) | Task-completion refresh without per-plot reload buttons; napari reloads data only. Plot refresh and napari reload stay separate toggles |
+| [`plotting-canvas-and-track-df.md`](plotting-canvas-and-track-df.md) | BUILT (confirmed 2026-08-20) | Plotting canvas + track-property gating (gate on track measures, one point per track) |
+| [`ONBOARDING_PLAN.md`](ONBOARDING_PLAN.md) | BUILT (confirmed 2026-08-20) | First-launch setup wizard removing the `custom.toml` wall; `config_dir()` is the one resolver it uses |
+| [`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md) | BUILT (confirmed 2026-08-20) | Pluto notebooks as the structured home for downstream analysis. As-built: `docs/NOTEBOOKS.md` |
+| [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | BUILT — A–G + F1/F2 + Phase H all done (2026-07-24) | Publication figures and movies: channel layers, colours, tracks, title cards, on the shared snapshot foundation |
+
+### Trackers and audits — not plans
+
+| Plan | Status (from its own header) | What it covers |
+|---|---|---|
+| [`UX_PRIMITIVES_PLAN.md`](UX_PRIMITIVES_PLAN.md) | living tracker | Frontend UX-primitive unification status: what a machine check holds, what's open, what's deliberately left. Cited from `docs/ui/PRIMITIVES.md` |
+| [`TASKS.md`](TASKS.md) | living checklist | One list, checked only when merged and green |
+| [`AF_CORRECTION_AUDIT.md`](AF_CORRECTION_AUDIT.md) | measured 2026-08-06 | What the autofluorescence correction actually does on a real 4-channel 2P spleen movie |
+| [`AF_QUANTISATION.md`](AF_QUANTISATION.md) | measured 2026-08-01, revised 08-03 | Output mapping resolved by the mechanism change; input precision still open |
+
+## Keeping this index true
+
+Add a row in the same change that adds a plan, and update the row's status in the same change that
+changes the plan's header. A plan absent from this index is invisible, because the directory is not
+searched by default.
+
+**Enforced, not advisory.** `python/cecelia/tests/test_doc_index_convention.py` (`pixi run test-py`,
+CI on every OS) fails if a plan has no row, a row points at a missing file, a plan is listed twice, an
+open/built plan states no status, or a plan's own status outright contradicts the section it is filed
+under. It is deliberately one-sided on that last check — a mixed status like "P1+P2 built, P3 open" is
+legitimately *Open* and is left alone, because a test that cries wolf gets muted. The check exists
+because this index had already failed exactly that way: it listed 20 of 57 plans, five of them
+contradicting their own headers, and nothing noticed.

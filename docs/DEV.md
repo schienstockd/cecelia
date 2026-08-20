@@ -306,7 +306,11 @@ the rc-vs-release distinction, and the pre-1.0 versioning rules — live in
 ## Tests
 
 Four categories, one per language layer. **All four run in CI** (`.github/workflows/ci.yml`) on every
-OS in the matrix, and each has a `pixi run` task that runs the whole suite:
+OS in the matrix, and each has a `pixi run` task that runs the whole suite. **Keep it that way** — the
+package suite was missing for a long time, which is how three Windows-only path bugs shipped. They are
+spread across three parallel jobs (`julia` / `server` / `python`), split by what each needs installed,
+so wall-clock is the longest job rather than the sum; a new suite goes in the job that already has its
+toolchain.
 
 - **Package (headless Cecelia):** `pixi run test-pkg`. The data model, persistence, task dispatch,
   scheduler + chain logic. Some testsets `@test_skip` when their `test-data/` fixtures are absent.
@@ -457,3 +461,156 @@ project fixes it. A patch that writes to the user's raw data owes more than the 
 must be the default, every file it declines must say why (`ims_relink.inspect` returns a `state` per
 file rather than a boolean), and it must verify the result by reading back through the path it just
 changed. Do not widen this to "patches can touch anything": `root` is still the only input.
+
+---
+
+## Core-functionality test rule
+
+> Moved here from `CLAUDE.md` (2026-08-20).
+
+**Rule: any change to core package functionality ships with a test in the same change.**
+Core = the data model and its persistence, the versioned-variable convention, task dispatch,
+and param validation. Specifically:
+- **ccid.json round-trip** — every persisted field must survive `save!` → `init_object`. When
+  you add a field to `CciaImage`/`CciaSet`/`CciaProject`, assert it round-trips. (`save!`
+  silently dropping `status`/`attr`/`imChannelNames` went unnoticed precisely because no test
+  covered this.)
+- **Versioned fields** — anything stored versioned in `ccid.json` (`filepath`, `imChannelNames`,
+  …) must be read/written through the `versioned_*` helpers and land at the agreed location.
+  Assert the on-disk shape (`{value_name => …, "_active" => …}`), not just the in-memory value —
+  a convention test like this catches a field quietly using the wrong storage location.
+- **Task dispatch** — a new `fun_name` resolves to its struct via `_task_from_fun_name`.
+- **Param validation** — at least one bad-param case per task asserting `ParamValidationError`.
+
+
+## Test data fixtures
+
+Tests must **not** depend on the dev projects dir (`projects_dir()`) — it can be deleted, and the
+test would then silently skip. When a test needs real data, copy a **small** fixture into the
+**committed** fixtures dir in this repo:
+
+```
+<repo>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
+```
+
+Resolve it in `runtests.jl` with the generic helpers — `fixture_path("proj","1","img","labelProps","x.h5ad")`
+and `have_fixture(path)` (override the root with the `CECELIA_TEST_DATA` env var). Gate the testset
+on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single strong `@warn` per
+missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
+
+**Keep fixtures small** — e.g. a `labelProps/*.h5ad` (hundreds of KB), not GB-scale raw images or
+OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
+
+> **The cap is enforced, not advisory.** `.h5ad` is binary, so git stores a whole new copy per update
+> and history can't be pruned without a rewrite — and a committed fixtures dir invites someone to drop a
+> GB-scale store in. The `fixtures stay small` testset fails if any single file exceeds **1 MB** or the
+> tree exceeds **8 MB** (today: largest 332 KB, tree 432 KB). Needing more room is a design conversation,
+> not a number to raise.
+
+---
+
+
+---
+
+## Windows compatibility
+
+All code must run on Linux, macOS, and Windows. Each of these has already caused a real bug —
+use the named helper, don't re-derive the platform branch inline:
+
+- **Python interpreter** — use `python_bin_path()` in `config.jl`; never hardcode an interpreter name
+  or venv layout (`bin/python3` vs `Scripts\python.exe`). It resolves to an **absolute** path and tries
+  the platform's spellings (Windows conda envs ship `python.exe` and often no `python3` at all). A bare
+  name is not good enough for any string that leaves the `pixi run` environment — the observer
+  registers this value into the user's own Claude Code config, launched from a plain shell.
+- **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
+  `.bat` vs no-extension.
+- **Leading `~` in a path** — use `expand_user()` in `config.jl`, never `Base.expanduser`, which is
+  documented Unix-only and is a **silent no-op on Windows** (a `~` then survives into
+  `joinpath`/`open`, e.g. `~/.cecelia\observer-mcp.json`).
+- **Writing into the config dir** — use `ensure_config_dir()`, not bare `config_dir()`: the latter is
+  a pure path computation and the directory doesn't exist until something creates it.
+- **Finding/spawning a CLI on PATH** — use `agent_bin_path()` + `_agent_spawn_cmd()` in
+  `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
+  never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
+  `CreateProcess` refuses batch files, they need `cmd /c`.
+- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`, or `_kill_proc_tree(proc)` when you
+  hold a `Base.Process`; never write `kill`/`pgrep`/`taskkill` inline. `Base.Process` has no `.pid`
+  field, and the pid must come from **`Libc.getpid(proc)`** — a raw
+  `ccall(:uv_process_get_pid, …, proc.handle)` dereferences NULL for a process that has already exited
+  (Julia nulls `handle` on reap), which is an **uncatchable SIGSEGV that kills the server**; `Libc.getpid`
+  does the same read with the iolock held and throws instead. Never `taskkill /IM julia.exe` — it kills every Julia
+  process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
+  port** instead of process name. Two homes, by caller: **in-process** → `_kill_listeners_on_port`
+  (same file); **outside the package** (`api/dev.jl`, every `pixi run stop*` task) → `free_port` in
+  `api/portkill.jl`, which is Base-only so it still works with no env. Both escalate to SIGKILL —
+  a SIGTERM does NOT stop a Julia process whose worker threads are mid-compile (it prints every
+  thread's backtrace and keeps running). Never write a third one. See `docs/DEV.md` → *Stopping the app*.
+- **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
+  processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
+- **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
+- **Path separators** — always `joinpath()`, never string-concatenate paths.
+- **`[PROGRESS]` line endings** — `eachline()` already strips `\r\n` on Windows, no special-casing
+  needed.
+- **Python text I/O — always pass `encoding="utf-8"`.** Python's default is the *locale* encoding:
+  UTF-8 here, **cp1252 on Windows**. Everything we read and write is UTF-8 (params JSON from Julia,
+  OME-XML carrying `µm`, our own sources), so a bare `open(p)` / `Path.read_text()` is a Windows-only
+  crash that passes every local run — it broke CI reading a source file containing `∝` (UTF-8 `0x9D`
+  is undefined in cp1252). For durable output use `write_json_atomic`/`write_atomic`
+  (`python/cecelia/utils/atomic_io.py`), which default to UTF-8. The `TextIoDeclaresEncodingTest`
+  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare text open.
+
+Launcher logic for all of the above lives in `pixi.toml` tasks (`dev`/`prod`/`frontend`/`napari`/
+`stop`), not shell scripts — add a `[target.<platform>.tasks]` override for OS-specific commands
+rather than a separate script. **Exception, when the same task needs all three OS branches:** a
+per-OS override means maintaining N copies of one behaviour by hand, and they drift. The `stop*`
+tasks carried 18 such one-liners and every escalation fix had to land three times; they now call one
+Base-only Julia file (`api/portkill.jl`) that does the platform branch *in code*, where it can be
+tested. Prefer that over a fourth copy — but keep the shared file dependency-free, so an emergency
+`pixi run stop` never depends on the env being intact.
+
+---
+
+
+## Development environment & `pixi run dev`
+
+> Moved here from `CLAUDE.md` (2026-08-20).
+
+
+**Git workflow:** branch + PR for everything; **never commit or push to `main`** (releases are
+tagged off `main` after merge). Full conventions — branch naming, commit style, how PRs are
+opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). **Agents: ask before every commit
+and before opening/pushing a PR — explicitly, each time; don't commit or push proactively** (a
+"go ahead" to do the work is not approval to commit it).
+
+**Agents: state your reservations BEFORE every commit.** When asked to commit/push (or asked for the
+PR url — that request itself calls the commit), first volunteer honest reservations about the change —
+what's unverified (e.g. never run in a browser, an untested regression surface), plus real
+limitations (perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait
+to be asked "any reservations?". Surface the risk at the decision point, then commit on the go-ahead.
+See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
+
+**Dev dir config — single source of truth:** `cecelia-feijoa/.env`
+```
+CECELIA_DEV_DIR=~/cecelia-feijoa/dev
+```
+This file is git-ignored (machine-specific). `init_cecelia!` reads it automatically — no env var export needed. The `CECELIA_DEV_DIR` env var still overrides it if set.
+
+**Where `custom.toml` lives — dev vs prod (one resolver).** `config_dir()` in `app/src/config.jl`
+resolves the config dir in order: explicit arg → `CECELIA_DEV_DIR` env → `CECELIA_DEV_DIR` in `.env`
+→ **`~/.cecelia`** (the installed-app default). The presence of `.env`/`CECELIA_DEV_DIR` *is* the dev
+signal; an installed app has neither and falls through to `~/.cecelia/custom.toml`, so a dev run never
+touches a real user's config and the path never depends on install scope. Both the reader
+(`init_cecelia!`) and the writer (`set_projects_dir!`, used by the first-launch setup wizard) call
+this one resolver — don't re-derive the path. See `docs/todo/ONBOARDING_PLAN.md`.
+
+```bash
+pixi run dev        # supervises BOTH the Revise backend (:8080) AND the frontend/Vite — ONE command
+```
+`api/dev.jl` starts and supervises the frontend too (relaunches on Settings→System Restart / worktree
+switch), so do NOT run `pixi run frontend` alongside `dev`. The standalone `pixi run frontend` (Vite,
+`npm run dev`) is only for previewing a frontend-only branch on a spare port against an already-running
+backend. `pixi run prod` runs the server without Revise (production). `pixi run stop` stops all by port.
+Revise reloads function bodies on save. Struct/macro changes still need a restart.
+
+---
+
