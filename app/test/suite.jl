@@ -13628,6 +13628,25 @@ end
     using Sockets: connect as sock_connect
     HTTP = Cecelia.HTTP
 
+    # READING THE WIRE, without guessing at packetisation — both halves of this were measured, and
+    # both got it wrong first:
+    #   * `bytesavailable(sock)` is NOT a usable poll. Julia stops the libuv read loop when its
+    #     buffer empties, so it reports 0 with bytes still pending — that version saw 2 terminators
+    #     of 4 on half its runs. So ONE reader task blocks in `readavailable` for the socket's whole
+    #     life and appends everything; `close` is what ends it.
+    #   * The stopping condition must be the DATA, not a fixed sleep. The extra terminator is written
+    #     separately from the head, so "both responses are in" can be true with those 4 bytes still in
+    #     flight — that is how the first version of this test flaked on ubuntu CI only (2 of 4) while
+    #     passing on macOS, Windows and locally. A generous deadline also absorbs the first call's
+    #     compilation, which a fixed window did not.
+    settle = function (acc, quiet, cap)         # wait until the accumulated bytes stop growing
+        n = length(acc[]); t0 = time(); t_last = time()
+        while time() - t_last < quiet && time() - t0 < cap
+            sleep(0.02)
+            if length(acc[]) != n; n = length(acc[]); t_last = time(); end
+        end
+    end
+
     wire = function (guarded::Bool)
         handler = function (stream)
             read(stream)
@@ -13639,25 +13658,22 @@ end
         server = HTTP.listen!(handler, "127.0.0.1", 0)          # port 0 → never a real one
         try
             sock = sock_connect("127.0.0.1", HTTP.port(server))
+            acc  = Ref("")
+            reader = @async try
+                while !eof(sock); acc[] *= String(copy(readavailable(sock))); end
+            catch; end
             try
-                s = ""
-                for i in 1:2
+                for i in 1:2                    # request 2 is the one the stray bytes broke
                     write(sock, "GET /$i HTTP/1.1\r\nHost: x\r\n\r\n")
                     t0 = time()
-                    while count("HTTP/1.1 200", s) < i && time() - t0 < 5
-                        s *= String(copy(readavailable(sock)))   # blocks; no busy loop
-                    end
+                    while count("HTTP/1.1 200", acc[]) < i && time() - t0 < 20; sleep(0.02); end
                 end
-                # a trailing terminator is written right after the head, so this is slack, not a wait
-                t0 = time()
-                while bytesavailable(sock) == 0 && time() - t0 < 0.3
-                    sleep(0.05)
-                end
-                bytesavailable(sock) > 0 && (s *= String(copy(readavailable(sock))))
-                s
+                settle(acc, 0.5, 5.0)
             finally
                 close(sock)
             end
+            wait(reader)
+            acc[]
         finally
             close(server)
         end
