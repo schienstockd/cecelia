@@ -25,6 +25,7 @@ import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
 import { axisLabelWithUnit } from '../../utils/gatingAxes'
+import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
@@ -298,11 +299,17 @@ function buildCsv(): string {
   return rowsToCsv(rows)
 }
 
+// The X/Y options, headed by family (Morphology · Channels · Spatial / Time) instead of one flat run
+// in which a shape descriptor and a marker looked alike — utils/measureGroups.ts, shared with the
+// pairs picker, the population manager and the clustering feature picker.
+const axisGroups = computed(() => measureGroups({
+  columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+
 function ensureChannels() {
   const cols = g.columns
   if (!cols.length) return
   // spatial/temporal axes are valid selections too — don't reset a persisted centroid_x/… axis
-  const valid = [...cols, ...g.spatialAxes]
+  const valid = groupedCols(axisGroups.value)
   if (!valid.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
   if (!valid.includes(yChan.value)) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
 }
@@ -357,9 +364,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <div class="panel-ctrl" data-guide="gate.axes">
         <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
           <select class="ax-chan" v-model="xChan" v-tooltip.bottom="'Measure on the X axis'">
-            <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-            <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
-              <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
+              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             </optgroup>
           </select>
           <select class="tsel" :class="{ 'cc-auto-override': !!xOverride }" v-model="xtSel"
@@ -369,9 +375,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
              v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
           <select class="ax-chan" v-model="yChan" v-tooltip.bottom="'Measure on the Y axis'">
-            <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-            <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
-              <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
+              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             </optgroup>
           </select>
           <select class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"

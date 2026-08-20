@@ -259,5 +259,31 @@ clauses.
 that is the claim the seconds axis makes, and this is the axis whose interval was unknown
 (`docs/ARCHITECTURE.md` → *Calibration*).
 
+### …and it GROUPS them by family
+
+Labelling each option is half the job. A picker that offers thirty measures in one undifferentiated
+run still makes you read every line to find the marker among the shape descriptors — `area`,
+`ellipticity_prolate`, `SHG` and `CD169-Kat` are four different KINDS of number and looked alike.
+
+Every measure picker renders the same headings, in the same order, from the one builder
+(`utils/measureGroups.ts` → `measureGroups`):
+
+| Heading | What it holds |
+|---|---|
+| `Track measures` | whole-track motility (`live.track.speed`, `…straightness`) |
+| `Morphology` | the shape descriptors (`area`, `solidity`, `sphericity`, …) |
+| `Channels` | the per-channel intensities, shown by channel name |
+| `Spatial / Time` | the centroid axes, shown as `X position` / `Time` |
+| `Behaviour` | per-cell obs `live.*` (speed, angle, HMM state, contact/distance) |
+| `Clusters` / `Regions` | `clusters.*` / `regions.*` + `spatial.comp.*` |
+| `Other measures` | the rest — track ids, `cell_id`, `track_state` |
+
+Empty groups are dropped, so a picker only ever shows the families it has. `Spatial / Time` came
+first (the centroid axes arrive on their own key, so they were the only family the UI could already
+tell apart) — the rest of the split existed in the payload the whole time and just wasn't rendered.
+
+**Add a heading, not a prefix.** Renaming columns to fake a grouping (`morph_area`) would change the
+stored name; a heading is display-only, like the labels above.
+
 ---
 
