@@ -8,7 +8,7 @@
 //      at all — the same affordance felt different on every screen.
 //
 // `copyText` fixes (1) in one place; `useCopyFlash` (composables/useCopyFlash.ts) fixes (2). New copy
-// affordances MUST use them — see docs/UI.md → UX-primitive catalog.
+// affordances MUST use them — see docs/ui/PRIMITIVES.md.
 
 /** Flash duration for a "Copied!" confirmation. One number, so every surface agrees. */
 export const COPY_FLASH_MS = 1500

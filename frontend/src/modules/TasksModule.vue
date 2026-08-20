@@ -34,7 +34,7 @@ const throttleOpen = ref(false)
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
 const logEl        = ref<HTMLElement | null>(null)
-// shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+// shared copy+flash helper (docs/ui/PRIMITIVES.md)
 const { isCopied: copied, copy } = useCopyFlash()
 
 const selected = computed(() => tasks.tasks.find(t => t.id === selectedId.value) ?? null)

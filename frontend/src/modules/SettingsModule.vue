@@ -161,7 +161,7 @@ function shortModulePath(p: string): string {
 // Columns for the two plugin tables. A table rather than stacked rows because each entry carries
 // several comparable facts (version, what it ships) plus a row-scoped action — and `.save-btn` is
 // `display:flex`, i.e. block-level, so in a plain row the button dropped onto its own line under the
-// name it belonged to. SelectionTable is THE canonical table (docs/UI.md → UX-primitive catalog);
+// name it belonged to. SelectionTable is THE canonical table (docs/ui/PRIMITIVES.md);
 // hand-rolling one here is the exact mistake it exists to prevent.
 const PLUGIN_COLUMNS: SelectionColumn[] = [
   { key: 'name',       label: 'Plugin' },

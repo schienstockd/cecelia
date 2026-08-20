@@ -11846,7 +11846,7 @@ end
 
 # ── UI copy budget: task-spec `tip` fields ────────────────────────────────────────────────────
 #
-# The enforceable half of `docs/UI.md` → *UI copy — keep it short*, for the surface Julia owns.
+# The enforceable half of `docs/ui/COPY.md`, for the surface Julia owns.
 # A `tip` renders as a tooltip on the task form, so it carries the same bar as any other tooltip:
 # one line, under 90 characters, no second sentence explaining itself. This lives here rather than
 # in the frontend suite because task specs are backend files and the frontend never holds a copy.
@@ -12974,7 +12974,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
                    joinpath(repo, "python", "cecelia", p.script)
             @test isfile(path)
             @test !isnothing(Cecelia.maintenance_patch(p.id))
-            # Copy budget (docs/UI.md → UI copy). This description sits in Settings and is read every
+            # Copy budget (docs/ui/COPY.md). This description sits in Settings and is read every
             # time, so it gets one line + the one caveat that matters — the store-debris entry had
             # grown to 674 characters explaining its own detection strategy, which belongs in the
             # runner. 160 leaves room for a caveat and none for an essay.

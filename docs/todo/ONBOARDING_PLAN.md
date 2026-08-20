@@ -1,5 +1,7 @@
 # First-Launch Setup Wizard + Onboarding — PLAN
 
+**Status: BUILT** — confirmed done 2026-08-20 (Dominik). Kept as the record of the design; for how it works now read the permanent `docs/<AREA>.md`.
+
 Real users are now installing Cecelia. The first wall is the `custom.toml` config file: a
 non-terminal user cannot get past it. This phase removes that wall and adds just enough in-app
 guidance to get a new user from install → first image without reading docs.

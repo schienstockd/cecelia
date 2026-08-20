@@ -47,7 +47,7 @@ const labarchives = ref<LabArchivesCtx>({ present: false })
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
 // brief "Copied" state on the Chat-to-Claude button — 2.5s, longer than the default flash
-// because the user has to go and paste it somewhere else. Shared helper (docs/UI.md → UX primitives).
+// because the user has to go and paste it somewhere else. Shared helper (docs/ui/PRIMITIVES.md).
 const { isCopied: chatCopied, copy: copyPrompt } = useCopyFlash(2500)
 
 // Chat to Claude: copy a one-line starter (which project + the MCP pointer) to the clipboard for a

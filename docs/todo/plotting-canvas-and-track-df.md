@@ -1,5 +1,7 @@
 # Plan: Plotting Canvas + Track DataFrame
 
+**Status: BUILT** — confirmed done 2026-08-20 (Dominik). Kept as the record of the design; for how it works now read the permanent `docs/<AREA>.md`.
+
 Unifies two phases that share infrastructure: the **plotting canvas** (per-module +
 universal floating-panel plot surfaces) and **track-property gating** (gate on track
 measures, one-point-per-track, show in napari). Executed by Opus directly (not Sonnet

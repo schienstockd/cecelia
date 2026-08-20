@@ -31,7 +31,7 @@ export interface RowFilterDef {
   count: (images: FilterableImage[]) => number
   /** Whether to render the button at all — no point offering a filter with nothing to filter. */
   visible: (images: FilterableImage[]) => boolean
-  /** Tooltip for the current state. Kept to one short line (docs/UI.md → UI copy). */
+  /** Tooltip for the current state. Kept to one short line (docs/ui/COPY.md). */
   tip: (active: boolean, images: FilterableImage[]) => string
 }
 

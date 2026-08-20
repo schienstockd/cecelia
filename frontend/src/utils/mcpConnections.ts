@@ -36,7 +36,7 @@ export interface McpRow {
   tone: Tone
   label: string                           // the pill text
   detail: string                          // ONE short phrase, ~4 words — the row is a status line,
-                                          // not an explanation (docs/UI.md → UI copy)
+                                          // not an explanation (docs/ui/COPY.md)
   hint: string                            // the why/how, as a tooltip — keeps the row on one line
   scope: string
   dismissable: boolean                    // account rows only: plenty of sites have no LabArchives

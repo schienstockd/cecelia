@@ -153,7 +153,7 @@ export function blockerMessage(b: PreviewBlocker | null): string {
     case 'no-models':       return 'Add a model to preview'
     case 'no-af-channels':  return 'Add a division channel to preview'
     // 'off' / 'pinned' / 'no-context' / 'no-params' are states the user chose or can see; a message
-    // for those is noise (docs/UI.md — keep UI copy short, say nothing rather than narrate)
+    // for those is noise (docs/ui/COPY.md — keep UI copy short, say nothing rather than narrate)
     default:                return ''
   }
 }

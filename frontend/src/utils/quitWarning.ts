@@ -7,7 +7,7 @@
 //
 // Pure string builders so they're testable without mounting the SFC (frontend test scope = src/utils
 // only — see docs/DEV.md). Both quit entry points (sidebar footer, Settings) read these, so the
-// wording stays identical in the two places; see INVENTORY.md → app shutdown/quit. The COUNT comes
+// wording stays identical in the two places; see docs/inventory/FLOWS.md → app shutdown/quit. The COUNT comes
 // from `runningTasks.ts` (the backend), not the local task store, which reads 0 after a page reload.
 //
 // Only the ARMED state reports the count. The idle control keeps its plain description: the count is

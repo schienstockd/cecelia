@@ -13,7 +13,7 @@ Everything either side of it is unit-tested.
 **Branch/worktree:** `work/movie-compare`, then `work/movie-seg-audit`
 (`~/cc-workspace/cecelia/movie-seg-audit`).
 **Related:** `docs/todo/ANIMATION_PLAN.md` (F1 batch / F2 animation / H title card), `docs/NAPARI.md`
-→ *Movie output size*, `docs/UI.md` → *UX primitive catalog*.
+→ *Movie output size*, `docs/ui/PRIMITIVES.md`.
 
 ## Goal
 

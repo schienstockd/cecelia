@@ -280,7 +280,7 @@ function list_coastal_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
         isfile(joinpath(dir, name)) || continue
         manifest = coastal_model_manifest(name, dev_dir)
         # Label carries the one thing that decides whether a model fits an image: what it was
-        # trained on. Kept to a phrase — see docs/UI.md → *UI copy*.
+        # trained on. Kept to a phrase — see docs/ui/COPY.md.
         ch = get(manifest, "channelName", nothing)
         stem = first(splitext(name))
         label = isnothing(ch) || isempty(string(ch)) ? stem : "$(stem) ($(ch))"

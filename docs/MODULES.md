@@ -867,7 +867,7 @@ sentence, or ending in a period), across `app/src/tasks/**` and the drop-in exam
 rendered as a form — see `docs/UI.md`) — one shared `each_spec` walk, so a new
 spec directory is added in one place. Write what the parameter
 *does*, not why it exists; long explanations go in the relevant `docs/<AREA>.md`. Rationale and the
-frontend half of the same rule: `docs/UI.md` → *Tooltip coverage*.
+frontend half of the same rule: `docs/ui/COPY.md` → *Tooltip coverage*.
 
 ---
 
@@ -1410,3 +1410,29 @@ without this, `get(raw, "filepath", nothing)` silently returns `nothing`.
 **The frontend never has its own task JSON copies.** `frontend/src/tasks/definitions/` is intentionally empty. Specs are always fetched from the API. If you accidentally put a JSON there, the API copy is still used — but the stale file will confuse future contributors.
 
 **Params are persisted to localStorage per (module, task) pair.** `TaskRunner` saves param values on function switch and on run. Users reopening the module will see their last-used values, not the JSON defaults. This is intentional — don't fight it, just make sure JSON defaults are sensible starting points.
+
+---
+
+## Module pattern
+Every task = **co-located files, same base name**:
+```
+app/src/tasks/<category>/<name>.jl       # Julia: struct + _run_task implementation
+app/src/tasks/<category>/<name>.json     # Param spec — single source of truth
+app/src/tasks/<category>/<name>_run.py   # OPTIONAL: Python compute, run by path via run_py
+```
+The `.jl`/`.json` (and `_run.py` if present) filenames must match — `remove.jl` pairs with `remove.json`, `cellpose.jl` with `cellpose.json` + `cellpose_run.py`. Never bundle multiple tasks into one `.jl` file. The `_run.py` sits **next to** its `.jl` (not in the `python/` package); it's run by path, so it doesn't make `app/` importable Python. This mirrors the custom-module layout (`docs/CUSTOM_MODULES.md`).
+
+The JSON spec is served to Vue via `GET /api/tasks/definitions?category=X` — Vue never maintains its own copy. Do **not** add task JSONs to `frontend/`. The `frontend/src/tasks/definitions/` directory is intentionally empty.
+
+When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
+- Add a `_spec_path(::MyTask)` overload pointing at the `.json` file
+- Add `"category.myTask" => MyTask()` to `_fun_name_map()`
+
+**And emit QC** — every result-producing task MUST bank sensible QC via `write_qc` (an objective
+`metrics` count + a `warn` finding for the bad case) and add cohort-comparable metrics to
+`COHORT_METRICS`. This is mandatory, not optional; the only exemption is a task with genuinely no
+objective signal (e.g. perceptual denoising), and it must be an explicit comment. Full guide + the
+pattern: [`docs/MODULES.md`](docs/MODULES.md) → *QC — REQUIRED for every new task*.
+
+---
+
