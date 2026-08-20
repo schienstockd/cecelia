@@ -202,6 +202,14 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            foregroundWeight = Float64(get(params, "foregroundWeight", 1.0)),
            intensityWeight  = Float64(get(params, "intensityWeight", 1.0)),
            temporalWeight   = Float64(get(params, "temporalWeight", 2.0)),
+           # Coastal's default, forwarded rather than left implicit: it decides the SHAPE of the
+           # foreground target, and it was silently pinned at coastal's 1.0 because nothing passed
+           # it. At zolIMa's 0.331 µm/px that blur is 0.33 µm, so the target thresholds into ~70
+           # specks per frame (median 0.9 µm²) where a cell is 28–79 µm² — the speckle objective
+           # `ForegroundLoss` exists to replace. Not a form control yet: raising it SOFTENS the
+           # target, which raises its entropy and therefore the best achievable loss, so the curve
+           # cannot referee the choice — it needs a fragment count first (docs/TODO.md).
+           foregroundBlurSigma = Float64(get(params, "foregroundBlurSigma", 1.0)),
            embeddingDim     = Int(get(params, "embeddingDim", 16)),
            # Not a form control. cuDNN is non-deterministic on this workload — the same config on
            # the same seed produced 84 and 79 instances across two runs (~6%) — so a seed box would

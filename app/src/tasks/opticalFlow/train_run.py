@@ -33,7 +33,7 @@ Parameter contract (JSON written by Julia):
   trainRatio               - fraction of each sequence to train on; 1.0 = no held-out split
   temporalScales           - already parsed + validated by Julia
   cumulativeWindow, droppedMetrics, epochs, embeddingDim, seed, normalise
-  foregroundWeight, intensityWeight, temporalWeight
+  foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma
 """
 
 import datetime
@@ -518,6 +518,9 @@ def run(params):
     # only "adds anything" in proportion to weight × term — with no weights recorded, a curve cannot
     # be read. The terms coastal supports but this task does not expose are pinned at 0 here rather
     # than left to coastal's defaults, so the manifest states them outright.
+    # Coastal's own default, restated here so the manifest records what was used rather than
+    # whatever coastal's signature happens to say later.
+    blur_sigma = float(params.get('foregroundBlurSigma', 1.0))
     loss_weights = {
         'intensity': float(params.get('intensityWeight', 1.0)),
         'foreground': float(params.get('foregroundWeight', 1.0)),
@@ -539,6 +542,7 @@ def run(params):
         num_epochs=epochs,
         intensity_weight=loss_weights['intensity'],
         foreground_weight=loss_weights['foreground'],
+        foreground_blur_sigma=blur_sigma,
         temporal_weight=loss_weights['temporal'],
         variance_weight=loss_weights['variance'],
         warp_weight=loss_weights['warp'],
@@ -559,7 +563,7 @@ def run(params):
     # The per-epoch loss belongs WITH the model, not only in the run's QC: QC is keyed by the task run
     # (set-scope dir, and a model can be renamed away from it), while "did this model converge" is a
     # question you ask of the model, months later, from the vault. A few hundred floats per term.
-    curves = _loss_curves(history)
+    curves, floors = _split_floors(_loss_curves(history))
     losses = curves.get('total', [])
 
     manifest = {
@@ -578,6 +582,11 @@ def run(params):
         'sourceValueName': params.get('valueName', ''),
         'nFrames': n_pooled,
         'foregroundWeight': float(params.get('foregroundWeight', 1.0)),
+        # Not just the weight — the SHAPE. Two runs at foregroundWeight 1.0 and different blurs fit
+        # different targets, and their loss curves are NOT comparable: a wider blur softens the
+        # target, raising its entropy and therefore the floor, so the better-shaped objective scores
+        # worse. Without this in the manifest that difference is invisible.
+        'foregroundBlurSigma': blur_sigma,
         'intensityWeight': float(params.get('intensityWeight', 1.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
         'maxFrames': max_frames,
@@ -598,6 +607,11 @@ def run(params):
         # a stack of a different thickness. Empty for 2D movies.
         'zPlanesUsed': planes_used,
         'lossCurves': curves,
+        # SEPARATE from lossCurves, not a `floor_foreground` entry inside it: a reader that walks
+        # lossCurves to draw one line per term would otherwise draw the floors as terms of their own.
+        # Keyed identically to lossCurves (`foreground`, `val_foreground`) so the two join by term.
+        # Absent for the contrastive terms, which have no floor — see coastal.loss.bce_floor.
+        'lossFloors': floors,
         'lossWeights': loss_weights,
         'trainedAt': _now_iso(),
     }
@@ -670,6 +684,29 @@ def _loss_curves(history):
         return {'total': [float(v) for v in history]}
     except (TypeError, ValueError):
         return {}
+
+
+def _split_floors(curves):
+    """`(curves, floors)` — coastal's flat history split on the `floor_` prefix.
+
+    coastal returns one dict (`foreground`, `val_foreground`, `floor_foreground`,
+    `val_floor_foreground`, …) because that is what its accumulation loop naturally produces. The
+    manifest keeps them apart so `lossCurves` stays exactly "one entry per loss term": anything that
+    iterates it to draw a line per term — the frontend does — would otherwise draw three extra
+    "terms" that are not terms.
+
+    The prefix is stripped and `val_` restored to the FRONT, so a floor is keyed exactly like the
+    curve it belongs to and the two join by term with no special cases:
+    `val_floor_foreground` -> `floors['val_foreground']`.
+    """
+    out, floors = {}, {}
+    for key, vals in curves.items():
+        val, stem = (True, key[4:]) if key.startswith('val_') else (False, key)
+        if stem.startswith('floor_'):
+            floors[('val_' if val else '') + stem[len('floor_'):]] = vals
+        else:
+            out[key] = vals
+    return out, floors
 
 
 def main():

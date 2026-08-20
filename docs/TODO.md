@@ -139,3 +139,43 @@ flight. The other two were like-for-like swaps precisely because neither has tha
 Decide the lifecycle, then route it the same way: build a `TaskRequest` (it already carries
 `chain_run_id` / `chain_node_id`), call `execute_task`, map `on_status` onto `_update_node_state!`, and
 capture the result from `on_result`.
+
+### The foreground target over-claims the field, and the blur cannot fix that on its own
+Measured, both models on the held-out tail of `VJy1Nx` (full table:
+`docs/SEGMENTATION.md` → *What σ=6 actually produced*): σ=6 gives **3.5× fewer prob-head components
+and a 16× larger median** than the shipped σ=1, but claims **9.2% of the field against 5.4%**, and
+finds *fewer* cell-sized objects (2.4 vs 3.1 per frame) where ~4 are expected at the measured 2.5%
+cell density. So the blur fixes fragmentation and makes coverage worse, and the default stays at 1.0.
+
+Two things to try, in this order:
+
+1. **σ=3 (≈1 µm).** The target sweep puts it at 10 components/frame, median 15.7 µm² and coverage
+   5.8% — i.e. most of σ=6's fragmentation win at σ=1's coverage. One 30-epoch run (the σ=6 run's
+   params with the one number changed) plus the fragment count settles it.
+2. **The coverage term the target does not have.** `_blob_target`'s docstring records this as a KNOWN
+   LIMITATION: the p99 rescale is purely relative, so "there is nothing here" is unrepresentable and
+   a wider blur necessarily spreads the claim. A blur is therefore the wrong lever for coverage. The
+   honest fix is an absolute signal estimate or an explicit coverage/sparsity penalty — a design
+   question, not a parameter sweep.
+
+Once σ is settled, decide whether `foregroundBlurSigma` becomes a form control with a cell-scale
+default, stays a REPL/chain override, or is **derived from the image's physical pixel size** — the
+last is the interesting option, since "one cell radius" is what anyone actually means and it is the
+one form of the parameter that does not need re-tuning per dataset.
+
+Note the other unexposed dial while you are there: `foregroundBoundaryWeight` is 0.0 in every run so
+far, and per `flow_discontinuity`'s docstring it is "the ONLY path by which optical flow reaches the
+labels". Nothing in `flow.cyto` supervises segmentation with flow; flow enters as input channels and
+through the contrastive embedding term only.
+
+### Flow-training QC measures the drop on a number that is mostly a constant
+`flow_training_qc_findings` warns when `lossDrop` (first/final `total`) is ≤ 1.0. Now that the floor
+is recorded, that ratio is known to be a weak signal: 85% of flow.cyto's `total` is
+`Σ weight × H(target)`, so the ratio is dominated by moving off a random init and comes out at 2.69
+for a model that learned essentially nothing after epoch 5. The threshold can therefore almost never
+fire.
+
+The floor-aware version is the ratio of the EXCESS — `(first − floor) / (final − floor)` — which for
+flow.cyto is a genuinely large number and for a stalled run would be ~1.0. `lossFloors` is in the
+manifest and `flow_training_qc_findings` already receives the QC dict, so this is a question of
+picking a threshold on evidence, not of plumbing. Don't change it without a run that should warn.

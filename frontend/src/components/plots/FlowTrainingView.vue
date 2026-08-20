@@ -17,6 +17,15 @@
   view: it lands on the canvas with the panel chrome, the zoom, CSV/PNG/SVG export and the board's
   PDF export already attached. A chart in a modal would need every one of those written again, worse.
 
+  **A converged run and a stalled one look identical until you subtract the floor.** Every BCE term
+  fits a SOFT target, so its minimum is that target's own entropy — a constant of the DATA. Measured
+  on flow.cyto: `foreground` settles at 0.2651 against a floor of 0.2650, so the model's entire
+  remaining error is 0.0001 and 85% of the plotted TOTAL is a number no model can move. Read raw,
+  that run looks like it stopped learning after five epochs. `lossFloors` travels in the manifest and
+  the `− floor` toggle (on by default) subtracts it, which is also what makes the zero-anchored axis
+  tell the truth. Terms with no floor — the contrastive ones, whose minimum genuinely is 0 — are left
+  alone.
+
   **The held-out curve is the one that answers the question.** A training loss only ever says the
   number went down, measured on the frames the weights were just fitted to. When the run had a
   `trainRatio` split, each term also carries a `val_` curve — drawn dashed in the SAME colour as its
@@ -42,8 +51,10 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 import { lossSeries, lossTable, type LossCurves } from '../../plots/lossCurves'
 
-interface TrainState { logY?: boolean; raw?: boolean; terms?: string[]; model?: string }
-interface Manifest { lossCurves?: LossCurves; lossWeights?: Record<string, number>; epochs?: number }
+interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
+                       model?: string }
+interface Manifest { lossCurves?: LossCurves; lossFloors?: LossCurves
+                     lossWeights?: Record<string, number>; epochs?: number }
 interface FlowModel { name: string; label: string; stem: string; manifest: Manifest }
 
 // `model` comes from the HOST — the vault owns the selection and its global/local scope, exactly as
@@ -70,18 +81,30 @@ const forceLight = ref(false)
 const state = computed(() => props.state)
 const logY = computed({ get: () => state.value.logY ?? false, set: v => (state.value.logY = v) })
 const raw = computed({ get: () => state.value.raw ?? false, set: v => (state.value.raw = v) })
+// Default ON. The floor is the whole reason a converged run reads as a stalled one, so the useful
+// view is the one showing what the model actually did; the unadjusted number is one click away.
+// Models trained before floors were recorded have none, and `hasFloors` disables the control rather
+// than leaving a toggle that silently does nothing.
+const minusFloor = computed({ get: () => state.value.minusFloor ?? true,
+                              set: v => (state.value.minusFloor = v) })
 // the host's pick wins; `state.model` is the board's local-scope slot value, also host-written
 const chosen = computed(() => props.model || state.value.model || '')
 const current = computed(() => models.value.find(m => m.name === chosen.value) ?? null)
 
+const floors = computed(() => current.value?.manifest?.lossFloors ?? null)
+const hasFloors = computed(() => Object.keys(floors.value ?? {}).length > 0)
 const series = computed(() => lossSeries(current.value?.manifest?.lossCurves,
-                                         current.value?.manifest?.lossWeights, raw.value))
+                                         current.value?.manifest?.lossWeights, raw.value,
+                                         floors.value, minusFloor.value && hasFloors.value))
 const termOptions = computed<ChipOption[]>(() => series.value.map(s => ({
   value: s.term,
   label: s.term,
-  // A term at weight 0 is switched off — say so on the chip rather than letting a flat line at zero
-  // read as "trained to nothing".
-  tip: s.weight === 0 ? 'weight 0 — this term is off' : `weight ${s.weight}`,
+  // Weight 0 only reaches here in raw mode — weighted, `lossSeries` drops it, because its weighted
+  // curve is the constant 0 and a flat line on the axis reads as "trained to nothing". This tip used
+  // to be the only thing saying otherwise, i.e. a caption on a misleading picture.
+  tip: s.weight === 0 ? 'weight 0 — off, shown because raw is on'
+    : s.floored ? `weight ${s.weight}, less its target's entropy floor`
+    : `weight ${s.weight}`,
 })))
 // Default: everything that is actually on. `undefined` means "not chosen yet", so an explicit empty
 // pick is respected (docs/UI.md → Persisting view state).
@@ -149,7 +172,8 @@ async function render() {
     // just short of the axis — a loss settling at 0.2 and one settling at 0.02 draw identically.
     // "How close to zero did it actually get" is the question, so zero has to be on screen.
     // Never on a log scale: log(0) is undefined and Plot would drop the axis.
-    y: { label: raw.value ? 'loss (raw)' : 'loss (weighted)', grid: true,
+    y: { label: (raw.value ? 'loss (raw)' : 'loss (weighted)')
+              + (minusFloor.value && hasFloors.value ? ' \u2212 floor' : ''), grid: true,
          // Every plotted value, val included — a log axis chosen on the training rows alone would
          // silently drop a val point that touched zero.
          ...(isLog.value ? { type: 'log' as const } : { type: 'linear' as const, zero: true }) },
@@ -170,7 +194,8 @@ onMounted(() => {
 // that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([chosen, logY, raw, () => terms.value.join(','), hasVal], () => plotBox.redraw())
+watch([chosen, logY, raw, minusFloor, () => terms.value.join(','), hasVal],
+      () => plotBox.redraw())
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -216,6 +241,12 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         <label class="cc-muted cc-fs-xs ftv-opt" v-tooltip.top="'Log scale on the loss axis'">
           <input type="checkbox" v-model="logY" /> log
         </label>
+        <label class="cc-muted cc-fs-xs ftv-opt" :class="{ 'ftv-off': !hasFloors }"
+               v-tooltip.top="hasFloors
+                 ? 'Subtract each target\'s entropy — the loss no model can beat'
+                 : 'No floors recorded — re-train to get them'">
+          <input type="checkbox" v-model="minusFloor" :disabled="!hasFloors" /> &minus; floor
+        </label>
         <!-- A dashed line with nothing naming it is a puzzle. Only shown when there is one. -->
         <span v-if="hasVal" class="cc-muted cc-fs-2xs">dashed = held out</span>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
@@ -251,5 +282,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-bar { flex-wrap: wrap; }
 .ftv-terms { flex-wrap: wrap; gap: 0.4rem; }
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
+.ftv-off { opacity: 0.45; }
 .ftv-host { flex: 1; min-height: 0; }
 </style>

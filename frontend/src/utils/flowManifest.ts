@@ -46,6 +46,10 @@ export interface FlowManifest {
   trainedAt?: string
   lossWeights?: Record<string, number>
   lossCurves?: Record<string, number[]>
+  /** Per-term irreducible loss — `mean H(target)`. Keyed like `lossCurves`; BCE terms only. */
+  lossFloors?: Record<string, number[]>
+  /** Cell-scale blur on the foreground target, in px. Decides the target's SHAPE, not its weight. */
+  foregroundBlurSigma?: number
 }
 
 export interface DetailField { label: string; value: string; mono?: boolean }
@@ -58,7 +62,8 @@ const KNOWN = new Set([
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
   'maxFrames', 'frameWindows', 'trainRatio', 'zSpacing', 'cropSize', 'cropWindows', 'metricDtype',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
-  'lossCurves',
+  'lossCurves', 'lossFloors',
+  'foregroundBlurSigma',
 ])
 
 const list = (v: unknown): string =>
@@ -143,6 +148,11 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
     field('Embedding dim', m.embeddingDim),
     field('Seed', m.seed),
     ...Object.entries(m.lossWeights ?? {}).map(([term, w]) => field(`${term} weight`, w)),
+    // Beside the weights, because it is the other half of what the foreground term IS. Two models
+    // at foregroundWeight 1.0 and different blurs fitted differently shaped targets and their loss
+    // curves are not comparable — a wider blur softens the target and raises its entropy floor.
+    field('Foreground blur', m.foregroundBlurSigma === undefined ? undefined
+      : `${m.foregroundBlurSigma} px`),
   ]
 
   // Which frames, not just how many. The window is seed-derived, so without it "frames 40–89 of

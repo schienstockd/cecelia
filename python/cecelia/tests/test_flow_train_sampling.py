@@ -387,5 +387,43 @@ class ReduceMetricsTest(unittest.TestCase):
         self.assertEqual(self.reduce([], ('vorticity',)), [])
 
 
+@unittest.skipUnless(_RUNNER.is_file(), 'app/ not present (IO-library-only install)')
+class SplitFloorsTest(unittest.TestCase):
+    """`lossFloors` is a SEPARATE manifest key, not entries inside `lossCurves`.
+
+    coastal returns one flat history — `foreground`, `val_foreground`, `floor_foreground`,
+    `val_floor_foreground` — because that is what its accumulation loop produces. The frontend draws
+    one line per entry of `lossCurves`, so leaving the floors in it draws three extra "terms" that
+    are not terms; and the frontend joins a floor to its curve by KEY, so the `val_` has to come back
+    to the front.
+    """
+
+    def setUp(self):
+        self.split = _load_runner()._split_floors
+
+    def test_it_lifts_the_floors_out_and_keys_them_like_their_curves(self):
+        curves, floors = self.split({
+            'foreground': [0.30, 0.27], 'val_foreground': [0.31, 0.28],
+            'floor_foreground': [0.26, 0.26], 'val_floor_foreground': [0.25, 0.25],
+        })
+        self.assertEqual(sorted(curves), ['foreground', 'val_foreground'])
+        self.assertEqual(sorted(floors), ['foreground', 'val_foreground'])
+        self.assertEqual(floors['val_foreground'], [0.25, 0.25])
+
+    def test_the_terms_are_left_alone(self):
+        curves, floors = self.split({'total': [1.0], 'temporal': [0.5], 'val_total': [1.1]})
+        self.assertEqual(sorted(curves), ['temporal', 'total', 'val_total'])
+        self.assertEqual(floors, {})
+
+    def test_a_term_that_merely_starts_with_val_is_not_mistaken_for_a_split(self):
+        """`variance` begins with no prefix of interest; the guard is on `val_`/`floor_` exactly."""
+        curves, floors = self.split({'variance': [0.9], 'validation_thing': [0.1]})
+        self.assertEqual(sorted(curves), ['validation_thing', 'variance'])
+        self.assertEqual(floors, {})
+
+    def test_an_empty_history_gives_two_empty_dicts(self):
+        self.assertEqual(self.split({}), ({}, {}))
+
+
 if __name__ == '__main__':
     unittest.main()

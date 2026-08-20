@@ -9,7 +9,20 @@ describe('lossSeries', () => {
     const byTerm = Object.fromEntries(lossSeries(curves, weights).map(s => [s.term, s.values]))
     expect(byTerm.temporal).toEqual([2, 1])        // 2× — contributes more than its raw curve shows
     expect(byTerm.intensity).toEqual([0.4, 0.2])   // 1× — unchanged
-    expect(byTerm.variance).toEqual([0, 0])        // weight 0 — contributes nothing, however big raw
+  })
+
+  // A weight-0 term used to be drawn as the constant 0, which on a zero-anchored axis is a flat line
+  // ON the axis — indistinguishable from a term trained to nothing, and the exact opposite of "this
+  // term was switched off". It was reported live: after intensityWeight went 1 -> 0, the saved term
+  // pick kept drawing `intensity` at 0.000 alongside three real curves.
+  it('drops a weight-0 term when weighted, because its weighted curve is the constant 0', () => {
+    expect(lossSeries(curves, weights).map(s => s.term)).not.toContain('variance')
+  })
+
+  it('brings the weight-0 term back in raw mode — that is what raw is for', () => {
+    const variance = lossSeries(curves, weights, true).find(s => s.term === 'variance')
+    expect(variance!.values).toEqual([0.9, 0.9])
+    expect(variance!.weight).toBe(0)
   })
 
   it('never re-scales the total, which is already the weighted sum', () => {
@@ -25,7 +38,7 @@ describe('lossSeries', () => {
   })
 
   it('puts the total first, then the rest alphabetically', () => {
-    expect(lossSeries(curves, weights).map(s => s.term))
+    expect(lossSeries(curves, weights, true).map(s => s.term))
       .toEqual(['total', 'intensity', 'temporal', 'variance'])
   })
 
@@ -66,6 +79,73 @@ describe('lossSeries', () => {
     expect(lossSeries({ total: [3, 2] }, {})[0]!.val).toBeUndefined()
     // ...and an empty val curve is the same as none, not an empty dashed line
     expect(lossSeries({ total: [3, 2], val_total: [] }, {})[0]!.val).toBeUndefined()
+  })
+
+  // ── floors ──────────────────────────────────────────────────────────────────────────────────
+  // Every BCE term fits a soft target, so its minimum is that target's entropy — a constant of the
+  // data. flow.cyto's `foreground` settles 0.00009 above its floor of 0.26499: without subtracting
+  // it, a fully converged run is indistinguishable from one that stalled at epoch 5.
+  describe('minus floor', () => {
+    it('subtracts the floor from the term and from its val curve', () => {
+      const s = lossSeries({ foreground: [0.30, 0.27], val_foreground: [0.31, 0.28] },
+                           { foreground: 1 }, false,
+                           { foreground: [0.26, 0.26], val_foreground: [0.25, 0.25] }, true)
+      expect(s[0]!.values[0]).toBeCloseTo(0.04)
+      expect(s[0]!.val![1]).toBeCloseTo(0.03)
+      expect(s[0]!.floored).toBe(true)
+    })
+
+    it('scales the floor by the same weight it scales the term by', () => {
+      // Otherwise the subtraction is between two different quantities and the result is meaningless.
+      const s = lossSeries({ foreground: [0.30] }, { foreground: 2 }, false,
+                           { foreground: [0.26] }, true)
+      expect(s[0]!.values[0]).toBeCloseTo(0.08)   // 2×0.30 − 2×0.26, not 2×0.30 − 0.26
+    })
+
+    it("derives the total's floor as the same weighted sum the total is", () => {
+      // total = Σ w×term, so its floor is Σ w×floor. Recording it separately would create a number
+      // that can disagree with the terms it is made of.
+      const s = lossSeries({ total: [0.9] }, { foreground: 1, temporal: 2 }, false,
+                           { foreground: [0.26], intensity: [0.37] }, true)
+      // intensity has no weight here -> treated as 1, so 0.26 + 0.37 = 0.63
+      expect(s[0]!.values[0]).toBeCloseTo(0.27)
+    })
+
+    it("ignores a weight-0 term's floor in the total — it contributes nothing to the total either", () => {
+      const s = lossSeries({ total: [0.9] }, { foreground: 1, intensity: 0 }, false,
+                           { foreground: [0.26], intensity: [0.37] }, true)
+      expect(s[0]!.values[0]).toBeCloseTo(0.64)
+    })
+
+    it('leaves a term with no recorded floor exactly as it was', () => {
+      // The contrastive terms are hinges with a genuine minimum of 0 — there is nothing to subtract,
+      // and inventing a zero floor would be indistinguishable from having measured one.
+      const s = lossSeries({ temporal: [0.05] }, { temporal: 2 }, false, { foreground: [0.26] }, true)
+      expect(s[0]!.values).toEqual([0.10])
+      expect(s[0]!.floored).toBeUndefined()
+    })
+
+    it('does not subtract when the toggle is off, and reports nothing floored', () => {
+      const s = lossSeries({ foreground: [0.30] }, { foreground: 1 }, false,
+                           { foreground: [0.26] }, false)
+      expect(s[0]!.values).toEqual([0.30])
+      expect(s[0]!.floored).toBeUndefined()
+    })
+
+    it('leaves the tail unsubtracted when the floor series is short, rather than dropping it', () => {
+      // A curve that silently loses its last epochs is worse than one partly unadjusted.
+      const s = lossSeries({ foreground: [0.30, 0.28, 0.27] }, { foreground: 1 }, false,
+                           { foreground: [0.26] }, true)
+      expect(s[0]!.values.length).toBe(3)
+      expect(s[0]!.values[0]).toBeCloseTo(0.04)
+      expect(s[0]!.values[2]).toBeCloseTo(0.27)
+    })
+
+    it('survives a model with no floors at all', () => {
+      const s = lossSeries({ foreground: [0.30] }, { foreground: 1 }, false, null, true)
+      expect(s[0]!.values).toEqual([0.30])
+      expect(s[0]!.floored).toBeUndefined()
+    })
   })
 
   it('does not invent a term from an orphan val curve', () => {
