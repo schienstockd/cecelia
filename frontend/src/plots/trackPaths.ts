@@ -309,3 +309,29 @@ export function groupedPathPoints(
 export function trackCountNote(shown: number, total: number): string {
   return total > shown ? `${shown} of ${total} tracks — longest first` : ''
 }
+
+/**
+ * The first and last point of each track — the symbols that give a path a DIRECTION.
+ *
+ * A polyline alone says where a cell went but not which way along it, and with several tracks on one
+ * pair of axes that is the difference between reading the plot and guessing at it. The start is drawn
+ * as a hollow circle and the end as an arrowhead on the line itself (`markerEnd`), so the two are
+ * distinguishable at a glance and neither can be mistaken for a bend in the path.
+ *
+ * `ends` is the non-trivial half: `pathPoints` emits in time order and tags each point with its index
+ * within the track, so a start is `i === 0`, but the last index differs per track. Kept here rather
+ * than in the SFC because it is arithmetic over the point set, like everything else in this module.
+ */
+export function trackEndpoints(
+  pts: readonly PathPoint[],
+): { starts: PathPoint[]; ends: PathPoint[] } {
+  const starts: PathPoint[] = []
+  const last = new Map<string, PathPoint>()
+  for (const p of pts) {
+    if (p.i === 0) starts.push(p)
+    last.set(p.track, p)
+  }
+  // a single-point track is both its own start and its own end; it gets the circle, and the line mark
+  // draws no arrow for it because there is no segment to put one on
+  return { starts, ends: [...last.values()] }
+}

@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc } from '../../plots/export'
 
@@ -29,6 +30,7 @@ const props = withDefaults(defineProps<{
   lineWidth?: number                         // gate stroke width
   showLabels?: boolean                       // draw the population name on each gate
   readonly?: boolean                         // fully static: draw outlines only, never move/resize/draw
+  flipY?: boolean                            // y is an IMAGE row coordinate (grows downward)
 }>(), { lineWidth: 1.5, showLabels: false, readonly: false })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -54,15 +56,14 @@ function gateColour(colour?: string): string {
   const c = (colour ?? '').trim().toLowerCase()
   return (!c || c === 'white' || c === '#fff' || c === '#ffffff' || c === '#fafafa') ? ink() : colour!
 }
-function dataToPx(vx: number, vy: number): [number, number] {
-  const { w, h } = size(); const { xMin, xMax, yMin, yMax } = props.extents
-  const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
-  return [((vx - xMin) / xs) * w, (1 - (vy - yMin) / ys) * h]
-}
-function pxToData(px: number, py: number): [number, number] {
-  const { w, h } = size(); const { xMin, xMax, yMin, yMax } = props.extents
-  return [xMin + (px / w) * (xMax - xMin), yMin + (1 - py / h) * (yMax - yMin)]
-}
+// ONE mapping, forward AND inverse, from plots/axisMap.ts — and this is the file that makes it
+// matter. `pxToData` is how a dragged rectangle becomes the numbers written to
+// gating/{value_name}.json, so if the two directions ever disagreed about `flipY` every new position
+// gate would be stored MIRRORED: wrong on disk, applied to every future image, and nothing looking
+// wrong on screen at the moment it happens. `axisMap.test.ts` pins the round trip in both modes.
+const box = (): PxBox => ({ ...size(), flipY: props.flipY })
+const dataToPx = (vx: number, vy: number) => mapDataToPx(props.extents, box(), vx, vy)
+const pxToData = (px: number, py: number) => mapPxToData(props.extents, box(), px, py)
 function evtPx(e: MouseEvent): [number, number] {
   const r = canvasEl.value!.getBoundingClientRect()
   return [e.clientX - r.left, e.clientY - r.top]
@@ -119,7 +120,10 @@ function hitTest(p: [number, number]): Handle | null {
 }
 function cursorFor(h: Handle | null): string {
   if (!h) return 'default'
-  if (h.kind === 'rect-corner') return h.ix % 2 === 0 ? 'nwse-resize' : 'nesw-resize'
+  // the corner indices are DATA corners, so a flipped y axis puts corner 0 at the top of the screen
+  // instead of the bottom — the diagonal the cursor should point along is the other one
+  if (h.kind === 'rect-corner')
+    return (h.ix % 2 === 0) === !props.flipY ? 'nwse-resize' : 'nesw-resize'
   if (h.kind === 'rect-edge') return h.edge % 2 === 0 ? 'ns-resize' : 'ew-resize'
   if (h.kind === 'poly-vertex') return 'grab'
   if (h.kind === 'poly-edge') return 'copy'

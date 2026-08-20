@@ -6,13 +6,15 @@
 //  - multi-select   → modelValue is a `string[]` in DISPLAY/pick order (drag-reorderable)
 // These helpers operate on the multi-select array form; single-select is a trivial assign in the SFC.
 
+import { toggleSelected } from './selection'
+
 /** Toggle `value` in an ordered selection array. Adding appends to the end (preserving pick order);
- *  removing drops it in place. Returns a NEW array (never mutates the input). */
-export function toggleValue(selected: readonly string[], value: string): string[] {
-  return selected.includes(value)
-    ? selected.filter(v => v !== value)
-    : [...selected, value]
-}
+ *  removing drops it in place. Returns a NEW array (never mutates the input).
+ *
+ *  Delegates to `utils/selection.ts`, which is the ONE implementation — the canvas hosts each had
+ *  their own copy of these three lines, and single-select was about to become a sixth that disagreed. */
+export const toggleValue = (selected: readonly string[], value: string): string[] =>
+  toggleSelected(selected, value)
 
 /** Move the item at `from` to index `to`, shifting the rest. Out-of-range / no-op indices return a
  *  copy unchanged. Returns a NEW array. Used by the drag-to-reorder handler. */

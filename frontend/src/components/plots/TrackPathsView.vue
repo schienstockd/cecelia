@@ -46,12 +46,17 @@ import PlotSpinner from './PlotSpinner.vue'
 import PlotNotice from '../canvas/PlotNotice.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { debouncedLatest } from '../../utils/debouncedLatest'
+import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
+         type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { distinctColors, facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
-import { popTypeOptions, popTypeLabel, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import type { PopTypeOption } from '../../plots/popTypes'
+import { usePopFamily } from '../../composables/usePopFamily'
+import PopFamilySelect from './PopFamilySelect.vue'
 import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
-  pathDomain, displacementVectors, pathCsvRows, groupedPathPoints,
+  pathDomain, displacementVectors, pathCsvRows, groupedPathPoints, trackEndpoints,
   type GroupedPathPoint, type PathGroup,
 } from '../../plots/trackPaths'
 import {
@@ -72,8 +77,15 @@ const props = defineProps<{
   groupAttr?: string[]
   poolGroups?: boolean
   popTypes?: PopTypeOption[]
+  // THE CROSS-PANEL LINK (canvas `shared` bag, provided by GatingPlots). When the timeline selects
+  // lanes, this plot draws exactly those tracks instead of the top-N — the timeline answers WHEN,
+  // this one answers WHERE, about the same cells. Optional, so a host that shares no selection (a
+  // board slot) still gets a working plot.
+  trackSel?: CanvasTrackSelection
+  setTrackSel?: (v: CanvasTrackSelection) => void
   // every user-settable option lives in the panel's persisted bag, not a bare ref
-  state: { valueName?: string; mode?: Mode; colorBy?: string; limit?: number; popType?: string }
+  state: { valueName?: string; mode?: Mode; colorBy?: string; limit?: number; popType?: string
+           ends?: boolean }
 }>()
 
 // the FIRST selected image answers "which segmentations / which columns" — the pickers are about the
@@ -93,16 +105,16 @@ const colorBy = computed({ get: () => props.state.colorBy ?? '',
                            set: v => (props.state.colorBy = v) })
 const limit = computed({ get: () => props.state.limit ?? 500,
                          set: v => (props.state.limit = v) })
+// START/END MARKERS, on by default. They carry the direction a bare polyline cannot — but on a dense
+// cohort they are two extra marks per track, and at 500 tracks the circles and crosses are most of the
+// ink. So it is a toggle rather than a judgement made once for every image: the plot that answers "which
+// way did they go" and the plot that answers "how much did they cover" want opposite answers.
+const showEnds = computed({ get: () => props.state.ends ?? true,
+                            set: v => (props.state.ends = v) })
 // the population FAMILY, one per plot (docs/PLOTS.md) — the rail lists whichever this is, so the pick
 // resolves through the same `resolvePopType` the rail uses and cannot disagree with it
-const familyOptions = computed<PopTypeOption[]>(() =>
-  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
-const popType = computed({
-  get: () => (familyOptions.value.length
-    ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
-    : 'live'),
-  set: v => (props.state.popType = v),
-})
+const { options: familyOptions, popType } =
+  usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 interface PathGroupResponse extends TrackGroupMeta {
@@ -132,6 +144,15 @@ const MODES: ChipOption[] = [
 const LIMITS = [100, 500, 2000]
 
 /** The track vocabulary — value names + the per-track columns, from the track-gating source. */
+// `ids=` bypasses the endpoint's cap by NAMING the tracks. The selection also carries its SCOPE, and
+// this plot ADOPTS the segmentation it names: a track id only means something within one label set, so
+// with this panel on `memTom` (396 tracks) and the timeline on `importTest2` (314), selecting lane 277
+// asked memTom for a track it does not have and drew an empty box reading "0 selected tracks of 396".
+const follow = computed(() =>
+  followSelection(props.trackSel ?? EMPTY_TRACK_SELECTION, imageUid.value))
+const pinned = computed(() => follow.value?.ids ?? [])
+const effectiveValueName = computed(() => follow.value?.valueName || valueName.value)
+
 async function loadColumns() {
   if (!props.projectUid || !imageUid.value) { valueNames.value = []; colorOptions.value = []; return }
   try {
@@ -160,30 +181,47 @@ const cohort = computed(() => ({
   poolGroups: props.poolGroups, series: props.series, popType: popType.value,
 }))
 
-async function load() {
+/**
+ * LAST REQUEST WINS. Selecting tracks in the timeline fires one `load` per click, and each is a
+ * different request (`ids=80` then `ids=80,277`) — so without this the older, smaller response can
+ * land last and the plot draws ONE track while two are selected. `debouncedLatest` is the canonical
+ * scheduler for a request (docs/UI.md → Continuous controls), placed at the SINK so every caller is
+ * protected; `isCurrent()` after the await is the part a plain debounce misses.
+ */
+const runLoad = debouncedLatest<void>(async (_arg, isCurrent) => {
   if (!props.projectUid || !imageUid.value) { data.value = null; return }
-  loading.value = true; error.value = ''
+  error.value = ''
   try {
     const p = cohortParams(cohort.value)
     p.set('projectUid', props.projectUid)
-    if (valueName.value) p.set('valueName', valueName.value)
+    const vn = effectiveValueName.value
+    if (vn) p.set('valueName', vn)
     p.set('colorBy', colorBy.value)
-    p.set('limit', String(limit.value))
+    // a named selection ignores the cap; otherwise the top-N by length
+    if (pinned.value.length) p.set('ids', pinned.value.join(','))
+    else p.set('limit', String(limit.value))
     const r = await fetch(`/api/tracking/paths?${p}`)
     const d = await r.json()
+    if (!isCurrent()) return                       // a newer selection is already on its way
     if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
     data.value = d as PathsResponse
     // the server falls a column this cohort lacks back to uncoloured — follow it rather than keeping
     // a picker that claims a colour the plot is not using
     if (data.value.colorBy !== colorBy.value) colorBy.value = data.value.colorBy
   } catch (e) {
+    if (!isCurrent()) return
     error.value = e instanceof Error ? e.message : String(e)
     data.value = null
   } finally {
-    loading.value = false
-    await nextTick(); plotBox.redraw()
+    if (isCurrent()) { await nextTick(); plotBox.redraw() }
   }
-}
+}, {
+  wait: 60,
+  onState: st => (loading.value = st !== 'idle'),
+  onError: e => (error.value = e instanceof Error ? e.message : String(e)),
+})
+
+function load() { runLoad.schedule() }
 
 onMounted(async () => { await loadColumns(); await load() })
 // a tracking or correction run rewrites exactly what this draws — the ONE refresh chokepoint, so the
@@ -193,6 +231,12 @@ watch([() => props.projectUid, imageUid], async () => { await loadColumns(); awa
 // one watcher over the whole cohort query, so a compare-mode / population / family change refetches
 // without a per-prop list that can fall behind the params it builds
 watch([() => cohortKey(cohort.value), valueName, colorBy, limit], load)
+// THE CROSS-PANEL LINK, and it must be its own watcher: `cohortKey` covers the cohort params and knows
+// nothing about `ids=` or the segmentation this panel ADOPTS from the selection. It was dropped when the
+// watch list above was rewritten around `cohortKey`, and the panel then answered a lane click by
+// changing `pinned` and never refetching — the timeline selected, this plot sat still, and the two
+// looked like they had never been connected.
+watch([pinned, effectiveValueName], load)
 
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
@@ -216,8 +260,17 @@ const slots = computed(() => {
   groups.value.forEach((g, i) => m.set(g.key, facetSlot(i, grid.cols)))
   return m
 })
-const note = computed(() => cohortNote(data.value?.shown ?? 0, data.value?.total ?? 0,
-                                       data.value?.dropped ?? 0, groups.value.length))
+// A capped plot that says nothing is a plot that lies — and so is one following a selection while
+// reporting a cohort cap. Two different truths.
+const missed = computed(() =>
+  selectionMissed(props.trackSel ?? EMPTY_TRACK_SELECTION, data.value?.shown ?? 0))
+const note = computed(() => {
+  if (!pinned.value.length) return cohortNote(data.value?.shown ?? 0, data.value?.total ?? 0,
+                                              data.value?.dropped ?? 0, groups.value.length)
+  if (missed.value) return `None of the ${pinned.value.length} selected tracks are in ${effectiveValueName.value}`
+  const n = data.value?.shown ?? 0
+  return `${n} selected track${n === 1 ? '' : 's'} of ${data.value?.total ?? 0}`
+})
 
 async function render() {
   if (!host.value) return
@@ -262,15 +315,27 @@ async function render() {
     // one colour per track and a legend of 500 entries is not a legend
     : { domain: tracks, range: distinctColors(tracks.length), legend: false as const }
 
+  // ONE pass over the points, not one per mark — `trackEndpoints` walks every point to find each
+  // track's last index, and it was being called twice for the two marks that share its answer.
+  const endpoints = mode.value !== 'rose' && showEnds.value ? trackEndpoints(pts) : null
   const marks = mode.value === 'rose'
     ? [
         Plot.link(vectors, { x1: 0, y1: 0, x2: 'x', y2: 'y', stroke,
                              strokeWidth: 1.2, markerEnd: 'arrow', ...fch }),
       ]
     : [
+        // START and END, told apart at a glance: a HOLLOW CIRCLE where a track starts and an X where it
+        // ends. The old marker was a filled dot in the line's own colour at r=1.8, on the start only —
+        // it read as a bend rather than a beginning, and the end was unmarked entirely. Two distinct
+        // shapes carry the direction, so the line needs no arrowhead competing with them.
         Plot.line(pts, { x: 'x', y: 'y', z: 'track', stroke, strokeWidth: 1.2, ...fch }),
         // where each track STARTS — without it a path is a line with no direction
-        Plot.dot(pts.filter(p => p.i === 0), { x: 'x', y: 'y', fill: stroke, r: 1.8, ...fch }),
+        ...(endpoints ? [
+          Plot.dot(endpoints.starts,
+                   { x: 'x', y: 'y', stroke, fill: 'none', r: 6, strokeWidth: 1.6, ...fch }),
+          Plot.dot(endpoints.ends,
+                   { x: 'x', y: 'y', stroke, symbol: 'times', r: 5, strokeWidth: 1.8, ...fch }),
+        ] : []),
       ]
   if (facet) {
     marks.push(Plot.text(groups.value.map(g => ({ ...slots.value.get(g.key)!, t: groupLabel(g) })),
@@ -285,7 +350,10 @@ async function render() {
     // µm on both axes, same span — see the header: a stretched track plot is a wrong track plot, and
     // facets share ONE domain so the small multiple is a comparison
     x: { domain: domain?.x, label: 'x (µm)', grid: true },
-    y: { domain: domain?.y, label: 'y (µm)', grid: true },
+    // Y GROWS DOWNWARD. `centroid_y` is an IMAGE row index — row 0 is the top of the frame, which is
+    // what napari draws. A chart's upward y axis is a MIRROR of the image: a cell drifting down-screen
+    // appears to drift up. See docs/PLOTS.md → *Y grows downward*.
+    y: { domain: domain?.y, label: 'y (µm)', grid: true, reverse: true },
     color: colourScale,
     ...(facet ? { fx: { axis: null }, fy: { axis: null } } : {}),
     marks,
@@ -297,7 +365,9 @@ async function render() {
 // that loops, and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([mode, rows, plan], () => nextTick(() => plotBox.redraw()))
+// `showEnds` is a REDRAW, not a refetch — the endpoints are derived from points the panel already
+// holds, so the toggle must be in this list and not in the load watchers above.
+watch([mode, rows, plan, showEnds], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the other views) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -346,15 +416,11 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         </button>
       </div>
       <div class="cc-row">
-        <select v-if="familyOptions.length > 1" :value="popType" v-tooltip.top="'Which populations'"
-                aria-label="Population family"
-                @change="popType = ($event.target as HTMLSelectElement).value">
-          <option v-for="o in familyOptions" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
-        </select>
-        <select v-if="valueNames.length > 1" v-model="valueName"
-                v-tooltip.top="'Which segmentation'" aria-label="Segmentation">
-          <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
+        <PopFamilySelect :options="familyOptions" v-model="popType" />
+        <button v-if="mode !== 'rose'" class="cc-btn cc-btn-bare cc-btn-dense"
+                :class="{ 'cc-btn-on': showEnds }"
+                v-tooltip.top="'Mark where each track starts (circle) and ends (×)'"
+                @click="showEnds = !showEnds">ends</button>
         <select v-model="colorBy" v-tooltip.top="'Colour each track by one of its properties'"
                 aria-label="Colour by">
           <option value="">colour: track</option>
@@ -375,7 +441,16 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
                 tip="Overlaid tracks from two images are not comparable." />
     <div ref="host" class="tpv-host" />
     <PlotSpinner v-if="loading" label="Reading tracks" />
-    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">{{ note }}</span>
+    <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">
+      {{ note }}
+      <!-- the way BACK from a selection. Without it a canvas-wide pick can only be undone in whichever
+           other panel made it, and the note reads "3 selected tracks" with no way out. -->
+      <button v-if="pinned.length && setTrackSel" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              v-tooltip.left="'Show all tracks again'"
+              @click="setTrackSel({ ...EMPTY_TRACK_SELECTION })">
+        <i class="pi pi-times" />
+      </button>
+    </span>
   </div>
 </template>
 

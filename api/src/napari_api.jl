@@ -1209,6 +1209,36 @@ _comparison_frame_total(n_columns::Int, per_pass::Int)::Int = _grid_frame_total(
 _camera_only(snapshot) =
     Dict{String,Any}(String(k) => v for (k, v) in pairs(snapshot) if String(k) != "layers")
 
+"""
+    _viewer_shows(img_uid) -> Union{Nothing,Tuple{Int,String}}
+
+`nothing` when the viewer is showing the image a request is about; otherwise the 400 to return.
+
+**A layer request names an image, and the bridge resolves paths against the one on SCREEN.** Those are
+two different images whenever the user has moved on, and nothing checked: pressing *Show* on a track
+panel pointed at `fXgbTl` while the viewer held `VJy1Nx` sent a pop with `value_name = "memTom"` —
+valid for `fXgbTl`, absent from `VJy1Nx` — and the bridge died inside HDF5 on a path that does not
+exist:
+
+    show_tracks failed: [Errno 2] Unable to synchronously open file
+      (…/1/VJy1Nx/labelProps/memTom.h5ad, errno = 2, 'No such file or directory')
+
+Refusing beats repairing here, and beats the alternative of drawing it anyway. Had the two images both
+carried `memTom` there would have been no error at all — one image's tracks drawn over another's
+pixels, silently, which is the version of this bug nobody would have reported. The client knows which
+image the viewer holds (`project.napariImageUid`) and can open the right one before asking; this is the
+backstop for when it does not.
+"""
+function _viewer_shows(img_uid::AbstractString)
+    open_uid = _current_image_uid[]
+    open_uid === nothing &&
+        return (400, JSON3.write((; error = "No image open in the viewer — open it first.")))
+    String(open_uid) == String(img_uid) && return nothing
+    (400, JSON3.write((; error = "The viewer is showing a different image ($(open_uid)) than this " *
+                                 "request is about ($(img_uid)) — open that image first.",
+                         viewerImageUid = String(open_uid), requestedImageUid = String(img_uid))))
+end
+
 # Is `value_name` the image version the viewer already has open? A column must not re-open one that is:
 # re-opening re-samples the channel contrast (`add_image contrast=True`), which would throw away a look
 # the user set live and never saved — and "record what is on screen" is the whole promise of the
@@ -1762,6 +1792,9 @@ function api_napari_show_populations(body_bytes::Vector{UInt8})
 
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
+    # the bridge resolves layer paths against the image ON SCREEN, not the one this request
+    # names — see `_viewer_shows`
+    let e = _viewer_shows(image_uid); e === nothing || return e end
 
     # Scope: an explicit `valueNames` list (or a single non-blank `valueName`) → refresh ONLY those
     # segmentations; blank → ALL real segmentations. Live gate edits pass the edited segmentation so we
@@ -1832,6 +1865,9 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
 
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
+    # the bridge resolves layer paths against the image ON SCREEN, not the one this request
+    # names — see `_viewer_shows`
+    let e = _viewer_shows(image_uid); e === nothing || return e end
 
     # which segmentations' whole-track overlay (_tracked) to show — the per-segmentation "directions"
     # toggles. Resolve each against the image's keys.
@@ -1906,7 +1942,29 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
                 @warn "trackclust pops unavailable" value_name = vn exception = e
             end
         end
-    end   # empty want + no gated + no trackclust → empty pops → bridge removes existing track layers
+    end
+    # 4. AN EXPLICIT SET OF TRACK IDS — the track timeline's "Show". Selecting lanes there is a
+    #    question about specific tracks, and centring the camera on one of them does not answer
+    #    "which of the ribbons on screen are the ones I picked?" — at 300 tracks they are
+    #    indistinguishable. This puts exactly the selection on its own brightly-coloured layer.
+    #
+    #    Reuses the SAME pop shape as every other branch rather than inventing a second way to draw a
+    #    track: the bridge already knows how to render a `track_ids` list, so this is a caller, not a
+    #    feature. `/_selection` is a path no gating map can produce (a leading underscore is reserved),
+    #    so it can never collide with a real population.
+    sel_raw = get(data, :trackIds, nothing)
+    if sel_raw !== nothing
+        sel_ids = unique(Int[Int(t) for t in sel_raw if t isa Real && isfinite(t) && t > 0])
+        sel_vn  = String(get(data, :valueName, ""))
+        haskey(img.label_props, sel_vn) || (sel_vn = isempty(want) ? sel_vn : first(want))
+        if !isempty(sel_ids) && haskey(img.label_props, sel_vn)
+            push!(pops, Dict{String,Any}(
+                "value_name" => sel_vn, "path" => "/_selection", "name" => "selection",
+                "pop_type" => "track", "colour" => "#e8a33d", "show" => true,
+                "track_ids" => sel_ids))
+        end
+    end
+    # empty want + no gated + no trackclust + no selection → empty pops → bridge removes track layers
     # colour-by overrides: where a user pop FILTERS on the `color_by` column, use its colour (the
     # canonical "use the population's colour" rule); the bridge fills the rest with defaults. Scan ALL
     # pop types — a track can be coloured by a cell-level column (flow/clust pop) or a track-level one
@@ -2020,6 +2078,9 @@ function api_napari_colour_labels(body_bytes::Vector{UInt8})
 
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
+    # the bridge resolves layer paths against the image ON SCREEN, not the one this request
+    # names — see `_viewer_shows`
+    let e = _viewer_shows(image_uid); e === nothing || return e end
     vn = _resolve_vn(img, String(get(data, :valueName, "")))
 
     v = _viewer()
@@ -2111,6 +2172,9 @@ function api_napari_start_selection(body_bytes::Vector{UInt8})
     image_uid   = String(get(data, :imageUid, ""))
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
+    # the bridge resolves layer paths against the image ON SCREEN, not the one this request
+    # names — see `_viewer_shows`
+    let e = _viewer_shows(image_uid); e === nothing || return e end
     vn = _resolve_vn(img, String(get(data, :valueName, "")))
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))

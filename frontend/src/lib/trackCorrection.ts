@@ -281,6 +281,7 @@ export interface ManualAction {
  */
 export function manualActions(
   picked: readonly number[], rows: readonly TrackRow[], splitAt: number | null,
+  sharedFrames?: (a: number, b: number) => number[],
 ): ManualAction[] {
   const byId = new Map(rows.map(r => [r.track, r]))
   const sel = picked.map(id => byId.get(id)).filter((r): r is TrackRow => !!r)
@@ -288,13 +289,28 @@ export function manualActions(
   const join: ManualAction = { key: 'join', label: 'Join', blocked: null, op: null }
   if (sel.length !== 2) {
     join.blocked = 'Pick exactly two tracks'
-  } else if (tracksOverlap(sel[0], sel[1])) {
-    // the engine's own rule, checked before Apply rather than after
-    join.blocked = `Tracks overlap in time (frames ${Math.max(sel[0].t0, sel[1].t0)}–` +
-                   `${Math.min(sel[0].t1, sel[1].t1)}) — they are not one cell`
   } else {
-    const [a, b] = joinOrder(sel[0], sel[1])
-    join.op = buildJoinOp(a, b)
+    // THE ENGINE'S RULE IS A SET INTERSECTION OF FRAMES, not a range test (`_op_join`: it collects
+    // the timepoints track B shares with track A and refuses only if that set is non-empty). A caller
+    // that can answer exactly passes `sharedFrames`; `tracksOverlap` is the fallback for one that
+    // only has t0/t1, and it is CONSERVATIVE — two interleaved tracks (A on 0–4 and 20–24, B on
+    // 10–14) share no frame and are joinable, yet their ranges overlap completely.
+    //
+    // That is not hypothetical: measured on zolIMa/fXgbTl (memTom, 396 tracks), the range test
+    // refuses 395 pairs the engine would accept — 2.6% of the joinable pairs — with no way past it.
+    const shared = sharedFrames ? sharedFrames(sel[0].track, sel[1].track)
+                                : (tracksOverlap(sel[0], sel[1])
+                                    ? [Math.max(sel[0].t0, sel[1].t0), Math.min(sel[0].t1, sel[1].t1)]
+                                    : [])
+    if (shared.length) {
+      // named frames, in the engine's own words, so the pre-check and the failure read the same
+      const list = shared.length > 4
+        ? `${shared.slice(0, 4).join(', ')}…` : shared.join(', ')
+      join.blocked = `Both have a cell at frame ${list} — they are not one cell`
+    } else {
+      const [a, b] = joinOrder(sel[0], sel[1])
+      join.op = buildJoinOp(a, b)
+    }
   }
 
   const split: ManualAction = { key: 'split', label: 'Split', blocked: null, op: null }
@@ -332,13 +348,13 @@ export interface TrackThresholds {
 
 export const THRESHOLD_FIELDS: { key: keyof TrackThresholds; label: string; tip: string; step: number }[] = [
   { key: 'gapFrames',    label: 'gap frames',  step: 1,
-    tip: 'Join candidates: how many frames may be missing between two tracks' },
+    tip: 'Flag a JOIN: how many frames may be missing between two tracks' },
   { key: 'gapSteps',     label: 'gap steps',   step: 0.5,
-    tip: "Join candidates: how far apart the ends may be, in multiples of this image's median step" },
+    tip: "Flag a JOIN: how far apart the ends may be, × this image's median step" },
   { key: 'jumpFactor',   label: 'jump ×',      step: 0.5,
-    tip: "Split candidates: a step this many times the track's OWN median step is suspect" },
+    tip: "Flag a SPLIT: a step this many × the track's OWN median step" },
   { key: 'jumpQuantile', label: 'jump top',    step: 0.005,
-    tip: 'Split candidates: …and in this top quantile of every step in the image' },
+    tip: 'Flag a SPLIT: …and in this top quantile of every step in the image' },
   { key: 'minLen',       label: 'min frames',  step: 1,
     tip: 'Flag tracks shorter than this many timepoints' },
 ]

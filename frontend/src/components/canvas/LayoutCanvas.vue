@@ -16,6 +16,7 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
+import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, watch, ref, provide, nextTick, useTemplateRef } from 'vue'
 import { awaitIdle, anyBusy } from '../../utils/awaitIdle'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
@@ -36,7 +37,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
@@ -274,12 +275,29 @@ const activeSel = computed(() => scope.value === 'global' ? gSel.value : (active
 // pop manager's `vis` is undefined and the whole PlotOptions styling block is hidden (the "cluster-tracks
 // manager has no plot params" bug).
 const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activeContent.value ? (st(activeContent.value).vis ?? DEFAULT_VIS) : DEFAULT_VIS))
-const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+// the ONE selection toggle (utils/selection.ts) — four hosts had a copy of it each
+const toggle = (arr: string[], v: string) => toggleSelected(arr, v)
+// Reads the SAME registry policy as the module canvases (`singlePopFor`), so a single-population view
+// behaves identically wherever it is hosted. No board plot declares it today — the one that does
+// MUTATES, and the board is read-only — but a policy honoured by one host and not the other is how the
+// two drift apart. (No view id named here: `interactiveViews.test.ts` forbids it, correctly.)
+const activeSinglePop = computed(() => {
+  const c = entry.value.contents[entry.value.activeIndex]
+  return !!c && c.kind === 'interactive' && singlePopFor(c.ref)
+})
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
-  if (scope.value === 'global') gSel.value = toggle(gSel.value, k)
-  else if (activeContent.value) st(activeContent.value).sel = toggle(st(activeContent.value).sel ?? [], k)
+  const next = (cur: string[]) => toggleSelected(cur, k, { single: activeSinglePop.value })
+  if (scope.value === 'global') gSel.value = next(gSel.value)
+  else if (activeContent.value) st(activeContent.value).sel = next(st(activeContent.value).sel ?? [])
 }
+// the policy can change under an existing selection when the active SLOT changes — narrow rather than
+// let a single-population plot draw one of several and say nothing
+watch(activeSinglePop, single => {
+  if (!single) return
+  if (scope.value === 'global') gSel.value = narrowToSingle(gSel.value)
+  else if (activeContent.value) st(activeContent.value).sel = narrowToSingle(st(activeContent.value).sel ?? [])
+})
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activeContent.value) st(activeContent.value).vis = { ...(st(activeContent.value).vis ?? defaultVis()), ...patch }
@@ -666,6 +684,7 @@ defineExpose({ capturePage, collectCsvs })
                              :suffix="clustSuffix" :vis="activeVis"
                              @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
           <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
+                        :single="activeSinglePop"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed || activeRail === 'none'"
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />

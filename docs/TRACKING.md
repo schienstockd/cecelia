@@ -290,29 +290,169 @@ fresh tracking and rewrites the track table.
 
 Fixing a wrong track by hand. Design + the old-R ground truth it ports:
 [`docs/todo/CORRECTION_PLAN.md`](todo/CORRECTION_PLAN.md). Shipped: the ops engine, the task, the
-journal and its QC (plan phase **P1**), and the worklist UI (**P4**). Segmentation correction (P2) is
-not built.
+journal and its QC (plan phase **P1**), and the editing UI (**P4**, now the track timeline —
+[`TRACK_SCHEME_PLAN.md`](todo/TRACK_SCHEME_PLAN.md)). Segmentation correction (P2) is not built.
 
-**Two modes, because the detector is not the only source of a bad track.** *Suggested* is the ranked
-worklist; *All tracks* lists every track and turns a selection into the same op objects the detector
-emits — one queue, one task run, one journal, whether an edit was suggested or hand-authored. Without it
-the surface was WORSE than old R for the case a user simply sees: there you could at least name the
-tracks. Join is blocked with a reason when the two tracks share frames — the engine's own rule, checked
-before Apply instead of after, and the picked track can be flown to in napari like a suggested one.
+**The surface is the timeline** (below). The worklist that shipped in #590 — a ranked table with a
+per-candidate x/y thumbnail — was **deleted**: it drew each candidate on SPATIAL axes, so it could not
+answer the question every join turns on ("are they both from the same timepoints?"), and its rows were
+prose nobody read. Its engine, ops, queue, journal and QC are untouched; only the surface changed. A
+canvas persisted with the old panel migrates via `VIEW_ALIASES` rather than rendering as an empty slot.
 
-**From napari, not from a table.** *All tracks* also reads the viewer: draw a region around the cells
-(`POST /api/napari/start-selection`, the existing brush), then **Read selection** →
-`GET /api/tracking/selection` resolves the enclosed labels to their tracks and **Pick** selects them in
-the list, fetching them explicitly if they fall outside the picker's cap. That closes the loop the
-worklist could not: you see the bad track in the image and act on it there, instead of reading an id off
-the viewer and hunting for it. The same selection drives the one CELL-level op — **Untrack cells**
-(`points.remove`), which drops bad detections and leaves the rest of their tracks intact.
+### The track timeline (`trackScheme`)
 
-**Naming beats raising a cap.** The picker lists 2000 tracks (longest first) because a 5000-row table is
-not a picker; `find` sends `ids=` to `/api/tracking/paths`, which bypasses the cap for exactly the tracks
-named. Raising the limit would make every request slower for everyone to serve one lookup.
+The correction surface, on the Track canvas via **+ Track… → Track timeline**. Design and phases:
+[`docs/todo/TRACK_SCHEME_PLAN.md`](todo/TRACK_SCHEME_PLAN.md). Phases 1 and 2 are built — lanes,
+sorting, filtering, selection, and editing. It MUTATES, so it carries no `analysisBoard` flag.
 
-**The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
+**Every track is a lane over frames, drawn as one rect per contiguous run.** A gap is therefore the
+absence of a rect, which is what makes the picture answer the question the XY worklist could not:
+"are they both from the same timepoints?" Select two lanes and any frames they SHARE are drawn in
+red — the engine refuses `track.join` for exactly those tracks, so the refusal is visible before the
+button exists to press.
+
+**A lane gap and a `gap` candidate are different things, and the panel prints both counts.** A
+candidate is two track ids the detector believes are one cell; a lane gap is a frame inside one track
+where the cell was never detected. On the reference image (`zolIMa/fXgbTl`, `memTom`, 396 tracks over
+31 frames) that is **23 candidates** against **306 tracks carrying 735 holes** — 382 of one frame, 189
+of two, 90 of three, 74 of four. So most of what a user might want to repair is invisible to the
+detector, which is why the untracked lane and `points.add` are their own phase rather than a detail.
+
+**A proposed join is drawn, not described.** Sort by **Join pairs** and the two halves of each
+candidate sit on neighbouring rows, worst first; a line runs from the end of one to the start of the
+other — amber where the join is possible, red and dashed where the two tracks share frames and the
+engine would refuse it. Every other sort scatters a pair across the panel, which is why the one
+comparison the surface exists for used to need scrolling to make.
+
+**One user-facing word: FLAGGED.** The scan flags tracks; a flag proposes an op. "Candidate" and
+"detector" were internal nouns that had reached the UI — *"what is the fix detector … i didn't know what
+this was"* — so the controls name the op or the observation instead: the filter is **Flagged** (not
+*Candidates*), the sort is **Join pairs** (not *Join candidates*), the threshold section is **Flagging**
+(not *Sensitivity*, which never said what it was sensitive to), and each knob's tip names the op it
+governs (*"Flag a JOIN: how many frames may be missing…"*). The header count reads `23 flagged`, and
+hovering it says what that is and what it is not — the terse/long split `QC_TEXT` uses, because
+"flagged" and "with gaps" measure different things and a reader will assume they do not.
+
+**The timeline takes ONE population; its two siblings take any number.** A cohort plot's answer to
+several populations is several facets — that is what the comparison IS — but the timeline edits one
+image's tracks, and a `track_id` is only unique within one (image, segmentation), so a second ticked
+population is not a second facet, it is a second set of ids the ops could not tell apart. It resolved
+`groups.find(mine) ?? groups[0]` and drew one, so the extra ticks were input it discarded in silence.
+The plot declares the policy (`singlePop` on its registry entry), the rail reads it (`singlePopFor`, in
+all three hosts, so it cannot mean different things on different canvases) and the arithmetic is one
+shared function (`utils/selection.ts` — `toggleSelected` with a `single` flag, plus `narrowToSingle` for
+a selection made while the policy did not apply). Five copies of that three-line toggle existed before,
+one per host plus `chipSelect`; single-select would have been a sixth that disagreed.
+
+**Panels cross-reference through the canvas, not through each other.** The track selection lives in the
+gating canvas's `shared` bag (`useViewState`, the same mechanism as the highlighted populations), so
+selecting lanes in the timeline is the same act as choosing what the **Tracks** x/y panel draws — it
+re-requests with `ids=`, which bypasses the endpoint's cap, so a selected track outside the top-N is
+still drawn. `lib/napariView.ts` sends the viewer to a selected track. The link is offered through the
+view context (`selTracks` + `setSelTracks`) rather than an event on `InteractivePanel`, which is
+generic infrastructure and must not learn what a track is; a host that provides neither still gets a
+working panel that simply talks to nobody.
+
+Arithmetic lives in `frontend/src/plots/trackScheme.ts` (runs, ordering, windowing, overlap, join
+pairs, hit-testing) and is unit-tested; the view renders SVG directly rather than through Observable Plot,
+for the same reason the gating scatter is a canvas — it is an authoring surface, and every pixel has
+to map back to a (track, frame).
+
+**From napari, not from a table.** **Draw** a region around the cells in the viewer
+(`POST /api/napari/start-selection`), then **Read** → `GET /api/tracking/selection` resolves the
+enclosed labels to their tracks, selects those lanes and scrolls to them. **Show** puts the selection on its OWN napari layer — and only that layer: sending the
+segmentation too drew every track in the image beside it, which puts the picked tracks back in the
+haystack they were picked out of. That closes the loop a table could not: you see the bad track in the image and act on
+it there.
+
+**Show opens this panel's image first.** The bridge resolves layer paths against the image the viewer
+holds, not the one the request names, so pressing *Show* while the viewer was on another movie asked for
+a segmentation that image does not have and died inside HDF5 (`docs/NAPARI.md` → *A layer request names
+an image*). The panel now points the viewer at its own image through the one canonical open path, and
+declines with a line when no viewer is open rather than force-launching one. The route refuses the
+mismatch as a backstop.
+
+**Show flies to a track's LAST frame, not its first.** napari's Tracks layer draws each track as a
+trail up to the current timepoint, so at the first frame there is one point and no track — the layer
+is on, the viewer is in the right place, and there is nothing to see.
+
+**The selection carries its SCOPE.** A `track_id` is only unique within one (image, segmentation)
+pair, so the canvas shares `{imageUid, valueName, ids}` rather than a bare id list
+(`lib/trackSelection.ts`). A panel on a different segmentation of the same image **adopts** the
+selection's segmentation instead of ignoring it; a panel on a different IMAGE does not, because that
+is a comparison the user set up deliberately. Sharing ids alone was shipped first and was wrong: with
+the timeline on `importTest2` (314 tracks) and the Tracks plot on `memTom` (396), selecting lane 277
+asked `memTom` for a track it does not have and drew an empty box reading "0 selected tracks of 396".
+
+**The uncommitted queue is a task DRAFT, not a view option.** It lives in `stores/trackOpsQueue.ts`,
+keyed by the (project, image, segmentation) the ops edit — the same principle as `stores/taskDrafts.ts`,
+because the queue becomes `params.trackOps` of one `tracking.correct_measures` run. It used to live in the
+timeline panel's persisted state, which is keyed by the CANVAS: the Track canvas keys itself on the
+page-level segmentation select, so changing that select rebound the canvas and put queued edits out of
+reach. Two panels on one tracked label set now share one queue, which is what the engine already assumed.
+
+**Editing is the same vocabulary as before.** Select lanes → **Join** / **Split** / **Remove**, or
+**Fix** to queue the op the detector already picked. Split takes its frame from the bar you clicked —
+the worklist made you read the frame out of a sentence and type it into a box. Everything lands in one
+queue and one `tracking.correct_measures` run (`lib/trackOpsRun.ts`), so a hand-authored edit and a
+suggested one are indistinguishable downstream.
+
+**Join is refused by the engine's own rule, not an approximation of it.** `_op_join` refuses when the
+SET of timepoints the two tracks share is non-empty. `manualActions` takes that exact answer from the
+lanes' runs (`sharedFrames`); its `tracksOverlap` range fallback remains for callers holding only
+`t0`/`t1`, and is conservative — measured on `zolIMa/fXgbTl` it refuses **395 pairs the engine would
+accept**, 2.6% of the joinable ones.
+
+**The timeline takes EVERY track, and pays for it by asking for less.** `GET /api/tracking/paths`
+gained `occupancy=1`: timepoints only, with `x`/`y`/`label` returned as empty arrays so the wire shape
+is unchanged (exactly as `y` already is for a 1-D segmentation). Measured on a real image the full
+shape costs ~641 B per track, so 5000 tracks would be ~3.2 MB of coordinates for a panel that reads
+none of them. A path plot caps at a top-N because 5000 polylines are a hairball; a lane list capped is
+just a lie — "pick track 2001" has no answer if 2001 was never sent, and the panel cannot even say it
+exists. So occupancy mode defaults to a 20000 cap, and the fly-to-napari button fetches that one
+track's geometry on demand with `ids=`.
+
+**A TRACK POPULATION PICKER picks what the track panels show.** All three track views sit on the
+population rail (`rail: 'pops'` + `TRACK_FAMILIES`) and take the same `series` the Analysis board hands
+its cohort plots — so a picker already on the Track canvas is the picker, rather than each panel growing
+a private segmentation `<select>`. A track population is what a user chooses; the segmentation is the
+storage detail underneath it. `compareMode: 'image'` on this canvas, because it is one image by
+construction — the cohort comparison is the board's job.
+
+**Which picker, and why not the gating tree.** The Track canvas's rail follows the ACTIVE panel
+(`railFor`, as the board's does): a gating plot gets the mutating `PopulationManager`, a track view gets
+the read-only `SeriesPicker` — populations grouped by segmentation, each row carrying its family. Wiring
+the track views to the gating tree was tried first and could not work: the tree has no `popType`, so the
+canvas had to invent one (its own `props.popType`, i.e. `track`) while a track panel resolves its family
+from the registry (`live`, the first declared). `filterSeriesToPopType` then correctly dropped every
+ticked population and the panels silently fell back to the whole segmentation — the picker was on screen,
+was clicked, and reached nothing. `interactiveViews.test.ts` now pins the round trip for every declared
+family, and the timeline gained the family `<select>` its siblings already had (`PopFamilySelect` +
+`usePopFamily`, one resolution for the control and the request).
+
+This makes the Track canvas the SECOND polymorphic rail host. `docs/todo/CANVAS_MANAGER_RAIL_PLAN.md`
+Decision 5 says module pages stay static, and its stated reason is "indirection with no second case" —
+this is that case: one canvas hosting both a tree that is edited and three views that slice by population.
+
+**The candidate list is scoped like the lanes.** `GET /api/tracking/issues` takes `pops` and resolves its
+cells through the same `track_plot_groups` the paths route uses (`track_group_frame`). Without it, ticking
+a population narrowed the picture and not the ranking: candidates could name tracks that were not on
+screen, and the two counts the panel prints beside each other were tallied over two different track sets.
+A POOLED group yields no ranking rather than a wrong one — a `track_id` is unique only within one (image,
+segmentation), so an op built from pooled cells would name two different cells.
+
+**There is no "which set of tracks" picker.** All three track panels had one, and it was the wrong
+control twice over: it listed every `value_name`, so on the reference image `default` and `three` were
+offered as sets of tracks and answered "Not tracked" — and once the rail lists populations GROUPED BY
+SEGMENTATION, it is redundant, because a row already names both. Measured on `zolIMa/fXgbTl`, the rail
+offers `importTest2 → /_tracked`, `importTest → /_tracked` and `memTom → /_tracked, /hbk, /hbk/_tracked`,
+and nothing at all under the four untracked sets — so every tracked label set is reachable and no
+untracked one is offered. `/_tracked` is injected per tracked segmentation by `/api/plots/populations`
+(root-level only when tracking was UNGATED, else `/<gate>/_tracked`), which is what makes deleting the
+select lossless rather than merely tidier. With nothing ticked a panel still needs a segmentation, and
+`resolveTrackValueName` picks a tracked one.
+
+**The scan's thresholds are exposed** (a collapsed *Flagging* section). They matter more than a
 default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
 and **309** at `minLen 15`. The panel seeds the knobs from what the server actually used
 (`thresholds` in the response) and sends only what the user moved, so the measured defaults live on the
@@ -385,7 +525,12 @@ Three modes, because "the tracks" is three questions:
 - **Axes are always square** (`pathDomain` in `frontend/src/plots/trackPaths.ts`). A track plot
   stretched to its panel turns a straight run into a diagonal, destroying the one thing these modes
   exist to show.
-- **Geometry comes from `GET /api/tracking/paths`**, in the same wire shape the correction worklist
+- **Start and end markers are a toggle** (*ends*, on by default). A hollow circle where a track starts
+  and an X where it ends carry the direction a bare polyline cannot — but they are two extra marks per
+  track, and on a 500-track cohort they are most of the ink. "Which way did they go" and "how much ground
+  did they cover" want opposite answers, so it is a per-panel setting rather than one decision for every
+  image. Absent in *rose*, which has arrowheads instead.
+- **Geometry comes from `GET /api/tracking/paths`**, in the same wire shape the correction surface
   reads — one Julia helper (`track_path_dicts`) builds it for both routes, so they cannot drift.
 - **The colour-by list is not a second vocabulary.** It comes from
   `/api/gating/channels?popType=track`, the same call the track-gating axes read, so anything you can

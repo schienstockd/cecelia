@@ -259,7 +259,7 @@ function _track_source_labels(g::TrackPlotGroup)::Vector{String}
 end
 
 """
-    track_group_paths(g; limit, ids, color_by) -> NamedTuple
+    track_group_paths(g; limit, ids, color_by, occupancy) -> NamedTuple
 
 One group's path geometry, JSON-ready: `(; paths, values, color_by, color_kind, total, shown, step_scale)`.
 
@@ -273,15 +273,20 @@ images rather than whichever one won the length ties; `total`/`shown` both come 
 what it left out. `ids` names
 tracks explicitly and ignores the cap — matched against the plain track id in every source, since the id
 is what a user can read off a viewer.
+
+`occupancy = true` sends the TIMEPOINTS ONLY (`x`/`y`/`label` come back empty). It is for the track
+timeline, which draws lanes over frames and reads nothing but `t` — and which, unlike a path plot, must
+not be capped at a top-N: a hairball of 5000 polylines is unreadable, whereas a lane list capped is
+simply a lie, since "pick track 2001" has no answer if 2001 was never sent.
 """
 function track_group_paths(g::TrackPlotGroup; limit::Int = 500, ids = String[],
-                           color_by::AbstractString = "")
+                           color_by::AbstractString = "", occupancy::Bool = false)
     labels = _track_source_labels(g)
     want_ids = Set{String}(String.(ids))
     all_paths = Dict{String,Any}()
     owner = Dict{String,Tuple{Int,String}}()          # plot key → (source index, plain track id)
     for (i, s) in enumerate(g.sources)
-        for (tid, p) in track_path_dicts(s.df, g.spatial)
+        for (tid, p) in track_path_dicts(s.df, g.spatial; occupancy = occupancy)
             key = isempty(labels[i]) ? String(tid) : string(labels[i], ":", tid)
             all_paths[key] = p
             owner[key] = (i, String(tid))
@@ -342,6 +347,35 @@ function _track_group_values(g::TrackPlotGroup, shown_keys, owner, color_by::Abs
         end
     end
     (values, kind)
+end
+
+"""
+    track_group_frame(g) -> Union{Nothing,NamedTuple{(:df,:spatial,:value_name)}}
+
+One group's cells as a single frame — the accessor for a readout that must EDIT rather than summarise.
+
+Beside [`track_group_paths`] and [`track_group_diagnostics`], which each shape their own answer. The
+correction detector is different: it needs the raw frame (it reports track ids, then the same route sends
+those tracks' geometry and their step scale), so what it needs from a group is the cells, not a summary.
+
+It exists so the CANDIDATES and the LANES answer for the same cells. The timeline draws its lanes from
+`track_group_paths`, which honours the picked population; the candidate list was reading `label_props` for
+the whole segmentation, so ticking a population narrowed the PICTURE and not the RANKING — a candidate
+naming a track outside the population is un-actionable, and the two counts the panel prints side by side
+("23 candidates · 306 with gaps") were tallied over two different track sets.
+
+**`nothing` for a POOLED group, and that is not a limitation to work around.** A `track_id` is unique only
+within one (image, segmentation), so an op built from a pooled frame would carry an id naming two different
+cells and would corrupt one of them. `pooled_track_frame` exists for the diagnostics battery because a
+*statistic* can pool; an *edit* cannot. The caller then says the ranking is unavailable rather than showing
+a wrong one — the timeline already treats a missing ranking as degraded-but-useful, since its own job (when
+each track existed) needs no detector at all.
+"""
+function track_group_frame(g::TrackPlotGroup)
+    length(g.sources) == 1 || return nothing
+    src = only(g.sources)
+    nrow(src.df) == 0 && return nothing
+    (; df = src.df, spatial = g.spatial, value_name = src.value_name)
 end
 
 """

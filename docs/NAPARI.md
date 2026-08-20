@@ -730,6 +730,27 @@ Wiring: the app enables it via `POST /api/napari/open` (`autoSaveProps`), which 
 
 They are reset on server restart (the `Ref`s are re-initialised). If napari is closed and reopened mid-session, the refs still hold the old path — auto-save will attempt a `send()` which will fail gracefully (caught by the try/catch in `_try_save_layer_props!`).
 
+### A layer request names an image; the bridge draws on the one on screen
+
+`_current_image_uid[]` is also the **guard** for every route that pushes layers — `show-tracks`,
+`show-populations`, `colour-labels`, `start-selection` (`_viewer_shows`). Each of those resolves a
+`CciaImage` from the request's `projectUid`/`imageUid` and builds pops from it, while the bridge
+resolves the resulting paths against whatever the viewer actually holds. Nothing checked that they were
+the same image, and the failure was reported from the field: pressing *Show* on a track panel pointed at
+`fXgbTl` while the viewer held `VJy1Nx` sent `value_name = "memTom"` — valid for the former, absent from
+the latter — and the bridge died inside HDF5 on `VJy1Nx/labelProps/memTom.h5ad`.
+
+**The error was the lucky outcome.** Had both images carried a `memTom`, one image's tracks would have
+been drawn over the other's pixels with no error anywhere — the version of this nobody reports. So the
+route refuses, naming both uids (`viewerImageUid` / `requestedImageUid`), and refuses before any bridge
+work. Validated against that exact case in `api/test/runtests.jl` → *"a viewer showing another image
+refuses the layer"*.
+
+The client is expected to not need it: the track timeline calls `ensureViewerImage()` first, which opens
+this panel's image through the one canonical `useNapariOpen` when the viewer is on a different one, and
+declines (with a line) when no viewer is open — *Show* must not force-launch napari, the same rule the
+gating canvas's prev/next navigation follows.
+
 ---
 
 ## Restoring overlays on open
