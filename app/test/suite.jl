@@ -9748,6 +9748,22 @@ end
         # `numeric` escape-hatch forces it back to numeric aggregates when desired
         forced = track_props(img; value_name="B", cell_measures=["st"], numeric=["st"])
         @test "st.mean" in names(forced) && !("st.1" in names(forced))
+
+        # An UNTRACKED segmentation → the empty, well-formed table, and SILENTLY. `track_props`
+        # handles this case by design, so it must ASK (`is_tracked`, which reads the obs column list
+        # only) instead of selecting `track_id` and inspecting the result: `select_cols` @warns about
+        # every column it cannot find, so the by-design path logged
+        # `LabelProps: ignoring unknown columns ["track_id"]` once per request — six per page load of
+        # a track-grained plot panel, every one of them about a column we already knew might be absent.
+        td2 = mktempdir(); mkpath(joinpath(td2, "labelProps"))
+        cp(h5, joinpath(td2, "labelProps", "B.h5ad"))
+        img2 = CciaImage(uid="KDIeEm", dir=td2)
+        img2.label_props["B"] = "B.h5ad"; img2.label_props["_active"] = "B"
+        label_props(img_label_props_path(img2, "B")) |> drop_obs(["track_id"]) |> save!
+        @test !is_tracked(img2; value_name="B")
+        untracked = @test_logs min_level=Logging.Warn track_props(img2; value_name="B", cell_measures=["area"])
+        @test nrow(untracked) == 0
+        @test Set(names(untracked)) == Set(["track_id", "num_cells", "label"])
     end
 end
 
