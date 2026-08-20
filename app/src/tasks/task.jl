@@ -72,12 +72,10 @@ function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any},
         # spec cannot say. Both mutate a fresh deepcopy, so a newly-dropped checkpoint shows up in
         # `validate_params` and the definitions API with no restart.
         hooked = _needs_dynamic_options(task)
-        opts   = _spec_has_options_from(cached)
-        dflts  = _spec_has_default_from(cached)
-        (hooked || opts || dflts) || return cached
+        srcs   = _spec_has_options_from(cached) || _spec_has_default_from(cached)
+        (hooked || srcs) || return cached
         out = deepcopy(cached)
-        opts  && _apply_options_from!(out)
-        dflts && _apply_defaults_from!(out)
+        srcs && resolve_spec_sources!(out)
         hooked ? _inject_dynamic_options!(out, task, form) : out
     end
 end
@@ -181,6 +179,34 @@ function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
         end
     end
     walk(get(spec, "params", nothing))
+    spec
+end
+
+"""
+    resolve_spec_sources!(spec) -> spec
+
+Resolve the spec-DECLARED runtime sources — `optionsFrom` and `defaultFrom` — on a parsed spec, in
+place. The one place those two are applied.
+
+It exists because there are TWO paths a spec reaches a user by, and only one of them owns a task
+instance. `_task_spec` dispatches on the task, so it can also run the `_inject_dynamic_options!`
+hook; `/api/tasks/definitions` walks the spec FILES instead — it must serve a category's forms whether
+or not every `fun_name` resolves to a registered Julia task — so it has no instance to dispatch on and
+called the hook only. When `optionsFrom` replaced the three per-task hooks (cellpose, coastal,
+opticalFlow.train), that route stopped resolving anything at all: `validate_params` accepted a coastal
+model the FORM could not offer, so the vault manager listed five models and the segmentation picker
+showed nothing but "None". Same for `defaultFrom` and the import form's store layout.
+
+So: anything a spec can DECLARE resolves here, for both paths. Only what a spec cannot say stays behind
+the dispatch hook.
+
+Unguarded by the `_spec_has_*` sniffs on purpose — those exist to spare `_task_spec` a `deepcopy` of a
+cached spec, and each is a `JSON3.write` of the whole spec, which costs more than the two walks it
+guards on a freshly-parsed one.
+"""
+function resolve_spec_sources!(spec::Dict{String,Any})::Dict{String,Any}
+    _apply_options_from!(spec)
+    _apply_defaults_from!(spec)
     spec
 end
 

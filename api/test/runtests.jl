@@ -930,6 +930,97 @@ end
     @test by_fun["segment.measureLabels"].previewable == false
 end
 
+@testset "API: the served form resolves optionsFrom and defaultFrom" begin
+    # The picker the USER sees comes from this route, not from `_task_spec` — the route walks the spec
+    # FILES (it must serve a category's forms whether or not every fun_name resolves to a registered
+    # Julia task), so it never had a task instance to dispatch on and resolved only the
+    # `_inject_dynamic_options!` hook. When the three model pickers moved from that hook to a
+    # spec-declared `optionsFrom`, this route silently stopped filling them: the Optical Flow vault
+    # manager listed every trained model and the segmentation form offered nothing but "None", both
+    # reading the same `list_coastal_models`. `validate_params` resolved it fine, which is why the suite
+    # was green — hence a test at the ROUTE, on the one thing the user can actually click.
+    vault = Cecelia.coastal_models_dir()
+    mkpath(vault)
+    pt = joinpath(vault, "__api_defs_test_model__.pt")
+    mf = joinpath(vault, "__api_defs_test_model__.json")
+    try
+        write(pt, "weights")
+        write(mf, """{"channelName": "memTom"}""")
+
+        # the walk the frontend does: `model` sits inside the repeatable `models` group
+        function find_param(ps, key)
+            for p in ps
+                get(p, :key, "") == key && return p
+                inner = get(p, :params, nothing)
+                if inner !== nothing
+                    hit = find_param(inner, key)
+                    hit === nothing || return hit
+                end
+            end
+            nothing
+        end
+
+        st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=segment"))
+        @test st == 200
+        specs = JSON3.read(body).segment
+        coastal = only(s for s in specs if get(s, :fun_name, "") == "segment.coastal")
+        opts = find_param(coastal.params, "model").options
+        vals = [String(o.value) for o in opts]
+
+        # the model is offerable at all — the whole bug
+        @test "__api_defs_test_model__.pt" in vals
+        # …and the label carries what it was trained on, so a user can tell whether it fits the image
+        @test any(o -> String(o.value) == "__api_defs_test_model__.pt" &&
+                       occursin("memTom", String(o.label)), opts)
+        # the spec's own "None" survives and stays first: the vault is empty until you train something,
+        # and that empty state must remain a legible choice rather than a select that rejects its default
+        @test String(first(opts).value) == ""
+
+        # picker == validator. The desync is the failure mode, not the empty list: `validate_params`
+        # accepting a model the form cannot offer is how this stayed invisible.
+        validated = Cecelia._task_spec(Cecelia._task_from_fun_name("segment.coastal"))
+        vparams = JSON3.read(JSON3.write(validated)).params
+        @test Set(String(o.value) for o in find_param(vparams, "model").options) == Set(vals)
+
+        # the composite the module page actually runs pulls its params from the sub-spec, so it must see
+        # the same resolved options — it is what the Segment page offers
+        measure = only(s for s in specs if get(s, :fun_name, "") == "segment.coastalMeasure")
+        @test "__api_defs_test_model__.pt" in
+              [String(o.value) for o in find_param(measure.params, "model").options]
+
+        # `defaultFrom` came in through the same door and had the same gap: the import form's store
+        # layout must be the SETTING, not the literal in the JSON, or choosing zarr v3 in Settings and
+        # importing from the form silently writes v2.
+        #
+        # Asserted against a setting FLIPPED to v3, not against `ngff_version()`. Comparing the served
+        # default to the live setting looks like the tighter test and is in fact no test at all: the
+        # spec literal is "0.4" and so is `NGFF_VERSION_DEFAULT`, so on any config that hasn't chosen
+        # v3 — every CI run, since the suite isolates itself in an empty temp `CECELIA_DEV_DIR` — the
+        # two sides agree whether or not the resolver ran. Only a setting that DISAGREES with the
+        # literal can tell resolution from a passthrough.
+        mktempdir() do tmp
+            try
+                withenv("CECELIA_DEV_DIR" => tmp) do
+                    @test Cecelia.set_store_layout!("v3") == "v3"   # writes custom.toml + hot-reloads
+                    @test Cecelia.ngff_version() == "0.5"           # the setting really did change
+                    st2, body2 = api_task_definitions(
+                        HTTP.Request("GET", "/api/tasks/definitions?category=importImages"))
+                    @test st2 == 200
+                    omezarr = only(s for s in JSON3.read(body2).importImages
+                                   if get(s, :fun_name, "") == "importImages.omezarr")
+                    # the form pre-fills v3 — and "0.4" here would be the spec literal winning
+                    @test String(find_param(omezarr.params, "ngffVersion").default) == "0.5"
+                end
+            finally
+                init_cecelia!()   # restore the real dev/prod config regardless of outcome
+            end
+        end
+    finally
+        rm(pt; force = true)
+        rm(mf; force = true)
+    end
+end
+
 @testset "API: task preview never guesses which image is open" begin
     # The property this whole route exists for. `napari_api` tracked the open image but exposed
     # nothing, so callers had to be told which image to act on — and guessing wrong wrote scratch
