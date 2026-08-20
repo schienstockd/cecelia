@@ -104,7 +104,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`PY_PACKAGING_PLAN.md`](PY_PACKAGING_PLAN.md) | DONE, verified in-env | `python/cecelia` as an installable package so coastal can `pip install` it |
 | [`ZARR_STREAMING_PLAN.md`](ZARR_STREAMING_PLAN.md) | COMPLETE — #315, #317, #319 | Bounded-memory store writers; Phase 2 measured out, 3.2/3.3 parked |
 | [`SPATIAL_GATE_UNITS_PLAN.md`](SPATIAL_GATE_UNITS_PLAN.md) | built, four suites green | Gate on calibrated spatial units; Phase 5 written then deliberately dropped (decision 8) |
-| [`SPATIAL_ANISOTROPY_PLAN.md`](SPATIAL_ANISOTROPY_PLAN.md) | done, uncommitted (worktree `spatial-anisotropy`) | Branching-port audit + structure-anisotropy readouts. **Notebook, not app plots** |
+| [`SPATIAL_ANISOTROPY_PLAN.md`](SPATIAL_ANISOTROPY_PLAN.md) | BUILT — PR #413 (2026-07-30) | Branching-port audit + structure-anisotropy readouts. **Notebook, not app plots** |
 | [`UMAP_COLOUR_FACET_PLAN.md`](UMAP_COLOUR_FACET_PLAN.md) | all phases built (#127 + follow-ups) | Colour the cluster UMAP by cluster / population / attribute |
 | [`STORAGE_RECLAIM_PLAN.md`](STORAGE_RECLAIM_PLAN.md) | built (`feat/storage-reclaim`) | Surface reclaimable space instead of telling users to delete originals by hand |
 | [`RESOURCE_POOLS_PLAN.md`](RESOURCE_POOLS_PLAN.md) | Slice 1+2 done | Pools per real bottleneck + live per-pool sliders. Durable parts in `docs/SCHEDULER.md` |
