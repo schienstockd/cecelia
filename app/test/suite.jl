@@ -13554,6 +13554,40 @@ end
         rm(state; force = true)
     end
 end
+
+# ── The TWIN of the test above, and the one whose absence let a regression ship ───────────────────
+#
+# The guard was only ever pinned from the "port is taken" side, so `_runner_owns_port` answering false
+# for a port we had *just bound ourselves* looked like a pass. It shipped, and then every fresh
+# `pixi run dev` printed "another process took it" with nothing listening on 7657 at all — the runner
+# exited on start and every task fell back to in-process.
+#
+# The cause was a budget that could not be met, not a wrong idea: a freshly returned `HTTP.listen!`
+# server does not serve its first in-process request for ~1.2 s (the accept path is still compiling),
+# and the session's first `HTTP.get` compiles for about as long — so a 2 s per-attempt timeout inside a
+# 3 s deadline bought ONE attempt, which could not succeed. This test fails outright on those numbers.
+#
+# Deliberately exercises `_runner_owns_port` against a real `HTTP.listen!` rather than `runner_serve`:
+# a full runner installs `_runner_idle_watchdog!`, which calls `exit(0)`, and a test process that may
+# exit from under the suite is not a test.
+@testset "_runner_owns_port recognises a port WE just bound" begin
+    using Sockets: listen as sock_listen, getsockname, localhost
+
+    probe = sock_listen(localhost, 0)             # port 0 → the OS names a free one
+    port  = Int(getsockname(probe)[2])
+    close(probe)                                   # …then hand it back, so we can bind it ourselves
+
+    server = Cecelia.HTTP.listen!(Cecelia._runner_stream, "127.0.0.1", port)
+    try
+        @test Cecelia._runner_owns_port(port)
+        # and it is OUR pid it recognised, not merely "something answered"
+        reply = Cecelia.runner_ping(Cecelia.RunnerHandle(; port = port))
+        @test reply !== nothing
+        @test string(get(reply, "pid", "")) == string(getpid())
+    finally
+        try; close(server); catch; end
+    end
+end
 # ── Manual track correction (docs/todo/CORRECTION_PLAN.md, P1) ────────────────
 #
 # The ops engine is pure, so it is tested directly against a hand-built cell table — no fixture, no

@@ -488,8 +488,11 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
         return nothing
     end
     if !_runner_owns_port(port)
-        @warn("Could not bind the task runner port — another process took it. This runner is exiting; " *
-              "the one holding the port keeps working.", port)
+        # Deliberately NOT the same sentence as the throw above. Two different causes printing one
+        # message cost a debugging round trip: the log said "another process took it" with nothing
+        # listening on the port, and there was no way to tell which branch had said so.
+        @warn("Bound the task runner port but could not confirm it answers as us — standing down " *
+              "rather than claiming the state file. Nothing else is known to hold the port.", port)
         # if the bind did somehow succeed we must not leak the listener; `close` on a doomed server is
         # a no-op, so this is unconditional rather than guarded by a second guess about its state
         try; close(server); catch; end
@@ -515,15 +518,27 @@ end
 # "someone else did" — the distinction the whole stand-down path turns on. `nothing` (a raw socket that
 # never speaks HTTP, e.g. a test holding the port) counts as not ours.
 #
-# Polled, because `HTTP.listen!` binds in a spawned task: on the happy path the first ask answers at
-# once, and the deadline only matters on a machine slow enough to still be binding. A LOST race pays the
-# whole deadline — acceptable, because that process is exiting anyway, and an already-running runner was
-# caught by the cheap `runner_ping` above long before this.
-function _runner_owns_port(port::Int; deadline_seconds::Real = 3.0)::Bool
+# ── The budget, and why the first ask is guaranteed to fail ────────────────────
+#
+# "On the happy path the first ask answers at once" was wrong, and it made every fresh start stand
+# down. Measured on a warm machine: a freshly returned `HTTP.listen!` server does not serve its first
+# in-process request for ~1.2 s — the accept path is still compiling — and the FIRST `HTTP.get` of the
+# session spends about that long compiling too. With a 2 s per-attempt timeout inside a 3 s deadline
+# that bought exactly ONE attempt, which could not succeed. Nothing held the port; the runner said
+# another process had and exited, so every task fell back to in-process.
+#
+# So: cheap attempts, generous deadline. Short per-attempt timeouts mean the loop actually LOOPS
+# (~4 attempts over ~1.2 s here) instead of spending its whole budget waiting for one doomed request.
+#
+# A LOST race pays the whole deadline, which is fine twice over: a runner that ANSWERS returns false on
+# the first attempt (wrong pid — no waiting), so only a non-HTTP squatter reaches the deadline, and that
+# process is exiting anyway. An already-running runner was caught by the cheap `runner_ping` above long
+# before this.
+function _runner_owns_port(port::Int; deadline_seconds::Real = 10.0, attempt_timeout::Real = 0.5)::Bool
     mine = string(getpid())
     t0 = time()
     while true
-        p = runner_ping(RunnerHandle(; port = port))
+        p = runner_ping(RunnerHandle(; port = port); timeout = attempt_timeout)
         p !== nothing && return string(get(p, "pid", "")) == mine
         time() - t0 > deadline_seconds && return false
         sleep(0.05)

@@ -183,11 +183,23 @@ Three things used to go wrong at that point, and all three are fixed:
   red on macOS. Ownership is therefore proven by **asking**: `/ping` reports the responder's PID, so
   "something answers" and "*we* answer" are distinguishable (`_runner_owns_port`) — which is the
   distinction that matters, since the failure mode is another runner holding the port. A lost race pays
-  that deadline (~3 s) before exiting, which costs nothing: that process is leaving.
+  the deadline before exiting, which costs nothing: that process is leaving.
+- **The budget has to fit the measurement, and the first version's did not** — which turned the guard
+  into "stand down always". A freshly returned `HTTP.listen!` server does not serve its first
+  *in-process* request for ~1.2 s (its accept path is still compiling), and the session's first
+  `HTTP.get` compiles for about as long. A 2 s per-attempt timeout inside a 3 s deadline therefore
+  bought exactly ONE attempt, which could not succeed: nothing held the port, the runner announced that
+  another process had, and every task fell back to in-process on a normal `pixi run dev`. The fix is
+  cheap attempts (0.5 s) inside a generous deadline (10 s), so the loop actually loops. Only a
+  **non-HTTP squatter** can reach the deadline — a runner that answers is rejected on the first attempt
+  by its pid, and a live one was caught by the cheap `runner_ping` long before.
 
-All three are pinned by *"runner_serve stands down when the port is taken"* in `app/test/suite.jl`,
-which holds an ephemeral port with a plain socket that never speaks HTTP — so nothing answers, and the
-stand-down path is exercised on every platform rather than only where the scheduler loses.
+The stand-down path is pinned by *"runner_serve stands down when the port is taken"* in
+`app/test/suite.jl`, which holds an ephemeral port with a plain socket that never speaks HTTP — so
+nothing answers, and the path is exercised on every platform rather than only where the scheduler loses.
+**Its twin matters just as much**: *"`_runner_owns_port` recognises a port WE just bound"* is what the
+budget regression got past, because a guard tested only from the "port taken" side looks correct when it
+fires for every input. Both directions, or neither is pinned.
 
 `runner_launch!` also reports **whose** runner answered: it compares the pid on the wire with
 `Libc.getpid` of the child it spawned, and says "adopted" rather than "started" when they differ. It

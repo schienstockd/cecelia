@@ -2374,12 +2374,21 @@ Dev-only, like the proxy note below: nothing in a production build reaches eithe
 
 ## The dev proxy is quiet when the backend is down
 
-`vite.config.ts` gives both proxies a `configure` hook that swallows `ECONNREFUSED`/`ECONNRESET` as one
-line and answers 503. `pixi run dev` supervises the backend and Settings → System Restart stops and
-starts it, so every session has windows where :8080 is not listening — and `TaskRunner.vue` polls
-`/api/runner/status` on a timer from every module page, so the default handler printed a Node stack per
-poll into the same terminal the log rail writes to. Noise on a normal action teaches you to ignore the
-log, and then a real proxy error goes unread. Anything that is not those two codes still prints in full.
+`vite.config.ts` wraps Vite's own logger (`createLogger()`) and turns `ECONNREFUSED`/`ECONNRESET` proxy
+stacks into one line; the predicate is `utils/devProxyNoise.ts`, unit-tested. `pixi run dev` supervises
+the backend and Settings → System Restart stops and starts it, so every session has windows where :8080
+is not listening — and `TaskRunner.vue` polls `/api/runner/status` on a timer from every module page,
+so the default handler printed a Node stack per poll into the same terminal the log rail writes to.
+Noise on a normal action teaches you to ignore the log, and then a real proxy error goes unread.
+Anything that is not those two codes still prints in full, and Vite still answers the request (502 for
+`/api`, socket end for `/ws`), so a client `catch` runs when it should.
+
+**Why the logger and not a proxy `error` listener.** The first version attached one via
+`server.proxy.configure` and could not work: `proxyMiddleware` calls `opts.configure(proxy)` and only
+*then* attaches its own logging listener, so ours ran first and Vite's still printed. Node calls every
+listener; no ordering suppresses a sibling. It also only ever covered `http proxy error` — `/ws` has
+two more spellings (`ws proxy error:`, `ws proxy socket error:`), and the socket one does not even
+contain the substring `proxy error`.
 
 ## Persisting view state — the three scopes (important; read before adding any plot option)
 
