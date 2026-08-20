@@ -2804,6 +2804,40 @@ factored out of the gating page so every module canvas reuses them unchanged:
 
 ---
 
+## Stores are HMR-aware — one line per store, and it is not optional
+
+Every Pinia store ends with
+
+```ts
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useThingStore, import.meta.hot))
+```
+
+A setup-store instance is **not** replaced when its module hot-reloads — it keeps the shape it had at
+page load. So adding a field to a store and saving leaves the *component* reloaded into the version that
+reads the new field, while the live store still lacks it, and the page dies on code that is correct in
+the source:
+
+```
+UI error (render function): can't access property "length", $setup.customModules.clashes is undefined
+```
+
+`clashes` is `ref([])` and cannot be undefined from a cold load, which is exactly what makes this
+expensive: nothing is wrong, a reload fixes it, so it reads as a ghost. `acceptHMRUpdate` must be called
+in the store's OWN module (it needs that module's `import.meta.hot`), so it is per-file boilerplate and
+will be forgotten — `stores/hmr.test.ts` fails when a store lacks the line, or names a different store
+in it (registering A's updater in B corrupts A and leaves B stale).
+
+Dev-only, like the proxy note below: nothing in a production build reaches either.
+
+## The dev proxy is quiet when the backend is down
+
+`vite.config.ts` gives both proxies a `configure` hook that swallows `ECONNREFUSED`/`ECONNRESET` as one
+line and answers 503. `pixi run dev` supervises the backend and Settings → System Restart stops and
+starts it, so every session has windows where :8080 is not listening — and `TaskRunner.vue` polls
+`/api/runner/status` on a timer from every module page, so the default handler printed a Node stack per
+poll into the same terminal the log rail writes to. Noise on a normal action teaches you to ignore the
+log, and then a real proxy error goes unread. Anything that is not those two codes still prints in full.
+
 ## Persisting view state — the three scopes (important; read before adding any plot option)
 
 Every user-settable option MUST live in a persisted bag, or it silently resets on remount (a plain

@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
@@ -527,3 +527,6 @@ export const useWsStore = defineStore('ws', () => {
 
   return { status, lastPong, connect, send, ping, on, off }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useWsStore, import.meta.hot))

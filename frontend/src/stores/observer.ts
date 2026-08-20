@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { observerApi, type ObserverSession } from '../utils/serviceApi'
 import { useSettingsStore } from './settings'
@@ -95,3 +95,6 @@ export const useObserverStore = defineStore('observer', () => {
            registering, registerError,
            refresh, runPass, clear, registerMcp }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useObserverStore, import.meta.hot))

@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 import { useLogStore } from './log'
 import { useProjectStore, type CciaSet } from './project'
@@ -172,3 +172,6 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
 
   return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, deleteProject, closeProject }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useProjectMetaStore, import.meta.hot))

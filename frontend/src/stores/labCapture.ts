@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { useTaskCompletionWatch } from '../composables/useTaskCompletionWatch'
 import { useSettingsStore } from './settings'
@@ -69,3 +69,6 @@ export const useLabCaptureStore = defineStore('labCapture', () => {
 
   return { captureTick, capture, installAutoCapture, notifyAppended }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useLabCaptureStore, import.meta.hot))

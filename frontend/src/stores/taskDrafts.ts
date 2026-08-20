@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { reactive } from 'vue'
 import type { ParamValues } from '../tasks/types'
 
@@ -30,3 +30,6 @@ export const useTaskDraftsStore = defineStore('taskDrafts', () => {
 
   return { drafts, get, set, clear }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useTaskDraftsStore, import.meta.hot))

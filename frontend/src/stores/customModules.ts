@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 
 // User drop-in custom modules (see docs/CUSTOM_MODULES.md). Mirrors the backend
@@ -115,3 +115,17 @@ export const useCustomModulesStore = defineStore('customModules', () => {
   // race the reload those endpoints just performed.
   return { dir, modules, categories, plugins, clashes, registry, bundled, loading, apply, ensureLoaded, refresh, reload }
 })
+
+// ── HMR ───────────────────────────────────────────────────────────────────────
+// A Pinia setup-store is NOT replaced when its module is hot-reloaded: the instance created at page
+// load keeps whatever shape it had. So adding a field to a store and saving means the COMPONENT
+// reloads into the version that reads the new field while the live store still lacks it, and the page
+// dies on something that is correct in the source:
+//
+//     UI error (render function): can't access property "length", $setup.customModules.clashes is undefined
+//
+// `clashes` is `ref([])` and can never be undefined from a cold load — the only way to see that is a
+// stale instance. `acceptHMRUpdate` is Pinia's fix, and it has to be called in each store's own module
+// because it needs THAT module's `import.meta.hot`. One line per store, ratcheted by
+// `stores/hmr.test.ts` so the next store added does not quietly reintroduce this.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useCustomModulesStore, import.meta.hot))

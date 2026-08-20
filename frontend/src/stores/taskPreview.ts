@@ -14,7 +14,7 @@
 // Both funnel into one debounced, latest-wins run, because a preview that fires per event queues
 // seconds of stale cellpose behind the one result the user is waiting for.
 
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { previewApi, type SvcError } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
@@ -280,3 +280,6 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     flush: () => scheduler.flush(),
   }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useTaskPreviewStore, import.meta.hot))
