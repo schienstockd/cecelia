@@ -328,6 +328,17 @@ Enforced by `utils/continuousControls.test.ts`: it scans every SFC for range inp
 pins the live napari endpoints to their one owner. It cannot follow an `emit` into the parent — which is
 exactly how the z-slider bug got in — so the sink-side rule above is the part that actually holds.
 
+**A `ResizeObserver` callback may MEASURE, never write layout.** Same rule, structural version: a
+callback that resizes an observed element during delivery is what the browser reports as
+`ResizeObserver loop completed with undelivered notifications` — and it reports it after the FIRST
+write, so a settle guard (`> 1px`) bounds the loop but never silences the message. Two fixes, by shape:
+a plot that renders into its host uses `composables/usePlotResize.ts` (rAF + skip a render the size did
+not ask for); a box that sizes ITSELF schedules the write through `rafCoalesce` (`CanvasPanel`'s square
+panels — the gating plot panels — did it inline and that was the rail's mystery error). In DEV,
+`utils/roLoopTrace.ts` wraps the constructor and names the observer that did it, ours or a dependency's.
+Exemptions live in `continuousControls.test.ts` with a reason each, and a reason has to be about the
+WRITE, not about looping.
+
 **Say that a slow result is coming.** A control whose effect is coalesced looks broken if nothing
 changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
 
