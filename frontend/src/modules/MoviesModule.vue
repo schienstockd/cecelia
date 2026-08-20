@@ -15,6 +15,7 @@ import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          movieChannelCells, movieChannelCount, nextMovieName,
          type MovieEntry, type MovieRow } from '../utils/movies'
 import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
+import { rafCoalesce } from '../utils/rafCoalesce'
 import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
          type AttrFilterState } from '../utils/attrFilter'
@@ -113,18 +114,33 @@ function onZoomSlider(v: number) {
   zoomAround(v, vp.clientWidth / 2, vp.clientHeight / 2)
 }
 
+// Measuring FEEDS the video's box (`displaySize`), so the observer must not write it during delivery:
+// a video sized past the viewport makes a scrollbar appear, which shrinks the box the observer reports
+// — the loop behind "ResizeObserver loop completed with undelivered notifications" in the log rail.
+// It stayed anonymous because the viewport's BORDER box never moves while that happens; only the inner
+// box does (`utils/roLoopTrace.ts`). The fix is the canonical pair (`usePlotResize`): coalesce the
+// write into a frame, so the resize is delivered as a fresh cycle, and skip one the size didn't ask
+// for — which here is free, since a ref written its own value changes nothing.
+function measureViewport() {
+  const el = viewportEl.value
+  if (!el) return
+  vpW.value = el.clientWidth
+  vpH.value = el.clientHeight
+}
+const measureFrame = rafCoalesce(measureViewport)
+
 watch(viewportEl, (el, prev) => {
   ro?.disconnect()
   prev?.removeEventListener('wheel', onWheel)
   if (el) {
-    const measure = () => { vpW.value = el.clientWidth; vpH.value = el.clientHeight }
-    ro = new ResizeObserver(measure)
+    ro = new ResizeObserver(() => measureFrame.schedule())
     ro.observe(el)
-    measure()
+    measureViewport()          // the first one is not inside a delivery cycle — no frame to wait for
     el.addEventListener('wheel', onWheel, { passive: false })   // passive:false → we can preventDefault
   }
 })
 onBeforeUnmount(() => {
+  measureFrame.cancel()
   ro?.disconnect()
   viewportEl.value?.removeEventListener('wheel', onWheel)
   window.removeEventListener('keydown', onKey)

@@ -339,6 +339,15 @@ panels — the gating plot panels — did it inline and that was the rail's myst
 Exemptions live in `continuousControls.test.ts` with a reason each, and a reason has to be about the
 WRITE, not about looping.
 
+**"It measures, it writes nothing" is the reason that fools you.** An observer reports the CONTENT box,
+so sizing a CHILD from the measurement is a write to the parent's box whenever a scrollbar is involved:
+grow the child past an `overflow: auto` box, a scrollbar appears, and the box the observer reports
+shrinks — while the BORDER box never moves. The Movies player's zoom did exactly that, and it stayed
+anonymous through a release because the trace compared border boxes only; it now measures the inner box
+too and says "a scrollbar appeared or went". So the rule for a *measuring* callback: if the measurement
+sizes anything inside the observed element, coalesce it like any other write. Both conditional
+exemptions are pinned to their callback LINE, not to prose.
+
 **Say that a slow result is coming.** A control whose effect is coalesced looks broken if nothing
 changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
 

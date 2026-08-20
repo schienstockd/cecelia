@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { selfResized, describeTarget, creationSite, formatRoLoop } from './roLoopTrace'
+import { selfResized, describeTarget, creationSite, formatRoLoop,
+         describeResize } from './roLoopTrace'
+
+/** a box where the inner and outer measurements agree — the ordinary case */
+const box = (w: number, h: number, cw = w, ch = h) => ({ w, h, cw, ch })
 
 // The wrapper itself needs a DOM (and a real ResizeObserver) to exercise, which this suite has no
 // environment for — so the DECISIONS live in pure functions and are pinned here, and the wrapper is
@@ -10,9 +14,27 @@ describe('selfResized', () => {
     // CanvasPanel's `>1px` guard was read as "so we don't loop the ResizeObserver". It does bound the
     // loop; it does NOT stop the browser reporting the first write, which is the whole confusion this
     // detector exists to end. 1px must therefore report.
-    expect(selfResized({ w: 400, h: 300 }, { w: 400, h: 301 })).toBe(true)
-    expect(selfResized({ w: 400, h: 300 }, { w: 401, h: 300 })).toBe(true)
-    expect(selfResized({ w: 400, h: 300 }, { w: 400, h: 300 })).toBe(false)
+    expect(selfResized(box(400, 300), box(400, 301))).toBe(true)
+    expect(selfResized(box(400, 300), box(401, 300))).toBe(true)
+    expect(selfResized(box(400, 300), box(400, 300))).toBe(false)
+  })
+
+  it('catches the scrollbar case, where the border box never moves', () => {
+    // an overflow:auto element whose callback sizes a CHILD from clientWidth: the child grows past the
+    // box, a scrollbar appears, the INNER box shrinks — and the outer numbers say nothing happened.
+    // This is the loop the detector used to miss entirely.
+    expect(selfResized(box(400, 300), box(400, 300, 385, 300))).toBe(true)
+  })
+})
+
+describe('describeResize', () => {
+  it('reports the border box when that is what moved', () => {
+    expect(describeResize(box(400, 300), box(400, 412))).toBe('400x300 → 400x412')
+  })
+
+  it('names the scrollbar when only the inner box moved — the outer numbers would read as a non-event', () => {
+    expect(describeResize(box(400, 300), box(400, 300, 385, 300)))
+      .toBe('inner 400x300 → 385x300, a scrollbar appeared or went')
   })
 })
 
@@ -58,7 +80,7 @@ describe('creationSite', () => {
 describe('formatRoLoop', () => {
   it('states the box change, and points at the fix rather than the symptom', () => {
     const { message, detail } = formatRoLoop('at CanvasPanel.vue:122', 'div.panel.square',
-                                             { w: 400, h: 300 }, { w: 400, h: 412 })
+                                             box(400, 300), box(400, 412))
     expect(message).toContain('div.panel.square')
     expect(message).toContain('400x300 → 400x412')
     expect(detail).toContain('rafCoalesce')
