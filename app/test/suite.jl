@@ -14870,3 +14870,152 @@ end
     # The scan must actually find calls; a refactor that renamed `run_py` would otherwise "pass".
     @test checked >= 20
 end
+
+@testset "task callbacks are bound where they are used" begin
+    # The sibling test above checks that a `run_py` call MENTIONS `on_progress`. It cannot check that
+    # the name is actually IN SCOPE — and that is the half that shipped broken: `_write_track_props`
+    # (track_measures.jl) forwarded `on_progress = on_progress` from a signature that only took
+    # `on_log` and `on_process`, so every `tracking.track_measures` run died with
+    # `UndefVarError: on_progress not defined` the moment it reached the per-track table. Julia cannot
+    # catch this at load time: an unbound global in a function body is a RUNTIME error, on the one line
+    # that uses it. Text-matching cannot catch it either — the offending line reads exactly like the 24
+    # correct ones. So: parse each file and check the three task callbacks against the enclosing
+    # function's arguments (or an enclosing closure's, or a local assignment).
+    CALLBACKS = Set([:on_log, :on_progress, :on_process])
+
+    _unwrap(s) = begin                       # strip `where {…}` and `::ReturnType` off a signature
+        while s isa Expr
+            if s.head === :where
+                s = s.args[1]
+            elseif s.head === :(::) && length(s.args) == 2 && s.args[1] isa Expr &&
+                   s.args[1].head in (:call, :where, :tuple)
+                s = s.args[1]
+            else
+                break
+            end
+        end
+        s
+    end
+
+    function _names!(out, a)                 # every name an argument/binding form introduces
+        if a isa Symbol
+            push!(out, a)
+        elseif a isa Expr
+            if a.head in (:(::), :(=), :kw, :(...))
+                _names!(out, a.args[1])
+            elseif a.head in (:parameters, :tuple, :block)
+                for p in a.args; _names!(out, p); end
+            end
+        end
+        out
+    end
+
+    function _args(sig)                  # positional + keyword argument names of a signature
+        s = _unwrap(sig)
+        out = Symbol[]
+        if s isa Expr && s.head === :call
+            for a in s.args[2:end]; _names!(out, a); end
+        else
+            _names!(out, s)
+        end
+        out
+    end
+
+    _isfun(ex) = ex isa Expr && (ex.head === :function ||
+        (ex.head === :(=) && length(ex.args) == 2 &&
+         _unwrap(ex.args[1]) isa Expr && _unwrap(ex.args[1]).head === :call))
+
+    _fname(sig) = (s = _unwrap(sig); f = s isa Expr && s.head === :call ? s.args[1] : nothing;
+                   f isa Expr ? string(f.head === :(.) ? f.args[end] : f) :
+                   f isa Symbol ? string(f) : "λ")
+
+    # Default values in a signature are evaluated in the ENCLOSING scope, so they are walked there.
+    function _defaults(walk, sig, bound, fn, file, ln)
+        s = _unwrap(sig)
+        s isa Expr || return
+        for a in (s.head === :call ? s.args[2:end] : s.args)
+            a isa Expr || continue
+            if a.head in (:kw, :(=)) && length(a.args) == 2
+                walk(a.args[2], bound, fn, file, ln)
+            elseif a.head === :parameters
+                for p in a.args
+                    p isa Expr && p.head in (:kw, :(=)) && length(p.args) == 2 &&
+                        walk(p.args[2], bound, fn, file, ln)
+                end
+            end
+        end
+    end
+
+    offenders = String[]
+    function walk(ex, bound::Set{Symbol}, fn::String, file::String, ln::Ref{Int})
+        if ex isa Symbol
+            ex in CALLBACKS && !(ex in bound) &&
+                push!(offenders, "$file:$(ln[]) — `$ex` in `$fn` is not bound in scope")
+            return
+        end
+        ex isa Expr || return
+        if _isfun(ex)                                   # named function / short-form definition
+            _defaults(walk, ex.args[1], bound, fn, file, ln)
+            nb, nm = union(bound, Set(_args(ex.args[1]))), _fname(ex.args[1])
+            for a in ex.args[2:end]
+                a isa LineNumberNode ? (ln[] = a.line) : walk(a, nb, nm, file, ln)
+            end
+        elseif ex.head === :(->)                        # lambda — captures the enclosing scope
+            nb = union(bound, Set(_args(ex.args[1])))
+            for a in ex.args[2:end]
+                a isa LineNumberNode ? (ln[] = a.line) : walk(a, nb, fn, file, ln)
+            end
+        elseif ex.head === :do                          # f(…) do x … end
+            walk(ex.args[1], bound, fn, file, ln)
+            walk(ex.args[2], bound, fn, file, ln)
+        elseif ex.head in (:for, :while, :let, :generator, :comprehension, :try)
+            nb = copy(bound)                            # loop/let/catch vars bind inside
+            for a in ex.args
+                a isa LineNumberNode && (ln[] = a.line; continue)
+                if a isa Expr && a.head in (:(=), :in, :(=>)) && length(a.args) == 2
+                    walk(a.args[2], nb, fn, file, ln); _names!(nb, a.args[1])
+                elseif a isa Symbol
+                    push!(nb, a)                        # `catch e`
+                else
+                    walk(a, nb, fn, file, ln)
+                end
+            end
+        elseif ex.head === :struct                      # field declarations are not a scope
+            return
+        elseif ex.head === :(=) && ex.args[1] isa Symbol
+            walk(ex.args[2], bound, fn, file, ln); push!(bound, ex.args[1])
+        elseif ex.head === :(.) && length(ex.args) == 2  # `obj.on_log` is a field, not the name
+            walk(ex.args[1], bound, fn, file, ln)
+        elseif ex.head === :kw                          # `on_log = …` in a CALL: lhs is the kwarg name
+            walk(ex.args[2], bound, fn, file, ln)
+        elseif ex.head === :quote
+            return
+        else
+            b2 = copy(bound)
+            for a in ex.args
+                a isa LineNumberNode ? (ln[] = a.line) : walk(a, b2, fn, file, ln)
+            end
+        end
+    end
+
+    roots   = [joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src")]
+    scanned = 0
+    for root in roots
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f)
+            ex = try
+                Meta.parseall(read(path, String))
+            catch e
+                push!(offenders, "$f — could not parse: $e"); continue
+            end
+            scanned += 1
+            walk(ex, Set{Symbol}(), "<toplevel>", f, Ref(0))
+        end
+    end
+
+    isempty(offenders) || @info "task callbacks used out of scope" offenders
+    @test isempty(offenders)
+    @test scanned >= 40      # a moved/renamed source tree must not make this "pass" by scanning nothing
+end
