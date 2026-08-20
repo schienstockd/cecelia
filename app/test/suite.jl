@@ -13521,6 +13521,13 @@ end
 #
 # Uses an EPHEMERAL port held by a plain socket, never the real 7657 — a test must not touch a runner
 # the developer has running.
+#
+# It caught a THIRD way to get this wrong, on macOS CI only: `HTTP.listen!` builds a `Server` and
+# spawns a task that does the bind, and the failure path notifies its ready `Event` BEFORE it rethrows —
+# so `listen!` returned normally, the state file was claimed, and the EADDRINUSE surfaced at `wait` as
+# a `TaskFailedException`. Both original symptoms, back. Ownership is therefore proven by asking
+# `/ping` for the responder's PID (`_runner_owns_port`), which no scheduler ordering can fake — the
+# raw socket this test holds never speaks HTTP, so nothing answers and the runner stands down.
 @testset "runner_serve stands down when the port is taken" begin
     using Sockets: listen as sock_listen, getsockname, localhost
 

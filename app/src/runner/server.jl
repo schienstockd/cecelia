@@ -458,26 +458,83 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
         return nothing
     end
 
-    # ── Bind FIRST, claim the state file second ──────────────────────────────────
+    # ── OWN the port before claiming the state file ───────────────────────────────
     #
     # The order used to be the other way round, and it made a lost race destructive rather than merely
     # noisy: the loser wrote `runner.json` with ITS pid — clobbering the winner's record — and then its
     # `atexit` hook DELETED the file on the way out. So after a collision the surviving runner had no
     # state file at all, which is exactly the "a stray runner is folklore" case this file exists to
-    # prevent. `HTTP.listen!` binds synchronously and hands back a server to `wait` on, so the claim
-    # can happen after the port is genuinely ours.
+    # prevent.
+    #
+    # **A returned `Server` is NOT proof of a bound port**, and assuming it was reinstated that exact
+    # bug. `HTTP.listen!(handler, host, port)` only builds a `Server` and spawns a task that does the
+    # bind; `_start_server_task!` waits on a ready `Event` that the failure path `notify`s BEFORE it
+    # rethrows, so the caller can resume while the doomed task is still unwinding and its
+    # `istaskdone && istaskfailed` guard sees a task that has not finished failing yet. The EADDRINUSE
+    # then arrives at `wait(server)` as a `TaskFailedException` — after the state file was claimed. That
+    # is scheduler-dependent, so it passed on Linux and Windows CI and failed on macOS.
+    #
+    # So ownership is proven by ASKING, not by the absence of an exception: `/ping` reports the
+    # responder's PID, so "something answers" and "we answer" are distinguishable — which matters,
+    # because the whole failure mode is another runner holding the port. Retried, because the bind is
+    # asynchronous and may not have happened yet when we first ask.
     server = try
         HTTP.listen!(_runner_stream, host, port)
     catch e
-        # A true race (someone bound between the ping above and here). Nothing has been written yet, so
-        # no other runner's record is harmed — report it as the ordinary event it is.
+        # A synchronous throw (some HTTP versions do surface the bind error here). Nothing has been
+        # written yet, so no other runner's record is harmed.
         @warn("Could not bind the task runner port — another process took it. This runner is exiting; " *
               "the one holding the port keeps working.", port, exception = e)
+        return nothing
+    end
+    if !_runner_owns_port(port)
+        @warn("Could not bind the task runner port — another process took it. This runner is exiting; " *
+              "the one holding the port keeps working.", port)
+        # if the bind did somehow succeed we must not leak the listener; `close` on a doomed server is
+        # a no-op, so this is unconditional rather than guarded by a second guess about its state
+        try; close(server); catch; end
         return nothing
     end
     _runner_write_state_file(port)
     atexit(_runner_remove_state_file)
     _runner_idle_watchdog!()
     @info "Cecelia task runner starting" host port pid=getpid() threads=Threads.nthreads() commit=_RUNNER_COMMIT[] projects_dir=projects_dir()
-    wait(server)
+    # The residual race: a bind that fails after we were satisfied. Report it as the ordinary event it
+    # is rather than as a `TaskFailedException` stack trace, which is what "reads as a broken app" means.
+    try
+        wait(server)
+    catch e
+        _is_addr_in_use(e) || rethrow()
+        @warn("The task runner lost its port to another process. This runner is exiting; the one " *
+              "holding the port keeps working.", port)
+        return nothing
+    end
+end
+
+# Do WE answer on this port? `/ping` carries the responder's pid, so this separates "we bound it" from
+# "someone else did" — the distinction the whole stand-down path turns on. `nothing` (a raw socket that
+# never speaks HTTP, e.g. a test holding the port) counts as not ours.
+#
+# Polled, because `HTTP.listen!` binds in a spawned task: on the happy path the first ask answers at
+# once, and the deadline only matters on a machine slow enough to still be binding. A LOST race pays the
+# whole deadline — acceptable, because that process is exiting anyway, and an already-running runner was
+# caught by the cheap `runner_ping` above long before this.
+function _runner_owns_port(port::Int; deadline_seconds::Real = 3.0)::Bool
+    mine = string(getpid())
+    t0 = time()
+    while true
+        p = runner_ping(RunnerHandle(; port = port))
+        p !== nothing && return string(get(p, "pid", "")) == mine
+        time() - t0 > deadline_seconds && return false
+        sleep(0.05)
+    end
+end
+
+# EADDRINUSE, however deeply it is wrapped. `HTTP.listen!` surfaces it as a `TaskFailedException` whose
+# nested cause is an `IOError`/`SystemError`, and the wrapper types differ across HTTP/Reseau versions —
+# so this matches on the MESSAGE, which is the one part that has stayed stable.
+function _is_addr_in_use(e)::Bool
+    occursin("EADDRINUSE", sprint(showerror, e)) && return true
+    occursin("Address already in use", sprint(showerror, e)) && return true
+    occursin("address already in use", sprint(showerror, e))
 end
