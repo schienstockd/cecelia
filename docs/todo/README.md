@@ -57,7 +57,6 @@ disagree, the plan's header wins — and fix the row.
 | [`VALUE_NAME_INPUT_PLAN.md`](VALUE_NAME_INPUT_PLAN.md) | P1–2 built; **P3 open** | One canonical "what does this task write to" input; P3 tracked in `docs/TODO.md` → *Value-name input* |
 | [`QC_PLAN.md`](QC_PLAN.md) | Phase 1 landed; **2–3 open** | Objective per-task QC: convention + producers + badges. Durable parts in `docs/ARCHITECTURE.md` |
 | [`ZARR_V3_PLAN.md`](ZARR_V3_PLAN.md) | P1–3 built, P4 measured | Read/write/report zarr v3 (NGFF 0.5) + sharding. **Default stays `nested` (NGFF 0.4 / v2)** |
-| [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | A–G + F1/F2 merged; **Phase H deferred** | Publication figures and movies: channel layers, colours, tracks, title cards |
 | [`TASK_RUNNER_PLAN.md`](TASK_RUNNER_PLAN.md) | P1–2 built + verified, dev-only | Move task execution out of the API process so a backend restart doesn't lose work in flight |
 | [`PLUGINS_PLAN.md`](PLUGINS_PLAN.md) | P1–P4 built on `feat/plugins`; not browser-verified | Drop-in plugin layout, scans, precedence, PYTHONPATH, Settings surface, curated registry |
 | [`CENTROID_AXES_PLAN.md`](CENTROID_AXES_PLAN.md) | partly shipped (P0, P4 done) | Explicit centroid axis names from the writer; the one-off converter was retired |
@@ -114,6 +113,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`plotting-canvas-and-track-df.md`](plotting-canvas-and-track-df.md) | BUILT (confirmed 2026-08-20) | Plotting canvas + track-property gating (gate on track measures, one point per track) |
 | [`ONBOARDING_PLAN.md`](ONBOARDING_PLAN.md) | BUILT (confirmed 2026-08-20) | First-launch setup wizard removing the `custom.toml` wall; `config_dir()` is the one resolver it uses |
 | [`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md) | BUILT (confirmed 2026-08-20) | Pluto notebooks as the structured home for downstream analysis. As-built: `docs/NOTEBOOKS.md` |
+| [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | BUILT — A–G + F1/F2 + Phase H all done (2026-07-24) | Publication figures and movies: channel layers, colours, tracks, title cards, on the shared snapshot foundation |
 
 ### Trackers and audits — not plans
 
@@ -129,3 +129,11 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 Add a row in the same change that adds a plan, and update the row's status in the same change that
 changes the plan's header. A plan absent from this index is invisible, because the directory is not
 searched by default.
+
+**Enforced, not advisory.** `python/cecelia/tests/test_doc_index_convention.py` (`pixi run test-py`,
+CI on every OS) fails if a plan has no row, a row points at a missing file, a plan is listed twice, an
+open/built plan states no status, or a plan's own status outright contradicts the section it is filed
+under. It is deliberately one-sided on that last check — a mixed status like "P1+P2 built, P3 open" is
+legitimately *Open* and is left alone, because a test that cries wolf gets muted. The check exists
+because this index had already failed exactly that way: it listed 20 of 57 plans, five of them
+contradicting their own headers, and nothing noticed.

@@ -1,5 +1,7 @@
 # QC Consolidation + Observer Redesign — build plan
 
+**Status:** parked — scoped, not started.
+
 Parked plan (see `docs/todo/README.md`). Supersedes the three exploratory prompts in
 `docs/ai-assist/` (`qc-consolidation-prompt.md`, `observer-redesign-prompt.md`,
 `qc-observer-relationship.md`) — those framed the problem; this is the agreed, code-grounded plan.

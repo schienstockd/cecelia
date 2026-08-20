@@ -1,6 +1,6 @@
 # Notebook Playground — Parked Plan
 
-> Status: **BUILT** — confirmed done 2026-08-20 (Dominik); the header said "planned, not started"
+> Status: **BUILT** — confirmed done 2026-08-20 (Dominik). This header claimed the opposite for
 > long after the playground shipped. As-built reference: [`docs/NOTEBOOKS.md`](../NOTEBOOKS.md).
 > Original parked design (locked decisions + phased build + cross-file
 > architecture) for integrating **Pluto.jl** notebooks into the Cecelia UI as the structured home for

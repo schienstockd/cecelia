@@ -25,7 +25,8 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
     349 code citations already do exactly that, so grep was never the access path. **Before designing
     anything, grep [`docs/todo/README.md`](docs/todo/README.md)** — a complete one-row-per-plan index
     with each plan's status — so you find a locked design instead of rebuilding it. Skipping that
-    check is how a parked design gets re-derived.
+    check is how a parked design gets re-derived. The index's completeness is test-enforced
+    (`python/cecelia/tests/test_doc_index_convention.py`), so it can be trusted.
 - **Area rules live in nested `CLAUDE.md` files, loaded on demand:** [`frontend/CLAUDE.md`](frontend/CLAUDE.md)
   (Vue/CSS + the two mandatory UI lookups), [`app/CLAUDE.md`](app/CLAUDE.md) (Julia conventions, tasks,
   `run_py`, `channel_indices`, ccid.json versioning). Don't duplicate their content up here.
