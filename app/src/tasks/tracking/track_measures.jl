@@ -291,7 +291,8 @@ Returns true on a clean subprocess exit.
 function _write_track_props(track_path::String, track_ids::Vector{Int},
                             measure_names::Vector{String}, X::Vector{Vector{Any}},
                             lineage::Dict{String,Vector{Any}};
-                            on_log::Function, on_process::Function)::Bool
+                            on_log::Function, on_progress::Function,
+                            on_process::Function)::Bool
     # track_path = {img._dir}/labelProps/{vn}__tracks.h5ad → up two dirs reaches img._dir
     run_py("tasks/tracking/track_props_run.py",
         (; outPath = track_path, trackIds = track_ids,
@@ -478,7 +479,8 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Writing per-track table → $track_path")
     lineage = _track_lineage(props_path, track_ids)
     ok = _write_track_props(track_path, track_ids, agg_names, X, lineage;
-                            on_log = on_log, on_process = on_process)
+                            on_log = on_log, on_progress = on_progress,
+                            on_process = on_process)
     ok || begin
         on_log("[ERROR] Failed to write per-track table")
         return nothing
