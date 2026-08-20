@@ -452,6 +452,16 @@ end
 
 # Copy `n` bytes from `io` to the response stream in bounded chunks — never slurp a whole movie (or a
 # large range slice) into memory just to hand it to the socket.
+#
+# 64 KB writes are only HALF of what makes that true, and for a long time the other half was missing:
+# HTTP.jl BUFFERS the entire body of any response that carries a `Content-Length`
+# (`_server_stream_buffered_fixed_h1` — the head is only written at `closewrite`, so the body has
+# nowhere to go until then), and it streams straight to the socket only when the response is CHUNKED.
+# So this loop handed its bounded chunks to a buffer that grew to the whole file. Measured, serving one
+# file through both framings: `Content-Length` peaked at +390 MB for a 210 MB file and +1022 MB for a
+# 420 MB one (~2.4x the file, buffer plus copies), against a FLAT ~30 MB either chunked or with the
+# range clamped. Confirmed through the ROUTE itself (`/api/movies/file`, warmed up so JIT is not being
+# measured): +506 MB before, +24 MB after, on the same 210 MB file. `_movie_plan` is what keeps it flat.
 function _stream_file!(stream::HTTP.Stream, io::IO, n::Integer)
     remaining = Int(n)
     buf = Vector{UInt8}(undef, 64 * 1024)
@@ -483,11 +493,38 @@ function _parse_range(header::AbstractString, total::Integer)
     (start, stop)
 end
 
+# How much of a movie ONE response may carry. A `Content-Length` response is buffered whole by HTTP.jl
+# (see `_stream_file!`), so this is the ceiling on that buffer — the reason memory no longer tracks the
+# file size. 8 MB is ~7 responses for the largest movie in a real project (57 MB) and a handful of
+# extra `open`s; a player that seeks was going to issue several range requests anyway.
+const MOVIE_RANGE_MAX = 8 * 1024 * 1024
+
+"""
+    _movie_plan(range_header, total) -> (status, start, stop, framing)
+
+The response plan for a movie GET: which bytes, and how they are FRAMED. Pure, because framing is what
+bounds memory and `api/test` has no live server to measure through — so the rules are asserted here
+instead of on a socket.
+
+  * a Range request → `206` for at most `MOVIE_RANGE_MAX` bytes, `:length` (a `Content-Length`, which a
+    `<video>` needs to seek). Short is legal and ordinary: `Content-Range` tells the player what it
+    got, and it asks for the next slice. This is the clamp that bounds the buffer.
+  * no Range → `200` for the whole file, `:chunked`. A 200 must carry the WHOLE body, so it cannot be
+    clamped — but omitting `Content-Length` moves it to chunked framing, which HTTP.jl streams instead
+    of buffering. `Accept-Ranges` still rides on the response, so a player can switch to ranges to seek.
+"""
+function _movie_plan(range_header::AbstractString, total::Integer)
+    rng = _parse_range(range_header, total)
+    rng === nothing && return (200, 0, Int(total) - 1, :chunked)
+    start, stop = rng
+    (206, start, min(stop, start + MOVIE_RANGE_MAX - 1), :length)
+end
+
 # Serve a rendered project movie as video/mp4 for the /movies player, honouring HTTP Range so seeking
-# works. GET /api/movies/file?projectUid=…&name=….mp4 — no Range → 200 full body; a Range → 206 with
-# Content-Range and only that slice. This is the server's ONLY range-capable route, and a <video>
-# element issues Range requests in every browser, so this is what makes scrubbing work at all. Streamed
-# in chunks (never buffers the whole file). Returns true iff it wrote a response.
+# works. GET /api/movies/file?projectUid=…&name=….mp4 — a Range → 206 with Content-Range for at most
+# `MOVIE_RANGE_MAX`; no Range → 200, chunked, whole file. `_movie_plan` owns both rules and why.
+# This is the server's ONLY range-capable route, and a <video> element issues Range requests in every
+# browser, so this is what makes scrubbing work at all. Returns true iff it wrote a response.
 function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
     q = HTTP.queryparams(HTTP.URI(target))
     uid = get(q, "projectUid", ""); name = get(q, "name", "")
@@ -495,26 +532,23 @@ function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
     f = joinpath(_movies_dir_for_project(String(uid)), String(name))
     isfile(f) || return false
     total = filesize(f)
-    rng = _parse_range(HTTP.header(stream.message, "Range", ""), total)
+    status, start, stop, framing = _movie_plan(HTTP.header(stream.message, "Range", ""), total)
+    n = stop - start + 1
 
     HTTP.setheader(stream, "Content-Type"                => "video/mp4")
     HTTP.setheader(stream, "Accept-Ranges"               => "bytes")
     HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
-    if rng === nothing
-        HTTP.setheader(stream, "Content-Length" => string(total))
-        HTTP.setstatus(stream, 200)
-        HTTP.startwrite(stream)
-        open(io -> _stream_file!(stream, io, total), f)
-    else
-        start, stop = rng
-        HTTP.setheader(stream, "Content-Range"  => "bytes $start-$stop/$total")
-        HTTP.setheader(stream, "Content-Length" => string(stop - start + 1))
-        HTTP.setstatus(stream, 206)
-        HTTP.startwrite(stream)
-        open(f) do io
-            seek(io, start)
-            _stream_file!(stream, io, stop - start + 1)
-        end
+    if status == 206
+        HTTP.setheader(stream, "Content-Range" => "bytes $start-$stop/$total")
+    end
+    # `Content-Length` ONLY on the clamped 206 — setting it is what makes HTTP.jl buffer the body, so
+    # the unclamped 200 deliberately goes out chunked instead (see `_movie_plan`/`_stream_file!`).
+    framing == :length && HTTP.setheader(stream, "Content-Length" => string(n))
+    HTTP.setstatus(stream, status)
+    HTTP.startwrite(stream)
+    open(f) do io
+        start > 0 && seek(io, start)
+        _stream_file!(stream, io, n)
     end
     true
 end
