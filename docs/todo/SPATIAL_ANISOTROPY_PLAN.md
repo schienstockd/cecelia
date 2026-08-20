@@ -1,7 +1,7 @@
 # Structure anisotropy — branching-port audit + the notebook readouts
 
-**Status:** 2026-07-29 — **done, uncommitted.** Worktree `spatial-anisotropy`, branch
-`feat/spatial-anisotropy`. Supersedes `docs/archive/spatial-anisotropy-quiver-prompt.md`.
+**Status:** 2026-07-30 — **BUILT**, merged as PR #413 from `feat/spatial-anisotropy`.
+Supersedes `docs/archive/spatial-anisotropy-quiver-prompt.md`.
 **Depends on:** `docs/todo/BRANCHING_PLAN.md` (Phases 0–3 shipped, PRs #387 + #396).
 
 ## What this is
