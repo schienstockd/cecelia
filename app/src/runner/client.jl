@@ -56,8 +56,8 @@ this preserves: a reply with the WRONG protocol is still a reply — the caller 
 it — because reporting "nothing there" for a process that is very much there produces a relaunch loop
 against a port that can never be bound.
 """
-function runner_ping(h::RunnerHandle)::Union{Dict{String,Any},Nothing}
-    try; _runner_get(h, "/ping"; timeout = 2); catch; nothing; end
+function runner_ping(h::RunnerHandle; timeout::Real = 2)::Union{Dict{String,Any},Nothing}
+    try; _runner_get(h, "/ping"; timeout); catch; nothing; end
 end
 
 runner_alive(h::RunnerHandle)::Bool = runner_ping(h) !== nothing
