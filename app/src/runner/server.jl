@@ -414,7 +414,7 @@ function _runner_stream(stream::HTTP.Stream)
     HTTP.setstatus(stream, status)
     HTTP.setheader(stream, "Content-Type" => "application/json")
     HTTP.startwrite(stream)
-    write(stream, body)
+    write_http_body!(stream, body)
 end
 
 """

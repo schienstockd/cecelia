@@ -4768,6 +4768,20 @@ end
     end
 end
 
+# Every response body this server writes goes through `write_http_body!` (Cecelia/utils.jl), because
+# an EMPTY one written bare corrupts the connection: no Content-Length → chunked framing → a
+# zero-length `write` emits the terminating `0\r\n\r\n` and `closewrite` emits a second, so the NEXT
+# response on that keep-alive connection is parsed starting at 4 stray bytes. One legitimately-empty
+# gating plot (a track-grained plot of an untracked segmentation) took every other plot on the page
+# down with it. The wire-level proof lives in the package suite ("an empty response body is written
+# through write_http_body!"); this is the ratchet on the call sites.
+@testset "API: response bodies go through write_http_body!" begin
+    src = read(joinpath(@__DIR__, "..", "src", "server.jl"), String)
+    lines = [l for l in split(src, '\n') if !startswith(strip(l), "#")]
+    @test isempty(filter(l -> occursin("write(stream, ", l), lines))
+    @test count(l -> occursin("write_http_body!(stream, ", l), lines) >= 4   # JSON/binary, static, asset, file
+end
+
 # ── `api/` has no DataFrames — a bare `nrow` compiles and dies at runtime ─────
 #
 # `api/src` is `include`d into a script that does not `using DataFrames`, so `nrow(df)` is an

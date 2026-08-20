@@ -16,6 +16,7 @@ export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_ME
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
+export write_http_body!
 export safe_name_part
 
 # ── Log rail (console records, the server tee, child-process capture) ─────────

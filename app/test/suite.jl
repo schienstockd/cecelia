@@ -13588,6 +13588,76 @@ end
         try; close(server); catch; end
     end
 end
+
+# ── An empty response body must not corrupt the connection ────────────────────
+#
+# `write_http_body!` (utils.jl, where the mechanism is explained) exists for one wire-level reason:
+# our responses carry no Content-Length, so HTTP.jl frames them CHUNKED and frames every `write` as
+# its own chunk — so a zero-length write emits the TERMINATING `0\r\n\r\n` and `closewrite` emits a
+# second one. This asserts the BYTES, over two requests on ONE keep-alive connection, because the
+# response that broke was never the empty one: the extra terminator sits in the connection and the
+# NEXT response is parsed starting at it.
+#
+# The unguarded `write` is kept as the negative control — a guard is only worth having if the test
+# fails without it. Ephemeral port, and a raw socket that speaks HTTP by hand (an HTTP client would
+# hide the framing, which is the whole subject).
+@testset "an empty response body is written through write_http_body!" begin
+    using Sockets: connect as sock_connect
+    HTTP = Cecelia.HTTP
+
+    wire = function (guarded::Bool)
+        handler = function (stream)
+            read(stream)
+            HTTP.setstatus(stream, 200)
+            HTTP.setheader(stream, "Content-Type" => "application/octet-stream")
+            HTTP.startwrite(stream)
+            guarded ? write_http_body!(stream, UInt8[]) : write(stream, UInt8[])
+        end
+        server = HTTP.listen!(handler, "127.0.0.1", 0)          # port 0 → never a real one
+        try
+            sock = sock_connect("127.0.0.1", HTTP.port(server))
+            try
+                s = ""
+                for i in 1:2
+                    write(sock, "GET /$i HTTP/1.1\r\nHost: x\r\n\r\n")
+                    t0 = time()
+                    while count("HTTP/1.1 200", s) < i && time() - t0 < 5
+                        s *= String(copy(readavailable(sock)))   # blocks; no busy loop
+                    end
+                end
+                # a trailing terminator is written right after the head, so this is slack, not a wait
+                t0 = time()
+                while bytesavailable(sock) == 0 && time() - t0 < 0.3
+                    sleep(0.05)
+                end
+                bytesavailable(sock) > 0 && (s *= String(copy(readavailable(sock))))
+                s
+            finally
+                close(sock)
+            end
+        finally
+            close(server)
+        end
+    end
+
+    guarded = wire(true)
+    @test count("HTTP/1.1 200", guarded) == 2
+    @test count("0\r\n\r\n", guarded) == 2        # exactly ONE terminating chunk per response
+    @test endswith(guarded, "0\r\n\r\n")          # …and no bytes left over for the next response
+
+    # the bug, on the wire: `…0\r\n\r\n0\r\n\r\nHTTP/1.1 …`. Vite's proxy died on exactly these bytes
+    # (`HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>`), failing the OTHER, good
+    # requests that shared the connection with one legitimately-empty gating plot.
+    bare = wire(false)
+    @test count("0\r\n\r\n", bare) == 4
+    @test occursin("0\r\n\r\n0\r\n\r\n", bare)
+
+    # so no handler hands a body to `write` directly — the runner's reply path included
+    src = read(joinpath(@__DIR__, "..", "src", "runner", "server.jl"), String)
+    @test occursin("write_http_body!(stream, body)", src)
+    @test !occursin("write(stream, ", src)
+end
+
 # ── Manual track correction (docs/todo/CORRECTION_PLAN.md, P1) ────────────────
 #
 # The ops engine is pure, so it is tested directly against a hand-built cell table — no fixture, no
