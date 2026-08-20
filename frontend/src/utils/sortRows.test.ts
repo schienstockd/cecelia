@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { sortRows, compareSortValues, isBlankSortValue, cycleSort, sortIconFor } from './sortRows'
+import { sortRows, compareSortValues, isBlankSortValue, cycleSort, sortIconFor,
+         parseSortState } from './sortRows'
 
 // The rules the image table established and every other sortable list now inherits. `imageTable.test.ts`
 // still covers them THROUGH `sortImages` (its column→value mapping); these pin them on the shared rule
@@ -78,5 +79,18 @@ describe('isBlankSortValue', () => {
   it('treats null, undefined and the empty string as no value — but not 0', () => {
     expect([null, undefined, ''].every(isBlankSortValue)).toBe(true)
     expect(isBlankSortValue(0)).toBe(false)   // 0 is a real measurement (0 channels, 0 bytes)
+  })
+})
+
+describe('parseSortState', () => {
+  it('reads back what was stored', () => {
+    expect(parseSortState('{"key":"mtime","dir":"desc"}')).toEqual({ key: 'mtime', dir: 'desc' })
+  })
+  it('is unsorted for nothing stored, a stale shape or broken JSON', () => {
+    expect(parseSortState(null)).toBeNull()
+    expect(parseSortState('{"key":"mtime"}')).toBeNull()          // no direction
+    expect(parseSortState('{"key":1,"dir":"asc"}')).toBeNull()    // key is not a column
+    expect(parseSortState('{"key":"mtime","dir":"up"}')).toBeNull()
+    expect(parseSortState('not json')).toBeNull()
   })
 })

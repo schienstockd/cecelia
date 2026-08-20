@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
          resolveMovieImageUid, movieChannelCells, movieChannelCount,
-         type MovieEntry, type MovieImage, movieSuffixesInUse } from './movies'
+         type MovieEntry, type MovieImage, movieSuffixesInUse,
+         parseMovieEndMode, nextMovieName } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -319,5 +320,38 @@ describe('movieSuffixesInUse', () => {
 
   it('trims, so a stray space cannot make a second entry for one suffix', () => {
     expect(movieSuffixesInUse([mv({ suffix: 'af' }), mv({ suffix: ' af ' })])).toEqual(['af'])
+  })
+})
+
+describe('parseMovieEndMode', () => {
+  it('takes a stored mode as-is', () => {
+    expect(parseMovieEndMode('next', null)).toBe('next')
+    expect(parseMovieEndMode('loop', null)).toBe('loop')
+    expect(parseMovieEndMode('stop', 'true')).toBe('stop')   // an explicit choice outranks the legacy flag
+  })
+  it('migrates the boolean it replaced, so Loop stays on', () => {
+    expect(parseMovieEndMode(null, 'true')).toBe('loop')
+    expect(parseMovieEndMode(null, 'false')).toBe('stop')
+  })
+  it('falls back to stop for nothing stored or a stale value', () => {
+    expect(parseMovieEndMode(null, null)).toBe('stop')
+    expect(parseMovieEndMode('advance', null)).toBe('stop')
+  })
+})
+
+describe('nextMovieName', () => {
+  const order = ['a.mp4', 'b.mp4', 'c.mp4']
+  it('is the following entry in the shown order', () => {
+    expect(nextMovieName(order, 'a.mp4')).toBe('b.mp4')
+    expect(nextMovieName(order, 'b.mp4')).toBe('c.mp4')
+  })
+  it('stops at the end rather than wrapping — a list that restarts itself never finishes', () => {
+    expect(nextMovieName(order, 'c.mp4')).toBe('')
+  })
+  it('stops when the playing movie is filtered out of the shown list', () => {
+    expect(nextMovieName(order, 'z.mp4')).toBe('')
+  })
+  it('stops on an empty list', () => {
+    expect(nextMovieName([], 'a.mp4')).toBe('')
   })
 })

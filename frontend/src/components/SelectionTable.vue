@@ -31,7 +31,8 @@
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
 import { computed, ref, watch, getCurrentInstance, useSlots } from 'vue'
-import { sortRows, cycleSort, sortIconFor, type SortState, type SortValue } from '../utils/sortRows'
+import { sortRows, cycleSort, sortIconFor, parseSortState,
+         type SortState, type SortValue } from '../utils/sortRows'
 import { useColumnResize } from '../composables/useColumnResize'
 import { allSelected as allChosen, someSelected as someChosen,
          toggleAllSelection, toggleOneSelection } from '../utils/tableSelection'
@@ -272,11 +273,7 @@ function toggleAll() {
 // about blanks, numeric strings and stable ties.
 function loadSort(): SortState {
   if (!props.sortStorageKey) return null
-  try {
-    const raw = localStorage.getItem(props.sortStorageKey)
-    const p = raw ? JSON.parse(raw) : null
-    return p && typeof p.key === 'string' && (p.dir === 'asc' || p.dir === 'desc') ? p : null
-  } catch { return null }
+  return parseSortState(localStorage.getItem(props.sortStorageKey))
 }
 const ownSort = ref<SortState>(loadSort())
 // controlled when the caller passes `sort`, else the table's own persisted state
