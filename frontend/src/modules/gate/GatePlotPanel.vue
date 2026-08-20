@@ -186,6 +186,11 @@ function fetchGates(): Promise<void> {
 // EFFECTIVE transforms so the cloud matches the extent + projected gates fetchMeta set.
 async function fetchPoints() {
   if (!g.imageUid || !xChan.value || !yChan.value) return
+  // plotmeta already answered `tracked: false` — a track-grained plot of an untracked segmentation
+  // has no points, so don't ask for them (the server's own comment says the client skips the empty
+  // data reads; only the message half was wired up). CLEAR them: leaving the previous image's cloud
+  // under the "Not tracked yet" message would read as data.
+  if (notTracked.value) { points.value = new Float32Array(0); return }
   const key = metaQ.value                    // snapshot the view; drop a stale response
   const buf = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value))
   // same last-writer guard as fetchMeta: if the image/segmentation/axis/parent changed while this
@@ -223,7 +228,7 @@ async function refreshMembership() {
 // highlighted (eye) for THIS panel in the manager, each plotted on the current axes
 async function loadPopLayers() {
   const hl = props.highlight ?? []
-  if (!hl.length) { popLayers.value = []; return }
+  if (!hl.length || notTracked.value) { popLayers.value = []; return }   // untracked → nothing to overlay
   try {
     popLayers.value = await Promise.all(hl.map(async path =>
       ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee',
