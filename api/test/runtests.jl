@@ -3077,6 +3077,31 @@ end
     @test _parse_range("bytes=-0", 1000)   === nothing       # zero-length suffix
     @test _parse_range("bogus", 1000)      === nothing
 
+    # _movie_plan → (status, start, stop, framing). The FRAMING is the load-bearing half: HTTP.jl
+    # buffers the whole body of a `Content-Length` response and streams a chunked one, measured on one
+    # file through both — +390 MB peak for a 210 MB file and +1022 MB for a 420 MB one with a
+    # Content-Length (~2.4x the file, buffer plus copies) against a flat ~30 MB chunked or clamped, and
+    # through the route itself: +506 MB before this, +24 MB after, on one 210 MB movie. So a
+    # `:length` plan must never exceed MOVIE_RANGE_MAX, and the unclamped whole-file plan must be
+    # `:chunked` — that pair is what stops memory tracking the file size.
+    big = 200 * 1024 * 1024
+    @test _movie_plan("bytes=0-", big)  == (206, 0, MOVIE_RANGE_MAX - 1, :length)   # the clamp
+    @test _movie_plan("bytes=0-", 1000) == (206, 0, 999, :length)                   # under the cap: untouched
+    @test _movie_plan("bytes=$(MOVIE_RANGE_MAX)-", big) ==
+          (206, MOVIE_RANGE_MAX, 2 * MOVIE_RANGE_MAX - 1, :length)                  # the slice a player asks for next
+    @test _movie_plan("bytes=0-99", big)  == (206, 0, 99, :length)                   # a bounded ask is honoured exactly
+    @test _movie_plan("bytes=-100", 1000) == (206, 900, 999, :length)                # suffix form
+    @test _movie_plan("", big)            == (200, 0, big - 1, :chunked)             # no Range → whole file, streamed
+    @test _movie_plan("bogus", 1000)      == (200, 0, 999, :chunked)                 # unparseable → as if absent
+    @test _movie_plan("bytes=1000-1100", 1000) == (200, 0, 999, :chunked)            # unsatisfiable → whole file (as before)
+    @test _movie_plan("", 0) == (200, 0, -1, :chunked)   # a 0-byte render: n = 0, and write_http_body! frames it
+
+    # the invariant, not just the examples: nothing that carries a Content-Length exceeds the ceiling
+    for h in ("bytes=0-", "bytes=0-999999999", "bytes=-$big", "bytes=5-", "bytes=0-$(big - 1)")
+        _, a, b, fr = _movie_plan(h, big)
+        fr === :length && @test b - a + 1 <= MOVIE_RANGE_MAX
+    end
+
     # _valid_movie_name accepts the sanitised names the recorders write; blocks traversal/other types.
     @test _valid_movie_name("myImage_animation.mp4")
     @test _valid_movie_name("A1_B2_x0f2Kd.mp4")
