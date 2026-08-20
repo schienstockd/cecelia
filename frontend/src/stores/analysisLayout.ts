@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { uniform, type LayoutTemplate } from '../plots/layoutTemplates'
 import { useAnalysisTabsStore } from './analysisTabs'
@@ -193,3 +193,6 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   return { entries, ensure, applyTemplate, setContent, setActive, swap, duplicateEntry, drop, clear,
            serialize, load, setVersion, reloadBoards }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAnalysisLayoutStore, import.meta.hot))

@@ -1,5 +1,5 @@
 import { moduleKeyFromFun } from '../utils/taskModule'
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { shortId } from '../utils/id'
 
@@ -260,3 +260,6 @@ export const useTaskStore = defineStore('tasks', () => {
 
   return { tasks, lastStarted, add, addMany, adopt, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useTaskStore, import.meta.hot))

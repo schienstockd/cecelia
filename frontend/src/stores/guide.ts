@@ -16,7 +16,7 @@
 // hash IS the route, and a store that reads it needs no router injection context (no other store
 // touches vue-router — this one shouldn't be the first to require it).
 
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
@@ -328,3 +328,6 @@ export const useGuideStore = defineStore('guide', () => {
     prereqState, prereqsMet,
   }
 })
+
+// Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useGuideStore, import.meta.hot))
