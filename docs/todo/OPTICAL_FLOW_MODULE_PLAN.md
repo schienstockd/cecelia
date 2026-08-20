@@ -171,6 +171,6 @@ board-PDF export instead of a chart hand-drawn inside a dialog.
 ## References
 - [`COASTAL_SEGMENTATION_PLAN.md`](COASTAL_SEGMENTATION_PLAN.md) — the segmenter, the vault decision, Phase 2.
 - `docs/MODULES.md` — task trio, param widget types, mandatory QC, module-page authoring.
-- `docs/UI.md` — the UX-primitive catalog (**check before rendering any control**).
+- `docs/ui/PRIMITIVES.md` (**check before rendering any control**).
 - `docs/ANALYSIS.md` — the canvas families, including `image`.
-- `INVENTORY.md` → *Custom cellpose checkpoints (drop-in)* — the vault mechanism to mirror.
+- `docs/inventory/JULIA_APP.md` → *Custom cellpose checkpoints (drop-in)* — the vault mechanism to mirror.

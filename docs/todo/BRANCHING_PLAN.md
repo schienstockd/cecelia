@@ -305,7 +305,7 @@ short `"No branches found"`, long `"Lower the pre-dilation or check the segmenta
 This port adds **no new chrome** — that is the point of Decision 2's cost table. Still, three current
 rules bind the frontend edits:
 
-- **UX-primitive catalog is mandatory *and* test-enforced** (`docs/UI.md` → *CHECK BEFORE BUILDING*).
+- **UX-primitive catalog is mandatory *and* test-enforced** (`docs/ui/PRIMITIVES.md`).
   `utils/cssScenarios.test.ts` holds a per-file baseline that **may shrink and must never grow**, and
   `utils/cssTokens.test.ts` fails on any undeclared custom property or `var(--x, #hex)` fallback. The
   planned edits (`popGroups.ts`, `stores/gating.ts`) are pure logic with no CSS, so they should move

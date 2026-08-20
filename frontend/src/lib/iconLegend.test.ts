@@ -78,7 +78,7 @@ describe('the icon glossary', () => {
   })
 
   it('writes each meaning as one short line, in the user’s words', () => {
-    // Same budget as a tooltip (docs/UI.md → UI copy): one line, no second sentence.
+    // Same budget as a tooltip (docs/ui/COPY.md): one line, no second sentence.
     const bad = ICON_LEGEND.flatMap(f => f.icons)
       .filter(i => i.means.length > 78 || /\.\s+[A-Z]/.test(i.means) || !i.means)
       .map(i => `${i.icon}: ${i.means}`)

@@ -165,7 +165,7 @@ gate populations, track cells, make a notebook, build plots. Starting one closes
 **bubble beside the real control**; doing the thing pops the next bubble. The user learns on **their
 own data**, in the real app, at their own pace — which is exactly what a silent screencast can't do.
 
-Reference: `docs/UI.md` (UX primitive catalog · Onboarding · Explainer sketches), `INVENTORY.md`,
+Reference: `docs/ui/PRIMITIVES.md`, `docs/UI.md` (Onboarding · Explainer sketches), `INVENTORY.md`,
 `docs/todo/ONBOARDING_PLAN.md` (the setup wizard + `HintCallout` this builds on),
 `docs/todo/WHATS_NEW_PLAN.md` (the tip catalogue this links to).
 

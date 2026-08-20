@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // THE right-hand side panel: a thin always-visible handle on its left edge folds the content away,
-// and a drag strip beside the handle resizes it (docs/UI.md → UX-primitive catalog).
+// and a drag strip beside the handle resizes it (docs/ui/PRIMITIVES.md).
 //
 // Extracted from ModuleLayout, where this had been inline — the module pages' functions/tasks panel.
 // Nothing else could reuse it, so the Movies player had no way to get the same affordance, and

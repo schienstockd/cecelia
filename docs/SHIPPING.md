@@ -525,3 +525,43 @@ pixi run stop             # stop backend/frontend/napari by port (TERM → KILL 
 In dev you typically run `pixi run dev` + `pixi run frontend` (Vite, hot reload). To exercise the
 shipped same-origin path, `pixi run build` then `pixi run prod` (or `pixi run app`) and use `:8080`.
 Running through `pixi run` is what guarantees the Julia server's Python subprocesses use the Pixi env.
+
+---
+
+## Python environment
+
+**Location:** the Pixi-managed env at the repo-root `.pixi/` (NOT under `napari/`). Don't reference an
+interpreter path — launch via `pixi run`, which puts the env's `python3` on PATH (that's how the Julia
+server's subprocesses and the napari bridge find it). See `docs/SHIPPING.md`.  
+**Add a package:** `pixi add --pypi <package>` (PyPI) or `pixi add <package>` (conda-forge), then commit
+the updated `pixi.toml` + `pixi.lock`.  
+**Where deps are defined (two files, disjoint sets — a dep is listed in exactly one):**
+- **`python/pyproject.toml`** owns the **light IO tier** the `cecelia` package needs to *import*
+  (`numpy`, `zarr>=3`, `dask`, `tifffile`, `ome-types`, `scipy`, `scikit-image`, `tqdm`). These reach
+  an external `pip install cecelia` consumer (e.g. coastal). If importing `cecelia.utils.*` needs it,
+  it goes here.
+- **`pixi.toml`** owns everything else — the **heavy / conda / per-platform** deps only the full app
+  needs (`cellpose`, `torch`, `napari`, `pyqt5`, `anndata`, `scanpy`, `btrack`, `leidenalg`,
+  `trimesh`, `pandas`, `websockets`; conda `python`/`openjdk`/`cvxopt`) — plus the editable
+  `cecelia = { path = "python", editable = true }` dep, which pulls the IO tier transitively so the
+  pixi env has everything. `pixi.toml` remains the single source of truth **for the pins it owns**;
+  the IO pins are `pyproject.toml`'s. (The old `napari/requirements.txt` is gone.)
+  See [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
+
+### Key version pins
+
+| Package | Pin | Reason |
+|---------|-----|--------|
+| `cellpose==3.1.1.2` | exact | `DenoiseModel` removed in v4; we need it for cleanup/denoise tasks. Do NOT upgrade. |
+| `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
+
+### GPU detection (cellpose tasks)
+Auto-detected in Python — no user checkbox needed. Use the one helper, don't inline the branch:
+```python
+from cecelia.utils.gpu_utils import torch_device
+use_gpu, gpu_device = torch_device()   # CUDA → MPS (Apple Silicon) → CPU
+```
+Do not add a `useGPU` param to task JSON or Julia handlers.
+
+---
+

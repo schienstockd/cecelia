@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="Row extends Record<string, any>">
-// THE canonical table (docs/UI.md → UX-primitive catalog). Rows and columns anywhere in the app.
+// THE canonical table (docs/ui/PRIMITIVES.md). Rows and columns anywhere in the app.
 //
 // It began as the single-select COMPARISON table — pick one option where the reason to prefer one is
 // a set of comparable numbers (a codec, a preset, a model). A dropdown is the wrong control there: it

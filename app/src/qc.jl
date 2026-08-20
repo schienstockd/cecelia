@@ -41,7 +41,7 @@ end
 # could even see it. Keeping it here means the wording can be read and revised as a set, and the
 # analysis code below reads as logic rather than as logic-plus-writing.
 #
-# Text rules (`docs/UI.md` → *UI copy*, `docs/MODULES.md` → *QC*): `short` = the problem, terse and
+# Text rules (`docs/ui/COPY.md`, `docs/MODULES.md` → *QC*): `short` = the problem, terse and
 # with no trailing period; `long` = what to DO about it, one imperative sentence. Numbers belong in
 # the finding's `detail`, not in the prose — a `{}` placeholder is only for the cases where the
 # number IS the message (a percentage, a channel index). The set of allowed placeholder names is

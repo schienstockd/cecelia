@@ -20,7 +20,7 @@
   wait for it. Tone is `warn` (amber, with the triangle) or `muted` (an observation, no icon).
 
   The tooltip is where the ACTION goes — the text says what, the tip says what to do about it — the
-  same split `overrideTooltip` uses. Keep both to the house budget (docs/UI.md → UI copy).
+  same split `overrideTooltip` uses. Keep both to the house budget (docs/ui/COPY.md).
 -->
 <script setup lang="ts">
 withDefaults(defineProps<{

@@ -164,7 +164,7 @@ enough, because the rail swaps on "can be docked with a scope footer", not on th
   `CanvasSidePanel` rather than a `FloatingPanel`.
 - [`ANALYSIS_CANVAS_PLAN.md`](ANALYSIS_CANVAS_PLAN.md) — the board, its slots and the docked rail.
 - `docs/UI.md` → *Interactive plots*, *Canvas side panels* — the surfaces and the shared chrome.
-- `INVENTORY.md` → *Dialog/panel shells* — why canvas-scoped managers never use `FloatingPanel`.
+- `docs/inventory/FRONTEND.md` → *Dialog/panel shells* — why canvas-scoped managers never use `FloatingPanel`.
 
 ## Outcome (2026-08-08)
 

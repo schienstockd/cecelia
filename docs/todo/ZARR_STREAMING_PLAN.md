@@ -2,7 +2,7 @@
 
 Status: **COMPLETE — shipped in PRs #315, #317, #319** (Phase 2 measured out; Phase 3.2/3.3 parked).
 Kept as history for the rationale + locked decisions; the shipped helpers are indexed in
-`INVENTORY.md` (Data access → streaming writers). Scope guardrail (Dominik): **don't overengineer —
+`docs/inventory/DATA_ACCESS.md` → *streaming writers*. Scope guardrail (Dominik): **don't overengineer —
 only changes with an actual measured benefit.** This doc deliberately marks which candidate changes
 paid off and which were churn to skip.
 
@@ -15,7 +15,7 @@ through the image tasks because **dask was catastrophically slow** for tiled/seg
 its auto-chunks span the whole timecourse, so reading one XY tile over-fetches a ~128 MB chunk.
 Loading everything to RAM sidestepped the repeated over-reads. It was a speed workaround, not a
 laziness abuse. The memory fix already landed (drift/AF/cellpose/segmentation now stream per
-timepoint/channel — see `INVENTORY.md` → streaming writers), but it must not reintroduce that
+timepoint/channel — see `docs/inventory/DATA_ACCESS.md` → *streaming writers*), but it must not reintroduce that
 slowness.
 
 ## Locked decisions

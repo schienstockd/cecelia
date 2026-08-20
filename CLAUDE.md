@@ -3,58 +3,93 @@
 Cecelia is an immunological image analysis tool (Nature Communications 2025).
 Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend) · **Python/Napari** (image viewer)
 
-See also:
-- [`INVENTORY.md`](INVENTORY.md) — living index of what already exists and where (canonical readers/helpers, shared Vue components, API handlers, cross-cutting flows). **Check it before building anything** — see *Before implementing anything* below.
-- [`FAQ.md`](FAQ.md) — root-level, reader-facing highlight doc: the *counterintuitive* "why" (AI-written, no Rust, browser-not-Electron, three languages). Punch lines, not prose. Keep it a highlight reel — do NOT expand it into a summary of the `docs/`; add new detail to the relevant `docs/` file and only promote a genuinely surprising one-liner up to the FAQ.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layer boundaries, WS protocol, data model contracts, Napari lifecycle
-- [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
-- [`docs/RUNNER.md`](docs/RUNNER.md) — the detached task runner (dev only): why a second process, the Quit-vs-Restart asymmetry, staleness reporting, chain-run claims, and why it is not offered in production.
-- [`docs/JOBS.md`](docs/JOBS.md) — background jobs vs scheduler tasks: the `jobs.jl` registry (OS process-kill primitives + `track_job!`/`cancel_job!`), when to write a job vs a `CciaTask`, and how project-wide ops (data patches, project export/import) run end-to-end over the WS task rail
-- [`docs/UI.md`](docs/UI.md) — frontend conventions, component catalog, how to add module pages and plots
-- [`docs/MODULES.md`](docs/MODULES.md) — complete guide to adding task functions and module pages
-- [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) — user drop-in tasks: add a task by dropping `.jl`/`.json`/`_run.py` into `<config_dir>/modules/` (no rebuild), the runtime `register_task!` registry, `load_custom_modules!`, the `/api/tasks/custom-modules` routes, and the runnable example in `docs/examples/custom-modules/`
-- [`docs/NAPARI.md`](docs/NAPARI.md) — napari integration: process model, restart rules, OME-ZARR layouts, byte order, contrast limits, layer props, unimplemented options
-- [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) — CciaProject/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions
-- [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) — segmentation pipeline: class hierarchy, label type convention (base/nuc), tiling, output zarr layout, napari integration, future tracking/gating
-- [`docs/TRACKING.md`](docs/TRACKING.md) — cell tracking (btrack): whole-segmentation vs gated-population input, in-process gated membership, track lineage columns in H5AD obs, vendored config, deferred track-property gating (celltrackR port)
-- [`docs/DATAMODEL.md`](docs/DATAMODEL.md) — AnnData conventions: .h5ad layout, feature names, ccid.json label_props, mesh file paths
-- [`docs/POPULATION.md`](docs/POPULATION.md) — population manager & gating: pop types, transforms, gating/{value_name}.json storage, pop_df unified accessor, gate↔track composition, membership access
-- [`docs/API.md`](docs/API.md) — HTTP/WS surface: routing conventions, binary responses, route index, gating routes (popmap/CRUD/plotdata/density/membership/stats)
-- [`docs/PLOTS.md`](docs/PLOTS.md) — summary-plot design: chart types × data source (one/multi/pooled) × measure type (numeric/categorical), encoding model, the agreed renderer spec
-- [`docs/ANALYSIS.md`](docs/ANALYSIS.md) — the Analysis board (`/analysis`): tabs + comic-plate layout + persistence keys, the registry-driven plot families (summary/interactive/cluster/image), the read-only cluster manager, the gating-strategy plot, and PDF/CSV export (light theme, shared hi-res raster path)
-- [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) — the Notebooks Playground (`/notebooks`): pure-Julia Pluto downstream analysis; the `pluto/` engine env, `CeceliaNb` helpers, per-project registry + snapshot/restore versioning, the deps/full sysimage, and the `/api/notebooks/*` routes
-- [`docs/FUTURE.md`](docs/FUTURE.md) — **deliberately deferred**: known-better alternatives, product non-goals, and work gated on a trigger that may never fire. What, why deferred, when to revisit. If nobody should act on it, it goes here, not in `docs/TODO.md`
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — temporary forward goals: phases (behaviour/HMM → clustering → freeze v1.0 → packaging/distribution → self-update) + post-v1 backlog. Consult before starting a new phase.
-- [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
-- [`docs/SHIPPING.md`](docs/SHIPPING.md) — distribution architecture & rationale: Pixi/constructor + browser stack (Julia serves the built frontend; no Tauri/Electron), packaging/update model, and non-obvious env decisions (cellpose-v3 pin, dropped coastal, GPU/RAPIDS parked, run-via-`pixi run`). The *why*, paired with INSTALL.md's *how*.
-- [`docs/DEV.md`](docs/DEV.md) — development workflow: branch + PR conventions (never commit/push to `main`), commit style, how PRs are opened/merged (`gh pr create` → relay the PR URL; Dominik merges), attribution on agent-authored public replies, and how releases are tagged off `main`.
-- [`docs/RELEASING.md`](docs/RELEASING.md) — release *policy*: when to cut a tag (a ~2-week heartbeat + event triggers), rc-vs-release-vs-milestone, pre-1.0 versioning, and the cutting checklist. (DEV.md = tag mechanics; SHIPPING.md = build pipeline; this = the "when/what".)
+## How to read the docs without burning the context window
+
+`docs/` is ~1 MB. **Read a slice, not a file.** For anything over ~40 KB:
+
+```bash
+grep -n '^#\{2,3\} ' docs/UI.md      # section index with line numbers — ~400 tokens
+sed -n '1918,2137p' docs/UI.md       # then read only the section you need
+```
+
+- **Inventory lookups are a grep, not a read.** `docs/inventory/*.md` are flat bullet lists —
+  `grep -n -i '<thing>' docs/inventory/FRONTEND.md` gives you the whole answer.
+- **Two directories are excluded from default search — for different reasons.** Pass
+  `--exclude-dir=archive --exclude-dir=todo` (grep) or skip `docs/archive/**` and `docs/todo/**`
+  (Glob) unless you are deliberately going there. Together they are 1.6 MB and contributed ~40–50% of
+  doc grep hits on ordinary terms.
+  - `docs/archive/` (380 KB) — **not authoritative**, superseded by definition. Only open one if you
+    want the historical ask.
+  - `docs/todo/` (1.2 MB) — **authoritative but narrow**: a plan is reference for whoever is working
+    *that* plan. It is reached **by name**, from a pointer (a code comment, `docs/TODO.md`, this file);
+    349 code citations already do exactly that, so grep was never the access path. **Before designing
+    anything, grep [`docs/todo/README.md`](docs/todo/README.md)** — a complete one-row-per-plan index
+    with each plan's status — so you find a locked design instead of rebuilding it. Skipping that
+    check is how a parked design gets re-derived.
+- **Area rules live in nested `CLAUDE.md` files, loaded on demand:** [`frontend/CLAUDE.md`](frontend/CLAUDE.md)
+  (Vue/CSS + the two mandatory UI lookups), [`app/CLAUDE.md`](app/CLAUDE.md) (Julia conventions, tasks,
+  `run_py`, `channel_indices`, ccid.json versioning). Don't duplicate their content up here.
+
+## Doc index — what it covers, and when to update it
 
 **Keep the docs current — update the relevant file in the same change, not after.**
 
-| Changed area | Update |
+| Doc | Covers — and update it when you change this |
 |---|---|
-| A design decision becomes *surprising/counterintuitive* to an outside reader | `FAQ.md` (one punchy Q&A) — but keep detail in the relevant `docs/` file |
-| Layer boundaries, contracts, hidden invariants | `docs/ARCHITECTURE.md` |
-| Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
-| Background jobs (data patches, project export/import), `jobs.jl` registry, process-kill primitives | `docs/JOBS.md` |
-| The detached task runner: its process, lifecycle, routes, dev-only gating | `docs/RUNNER.md` |
-| UI patterns, components, design tokens | `docs/UI.md` |
-| Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
-| Notebooks Playground: Pluto engine, `CeceliaNb`, registry/versioning, sysimage, `/api/notebooks/*` | `docs/NOTEBOOKS.md` |
-| **Adding ANY plot (module page OR board)** — registry + `SummaryCanvas`, never a bespoke panel/route | `docs/PLOTS.md` → *Hosting*, `docs/ANALYSIS.md` |
-| Task JSON, registry, module pages, composite pattern | `docs/MODULES.md` |
-| Napari bridge, commands, OME-ZARR, contrast, layer props | `docs/NAPARI.md` |
-| Object model, ccid.json, versioned fields, disk layout | `docs/OBJECTMODEL.md` |
-| Segmentation pipeline, label types, tiling, output zarr | `docs/SEGMENTATION.md` |
-| Cell tracking (btrack), track lineage in H5AD, track-property gating | `docs/TRACKING.md` |
-| AnnData, cell-level data storage and access | `docs/DATAMODEL.md` |
-| Population manager, gating engine, pop_df, gate↔track | `docs/POPULATION.md` |
-| HTTP/WS routes, request/response shapes, binary responses | `docs/API.md` |
-| Deferring a known-better approach, or recording a non-goal | `docs/FUTURE.md` |
-| Packaging, distribution, env rationale (Pixi/constructor, why) | `docs/SHIPPING.md` |
-| Branching, commits, PRs, release tagging (dev workflow) | `docs/DEV.md` |
-| Release cadence/policy — when to tag, versioning, rc-vs-release | `docs/RELEASING.md` |
+| [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
+| [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants |
+| [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus |
+| [`docs/RUNNER.md`](docs/RUNNER.md) | The detached task runner (dev only): process, lifecycle, routes, staleness, chain claims |
+| [`docs/JOBS.md`](docs/JOBS.md) | Background jobs vs scheduler tasks: `jobs.jl` registry, process-kill primitives, data patches, export/import |
+| [`docs/UI.md`](docs/UI.md) | Frontend conventions, component catalog, module pages, plots, design tokens. **188 KB — slice it.** Mandatory subsets: [`ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md), [`ui/COPY.md`](docs/ui/COPY.md) |
+| [`docs/MODULES.md`](docs/MODULES.md) | Adding task functions and module pages; task JSON, registry, param widgets, composite pattern, the module file pattern |
+| [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) | User drop-in tasks: `<config_dir>/modules/`, `register_task!`, `/api/tasks/custom-modules` |
+| [`docs/NAPARI.md`](docs/NAPARI.md) | Napari: process model, restart rules, OME-ZARR layouts, byte order, contrast limits, layer props |
+| [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) | Project/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions, calibration |
+| [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) | Segmentation pipeline: class hierarchy, base/nuc label types, tiling, output zarr, staged stores |
+| [`docs/TRACKING.md`](docs/TRACKING.md) | Cell tracking (btrack): gated-population input, track lineage in H5AD obs, vendored config |
+| [`docs/DATAMODEL.md`](docs/DATAMODEL.md) | AnnData conventions: `.h5ad` layout, feature names, `label_props`, mesh paths |
+| [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track |
+| [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions |
+| [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec |
+| [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export |
+| [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
+| [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers** |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
+| [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins |
+| [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
+| [`docs/FUTURE.md`](docs/FUTURE.md) | **Deliberately deferred**: known-better alternatives, non-goals, work gated on a trigger that may never fire |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Temporary forward goals: phases + post-v1 backlog. Consult before starting a new phase |
+| [`docs/MILESTONES.md`](docs/MILESTONES.md) | Append-only ledger of what landed and how it was packaged. Add an entry at each freeze/release |
+
+### Where a note goes — four trackers, four jobs
+
+- **`docs/TODO.md` — open work only.** Someone intends to do it. When an item is done, **delete it** —
+  no "Fixed" log (git history, merged PRs and the auto-generated release notes already have it; a
+  hand-maintained list caused recurring merge conflicts). Items are keyed by **title**, not a number
+  (numeric IDs retired 2026-08-05 — half the code comments citing one pointed at a deleted item). Cite
+  as `docs/TODO.md` → *Title*. **From code, prefer a permanent reference** — a `docs/<AREA>.md` section
+  or a `docs/todo/X_PLAN.md` path, which cannot dangle when the work ships. There's a routing table at
+  the top of TODO.md — check it before adding an entry.
+- **`docs/FUTURE.md` — nobody should act on it.** A deliberate non-goal, or something conditional on a
+  trigger that may never fire. **A fact worth recording that nobody should act on is not a TODO item.**
+- **`docs/todo/*_PLAN.md` — parked plans.** A standalone design doc for a feature too big for a TODO
+  item: locked decisions + a phased build sequence + cross-file architecture. Created when a feature
+  needs real design before/while building, when a topic is paused but the thinking must be preserved,
+  or when code needs a stable pointer. Promote the durable parts into `docs/<AREA>.md` once built.
+  **Excluded from default search** — find one via the complete status index in
+  [`docs/todo/README.md`](docs/todo/README.md), which is also the convention doc. Add a row there in
+  the same change that adds a plan; a plan absent from the index is invisible.
+- **`docs/archive/` — do not act on anything in here.** Shipped feature briefs and one-off audits, kept
+  as a record of what was asked (the project is openly AI-assisted; the asking is part of how it was
+  built). **They are not documentation and nothing in them is authoritative** — a brief reads like a
+  confident spec long after the design moved, was rejected, or shipped differently. Every file carries
+  an `ARCHIVED` banner on line 1. If a grep leads you here, go find the current answer in
+  `docs/<AREA>.md` or `docs/todo/*_PLAN.md`. When a brief's work lands, add an outcome note under the
+  banner in the same PR. Convention: [`docs/archive/README.md`](docs/archive/README.md).
+
+---
 
 > **Watch for divergent re-implementation — flag it, don't add another variant.** The most
 > expensive mistakes here are doing the same *cross-cutting* thing more than one way — e.g. touching
@@ -74,81 +109,27 @@ Fresh context windows don't know what already exists — which is how we ended u
 (two shutdown buttons, hand-rolled zarr access, a private napari reader stack). Before writing any
 code, find the existing implementation of everything the task touches:
 
-1. Check [`INVENTORY.md`](INVENTORY.md) for the canonical component/helper — use it, don't rebuild it.
-2. Grep/find for the specific function, component, or pattern (e.g. a reader, a store, a base component).
+1. Check the matching [`docs/inventory/*.md`](INVENTORY.md) for the canonical component/helper — use
+   it, don't rebuild it. It's a **grep**, not a read.
+2. Grep/find for the specific function, component, or pattern (a reader, a store, a base component).
 3. Report what you found before writing code.
 4. Build on what exists — only write new if the search genuinely comes up empty.
 5. If in doubt: search, don't build.
 
-Using a hand-rolled solution when a util or component already exists is a bug, not a style choice —
-this is the concrete, do-this-first version of the divergent-re-implementation warning above. When
-you add a significant new shared component, add a line to `INVENTORY.md` in the same change.
+Using a hand-rolled solution when a util or component already exists is a bug, not a style choice.
+When you add a significant new shared component, add a line to the matching `docs/inventory/*.md` in
+the same change.
 
-**UX elements — MANDATORY lookup before you render any control.** The recurring worst case is
-frontend chrome: a fresh session hand-rolls a checkbox-as-toggle, a `.btn-sm` that renders as a raw
-browser button, a bespoke slider/dialog/empty-state — because it didn't know the canonical one
-exists. Before adding **any** button, on/off toggle, slider, dialog/modal, popover, tabs, chips,
-empty state, spinner, badge, or collapsible section, you MUST consult the **UX-primitive catalog** in
-[`docs/UI.md`](docs/UI.md) (the *"check before building"* table at the top of the components section)
-and use the canonical component/utility (`CcToggle`, `.cc-btn*`, `ChipSelect`, `SwatchSelect`,
-`BaseModal`, `TeleportPopover`, `TabbedCanvas`, `CollapsibleSection`, `ConfirmButton`, …). Rendering a
-new variant of a primitive that already has a canonical form is a bug — same rule as H5AD/zarr/`run_py`.
-Unification status + what's not-yet-extracted lives in [`docs/todo/UX_PRIMITIVES_PLAN.md`](docs/todo/UX_PRIMITIVES_PLAN.md).
-
-## Archive (`docs/archive/`) — do not act on anything in here
-
-Feature briefs and one-off audits are kept in the repo once the work has shipped, as a record of what was asked and investigated (the project is openly AI-assisted; the asking is part of how it was built). **They are not documentation and nothing in them is authoritative** — a brief reads like a confident spec long after the design it describes has moved, been rejected, or shipped differently. Every file carries an `ARCHIVED` banner on line 1, since a grep hit shows a path and the top of the file is the only place a warning reliably lands. If a grep leads you here, go find the current answer in `docs/<AREA>.md` or `docs/todo/*_PLAN.md` instead.
-
-The folder was `docs/prompts/` until 2026-08-13 — a name that said where the files came from and left their status to be inferred. **When a brief's work lands, add an outcome note under the banner in the same PR** — what shipped, where the design lives, and any premise that turned out wrong. Convention + how this differs from `docs/todo/`: [`docs/archive/README.md`](docs/archive/README.md).
-
-## TODO.md
-
-`docs/TODO.md` tracks **open work only** — things someone intends to do.
-- When an item is done, **delete it** — don't keep a "Fixed" log. What changed is recorded in git
-  history, merged PRs, and the GitHub Releases notes (auto-generated from PRs at each tag). Keeping a
-  hand-maintained fixed list duplicated that and caused recurring merge conflicts.
-- **A fact worth recording that nobody should act on is not a TODO item.** This is the tracker with
-  the loosest edges, so orphans drift into it: a deliberate non-goal, or something conditional on a
-  trigger that may never fire, belongs in `docs/FUTURE.md`. There's a routing table at the top of
-  `docs/TODO.md` — check it before adding an entry.
-- Items are keyed by **title**, not a number. Cite one as `docs/TODO.md` → *Title*. Numeric IDs were
-  retired 2026-08-05 (half the code comments citing one pointed at a deleted item — see the note in
-  `docs/TODO.md`). **From code, prefer the permanent reference** — a `docs/<AREA>.md` section or a
-  `docs/todo/X_PLAN.md` path, which cannot dangle when the work ships.
-
-## Parked plans (`docs/todo/`)
-
-`docs/todo/*.md` holds **parked plans** — full, standalone design docs for a feature too big for a
-`docs/TODO.md` item. See [`docs/todo/README.md`](docs/todo/README.md) for the convention. In short:
-a TODO item is a paragraph; a parked plan is a `*_PLAN.md` with **locked decisions + a phased build
-sequence + cross-file architecture**, created when a feature needs real design before/while building,
-when a topic is paused but the thinking must be preserved, or when code needs a stable pointer
-(`see X_PLAN.md`). Promote the durable parts into a permanent `docs/<AREA>.md` once built.
-
-## INSTALL.md
-
-`docs/INSTALL.md` installation instructions for Unix and Windows systems. Needs to be reviewed before production deployment.
-
-## SHIPPING.md
-
-`docs/SHIPPING.md` is the **distribution architecture & rationale** — the Pixi/constructor + browser stack, the
-packaging/update model, and the non-obvious environment decisions (cellpose pinned to v3, the
-dropped `coastal` dep, GPU/RAPIDS parked, the run-via-`pixi run` model). It is distinct from
-`docs/INSTALL.md`: *commands and setup steps* live in INSTALL; *why it's built this way, and how
-it ships and updates* lives in SHIPPING. Keep both current when changing install-related code
-(`pixi.toml`, launcher scripts, `python_bin_path()`), and cross-reference SHIPPING rather than
-duplicating rationale into INSTALL.
-
----
+**Rendering UI? The primitive catalog is mandatory** — see [`frontend/CLAUDE.md`](frontend/CLAUDE.md),
+which loads automatically when you touch `frontend/`.
 
 ## Cite sources for non-trivial algorithms
 
-Applies to **all languages** (Julia, Python, TypeScript/Vue). When implementing a non-trivial
-or published algorithm — numeric transforms, methods from a paper, or code ported from a
-reference implementation — add a comment with the **citation** (paper + DOI, and/or the
-reference-implementation URL) and, where feasible, **validate against golden values** from that
-reference in the test suite. Reserve this for the parts where "is this actually correct?"
-genuinely matters — not ordinary code or small helpers.
+Applies to **all languages**. When implementing a non-trivial or published algorithm — numeric
+transforms, methods from a paper, code ported from a reference implementation — add a comment with the
+**citation** (paper + DOI, and/or the reference-implementation URL) and, where feasible, **validate
+against golden values** from that reference in the test suite. Reserve this for the parts where "is
+this actually correct?" genuinely matters — not ordinary code or small helpers.
 
 Example: `app/src/gating/transforms.jl` (logicle ← Moore & Parks 2012, cross-checked against
 FlowUtils' `logicle_c`, golden values asserted in `app/test/runtests.jl`).
@@ -157,613 +138,139 @@ FlowUtils' `logicle_c`, golden values asserted in `app/test/runtests.jl`).
 
 ## H5AD / cell-data access — always go through the readers/writers
 
-**Never touch `.h5ad` (or its HDF5 internals) directly. There are dedicated readers and writers
-in both languages — use them. This applies to every cell-level read and write.** See
-[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading `.h5ad`* for the full idiom.
-
-The interface is the same chain in both languages — build a view, refine it, finish with a
-terminal verb. `as_df` reads a label-keyed DataFrame; `add_obs(df).save!`/`.save()` writes one
-back (aligned by `label`, correct AnnData encoding). You read a labeled DataFrame, you write a
-labeled DataFrame — one idiom, no guessing.
+**Never touch `.h5ad` (or its HDF5 internals) directly.** There are dedicated readers/writers in both
+languages — one idiom: build a view, refine it, finish with a terminal verb. You read a labeled
+DataFrame, you write a labeled DataFrame.
 
 | | Julia (`app/src/label_props.jl`) | Python (`python/cecelia/utils/label_props_utils.py`) |
 |---|---|---|
-| **Read**  | `label_props(img\|path) \|> select_cols/view_centroid_cols/filter_rows \|> as_df` | `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()` |
-| **Write** (append obs cols to an existing file) | `label_props(path) \|> v -> add_obs(v, df) \|> save!` | `LabelPropsView(path).add_obs(df).save()` |
+| **Read** | `label_props(img\|path) \|> select_cols/view_centroid_cols/filter_rows \|> as_df` | `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()` |
+| **Write** (append obs cols) | `label_props(path) \|> v -> add_obs(v, df) \|> save!` | `LabelPropsView(path).add_obs(df).save()` |
 
-- **Do not** call `h5open`/`HDF5.*` (Julia) or `h5py`/`anndata` (Python) on cell data, and **do
-  not** read the whole table and filter in memory — push the column/row selection into the view.
-- **Deviate only when it is measurably more efficient/faster** to hit HDF5 directly (e.g. a
-  cheap one-attribute metadata peek). When you do, **add an inline comment on that exact line**
-  explaining why the view was bypassed. No silent raw access.
-- The only place raw `HDF5.jl` lives is the reader/writer itself (`label_props.jl`).
-- **One sanctioned exception — file *creation*.** Building a *new* `.h5ad` from scratch (the `X`
-  matrix + `var` + `obsm`, e.g. segmentation measurement output in `python/cecelia/utils/measure_utils.py`)
-  is the producing task's job and uses `anndata` directly — the view wraps an *existing* file
-  (read + obs-append), it does not create one. Structural changes to `X`/`var` likewise go through
-  the producing Python task, not the view.
-- **Every `.h5ad` write goes through `write_h5ad_atomic`** (`python/cecelia/utils/atomic_io.py`) —
-  creating one *or* rewriting one. Never `adata.write_h5ad(final_path)`: that truncates the destination
-  before the new bytes land, and `task:cancel` kills the Python process **by design**, so a cancelled
-  clustering/tracking run could leave a truncated cell table. A truncated HDF5 is not partially
-  readable and the previous content is gone. (A half-written *new* file is bad too — discovery is a
-  directory listing, so it would be presented as a real segmentation.) The `no_bare_write_h5ad`
-  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare call. Same family for other
-  durable output: `write_json_atomic`, `write_atomic`, `atomic_path`. This is the Python counterpart of
-  Julia's `write_atomic` (#420); for a multiscales **store** the equivalent is `staged_store` (see the
-  zarr section below) — a separate helper because replacing a directory has different atomic-rename
-  mechanics than replacing a file.
+- No `h5open`/`HDF5.*` (Julia) or `h5py`/`anndata` (Python) on cell data, and don't read the whole
+  table and filter in memory — push the selection into the view.
+- **Every `.h5ad` write goes through `write_h5ad_atomic`** (`python/cecelia/utils/atomic_io.py`), creating
+  one *or* rewriting one. Never `adata.write_h5ad(final_path)`. Same family for other durable output:
+  `write_json_atomic`, `write_atomic`, `atomic_path`; Julia's counterpart is `write_atomic`.
+- **One sanctioned exception — file *creation*.** Building a *new* `.h5ad` is the producing task's job
+  and uses `anndata` directly; the view wraps an *existing* file.
+- Deviating (e.g. a cheap one-attribute metadata peek) needs an **inline comment on that exact line**
+  saying why. No silent raw access.
+
+Why each of these exists, and what a truncated HDF5 costs: [`docs/DATAMODEL.md`](docs/DATAMODEL.md) →
+*Reading and writing `.h5ad` — the full rule*.
 
 ---
 
 ## Image / OME-ZARR access — always go through `zarr_utils`
 
-**The same rule as H5AD above, for image data. Never hand-roll opening an image or reading its
-geometry — no bare `zarr.open` / `da.from_zarr` / `tifffile.imread` on image or label stores, and
-no reading NGFF `.zattrs` or OME-XML yourself.** There is ONE set of readers in
-`python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`); use them everywhere — the pipeline
-tasks, the napari bridge, and any external consumer (e.g. coastal).
+**The same rule, for image data.** No bare `zarr.open` / `da.from_zarr` / `tifffile.imread` on image or
+label stores, and never read NGFF `.zattrs` or OME-XML yourself. ONE set of readers —
+`python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`) — used by the pipeline tasks, the napari
+bridge, and external consumers (coastal).
 
 | Need | Use |
 |---|---|
-| Open an OME-ZARR (image **or** labels) as a level list | `zarr_utils.open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
-| **Write** a store (image version, label set) | `with zarr_utils.staged_store(final_path) as staging:` — then `create_multiscales`/`open_multiscales_for_writing` on `staging`, never on `final_path` |
-| **Compression** for any array you create | `compressor=zarr_utils.store_compressor(kind)` — `kind='image'` or `'labels'`. NEVER omit it, never build a `Blosc`/`Zstd` yourself |
-| Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
-| NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
-| OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
+| Open an OME-ZARR (image **or** labels) as a level list | `open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
+| **Write** a store | `with zarr_utils.staged_store(final_path) as staging:` — then `create_multiscales`/`open_multiscales_for_writing` on `staging`, **never** on `final_path` |
+| **Compression** for any array you create | `compressor=zarr_utils.store_compressor(kind)`, `kind='image'` or `'labels'`. NEVER omit it, never hand-build a `Blosc`/`Zstd` |
+| Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural, read-only |
+| NGFF axes / per-axis scale | `read_axes(path)` / `read_scale(path)` |
+| OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml/read_pixel_unit/read_scale_from_ome_xml/read_time_increment` |
 
-- **Do not** copy these readers into a new module or re-open a store you already opened. The napari
-  bridge did exactly that — a full private zarr/OME reader stack (`_open_zarr_multiscale`,
-  `_read_axes`, `_read_scale`, `_load_ome_xml`, …) that silently **drifted** from the shared ones —
-  and it has been consolidated back. One implementation; the second is the bug (see the divergent
-  re-implementation warning above).
-- **Reads are read-only.** `zarr_data_to_list` only ever mutates a store on a WRITE-mode open —
-  never on `mode='r'`.
-- **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
-  producing task's job, via `zarr_utils.create_multiscales` (or the segmentation writer), not a
-  hand-rolled `zarr.open(..., 'w')`.
-- **The compressor is a decision, not a default.** `create_array` without `compressor=` silently
-  takes whatever the zarr version defaults to, which is how three different codecs ended up on disk
-  with no intent behind any of them. `store_compressor` holds the one choice per store kind — and the
-  two kinds need *opposite* settings (byte shuffle wins on 16-bit intensity data, and loses on
-  >99%-zero label planes), so pass the right `kind` rather than assuming one is better. Selectable in
-  Settings → Storage (`[zarr].imageCompressor`), reaching Python via the `CECELIA_IMAGE_COMPRESSOR`
-  env var `run_py` sets. Enforced by `test_store_compressor_convention.py`. The measured numbers live
-  on the constants; why images are NOT reduced to 8-bit is a recorded non-goal in `docs/FUTURE.md`.
-- **Never write a store at its final path — stage it.** `staged_store` is the store-level twin of
-  `write_atomic`: a writer that opens the final path destroys the previous store up front and then
-  fills it over minutes, so a cancelled re-run leaves `ccid.json` pointing at a truncated store — and
-  on a single-level store the missing frames read as **zeros, with no error**, which downstream
-  measurement and tracking consume happily. Enforced by the `store staging convention` tests
-  (`python/cecelia/tests/test_store_staging_convention.py`); rationale in `docs/SEGMENTATION.md` →
-  *Stores are written staged, never in place*.
+- **Don't copy these readers into a new module** or re-open a store you already opened.
+- **Reads are read-only** — `zarr_data_to_list` only mutates on a WRITE-mode open.
+- **The compressor is a decision, not a default**, and the two kinds need *opposite* settings — pass the
+  right `kind`. Selectable in Settings → Storage; enforced by `test_store_compressor_convention.py`.
+- **Never write a store at its final path — stage it.** A writer that opens the final path destroys the
+  previous store then fills it over minutes; a cancelled re-run leaves `ccid.json` pointing at a
+  truncated store, and on a single-level store the missing frames read as **zeros with no error**.
+  Enforced by `test_store_staging_convention.py`.
+- **One sanctioned exception — file *creation*,** via `zarr_utils.create_multiscales`.
+
+The drifted private napari reader stack, the measured compressor numbers, and the full rationale:
+[`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access — the full rule*.
 
 ---
-
-## Channel names → indices — always `channel_indices` (and `channel_names` for the list)
-
-**A `channelSelection` param holds channel NAMES, not indices.** Two helpers, both in
-`app/src/model/image.jl`, and a handler needs both:
-
-```julia
-names    = something(channel_names(img; value_name = value_name), String[])
-channels = channel_indices(get(params, "channels", nothing), names; what = "channels")
-```
-
-- **`channel_indices`** returns **0-based** indices (what the Python side slices with), accepts an
-  already-resolved index unchanged, and **errors by name** on a miss — with a "differs only in case"
-  hint, because two images from one experiment shipped `mem-TOM` and `mem-Tom`. Six handlers once
-  hand-rolled `findfirst(==(String(ch)), ch_names)` and drifted into three separately wrong
-  behaviours: an index crashed four of them, an unmatched name was silently **dropped** by five, and
-  drift correction silently fell back to channel 0 — registering a whole timelapse against SHG.
-- **`channel_names(img; value_name)`** is where the list comes from, because it **falls back to the
-  active version**. Names are typically registered only under `default` while a processed version
-  carries none of its own, so reading the raw versioned field (`versioned_get_field(raw,
-  "imChannelNames", value_name)` / `ccid_channel_names(raw, value_name)`) returns `nothing` and the
-  task reports "(none registered)" for an image whose channels the picker is happily listing — the
-  picker is fed by `channel_names(img)` in the image payload, so any other source disagrees with what
-  the user just clicked.
-
-Enforced by the `channelSelection params resolve through channel_indices` testset: a task whose
-resolved spec declares one and whose handler never calls `channel_indices` fails the suite.
 
 ## Spawning Python — always go through `run_py`
 
-**Never spawn a Python subprocess by hand. There is one launcher — `run_py` in `app/src/py_runner.jl`
-— use it for every Python task runner and data-layer writer.** It writes the params JSON to the
-run's task dir (`task_run_dir(<obj>._dir)`, never a temp dir), sets `PYTHONPATH=python/` (so the script
-does `import cecelia.*` with **no `sys.path` bootstrapping**), streams `[PROGRESS] n/total` → `on_progress`
-and the rest → `on_log`, registers the process for cancellation, and returns clean-exit (checks
-`exitcode` AND `termsignal`). It's the analogue of the old R `self$pyScript`.
-
-```julia
-ok = run_py("tasks/<category>/<name>_run.py", (; …params…), task_run_dir(img._dir);
-            on_log = on_log, on_progress = on_progress, on_process = on_process)
-ok || return nothing
-```
-
-- **Do not** write `run(pipeline(\`$python …\`))`, build a params file, or parse `[PROGRESS]`
-  inline in a task — that boilerplate (and the bugs that come with hand-rolling exit/signal checks
-  and param-file locations) is exactly what `run_py` exists to delete.
-- **Python runners therefore carry NO `sys.path` manipulation** — `import cecelia.*` resolves via the
-  PYTHONPATH `run_py` sets. A new `sys.path.insert(... __file__ ...)` in a runner is a red flag.
-- This is the same principle as the H5AD rule above: a cross-cutting operation gets **one**
-  canonical helper, and reimplementing it inline is the bug. (See `docs/MODULES.md` → *Running a
-  Python subprocess*.)
-
----
-
-## Python environment
-
-**Location:** the Pixi-managed env at the repo-root `.pixi/` (NOT under `napari/`). Don't reference an
-interpreter path — launch via `pixi run`, which puts the env's `python3` on PATH (that's how the Julia
-server's subprocesses and the napari bridge find it). See `docs/SHIPPING.md`.  
-**Add a package:** `pixi add --pypi <package>` (PyPI) or `pixi add <package>` (conda-forge), then commit
-the updated `pixi.toml` + `pixi.lock`.  
-**Where deps are defined (two files, disjoint sets — a dep is listed in exactly one):**
-- **`python/pyproject.toml`** owns the **light IO tier** the `cecelia` package needs to *import*
-  (`numpy`, `zarr>=3`, `dask`, `tifffile`, `ome-types`, `scipy`, `scikit-image`, `tqdm`). These reach
-  an external `pip install cecelia` consumer (e.g. coastal). If importing `cecelia.utils.*` needs it,
-  it goes here.
-- **`pixi.toml`** owns everything else — the **heavy / conda / per-platform** deps only the full app
-  needs (`cellpose`, `torch`, `napari`, `pyqt5`, `anndata`, `scanpy`, `btrack`, `leidenalg`,
-  `trimesh`, `pandas`, `websockets`; conda `python`/`openjdk`/`cvxopt`) — plus the editable
-  `cecelia = { path = "python", editable = true }` dep, which pulls the IO tier transitively so the
-  pixi env has everything. `pixi.toml` remains the single source of truth **for the pins it owns**;
-  the IO pins are `pyproject.toml`'s. (The old `napari/requirements.txt` is gone.)
-  See [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
-
-### Key version pins
-
-| Package | Pin | Reason |
-|---------|-----|--------|
-| `cellpose==3.1.1.2` | exact | `DenoiseModel` removed in v4; we need it for cleanup/denoise tasks. Do NOT upgrade. |
-| `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
-
-### GPU detection (cellpose tasks)
-Auto-detected in Python — no user checkbox needed. Use the one helper, don't inline the branch:
-```python
-from cecelia.utils.gpu_utils import torch_device
-use_gpu, gpu_device = torch_device()   # CUDA → MPS (Apple Silicon) → CPU
-```
-Do not add a `useGPU` param to task JSON or Julia handlers.
+**Never spawn a Python subprocess by hand.** One launcher — `run_py` in `app/src/py_runner.jl` — for
+every Python task runner and data-layer writer. It writes the params JSON to the run's task dir, sets
+`PYTHONPATH=python/` (so runners `import cecelia.*` with **no `sys.path` bootstrapping** — a new
+`sys.path.insert(... __file__ ...)` in a runner is a red flag), streams `[PROGRESS] n/total`, registers
+the process for cancellation, and checks `exitcode` **and** `termsignal`. Signature, options and the
+anti-patterns it exists to delete: [`app/CLAUDE.md`](app/CLAUDE.md) → *Spawning Python*.
 
 ---
 
 ## Windows compatibility
 
-All code must run on Linux, macOS, and Windows. Each of these has already caused a real bug —
-use the named helper, don't re-derive the platform branch inline:
-
-- **Python interpreter** — use `python_bin_path()` in `config.jl`; never hardcode an interpreter name
-  or venv layout (`bin/python3` vs `Scripts\python.exe`). It resolves to an **absolute** path and tries
-  the platform's spellings (Windows conda envs ship `python.exe` and often no `python3` at all). A bare
-  name is not good enough for any string that leaves the `pixi run` environment — the observer
-  registers this value into the user's own Claude Code config, launched from a plain shell.
-- **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
-  `.bat` vs no-extension.
-- **Leading `~` in a path** — use `expand_user()` in `config.jl`, never `Base.expanduser`, which is
-  documented Unix-only and is a **silent no-op on Windows** (a `~` then survives into
-  `joinpath`/`open`, e.g. `~/.cecelia\observer-mcp.json`).
-- **Writing into the config dir** — use `ensure_config_dir()`, not bare `config_dir()`: the latter is
-  a pure path computation and the directory doesn't exist until something creates it.
-- **Finding/spawning a CLI on PATH** — use `agent_bin_path()` + `_agent_spawn_cmd()` in
-  `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
-  never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
-  `CreateProcess` refuses batch files, they need `cmd /c`.
-- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`, or `_kill_proc_tree(proc)` when you
-  hold a `Base.Process`; never write `kill`/`pgrep`/`taskkill` inline. `Base.Process` has no `.pid`
-  field, and the pid must come from **`Libc.getpid(proc)`** — a raw
-  `ccall(:uv_process_get_pid, …, proc.handle)` dereferences NULL for a process that has already exited
-  (Julia nulls `handle` on reap), which is an **uncatchable SIGSEGV that kills the server**; `Libc.getpid`
-  does the same read with the iolock held and throws instead. Never `taskkill /IM julia.exe` — it kills every Julia
-  process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
-  port** instead of process name. Two homes, by caller: **in-process** → `_kill_listeners_on_port`
-  (same file); **outside the package** (`api/dev.jl`, every `pixi run stop*` task) → `free_port` in
-  `api/portkill.jl`, which is Base-only so it still works with no env. Both escalate to SIGKILL —
-  a SIGTERM does NOT stop a Julia process whose worker threads are mid-compile (it prints every
-  thread's backtrace and keeps running). Never write a third one. See `docs/DEV.md` → *Stopping the app*.
-- **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
-  processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
-- **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
-- **Path separators** — always `joinpath()`, never string-concatenate paths.
-- **`[PROGRESS]` line endings** — `eachline()` already strips `\r\n` on Windows, no special-casing
-  needed.
-- **Python text I/O — always pass `encoding="utf-8"`.** Python's default is the *locale* encoding:
-  UTF-8 here, **cp1252 on Windows**. Everything we read and write is UTF-8 (params JSON from Julia,
-  OME-XML carrying `µm`, our own sources), so a bare `open(p)` / `Path.read_text()` is a Windows-only
-  crash that passes every local run — it broke CI reading a source file containing `∝` (UTF-8 `0x9D`
-  is undefined in cp1252). For durable output use `write_json_atomic`/`write_atomic`
-  (`python/cecelia/utils/atomic_io.py`), which default to UTF-8. The `TextIoDeclaresEncodingTest`
-  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare text open.
-
-Launcher logic for all of the above lives in `pixi.toml` tasks (`dev`/`prod`/`frontend`/`napari`/
-`stop`), not shell scripts — add a `[target.<platform>.tasks]` override for OS-specific commands
-rather than a separate script. **Exception, when the same task needs all three OS branches:** a
-per-OS override means maintaining N copies of one behaviour by hand, and they drift. The `stop*`
-tasks carried 18 such one-liners and every escalation fix had to land three times; they now call one
-Base-only Julia file (`api/portkill.jl`) that does the platform branch *in code*, where it can be
-tested. Prefer that over a fourth copy — but keep the shared file dependency-free, so an emergency
-`pixi run stop` never depends on the env being intact.
-
----
-
-## Architecture
-
-```
-cecelia-feijoa/
-  app/          Julia package — Cecelia.jl (Revise-tracked) + each task's co-located Python
-                runner (app/src/tasks/<cat>/<name>_run.py, run by path via run_py).
-  api/          Julia API server scripts — NOT a package, NOT Revise-tracked
-  frontend/     Vue 3 (Vite, TypeScript, Pinia, PrimeVue)
-  python/       Installable Python package `cecelia` (pyproject.toml here) — the IO LIBRARY only:
-                analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
-                to app/. This is what an external consumer (coastal) `pip install`s.
-  napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
-  preview/      Task-preview worker (preview_worker.py, :7656) — resident process that runs a task's
-                real compute over the visible region. Runtime process, like napari/ and mcp/.
-  mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
-  pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
-  docs/         Extended architecture and design reference
-```
-
-**What lives where.** `api/`/`frontend/` are single-ecosystem. `app/` is **the app** — Julia *plus*
-each task's co-located Python runner; `python/` is the **installable IO library** (no task code):
-
-| Dir | Language | What it is |
-|---|---|---|
-| `app/` | Julia (+ task Python) | The `Cecelia.jl` package: data model, scheduler, gating, and tasks. Each task is **three co-located files** — `app/src/tasks/<cat>/<name>.jl` + `.json` + (optional) `<name>_run.py`. The `_run.py` is run by path via `run_py` (never imported), so it doesn't make `app/` an importable Python package. `Project.toml`/`Manifest.toml`. |
-| `api/` | Julia | HTTP/WS server scripts (`include`d, not a package). |
-| `frontend/` | Vue/TS | The browser UI. |
-| `python/` | Python | The installable **`cecelia`** IO library — **no task runners**: `python/cecelia/utils/*` (zarr/OME/dim/label-props/tracking/… helpers) + `python/cecelia/writers/*` (h5ad write-side). `python/pyproject.toml` ships only `cecelia` + `cecelia.utils`. This is what coastal `pip install`s. |
-| `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
-| `preview/` | Python | The task-preview worker (`:7656`): runs a task's own compute over one visible region so params can be judged before a full run. Resident (17.7 s of imports), un-pooled, returns the mask block rather than writing a store. Imports `cecelia`; not part of it. |
-| `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
-
-> **⚠️ Structural shifts.** (2026-07) The Python helpers moved `app/py/` → top-level `python/cecelia/`
-> and were made a pip-installable package (import name `cecelia`) so external consumers — e.g. the
-> sibling `coastal` project — can `pip install cecelia` and `import cecelia.utils.zarr_utils` with no
-> `sys.path`/`PYTHONPATH` hack. (Later) The **task runners moved back out** of the package into
-> `app/src/tasks/<cat>/`, co-located with their `.jl`, so `python/cecelia/` is the **IO library only**
-> — coastal never pulls task code. `run_py` resolves `"tasks/…"` under `app/src/` and everything else
-> (e.g. `"writers/…"`) under `python/cecelia/`, and sets `PYTHONPATH=python/` so runners still
-> `import cecelia.*`. Dependency split:
-> the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
-> `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
-
-**Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
-
-**Adding a Julia dependency to `app/`**: `Cecelia` is path-sourced by **three** separate environments,
-each with its own committed `Manifest.toml` that pins Cecelia's full dependency graph — so a new dep
-must be re-resolved into **all three** and all three manifests committed together, or whichever env was
-missed fails to precompile Cecelia (`ArgumentError: Package Cecelia does not have <Dep> in its
-dependencies`). `Pkg.instantiate()` alone does NOT do this — it honours the existing (stale) manifest;
-you need `Pkg.resolve()` (the `*-instantiate` tasks below now resolve-then-instantiate for exactly this
-reason). After editing `app/Project.toml` (or `Pkg.add`-ing in `app/`):
-
-| Env | Command | Manifest to commit |
-|---|---|---|
-| `app/` (package + `test-pkg`) | `pixi run julia-instantiate` | `app/Manifest.toml` |
-| `api/` (WS server) | `cd api && julia --project -e 'using Pkg; Pkg.resolve()'` | `api/Manifest.toml` |
-| `pixi run frontend`… `pluto/` (notebooks) | `pixi run notebooks-instantiate` | `pluto/Manifest.toml` |
-
-Miss one and it precompiles fine everywhere else but dies in that one env — which is exactly how a
-`Clustering`/`NearestNeighbors` add shipped a stale `pluto/Manifest.toml` and broke every notebook.
-
-### Data layout
-```
-{proj}/0/{uid}/    image data (OME-ZARR, written by bioformats2raw)
-{proj}/1/{uid}/    metadata (ccid.json, labels, labelProps/)
-```
-
-### Ports
-- `8080` — Julia WS/HTTP server
-- `5173` — Vite dev (proxies `/ws` → `8080`)
-- `7655` — Napari bridge WS
-- `7656` — Task-preview worker WS (`preview/preview_worker.py`)
-- `7657` — Detached task runner (`api/runner.jl`, dev only — see `docs/RUNNER.md`)
-- `7660` — Pluto notebooks server
-
-The runner's port is **fixed and deliberately outlives the API server**, so two checkouts that share a
-`CECELIA_DEV_DIR` (a worktree with a copied `.env`) share it too and cannot both run `pixi run dev`.
-The second one's runner stands down with a one-line message rather than a stack trace; override with
-`CECELIA_RUNNER_PORT` if you genuinely need two.
-
-### Module pattern
-Every task = **co-located files, same base name**:
-```
-app/src/tasks/<category>/<name>.jl       # Julia: struct + _run_task implementation
-app/src/tasks/<category>/<name>.json     # Param spec — single source of truth
-app/src/tasks/<category>/<name>_run.py   # OPTIONAL: Python compute, run by path via run_py
-```
-The `.jl`/`.json` (and `_run.py` if present) filenames must match — `remove.jl` pairs with `remove.json`, `cellpose.jl` with `cellpose.json` + `cellpose_run.py`. Never bundle multiple tasks into one `.jl` file. The `_run.py` sits **next to** its `.jl` (not in the `python/` package); it's run by path, so it doesn't make `app/` importable Python. This mirrors the custom-module layout (`docs/CUSTOM_MODULES.md`).
-
-The JSON spec is served to Vue via `GET /api/tasks/definitions?category=X` — Vue never maintains its own copy. Do **not** add task JSONs to `frontend/`. The `frontend/src/tasks/definitions/` directory is intentionally empty.
-
-When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
-- Add a `_spec_path(::MyTask)` overload pointing at the `.json` file
-- Add `"category.myTask" => MyTask()` to `_fun_name_map()`
-
-**And emit QC** — every result-producing task MUST bank sensible QC via `write_qc` (an objective
-`metrics` count + a `warn` finding for the bad case) and add cohort-comparable metrics to
-`COHORT_METRICS`. This is mandatory, not optional; the only exemption is a task with genuinely no
-objective signal (e.g. perceptual denoising), and it must be an explicit comment. Full guide + the
-pattern: [`docs/MODULES.md`](docs/MODULES.md) → *QC — REQUIRED for every new task*.
-
----
-
-## Development
-
-**Git workflow:** branch + PR for everything; **never commit or push to `main`** (releases are
-tagged off `main` after merge). Full conventions — branch naming, commit style, how PRs are
-opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). **Agents: ask before every commit
-and before opening/pushing a PR — explicitly, each time; don't commit or push proactively** (a
-"go ahead" to do the work is not approval to commit it).
-
-**Agents: state your reservations BEFORE every commit.** When asked to commit/push (or asked for the
-PR url — that request itself calls the commit), first volunteer honest reservations about the change —
-what's unverified (e.g. never run in a browser, an untested regression surface), plus real
-limitations (perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait
-to be asked "any reservations?". Surface the risk at the decision point, then commit on the go-ahead.
-See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
-
-**Dev dir config — single source of truth:** `cecelia-feijoa/.env`
-```
-CECELIA_DEV_DIR=~/cecelia-feijoa/dev
-```
-This file is git-ignored (machine-specific). `init_cecelia!` reads it automatically — no env var export needed. The `CECELIA_DEV_DIR` env var still overrides it if set.
-
-**Where `custom.toml` lives — dev vs prod (one resolver).** `config_dir()` in `app/src/config.jl`
-resolves the config dir in order: explicit arg → `CECELIA_DEV_DIR` env → `CECELIA_DEV_DIR` in `.env`
-→ **`~/.cecelia`** (the installed-app default). The presence of `.env`/`CECELIA_DEV_DIR` *is* the dev
-signal; an installed app has neither and falls through to `~/.cecelia/custom.toml`, so a dev run never
-touches a real user's config and the path never depends on install scope. Both the reader
-(`init_cecelia!`) and the writer (`set_projects_dir!`, used by the first-launch setup wizard) call
-this one resolver — don't re-derive the path. See `docs/todo/ONBOARDING_PLAN.md`.
-
-```bash
-pixi run dev        # supervises BOTH the Revise backend (:8080) AND the frontend/Vite — ONE command
-```
-`api/dev.jl` starts and supervises the frontend too (relaunches on Settings→System Restart / worktree
-switch), so do NOT run `pixi run frontend` alongside `dev`. The standalone `pixi run frontend` (Vite,
-`npm run dev`) is only for previewing a frontend-only branch on a spare port against an already-running
-backend. `pixi run prod` runs the server without Revise (production). `pixi run stop` stops all by port.
-Revise reloads function bodies on save. Struct/macro changes still need a restart.
+**All code must run on Linux, macOS, and Windows.** Every item below has already caused a real bug —
+use the named helper, never re-derive the platform branch inline: `python_bin_path()`,
+`bioformats2raw_bin()`, `expand_user()` (never `Base.expanduser` — a silent no-op on Windows),
+`ensure_config_dir()`, `agent_bin_path()`, `_kill_tree`/`free_port` (never inline
+`kill`/`pgrep`/`taskkill`), `_dir_bytes`, always `joinpath()`, and **always pass `encoding="utf-8"` to
+Python text I/O** (the default is cp1252 on Windows). Launcher logic lives in `pixi.toml` tasks, not
+shell scripts. The full table — which helper, which bug, and why each one exists — is in
+[`docs/DEV.md`](docs/DEV.md) → *Windows compatibility*. **Read it before writing any path, process, or
+file-encoding code.**
 
 ---
 
 ## Testing
 
-**Four test categories — one per layer. All four run in CI on every OS — keep it that way; the
-package suite was missing for a long time, which is how three Windows-only path bugs shipped. They
-are spread across three parallel jobs in `.github/workflows/ci.yml` (`julia` / `server` / `python`),
-split by what each needs installed, so wall-clock is the longest job rather than the sum; a new suite
-goes in the job that already has its toolchain. Each has a `pixi run` task that runs the whole suite.
-Write AND run the matching category in the same change as the code:**
+Write AND run the matching category in the same change as the code. All four run in CI on every OS.
 
-| You changed… | Write/run | Command |
-|---|---|---|
-| Julia package core (`app/`) — data model, persistence, task dispatch, param validation, scheduler/chain logic | package test (`app/test/runtests.jl`) | `pixi run test-pkg` |
-| An API handler/adapter (`api/src/*.jl`) with logic worth pinning | API test (`api/test/runtests.jl`, loaded with `CECELIA_NO_SERVE=1` — no socket) | `pixi run test-api` |
-| Frontend logic — first **extract it out of the `.vue` SFC into `frontend/src/utils/*.ts`**, then test that | Vitest (`*.test.ts` beside the module) | `pixi run test-frontend` |
-| Python analysis-env code (`python/cecelia/**` — zarr/dask writers, correction/measure utils) | `unittest` `TestCase` in `python/cecelia/tests/test_*.py` (stdlib, auto-discovered; no pytest dep) | `pixi run test-py` |
-
-Frontend scope is deliberately narrow: **pure logic in `src/utils/*` only — no component mounting,
-no jsdom/DOM/E2E.** Keep testable logic in plain `.ts`, not the component. Full conventions +
-rationale: [`docs/DEV.md`](docs/DEV.md) → *Tests*.
-
-Package tests run fully headless — no API, WS, or Vue. `app/test/runtests.jl` holds only the
-preamble (fixtures, hermetic config, shared helpers) and wraps the suite body, which lives in
-**`app/test/suite.jl`** — that is the file to add testsets to:
-```bash
-pixi run test-pkg                        # -O0; see pixi.toml for why
-cd app && julia -O0 --project test/runtests.jl
-```
-**Don't re-wrap `suite.jl` in a `begin` block or a single outer `@testset`.** One giant top-level
-expression is compiled in full before the first assertion runs — that shape cost ~90s of the
-suite's ~200s. Rationale in the `suite.jl` header.
-
-**Rule: any change to core package functionality ships with a test in the same change.**
-Core = the data model and its persistence, the versioned-variable convention, task dispatch,
-and param validation. Specifically:
-- **ccid.json round-trip** — every persisted field must survive `save!` → `init_object`. When
-  you add a field to `CciaImage`/`CciaSet`/`CciaProject`, assert it round-trips. (`save!`
-  silently dropping `status`/`attr`/`imChannelNames` went unnoticed precisely because no test
-  covered this.)
-- **Versioned fields** — anything stored versioned in `ccid.json` (`filepath`, `imChannelNames`,
-  …) must be read/written through the `versioned_*` helpers and land at the agreed location.
-  Assert the on-disk shape (`{value_name => …, "_active" => …}`), not just the in-memory value —
-  a convention test like this catches a field quietly using the wrong storage location.
-- **Task dispatch** — a new `fun_name` resolves to its struct via `_task_from_fun_name`.
-- **Param validation** — at least one bad-param case per task asserting `ParamValidationError`.
-
-### Test data fixtures
-
-Tests must **not** depend on the dev projects dir (`projects_dir()`) — it can be deleted, and the
-test would then silently skip. When a test needs real data, copy a **small** fixture into the
-**committed** fixtures dir in this repo:
-
-```
-<repo>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
-```
-
-Resolve it in `runtests.jl` with the generic helpers — `fixture_path("proj","1","img","labelProps","x.h5ad")`
-and `have_fixture(path)` (override the root with the `CECELIA_TEST_DATA` env var). Gate the testset
-on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single strong `@warn` per
-missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
-
-**Keep fixtures small** — e.g. a `labelProps/*.h5ad` (hundreds of KB), not GB-scale raw images or
-OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
-
-> **The cap is enforced, not advisory.** `.h5ad` is binary, so git stores a whole new copy per update
-> and history can't be pruned without a rewrite — and a committed fixtures dir invites someone to drop a
-> GB-scale store in. The `fixtures stay small` testset fails if any single file exceeds **1 MB** or the
-> tree exceeds **8 MB** (today: largest 332 KB, tree 432 KB). Needing more room is a design conversation,
-> not a number to raise.
-
----
-
-## Julia conventions
-
-- Mutating functions: `!` suffix (`open_image!`, `set_channel_names!`)
-- Strings: double quotes only (single quotes = `Char`)
-- Multiple dispatch: separate method per type, not OOP overloading
-- `@infiltrate` = `browser()` from R
-- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/jobs.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
-- **Don't `export` generic names that collide with common deps or Base.** Exports land in any
-  user's namespace; if Cecelia and another `using`'d package both export the same name, Julia
-  leaves it *unbound* (ambiguous), breaking unqualified calls. In particular avoid clashing with
-  **DataFrames** (`transform`, `select`, `groupby`, `combine`, `subset`, `rename`, `stack`,
-  `unstack`, `nrow`, `describe`, `order`) and Base. Prefer specific names — e.g. we export
-  `apply_transform`/`invert_transform`, not `transform`/`invert`. If you must share a generic
-  verb, extend the owner's function (`import DataFrames: transform`) rather than exporting your own.
-
-### HTTP.jl v2 WebSocket
-Use `HTTP.listen`, not `HTTP.serve` — the latter is request→response only and doesn't support
-WS upgrades. Full stream-handler/WS-upgrade/response conventions are in
-[`docs/API.md`](docs/API.md) → *HTTP.jl v2 conventions* — read that before touching
-`api/src/server.jl` or `api/src/sockets.jl`.
-
----
-
-## Frontend conventions
-
-See [`docs/UI.md`](docs/UI.md) for the full reference: design tokens, button utilities, module page authoring, component catalog, plot integration, and WS event patterns.
-
-**Keep UI copy short.** Default to NO explanatory text in the app — no page subtitles, no paragraph tooltips, no prose QC findings. Where orientation genuinely isn't self-evident, one phrase under ~10 words, never two sentences. Long in-app prose is noise forever for the person who uses the page daily, and is the most reliable tell that a screen was generated. The explanation goes in the relevant `docs/<AREA>.md`. Per-surface budgets: `docs/UI.md` → *UI copy — keep it short*.
-
-**Persist every user-settable option.** Any option on a module page / canvas (chart type, scope, compare mode, highlights, sliders, …) MUST live in persisted view state (`useViewState` over a store-backed bag / panel `state`), never a bare `ref()` — a `ref()` resets on remount, so options vanish when the user navigates away and back. This is a hard convention for new pages; see `docs/MODULES.md` → "RULE: persist every user-settable option" and `docs/UI.md` → "Persisting view state".
-
-**A continuous control's effect is coalesced, never per event.** A slider (`<input type="range">`, a drag handle, a wheel gesture) fires an event per pixel of travel. Its `@input` may WRITE the value; anything slower goes through one of the **three canonical schedulers** — `utils/debouncedLatest.ts` (a request), `utils/rafCoalesce.ts` (a paint), `utils/debouncedSave.ts` (a write-behind autosave) — or moves to `@change` (once, on release). **Never hand-roll a fourth `setTimeout` + sequence-token pair**, and **put the coalescing at the sink, not the call site**: one scheduler per slow endpoint, so a new caller can't reintroduce the spam. Enforced by `utils/continuousControls.test.ts`; rule + which to pick in `docs/UI.md` → "Continuous controls".
-
----
-
-## Task system
-
-See [`docs/MODULES.md`](docs/MODULES.md) for the complete step-by-step guide: Julia handler, Python script, JSON spec, registry, module page, route/nav wiring, composite tasks, and tests.
-
-### Key invariants (read before writing any task)
-
-**Tasks are sink-agnostic.** They report through injected callbacks and never call `ws_progress`/`ws_log` directly — those are API-layer concerns. The same `_run_task` runs unchanged from the REPL, a test, or the GUI.
-
-```julia
-# inside _run_task — always use callbacks, never ws_* directly
-on_progress(n, total)
-on_log("message")
-```
-
-**Implement `_run_task`, not `run_task`.** The scheduler's public `run_task` validates params, acquires a pool slot, writes the log file, then delegates to `_run_task`. Overriding `run_task` bypasses all of that.
-
-**`on_process(proc)` is required** when launching a subprocess. It registers the process handle with the cancellation system. Omitting it means `task:cancel` cannot kill the subprocess.
-
-**`proc.exitcode == 0` doesn't mean success on cancel.** libuv sets `exitcode = 0` for signal-killed processes. Always check both:
-```julia
-ok = proc.exitcode == 0 && proc.termsignal == 0
-```
-
-**`resource_pool` is required in every task JSON.** One pool per real bottleneck resource; the name says *what* it rations. Standard values: `"cpu"` (limit 20, general compute — the default), `"gpu"` (1, cellpose family), `"io"` (8, local disk — import/convert/crop), `"network"` (1, remote/SMB — reserved for HPC, unused today). Defined in `app/config.toml [pools]`; limits are adjustable live in Settings (throttle e.g. `io` to 1 for slow-share imports). The `tasksLimit` field and old single concurrent-task slider have been removed — use pools instead.
-
-**QC is required for every result-producing task.** After the work succeeds, bank an objective
-`metrics` count + a `warn` finding for the unambiguous bad case via `write_qc` (`app/src/qc.jl`), and
-add cohort-comparable metrics to `COHORT_METRICS` (`app/src/qc_cohort.jl`). Advisory only (never
-`error`, never gates). Keep the finding logic in a pure, unit-tested helper. The only exemption is a
-task with genuinely no objective signal, stated as an explicit comment. See `docs/MODULES.md` → *QC —
-REQUIRED for every new task*.
-
----
-
-## OME-ZARR dual-format
-
-Two layouts coexist — the reader handles both:
-
-| Source | Layout | `multiscales` location |
-|--------|--------|------------------------|
-| bioformats2raw | Series wrapper: data at `zarr/0/[level]` | `zarr/0/.zattrs` |
-| `create_multiscales()` | Flat: data at `zarr/[level]` | root `.zattrs` |
-
-Detection is **structural** — does `path/0` carry a `multiscales` attr, not what the path ends in.
-Both layouts have a `0/` child (a group in one, the level-0 *array* in the other), so the suffix
-tells you nothing. One resolver per language, and everything goes through it:
-
-| Language | Resolver |
+| You changed… | Command |
 |---|---|
-| Python | `zarr_utils.py` → `series_base` (used by `zarr_data_to_list`/`open_as_zarr`/`open_zarr`) |
-| Julia | `app/src/tasks/importImages/omezarr.jl` → `series_base` (used by `read_ome_metadata`, `update_ome_scale!`) |
+| Julia package core (`app/`) — data model, persistence, task dispatch, param validation, scheduler/chain | `pixi run test-pkg` (add testsets to `app/test/suite.jl`) |
+| An API handler/adapter (`api/src/*.jl`) with logic worth pinning | `pixi run test-api` |
+| Frontend logic — **extract it out of the `.vue` SFC into `frontend/src/utils/*.ts` first** | `pixi run test-frontend` |
+| Python analysis-env code (`python/cecelia/**`) | `pixi run test-py` |
 
-Never assume one format, and never hand-roll the check — always go through the readers (see
-*Image / OME-ZARR access — always go through `zarr_utils`* above).
+**Any change to core package functionality ships with a test in the same change** — core = the data
+model and its persistence, the versioned-variable convention, task dispatch, param validation. The
+four specific obligations (ccid.json round-trip, versioned-field on-disk shape, task dispatch, one
+bad-param case), the fixture conventions and the enforced fixture size cap are in
+[`docs/DEV.md`](docs/DEV.md) → *Core-functionality test rule* / *Test data fixtures*.
 
-**The trap this cost us twice:** hardcoding `zarr/0/.zattrs`. For a flat store that path *exists*
-(the level-0 array's own, empty `.zattrs`), so the code doesn't error — it finds no `multiscales`
-and returns silently. First it made `resync_ome_meta!` a no-op on any image with a processed
-variant active; then it made `sync_zarr_calibration!` land only its OME-XML half on the 8-bit
-import + crop outputs, leaving a store whose XML said `TimeIncrement="10.0"` while its NGFF t axis
-said `scale: 1.0` — and napari, which prefers NGFF, rendered 1 s/frame.
-
-Callers of `read_ome_metadata` should still resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` —
-the `"default"` zarr, not the active one. That is no longer a layout limitation: physical size and
-timing are acquisition properties, and the default is the store the importer syncs its corrections
-into, so reading a processed variant would make the answer depend on what happens to be selected
-for viewing.
+Tests must **not** depend on the dev projects dir — use the committed `test-data/` fixtures via
+`fixture_path(...)` + `have_fixture(...)`.
 
 ---
 
-## Calibration — three copies, one stamp
+## Git & commits
 
-Physical calibration (`PhysicalSize*`, `TimeIncrement`, and their units) is stored **three times**,
-because three consumers need it in three formats. That is fine. What is not fine is writing them
-from different sources — every calibration bug so far has been one copy landing and its partner
-silently not.
+**Branch + PR for everything; never commit or push to `main`** (releases are tagged off `main` after
+merge). Full conventions — branch naming, commit style, how PRs are opened, release tagging — in
+[`docs/DEV.md`](docs/DEV.md).
 
-| Copy | Consumer | Written by |
-|---|---|---|
-| `ccid.json` `meta` | all Julia analysis, via `img_physical_sizes` | `_merge_zarr_meta_into_ccid!`, `api_images_meta_set` |
-| NGFF `.zattrs` scale + axis units | napari, coastal (`read_scale`/`read_time_increment`) | `zarr_utils.write_calibration` |
-| OME-XML `<Pixels>` | every Python task, via `DimUtils` | `zarr_utils.write_calibration` |
+**Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
+commit or push proactively.** A "go ahead" to do the work is not approval to commit it.
 
-**Rules:**
-
-1. **`ccid.json` is authoritative.** It holds the human corrections and the numbers analysis
-   computes with. The two store copies are derived; when they disagree with ccid, they are wrong.
-2. **One stamp writes both store copies.** `zarr_utils.write_calibration(store, dim_utils)` writes
-   the NGFF `.zattrs` *and* the OME-XML `<Pixels>` from one derivation
-   (`zarr_utils.calibration_for_axes`). Every task runner calls it after the pixels and the sidecar
-   are in place. Never write one copy on its own.
-3. **Julia mirrors it for values Python cannot see** — the per-plane DeltaT interval, the ImageJ Z
-   fix. `sync_zarr_calibration!` is the same stamp against the same two copies, and
-   `resync_ome_meta!` re-applies it from ccid, which is the repair path for a stale store (no
-   re-import). The two implementations cannot call each other, so they each carry a unit table;
-   `app/test/runtests.jl` → *"calibration writers agree across languages"* stamps one fixture with
-   each and compares. **If you touch either stamp, that test is the contract.**
-4. **A `unit` on the t axis means the interval is KNOWN.** Every writer falls the t scale back to
-   1.0 when there is no `TimeIncrement`, so a unit-less t scale is a placeholder, not a reading.
-   Writers must not stamp a unit on it, and readers must not trust one without it
-   (`read_time_increment`, Julia `read_ome_metadata`) — otherwise "we don't know" silently becomes
-   "1 second per frame".
+**Agents: state your reservations BEFORE every commit.** When asked to commit/push (or asked for the
+PR url — that request itself calls the commit), first volunteer honest reservations about the change —
+what's unverified (e.g. never run in a browser, an untested regression surface), plus real limitations
+(perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait to be asked
+"any reservations?". Surface the risk at the decision point, then commit on the go-ahead. See
+[`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
 ---
 
-## Versioned variable pattern (ccid.json)
+## Dev dir config — single source of truth
 
-```json
-{ "default": "ccidImage.ome.zarr", "_active": "default" }
+`cecelia-feijoa/.env` (git-ignored, machine-specific):
 ```
-- Read: `versioned_get_field(raw, "filepath", value_name)` (falls back to `"default"`)
-- Write: `versioned_set_field!(raw, "filepath", value, value_name)`
-
-**JSON3 gotcha — Symbol keys**: JSON3 yields Symbol keys (`:default`, `:_active`). Always convert when building a `Dict`:
-```julia
-Dict{String,Any}(String(k) => v for (k, v) in obj
-                 if string(k) != VERSIONED_ACTIVE_KEY)
+CECELIA_DEV_DIR=~/cecelia-feijoa/dev
 ```
-Without this, `get(dict, "default", nothing)` returns `nothing` silently even when the key exists.
+`init_cecelia!` reads it automatically — no env var export needed; the `CECELIA_DEV_DIR` env var still
+overrides it. `config_dir()` in `app/src/config.jl` is the **one resolver**: explicit arg →
+`CECELIA_DEV_DIR` env → `.env` → `~/.cecelia` (installed-app default). Don't re-derive the path.
 
-**JSON3 gotcha — `isa Dict` vs `isa AbstractDict`**: `JSON3.Object <: AbstractDict` but `JSON3.Object isa Dict` is `false`. Any type guard that checks `isa Dict` will fail for values read from JSON3. Use `isa AbstractDict` everywhere. The versioned-field helpers (`versioned_set_field!`, `_to_str_dict`) already handle this — don't add new `isa Dict` checks.
-
----
-
-## Input definition — param type reference
-
-Full widget-type reference (every type, extra fields, JSON examples) lives in
-[`docs/MODULES.md`](docs/MODULES.md) — don't duplicate it here.
+```bash
+pixi run dev     # supervises BOTH the Revise backend (:8080) AND the frontend — ONE command
+```
+`api/dev.jl` supervises the frontend too, so do NOT run `pixi run frontend` alongside `dev`.
+`pixi run prod` = no Revise. `pixi run stop` stops all by port. Details, ports and the worktree-sharing
+caveat: [`docs/DEV.md`](docs/DEV.md) → *Development environment*, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → *Repository layout*.

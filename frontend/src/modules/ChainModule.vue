@@ -1842,7 +1842,7 @@ onActivated(async () => {
 }
 
 /* Layout menu — a short list of ACTIONS in a popover. Not a ChipSelect: each row fires an action and
-   none of them persists as a selection (docs/UI.md → UX primitive catalog). */
+   none of them persists as a selection (docs/ui/PRIMITIVES.md). */
 .layout-menu { display: flex; flex-direction: column; min-width: 11rem; }
 .layout-menu-item {
   justify-content: flex-start;

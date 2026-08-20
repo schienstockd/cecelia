@@ -517,6 +517,129 @@ Lives in Julia, operates on H5AD files written by Python tasks.
 
 ---
 
-## OME-ZARR
+## OME-ZARR dual-format
 
-See [`docs/NAPARI.md`](NAPARI.md) for the dual-layout detection, `create_multiscales` rules, byte-order issue, scale/unit reading, and dask vs zarr loading.
+> Moved here from `CLAUDE.md` (2026-08-20). Viewer-side detail (byte order, contrast, dask vs zarr loading) is in [`docs/NAPARI.md`](NAPARI.md).
+
+
+Two layouts coexist — the reader handles both:
+
+| Source | Layout | `multiscales` location |
+|--------|--------|------------------------|
+| bioformats2raw | Series wrapper: data at `zarr/0/[level]` | `zarr/0/.zattrs` |
+| `create_multiscales()` | Flat: data at `zarr/[level]` | root `.zattrs` |
+
+Detection is **structural** — does `path/0` carry a `multiscales` attr, not what the path ends in.
+Both layouts have a `0/` child (a group in one, the level-0 *array* in the other), so the suffix
+tells you nothing. One resolver per language, and everything goes through it:
+
+| Language | Resolver |
+|---|---|
+| Python | `zarr_utils.py` → `series_base` (used by `zarr_data_to_list`/`open_as_zarr`/`open_zarr`) |
+| Julia | `app/src/tasks/importImages/omezarr.jl` → `series_base` (used by `read_ome_metadata`, `update_ome_scale!`) |
+
+Never assume one format, and never hand-roll the check — always go through the readers (see
+*Image / OME-ZARR access — always go through `zarr_utils`* above).
+
+**The trap this cost us twice:** hardcoding `zarr/0/.zattrs`. For a flat store that path *exists*
+(the level-0 array's own, empty `.zattrs`), so the code doesn't error — it finds no `multiscales`
+and returns silently. First it made `resync_ome_meta!` a no-op on any image with a processed
+variant active; then it made `sync_zarr_calibration!` land only its OME-XML half on the 8-bit
+import + crop outputs, leaving a store whose XML said `TimeIncrement="10.0"` while its NGFF t axis
+said `scale: 1.0` — and napari, which prefers NGFF, rendered 1 s/frame.
+
+Callers of `read_ome_metadata` should still resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` —
+the `"default"` zarr, not the active one. That is no longer a layout limitation: physical size and
+timing are acquisition properties, and the default is the store the importer syncs its corrections
+into, so reading a processed variant would make the answer depend on what happens to be selected
+for viewing.
+
+---
+
+
+---
+
+## Repository layout
+
+> Moved here from `CLAUDE.md` (2026-08-20) — CLAUDE.md keeps only the invariants that a session can violate.
+
+
+```
+cecelia-feijoa/
+  app/          Julia package — Cecelia.jl (Revise-tracked) + each task's co-located Python
+                runner (app/src/tasks/<cat>/<name>_run.py, run by path via run_py).
+  api/          Julia API server scripts — NOT a package, NOT Revise-tracked
+  frontend/     Vue 3 (Vite, TypeScript, Pinia, PrimeVue)
+  python/       Installable Python package `cecelia` (pyproject.toml here) — the IO LIBRARY only:
+                analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
+                to app/. This is what an external consumer (coastal) `pip install`s.
+  napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
+  preview/      Task-preview worker (preview_worker.py, :7656) — resident process that runs a task's
+                real compute over the visible region. Runtime process, like napari/ and mcp/.
+  mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
+  pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
+  docs/         Extended architecture and design reference
+```
+
+**What lives where.** `api/`/`frontend/` are single-ecosystem. `app/` is **the app** — Julia *plus*
+each task's co-located Python runner; `python/` is the **installable IO library** (no task code):
+
+| Dir | Language | What it is |
+|---|---|---|
+| `app/` | Julia (+ task Python) | The `Cecelia.jl` package: data model, scheduler, gating, and tasks. Each task is **three co-located files** — `app/src/tasks/<cat>/<name>.jl` + `.json` + (optional) `<name>_run.py`. The `_run.py` is run by path via `run_py` (never imported), so it doesn't make `app/` an importable Python package. `Project.toml`/`Manifest.toml`. |
+| `api/` | Julia | HTTP/WS server scripts (`include`d, not a package). |
+| `frontend/` | Vue/TS | The browser UI. |
+| `python/` | Python | The installable **`cecelia`** IO library — **no task runners**: `python/cecelia/utils/*` (zarr/OME/dim/label-props/tracking/… helpers) + `python/cecelia/writers/*` (h5ad write-side). `python/pyproject.toml` ships only `cecelia` + `cecelia.utils`. This is what coastal `pip install`s. |
+| `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
+| `preview/` | Python | The task-preview worker (`:7656`): runs a task's own compute over one visible region so params can be judged before a full run. Resident (17.7 s of imports), un-pooled, returns the mask block rather than writing a store. Imports `cecelia`; not part of it. |
+| `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
+
+> **⚠️ Structural shifts.** (2026-07) The Python helpers moved `app/py/` → top-level `python/cecelia/`
+> and were made a pip-installable package (import name `cecelia`) so external consumers — e.g. the
+> sibling `coastal` project — can `pip install cecelia` and `import cecelia.utils.zarr_utils` with no
+> `sys.path`/`PYTHONPATH` hack. (Later) The **task runners moved back out** of the package into
+> `app/src/tasks/<cat>/`, co-located with their `.jl`, so `python/cecelia/` is the **IO library only**
+> — coastal never pulls task code. `run_py` resolves `"tasks/…"` under `app/src/` and everything else
+> (e.g. `"writers/…"`) under `python/cecelia/`, and sets `PYTHONPATH=python/` so runners still
+> `import cecelia.*`. Dependency split:
+> the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
+> `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
+
+**Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
+
+**Adding a Julia dependency to `app/`**: `Cecelia` is path-sourced by **three** separate environments,
+each with its own committed `Manifest.toml` that pins Cecelia's full dependency graph — so a new dep
+must be re-resolved into **all three** and all three manifests committed together, or whichever env was
+missed fails to precompile Cecelia (`ArgumentError: Package Cecelia does not have <Dep> in its
+dependencies`). `Pkg.instantiate()` alone does NOT do this — it honours the existing (stale) manifest;
+you need `Pkg.resolve()` (the `*-instantiate` tasks below now resolve-then-instantiate for exactly this
+reason). After editing `app/Project.toml` (or `Pkg.add`-ing in `app/`):
+
+| Env | Command | Manifest to commit |
+|---|---|---|
+| `app/` (package + `test-pkg`) | `pixi run julia-instantiate` | `app/Manifest.toml` |
+| `api/` (WS server) | `cd api && julia --project -e 'using Pkg; Pkg.resolve()'` | `api/Manifest.toml` |
+| `pixi run frontend`… `pluto/` (notebooks) | `pixi run notebooks-instantiate` | `pluto/Manifest.toml` |
+
+Miss one and it precompiles fine everywhere else but dies in that one env — which is exactly how a
+`Clustering`/`NearestNeighbors` add shipped a stale `pluto/Manifest.toml` and broke every notebook.
+
+### Data layout
+```
+{proj}/0/{uid}/    image data (OME-ZARR, written by bioformats2raw)
+{proj}/1/{uid}/    metadata (ccid.json, labels, labelProps/)
+```
+
+### Ports
+- `8080` — Julia WS/HTTP server
+- `5173` — Vite dev (proxies `/ws` → `8080`)
+- `7655` — Napari bridge WS
+- `7656` — Task-preview worker WS (`preview/preview_worker.py`)
+- `7657` — Detached task runner (`api/runner.jl`, dev only — see `docs/RUNNER.md`)
+- `7660` — Pluto notebooks server
+
+The runner's port is **fixed and deliberately outlives the API server**, so two checkouts that share a
+`CECELIA_DEV_DIR` (a worktree with a copied `.env`) share it too and cannot both run `pixi run dev`.
+The second one's runner stands down with a one-line message rather than a stack trace; override with
+`CECELIA_RUNNER_PORT` if you genuinely need two.
+

@@ -15,7 +15,7 @@ component, no row markup, no selection idiom and no selection colour:
 | Module-page sidebar (every module page, + batch movies, + animation) | `frontend/src/tasks/TaskList.vue` | a **card stack** — `.task-item` boxes, rounded, per-status border tint, log expanded inline as a `<pre>` |
 | Task Manager page (`/tasks`) | `frontend/src/modules/TasksModule.vue` | a **flat row list** — `.tm-row`, a selected row + a detail log pane on the right |
 
-Neither uses `components/SelectionTable.vue`, which `docs/UI.md` → *UX primitive catalog* names as the
+Neither uses `components/SelectionTable.vue`, which `docs/ui/PRIMITIVES.md` names as the
 canonical control for **ANY table of rows and columns — pick one, pick many, or a plain list**. This is
 the divergent-re-implementation trap in `CLAUDE.md`, on the two surfaces where it is most visible: they
 show the same objects, from the same store, side by side in the same session.
@@ -152,7 +152,7 @@ Each phase is independently shippable and independently viewable in the browser.
 - [x] Migrate all four sites (Decision 7a): `TaskList`, `TasksModule` (log pane), `SettingsModule`
       (`.patch-bar`), `ProjectPanel` (`.pp-io-bar`). Eight scoped rules deleted; the three classes that
       survive are geometry only (`flex-shrink`, `margin-bottom`, `flex: 0 0 90px`).
-- [x] `docs/UI.md` UX-primitive catalog (+ a row for the "working, no fraction" case, so the next
+- [x] `docs/ui/PRIMITIVES.md` (+ a row for the "working, no fraction" case, so the next
       session doesn't animate this one) + `INVENTORY.md`.
 - [x] `npm run typecheck` clean; `npx vitest run` 123 files / 1506 tests green.
 - **Two deliberate behaviour changes, both merges of a split nobody chose:** one transition for all

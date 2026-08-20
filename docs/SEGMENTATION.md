@@ -1070,3 +1070,56 @@ segmentations ending in `__branch` (same rule as `__tracks`).
 - Store track IDs in AnnData `obs["track_id"]` and spatial coordinates per timepoint
 
 See `docs/DATAMODEL.md` for AnnData conventions.
+
+---
+
+## Image / OME-ZARR access — the full rule
+
+> Moved here from `CLAUDE.md` (2026-08-20), which keeps the short form. This is the rationale half:
+> the drifted private napari reader stack, why the compressor is a decision not a default, and why
+> stores are staged rather than written in place.
+
+
+**The same rule as H5AD above, for image data. Never hand-roll opening an image or reading its
+geometry — no bare `zarr.open` / `da.from_zarr` / `tifffile.imread` on image or label stores, and
+no reading NGFF `.zattrs` or OME-XML yourself.** There is ONE set of readers in
+`python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`); use them everywhere — the pipeline
+tasks, the napari bridge, and any external consumer (e.g. coastal).
+
+| Need | Use |
+|---|---|
+| Open an OME-ZARR (image **or** labels) as a level list | `zarr_utils.open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
+| **Write** a store (image version, label set) | `with zarr_utils.staged_store(final_path) as staging:` — then `create_multiscales`/`open_multiscales_for_writing` on `staging`, never on `final_path` |
+| **Compression** for any array you create | `compressor=zarr_utils.store_compressor(kind)` — `kind='image'` or `'labels'`. NEVER omit it, never build a `Blosc`/`Zstd` yourself |
+| Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
+| NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
+| OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
+
+- **Do not** copy these readers into a new module or re-open a store you already opened. The napari
+  bridge did exactly that — a full private zarr/OME reader stack (`_open_zarr_multiscale`,
+  `_read_axes`, `_read_scale`, `_load_ome_xml`, …) that silently **drifted** from the shared ones —
+  and it has been consolidated back. One implementation; the second is the bug (see the divergent
+  re-implementation warning above).
+- **Reads are read-only.** `zarr_data_to_list` only ever mutates a store on a WRITE-mode open —
+  never on `mode='r'`.
+- **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
+  producing task's job, via `zarr_utils.create_multiscales` (or the segmentation writer), not a
+  hand-rolled `zarr.open(..., 'w')`.
+- **The compressor is a decision, not a default.** `create_array` without `compressor=` silently
+  takes whatever the zarr version defaults to, which is how three different codecs ended up on disk
+  with no intent behind any of them. `store_compressor` holds the one choice per store kind — and the
+  two kinds need *opposite* settings (byte shuffle wins on 16-bit intensity data, and loses on
+  >99%-zero label planes), so pass the right `kind` rather than assuming one is better. Selectable in
+  Settings → Storage (`[zarr].imageCompressor`), reaching Python via the `CECELIA_IMAGE_COMPRESSOR`
+  env var `run_py` sets. Enforced by `test_store_compressor_convention.py`. The measured numbers live
+  on the constants; why images are NOT reduced to 8-bit is a recorded non-goal in `docs/FUTURE.md`.
+- **Never write a store at its final path — stage it.** `staged_store` is the store-level twin of
+  `write_atomic`: a writer that opens the final path destroys the previous store up front and then
+  fills it over minutes, so a cancelled re-run leaves `ccid.json` pointing at a truncated store — and
+  on a single-level store the missing frames read as **zeros, with no error**, which downstream
+  measurement and tracking consume happily. Enforced by the `store staging convention` tests
+  (`python/cecelia/tests/test_store_staging_convention.py`); rationale in `docs/SEGMENTATION.md` →
+  *Stores are written staged, never in place*.
+
+---
+
