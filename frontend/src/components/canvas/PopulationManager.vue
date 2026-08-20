@@ -27,6 +27,7 @@ import { popNameError } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
+import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const AXIS_OPTIONS: ChipOption[] = [
@@ -172,8 +173,13 @@ const fpName = ref('')
 const fpParent = ref('root')
 const fpColour = ref(POP_PALETTE[0])
 const fpConds = ref<FpCond[]>([{ measure: '', fun: 'gt', values: '' }])
-// measures: per-cell obs (regions/clusters/aggregate/hmm/speed…) + gateable var columns (intensities)
-const filterMeasures = computed(() => [...new Set([...g.obsColumns, ...g.columns])].sort())
+// measures: per-cell obs (regions/clusters/aggregate/hmm/speed…) + gateable var columns (intensities),
+// headed by family (utils/measureGroups.ts — the same grouping the gate axis pickers use). Sorted
+// WITHIN each family: one alphabetical run put `area` next to `cell_id` next to `mean_intensity_0`.
+const filterGroups = computed(() => measureGroups({
+  columns: [...g.columns].sort(), channels: g.channels,
+  obsColumns: [...g.obsColumns].sort(), popType: g.popType }))
+const filterMeasures = computed(() => groupedCols(filterGroups.value))
 const parentOptions = computed(() => ['root', ...visiblePops.value.map(p => p.path)])
 
 function addFpCond() { fpConds.value.push({ measure: filterMeasures.value[0] ?? '', fun: 'gt', values: '' }) }
@@ -257,7 +263,9 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         <div v-for="(c, i) in fpConds" :key="i" class="pm-ff-cond cc-muted cc-fs-xs">
           <select v-model="c.measure" class="pm-ff-measure" v-tooltip.top="'Measure this condition filters on'">
             <option value="" disabled>measure…</option>
-            <option v-for="m in filterMeasures" :key="m" :value="m">{{ g.colLabel(m) }}</option>
+            <optgroup v-for="grp in filterGroups" :key="grp.title" :label="grp.title">
+              <option v-for="m in grp.cols" :key="m" :value="m">{{ g.colLabel(m) }}</option>
+            </optgroup>
           </select>
           <select v-model="c.fun" class="pm-ff-fun" v-tooltip.top="'How the measure is compared'">
             <option v-for="f in FILTER_FUNS" :key="f" :value="f">{{ f }}</option>

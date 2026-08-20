@@ -21,6 +21,7 @@ import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plot
 import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
+import { measureGroups, groupedCols } from '../../utils/measureGroups'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -89,6 +90,12 @@ function toggleChannel(c: string) {
 }
 function clearChannels() { channels.value = [] }
 
+// The pickable measures, headed by family (Morphology · Channels · Spatial / Time) — the SAME
+// grouping the single plot's X/Y selects use (utils/measureGroups.ts), so the two panels' lists read
+// the same. `groupedCols` is the flat universe the selection is reconciled against.
+const pickGroups = computed(() => measureGroups({
+  columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+
 // Keep the selection valid for the current segmentation: a value_name switch changes the columns, so
 // prune any channel that no longer exists (reseeding if that empties it) — the pure reconcileChannels,
 // same intent as the single plot's ensureChannels. Only assign on a real content change (a bare filter
@@ -96,7 +103,7 @@ function clearChannels() { channels.value = [] }
 function syncChannels() {
   const defaults = g.channels.length ? g.channels : g.columns
   // spatial/temporal centroid axes are selectable too (kept out of the defaults — opt-in per user)
-  const valid = [...g.columns, ...g.spatialAxes]
+  const valid = groupedCols(pickGroups.value)
   const next = reconcileChannels(channels.value, valid, defaults)
   const changed = next.length !== channels.value.length || next.some((c, i) => c !== channels.value[i])
   if (changed) channels.value = next
@@ -158,13 +165,16 @@ function exportAs(kind: string) {
                 <button class="chan-clear" :disabled="!channels.length" @click="clearChannels">clear</button>
               </div>
               <div class="chan-list">
-                <label v-for="c in [...g.columns, ...g.spatialAxes]" :key="c" class="chan-item"
-                       v-tooltip.right="'Include this measure in the pair grid'"
-                       :class="{ disabled: !channels.includes(c) && atCap }">
-                  <input type="checkbox" :checked="channels.includes(c)"
-                         :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />
-                  <span>{{ g.colLabel(c) }}</span>
-                </label>
+                <template v-for="grp in pickGroups" :key="grp.title">
+                  <div class="chan-grp cc-eyebrow cc-fs-2xs">{{ grp.title }}</div>
+                  <label v-for="c in grp.cols" :key="c" class="chan-item"
+                         v-tooltip.right="'Include this measure in the pair grid'"
+                         :class="{ disabled: !channels.includes(c) && atCap }">
+                    <input type="checkbox" :checked="channels.includes(c)"
+                           :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />
+                    <span>{{ g.colLabel(c) }}</span>
+                  </label>
+                </template>
               </div>
               <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * (MAX_CHANNELS - 1) / 2 }} scatter plots). Clear one to swap.</div>
             </div>
@@ -227,6 +237,10 @@ function exportAs(kind: string) {
 .chan-clear { background: none; border: none; color: var(--cc-accent); cursor: pointer; font-size: var(--cc-fs-xs); }
 .chan-clear:disabled { color: var(--cc-text-dim); cursor: default; }
 .chan-list { max-height: 220px; overflow-y: auto; padding: 4px 0; }
+/* family heading inside the list (Morphology / Channels / Spatial / Time) — same eyebrow treatment as
+   the clustering feature picker's group titles, so a grouped measure list reads the same everywhere */
+.chan-grp { padding: 5px 4px 2px; }
+.chan-grp:first-child { padding-top: 1px; }
 .chan-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: pointer; color: var(--cc-text); }
 .chan-item:hover { background: var(--cc-surface-2); }
 .chan-item.disabled { color: var(--cc-text-dim); cursor: default; }

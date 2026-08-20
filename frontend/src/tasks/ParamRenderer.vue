@@ -17,6 +17,7 @@ import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          scopeValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
@@ -269,8 +270,10 @@ function channelLabel(col: string, chans: string[]): string {
 }
 
 // labelPropsColsSelection: multi-select of per-cell measure columns for the chosen image +
-// segmentation. Source: /api/gating/channels. Two groups (matching the R UI): TRACKING measures
-// (obs `live.*`) and OBJECT measures (var columns — intensities shown by CHANNEL NAME, plus shape).
+// segmentation. Source: /api/gating/channels. Grouped by family via the shared `measureGroups`
+// (utils/measureGroups.ts — also the gate axis pickers and the population manager): whole-track
+// motility, then Morphology and Channels (the intensities, by CHANNEL NAME), then Behaviour (obs
+// `live.*`). The one "Object measures" heading used to hold the shape descriptors AND the markers.
 // `trimPrefix` collapses to one flat group filtered to that prefix with the label trimmed (the
 // transitions HMM-state picker shows just the suffix).
 const COL_DENYLIST = new Set(['label', 'track_id', 'track_parent', 'track_root', 'track_state',
@@ -293,7 +296,7 @@ async function loadCols() {
     const res = await fetch(`/api/gating/channels?${q}`)
     if (!res.ok) return
     const d = await res.json() as { columns?: string[]; obsColumns?: string[]; channelNames?: string[]
-      cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[] }
+      channels?: string[]; cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[] }
     const vars = (d.columns ?? []).filter(c => !COL_DENYLIST.has(c))
     const obs = (d.obsColumns ?? []).filter(c => !COL_DENYLIST.has(c))
     const chans = d.channelNames ?? []
@@ -305,32 +308,21 @@ async function loadCols() {
       colGroups.value = opts.length ? [{ title: '', opts }] : []
       return
     }
-    const groups: { title: string; opts: { label: string; value: string }[] }[] = []
-    if (popType === 'track' || popType === 'trackclust') {
-      // TRACK: pick BASE measures (like old R); the task aggregates each to ALL per-track stats
-      // (mean/median/…; categorical → frequencies) automatically — so we DON'T list *.mean/*.median.
-      //  • Track measures = whole-track motility (used directly)
-      //  • Object measures = cell vars (channels/morphology), aggregated per track
-      //  • Behaviour = cell obs (live.* incl. HMM state/transitions), aggregated per track
-      const motility = vars.map(c => ({ label: c, value: c }))
-      if (motility.length) groups.push({ title: 'Track measures', opts: motility })
-      const object = (d.cellMeasures ?? []).filter(c => !COL_DENYLIST.has(c))
-        .map(c => ({ label: channelLabel(c, chans), value: c }))
-      if (object.length) groups.push({ title: 'Object measures', opts: object })
-      const behaviour = (d.cellObsMeasures ?? []).filter(c => !COL_DENYLIST.has(c) && c.startsWith('live.'))
-        .map(c => ({ label: c, value: c }))
-      if (behaviour.length) groups.push({ title: 'Behaviour', opts: behaviour })
-      colGroups.value = groups
-      return
-    }
-    // FLOW/cell: object vars + behaviour obs (live.*). Group names + order match the track picker
-    // (Object measures, then Behaviour) so Cluster cells and Cluster tracks read consistently — the
-    // only difference is Cluster tracks additionally has a "Track measures" (whole-track) group.
-    const object = vars.map(c => ({ label: channelLabel(c, chans), value: c }))
-    if (object.length) groups.push({ title: 'Object measures', opts: object })
-    const behaviour = obs.filter(c => c.startsWith('live.')).map(c => ({ label: c, value: c }))
-    if (behaviour.length) groups.push({ title: 'Behaviour', opts: behaviour })
-    colGroups.value = groups
+    // Both branches pick BASE measures (like old R); for tracks the task aggregates each to ALL
+    // per-track stats (mean/median/…; categorical → frequencies) automatically — so we DON'T list
+    // *.mean/*.median. The FAMILIES and their order come from the shared `measureGroups`, so Cluster
+    // cells and Cluster tracks read consistently: the only difference is that Cluster tracks
+    // additionally has a "Track measures" (whole-track motility) group.
+    //  • track: motility in `columns`, the per-track-aggregatable cell vars in `cellMeasures`
+    //  • flow:  the cell vars are `columns`; behaviour is the cell obs `live.*`
+    const track = popType === 'track' || popType === 'trackclust'
+    const groups = measureGroups(track
+      ? { trackColumns: vars, columns: (d.cellMeasures ?? []).filter(c => !COL_DENYLIST.has(c)),
+          channels: d.channels,
+          obsColumns: (d.cellObsMeasures ?? []).filter(c => !COL_DENYLIST.has(c) && c.startsWith('live.')) }
+      : { columns: vars, channels: d.channels, obsColumns: obs.filter(c => c.startsWith('live.')) })
+    colGroups.value = groups.map(grp => ({
+      title: grp.title, opts: grp.cols.map(c => ({ label: channelLabel(c, chans), value: c })) }))
   } catch { /* no columns available yet */ }
 }
 
