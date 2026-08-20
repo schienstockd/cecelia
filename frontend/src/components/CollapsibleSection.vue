@@ -13,6 +13,9 @@ import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   label:        string
+  // one short line on what the section is for — a collapsed section is a control like any other, and
+  // "Sensitivity" alone does not say what it is sensitive TO (docs/UI.md → every control needs a tooltip)
+  tip?:         string
   defaultOpen?: boolean
   maxHeight?:   string
   storageKey?:  string
@@ -31,7 +34,7 @@ watch(open, v => {
 <template>
   <div class="collapsible-section">
     <button class="cs-toggle cc-section-toggle" @click="open = !open"
-      v-tooltip.right="open ? `Collapse ${label}` : `Expand ${label}`">
+      v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
       <span class="cs-label cc-eyebrow">{{ label }}</span>
     </button>

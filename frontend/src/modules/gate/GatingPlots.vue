@@ -14,6 +14,7 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
+import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useGatingStore } from '../../stores/gating'
@@ -27,7 +28,7 @@ import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor }
+import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor, singlePopFor }
   from '../../components/canvas/interactiveViews'
 import SeriesPicker from '../../components/canvas/SeriesPicker.vue'
 import { fetchSegmentationPops } from '../../plots/populations'
@@ -189,7 +190,8 @@ const activeLabels = computed(() => scope.value === 'global' ? gLabels.value : (
 const activeFromZero = computed(() => scope.value === 'global' ? gFromZero.value : (activePanel.value?.state.fromZero ?? true))
 
 // edits route to the global value or the active plot depending on scope
-const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+// the ONE selection toggle (utils/selection.ts) — four hosts had a copy of it each
+const toggle = (arr: string[], v: string) => toggleSelected(arr, v)
 
 // ── The rail's SECOND manager: which track populations the track panels plot ──────────────────
 //
@@ -242,11 +244,27 @@ function panelPopSel(id: number): string[] {
   return (panels.value.find(p => p.id === id)?.state.popSel as string[] | undefined) ?? []
 }
 const activePopSel = computed(() => activePanel.value ? panelPopSel(activePanel.value.id) : [])
+// ONE population at a time when the active view says so (`singlePop`) — picking replaces instead of
+// adding, and picking the one already lit clears it. The timeline is the case: several populations
+// resolve to several groups and it can only draw one, so the extra ticks were input it silently threw
+// away. Its two siblings facet, so they keep the multi-select they need.
+const activeSinglePop = computed(() =>
+  !!activePanel.value && isInteractiveView(activePanel.value.state.kind)
+  && singlePopFor(activePanel.value.state.kind))
 function togglePop(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
-  if (scope.value === 'global') trackPops.value = toggle(trackPops.value, k)
-  else if (activePanel.value) activePanel.value.state.popSel = toggle(panelPopSel(activePanel.value.id), k)
+  const next = (cur: string[]) => toggleSelected(cur, k, { single: activeSinglePop.value })
+  if (scope.value === 'global') trackPops.value = next(trackPops.value)
+  else if (activePanel.value) activePanel.value.state.popSel = next(panelPopSel(activePanel.value.id))
 }
+// The policy can change UNDER a selection: this rail follows the active panel, so ticking three
+// populations for a facetting plot and then clicking the timeline leaves three ticked. Narrow instead
+// of drawing one of them and saying nothing — which is the bug `singlePop` exists to prevent.
+watch(activeSinglePop, single => {
+  if (!single) return
+  if (scope.value === 'global') trackPops.value = narrowToSingle(trackPops.value)
+  else if (activePanel.value) activePanel.value.state.popSel = narrowToSingle(activePopSel.value)
+})
 // keyed by PANEL ID so each panel keeps one series array while its ticks are unchanged — a
 // template-built `.map(parseTkey)` would hand every panel a "new" list on every canvas render.
 const memoSeries = seriesMemo<number>()
@@ -456,6 +474,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
              five controls wired to nothing is what the rail plan calls dead chrome. -->
         <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
                       :groups="segPops" :selected="activePopSel" :scope="scope"
+                      :single="activeSinglePop"
                       @toggle="togglePop" @update:scope="scope = $event" />
         <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"

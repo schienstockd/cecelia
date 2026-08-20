@@ -53,7 +53,6 @@ import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
   availableModes, resolveMode, modeHint, referenceLine, axisLabels,
   cohortSummary, cohortFindings, pairCapNote, diagnosticsCsvRows, resolveTrackValueName,
-  trackSetOptions,
   diagGroups, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
@@ -84,8 +83,6 @@ const valueName = computed({
                                    activeName.value),
   set: v => (props.state.valueName = v),
 })
-// what the picker may offer — the TRACKED label sets (plots/trackDiagnostics.ts)
-const trackSets = computed(() => trackSetOptions(trackedNames.value, valueNames.value))
 // the population FAMILY, one per plot (docs/PLOTS.md) — resolved through the same helper the rail uses
 const { options: familyOptions, popType } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
@@ -304,10 +301,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                     @update:model-value="v => (state.mode = v as string)" />
         <span class="tdv-spacer" />
         <PopFamilySelect :options="familyOptions" v-model="popType" />
-        <select v-if="trackSets.length > 1" v-model="valueName"
-                v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
-          <option v-for="vn in trackSets" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Re-run the checks'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />

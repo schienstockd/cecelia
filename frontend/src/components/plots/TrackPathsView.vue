@@ -63,7 +63,7 @@ import {
   cohortParams, cohortKey, facetPlan, groupLabel, cohortNote,
   type CompareMode, type TrackGroupMeta,
 } from '../../plots/trackGroups'
-import { trackSetOptions, resolveTrackValueName } from '../../plots/trackDiagnostics'
+import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 import type { SeriesTarget } from '../../plots/types'
 
 type Mode = 'paths' | 'star' | 'rose'
@@ -99,8 +99,6 @@ const valueName = computed({
                                    activeName.value),
   set: v => (props.state.valueName = v),
 })
-// what the picker may offer — the TRACKED label sets (plots/trackDiagnostics.ts)
-const trackSets = computed(() => trackSetOptions(trackedNames.value, valueNames.value))
 const mode = computed({ get: () => props.state.mode ?? 'paths',
                         set: v => (props.state.mode = v) })
 const colorBy = computed({ get: () => props.state.colorBy ?? '',
@@ -423,10 +421,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
                 :class="{ 'cc-btn-on': showEnds }"
                 v-tooltip.top="'Mark where each track starts (circle) and ends (×)'"
                 @click="showEnds = !showEnds">ends</button>
-        <select v-if="trackSets.length > 1" v-model="valueName"
-                v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
-          <option v-for="vn in trackSets" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
         <select v-model="colorBy" v-tooltip.top="'Colour each track by one of its properties'"
                 aria-label="Colour by">
           <option value="">colour: track</option>

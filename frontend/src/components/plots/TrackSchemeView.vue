@@ -38,10 +38,12 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { useLogStore } from '../../stores/log'
+import { useProjectStore } from '../../stores/project'
+import { useNapariOpen } from '../../composables/useNapariOpen'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
-import { resolveTrackValueName, trackSetOptions } from '../../plots/trackDiagnostics'
+import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 import { cohortParams, type CompareMode } from '../../plots/trackGroups'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
@@ -123,9 +125,6 @@ const valueName = computed({
 const { options: familyOptions, popType } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 
-// what the picker may offer — the TRACKED label sets (plots/trackDiagnostics.ts)
-const trackSets = computed(() => trackSetOptions(trackedNames.value, valueNames.value))
-
 const order = computed<LaneOrder>(() => (props.state.order as LaneOrder) ?? 'pair')
 const candidatesOnly = computed(() => !!props.state.candidatesOnly)
 const gapsOnly = computed(() => !!props.state.gapsOnly)
@@ -192,6 +191,17 @@ const selSummary = computed(() => {
   return `${n} tracks selected — ${o.a} and ${o.b} both exist at ${span}`
 })
 
+// The two counts in the header measure DIFFERENT things and a user will assume they are the same, so
+// hovering says which is which. `summary` stays terse (docs/UI.md → UI copy); this is the long half,
+// the same split `QC_TEXT` uses.
+const summaryTip = computed(() => {
+  const flagged = issues.value.length
+  const gappy = allLanes.value.filter(l => l.nGaps > 0).length
+  if (!flagged && !gappy) return ''
+  return `Flagged = tracks an automatic scan thinks need a join, split or removal (${flagged}). `
+       + `With gaps = tracks missing a detection in some frame (${gappy}) — most are not flagged.`
+})
+
 const orderOptions: ChipOption[] = (Object.keys(ORDER_LABEL) as LaneOrder[])
   .map(k => ({ value: k, label: ORDER_LABEL[k] }))
 
@@ -199,11 +209,11 @@ const summary = computed(() => {
   const m = meta.value
   if (!m?.tracked) return ''
   const parts = [`${m.total} tracks`]
-  if (issues.value.length) parts.push(`${issues.value.length} candidates`)
-  // COUNT OF TRACKS, not of holes, and shown beside the candidate count on purpose: the two are
-  // different things and a user will assume they are the same. A `gap` CANDIDATE is two track ids the
-  // detector thinks are one cell; a gap in a LANE is a frame inside one track where the cell was never
-  // detected. On the reference image (zolIMa/fXgbTl, memTom) that is 23 candidates against 306 of 396
+  if (issues.value.length) parts.push(`${issues.value.length} flagged`)
+  // COUNT OF TRACKS, not of holes, and shown beside the flagged count on purpose: the two are
+  // different things and a user will assume they are the same, which is what `summaryTip` spells out. A
+  // FLAGGED gap is two track ids the scan thinks are one cell; a gap in a LANE is a frame inside one
+  // track where the cell was never detected. On the reference image (zolIMa/fXgbTl, memTom) that is 23 candidates against 306 of 396
   // tracks — so the majority of what a user might want to fix is invisible to the detector, which is
   // the whole reason the untracked lane and `points.add` are Phase 3.
   const gappy = allLanes.value.filter(l => l.nGaps > 0).length
@@ -315,6 +325,10 @@ watch(filtered, () => { if (win.value.offset !== (props.state.offset ?? 0)) prop
 // it used and the panel seeds from that, so the measured numbers stay on the Julia constants where
 // they belong. Only what the user moved is sent.
 const log = useLogStore()
+// which image the VIEWER holds, and the one canonical way to change it (useNapariOpen) — a track panel
+// must not grow a second open path
+const project = useProjectStore()
+const { openInNapari } = useNapariOpen()
 const serverThresholds = ref<TrackThresholds>({})
 const thr = computed<TrackThresholds>({
   get: () => props.state.thr ?? {}, set: v => (props.state.thr = v),
@@ -342,6 +356,9 @@ const napariSel = ref<TrackSelection | null>(null)
 const napariSummary = computed(() => selectionSummary(napariSel.value))
 
 async function drawInNapari() {
+  // same reason as `showInNapari`: a region drawn on the image ON SCREEN would resolve against this
+  // panel's labels, which is only meaningful when they are the same image
+  if (!(await ensureViewerImage())) return
   try {
     await fetch('/api/napari/start-selection', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -664,6 +681,24 @@ function onClick(ev: MouseEvent) {
 }
 
 /**
+ * Point the viewer at THIS panel's image, if it is not there already.
+ *
+ * `false` when there is nothing to point: no viewer open, which is deliberately not force-launched —
+ * the same rule the canvas's prev/next navigation follows ("don't force-launch napari when it isn't
+ * open"). Says so rather than failing three calls later inside the bridge.
+ */
+async function ensureViewerImage(): Promise<boolean> {
+  if (!imageUid.value) return false
+  if (!project.napariImageUid) {
+    log.info('Open this image in the viewer first.', { source: 'tracks' })
+    return false
+  }
+  if (project.napariImageUid === imageUid.value) return true
+  await openInNapari(imageUid.value, props.setUid ?? '')
+  return true
+}
+
+/**
  * Send the viewer to the selected track — the escape hatch to the image.
  *
  * "The plot is for the obvious ones; the image is for the hard ones" — so the viewer has to be one
@@ -673,6 +708,13 @@ async function showInNapari() {
   const ids = [...selected.value]
   const first = ids[0]
   if (!first) return
+  // THE VIEWER MAY BE ON A DIFFERENT IMAGE. The bridge resolves layer paths against whatever is on
+  // screen, so asking it to draw this panel's tracks while it holds another movie is at best wrong and
+  // at worst fatal: on `fXgbTl` → `VJy1Nx` it died inside HDF5 on `VJy1Nx/labelProps/memTom.h5ad`,
+  // a file that does not exist. Open the right image first — the same follow-along the canvas's
+  // prev/next buttons already do — and only when a viewer is actually up, because "Show" must not
+  // force-launch napari.
+  if (!(await ensureViewerImage())) return
   // the SELECTION as its own layer first — "which of these ribbons are mine" is the question, and the
   // camera move only answers "where". Both, because a highlighted track off-screen is still invisible.
   await showTracksInNapari({ projectUid: props.projectUid, imageUid: imageUid.value,
@@ -760,23 +802,20 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
         <span class="tsv-spacer" />
         <!-- the candidate queue is a FILTER, not a second screen (Decision 2) -->
         <button class="cc-btn cc-btn-bare cc-btn-dense" :class="{ 'cc-btn-on': candidatesOnly }"
-                v-tooltip.top="'Show only tracks the detector flagged'"
+                v-tooltip.top="'Only tracks flagged as a possible join, split or removal'"
                 :disabled="!issues.length"
-                @click="state.candidatesOnly = !candidatesOnly">Candidates</button>
+                @click="state.candidatesOnly = !candidatesOnly">Flagged</button>
         <button class="cc-btn cc-btn-bare cc-btn-dense" :class="{ 'cc-btn-on': gapsOnly }"
                 v-tooltip.top="'Tracks missing a detection in some frame'"
                 @click="state.gapsOnly = !gapsOnly">Gaps</button>
         <PopFamilySelect :options="familyOptions" v-model="popType" />
-        <select v-if="trackSets.length > 1" v-model="valueName"
-                v-tooltip.top="'Which set of tracks'" aria-label="Tracks">
-          <option v-for="vn in trackSets" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload the tracks'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
         </button>
       </div>
-      <span v-if="summary" class="cc-muted cc-fs-xs">{{ summary }}</span>
+      <span v-if="summary" class="cc-muted cc-fs-xs"
+            v-tooltip.bottom="summaryTip || 'Tracks in this set'">{{ summary }}</span>
     </div>
 
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
@@ -785,7 +824,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 
     <!-- The detector's own thresholds. Collapsed, because the defaults are measured — but a queue
          someone abandons is one whose sensitivity they could not change. -->
-    <CollapsibleSection v-if="meta?.tracked" label="Sensitivity"
+    <CollapsibleSection v-if="meta?.tracked" label="Flagging"
+                        tip="How readily a track is flagged — re-scans when you apply"
                         storage-key="tsv:sensitivity" :default-open="false">
       <div class="cc-row tsv-knobs">
         <label v-for="f in THRESHOLD_FIELDS" :key="f.key" class="cc-row-group cc-fs-xs"
@@ -821,7 +861,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                 v-tooltip.top="a.blocked || opDescription(a.op!)" @click="queue(a.op)">{{ a.label }}</button>
         <button class="cc-btn cc-btn-dense" :class="fixable.length ? 'cc-btn-primary' : 'cc-btn-bare'"
                 :disabled="!fixable.length"
-                v-tooltip.top="fixable.length ? 'Queue the fix the detector picked for the selected tracks'
+                v-tooltip.top="fixable.length ? 'Queue the suggested fix for the selected tracks'
                                              : 'Select a flagged track to use its suggested fix'"
                 @click="fixSelected">Fix{{ fixable.length ? ` ${fixable.length}` : '' }}</button>
       </div>

@@ -154,8 +154,13 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
     resolution shared by the control and the request);
   - `GET /api/tracking/issues` takes `pops`, so the CANDIDATES are scoped like the LANES
     (`track_group_frame`; a pooled group yields no ranking rather than a wrong one);
-  - "which set of tracks" offers only TRACKED label sets (`trackSetOptions`) — all three pickers were
-    listing `default`;
+  - the "which set of tracks" select is DELETED from all three panels: it listed untracked label sets,
+    and once the rail groups populations by segmentation a row names both, so it was redundant as well
+    as wrong. Verified against `zolIMa/fXgbTl` that every tracked set is still reachable via the
+    `/_tracked` row the populations route injects;
+  - the timeline takes ONE population (`singlePop` on its registry entry): several resolve to several
+    groups and it drew `groups[0]`, discarding the rest silently. The arithmetic is one shared function
+    (`utils/selection.ts`), which also folded in the five existing copies of that toggle;
   - **a regression, restored**: `TrackPathsView` lost `watch([pinned, effectiveValueName])` when its load
     watchers were consolidated onto `cohortKey`, which knows nothing about `ids=`. Selecting lanes changed
     a computed and refetched nothing, so the cross-panel link looked as if it had never been built. Its

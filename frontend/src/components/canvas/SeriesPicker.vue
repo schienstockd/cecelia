@@ -38,6 +38,10 @@ const props = defineProps<{
   // styling block + scope footer.
   selectionUnused?: boolean
   unusedNote?: string
+  // ONE population at a time (the host enforces it in its toggle handler; this only makes the picker
+  // SAY so). A list that behaves like radio buttons while looking like checkboxes is a control that
+  // lies about itself — the note is the cheapest way to stop that being a surprise.
+  single?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -60,6 +64,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
       {{ unusedNote ?? "This plot's populations come from its run." }}
     </div>
     <div v-else-if="!total" class="pick-empty cc-muted">No populations in the selected segmentations.</div>
+    <div v-else-if="single" class="pick-note cc-muted cc-fs-2xs">one at a time</div>
     <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
       <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
@@ -84,6 +89,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
    (slotted content keeps THIS component's scoped styles; the chrome lives in the shell, prefixed
    `csp-`). `pick-` is this component's own prefix: it was `pm-` from when the shell was the
    population manager, which made two different components look like one. */
+.pick-note { padding: 2px 12px 4px; }
 .pick-empty { padding: 12px; }   /* + .cc-muted */
 .pick-group-head {
   padding: 5px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);

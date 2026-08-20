@@ -139,8 +139,12 @@ export type LaneOrder = 'pair' | 'start' | 'length' | 'severity' | 'track'
  * the candidate filter is on, because then the list is a queue. Offering both is the answer to "can't
  * we let the user decide"; picking one and hard-coding it is the mistake the shipped surface made.
  */
+// ONE word for the concept across this panel: a scan FLAGS tracks, and a flag proposes an op. "Candidate"
+// and "detector" were internal nouns that reached the UI — "i didn't know what this was" — so the labels
+// name the op or the observation instead. `pair` groups the two halves of each proposed join, which is
+// what makes the one comparison this panel exists for two rows apart instead of a scroll apart.
 export const ORDER_LABEL: Record<LaneOrder, string> = {
-  pair: 'Join candidates',
+  pair: 'Join pairs',
   start: 'First frame',
   length: 'Longest first',
   severity: 'Most suspicious',

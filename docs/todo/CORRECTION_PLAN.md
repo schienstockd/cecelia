@@ -428,7 +428,7 @@ Both from `app/src/label_props.jl:657-692`:
   selection plus a target track, so it is small — but "which track should these join" needs a picker
   of its own, and nobody has asked for it yet.
 
-- **P4e — detector thresholds in the GUI. ✅ BUILT.** A collapsed *Sensitivity* section with the five
+- **P4e — scan thresholds in the GUI. ✅ BUILT.** A collapsed *Flagging* section (was *Sensitivity*) with the five
   knobs the route accepts. Measured on the reference image, the same 374 tracks give **10** candidates
   at `jumpQuantile 0.999`, 26 at `gapSteps 1`, **31** at the defaults, 96 at `gapSteps 8` +
   `gapFrames 6`, 222 at `jumpFactor 2` + `jumpQuantile 0.9`, and **309** at `minLen 15` — a range no

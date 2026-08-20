@@ -348,13 +348,13 @@ export interface TrackThresholds {
 
 export const THRESHOLD_FIELDS: { key: keyof TrackThresholds; label: string; tip: string; step: number }[] = [
   { key: 'gapFrames',    label: 'gap frames',  step: 1,
-    tip: 'Join candidates: how many frames may be missing between two tracks' },
+    tip: 'Flag a JOIN: how many frames may be missing between two tracks' },
   { key: 'gapSteps',     label: 'gap steps',   step: 0.5,
-    tip: "Join candidates: how far apart the ends may be, in multiples of this image's median step" },
+    tip: "Flag a JOIN: how far apart the ends may be, × this image's median step" },
   { key: 'jumpFactor',   label: 'jump ×',      step: 0.5,
-    tip: "Split candidates: a step this many times the track's OWN median step is suspect" },
+    tip: "Flag a SPLIT: a step this many × the track's OWN median step" },
   { key: 'jumpQuantile', label: 'jump top',    step: 0.005,
-    tip: 'Split candidates: …and in this top quantile of every step in the image' },
+    tip: 'Flag a SPLIT: …and in this top quantile of every step in the image' },
   { key: 'minLen',       label: 'min frames',  step: 1,
     tip: 'Flag tracks shorter than this many timepoints' },
 ]

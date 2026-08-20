@@ -274,23 +274,6 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
 }
 
 /**
- * What a track view's "which set of tracks" picker may OFFER.
- *
- * The comment on `resolveTrackValueName` below already claimed the list "only ever contains TRACKED
- * label sets" — and every one of the three views was iterating `valueNames`, so on the reference image
- * it offered `default` and `three`, both untracked, under a control labelled "which set of tracks".
- * Picking one answered "Not tracked" for an image full of them. Refusing to DEFAULT to an untracked set
- * and then offering it by hand is the same mistake one control along, so the invariant lives here as a
- * function rather than as a sentence.
- *
- * Falls back to the full list when the server reported no tracked names at all — an empty picker with no
- * way to look is worse than an honest one that can answer "not tracked".
- */
-export function trackSetOptions(trackedNames: string[], valueNames: string[]): string[] {
-  return trackedNames.length ? trackedNames : valueNames
-}
-
-/**
  * Which segmentation a TRACK view should show, given what the image has.
  *
  * Not `'default'`, and not the active one: both are routinely untracked. On the reference image

@@ -15,6 +15,7 @@
   cluster numbering; the heatmap pools via setUid).
 -->
 <script setup lang="ts">
+import { toggleSelected } from '../../utils/selection'
 import { ref, computed, watch, provide } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -91,7 +92,8 @@ const {
   popType: computed(() => props.popType), suffix,
 })
 
-const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+// the ONE selection toggle (utils/selection.ts) — four hosts had a copy of it each
+const toggle = (arr: string[], v: string) => toggleSelected(arr, v)
 function toggleHighlight(path: string) {
   if (scope.value === 'global') highlighted.value = toggle(highlighted.value, path)
   else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl ?? [], path)

@@ -318,11 +318,31 @@ where the cell was never detected. On the reference image (`zolIMa/fXgbTl`, `mem
 of two, 90 of three, 74 of four. So most of what a user might want to repair is invisible to the
 detector, which is why the untracked lane and `points.add` are their own phase rather than a detail.
 
-**A proposed join is drawn, not described.** Sort by **Join candidates** and the two halves of each
+**A proposed join is drawn, not described.** Sort by **Join pairs** and the two halves of each
 candidate sit on neighbouring rows, worst first; a line runs from the end of one to the start of the
 other — amber where the join is possible, red and dashed where the two tracks share frames and the
 engine would refuse it. Every other sort scatters a pair across the panel, which is why the one
 comparison the surface exists for used to need scrolling to make.
+
+**One user-facing word: FLAGGED.** The scan flags tracks; a flag proposes an op. "Candidate" and
+"detector" were internal nouns that had reached the UI — *"what is the fix detector … i didn't know what
+this was"* — so the controls name the op or the observation instead: the filter is **Flagged** (not
+*Candidates*), the sort is **Join pairs** (not *Join candidates*), the threshold section is **Flagging**
+(not *Sensitivity*, which never said what it was sensitive to), and each knob's tip names the op it
+governs (*"Flag a JOIN: how many frames may be missing…"*). The header count reads `23 flagged`, and
+hovering it says what that is and what it is not — the terse/long split `QC_TEXT` uses, because
+"flagged" and "with gaps" measure different things and a reader will assume they do not.
+
+**The timeline takes ONE population; its two siblings take any number.** A cohort plot's answer to
+several populations is several facets — that is what the comparison IS — but the timeline edits one
+image's tracks, and a `track_id` is only unique within one (image, segmentation), so a second ticked
+population is not a second facet, it is a second set of ids the ops could not tell apart. It resolved
+`groups.find(mine) ?? groups[0]` and drew one, so the extra ticks were input it discarded in silence.
+The plot declares the policy (`singlePop` on its registry entry), the rail reads it (`singlePopFor`, in
+all three hosts, so it cannot mean different things on different canvases) and the arithmetic is one
+shared function (`utils/selection.ts` — `toggleSelected` with a `single` flag, plus `narrowToSingle` for
+a selection made while the policy did not apply). Five copies of that three-line toggle existed before,
+one per host plus `chipSelect`; single-select would have been a sixth that disagreed.
 
 **Panels cross-reference through the canvas, not through each other.** The track selection lives in the
 gating canvas's `shared` bag (`useViewState`, the same mechanism as the highlighted populations), so
@@ -344,6 +364,13 @@ enclosed labels to their tracks, selects those lanes and scrolls to them. **Show
 segmentation too drew every track in the image beside it, which puts the picked tracks back in the
 haystack they were picked out of. That closes the loop a table could not: you see the bad track in the image and act on
 it there.
+
+**Show opens this panel's image first.** The bridge resolves layer paths against the image the viewer
+holds, not the one the request names, so pressing *Show* while the viewer was on another movie asked for
+a segmentation that image does not have and died inside HDF5 (`docs/NAPARI.md` → *A layer request names
+an image*). The panel now points the viewer at its own image through the one canonical open path, and
+declines with a line when no viewer is open rather than force-launching one. The route refuses the
+mismatch as a backstop.
 
 **Show flies to a track's LAST frame, not its first.** napari's Tracks layer draws each track as a
 trail up to the current timepoint, so at the first frame there is one point and no track — the layer
@@ -414,12 +441,18 @@ screen, and the two counts the panel prints beside each other were tallied over 
 A POOLED group yields no ranking rather than a wrong one — a `track_id` is unique only within one (image,
 segmentation), so an op built from pooled cells would name two different cells.
 
-**"Which set of tracks" offers only TRACKED label sets** (`trackSetOptions`). All three pickers were
-listing every `value_name`, so on the reference image `default` and `three` were offered as sets of tracks
-and answered "Not tracked". `resolveTrackValueName` already refuses to *default* to an untracked set;
-offering one by hand was the same mistake one control along.
+**There is no "which set of tracks" picker.** All three track panels had one, and it was the wrong
+control twice over: it listed every `value_name`, so on the reference image `default` and `three` were
+offered as sets of tracks and answered "Not tracked" — and once the rail lists populations GROUPED BY
+SEGMENTATION, it is redundant, because a row already names both. Measured on `zolIMa/fXgbTl`, the rail
+offers `importTest2 → /_tracked`, `importTest → /_tracked` and `memTom → /_tracked, /hbk, /hbk/_tracked`,
+and nothing at all under the four untracked sets — so every tracked label set is reachable and no
+untracked one is offered. `/_tracked` is injected per tracked segmentation by `/api/plots/populations`
+(root-level only when tracking was UNGATED, else `/<gate>/_tracked`), which is what makes deleting the
+select lossless rather than merely tidier. With nothing ticked a panel still needs a segmentation, and
+`resolveTrackValueName` picks a tracked one.
 
-**The detector's thresholds are exposed** (a collapsed *Sensitivity* section). They matter more than a
+**The scan's thresholds are exposed** (a collapsed *Flagging* section). They matter more than a
 default can: on the reference image the same 374 tracks yield **10 candidates** at `jumpQuantile 0.999`
 and **309** at `minLen 15`. The panel seeds the knobs from what the server actually used
 (`thresholds` in the response) and sends only what the user moved, so the measured defaults live on the

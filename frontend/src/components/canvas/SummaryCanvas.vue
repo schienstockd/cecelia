@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, ref, watch, provide, useTemplateRef } from 'vue'
 import CanvasArrangeButtons from './CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
@@ -25,7 +26,7 @@ import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -163,9 +164,14 @@ const viewContext = (id: number, st: PanelState) => {
 // PopulationManager): global = one value shared by every plot, local = the active plot's own.
 const panelSel = (s: PanelState) => scope.value === 'global' ? gSel.value : s.sel
 const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activePanel.value?.state.sel ?? []))
+// the SAME registry policy the other two hosts read (`singlePopFor`). No plugin-nameable view declares
+// it today, but a policy honoured by two hosts out of three is how the three drift apart.
+const activeSinglePop = computed(() => {
+  const k = activePanel.value?.state.kind
+  return !!k && singlePopFor(String(k))
+})
 const panelVis = (s: PanelState) => scope.value === 'global' ? gVis.value : s.vis
 const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
-const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
 // the stats test each panel's last result actually ran (`auto` resolves it server-side from the group
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
 // it's a readout of the current result, not a setting.
@@ -189,9 +195,17 @@ function removePanel(id: number) { remove(id); delete readouts.value[id] }
 function removeAllPanels() { removeAll(); readouts.value = {} }
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
-  if (scope.value === 'global') gSel.value = toggle(gSel.value, k)
-  else if (activePanel.value) activePanel.value.state.sel = toggle(activePanel.value.state.sel, k)
+  const next = (cur: string[]) => toggleSelected(cur, k, { single: activeSinglePop.value })
+  if (scope.value === 'global') gSel.value = next(gSel.value)
+  else if (activePanel.value) activePanel.value.state.sel = next(activePanel.value.state.sel)
 }
+// the policy can change under an existing selection when the ACTIVE panel changes — narrow rather than
+// let a single-population plot draw one of several and say nothing
+watch(activeSinglePop, single => {
+  if (!single) return
+  if (scope.value === 'global') gSel.value = narrowToSingle(gSel.value)
+  else if (activePanel.value) activePanel.value.state.sel = narrowToSingle(activePanel.value.state.sel)
+})
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activePanel.value) activePanel.value.state.vis = { ...activePanel.value.state.vis, ...patch }

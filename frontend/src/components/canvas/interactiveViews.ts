@@ -51,6 +51,12 @@ export interface InteractiveView {
   // family the first registered summary spec happens to carry — a picker full of populations the plot
   // cannot draw. One family at a time, per docs/PLOTS.md; the plot owns the choice.
   popTypes?: PopTypeOption[]
+  // ONE population at a time, and the rail enforces it. A plot that FACETS can take any number — that
+  // is what the cohort comparison is — but a plot that edits one image's tracks cannot: several ticked
+  // populations resolve to several groups, and the timeline draws `groups.find(mine) ?? groups[0]`, so
+  // the second and third ticks changed nothing and said nothing. A picker that accepts input it
+  // discards is worse than one that refuses it.
+  singlePop?: boolean
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
@@ -122,6 +128,10 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     // shows the series picker whenever one of these three is the active panel, rather than each panel
     // growing a private segmentation `<select>` (docs/TRACKING.md → Which picker).
     rail: 'pops', popTypes: TRACK_FAMILIES,
+    // ONE population: this panel edits ONE image's tracks, and a track id is only unique within one
+    // (image, segmentation) — so a second ticked population is not a second facet, it is a second set
+    // of ids the ops could not tell apart. Its two read-only siblings facet and take any number.
+    singlePop: true,
     initialState: () => ({ order: 'pair', offset: 0, sel: [] }),
   },
 }
@@ -153,6 +163,9 @@ export const railFor = (key: string): RailKind => INTERACTIVE_VIEWS[key]?.rail ?
 
 /** The population families a view offers (empty when it does not slice by population). */
 export const popTypesFor = (key: string): PopTypeOption[] => INTERACTIVE_VIEWS[key]?.popTypes ?? []
+
+/** Does this view take exactly ONE population? Hosts ask; they must not read `.singlePop` themselves. */
+export const singlePopFor = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.singlePop
 
 /**
  * A view's families in the shape every `plots/popTypes.ts` reader takes, or null.

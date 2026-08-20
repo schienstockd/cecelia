@@ -4638,6 +4638,39 @@ end
 # Both are the answer to "fix a track the detector never flagged": draw around it in the viewer, or
 # name it. The RESOLUTION is the part worth pinning — labels in, tracks out, most-represented first,
 # with untracked cells counted separately rather than folded in (they are what `points.add` is for).
+# A layer request NAMES an image; the bridge resolves paths against the one on SCREEN. Nothing checked
+# that they matched, and the reported failure is what that costs: a track panel on `fXgbTl` asked for
+# `memTom` while the viewer held `VJy1Nx`, and the bridge died inside HDF5 on a path that does not exist.
+#
+# Validated against THAT case, not a convenient one — the guard is only worth having if it fires on the
+# bug it was written for, and refuses BEFORE any bridge work rather than reporting a nicer error after.
+@testset "API: a viewer showing another image refuses the layer" begin
+    open_uid, asked_uid = "VJy1Nx", "fXgbTl"
+    prev = Main._current_image_uid[]
+    try
+        # nothing open: every one of these needs an image to draw ON, so this is a refusal, not a no-op
+        Main._current_image_uid[] = nothing
+        st, body = Main._viewer_shows(asked_uid)
+        @test st == 400
+        @test occursin("open it first", JSON3.read(body).error)
+
+        # the reported case: the viewer is on a DIFFERENT image
+        Main._current_image_uid[] = open_uid
+        st, body = Main._viewer_shows(asked_uid)
+        @test st == 400
+        d = JSON3.read(body)
+        # both uids are NAMED, because "wrong image" without saying which two is not actionable
+        @test occursin(open_uid, d.error) && occursin(asked_uid, d.error)
+        @test d.viewerImageUid == open_uid && d.requestedImageUid == asked_uid
+
+        # …and it gets out of the way the moment they agree
+        Main._current_image_uid[] = asked_uid
+        @test Main._viewer_shows(asked_uid) === nothing
+    finally
+        Main._current_image_uid[] = prev
+    end
+end
+
 @testset "API: a napari selection resolves to TRACKS" begin
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
