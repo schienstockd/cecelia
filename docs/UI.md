@@ -1020,6 +1020,25 @@ tooltips. It renders **nothing** when the rows have no attributes, so a host can
 
 ---
 
+## Movies player — what happens when a movie ends
+
+`frontend/src/modules/MoviesModule.vue`
+
+**At end** is ONE segmented control (`ChipSelect`) with three states — **Stop** · **Loop** · **Next** —
+not a Loop toggle beside an Advance toggle. They are mutually exclusive outcomes of the same moment, so
+two booleans could ask for both. `Loop` is the `<video>` element's own attribute; `Next` selects the
+following row and plays it **whatever Autoplay says** (Autoplay is about picking a movie by hand). The
+chain STOPS at the end of the list rather than wrapping, and stops if the playing movie is filtered
+out — neither is a reason to jump back to the top of a list the user narrowed.
+
+*Next* means the next movie **as shown** — filtered and sorted — so the page owns the sort
+(`v-model:sort`, the ImageTable pattern) and orders the rows itself with the shared `sortRows`, rather
+than the table sorting privately where nothing else can read the order. Persisted under the same
+`cc.movies.sort` key the table used (`parseSortState`), so an existing sort survives. The setting is
+`settings.moviesEndMode`, which migrates the `cc.moviesLoop` boolean it replaced.
+
+---
+
 ## Movies list — the Details columns
 
 `frontend/src/modules/MoviesModule.vue`

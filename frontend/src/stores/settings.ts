@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../utils/batchMovie'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
-import { type MovieChannelMode } from '../utils/movies'
+import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -82,13 +82,17 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariDiscreteGpu') === 'true'  // default false
   )
 
-  // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, loop. Persisted
+  // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted
   // globally (not per-set): they're a viewing preference, not a project attribute, and the player is a
   // project-agnostic page.
   const moviesPlaybackRate = ref(Number(localStorage.getItem('cc.moviesPlaybackRate') ?? '1') || 1)
   const moviesZoom = ref(Number(localStorage.getItem('cc.moviesZoom') ?? '1') || 1)
   const moviesAutoplay = ref(localStorage.getItem('cc.moviesAutoplay') !== 'false')   // default true
-  const moviesLoop = ref(localStorage.getItem('cc.moviesLoop') === 'true')            // default false
+  // What happens when a movie ENDS: stop (default), repeat it, or play the next one in the shown
+  // list. ONE setting rather than a Loop toggle plus an Advance toggle — the outcomes are mutually
+  // exclusive, so two booleans could ask for both. Migrates the `cc.moviesLoop` boolean it replaced.
+  const moviesEndMode = ref<MovieEndMode>(
+    parseMovieEndMode(localStorage.getItem('cc.moviesEndMode'), localStorage.getItem('cc.moviesLoop')))
   // The movie list's Details columns — the source image's channels and attributes beside each movie.
   // Off by default: they only mean something once a project has attributes, and the list lives in a
   // side panel where every extra column costs width. `moviesChannelMode` picks which channels fill
@@ -376,7 +380,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
   watch(moviesZoom,               v => localStorage.setItem('cc.moviesZoom',               String(v)))
   watch(moviesAutoplay,           v => localStorage.setItem('cc.moviesAutoplay',           String(v)))
-  watch(moviesLoop,               v => localStorage.setItem('cc.moviesLoop',               String(v)))
+  watch(moviesEndMode,            v => localStorage.setItem('cc.moviesEndMode',            v))
   watch(moviesShowDetails,        v => localStorage.setItem('cc.moviesShowDetails',        String(v)))
   watch(moviesChannelMode,        v => localStorage.setItem('cc.moviesChannelMode',        String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
@@ -394,7 +398,7 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

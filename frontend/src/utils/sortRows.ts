@@ -31,6 +31,20 @@ export function cycleSort(current: SortState, key: string): SortState {
   return current.dir === 'asc' ? { key, dir: 'desc' } : null
 }
 
+/**
+ * A persisted sort, read back defensively — `null` for nothing stored, a stale shape, or unparseable
+ * JSON. Shared because a table that OWNS its sort (`SelectionTable`'s `sortStorageKey`) and a page
+ * that owns it for the table (Movies, which needs the shown order itself) must read the same key the
+ * same way, or a sort saved by one comes back unsorted in the other.
+ */
+export function parseSortState(raw: string | null): SortState {
+  try {
+    const p = raw ? JSON.parse(raw) : null
+    return p && typeof p.key === 'string' && (p.dir === 'asc' || p.dir === 'desc')
+      ? { key: p.key, dir: p.dir } : null
+  } catch { return null }
+}
+
 /** Header icon for `key`: a neutral both-arrows hint when unsorted, a direction arrow when active. */
 export function sortIconFor(current: SortState, key: string): string {
   if (!current || current.key !== key) return 'pi pi-sort-alt'

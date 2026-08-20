@@ -12,8 +12,9 @@ import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
-         movieChannelCells, movieChannelCount,
+         movieChannelCells, movieChannelCount, nextMovieName,
          type MovieEntry, type MovieRow } from '../utils/movies'
+import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
 import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
          type AttrFilterState } from '../utils/attrFilter'
@@ -151,6 +152,7 @@ async function refresh() {
   }
 }
 
+let forcePlay = false     // the next movie in a chain plays even with Autoplay off — see `onEnded`
 // <video> resets playbackRate to 1 whenever a new source loads, so re-apply the persisted speed on
 // load (and whenever the user changes it). Also grab the movie's intrinsic size for the zoom box, and
 // start playback if autoplay is on (covers selecting a new movie, not just the first load — the native
@@ -161,7 +163,22 @@ function onLoadedMeta() {
   v.playbackRate = settings.moviesPlaybackRate
   natW.value = v.videoWidth
   natH.value = v.videoHeight
-  if (settings.moviesAutoplay) v.play().catch(() => { /* autoplay may be blocked until user gesture */ })
+  const play = settings.moviesAutoplay || forcePlay
+  forcePlay = false
+  if (play) v.play().catch(() => { /* autoplay may be blocked until user gesture */ })
+}
+
+// What happens when a movie ENDS (`settings.moviesEndMode`). `loop` is the <video> element's own
+// attribute, so only `next` is ours: step to the following row IN THE SHOWN ORDER and play it. It
+// plays whatever Autoplay says — that setting is about selecting a movie by hand, and asking for the
+// next one to play is asking for it to play. The chain stops at the end of the list rather than
+// wrapping (`nextMovieName`), so a page left open doesn't cycle all night.
+function onEnded() {
+  if (settings.moviesEndMode !== 'next') return
+  const next = nextMovieName(shownOrder.value, selected.value)
+  if (!next) return
+  forcePlay = true
+  selected.value = next
 }
 watch(() => settings.moviesPlaybackRate, () => { if (videoEl.value) videoEl.value.playbackRate = settings.moviesPlaybackRate })
 
@@ -246,6 +263,28 @@ watch(allRows, rows => {
   if (next !== attrFilter.value) attrFilter.value = next
 })
 
+// ── The order the list is SHOWN in ────────────────────────────────────────────
+// The table renders the header cycle and reports it (`v-model:sort`, the ImageTable pattern), but the
+// ORDER is applied here — "play the next movie" means the next one on screen, so this page has to be
+// able to read the same sequence the table renders. `sortRows` is the shared rule, and the column's
+// `sortKey` is what a formatted column (a date, a size) actually sorts by.
+// Controlling the sort turns off `SelectionTable`'s own persistence, so it is kept here — under the
+// key the table used, so a sort chosen before this landed still comes back.
+const SORT_KEY = 'cc.movies.sort'
+const movieSort = ref<SortState>(parseSortState(localStorage.getItem(SORT_KEY)))
+watch(movieSort, s => {
+  if (s) localStorage.setItem(SORT_KEY, JSON.stringify(s))
+  else localStorage.removeItem(SORT_KEY)
+})
+const shownRows = computed(() => {
+  const s = movieSort.value
+  if (!s) return movieTableRows.value          // no sort = the order it arrives in (newest first)
+  const field = MOVIE_COLUMNS.value.find(c => c.key === s.key)?.sortKey ?? s.key
+  // read by column key, as the table does — declared fields plus the flattened `attr:<key>`s
+  return sortRows(movieTableRows.value, r => (r as unknown as Record<string, SortValue>)[field], s.dir)
+})
+const shownOrder = computed(() => shownRows.value.map(r => r.name))
+
 // ── The Details columns: the source image's channels and attributes ───────────
 // Derived from the rows ACTUALLY SHOWN, so filtering to one cohort drops the columns none of them has
 // rather than leaving a screenful of blanks.
@@ -265,10 +304,19 @@ const channelCells = computed(() => {
   return out
 })
 // Word-labelled, so the group tooltip is the coverage — per-option tips on top of it would say the
-// same thing twice and render over the chips (docs/UI.md → Tooltips, pinned by uiCopy.test.ts).
+// same thing twice and render over the chips (docs/UI.md → Tooltips, pinned by uiCopy.test.ts). Same
+// for `END_MODES` below.
 const CHANNEL_MODES: ChipOption[] = [
   { value: 'image', label: 'image' },
   { value: 'movie', label: 'in movie' },
+]
+
+// What happens when a movie ends — ONE control, because the three are mutually exclusive outcomes of
+// the same moment (`utils/movies.ts` → MovieEndMode).
+const END_MODES: ChipOption[] = [
+  { value: 'stop', label: 'Stop' },
+  { value: 'loop', label: 'Loop' },
+  { value: 'next', label: 'Next' },
 ]
 
 // ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
@@ -410,8 +458,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
       <div class="mov-stage">
         <div v-if="currentUrl" ref="viewportEl" class="mov-viewport">
           <video ref="videoEl" class="mov-video" :src="currentUrl" controls
-                 :autoplay="settings.moviesAutoplay" :loop="settings.moviesLoop"
-                 :style="videoStyle" @loadedmetadata="onLoadedMeta" />
+                 :autoplay="settings.moviesAutoplay" :loop="settings.moviesEndMode === 'loop'"
+                 :style="videoStyle" @loadedmetadata="onLoadedMeta" @ended="onEnded" />
         </div>
         <!-- Both empty states live in the STAGE, so the panel beside it (and its Refresh) stays
              reachable in a project with no movies yet — it used to replace the whole page. -->
@@ -444,8 +492,14 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             <div class="cc-row cc-row-tight">
               <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
                         v-tooltip.bottom="'Play a movie automatically when you select it'" />
-              <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
-                        v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
+              <!-- a <div>, not a <label>: a label has to point at one control, and this is a
+                   segmented group of buttons -->
+              <div class="mov-ctl cc-muted"
+                   v-tooltip.bottom="'At the end: stop, repeat it, or play the next movie in the list'">
+                <span class="cc-eyebrow cc-fs-2xs">At end</span>
+                <ChipSelect variant="segmented" :options="END_MODES" v-model="settings.moviesEndMode"
+                            aria-label="When a movie ends" />
+              </div>
               <button class="cc-btn cc-btn-ghost cc-btn-micro mov-refresh" :disabled="loading" @click="refresh"
                       v-tooltip.left="'Re-scan the project movies folder'">
                 <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
@@ -523,8 +577,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                  toggle out of view along with it (Dominik, 2026-08-10). -->
             <div class="mov-table-scroll">
             <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
-                            :rows="movieTableRows" v-model:selected="checked" id-key="name"
-                            sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
+                            :rows="shownRows" v-model:selected="checked" id-key="name"
+                            v-model:sort="movieSort" column-width-key="cc.movies.colw"
                             fit="content"
                             :row-tooltip="r => `Select ${r.label} — click the eye to play it`">
               <!-- eye · star · the name, editable in place. Renaming from the row is the point: the

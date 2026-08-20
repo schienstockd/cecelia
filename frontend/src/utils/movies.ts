@@ -303,3 +303,30 @@ export function movieSuffixesInUse(movies: MovieEntry[]): string[] {
   }
   return [...out].sort()
 }
+
+// ── What happens when a movie ENDS ────────────────────────────────────────────
+// One setting, not two toggles: repeat and advance are mutually exclusive outcomes of the same
+// moment, and as separate booleans "loop + play next" is a state the player cannot honour.
+export type MovieEndMode = 'stop' | 'loop' | 'next'
+export const MOVIE_END_MODES: MovieEndMode[] = ['stop', 'loop', 'next']
+
+/**
+ * The persisted end mode, migrating the boolean `cc.moviesLoop` it replaced — someone who had Loop on
+ * keeps it rather than silently dropping back to stop-at-the-end.
+ */
+export function parseMovieEndMode(stored: string | null, legacyLoop: string | null): MovieEndMode {
+  if (stored && (MOVIE_END_MODES as string[]).includes(stored)) return stored as MovieEndMode
+  return legacyLoop === 'true' ? 'loop' : 'stop'
+}
+
+/**
+ * The movie to play after `current` — the next one in the order the list is SHOWN in (filtered and
+ * sorted), so what plays next is what the eye reads next.
+ *
+ * `''` (play nothing) at the end of the list, and when the playing movie isn't in the shown order at
+ * all: filtering it out is not a reason to jump the user back to the top of a list they narrowed.
+ */
+export function nextMovieName(order: string[], current: string): string {
+  const i = order.indexOf(current)
+  return i >= 0 && i + 1 < order.length ? order[i + 1] : ''
+}
