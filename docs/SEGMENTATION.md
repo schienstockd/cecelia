@@ -620,6 +620,107 @@ read off a validation curve is its distance from its own training line, and a se
 make that a legend lookup. QC banks `valFinalLoss`/`valLossDrop` and warns when the held-out loss
 does not come down even though the training loss did.
 
+### A BCE loss curve cannot be read without its floor
+
+Every prob-head term (`foreground`, `intensity`, `confetti`) is `binary_cross_entropy_with_logits`
+against a **soft** target that is a deterministic function of the frame. BCE against a soft target
+cannot reach 0: its minimum is that target's own binary entropy, `mean H(target)`. That minimum is a
+property of the DATA. A model at the floor and a model that never learned anything both draw a flat
+line, and only one of them is finished.
+
+Measured on `flow.cyto` (zolIMa, 6 images, 60 sequences, 2880 train frames, 100 epochs):
+
+| | value |
+|---|---|
+| `foreground`, mean of last 10 epochs | 0.26508 |
+| floor `H(target)` on the exact trained crops | **0.26499** |
+| the model's entire remaining error | **+0.00009** |
+| held-out `val_foreground` | 0.27641, against its own floor of 0.26449 → **+0.01193** |
+| share of the plotted **total** that is the floor | **85%** |
+
+So "the loss plateaus after 5 epochs and nothing is learned in the other 95" was a description of
+convergence. 90% of the total's whole drop happens by epoch 5 and 96.6% by epoch 20 because there is
+nothing left to take. The generalisation gap is 130× the training excess and is the only real
+headroom in this objective — which answers to more images, not more epochs.
+
+`coastal.loss.bce_floor` computes it, each loss's `with_floor` returns it from the SAME target build
+(a separately constructed target is how a curve and the constant subtracted from it drift apart while
+both stay plausible), `train_with_metrics` records `floor_<term>` per epoch, and the manifest carries
+them as `lossFloors` — keyed exactly like `lossCurves` so the two join by term. The panel's
+**`− floor`** toggle is on by default. The contrastive terms (`temporal`, `variance`, `warp`,
+`boundary`) are hinges and cosine distances whose minimum genuinely is 0, so they get **no** floor
+rather than a fabricated zero one.
+
+`total`'s floor is derived in the frontend as `Σ weight × floor(term)`, not recorded: `total` IS that
+weighted sum, so storing its floor separately would create a number that can disagree with the terms
+it is made of.
+
+**The floors arrive only after coastal's pin moves.** `pixi.toml` pins coastal by git rev, and the
+env installs a copy — so a cecelia checkout does *not* see a working-tree edit to
+`~/cc-workspace/coastal-gated`. `bce_floor` / `with_floor` have to be merged into coastal's `main`
+and the rev bumped before any manifest gains `lossFloors`. Until then the panel's `− floor` toggle is
+disabled and the plot behaves exactly as before, which is the designed fallback and was verified
+live: a training run on the un-bumped pin writes `lossFloors: {}` and the control greys out.
+
+**The corollary is a trap.** A wider `foregroundBlurSigma` makes the target softer, so the floor goes
+UP — 0.262 at σ=1, 0.334 at σ=6 on real crops of `VJy1Nx`. The better-shaped target scores worse, so
+**two runs at different blurs cannot be ranked by their loss curves at all**, and the manifest records
+`foregroundBlurSigma` beside the weights for exactly that reason. Pinned by
+`tests/test_loss_floor.py::test_the_foreground_floor_rises_with_the_blur` — note its `_blobs` fixture,
+because on uniform noise the relationship inverts.
+
+### The foreground blur was pinned at a no-op
+
+`ForegroundLoss(blur_sigma=1.0)` is coastal's default and `opticalFlow.train` did not pass the
+parameter until 2026-08-20, so **every model trained before then used 1.0 px** whatever the image
+scale. At zolIMa's 0.331 µm/px that is a 0.33 µm blur. Measured on 9 crops of `VJy1Nx`, target
+thresholded at 0.4:
+
+| σ (px) | σ (µm) | floor | blobs/frame | median blob |
+|---|---|---|---|---|
+| **1.0** (shipped) | 0.33 | 0.262 | **70** | **8 px = 0.88 µm²** |
+| 3.0 | 0.99 | 0.298 | 10 | 143 px = 15.7 µm² |
+| 6.0 | 1.99 | 0.334 | 6 | 419 px = 46.0 µm² |
+| 9.0 | 2.98 | 0.363 | 5 | 486 px = 53.3 µm² |
+
+A lymphocyte cross-section is 28–79 µm². At the shipped blur 90% of the target's components are
+under 100 px — the speckle objective `ForegroundLoss` was written to *replace* (`IntensityLoss`: 2535
+components, median 3 px), one order milder. The docstrings attribute the whole win over
+`IntensityLoss` to "the cell-scale blur and the p99 rescale", and the blur half of that was never in
+effect.
+
+This is **not** evidence that the blur does not help — it is evidence that it was never used.
+
+### What σ=6 actually produced — a split verdict, so the default stands
+
+`flow.cytoBlur6` is `flow.cyto` with `foregroundBlurSigma` 1.0 → 6.0 and nothing else changed — the
+whole run is `flow.cyto`'s manifest replayed through `run_task` with that one param and `epochs` 30
+(both are on their floor by ~10, so 100 would only re-prove the plateau). The REPL script that does
+it lives in the machine-local `<CECELIA_DEV_DIR>/scripts/`, not in the repo. Prob-head
+components at the 0.4 inference threshold, on the held-out tail of 4 trained (plane, crop) pairs of
+`VJy1Nx` — no region growing, so this is the half the blur is supposed to change:
+
+| | σ=1 (`flow.cyto`) | σ=6 (`flow.cytoBlur6`) |
+|---|---|---|
+| components / frame | 39.9 | **11.5** |
+| median component | 0.99 µm² | **16.09 µm²** |
+| under 11 µm² | 83.9% | **47.5%** |
+| **cell-sized (28–79 µm²) / frame** | **3.1** | 2.4 |
+| **field claimed as foreground** | **5.4%** | 9.2% |
+| foreground loss, last epoch | 0.2651 (floor 0.2650, **+0.0001**) | 0.3571 (floor 0.3566, **+0.0006**) |
+
+So the blur does what it was supposed to: **3.5× fewer components and a 16× larger median**, and the
+prob map goes from speckle with ragged contours to rounded blobs. But it also claims **1.7× as much of
+the field** and finds *fewer* cell-sized objects — at 2.5% coverage (the measured cell density) a
+256 px crop should hold ~4 cells, and σ=1 is nearer that. That is `_blob_target`'s own recorded
+limitation biting: the p99 rescale is purely relative and has no way to say "there is nothing here",
+so a wider blur spreads the claim rather than sharpening it.
+
+**Neither σ dominates, so the default stays at coastal's 1.0** and `foregroundBlurSigma` stays a
+REPL/chain override rather than a form control. Note both models land on their own floor to within
+0.0006 — the loss says σ=1 is far better (0.265 vs 0.357) and it is simply measuring two different
+objectives. Next probe and the coverage question: `docs/TODO.md`.
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the
