@@ -655,12 +655,21 @@ rather than a fabricated zero one.
 weighted sum, so storing its floor separately would create a number that can disagree with the terms
 it is made of.
 
-**The floors arrive only after coastal's pin moves.** `pixi.toml` pins coastal by git rev, and the
-env installs a copy — so a cecelia checkout does *not* see a working-tree edit to
-`~/cc-workspace/coastal-gated`. `bce_floor` / `with_floor` have to be merged into coastal's `main`
-and the rev bumped before any manifest gains `lossFloors`. Until then the panel's `− floor` toggle is
-disabled and the plot behaves exactly as before, which is the designed fallback and was verified
-live: a training run on the un-bumped pin writes `lossFloors: {}` and the control greys out.
+**The floors arrive only with coastal's pin.** `pixi.toml` pins coastal by git rev and the env
+installs a copy, so a cecelia checkout does *not* see a working-tree edit to a local coastal clone —
+`bce_floor` / `with_floor` had to be merged into coastal's `main` and the rev bumped before any
+manifest could gain `lossFloors`. A rollback past that rev is the quietest of the three things the
+pin comment warns about: it simply writes `lossFloors: {}`, which the panel reads as "this model
+predates floors" and greys the toggle out, so the feature disappears with no error anywhere. That
+fallback was verified live before the bump.
+
+**A floor is recorded per epoch but comes out CONSTANT** — verified end to end, `0.3202` on all five
+epochs of a smoke run. That is not a bug: the target is a function of the data alone, and every epoch
+is a full pass over the same frames, so the mean is identical to float precision. It stays an
+array rather than a scalar because nothing guarantees that in general (a subsampling loader, or
+augmentation that reached the target, would move it) and because an elementwise subtraction needs no
+special case. A term whose loss is off records a floor of `0` for the same reason its curve is `0` —
+`lossFloors.confetti` is a zero array in every run that does not use confetti.
 
 **The corollary is a trap.** A wider `foregroundBlurSigma` makes the target softer, so the floor goes
 UP — 0.262 at σ=1, 0.334 at σ=6 on real crops of `VJy1Nx`. The better-shaped target scores worse, so
