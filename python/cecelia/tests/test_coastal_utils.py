@@ -61,6 +61,14 @@ class _StubInference:
         return None, inst, None
 
 
+class _PlaneIdInference:
+    """Labels the whole plane with the value carried in `mag_1` — i.e. its z index."""
+
+    def predict_frame(self, frame, metrics):
+        value = int(np.asarray(metrics['mag_1']).flat[0])
+        return None, np.full(frame.shape, value, np.uint32), None
+
+
 def _utils(model_params=None, dim_utils=None, task_dir='/tmp'):
     """A CoastalUtils with the coastal calls stubbed out."""
     from cecelia.utils.coastal_utils import CoastalUtils
@@ -242,6 +250,72 @@ class ProjectionTest(unittest.TestCase):
         self.assertTrue(np.all(out > 254.0), 'max-merge should fill the whole frame')
 
 
+class SharedFlowBetweenPassesTest(unittest.TestCase):
+    """Two-pass runs are a second `models` group, and both groups read the same window.
+
+    The optical flow derived from that window is the most expensive thing in the task and does not
+    depend on the group, so computing it twice is pure waste — but sharing it is only safe when the
+    two groups really would have computed the same planes. These pin both halves.
+    """
+
+    def _two_group_utils(self, second=None):
+        from cecelia.utils.coastal_utils import CoastalUtils
+
+        base = {'model': '/nonexistent/model.pt', 'cellChannels': [0]}
+        params = {'taskDir': '/tmp',
+                  'models': {'0': dict(base), '1': dict(base, **(second or {}))}}
+        cu = CoastalUtils(params, _DimUtils(shape=(30, 2, 3, 16, 16)))
+        cu._get_inference = lambda _mp: _StubInference()
+        cu._match_3d = lambda planes, threshold: planes
+        cu._seen = []
+
+        def _metrics(window, center, scales, cumulative):
+            cu._seen.append(center)
+            return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center])}
+
+        cu._flow_metrics = _metrics
+        return cu, params['models']
+
+    def _run(self, cu, mp, context_id):
+        ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
+        return cu.predict_slice(ctx[3], mp, norm_params={0: (0.0, 1000.0)},
+                                context=ctx, context_index=3, context_id=context_id)
+
+    def test_a_second_group_reuses_the_first_groups_flow(self):
+        cu, models = self._two_group_utils()
+        self._run(cu, models['0'], context_id=7)
+        after_first = len(cu._seen)
+        self._run(cu, models['1'], context_id=7)
+
+        self.assertEqual(after_first, 3, 'one flow computation per z on the first pass')
+        self.assertEqual(len(cu._seen), 3,
+                         'the second pass recomputed the flow it was handed by the first')
+
+    def test_a_new_window_is_not_served_from_the_old_one(self):
+        cu, models = self._two_group_utils()
+        self._run(cu, models['0'], context_id=7)
+        self._run(cu, models['0'], context_id=8)
+        self.assertEqual(len(cu._seen), 6, 'a different window must be recomputed, not reused')
+
+    def test_groups_reading_different_channels_do_not_share(self):
+        """The cached planes are derived from the PROJECTED window, so a different channel set is a
+        different frame — sharing there would segment pass 2 on pass 1's pixels."""
+        cu, models = self._two_group_utils(second={'cellChannels': [1]})
+        self._run(cu, models['0'], context_id=7)
+        self._run(cu, models['1'], context_id=7)
+        self.assertEqual(len(cu._seen), 6)
+
+    def test_a_single_group_run_caches_nothing(self):
+        cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 3, 16, 16)))
+        cu._match_3d = lambda planes, threshold: planes
+        ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
+        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3,
+                         context_id=1)
+        self.assertEqual(cu._feature_cache, {},
+                         'the common case must not carry the memory of a cache it cannot use')
+
+
 class PredictSliceTest(unittest.TestCase):
 
     def test_window_and_centre_reach_the_metric_call(self):
@@ -285,6 +359,61 @@ class PredictSliceTest(unittest.TestCase):
         (_, metrics), = cu._stub.calls
         self.assertNotIn('divergence', metrics)
         self.assertIn('mag_1', metrics)
+
+    def test_z_planes_come_back_in_z_order(self):
+        """The per-z work is threaded; `_match_3d` stitches neighbours, so ORDER is load-bearing.
+
+        `ThreadPoolExecutor.map` yields in input order regardless of completion order, which is the
+        whole reason it is used here rather than `as_completed`. Asserted with a stub whose label
+        value IS the plane index and a deliberately uneven per-plane cost, so a result assembled in
+        completion order would come back shuffled.
+        """
+        import time
+
+        cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 8, 16, 16)))
+        cu._match_3d = lambda planes, threshold: planes
+
+        n_z = 8
+        counter = {'z': 0}
+
+        def _slow_metrics(window, center, scales, cumulative):
+            z = counter['z']
+            counter['z'] += 1
+            time.sleep(0.02 * (n_z - z))     # earlier planes finish LAST
+            return np.asarray(window)[center], {'mag_1': np.full_like(window[center], z)}
+
+        cu._flow_metrics = _slow_metrics
+        cu._get_inference = lambda _mp: _PlaneIdInference()
+
+        ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
+        out = cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                               norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+
+        self.assertEqual(out.shape, (n_z, 16, 16))
+        np.testing.assert_array_equal(
+            [int(out[z][0, 0]) for z in range(n_z)], list(range(n_z)),
+            'planes came back out of z order — stitching would pair the wrong neighbours')
+
+    def test_threaded_and_serial_agree(self):
+        """Widening the pools is a scheduling change; it must not move a single label."""
+        import cecelia.utils.coastal_utils as mod
+
+        ctx = np.linspace(0, 1000, 9 * 2 * 6 * 16 * 16, dtype=np.float32).reshape(9, 2, 6, 16, 16)
+        mp = {'model': 'm.pt', 'cellChannels': [0]}
+
+        results = {}
+        for workers in ((1, 1), (4, 3)):
+            cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 6, 16, 16)))
+            cu._match_3d = lambda planes, threshold: planes
+            before = (mod.FLOW_WORKERS, mod.PREDICT_WORKERS)
+            mod.FLOW_WORKERS, mod.PREDICT_WORKERS = workers
+            try:
+                results[workers] = cu.predict_slice(
+                    ctx[3], mp, norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+            finally:
+                mod.FLOW_WORKERS, mod.PREDICT_WORKERS = before
+
+        np.testing.assert_array_equal(results[(1, 1)], results[(4, 3)])
 
     def test_missing_context_is_an_error_not_a_silent_single_frame_run(self):
         cu = _utils()
