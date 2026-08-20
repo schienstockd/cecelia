@@ -250,6 +250,44 @@ class ProjectionTest(unittest.TestCase):
         self.assertTrue(np.all(out > 254.0), 'max-merge should fill the whole frame')
 
 
+class ContextChannelsTest(unittest.TestCase):
+    """Reading fewer channels renumbers the window's channel axis — the failure mode is silent.
+
+    Dropping the channels coastal never projects is most of the biggest read in the task, but it
+    means `context[:, 2]` no longer means image channel 2. These pin that the narrowing asks for
+    the right set and that the projection lands on the SAME pixels either way.
+    """
+
+    def _utils_for(self, groups):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        params = {'taskDir': '/tmp', 'models': groups}
+        return CoastalUtils(params, _DimUtils(shape=(30, 4, 4, 16, 16)))
+
+    def test_the_union_across_groups_is_requested(self):
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]},
+                              '1': {'model': 'm.pt', 'cellChannels': [0, 2]}})
+        self.assertEqual(cu._context_channels(), (0, 2),
+                         'one window serves every group; a per-group answer starves the others')
+
+    def test_a_narrowed_window_projects_the_same_pixels(self):
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]}})
+        rng = np.random.default_rng(0)
+        full = rng.random((5, 4, 8, 8)).astype(np.float32) * 1000
+        norm = {2: (0.0, 1000.0)}
+
+        wide = cu._project_window(full, {'cellChannels': [2]}, norm)
+        narrow = cu._project_window(full[:, [0, 2]], {'cellChannels': [2]}, norm,
+                                    context_channels=(0, 2))
+        np.testing.assert_array_equal(wide, narrow)
+
+    def test_a_group_whose_channel_is_absent_raises(self):
+        """Better a stopped task than a label set segmented on the wrong channel."""
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]}})
+        window = np.zeros((5, 2, 8, 8), np.float32)
+        with self.assertRaises(ValueError):
+            cu._project_window(window, {'cellChannels': [3]}, None, context_channels=(0, 2))
+
+
 class SharedFlowBetweenPassesTest(unittest.TestCase):
     """Two-pass runs are a second `models` group, and both groups read the same window.
 

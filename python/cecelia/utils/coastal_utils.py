@@ -242,21 +242,58 @@ class CoastalUtils(SegmentationUtils):
 
     # ── Input preparation ─────────────────────────────────────────────────────
 
-    def _project_window(self, context, model_params, norm_params):
+    def _model_channels(self, model_params):
+        """The image channel indices one model group projects."""
+        return script_utils.channel_indices(
+            model_params.get('cellChannels'), 'cellChannels',
+            'coastal_models_for_python (coastal.jl)') or [0]
+
+    def _context_channels(self):
+        """Only the channels some group actually projects — the rest are never read.
+
+        Coastal projects `cellChannels` and nothing else, so on a 4-channel movie segmented on one
+        channel the base was reading four times the pixels it could use: the temporal window is 17
+        frames deep, which made it the second most expensive thing in the task (3.14 s of a 9.35 s
+        timepoint on zolIMa/fXgbTl, against 4.88 s for all the flow and inference).
+
+        The UNION across groups, because one window serves all of them (see `_context_channels` in
+        the base). `_project_window` then maps an image channel onto its position in that union —
+        the mapping is the whole safety of this, since dropping channels renumbers the axis and an
+        unmapped index would quietly project the wrong channel.
+        """
+        models = (self.params.get('models') or {}).values()
+        return tuple(sorted({int(c) for mp in models for c in self._model_channels(mp)}))
+
+    def _project_window(self, context, model_params, norm_params, context_channels=None):
         """`[W, C, ...]` window → `[W, ...]` single-channel float32 in 0–255.
 
         The same two steps as coastal's `normalize_and_project` (per-channel percentile clip, then
         maximum across channels, then scale), with one deliberate difference: the clip range comes
         from the base's GLOBAL `norm_params` rather than from this window. Per-window percentiles
         would make a tile's normalisation depend on which tile it is.
+
+        `context_channels` says which image channels the window carries, in axis order. When the
+        base has narrowed the read (see `_context_channels`) the window's channel axis no longer
+        counts 0, 1, 2, … in image terms, so every index has to go through it — `norm_params` stays
+        keyed by IMAGE channel, which is what makes the two halves agree.
         """
-        channels = script_utils.channel_indices(
-            model_params.get('cellChannels'), 'cellChannels',
-            'coastal_models_for_python (coastal.jl)') or [0]
+        channels = self._model_channels(model_params)
+        if context_channels:
+            position = {int(c): i for i, c in enumerate(context_channels)}
+            missing = [c for c in channels if c not in position]
+            if missing:
+                # Not a fallback: reading a different channel than the model was trained on is the
+                # silent-wrong-answer failure this class exists to prevent.
+                raise ValueError(
+                    f'the temporal window carries channels {list(context_channels)} but this model '
+                    f'group needs {missing} — `_context_channels` must return their union')
+        else:
+            position = None
 
         projected = None
         for ch in channels:
-            arr = np.asarray(context[:, ch], dtype=np.float32)
+            arr = np.asarray(context[:, ch if position is None else position[ch]],
+                             dtype=np.float32)
             if norm_params and ch in norm_params:
                 lo, hi = norm_params[ch]
             else:
@@ -285,7 +322,8 @@ class CoastalUtils(SegmentationUtils):
     # ── Prediction ────────────────────────────────────────────────────────────
 
     def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None):
+                      context=None, context_index=None, context_id=None,
+                      context_channels=None):
         """Segment one XY tile at one timepoint from its temporal window.
 
         tile:    [C, Z, Y, X] or [C, Y, X] — present for the base's contract; the pixels used come
@@ -301,7 +339,7 @@ class CoastalUtils(SegmentationUtils):
         is_3d = (tile.ndim == 4)
         scales, cumulative, dropped = temporal_config(self._manifest(model_params))
         inference = self._get_inference(model_params)
-        window = self._project_window(context, model_params, norm_params)
+        window = self._project_window(context, model_params, norm_params, context_channels)
         feature_key = self._feature_key(context_id, model_params, scales, cumulative, dropped)
 
         if not is_3d:

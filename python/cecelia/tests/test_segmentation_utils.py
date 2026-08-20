@@ -243,7 +243,8 @@ class LabelSmoothingTest(unittest.TestCase):
 
         class _Stub(SegmentationUtils):
             def predict_slice(self, tile, model_params, norm_params=None,
-                              context=None, context_index=None, context_id=None):
+                              context=None, context_index=None, context_id=None,
+                              context_channels=None):
                 raise NotImplementedError
 
         return _Stub({'taskDir': '/tmp', 'labelSmoothing': sigma}, None)

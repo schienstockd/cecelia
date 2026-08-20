@@ -271,7 +271,8 @@ class _TemporalStub(_StubSeg):
     TEMPORAL_RADIUS = 2
 
     def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None):
+                      context=None, context_index=None, context_id=None,
+                      context_channels=None):
         self.seen = getattr(self, 'seen', [])
         self.seen.append((None if context is None else context.shape, context_index,
                           None if context is None else

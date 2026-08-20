@@ -107,8 +107,26 @@ class SegmentationUtils:
             return 0
         return int(round(um2 / max(self.phys_size_x * self.phys_size_y, 1e-12)))
 
+    def _context_channels(self):
+        """Which image channels the temporal window has to carry — None for all of them.
+
+        A subclass that reads only some channels out of the window says so here and the base never
+        reads the rest: on a 4-channel movie where coastal projects one, that is three quarters of
+        the biggest read in the task (3.14 s of a 9.35 s timepoint, measured on zolIMa/fXgbTl).
+
+        Returns a SORTED tuple, and it is a property of the RUN, not of one model group: the window
+        is built once per (tile, timepoint) and shared by every group (see `predict_slice`), so the
+        answer has to be the union of what they all need or a later group is handed a window
+        missing its channel. The base passes the same tuple back as `context_channels` so the
+        subclass can map an image channel index onto its position in the window it was given —
+        without that the axis silently means something different and the wrong channel is
+        segmented, which is why `_project_window` maps rather than indexes directly.
+        """
+        return None
+
     def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None):
+                      context=None, context_index=None, context_id=None,
+                      context_channels=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
 
         `context`/`context_index`/`context_id` are passed ONLY when the subclass sets
@@ -120,6 +138,8 @@ class SegmentationUtils:
                        the window is TRUNCATED at the start and end of the movie rather than
                        reflected or edge-padded, because repeating a frame invents zero motion and
                        mirroring invents motion outright.
+        context_channels: the image channel indices `context` carries, in axis order, or None when
+                       it carries all of them — see `_context_channels`.
         context_id:    an integer identifying THIS window, stable across the model groups that
                        share it and never reused for another one. The window is built once per
                        (tile, timepoint) and handed to every group, so a subclass whose per-window
@@ -197,6 +217,18 @@ class SegmentationUtils:
         ia_y = dim_utils.im_dim_order.index('Y')
         ia_x = dim_utils.im_dim_order.index('X')
         ia_z = dim_utils.im_dim_order.index('Z') if 'Z' in dim_utils.im_dim_order else None
+        ia_c = dim_utils.im_dim_order.index('C') if 'C' in dim_utils.im_dim_order else None
+
+        # Which channels the temporal window has to carry (see `_context_channels`). Resolved once:
+        # it is a property of the run, and re-asking per timepoint would let it drift mid-run.
+        # Dropped when there is no channel axis to index, or when it would ask for all of them
+        # anyway — then the read stays exactly what it was.
+        ctx_channels = self._context_channels() if ia_c is not None else None
+        if ctx_channels is not None:
+            ctx_channels = tuple(sorted({int(c) for c in ctx_channels}))
+            n_c = int(dim_utils.dim_val('C'))
+            if not ctx_channels or len(ctx_channels) >= n_c:
+                ctx_channels = None
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -340,7 +372,9 @@ class SegmentationUtils:
                                         slice(read_yx[1].start + x0, read_yx[1].stop + x0))
                         context = np.stack([
                             self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
-                                               z_idx=ia_z if narrowed else None, z=(z0, z1))
+                                               z_idx=ia_z if narrowed else None, z=(z0, z1),
+                                               c_idx=ia_c if ctx_channels else None,
+                                               c=ctx_channels)
                             for t2 in range(lo, hi + 1)])
                         context_index = t - lo
                         self._context_counter += 1
@@ -364,7 +398,8 @@ class SegmentationUtils:
                             masks = self.predict_slice(tile, model_params, norm_p,
                                                        context=context,
                                                        context_index=context_index,
-                                                       context_id=context_id)
+                                                       context_id=context_id,
+                                                       context_channels=ctx_channels)
                         else:
                             # unchanged call for every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)
@@ -467,12 +502,17 @@ class SegmentationUtils:
             y = y1
         return tiles
 
-    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx, z_idx=None, z=None):
+    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx, z_idx=None, z=None,
+                      c_idx=None, c=None):
         """Extract one XY tile for timepoint t. Returns numpy array.
 
         `z_idx`/`z` narrow the read to the `(z0, z1)` planes that hold data — pushed into the index
         rather than sliced off afterwards, so the padded planes are never read at all. `z_idx=None`
         (the default) reads the whole stack, which is every caller that is not the valid-box skip.
+
+        `c_idx`/`c` do the same for channels, for `_context_channels`. The channel axis is KEPT
+        (a list index, not a scalar) even for a single channel, so the window's shape still matches
+        the tile's and every axis lookup downstream stays put.
         """
         idx = [slice(None)] * len(im_data.shape)
         if t_idx is not None:
@@ -481,6 +521,8 @@ class SegmentationUtils:
         idx[x_idx] = read_yx[1]
         if z_idx is not None and z is not None:
             idx[z_idx] = slice(int(z[0]), int(z[1]))
+        if c_idx is not None and c is not None:
+            idx[c_idx] = list(c)
         return np.asarray(im_data[tuple(idx)])
 
     def _crop_masks(self, masks, crop_yx, is_3d):
