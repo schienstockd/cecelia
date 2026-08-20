@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
+import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB } from '../../plots/flowColors'
 import { svgImage, svgCircles, svgPath } from '../../plots/export'
@@ -23,6 +24,8 @@ export interface PopLayer { path: string; colour: string; points: Float32Array }
 const props = defineProps<{
   viewExtents: Ext                          // live (zoom-synced) data extents
   renderMode: 'points' | 'contour' | 'outliers'
+  // y is an IMAGE row coordinate (grows downward) — see plots/axisMap.ts
+  flipY?: boolean
   basePoints: Float32Array | null           // base population points
   popLayers: PopLayer[]                      // visible child pops to colour
   showPops: boolean
@@ -45,16 +48,13 @@ function ink(): string {
   const v = el && getComputedStyle(el).getPropertyValue('--cc-text-dim').trim()
   return v || '#64748b'
 }
-function toPx(vx: number, vy: number): [number, number] {
-  const { w, h } = size(); const { xMin, xMax, yMin, yMax } = props.viewExtents
-  const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
-  return [((vx - xMin) / xs) * w, (1 - (vy - yMin) / ys) * h]
-}
+// ONE mapping for every layer on this canvas — see plots/axisMap.ts. `flipY` is set when the y axis
+// is an image ROW coordinate, which grows downward; the points, the density raster, the contour rings
+// and the gate outlines drawn over them all take it from the same place, so they cannot disagree.
+const box = (): PxBox => ({ ...size(), flipY: props.flipY })
+const toPx = (vx: number, vy: number) => dataToPx(props.viewExtents, box(), vx, vy)
 // d3-contour ring coord (grid space [0,G], col=x row=y) → px
-function gridToPx(gx: number, gy: number): [number, number] {
-  const { xMin, xMax, yMin, yMax } = props.viewExtents
-  return toPx(xMin + (gx / G) * (xMax - xMin), yMin + (gy / G) * (yMax - yMin))
-}
+const ringToPx = (gx: number, gy: number) => gridToPx(props.viewExtents, box(), G, gx, gy)
 
 // FlowJo/OMIQ pseudocolour DOT plot: each point drawn at its position, coloured by its LOCAL density
 // via the blue-heat ramp — point resolution, no blocky cells. Bucketed by colour so we set fillStyle
@@ -89,8 +89,8 @@ function drawContours(points: Float32Array, colour: string) {
     c.beginPath()
     for (const ring of lvl.rings) {
       if (ring.length < 2) continue
-      let [px, py] = gridToPx(ring[0][0], ring[0][1]); c.moveTo(px, py)
-      for (let k = 1; k < ring.length; k++) { [px, py] = gridToPx(ring[k][0], ring[k][1]); c.lineTo(px, py) }
+      let [px, py] = ringToPx(ring[0][0], ring[0][1]); c.moveTo(px, py)
+      for (let k = 1; k < ring.length; k++) { [px, py] = ringToPx(ring[k][0], ring[k][1]); c.lineTo(px, py) }
       c.closePath()
     }
     c.stroke()
@@ -167,7 +167,7 @@ async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
 // it into the capture). The DENSITY BASE is a blue-heat heatmap, not categorical — in points mode it's
 // embedded as a raster <image> (decision: don't vectorise 100k–1M events); contour/outlier bases are
 // already vector paths. CATEGORICAL child-population overlays are always TRUE VECTOR (one <g fill=…> per
-// pop → recolourable in Illustrator). Reuses the same toPx/gridToPx maps as the on-screen paint.
+// pop → recolourable in Illustrator). Reuses the same toPx/ringToPx maps as the on-screen paint.
 const svgR1 = (n: number) => Math.round(n * 10) / 10
 // render ONLY the density base to an offscreen canvas → PNG data URL (points-mode raster base layer)
 function renderBaseRasterUrl(scale = 4): string | null {
@@ -192,8 +192,8 @@ function contoursSvg(points: Float32Array, colour: string): string {
     let d = ''
     for (const ring of lvl.rings) {
       if (ring.length < 2) continue
-      let [px, py] = gridToPx(ring[0][0], ring[0][1]); d += `M${svgR1(px)} ${svgR1(py)}`
-      for (let k = 1; k < ring.length; k++) { [px, py] = gridToPx(ring[k][0], ring[k][1]); d += `L${svgR1(px)} ${svgR1(py)}` }
+      let [px, py] = ringToPx(ring[0][0], ring[0][1]); d += `M${svgR1(px)} ${svgR1(py)}`
+      for (let k = 1; k < ring.length; k++) { [px, py] = ringToPx(ring[k][0], ring[k][1]); d += `L${svgR1(px)} ${svgR1(py)}` }
       d += 'Z'
     }
     out += svgPath(d, { stroke: colour, width: 1.2, opacity: op })

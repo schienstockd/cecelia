@@ -1558,6 +1558,11 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   population — `popTypes`, the population FAMILIES it offers (same shape as a summary spec's
   `dataSource.popTypes`, read by the same `plots/popTypes.ts` functions, so the rail lists the family
   the ACTIVE plot can draw). See `docs/ANALYSIS.md` → *The rail*.
+  A view that declares `popTypes` must also OFFER the family in its own controls — `PopFamilySelect` bound
+  to `usePopFamily`, which is the one resolution shared by the control and the request. A read-only copy of
+  that resolution pins the panel to whichever family the registry lists first, and every population the
+  user ticks under a different one is then filtered out of the request with no error anywhere
+  (`docs/TRACKING.md` → *Which picker, and why not the gating tree*).
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
@@ -1579,7 +1584,7 @@ the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, wit
 plugin's custom module page (`docs/CUSTOM_MODULES.md`; PLUGINS_PLAN Decision 11). This is why the flag
 is an opt-in rather than "any registered id": that page renders the summary canvas's own population
 picker and no other rail, so a plugin-nameable view must be self-contained (`rail: 'none'`, ratcheted),
-and `trackCorrection` MUTATES — a manifest must not be able to request it. Ticking it makes that view's
+and `trackScheme` MUTATES — a manifest must not be able to request it. Ticking it makes that view's
 **id** public: rename it and installed plugins get a "Plot not available here" notice instead of a plot.
 
 **`docked` is the contract's chrome switch** — a panel reads it to hide what only makes sense

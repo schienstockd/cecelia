@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pathPoints, pathDomain, focusPoint, gapGeometry, gapHint,
   type TrackPathMap,
-  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote, groupedPathPoints,
+  normalizeTracks, displacementVectors, pathCsvRows, trackCountNote, groupedPathPoints, trackEndpoints,
 } from './trackPaths'
 
 // two tracks in a straight line along x: A runs 0→2, B carries on 3→5
@@ -320,5 +320,42 @@ describe('displacementVectors carries the row through', () => {
     const v = displacementVectors(pts).find(r => r.id === '1')!
     expect(v).toMatchObject({ g: 'wt', gl: 'WT', v: 4.5 })
     expect(v.distance).toBeCloseTo(2, 10)
+  })
+})
+
+describe('trackEndpoints', () => {
+  const grp = (paths: Record<string, { t: number[]; x: number[]; y: number[]; label: number[] }>) =>
+    groupedPathPoints([{ key: 'g', label: 'g', paths, values: {} }])
+
+  it('finds the first and last point of every track', () => {
+    const { starts, ends } = trackEndpoints(grp({
+      '1': { t: [0, 1, 2], x: [0, 1, 2], y: [0, 0, 0], label: [1, 2, 3] },
+      '2': { t: [0, 1], x: [5, 6], y: [1, 1], label: [4, 5] },
+    }))
+    expect(starts.map(p => p.x)).toEqual([0, 5])
+    expect(ends.map(p => p.x)).toEqual([2, 6])
+  })
+
+  it('a one-point track is both its own start and its own end', () => {
+    const { starts, ends } = trackEndpoints(grp({ '9': { t: [4], x: [3], y: [3], label: [7] } }))
+    expect(starts).toHaveLength(1)
+    expect(ends).toHaveLength(1)
+    expect(starts[0]).toEqual(ends[0])
+  })
+
+  // keys are namespaced by group, so the same track id in two groups keeps two endpoints rather than
+  // collapsing into one — the same reason `z: 'track'` uses the namespaced key
+  it('does not merge the same track id across groups', () => {
+    const pts = groupedPathPoints([
+      { key: 'a', label: 'a', paths: { '1': { t: [0, 1], x: [0, 1], y: [0, 0], label: [1, 2] } }, values: {} },
+      { key: 'b', label: 'b', paths: { '1': { t: [0, 1], x: [9, 8], y: [0, 0], label: [3, 4] } }, values: {} },
+    ])
+    const { starts, ends } = trackEndpoints(pts)
+    expect(starts).toHaveLength(2)
+    expect(ends.map(p => p.x).sort()).toEqual([1, 8])
+  })
+
+  it('is empty for no points', () => {
+    expect(trackEndpoints([])).toEqual({ starts: [], ends: [] })
   })
 })

@@ -284,6 +284,10 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
  * Order of preference: a persisted choice that is still tracked (so navigating away and back does not
  * re-point the panel), then the active segmentation if it is tracked, then the first tracked one.
  */
+// The picker this feeds is labelled "tracks", not "segmentation" — the list only ever contains
+// TRACKED label sets, so on a track plot a segmentation name is the storage detail and the tracks are
+// the thing being chosen: "the selection of a segmentation is a bit weird for these plots, because
+// what you should be selecting are tracks not segmentation."
 export function resolveTrackValueName(
   wanted: string | undefined, tracked: readonly string[], all: readonly string[] = [],
   active?: string,

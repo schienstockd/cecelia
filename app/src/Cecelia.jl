@@ -124,6 +124,7 @@ export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persist
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
 export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
+export track_group_frame
 export track_group_images, track_group_value_name, track_group_pop
 export MSD_SLOPE_RANDOM, MSD_SLOPE_DIRECTED, MSD_SLOPE_CONFINED, ACOR_PERSIST_LEVEL
 export PLANE_ANGLE_UNBIASED, DRIFT_STEP_SPACING, DRIFT_ALPHA, PAIR_SCAN_MAX_TRACKS

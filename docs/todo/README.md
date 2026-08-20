@@ -65,6 +65,7 @@ disagree, the plan's header wins — and fix the row.
 | [`LEGACY_MIGRATION_PLAN.md`](LEGACY_MIGRATION_PLAN.md) | in progress | Bring an old R-version project into the Julia stack **without recomputing** — images, segmentation, tracking only |
 | [`SPATIAL_REGIONS_PLAN.md`](SPATIAL_REGIONS_PLAN.md) | in-progress (`feat/spatial-regions`) | Spatial-analysis port + region clustering; new `region` poptype reusing the cluster machinery |
 | [`OBSERVER_INTEGRATION_PLAN.md`](OBSERVER_INTEGRATION_PLAN.md) | **not built** (Phase 1 done elsewhere) | Bring the MCP observer inside Cecelia so the assistant runs from the app |
+| [`TRACK_SCHEME_PLAN.md`](TRACK_SCHEME_PLAN.md) | P1–P2 built + P2b (`feat/track-scheme`); **P3–P5 open** | Timeline-first track correction: lanes over frames, so "can these two merge" is answered by the picture rather than by a greyed button. Records why the per-row and XY-only surfaces failed |
 | [`SEGMENTATION_OPEN_PROBLEM.md`](SEGMENTATION_OPEN_PROBLEM.md) | active — **negative result, not a plan** | Why CD169⁺ macrophage segmentation keeps failing; written so the next attempt doesn't re-derive the dead ends |
 | [`ANALYSIS_CANVAS_PLAN.md`](ANALYSIS_CANVAS_PLAN.md) | planning (`feat/multipage-analysis-canvas`) | Multipage tabbed analysis board + gating-strategy plot + PDF export |
 | [`CLUSTERING_PLAN.md`](CLUSTERING_PLAN.md) | UNBLOCKED (2026-06-30) — living plan | Leiden clustering for cells + tracks; GPU/RAPIDS parked. Cited from `pixi.toml`, `cluster.jl`, `clustering_utils.py` |
@@ -92,7 +93,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md) | BUILT (P1–P4); promoted to `docs/UI.md` → *Guides* | In-app click-through guides behind the compass button |
 | [`LABARCHIVES_SYNC_PLAN.md`](LABARCHIVES_SYNC_PLAN.md) | BUILT — all three phases (2026-08-10) | Pull LabArchives ELN context (cohort, protocol, the question) into a cecelia project |
 | [`MCP_BOARD_AUTHORING_PLAN.md`](MCP_BOARD_AUTHORING_PLAN.md) | BUILT (2026-08-08); Phase 4 cut | Let Claude ADD an Analysis board — create-only, semantic spec validated server-side |
-| [`CANVAS_MANAGER_RAIL_PLAN.md`](CANVAS_MANAGER_RAIL_PLAN.md) | BUILT (2026-08-08) | A plot declares which manager it needs; the host resolves it instead of hardcoding the branch |
+| [`CANVAS_MANAGER_RAIL_PLAN.md`](CANVAS_MANAGER_RAIL_PLAN.md) | BUILT (2026-08-08); Decision 5 superseded for `GatingPlots` | A plot declares which manager it needs; the host resolves it instead of hardcoding the branch. The Track canvas is the second polymorphic host |
 | [`MOVIE_MANAGEMENT_PLAN.md`](MOVIE_MANAGEMENT_PLAN.md) | BUILT — Phases 0–6 | Movies as a managed collection: `settings/movies.json`, rename, tags, star, delete, filters |
 | [`MOVIE_COMPARE_PLAN.md`](MOVIE_COMPARE_PLAN.md) | BUILT P1–P6, then generalised (2026-08-08) | Compare image versions and segmentations side by side |
 | [`TASK_LIST_UNIFICATION_PLAN.md`](TASK_LIST_UNIFICATION_PLAN.md) | built, phases 0–4 (#576 + follow-ups) | Both task surfaces onto `SelectionTable`; Phase 0 extracted `CcProgressBar` |

@@ -14,6 +14,7 @@
 -->
 <script setup lang="ts">
 import { useTemplateRef, toRef } from 'vue'
+import { dataToPx, yFrac } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
@@ -42,6 +43,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   compact?: boolean                              // tight chrome for small montage panels (gating strategy)
   readonly?: boolean                             // static gates — no move/resize (read-only Analysis board)
+  flipY?: boolean                                // y is an IMAGE row coordinate (grows downward)
   hideAxisLabels?: boolean                       // drop the x/y axis-name labels (pairs matrix — the
                                                  // diagonal names each channel, so per-tile labels only
                                                  // clutter/clip); also reclaims their padding
@@ -60,7 +62,9 @@ const showSpinner = useDelayedLoading(toRef(props, 'loading'))
 
 // ticks positioned against the LIVE view extents so labels track pan/zoom
 const tickX = (pos: number, e: Ext) => `${((pos - e.xMin) / Math.max(1e-9, e.xMax - e.xMin)) * 100}%`
-const tickY = (pos: number, e: Ext) => `${(1 - (pos - e.yMin) / Math.max(1e-9, e.yMax - e.yMin)) * 100}%`
+// the ticks come off the SAME mapping as the dots, so an axis label can never sit at a different
+// height from the value it names
+const tickY = (pos: number, e: Ext) => `${yFrac(e, pos, props.flipY) * 100}%`
 // abbreviate big numbers (262144 → 262.1k) so axis labels don't crowd; leave small ones as-is
 function fmtTick(label: string): string {
   const n = parseFloat(label)
@@ -93,9 +97,11 @@ const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
 // it can't drift. `pr` = plot-area rect (the panel-plot) within the capture, in CSS px.
 function drawAxes(c: CanvasRenderingContext2D, pr: { x: number; y: number; w: number; h: number }) {
   const e = props.viewExtents
-  const xs = e.xMax > e.xMin ? e.xMax - e.xMin : 1, ys = e.yMax > e.yMin ? e.yMax - e.yMin : 1
-  const px = (v: number) => pr.x + ((v - e.xMin) / xs) * pr.w
-  const py = (v: number) => pr.y + (1 - (v - e.yMin) / ys) * pr.h
+  // both axes through the ONE mapping, so the exported capture cannot orient differently from the
+  // live canvas it is a picture of
+  const b = { w: pr.w, h: pr.h, x0: pr.x, y0: pr.y, flipY: props.flipY }
+  const px = (v: number) => dataToPx(e, b, v, e.yMin)[0]
+  const py = (v: number) => dataToPx(e, b, e.xMin, v)[1]
   const cssVar = (n: string, fb: string) => {
     const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
     return v || fb
@@ -168,9 +174,11 @@ async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null
 // ink/border to dark-on-white (figure ground), like exportImage. Returns a full <svg> string.
 function drawAxesSvg(pr: { x: number; y: number; w: number; h: number }): string {
   const e = props.viewExtents
-  const xs = e.xMax > e.xMin ? e.xMax - e.xMin : 1, ys = e.yMax > e.yMin ? e.yMax - e.yMin : 1
-  const px = (v: number) => pr.x + ((v - e.xMin) / xs) * pr.w
-  const py = (v: number) => pr.y + (1 - (v - e.yMin) / ys) * pr.h
+  // both axes through the ONE mapping, so the exported capture cannot orient differently from the
+  // live canvas it is a picture of
+  const b = { w: pr.w, h: pr.h, x0: pr.x, y0: pr.y, flipY: props.flipY }
+  const px = (v: number) => dataToPx(e, b, v, e.yMin)[0]
+  const py = (v: number) => dataToPx(e, b, e.xMin, v)[1]
   const cssVar = (n: string, fb: string) => {
     const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
     return v || fb
@@ -239,8 +247,10 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
     <div ref="panelPlotEl" class="panel-plot">
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
+                  :flip-y="flipY"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
+                   :flip-y="flipY"
                    :line-width="gateLineWidth" :show-labels="gateLabels" :readonly="readonly"
                    @draw="emit('draw', $event)" @edit="emit('edit', $event)" @cancel="emit('cancel')" />
       <span class="axisline axisline-x" />

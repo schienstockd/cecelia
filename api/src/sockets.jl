@@ -41,6 +41,23 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # out: a task the runner has been running for twenty minutes would be stamped as starting when the
 # relay first saw it, and a restarted API server would restart every timer on reconnect. Seeding
 # `note_task_started!` with the runner's value is safe because it is first-write-wins.
+"""
+    _wstr(data, key, default = "") -> String
+
+A string field off a WS message, treating an explicit JSON **null** as absent.
+
+`String(get(data, :setUid, ""))` looks safe and is not: `get`'s default only fires when the key
+is MISSING, and JSON3 parses `null` to `nothing`, so a client that sends `{"setUid": null}` reaches
+`String(nothing)` — a `MethodError` that aborts the whole handler. It surfaced as
+`WS message error — MethodError: no method matching String(::Nothing)` on a `task:run` from a canvas
+whose panels legitimately have no set: the correction never ran and the only clue was a warn line.
+
+Sending `null` for "I have no value" is ordinary JSON, and the boundary is where that has to be
+absorbed — not in every caller, and not once per field.
+"""
+_wstr(data, key::Symbol, default::AbstractString = "") =
+    (v = get(data, key, nothing); v === nothing ? String(default) : String(v))
+
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
                    started_at="", finished_at="")
     if string(status) == "running"
@@ -79,7 +96,7 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "task:run" || type == "task:restart"
         handle_task_run(ws, data)
     elseif type == "task:cancel"
-        task_id = String(get(data, :taskId, ""))
+        task_id = _wstr(data, :taskId)
         # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in the
         # scheduler's _TASKS: recordings, single and batch (request_batch_cancel!, which flags the run AND
         # tells the bridge to stop the frame loop it is in), and background jobs (cancel_job!, kills the
@@ -97,7 +114,7 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "chain:run"
         handle_chain_run(ws, data)
     elseif type == "chain:cancel"
-        run_id = String(get(data, :runId, ""))
+        run_id = _wstr(data, :runId)
         # Both processes: the run may be executing here (fallback) or on the runner. Each is a no-op
         # for an id it does not know, so asking both is free — asking one is a Cancel that silently
         # does nothing depending on where the run happens to be.
@@ -105,7 +122,7 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "maintenance:run"
         handle_maintenance_run(ws, data)
     elseif type == "maintenance:cancel"
-        task_id = String(get(data, :taskId, ""))
+        task_id = _wstr(data, :taskId)
         isempty(task_id) || cancel_maintenance!(task_id)
     elseif type == "project:export"
         handle_project_export(ws, data)
@@ -120,9 +137,9 @@ end
 # rail like a data patch, cancellable via task:cancel → cancel_job!. NEITHER needs an open project:
 # export reads a project dir off disk by uid; import creates a new one. See docs/JOBS.md.
 function handle_project_export(ws, data)
-    task_id     = String(get(data, :taskId, ""))
-    project_uid = String(get(data, :projectUid, ""))
-    out_dir     = String(get(data, :outDir, ""))
+    task_id     = _wstr(data, :taskId)
+    project_uid = _wstr(data, :projectUid)
+    out_dir     = _wstr(data, :outDir)
     isempty(task_id) && return
     if isempty(project_uid) || !isdir(joinpath(projects_dir(), project_uid))
         ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
@@ -144,9 +161,9 @@ function handle_project_export(ws, data)
 end
 
 function handle_project_import(ws, data)
-    task_id = String(get(data, :taskId, ""))
-    bundle  = String(get(data, :bundle, ""))
-    mode    = String(get(data, :mode, "error"))   # error (default) | replace | copy — on uid collision
+    task_id = _wstr(data, :taskId)
+    bundle  = _wstr(data, :bundle)
+    mode    = _wstr(data, :mode, "error")   # error (default) | replace | copy — on uid collision
     isempty(task_id) && return
     if isempty(bundle) || !isdir(bundle)
         ws_log(ws, task_id, "[ERROR] Bundle not found: $bundle")
@@ -172,9 +189,9 @@ end
 # so it shows live progress + a working Cancel (maintenance:cancel → cancel_maintenance!), like an HPC
 # task spin-off. Confined to the ONE project the payload names. See docs/DEV.md → "Data patches".
 function handle_maintenance_run(ws, data)
-    task_id     = String(get(data, :taskId, ""))
-    patch_id    = String(get(data, :patchId, ""))
-    project_uid = String(get(data, :projectUid, ""))
+    task_id     = _wstr(data, :taskId)
+    patch_id    = _wstr(data, :patchId)
+    project_uid = _wstr(data, :projectUid)
     apply       = Bool(get(data, :apply, false))
     fun_lbl     = isempty(patch_id) ? "maintenance" : "maintenance:$patch_id"   # task-console attribution
 
@@ -207,14 +224,14 @@ end
 # It was a blocking POST until the bridge learned to report progress and take a cancel mid-render — see
 # `run_single_movie`. `keyframes` present ⇒ the interpolated animation, absent ⇒ the open image's T-sweep.
 function handle_movie_record(ws, data)
-    task_id     = String(get(data, :taskId, ""))
-    project_uid = String(get(data, :projectUid, ""))
-    image_uid   = String(get(data, :imageUid, ""))
+    task_id     = _wstr(data, :taskId)
+    project_uid = _wstr(data, :projectUid)
+    image_uid   = _wstr(data, :imageUid)
     isempty(task_id) && return
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
-    suffix      = String(get(data, :suffix, ""))
-    api_url     = String(get(data, :apiUrl, "http://localhost:8080"))
+    suffix      = _wstr(data, :suffix)
+    api_url     = _wstr(data, :apiUrl, "http://localhost:8080")
     kf_raw      = get(data, :keyframes, nothing)
     keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
@@ -240,7 +257,7 @@ function handle_movie_record(ws, data)
     show_3d     = _show_3d(data)                # whole z stack as a 3D render…
     z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
-    layout      = String(get(data, :compareLayout, "row"))
+    layout      = _wstr(data, :compareLayout, "row")
     # napari's baked overlays, burnt into every frame. Default true = what every movie was.
     show_ts     = Bool(get(data, :showTimestamp, true))
     show_sb     = Bool(get(data, :showScaleBar, true))
@@ -300,8 +317,8 @@ end
 # api/ (napari_api.jl) because the viewer + its lock live there; not a scheduler task (it's UI-serial,
 # not pooled headless compute). See docs/todo/ANIMATION_PLAN.md → F1.3.
 function handle_movie_batch(ws, data)
-    task_id     = String(get(data, :taskId, ""))
-    project_uid = String(get(data, :projectUid, ""))
+    task_id     = _wstr(data, :taskId)
+    project_uid = _wstr(data, :projectUid)
     isempty(task_id) && return
     uids_raw    = get(data, :imageUids, nothing)
     image_uids  = uids_raw === nothing ? String[] : collect(String, uids_raw)
@@ -310,7 +327,7 @@ function handle_movie_batch(ws, data)
     file_attrs  = attrs_raw === nothing ? String[] : collect(String, attrs_raw)
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
-    suffix      = String(get(data, :suffix, ""))
+    suffix      = _wstr(data, :suffix)
     if isempty(image_uids)
         ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
         ws_status(ws, task_id, "failed", ""; fun="movie:batch", pool="viewer")
@@ -355,14 +372,14 @@ function _drop_excluded(project_uid::String, uids::Vector{String}, on_skip::Func
 end
 
 function handle_chain_run(ws, data)
-    project_uid = String(get(data, :projectUid, ""))
-    chain_name  = String(get(data, :chain, ""))
+    project_uid = _wstr(data, :projectUid)
+    chain_name  = _wstr(data, :chain)
     image_uids  = String[String(u) for u in get(data, :imageUids, [])]
     # Resume: a `runId` re-runs a persisted run (restore from disk, re-do failed/incomplete/changed
     # nodes). An optional `startNode` force-restarts that node + everything downstream ("resume from
     # here"). When resuming, `chain`/`imageUids` are read from the run, so they're not required.
-    run_id      = String(get(data, :runId, ""))
-    start_node  = String(get(data, :startNode, ""))
+    run_id      = _wstr(data, :runId)
+    start_node  = _wstr(data, :startNode)
     resuming    = !isempty(run_id)
 
     if isempty(project_uid) || (!resuming && isempty(chain_name))
@@ -448,13 +465,13 @@ function _remember_fun_params(proj_root::String, fun::String, params::Dict{Strin
 end
 
 function handle_task_run(ws, data)
-    task_id     = String(get(data, :taskId, ""))
-    fun_name    = String(get(data, :funName, ""))
-    project_uid = String(get(data, :projectUid, ""))
-    image_uid   = String(get(data, :imageUid, ""))
+    task_id     = _wstr(data, :taskId)
+    fun_name    = _wstr(data, :funName)
+    project_uid = _wstr(data, :projectUid)
+    image_uid   = _wstr(data, :imageUid)
     image_uids  = String[String(u) for u in get(data, :imageUids, [])]
-    set_uid     = String(get(data, :setUid, ""))
-    pool_name   = String(get(data, :poolName, ""))
+    set_uid     = _wstr(data, :setUid)
+    pool_name   = _wstr(data, :poolName)
     params      = _to_str_dict(get(data, :params, nothing))
 
     proj_root = joinpath(projects_dir(), project_uid)

@@ -536,18 +536,27 @@ function _track_paths(df::DataFrame, spatial::Vector{String})
 end
 
 """
-    track_path_dicts(df, spatial; ids = nothing) -> Dict{String,Any}
+    track_path_dicts(df, spatial; ids = nothing, occupancy = false) -> Dict{String,Any}
 
 Per-track polylines, JSON-ready: `"\$tid" => Dict("t","x","y","label")`, each sorted by time, with
 coordinates in **µm** (scale `df` first — `scale_centroids!` — this does not). `ids` restricts the
 output to those track_ids; `nothing` returns every tracked track.
+
+`occupancy = true` sends **only the timepoints** — `x`/`y`/`label` come back empty. The track scheme
+(`frontend/src/plots/trackScheme.ts`) draws lanes over frames and reads nothing but `t`, and it needs
+EVERY track rather than a capped top-N, because a lane list is scrolled rather than crowded. Measured
+on a real image the full shape costs ~641 B per track, so 5000 tracks is ~3.2 MB of coordinates for a
+plot that uses none of them; occupancy alone is roughly a third of that. The wire SHAPE is unchanged —
+the arrays are present and empty, exactly as `y` already is for a 1-D segmentation — so one reader
+handles both and no caller needs to know which mode produced the response.
 
 This is the wire format two endpoints need — the correction worklist (geometry for the candidates it
 shows) and the track plot (geometry for the tracks it draws) — and the frontend's `plots/trackPaths.ts`
 reads exactly this shape. `y` is an empty vector for a 1-D segmentation, which the frontend treats as
 y = 0 rather than as an error.
 """
-function track_path_dicts(df::DataFrame, spatial::Vector{String}; ids = nothing)::Dict{String,Any}
+function track_path_dicts(df::DataFrame, spatial::Vector{String};
+                          ids = nothing, occupancy::Bool = false)::Dict{String,Any}
     want = ids === nothing ? nothing : Set{Int}(Int.(ids))
     rows_by_track = Dict{Int,Vector{Int}}()
     for r in 1:nrow(df)
@@ -562,9 +571,10 @@ function track_path_dicts(df::DataFrame, spatial::Vector{String}; ids = nothing)
         rs = rows[sortperm(Float64[df[r, :centroid_t] for r in rows])]
         out[string(tid)] = Dict{String,Any}(
             "t"     => Float64[df[r, :centroid_t] for r in rs],
-            "x"     => Float64[df[r, Symbol(spatial[1])] for r in rs],
-            "y"     => length(spatial) > 1 ? Float64[df[r, Symbol(spatial[2])] for r in rs] : Float64[],
-            "label" => Int[Int(round(Float64(df[r, :label]))) for r in rs])
+            "x"     => occupancy ? Float64[] : Float64[df[r, Symbol(spatial[1])] for r in rs],
+            "y"     => (occupancy || length(spatial) < 2) ? Float64[] :
+                       Float64[df[r, Symbol(spatial[2])] for r in rs],
+            "label" => occupancy ? Int[] : Int[Int(round(Float64(df[r, :label]))) for r in rs])
     end
     out
 end

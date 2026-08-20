@@ -24,7 +24,7 @@ import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
-import { axisLabelWithUnit } from '../../utils/gatingAxes'
+import { axisLabelWithUnit, isImageYAxis } from '../../utils/gatingAxes'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
@@ -396,6 +396,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       </select>
     </template>
     <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
+                     :flip-y="isImageYAxis(yChan)"
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
                      :x-label="axisLabelWithUnit(g.colLabel(xChan), xUnit)"
                      :y-label="axisLabelWithUnit(g.colLabel(yChan), yUnit)"

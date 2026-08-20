@@ -14055,6 +14055,22 @@ end
     geo = track_path_dicts(iss, ["centroid_x", "centroid_y"]; ids = [1, 2])
     @test sort(collect(keys(geo))) == ["1", "2"]
     @test all(k -> issubset(["t", "x", "y", "label"], collect(keys(geo[k]))), keys(geo))
+
+    # OCCUPANCY MODE: timepoints only, for the track timeline — it draws lanes over frames and reads
+    # nothing but `t`, and unlike a path plot it must show EVERY track rather than a capped top-N.
+    # The keys stay put and the dropped arrays come back EMPTY, exactly as `y` already does for a 1-D
+    # segmentation — so one frontend reader handles both modes and no caller has to know which
+    # produced the response. A mode that omitted the keys would make that a type change.
+    occ = track_path_dicts(df, ["centroid_x", "centroid_y"]; occupancy = true)
+    @test Set(keys(occ)) == Set(["1", "2"])
+    @test issubset(["t", "x", "y", "label"], collect(keys(occ["1"])))
+    @test occ["1"]["t"] == [0.0, 1.0, 2.0]          # the timepoints are unchanged…
+    @test occ["1"]["x"] == Float64[]                # …and everything else is empty, not absent
+    @test occ["1"]["y"] == Float64[]
+    @test occ["1"]["label"] == Int[]
+    # occupancy composes with `ids` — the fly-to-napari button asks for one track WITH coordinates
+    @test collect(keys(track_path_dicts(df, ["centroid_x", "centroid_y"];
+                                        ids = [2], occupancy = true))) == ["2"]
 end
 
 # ── celltrackR diagnostics battery (app/src/tracking/track_diagnostics.jl) ────
@@ -14693,6 +14709,34 @@ end
     fine = [grp("a", "WT", [src("u1", "B", "")]), grp("b", "MerTK", [src("u2", "B", "")])]
     @test [g.label for g in Cecelia._disambiguate_labels(fine)] == ["WT", "MerTK"]
     @test Cecelia._disambiguate_labels([grp("a", "", [src("u1", "B", "")])])[1].label == ""
+end
+
+# The detector EDITS, so its cells may not come from a pooled group: a `track_id` is unique only within
+# one (image, segmentation), so an op built from pooled cells would name two different ones and corrupt
+# whichever it was not meant for. `track_group_frame` refuses instead of returning a frame that reads fine
+# and cannot be acted on — the route then reports the ranking as unavailable rather than wrong.
+@testset "track_group_frame refuses to pool cells an EDIT would name" begin
+    mkdf(tid) = DataFrame(label = [1.0], track_id = [Float64(tid)], centroid_t = [0.0],
+                          centroid_x = [0.0], centroid_y = [0.0])
+    sp  = ["centroid_x", "centroid_y"]
+    src(uid, vn, tid) = TrackPlotSource(uid, nothing, vn, "", mkdf(tid), sp)
+    grp(srcs) = TrackPlotGroup("k", "", "live", srcs, sp, NaN)
+
+    # one source → the cells, with the segmentation they actually came from
+    one = track_group_frame(grp([src("u1", "memTom", 7)]))
+    @test one !== nothing
+    @test one.value_name == "memTom"
+    @test one.spatial == sp
+    @test nrow(one.df) == 1
+
+    # two sources (a pooled cohort, or two segmentations) → nothing, however plausible the frame would look
+    @test track_group_frame(grp([src("u1", "memTom", 7), src("u2", "memTom", 7)])) === nothing
+    @test track_group_frame(grp([src("u1", "memTom", 7), src("u1", "importTest2", 7)])) === nothing
+
+    # a source with no cells is not a frame either — the detector would report "0 candidates" for an
+    # image it never read
+    empty_src = TrackPlotSource("u1", nothing, "memTom", "", mkdf(1)[1:0, :], sp)
+    @test track_group_frame(grp([empty_src])) === nothing
 end
 
 @testset "track_plot_groups + the two readouts (KDIeEm B)" begin

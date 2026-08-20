@@ -10,6 +10,11 @@ Two are general and belong in the app — **correct segmentation** and **correct
 The other two (importing tracks / segmentation in their own format) are lab-specific and become
 plugins — that plan was dropped from `docs/todo/` (#588) to land with its own work, like this one.
 
+> **The SURFACE has moved on.** P4's worklist shipped in #590 and did not survive contact — see
+> [`TRACK_SCHEME_PLAN.md`](TRACK_SCHEME_PLAN.md) for the timeline-first successor and an honest record
+> of why. Everything here about the OPS, the invalidation contract, the old-R ground truth and the
+> segmentation half (P2) still stands; the phases describing the correction UI (P4a–P4e) are history.
+
 ## Goal
 
 A user can fix a wrong segmentation mask and a wrong track, in napari, and have the corrected result
@@ -423,7 +428,7 @@ Both from `app/src/label_props.jl:657-692`:
   selection plus a target track, so it is small — but "which track should these join" needs a picker
   of its own, and nobody has asked for it yet.
 
-- **P4e — detector thresholds in the GUI. ✅ BUILT.** A collapsed *Sensitivity* section with the five
+- **P4e — scan thresholds in the GUI. ✅ BUILT.** A collapsed *Flagging* section (was *Sensitivity*) with the five
   knobs the route accepts. Measured on the reference image, the same 374 tracks give **10** candidates
   at `jumpQuantile 0.999`, 26 at `gapSteps 1`, **31** at the defaults, 96 at `gapSteps 8` +
   `gapFrames 6`, 222 at `jumpFactor 2` + `jumpQuantile 0.9`, and **309** at `minLen 15` — a range no

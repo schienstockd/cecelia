@@ -13,6 +13,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
+import { isImageYAxis } from '../../utils/gatingAxes'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
 import { elementToImageURL, loadImg, svgDoc, svgText, rowsToCsv } from '../../plots/export'
 import GateScatterCell from './GateScatterCell.vue'
@@ -288,7 +289,8 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
                          :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
                          :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
                          :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
-                         :hide-axis-labels="cols != null" :font-size="fontSize" />
+                         :hide-axis-labels="cols != null" :font-size="fontSize"
+                         :flip-y="isImageYAxis(d.yChan)" />
         <div v-else class="gm-loading">…</div>
       </div>
     </template>

@@ -7,9 +7,9 @@ import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
-import TrackCorrectionView from '../plots/TrackCorrectionView.vue'
 import TrackPathsView from '../plots/TrackPathsView.vue'
 import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
+import TrackSchemeView from '../plots/TrackSchemeView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -21,20 +21,23 @@ import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 // or canvas changes. Shared infra (not cluster-specific) so the future universal canvas reuses it.
 // See docs/UI.md "Interactive plots".
 export type BoardGroup = 'interactive' | 'clustering' | 'image'
-export type PageFlag = 'clusterPage' | 'opticalFlowPage'
+export type PageFlag = 'clusterPage' | 'opticalFlowPage' | 'trackPage'
 
 export interface InteractiveView {
   label: string
   component: Component
   clusterPage?: boolean       // offered on the Cluster module page's +Plot picker (UMAP only)
   opticalFlowPage?: boolean   // offered on the Optical Flow module page's +Plot picker
+  trackPage?: boolean         // offered in the Track canvas's "+ Track…" picker
   analysisBoard?: boolean     // offered on the Analysis board's +Plot picker
   // NAMEABLE BY A PLUGIN, in `plugin.json` → `contributions.views` (PLUGINS_PLAN Decision 11), to show
   // on that plugin's custom module page. A separate opt-in rather than "any registered id", for two
   // reasons a plugin author cannot be expected to know: that page is the SUMMARY canvas, which renders
   // the population picker and nothing else, so a view wanting the cluster manager or the model vault
-  // would be handed the wrong rail (ratcheted below); and `trackCorrection` MUTATES, so it must not
+  // would be handed the wrong rail (ratcheted below); and `trackScheme` MUTATES, so it must not
   // become a panel a manifest can request. Flagging one makes its ID public — see the registry comment.
+  // (It was `trackCorrection` when this rule was written; the timeline replaced that worklist and
+  // inherited the rule, which is the point of stating it about the BEHAVIOUR rather than the id.)
   pluginPage?: boolean
   boardGroup?: BoardGroup     // which optgroup it lands in on the board (default 'interactive')
   // WHICH MANAGER this plot needs in the host's rail (default 'pops'). The plot declares it; the host
@@ -48,6 +51,12 @@ export interface InteractiveView {
   // family the first registered summary spec happens to carry — a picker full of populations the plot
   // cannot draw. One family at a time, per docs/PLOTS.md; the plot owns the choice.
   popTypes?: PopTypeOption[]
+  // ONE population at a time, and the rail enforces it. A plot that FACETS can take any number — that
+  // is what the cohort comparison is — but a plot that edits one image's tracks cannot: several ticked
+  // populations resolve to several groups, and the timeline draws `groups.find(mine) ?? groups[0]`, so
+  // the second and third ticks changed nothing and said nothing. A picker that accepts input it
+  // discards is worse than one that refuses it.
+  singlePop?: boolean
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
@@ -93,26 +102,60 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability', component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
-  // Track page ONLY, via that canvas's own "+ Correct" button — so it carries no surface flag and
-  // the pickers offer it nowhere. It is the one view here that MUTATES, and the Analysis board is
-  // read-only (docs/ANALYSIS.md), so a board flag would be wrong rather than merely unused.
-  // It is registered nonetheless because that is how a canvas hosts a view THROUGH InteractivePanel
-  // — title bar, drag, resize, collapse, persist. Hand-mounting the component instead skips all of
-  // it: that is what this entry's absence cost on the first attempt.
-  trackCorrection: { label: 'Track correction', component: TrackCorrectionView, rail: 'none' },
-  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the worklist above it
+  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the timeline below it
   // belongs on the board. It takes the board's COMPARISON (`rail: 'pops'` + `TRACK_FAMILIES`): one group
   // per (images × population), so treatments and populations sit side by side like every other plot here
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
   // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
-  trackPaths: { label: 'Tracks', component: TrackPathsView, analysisBoard: true, square: true,
-                rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
+  trackPaths: { label: 'Tracks', component: TrackPathsView, trackPage: true, analysisBoard: true,
+                square: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
   // it belongs on the board: "is this movie comparable to its peers" is a board question, and it answers
   // it as a cohort — one curve per group, a group's images POOLED. Its verdicts come from the server, the
   // same ones `tracking.track_measures` banks as QC.
-  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, analysisBoard: true,
-                      rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
+  trackDiagnostics: { label: 'Track diagnostics', component: TrackDiagnosticsView, trackPage: true,
+                      analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
+  // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
+  // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
+  // SPATIAL axes and so could not answer the question every join turns on — are these two tracks in
+  // the same frames? Track page only, because it MUTATES and the board is read-only
+  // (docs/ANALYSIS.md); it is registered rather than hand-mounted so it gets the InteractivePanel
+  // chrome (title bar, drag, resize, collapse, persist) that a hand-mount silently skips.
+  trackScheme: {
+    label: 'Track timeline', component: TrackSchemeView, trackPage: true,
+    // `'pops'` like its two siblings, and NOT `pluginPage`: this one mutates. A track population is
+    // what a user picks — the segmentation is the storage detail underneath it — so the Track canvas
+    // shows the series picker whenever one of these three is the active panel, rather than each panel
+    // growing a private segmentation `<select>` (docs/TRACKING.md → Which picker).
+    rail: 'pops', popTypes: TRACK_FAMILIES,
+    // ONE population: this panel edits ONE image's tracks, and a track id is only unique within one
+    // (image, segmentation) — so a second ticked population is not a second facet, it is a second set
+    // of ids the ops could not tell apart. Its two read-only siblings facet and take any number.
+    singlePop: true,
+    initialState: () => ({ order: 'pair', offset: 0, sel: [] }),
+  },
+}
+
+/**
+ * Renamed / replaced view keys, for canvases persisted before the change.
+ *
+ * A stored panel whose key no longer resolves does not fail loudly — `isInteractiveView` returns
+ * false and the host's `v-else` renders something else entirely (on the Track canvas, a gating plot
+ * with a correction panel's state in it). So a retired key must MAP, not vanish. Same contract as
+ * `SPEC_ALIASES` in plots/popTypes.ts and `KIND_ALIASES` in ClusterPlots.
+ *
+ * `trackCorrection` → `trackScheme`: the worklist was replaced by the timeline, which authors the
+ * same ops onto the same queue, so a saved worklist panel becomes the thing that replaced it rather
+ * than an empty slot.
+ */
+export const VIEW_ALIASES: Record<string, string> = { trackCorrection: 'trackScheme' }
+
+/** Apply `VIEW_ALIASES` to a persisted panel state in place; returns true when it changed. */
+export function migrateViewKey(state: { kind: string }): boolean {
+  const a = VIEW_ALIASES[state.kind]
+  if (!a) return false
+  state.kind = a
+  return true
 }
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */
@@ -120,6 +163,9 @@ export const railFor = (key: string): RailKind => INTERACTIVE_VIEWS[key]?.rail ?
 
 /** The population families a view offers (empty when it does not slice by population). */
 export const popTypesFor = (key: string): PopTypeOption[] => INTERACTIVE_VIEWS[key]?.popTypes ?? []
+
+/** Does this view take exactly ONE population? Hosts ask; they must not read `.singlePop` themselves. */
+export const singlePopFor = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.singlePop
 
 /**
  * A view's families in the shape every `plots/popTypes.ts` reader takes, or null.

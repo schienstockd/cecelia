@@ -46,7 +46,9 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
-import { popTypeOptions, popTypeLabel, resolvePopType, type PopTypeOption } from '../../plots/popTypes'
+import type { PopTypeOption } from '../../plots/popTypes'
+import { usePopFamily } from '../../composables/usePopFamily'
+import PopFamilySelect from './PopFamilySelect.vue'
 import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
   availableModes, resolveMode, modeHint, referenceLine, axisLabels,
@@ -82,14 +84,8 @@ const valueName = computed({
   set: v => (props.state.valueName = v),
 })
 // the population FAMILY, one per plot (docs/PLOTS.md) — resolved through the same helper the rail uses
-const familyOptions = computed<PopTypeOption[]>(() =>
-  props.popTypes?.length ? popTypeOptions({ dataSource: { popTypes: props.popTypes } }) : [])
-const popType = computed({
-  get: () => (familyOptions.value.length
-    ? resolvePopType({ dataSource: { popTypes: familyOptions.value } }, props.state.popType)
-    : 'live'),
-  set: v => (props.state.popType = v),
-})
+const { options: familyOptions, popType } =
+  usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 const data = ref<DiagnosticsResponse | null>(null)
@@ -304,15 +300,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                     v-tooltip.top="mode ? modeHint(mode) : 'Which diagnostic to show'"
                     @update:model-value="v => (state.mode = v as string)" />
         <span class="tdv-spacer" />
-        <select v-if="familyOptions.length > 1" :value="popType" v-tooltip.top="'Which populations'"
-                aria-label="Population family"
-                @change="popType = ($event.target as HTMLSelectElement).value">
-          <option v-for="o in familyOptions" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
-        </select>
-        <select v-if="valueNames.length > 1" v-model="valueName"
-                v-tooltip.top="'Which segmentation'" aria-label="Segmentation">
-          <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
+        <PopFamilySelect :options="familyOptions" v-model="popType" />
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Re-run the checks'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />

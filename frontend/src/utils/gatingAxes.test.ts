@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isCentroidAxis, axisLabelWithUnit, centroidLabel } from './gatingAxes'
+import { isCentroidAxis, axisLabelWithUnit, centroidLabel, isImageYAxis } from './gatingAxes'
 
 describe('isCentroidAxis', () => {
   it('matches every centroid coordinate column', () => {
@@ -56,5 +56,30 @@ describe('axisLabelWithUnit', () => {
     // the guard against the label claiming µm while the values are pixels: this helper cannot
     // decide, so a caller that forgets to pass the unit gets the bare name, never a guess
     expect(axisLabelWithUnit('centroid_x')).toBe('centroid_x')
+  })
+})
+
+describe('isImageYAxis', () => {
+  it('is true for the image ROW coordinate', () => {
+    expect(isImageYAxis('centroid_y')).toBe(true)
+    expect(isImageYAxis('CENTROID_Y')).toBe(true)
+  })
+
+  // z is depth and t is time — neither is a screen axis in the viewer, so flipping them would INVENT
+  // a mismatch rather than remove one
+  it('is false for the other centroid axes', () => {
+    expect(isImageYAxis('centroid_x')).toBe(false)
+    expect(isImageYAxis('centroid_z')).toBe(false)
+    expect(isImageYAxis('centroid_t')).toBe(false)
+  })
+
+  it('is false for an ordinary measure', () => {
+    expect(isImageYAxis('mean_intensity_1')).toBe(false)
+    expect(isImageYAxis('')).toBe(false)
+  })
+
+  it('does not match a column that merely contains the name', () => {
+    expect(isImageYAxis('live.cell.centroid_y')).toBe(false)
+    expect(isImageYAxis('centroid_y_mean')).toBe(false)
   })
 })
