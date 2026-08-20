@@ -10,6 +10,7 @@ import './style.css'
 import App from './App.vue'
 import { useAppControlStore } from './stores/appControl'
 import { useLogStore } from './stores/log'
+import { installRoLoopTrace } from './utils/roLoopTrace'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -108,5 +109,14 @@ window.addEventListener('unhandledrejection', e => {
   bootLog.error(`Unhandled promise rejection: ${r instanceof Error ? r.message : String(r)}`,
                 { source: 'frontend', detail: r instanceof Error ? r.stack : undefined })
 })
+// The hook above can only log "ResizeObserver loop completed with undelivered notifications" verbatim:
+// the browser fires it as a bare ErrorEvent with no script origin, so the rail says a callback resized
+// what it observes and names nobody. This attributes it at the source instead — DEV only, one line per
+// creation site, and it reports a dependency's observer as readily as ours (`regl-scatterplot` and
+// several PrimeVue components observe too), which is what decides whether the answer is a fix or a
+// classification. Installed BEFORE `app.mount`, since an observer built earlier keeps the native class.
+if (import.meta.env.DEV) {
+  installRoLoopTrace((message, detail) => bootLog.warn(message, { source: 'frontend', detail }))
+}
 
 app.mount('#app')

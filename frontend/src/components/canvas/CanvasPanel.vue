@@ -11,6 +11,7 @@ import { ref, onMounted, onBeforeUnmount, onUpdated, nextTick, useTemplateRef, w
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
+import { rafCoalesce } from '../../utils/rafCoalesce'
 import CcCycleButton, { type CycleOption } from '../CcCycleButton.vue'
 
 const props = withDefaults(defineProps<{
@@ -98,7 +99,13 @@ let ro: ResizeObserver | null = null
 // keep the PLOT REGION (.panel-main) square by adjusting the box height, so a coord-fixed plot fills it
 // with no blank space AND fixed in-flow controls (e.g. the gate axis selectors) are accounted for — the
 // plot stays 1:1 and its x-axis is never clipped. Overlay (auto-hide) controls don't reserve height, so
-// this reduces to a square box for them. Guarded by a >1px diff so we don't loop the ResizeObserver.
+// this reduces to a square box for them. The >1px diff settles it in one pass rather than oscillating.
+//
+// NEVER call this straight from the ResizeObserver — go through `squareFrame` (below). It writes
+// `root.style.height` on the element the observer WATCHES, and a callback that resizes an observed
+// element during delivery is precisely what the browser reports as "ResizeObserver loop completed with
+// undelivered notifications" — the line Dominik kept seeing in the log rail. The >1px guard bounds the
+// loop but not the message: the notification is already undeliverable after the FIRST write.
 function enforceSquare() {
   if (!props.square || props.docked || collapsed.value || !root.value || !mainEl.value) return
   const chromeH = root.value.offsetHeight - mainEl.value.offsetHeight   // head + in-flow controls/footer + borders
@@ -110,16 +117,21 @@ function persist() {
   if (collapsed.value) return   // collapsed height is transient — don't overwrite the saved size
   store.setGeom(props.persistKey, { x: pos.value.x, y: pos.value.y, w: root.value.offsetWidth, h: root.value.offsetHeight })
 }
+// ONE frame, one write — see `enforceSquare` for why this may not run inline in the observer
+const squareFrame = rafCoalesce(() => { enforceSquare(); persist() })
 watch(pos, persist, { deep: true })           // covers drag + Tile/Cascade
 onMounted(() => {
   if (props.docked) return   // docked panels fill their slot; no saved geometry / resize tracking
   if (saved && root.value) { root.value.style.width = saved.w + 'px'; root.value.style.height = saved.h + 'px' }
   enforceSquare()            // square an odd saved geometry on first mount
   if (props.persistKey && root.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => { enforceSquare(); persist() }); ro.observe(root.value)   // covers manual resize
+    // schedule, don't write: the callback must leave layout alone (see `enforceSquare`). rAF puts the
+    // write in the next frame, so the resize it causes is delivered as a fresh cycle — the same
+    // medicine `usePlotResize` applies to plots, and `persist` rides along a frame later for free.
+    ro = new ResizeObserver(() => squareFrame.schedule()); ro.observe(root.value)   // covers manual resize
   }
 })
-onBeforeUnmount(() => { ro?.disconnect(); ro = null })
+onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 </script>
 
 <template>

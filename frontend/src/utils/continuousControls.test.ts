@@ -226,7 +226,7 @@ describe('live napari view-property endpoints have exactly one owner', () => {
 // the log rail. `usePlotResize` is the fix (rAF coalescing + skip a render the size did not ask for).
 const RO_EXEMPT: Record<string, string> = {
   'components/canvas/CanvasPanel.vue':
-    'writes its OWN height to keep a square plot square, and guards on a >1px difference; it does not render into itself',
+    'writes its OWN height to keep a square plot square — but through rafCoalesce, NOT in the callback (pinned below)',
   'composables/useCanvasWorkspace.ts': 'measures only — no DOM write in the callback',
   'composables/usePlotResize.ts': 'IS the fix',
   'modules/MoviesModule.vue': 'measures a video element; writes nothing',
@@ -249,6 +249,18 @@ describe('no plot re-renders into the element it observes', () => {
       .filter(s => !s.path.endsWith('.test.ts'))
       .map(s => s.path)
     expect(offenders).toEqual([])
+  })
+
+  // The exemption above is conditional, and the condition is the whole point: CanvasPanel writes
+  // `root.style.height` on the element it OBSERVES. Inline in the callback, that is a self-resize
+  // during delivery — exactly what the browser reports as "ResizeObserver loop completed with
+  // undelivered notifications", and it did, in the log rail. The `>1px` guard bounds the loop but not
+  // the message, so prose ("it does not render into itself") was not enough to keep this right.
+  it('CanvasPanel schedules its square/persist write instead of writing in the callback', () => {
+    const src = roSources.find(s => s.path === 'components/canvas/CanvasPanel.vue')!.text
+    const ctorLine = src.split('\n').find(l => l.includes('new ResizeObserver(')) ?? ''
+    expect(ctorLine).toContain('schedule')
+    expect(ctorLine).not.toContain('enforceSquare')
   })
 
   it('the exemption list stays honest — every entry still exists and still observes', () => {
