@@ -10128,9 +10128,16 @@ end
     # only thing that stops them drifting: same stale store, one stamped by each, byte-compared.
     @testset "calibration writers agree across languages" begin
         pyroot  = joinpath(dirname(dirname(@__DIR__)), "python")
-        haspy   = success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
-                                          "PYTHONPATH" => pyroot);
-                                   stdout = devnull, stderr = devnull))
+        # `success` THROWS (IOError ENOENT) when there is no `python` on PATH at all — which is the
+        # ordinary case for `julia --project test/runtests.jl` outside the pixi env, and it errored the
+        # suite instead of skipping the way the next line intends.
+        haspy   = try
+            success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
+                                    "PYTHONPATH" => pyroot);
+                             stdout = devnull, stderr = devnull))
+        catch
+            false
+        end
         if !haspy
             @test_skip "analysis-env Python (ome_types/zarr/dask) not importable"
         else
