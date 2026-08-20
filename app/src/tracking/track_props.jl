@@ -91,11 +91,18 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
     categorical   = String.(collect(categorical))
     numeric       = String.(collect(numeric))
 
+    # segmentation isn't tracked (no track_id column) → no tracks. Return an empty, well-formed table
+    # rather than indexing a missing column (was an unhandled 500 on a track-grained gating plot).
+    # ASK FIRST, via `is_tracked` (obs column list only, no data read): asking `select_cols` for
+    # `track_id` and inspecting the result works too, but `select_cols` @warns about every column it
+    # cannot find, so the untracked case — which this function handles by design — logged
+    # `LabelProps: ignoring unknown columns ["track_id"]` once per request. Six of them per page load
+    # of a track-grained plot panel, all of them about a column we already knew might be absent.
+    is_tracked(img; value_name = vn) || return DataFrame(track_id = Int[], num_cells = Int[], label = Int[])
+
     # read tracked cells: track_id + requested measures (label-keyed)
     cols = unique(vcat("track_id", cell_measures))
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, cols) |> as_df
-    # segmentation isn't tracked (no track_id column) → no tracks. Return an empty, well-formed table
-    # rather than indexing a missing column (was an unhandled 500 on a track-grained gating plot).
     "track_id" in names(cell) || return DataFrame(track_id = Int[], num_cells = Int[], label = Int[])
     keep = [r isa Number && !isnan(r) && Int(r) > 0 for r in cell[!, "track_id"]]
     cell = cell[keep, :]

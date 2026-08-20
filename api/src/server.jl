@@ -428,7 +428,7 @@ function try_serve_static(stream::HTTP.Stream, reqpath::AbstractString)::Bool
     HTTP.setstatus(stream, 200)
     HTTP.setheader(stream, "Content-Type" => _static_content_type(full))
     HTTP.startwrite(stream)
-    write(stream, data)
+    write_http_body!(stream, data)
     true
 end
 
@@ -446,7 +446,7 @@ function try_serve_board_asset(stream::HTTP.Stream, target::AbstractString)::Boo
     HTTP.setheader(stream, "Content-Type"                => "image/png")
     HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
     HTTP.startwrite(stream)
-    write(stream, data)
+    write_http_body!(stream, data)
     true
 end
 
@@ -458,7 +458,7 @@ function _stream_file!(stream::HTTP.Stream, io::IO, n::Integer)
     while remaining > 0 && !eof(io)
         nread = readbytes!(io, buf, min(length(buf), remaining))
         nread == 0 && break
-        write(stream, view(buf, 1:nread))
+        write_http_body!(stream, view(buf, 1:nread))
         remaining -= nread
     end
 end
@@ -578,7 +578,7 @@ function handle_stream(stream::HTTP.Stream)
     HTTP.setheader(stream, "Access-Control-Allow-Methods" => "GET, POST, OPTIONS")
     HTTP.setheader(stream, "Access-Control-Allow-Headers" => "Content-Type")
     HTTP.startwrite(stream)
-    write(stream, body)
+    write_http_body!(stream, body)
 end
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -9748,6 +9748,22 @@ end
         # `numeric` escape-hatch forces it back to numeric aggregates when desired
         forced = track_props(img; value_name="B", cell_measures=["st"], numeric=["st"])
         @test "st.mean" in names(forced) && !("st.1" in names(forced))
+
+        # An UNTRACKED segmentation → the empty, well-formed table, and SILENTLY. `track_props`
+        # handles this case by design, so it must ASK (`is_tracked`, which reads the obs column list
+        # only) instead of selecting `track_id` and inspecting the result: `select_cols` @warns about
+        # every column it cannot find, so the by-design path logged
+        # `LabelProps: ignoring unknown columns ["track_id"]` once per request — six per page load of
+        # a track-grained plot panel, every one of them about a column we already knew might be absent.
+        td2 = mktempdir(); mkpath(joinpath(td2, "labelProps"))
+        cp(h5, joinpath(td2, "labelProps", "B.h5ad"))
+        img2 = CciaImage(uid="KDIeEm", dir=td2)
+        img2.label_props["B"] = "B.h5ad"; img2.label_props["_active"] = "B"
+        label_props(img_label_props_path(img2, "B")) |> drop_obs(["track_id"]) |> save!
+        @test !is_tracked(img2; value_name="B")
+        untracked = @test_logs min_level=Logging.Warn track_props(img2; value_name="B", cell_measures=["area"])
+        @test nrow(untracked) == 0
+        @test Set(names(untracked)) == Set(["track_id", "num_cells", "label"])
     end
 end
 
@@ -10112,9 +10128,16 @@ end
     # only thing that stops them drifting: same stale store, one stamped by each, byte-compared.
     @testset "calibration writers agree across languages" begin
         pyroot  = joinpath(dirname(dirname(@__DIR__)), "python")
-        haspy   = success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
-                                          "PYTHONPATH" => pyroot);
-                                   stdout = devnull, stderr = devnull))
+        # `success` THROWS (IOError ENOENT) when there is no `python` on PATH at all — which is the
+        # ordinary case for `julia --project test/runtests.jl` outside the pixi env, and it errored the
+        # suite instead of skipping the way the next line intends.
+        haspy   = try
+            success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
+                                    "PYTHONPATH" => pyroot);
+                             stdout = devnull, stderr = devnull))
+        catch
+            false
+        end
         if !haspy
             @test_skip "analysis-env Python (ome_types/zarr/dask) not importable"
         else
@@ -13588,6 +13611,92 @@ end
         try; close(server); catch; end
     end
 end
+
+# ── An empty response body must not corrupt the connection ────────────────────
+#
+# `write_http_body!` (utils.jl, where the mechanism is explained) exists for one wire-level reason:
+# our responses carry no Content-Length, so HTTP.jl frames them CHUNKED and frames every `write` as
+# its own chunk — so a zero-length write emits the TERMINATING `0\r\n\r\n` and `closewrite` emits a
+# second one. This asserts the BYTES, over two requests on ONE keep-alive connection, because the
+# response that broke was never the empty one: the extra terminator sits in the connection and the
+# NEXT response is parsed starting at it.
+#
+# The unguarded `write` is kept as the negative control — a guard is only worth having if the test
+# fails without it. Ephemeral port, and a raw socket that speaks HTTP by hand (an HTTP client would
+# hide the framing, which is the whole subject).
+@testset "an empty response body is written through write_http_body!" begin
+    using Sockets: connect as sock_connect
+    HTTP = Cecelia.HTTP
+
+    # READING THE WIRE, without guessing at packetisation — both halves of this were measured, and
+    # both got it wrong first:
+    #   * `bytesavailable(sock)` is NOT a usable poll. Julia stops the libuv read loop when its
+    #     buffer empties, so it reports 0 with bytes still pending — that version saw 2 terminators
+    #     of 4 on half its runs. So ONE reader task blocks in `readavailable` for the socket's whole
+    #     life and appends everything; `close` is what ends it.
+    #   * The stopping condition must be the DATA, not a fixed sleep. The extra terminator is written
+    #     separately from the head, so "both responses are in" can be true with those 4 bytes still in
+    #     flight — that is how the first version of this test flaked on ubuntu CI only (2 of 4) while
+    #     passing on macOS, Windows and locally. A generous deadline also absorbs the first call's
+    #     compilation, which a fixed window did not.
+    settle = function (acc, quiet, cap)         # wait until the accumulated bytes stop growing
+        n = length(acc[]); t0 = time(); t_last = time()
+        while time() - t_last < quiet && time() - t0 < cap
+            sleep(0.02)
+            if length(acc[]) != n; n = length(acc[]); t_last = time(); end
+        end
+    end
+
+    wire = function (guarded::Bool)
+        handler = function (stream)
+            read(stream)
+            HTTP.setstatus(stream, 200)
+            HTTP.setheader(stream, "Content-Type" => "application/octet-stream")
+            HTTP.startwrite(stream)
+            guarded ? write_http_body!(stream, UInt8[]) : write(stream, UInt8[])
+        end
+        server = HTTP.listen!(handler, "127.0.0.1", 0)          # port 0 → never a real one
+        try
+            sock = sock_connect("127.0.0.1", HTTP.port(server))
+            acc  = Ref("")
+            reader = @async try
+                while !eof(sock); acc[] *= String(copy(readavailable(sock))); end
+            catch; end
+            try
+                for i in 1:2                    # request 2 is the one the stray bytes broke
+                    write(sock, "GET /$i HTTP/1.1\r\nHost: x\r\n\r\n")
+                    t0 = time()
+                    while count("HTTP/1.1 200", acc[]) < i && time() - t0 < 20; sleep(0.02); end
+                end
+                settle(acc, 0.5, 5.0)
+            finally
+                close(sock)
+            end
+            wait(reader)
+            acc[]
+        finally
+            close(server)
+        end
+    end
+
+    guarded = wire(true)
+    @test count("HTTP/1.1 200", guarded) == 2
+    @test count("0\r\n\r\n", guarded) == 2        # exactly ONE terminating chunk per response
+    @test endswith(guarded, "0\r\n\r\n")          # …and no bytes left over for the next response
+
+    # the bug, on the wire: `…0\r\n\r\n0\r\n\r\nHTTP/1.1 …`. Vite's proxy died on exactly these bytes
+    # (`HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>`), failing the OTHER, good
+    # requests that shared the connection with one legitimately-empty gating plot.
+    bare = wire(false)
+    @test count("0\r\n\r\n", bare) == 4
+    @test occursin("0\r\n\r\n0\r\n\r\n", bare)
+
+    # so no handler hands a body to `write` directly — the runner's reply path included
+    src = read(joinpath(@__DIR__, "..", "src", "runner", "server.jl"), String)
+    @test occursin("write_http_body!(stream, body)", src)
+    @test !occursin("write(stream, ", src)
+end
+
 # ── Manual track correction (docs/todo/CORRECTION_PLAN.md, P1) ────────────────
 #
 # The ops engine is pure, so it is tested directly against a hand-built cell table — no fixture, no

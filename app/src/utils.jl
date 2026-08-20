@@ -29,6 +29,28 @@ gen_uid(n::Int=UID_LENGTH) = String(rand(UID_CHARS, n))
 # bounded into a clean failure instead of a silent one.
 const WS_MAX_FRAME_SIZE = 64 * 1024 * 1024
 
+# ── Writing a response body — ONE helper, because an EMPTY one corrupts the connection ──
+# THE way to write a fully-materialised HTTP response body (`api/src/server.jl`'s handlers and
+# static/asset serving, the task runner's replies). Do NOT hand-roll `write(stream, body)`: the
+# "an empty response body is written through write_http_body!" testset fails on a new bare site.
+#
+# None of those responses sets `Content-Length`, so HTTP.jl frames them CHUNKED — and it frames every
+# `write` as its own chunk, length prefix included. A zero-length write therefore emits `0\r\n\r\n`,
+# which is the TERMINATING chunk, and `closewrite` then emits a second one. Those 4 extra bytes stay in
+# the connection, so the NEXT response on that keep-alive connection is parsed starting at them.
+#
+# Measured (HTTP.jl 2.4.0, and 2.5.5 frames it the same way, so this is ours to guard, not an upstream
+# fix to wait for): two requests on one socket came back as
+# `HTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\nHTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\n`.
+# What that cost on screen: ONE handler legitimately returned zero bytes — a track-grained gating plot
+# of an untracked segmentation has no points — and Vite's proxy then died with
+# `HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>` on the OTHER, perfectly good
+# requests sharing that connection, so every plot on the page failed and the empty one looked innocent.
+#
+# A skipped write is exactly right, not a workaround: `closewrite` still terminates the body, so an
+# empty body stays an empty body — one that is now correctly framed.
+write_http_body!(stream, body) = (isempty(body) || write(stream, body); nothing)
+
 # ── Durable state writes — ONE mechanism ──────────────────────────────────────
 # `write_atomic` is THE way to write any durable state file — ccid.json, project.json, the
 # gating/QC/spatial/board sidecars, chain templates + run.json, custom.toml, the lab log, a Pluto
