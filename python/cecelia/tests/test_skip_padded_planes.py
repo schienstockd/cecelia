@@ -68,7 +68,7 @@ class _TemporalStubSeg(SegmentationUtils):
 
     def predict_slice(self, tile, model_params, norm_params=None,
                       context=None, context_index=None, context_id=None,
-                      context_channels=None):
+                      context_channels=None, context_start=None, context_tile=None):
         self.seen = getattr(self, 'seen', [])
         self.seen.append((tile.shape[-3], context[context_index].shape[-3], context.shape[0],
                           np.array_equal(context[context_index], tile)))

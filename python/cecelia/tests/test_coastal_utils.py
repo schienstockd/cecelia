@@ -85,7 +85,7 @@ def _utils(model_params=None, dim_utils=None, task_dir='/tmp'):
     # record the window it was given.
     cu._seen = []
 
-    def _metrics(window, center, scales, cumulative):
+    def _metrics(window, center, scales, cumulative, **_):
         cu._seen.append((np.asarray(window).copy(), center, tuple(scales), cumulative))
         return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center]),
                                             'divergence': np.zeros_like(window[center])}
@@ -288,6 +288,90 @@ class ContextChannelsTest(unittest.TestCase):
             cu._project_window(window, {'cellChannels': [3]}, None, context_channels=(0, 2))
 
 
+class SharedFlowBetweenTimepointsTest(unittest.TestCase):
+    """Consecutive windows overlap by all but one frame; the flow they share must be computed once.
+
+    The cache is the one place in this class that carries state ACROSS calls, so the tests that
+    matter are the ones about when it must NOT be used: a different tile is different pixels, and a
+    lag pair is never asked for twice and so must not be kept.
+    """
+
+    def _utils(self, n_z=2):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        params = {'taskDir': '/tmp',
+                  'models': {'0': {'model': 'm.pt', 'cellChannels': [0]}}}
+        cu = CoastalUtils(params, _DimUtils(shape=(30, 2, n_z, 16, 16)))
+        cu._get_inference = lambda _mp: _StubInference()
+        cu._match_3d = lambda planes, threshold: planes
+        cu._pairs = []
+
+        def _metrics(window, center, scales, cumulative, flow_cache=None, window_offset=0):
+            # stand in for coastal: ask the cache for the pairs a real call would
+            for scale in scales:
+                cu._pairs.append(('ask', window_offset + center - 1,
+                                  window_offset + center - 1 + scale))
+            for k in range(center - cumulative // 2, center + cumulative // 2):
+                key = (window_offset + k, window_offset + k + 1)
+                if flow_cache is not None and key in flow_cache:
+                    continue
+                cu._pairs.append(('compute', *key))
+                if flow_cache is not None:
+                    flow_cache[key] = ('flow', key)
+            return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center])}
+
+        cu._flow_metrics = _metrics
+        return cu
+
+    def _step(self, cu, t, tile=(0, 16, 0, 16), radius=8, n_z=2):
+        ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
+        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3,
+                         context_id=t, context_start=t - 3, context_tile=tile)
+
+    def _computed(self, cu):
+        return [p for p in cu._pairs if p[0] == 'compute']
+
+    def test_a_later_timepoint_reuses_the_overlap(self):
+        cu = self._utils()
+        self._step(cu, 10); first = len(self._computed(cu))
+        self._step(cu, 11); second = len(self._computed(cu)) - first
+        self.assertGreater(first, 0)
+        self.assertLess(second, first,
+                        'consecutive windows share all but one frame — most pairs were already had')
+
+    def test_moving_to_another_tile_starts_over(self):
+        """A flow is a property of the PIXELS. Reusing one tile's flow for another segments the
+        wrong motion, and nothing downstream would report it."""
+        cu = self._utils()
+        self._step(cu, 10, tile=(0, 16, 0, 16)); first = len(self._computed(cu))
+        self._step(cu, 11, tile=(16, 32, 0, 16)); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first, 'a different tile must not be served from the old one')
+        self.assertEqual(cu._flow_cache_tile, (16, 32, 0, 16))
+
+    def test_only_consecutive_pairs_are_kept(self):
+        """A lag pair moves with the centre frame, so it is never requested twice — keeping it grows
+        the cache by three dead entries per timepoint per z-plane."""
+        cu = self._utils()
+        self._step(cu, 10)
+        for cache in cu._flow_caches.values():
+            for (i, j) in cache:
+                self.assertEqual(j, i + 1, f'({i}, {j}) is not a consecutive pair')
+
+    def test_the_cache_does_not_grow_without_bound(self):
+        cu = self._utils()
+        sizes = []
+        for t in range(10, 30):
+            self._step(cu, t)
+            sizes.append(max(len(c) for c in cu._flow_caches.values()))
+        self.assertLessEqual(max(sizes[5:]), 6,
+                             f'entries a later timepoint can never read are not being pruned: {sizes}')
+
+    def test_each_z_plane_has_its_own(self):
+        cu = self._utils(n_z=3)
+        self._step(cu, 10, n_z=3)
+        self.assertEqual(sorted(cu._flow_caches), [0, 1, 2])
+
+
 class SharedFlowBetweenPassesTest(unittest.TestCase):
     """Two-pass runs are a second `models` group, and both groups read the same window.
 
@@ -307,7 +391,7 @@ class SharedFlowBetweenPassesTest(unittest.TestCase):
         cu._match_3d = lambda planes, threshold: planes
         cu._seen = []
 
-        def _metrics(window, center, scales, cumulative):
+        def _metrics(window, center, scales, cumulative, **_):
             cu._seen.append(center)
             return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center])}
 
@@ -414,7 +498,7 @@ class PredictSliceTest(unittest.TestCase):
         n_z = 8
         counter = {'z': 0}
 
-        def _slow_metrics(window, center, scales, cumulative):
+        def _slow_metrics(window, center, scales, cumulative, **_):
             z = counter['z']
             counter['z'] += 1
             time.sleep(0.02 * (n_z - z))     # earlier planes finish LAST

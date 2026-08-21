@@ -107,6 +107,34 @@ class SegmentationUtils:
             return 0
         return int(round(um2 / max(self.phys_size_x * self.phys_size_y, 1e-12)))
 
+    # The companion to the `models` group: which entries run, in what order. `<group>Order` by
+    # convention, so the form control (a `chipSelect` with `optionsFromGroup`) and the runner agree
+    # on one name rather than each task inventing its own.
+    MODEL_ORDER_PARAM = 'modelsOrder'
+
+    def model_order(self, models):
+        """The model-group keys to run, in run order.
+
+        ORDER IS SEMANTIC here, which is why it is worth a control at all: groups are applied in
+        turn and `_write_tile_to_arr` fills only pixels an earlier group left, so the first group
+        gets first claim on every pixel. Running a small-object pass before the cell pass is a
+        different segmentation, not the same one relabelled.
+
+        Absent means every group, ascending — a task saved before this existed, a chain node, and a
+        REPL call all carry no value and must keep running everything. Unknown keys are dropped
+        rather than raising: a saved param set outlives the group it was saved against, and a stale
+        key should not stop a run.
+        """
+        keys = sorted(models.keys(), key=lambda k: (len(str(k)), str(k)))
+        order = self.params.get(self.MODEL_ORDER_PARAM)
+        if not isinstance(order, (list, tuple)):
+            return keys
+        chosen = [str(k) for k in order if str(k) in models]
+        # Deduplicated in first-seen order: the same group twice would offset its own labels against
+        # itself and write nothing the second time, which is a confusing no-op rather than an error.
+        seen = set()
+        return [k for k in chosen if not (k in seen or seen.add(k))]
+
     def _context_channels(self):
         """Which image channels the temporal window has to carry — None for all of them.
 
@@ -126,7 +154,7 @@ class SegmentationUtils:
 
     def predict_slice(self, tile, model_params, norm_params=None,
                       context=None, context_index=None, context_id=None,
-                      context_channels=None):
+                      context_channels=None, context_start=None, context_tile=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
 
         `context`/`context_index`/`context_id` are passed ONLY when the subclass sets
@@ -140,6 +168,15 @@ class SegmentationUtils:
                        mirroring invents motion outright.
         context_channels: the image channel indices `context` carries, in axis order, or None when
                        it carries all of them — see `_context_channels`.
+        context_start: index in the MOVIE of `context[0]`, so a subclass can name a frame (or a
+                       frame pair) in absolute terms. `context_index` is relative to the window and
+                       two different windows share it; this does not.
+        context_tile:  the tile's `(y0, y1, x0, x1)` in full-image coordinates — what stays the same
+                       as the window walks forward in time, and what must NOT be conflated when it
+                       moves in space. Together with `context_start` it is what lets a subclass
+                       carry work between TIMEPOINTS (coastal caches optical flow across the ~94%
+                       of frames two consecutive windows share); `context_id` deliberately cannot,
+                       since it changes with every window.
         context_id:    an integer identifying THIS window, stable across the model groups that
                        share it and never reused for another one. The window is built once per
                        (tile, timepoint) and handed to every group, so a subclass whose per-window
@@ -167,13 +204,14 @@ class SegmentationUtils:
         per timepoint, and the only cross-frame state is the monotonic ``max_labels`` counter (which
         the per-frame steps never touch), so the label output is byte-identical."""
         models = self.params.get('models', {})
+        model_keys = self.model_order(models)
         dim_utils = self.dim_utils
 
         # Global norm params (from lowest-res level)
         all_norm_params = {}
         if self.normalise_to_whole:
-            for key, mp in models.items():
-                all_norm_params[key] = self._compute_norm_params(im_dat, mp)
+            for key in model_keys:
+                all_norm_params[key] = self._compute_norm_params(im_dat, models[key])
 
         # Image label store shape derives from the full image shape (tiling now reads whole frames
         # via zarr_utils.read_timepoint, so per-axis image indices are no longer needed here).
@@ -232,7 +270,7 @@ class SegmentationUtils:
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
-            mp.get('matchAs', 'base') for mp in models.values()
+            models[k].get('matchAs', 'base') for k in model_keys
         ))
         max_labels = {ma: 0 for ma in match_as_list}
 
@@ -358,6 +396,7 @@ class SegmentationUtils:
                     # against it (see `CoastalUtils._plane_features`); one that does not care
                     # ignores it.
                     context, context_index, context_id = None, None, None
+                    context_start, context_tile = None, None
                     if self.TEMPORAL_RADIUS > 0 and ia_t is not None:
                         # tile-extent reads across the clamped window; truncated at the movie
                         # edges, never reflected or edge-padded (see predict_slice docstring)
@@ -377,10 +416,13 @@ class SegmentationUtils:
                                                c=ctx_channels)
                             for t2 in range(lo, hi + 1)])
                         context_index = t - lo
+                        context_start = lo
+                        context_tile = (read_yx_full[0].start, read_yx_full[0].stop,
+                                        read_yx_full[1].start, read_yx_full[1].stop)
                         self._context_counter += 1
                         context_id = self._context_counter
 
-                    for model_key in sorted(models.keys()):
+                    for model_key in model_keys:
                         model_params = models[model_key]
                         match_as = model_params.get('matchAs', 'base')
                         norm_p = all_norm_params.get(model_key)
@@ -399,7 +441,9 @@ class SegmentationUtils:
                                                        context=context,
                                                        context_index=context_index,
                                                        context_id=context_id,
-                                                       context_channels=ctx_channels)
+                                                       context_channels=ctx_channels,
+                                                       context_start=context_start,
+                                                       context_tile=context_tile)
                         else:
                             # unchanged call for every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)

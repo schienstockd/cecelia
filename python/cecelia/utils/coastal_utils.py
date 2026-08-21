@@ -35,6 +35,7 @@ import numpy as np
 
 from cecelia.utils.segmentation_utils import SegmentationUtils
 from cecelia.utils.gpu_utils import torch_device
+import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.script_utils as script_utils
 
 
@@ -57,16 +58,19 @@ PERCENTILE_HI = 99.99
 #   flow metrics    17.9 s serial | 4.2 s @8 (4.3x) | 2.9 s @16 (6.2x) | 2.6 s @32 (6.8x)
 #   predict_frame   11.5 s serial | 5.8 s @4 (2.0x) | 8.2 s @8 (1.4x)  | 9.3 s @16 (1.2x)
 #
-# Flow is `cv2`/numpy and releases the GIL, so it scales. `predict_frame` is region growing in a
-# Python loop over scipy calls, so it peaks at 4 threads and gets WORSE beyond that — a single pool
-# sized for flow would have run the second stage 1.6x slower than 4 threads does. Hence two stages
-# and a barrier, not one map over `_predict_plane`.
+# Flow is `cv2`/numpy and releases the GIL, so it scales with whatever the machine offers.
+# `predict_frame` is region growing in a Python loop over scipy calls, so it peaks at 4 threads and
+# gets WORSE beyond that — a single pool sized for flow would run the second stage 1.6x slower than
+# 4 threads does. Hence two stages and a barrier, not one map over `_predict_plane`.
 #
-# Capped at 8 rather than `cpu_count()` for the same reason `correction_utils._FFT_WORKERS` is:
-# `segment.coastal` holds the `gpu` pool slot (limit 1) but the `cpu` pool has 20 more, so a run is
-# not alone on the machine. 8 gets 4.3x of the available 6.8x.
-FLOW_WORKERS = max(1, min(8, os.cpu_count() or 1))
-PREDICT_WORKERS = max(1, min(4, os.cpu_count() or 1))
+# The BUDGET comes from the machine and the scheduler (`CECELIA_TASK_WORKERS`, `[tasks].workerThreads`
+# — see docs/SCHEDULER.md → *Thread budgets*); what stays here is the algorithmic CEILING on the
+# second stage, because no machine makes 8 the right width for a stage that degrades past 4. So a
+# bigger box widens the flow stage and leaves region growing where the measurement put it.
+PREDICT_WORKER_CAP = 4
+
+FLOW_WORKERS = cpu_utils.task_workers()
+PREDICT_WORKERS = cpu_utils.task_workers(cap=PREDICT_WORKER_CAP)
 
 # What the projected window is scaled to before coastal sees it — coastal's own convention, kept so
 # a model trained through `normalize_and_project` receives the range it was trained on.
@@ -106,6 +110,37 @@ def temporal_config(manifest):
     return sorted(set(scales)), cumulative, dropped
 
 
+class _ConsecutiveOnly(dict):
+    """A flow cache that keeps only consecutive-frame pairs.
+
+    `flow_metrics_for_frame` offers every pair it computes; this decides what is worth keeping. The
+    lag pairs (`(i, i+scale)` for scale > 1) move with the centre frame and are never requested a
+    second time, so storing them is pure growth — three dead entries per timepoint per z-plane.
+    Reads are unaffected: a rejected key simply misses.
+    """
+
+    def __setitem__(self, key, value):
+        if key[1] == key[0] + 1:
+            super().__setitem__(key, value)
+
+
+class _PerPlaneFlowCaches:
+    """`caches[z]` → the flow cache for that z-plane, created on demand under one lock.
+
+    `_map_z` fills these from several threads, and `dict.setdefault` on the OUTER dict is what has
+    to be atomic — the inner `_ConsecutiveOnly` is then touched by one z's worker only, so it needs
+    no lock of its own.
+    """
+
+    def __init__(self, caches, lock):
+        self._caches = caches
+        self._lock = lock
+
+    def __getitem__(self, z):
+        with self._lock:
+            return self._caches.setdefault(z, _ConsecutiveOnly())
+
+
 class CoastalUtils(SegmentationUtils):
 
     def __init__(self, params, dim_utils):
@@ -119,6 +154,11 @@ class CoastalUtils(SegmentationUtils):
         self._feature_cache = {}
         self._feature_cache_key = None
         self._feature_lock = threading.Lock()
+
+        # Optical flow shared between TIMEPOINTS — see *Sharing the flow between timepoints*.
+        self._flow_caches = {}
+        self._flow_cache_tile = None
+        self._flow_lock = threading.Lock()
         self._model_cache = {}
         self._inference_cache = {}
         self._manifest_cache = {}
@@ -309,11 +349,13 @@ class CoastalUtils(SegmentationUtils):
     # trained checkpoint. Patching `sys.modules['coastal.*']` instead would leak a stub into every
     # later test in the process — it did, and broke an unrelated runner-import test.
 
-    def _flow_metrics(self, window, center, scales, cumulative):
+    def _flow_metrics(self, window, center, scales, cumulative,
+                      flow_cache=None, window_offset=0):
         from coastal.flow import flow_metrics_for_frame
         return flow_metrics_for_frame(window, center, temporal_scales=scales,
                                       cumulative_window=cumulative,
-                                      value_range=(0.0, PROJECTION_MAX))
+                                      value_range=(0.0, PROJECTION_MAX),
+                                      flow_cache=flow_cache, window_offset=window_offset)
 
     def _match_3d(self, planes, stitch_threshold):
         from coastal.utils import match_masks_3d
@@ -323,7 +365,7 @@ class CoastalUtils(SegmentationUtils):
 
     def predict_slice(self, tile, model_params, norm_params=None,
                       context=None, context_index=None, context_id=None,
-                      context_channels=None):
+                      context_channels=None, context_start=None, context_tile=None):
         """Segment one XY tile at one timepoint from its temporal window.
 
         tile:    [C, Z, Y, X] or [C, Y, X] — present for the base's contract; the pixels used come
@@ -341,10 +383,12 @@ class CoastalUtils(SegmentationUtils):
         inference = self._get_inference(model_params)
         window = self._project_window(context, model_params, norm_params, context_channels)
         feature_key = self._feature_key(context_id, model_params, scales, cumulative, dropped)
+        flow_caches = self._flow_caches_for(context_tile, context_start, context_index, cumulative)
 
         if not is_3d:
             frame, metrics = self._cached_features(
-                feature_key, 0, window, context_index, scales, cumulative, dropped)
+                feature_key, 0, window, context_index, scales, cumulative, dropped,
+                flow_caches, context_start)
             return np.asarray(inference.predict_frame(frame, metrics)[1]).astype(self.LABEL_DTYPE)
 
         # Per-Z 2D, then IoU matching across Z. Right choice here rather than a fallback: voxels are
@@ -362,7 +406,8 @@ class CoastalUtils(SegmentationUtils):
         features = self._map_z(
             FLOW_WORKERS, n_z,
             lambda z: self._cached_features(feature_key, z, window[:, z], context_index,
-                                            scales, cumulative, dropped))
+                                            scales, cumulative, dropped,
+                                            flow_caches, context_start))
         planes = self._map_z(
             PREDICT_WORKERS, n_z,
             lambda z: np.asarray(inference.predict_frame(*features[z])[1]).astype(self.LABEL_DTYPE))
@@ -382,6 +427,48 @@ class CoastalUtils(SegmentationUtils):
             return [fn(z) for z in range(n_z)]
         with ThreadPoolExecutor(max_workers=min(workers, n_z)) as pool:
             return list(pool.map(fn, range(n_z)))
+
+    # ── Sharing the flow between TIMEPOINTS ───────────────────────────────────
+    #
+    # Consecutive windows overlap by all but one frame — at radius 8, t and t+1 share 16 of 17 — and
+    # the cumulative displacement is a sum of CONSECUTIVE-frame flows, so three of the four pairs it
+    # needs at t are pairs it needed at t-1. Per plane that is 7 Farneback calls where 4 do: the
+    # three lag pairs (scale 2, 4, 8) genuinely move with t, the consecutive one does not.
+    #
+    # Only consecutive pairs are kept. A lag pair `(t-1, t-1+s)` is never asked for twice, so caching
+    # it would grow the cache by three entries per timepoint that nothing ever reads — which on a
+    # 32-plane stack is how this turns into a gigabyte.
+    #
+    # The cache is per (tile, z): a flow is a property of the PIXELS, so two tiles at the same
+    # timepoint, or two z-planes of one tile, share nothing. `context_tile` moving is a full reset
+    # rather than a second keying level, because the base walks every tile of a timepoint before
+    # moving on — entries for the previous tile are dead the moment it changes.
+
+    # How far back a consecutive pair stays reachable. The cumulative window at `t` reaches
+    # `t - cumulative // 2`, so a pair left of that can never be asked for again as `t` only
+    # advances. One frame of slack, because the base may revisit a timepoint when a run is resumed.
+    _FLOW_CACHE_SLACK = 1
+
+    def _flow_caches_for(self, context_tile, context_start, context_index, cumulative):
+        """Per-z flow caches for this tile, pruned to what a later timepoint can still read.
+
+        None when there is nothing to key on — an older base, or a caller driving `predict_slice`
+        directly — in which case `flow_metrics_for_frame` still memoises within the call.
+        """
+        if context_tile is None or context_start is None or context_index is None:
+            return None
+
+        with self._flow_lock:
+            if self._flow_cache_tile != context_tile:
+                self._flow_caches = {}
+                self._flow_cache_tile = context_tile
+
+            # `context_index` is t's offset in the window, so this is t in movie terms.
+            oldest = (context_start + context_index) - (cumulative // 2) - self._FLOW_CACHE_SLACK
+            for cache in self._flow_caches.values():
+                for key in [k for k in cache if k[0] < oldest]:
+                    del cache[key]
+            return _PerPlaneFlowCaches(self._flow_caches, self._flow_lock)
 
     # ── Sharing the flow between passes ───────────────────────────────────────
     #
@@ -421,10 +508,12 @@ class CoastalUtils(SegmentationUtils):
                 model_params.get('normalise'),
                 tuple(scales), cumulative, tuple(sorted(dropped)))
 
-    def _cached_features(self, feature_key, z, window, center, scales, cumulative, dropped):
+    def _cached_features(self, feature_key, z, window, center, scales, cumulative, dropped,
+                         flow_caches=None, window_offset=0):
         """`_plane_features`, memoised per z for as long as one window is being worked on."""
         if feature_key is None:
-            return self._plane_features(window, center, scales, cumulative, dropped)
+            return self._plane_features(window, center, scales, cumulative, dropped,
+                                        flow_caches, z, window_offset)
 
         with self._feature_lock:
             if self._feature_cache_key != feature_key[0]:
@@ -439,19 +528,23 @@ class CoastalUtils(SegmentationUtils):
         # would serialise the very z-loop `FLOW_WORKERS` exists to widen. Two threads racing on the
         # same key would each compute it and one would win; they cannot race here in practice
         # because `_map_z` visits each z once per group.
-        value = self._plane_features(window, center, scales, cumulative, dropped)
+        value = self._plane_features(window, center, scales, cumulative, dropped,
+                                     flow_caches, z, window_offset)
         with self._feature_lock:
             if self._feature_cache_key == feature_key[0]:
                 self._feature_cache[(feature_key, z)] = value
         return value
 
-    def _plane_features(self, window, center, scales, cumulative, dropped):
+    def _plane_features(self, window, center, scales, cumulative, dropped,
+                        flow_caches=None, z=0, window_offset=0):
         """One 2D plane's model input: `[W, Y, X]` window → `(frame, metrics)`.
 
         The expensive half (Farneback optical flow, ~94% of it) and the half that has to hold the
         GIL are split here so each can be mapped over z at its own width.
         """
-        frame, metrics = self._flow_metrics(window, center, scales, cumulative)
+        cache = None if flow_caches is None else flow_caches[z]
+        frame, metrics = self._flow_metrics(window, center, scales, cumulative,
+                                            flow_cache=cache, window_offset=window_offset)
         if dropped:
             metrics = {k: v for k, v in metrics.items() if k not in dropped}
         return frame, metrics
