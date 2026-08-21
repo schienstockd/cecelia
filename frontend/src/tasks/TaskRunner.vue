@@ -246,33 +246,29 @@ function onParamEdit(key: string, value: unknown) {
   if (optionTriggerKeys.value.has(key)) optionRefetch.schedule(null)
 }
 
-// A `chipSelect` with `optionsFromGroup` picks and orders the entries of a repeatable group, so
-// adding or removing an entry has to move with it. Reconciled HERE, with the group's keys from both
-// before and after the edit, because those two are what tell the cases apart: a key missing from the
-// selection is either an entry just added or one deliberately switched off, and from the new value
-// alone they look identical — guessing switches a pass back on the moment another is added.
-function syncGroupOrders(editedKey: string, before: unknown, after: unknown) {
-  const def = taskDef.value
-  if (!def) return
-  for (const p of collectGroupOrderParams(def.params)) {
-    if (p.optionsFromGroup !== editedKey) continue
-    const prevKeys = Object.keys((before ?? {}) as Record<string, unknown>).sort((a, b) => Number(a) - Number(b))
-    const nextKeys = Object.keys((after ?? {}) as Record<string, unknown>).sort((a, b) => Number(a) - Number(b))
-    const current = paramValues.value[p.key]
-    // Only an EXPLICIT selection is reconciled. An unset one means "all entries" (see
-    // `groupOrderKeys`) and stays unset, so a task nobody has reordered keeps behaving as it did.
-    if (!Array.isArray(current)) continue
-    paramValues.value[p.key] = syncGroupOrder(prevKeys, nextKeys, current.map(String))
-  }
+// Which entries of a repeatable group run, and in what order. A sibling key of the group's own —
+// `<groupKey>Order` — resolved away server-side by `_apply_group_order`, so no runner sees it.
+function onGroupOrderEdit(key: string, value: string[]) {
+  paramValues.value[key] = value
+  drafts.set(currentDraftKey.value, paramValues.value)
 }
 
-function collectGroupOrderParams(ps: TaskDef['params']): TaskDef['params'] {
-  const out: TaskDef['params'] = []
-  for (const p of ps ?? []) {
-    if (p.type === 'chipSelect' && p.optionsFromGroup) out.push(p)
-    if (p.params) out.push(...collectGroupOrderParams(p.params))
-  }
-  return out
+// Editing a repeatable GROUP has to move its order with it. Reconciled here, with the group's keys
+// from both before and after the edit, because those two are what tell the cases apart: a key
+// missing from the selection is either an entry just added or one deliberately switched off, and
+// from the new value alone they are identical — guessing switches a pass back on the moment another
+// is added.
+//
+// Only an EXPLICIT order is reconciled. An unset one means "every entry, in order" (see
+// `groupOrderKeys`), which stays true however many entries there are, so a group nobody has
+// reordered never acquires a stored order at all.
+function syncGroupOrders(editedKey: string, before: unknown, after: unknown) {
+  const key = `${editedKey}Order`
+  const current = paramValues.value[key]
+  if (!Array.isArray(current)) return
+  const keysOf = (v: unknown) =>
+    Object.keys((v ?? {}) as Record<string, unknown>).sort((a, b) => Number(a) - Number(b))
+  paramValues.value[key] = syncGroupOrder(keysOf(before), keysOf(after), current.map(String))
 }
 
 // ── Options that depend on the form ───────────────────────────────────────────────────────────────
@@ -557,6 +553,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           :modelValue="paramValues[p.key]"
           @update:modelValue="onParamEdit(p.key, $event)"
           @commit="onParamCommit"
+          @update:groupOrder="onGroupOrderEdit"
           :context="paramContext"
         />
       </div>

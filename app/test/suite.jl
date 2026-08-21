@@ -3130,6 +3130,60 @@ end
 # param spec (whose tip says "Calibrated at 1.5"). A second pass added in the GUI therefore ran at a
 # different embedding blur from the first, and on real data that mismatch turned 56% of the second
 # pass's objects into rims around the first pass's cells instead of standalone fragments.
+# Ordering and switching off entries of a repeatable group is offered for EVERY such group, by the
+# renderer, with no spec field — the reason it exists is a property of repeatable groups themselves
+# (entries are applied in turn, each filling only what an earlier one left, so the order is
+# semantic). It is resolved away here rather than forwarded: `_apply_group_order` rebuilds the group
+# so no handler, runner or Python task learns that ordering exists. The first version of this WAS a
+# hand-authored `modelsOrder` param plus a passthrough in one task's .jl — i.e. exactly the thing
+# every future grouped task would have had to remember.
+@testset "a repeatable group's run order is resolved into the group" begin
+    task = Cecelia._fun_name_map()["segment.coastal"]
+    @test "models" in Cecelia._repeatable_group_keys(task)
+
+    three = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "a"),
+        "1" => Dict{String,Any}("model" => "b"),
+        "2" => Dict{String,Any}("model" => "c")))
+
+    # no order at all: every entry, untouched. A task saved before the control existed, a chain node
+    # and a REPL call all look like this.
+    kept = Cecelia._apply_group_order(task, copy(three))
+    @test sort(collect(keys(kept["models"]))) == ["0", "1", "2"]
+
+    # reordered AND filtered, renumbered so a consumer's ascending walk IS the run order
+    ord = merge(copy(three), Dict{String,Any}("modelsOrder" => ["2", "0"]))
+    got = Cecelia._apply_group_order(task, ord)
+    @test !haskey(got, "modelsOrder")            # resolved away, never forwarded
+    @test sort(collect(keys(got["models"]))) == ["0", "1"]
+    @test got["models"]["0"]["model"] == "c"
+    @test got["models"]["1"]["model"] == "a"
+
+    # an empty list means run NOTHING — otherwise the off switch would be a no-op
+    none = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => String[])))
+    @test isempty(none["models"])
+
+    # a stale key outlives the group it was saved against; ignore it rather than fail the run
+    stale = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => ["1", "9"])))
+    @test length(stale["models"]) == 1
+    @test stale["models"]["0"]["model"] == "b"
+
+    # the same entry twice would offset its labels against itself and write nothing the second time
+    dup = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => ["0", "0", "1"])))
+    @test length(dup["models"]) == 2
+
+    # idempotent, because `run_task` is not the only thing that may normalise a bag of params
+    @test Cecelia._apply_group_order(task, copy(got))["models"] == got["models"]
+
+    # EVERY repeatable group gets it, not just the one that motivated it
+    reps = String[]
+    for (fun_name, t) in Cecelia._fun_name_map()
+        isempty(Cecelia._repeatable_group_keys(t)) || push!(reps, fun_name)
+    end
+    @test "segment.cellpose" in reps
+    @test length(reps) >= 3
+end
+
 @testset "a group's two sets of defaults agree" begin
     checked = 0
     for (fun_name, task) in sort(collect(Cecelia._fun_name_map()); by = first)

@@ -10,6 +10,8 @@ stardist, etc.).
 
 import contextlib
 import os
+import typing
+
 import numpy as np
 import dask.array as da
 import zarr
@@ -27,6 +29,47 @@ def count_labels(arr):
     Label IDs are assigned globally-incrementing across tiles AND timepoints, so this is the total
     number of segmented object instances (matching one row per object in the measured .h5ad)."""
     return int(np.unique(arr[arr > 0]).size)
+
+
+
+class TemporalWindow(typing.NamedTuple):
+    """The tile through time, plus everything a subclass needs to know about where it came from.
+
+    One object rather than six keyword arguments. It got to six one at a time — each new capability
+    (sharing the flow between passes, then between timepoints, then reading fewer channels) needed
+    one more fact about the window, and every addition meant a pass over every subclass and every
+    test stub that implements `predict_slice`. The facts are all about the SAME thing, so they
+    travel together.
+
+    frames:   `[W, ...tile axes]`, `W <= 2*TEMPORAL_RADIUS+1`. TRUNCATED at the start and end of the
+              movie rather than reflected or edge-padded, because repeating a frame invents zero
+              motion and mirroring invents motion outright.
+    index:    which frame of `frames` is the tile's OWN timepoint. Not always the middle, for the
+              truncation reason above.
+    start:    index in the MOVIE of `frames[0]`, so a frame — or a frame pair — can be named in
+              absolute terms. `index` is relative to the window and two different windows share it.
+    tile:     `(y0, y1, x0, x1)` in full-image coordinates: what stays the same as the window walks
+              forward in time, and what must not be conflated when it moves sideways.
+    channels: the image channel indices `frames` carries, in axis order, or None for all of them.
+              Narrowing the read renumbers the channel axis, so a subclass must MAP an image channel
+              index through this rather than index `frames` with it — see
+              `CoastalUtils._project_window`, and `_context_channels` for why the read is narrowed.
+    id:       identifies THIS window, stable across the model groups that share it and never reused.
+              The window is built once per (tile, timepoint) and handed to every group, so work that
+              is expensive and group-independent can be cached against it. Comparing the arrays, or
+              their `id()`, would both be wrong: two windows can hold equal pixels, and a freed
+              array's `id()` gets reused.
+
+    `start` + `tile` are what let a subclass carry work between TIMEPOINTS, and `id` deliberately
+    cannot — it changes with every window, which is what makes it safe for the per-window cache.
+    """
+
+    frames: object
+    index: int
+    start: int
+    tile: tuple
+    channels: object = None
+    id: int = 0
 
 
 class SegmentationUtils:
@@ -84,8 +127,8 @@ class SegmentationUtils:
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
         self.task_dir = params['taskDir']
-        # Hands out `context_id` — see `predict_slice`. Monotonic for the life of the instance so a
-        # value is never reused, which is the property a subclass caching against it depends on.
+        # Hands out `TemporalWindow.id`. Monotonic for the life of the instance so a value is never
+        # reused, which is the property a subclass caching against it depends on.
         self._context_counter = 0
         self.output_value_name = params.get('outputValueName', 'default')
 
@@ -107,33 +150,25 @@ class SegmentationUtils:
             return 0
         return int(round(um2 / max(self.phys_size_x * self.phys_size_y, 1e-12)))
 
-    # The companion to the `models` group: which entries run, in what order. `<group>Order` by
-    # convention, so the form control (a `chipSelect` with `optionsFromGroup`) and the runner agree
-    # on one name rather than each task inventing its own.
-    MODEL_ORDER_PARAM = 'modelsOrder'
-
-    def model_order(self, models):
+    @staticmethod
+    def model_order(models):
         """The model-group keys to run, in run order.
 
-        ORDER IS SEMANTIC here, which is why it is worth a control at all: groups are applied in
-        turn and `_write_tile_to_arr` fills only pixels an earlier group left, so the first group
-        gets first claim on every pixel. Running a small-object pass before the cell pass is a
-        different segmentation, not the same one relabelled.
+        ORDER IS SEMANTIC: groups are applied in turn and `_write_tile_to_arr` fills only pixels an
+        earlier group left, so the first group has first claim on every pixel. Running a
+        small-object pass before the cell pass is a different segmentation, not the same one
+        relabelled.
 
-        Absent means every group, ascending — a task saved before this existed, a chain node, and a
-        REPL call all carry no value and must keep running everything. Unknown keys are dropped
-        rather than raising: a saved param set outlives the group it was saved against, and a stale
-        key should not stop a run.
+        Which entries run, and in which order, is settled BEFORE this: `_apply_group_order` in
+        `task.jl` resolves the form's `<group>Order` by rebuilding the group itself — dropping the
+        entries that will not run and renumbering the rest into run order. So there is nothing to
+        select here and no task-specific param to read, and a caller constructing `models` by hand
+        (a REPL session, a test) gets the obvious behaviour.
+
+        Sorted NUMERICALLY, which is the one thing a plain `sorted` gets wrong: past nine entries
+        `'10'` sorts before `'2'`, silently reordering the passes.
         """
-        keys = sorted(models.keys(), key=lambda k: (len(str(k)), str(k)))
-        order = self.params.get(self.MODEL_ORDER_PARAM)
-        if not isinstance(order, (list, tuple)):
-            return keys
-        chosen = [str(k) for k in order if str(k) in models]
-        # Deduplicated in first-seen order: the same group twice would offset its own labels against
-        # itself and write nothing the second time, which is a confusing no-op rather than an error.
-        seen = set()
-        return [k for k in chosen if not (k in seen or seen.add(k))]
+        return sorted(models.keys(), key=lambda k: (len(str(k)), str(k)))
 
     def _context_channels(self):
         """Which image channels the temporal window has to carry — None for all of them.
@@ -145,50 +180,25 @@ class SegmentationUtils:
         Returns a SORTED tuple, and it is a property of the RUN, not of one model group: the window
         is built once per (tile, timepoint) and shared by every group (see `predict_slice`), so the
         answer has to be the union of what they all need or a later group is handed a window
-        missing its channel. The base passes the same tuple back as `context_channels` so the
+        missing its channel. The base passes the same tuple back as `TemporalWindow.channels` so the
         subclass can map an image channel index onto its position in the window it was given —
         without that the axis silently means something different and the wrong channel is
         segmented, which is why `_project_window` maps rather than indexes directly.
         """
         return None
 
-    def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None,
-                      context_channels=None, context_start=None, context_tile=None):
+    def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
 
-        `context`/`context_index`/`context_id` are passed ONLY when the subclass sets
-        `TEMPORAL_RADIUS > 0`, so a subclass that does not want them never has to accept them
-        (cellpose does not, and neither does any existing third-party subclass).
+        `window` is a `TemporalWindow` — the same tile through time — and is passed ONLY when the
+        subclass sets `TEMPORAL_RADIUS > 0`, so a subclass that does not want it never has to accept
+        it (cellpose does not, and neither does any existing third-party subclass). See
+        `TemporalWindow` for what it carries and why those facts travel together.
 
-        context:       the same tile through time, [W, ...tile axes], W <= 2*TEMPORAL_RADIUS+1
-        context_index: index of `tile`'s own timepoint within `context`. NOT always the middle —
-                       the window is TRUNCATED at the start and end of the movie rather than
-                       reflected or edge-padded, because repeating a frame invents zero motion and
-                       mirroring invents motion outright.
-        context_channels: the image channel indices `context` carries, in axis order, or None when
-                       it carries all of them — see `_context_channels`.
-        context_start: index in the MOVIE of `context[0]`, so a subclass can name a frame (or a
-                       frame pair) in absolute terms. `context_index` is relative to the window and
-                       two different windows share it; this does not.
-        context_tile:  the tile's `(y0, y1, x0, x1)` in full-image coordinates — what stays the same
-                       as the window walks forward in time, and what must NOT be conflated when it
-                       moves in space. Together with `context_start` it is what lets a subclass
-                       carry work between TIMEPOINTS (coastal caches optical flow across the ~94%
-                       of frames two consecutive windows share); `context_id` deliberately cannot,
-                       since it changes with every window.
-        context_id:    an integer identifying THIS window, stable across the model groups that
-                       share it and never reused for another one. The window is built once per
-                       (tile, timepoint) and handed to every group, so a subclass whose per-window
-                       work is expensive and group-independent — coastal's optical flow — can cache
-                       it against this and let a second pass reuse the first pass's. Comparing the
-                       arrays, or their `id()`, would both be wrong: two windows can hold equal
-                       pixels, and a freed array's `id()` gets reused.
-
-        `context` matches `tile` on every axis they share — including z when the valid-box skip has
-        narrowed this timepoint (see *Skipping the padding a drift correction added* below). A
-        subclass that takes its pixels from the window therefore never has to ask which of the two
-        was narrowed.
+        `window.frames` matches `tile` on every axis they share — including z when the valid-box skip
+        has narrowed this timepoint (see *Skipping the padding a drift correction added* below), and
+        excluding the channel axis when `_context_channels` has narrowed that. A subclass that takes
+        its pixels from the window therefore never has to ask which of the two was narrowed.
         """
         raise NotImplementedError
 
@@ -390,13 +400,11 @@ class SegmentationUtils:
                     # over it. On a coastal run that doubled both the read and the single most
                     # expensive step in the task.
                     #
-                    # `context_id` is what lets a subclass tell "the window I was just given" from
-                    # "a different window that happens to look alike": a counter, not `id()`, whose
-                    # values are never reused within a run. A subclass caches per-window work
-                    # against it (see `CoastalUtils._plane_features`); one that does not care
-                    # ignores it.
-                    context, context_index, context_id = None, None, None
-                    context_start, context_tile = None, None
+                    # Everything a subclass may need to know about the window travels with it —
+                    # which frames, where in the movie, which tile, which channels, and an id that
+                    # tells "the window I was just given" from "a different one that looks alike".
+                    # See `TemporalWindow`.
+                    window = None
                     if self.TEMPORAL_RADIUS > 0 and ia_t is not None:
                         # tile-extent reads across the clamped window; truncated at the movie
                         # edges, never reflected or edge-padded (see predict_slice docstring)
@@ -409,18 +417,18 @@ class SegmentationUtils:
                         # temporal subclass pixels that do not correspond to its own tile.
                         read_yx_full = (slice(read_yx[0].start + y0, read_yx[0].stop + y0),
                                         slice(read_yx[1].start + x0, read_yx[1].stop + x0))
-                        context = np.stack([
+                        frames = np.stack([
                             self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
                                                z_idx=ia_z if narrowed else None, z=(z0, z1),
                                                c_idx=ia_c if ctx_channels else None,
                                                c=ctx_channels)
                             for t2 in range(lo, hi + 1)])
-                        context_index = t - lo
-                        context_start = lo
-                        context_tile = (read_yx_full[0].start, read_yx_full[0].stop,
-                                        read_yx_full[1].start, read_yx_full[1].stop)
                         self._context_counter += 1
-                        context_id = self._context_counter
+                        window = TemporalWindow(
+                            frames=frames, index=t - lo, start=lo,
+                            tile=(read_yx_full[0].start, read_yx_full[0].stop,
+                                  read_yx_full[1].start, read_yx_full[1].stop),
+                            channels=ctx_channels, id=self._context_counter)
 
                     for model_key in model_keys:
                         model_params = models[model_key]
@@ -430,20 +438,14 @@ class SegmentationUtils:
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
 
-                        if context is not None:
+                        if window is not None:
                             # Narrowed to THIS timepoint's span, like the tile — the window is the
                             # tile through time and must match it on every axis. A subclass takes
                             # its pixels from the window, so a full-depth one silently re-segments
                             # the padding. Each frame's OWN span may differ — drift moves the stack
                             # — but the window is one array with one z extent, and t's span is the
                             # one the output is written back at.
-                            masks = self.predict_slice(tile, model_params, norm_p,
-                                                       context=context,
-                                                       context_index=context_index,
-                                                       context_id=context_id,
-                                                       context_channels=ctx_channels,
-                                                       context_start=context_start,
-                                                       context_tile=context_tile)
+                            masks = self.predict_slice(tile, model_params, norm_p, window)
                         else:
                             # unchanged call for every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)

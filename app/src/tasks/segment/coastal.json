@@ -24,15 +24,6 @@
       "tip": "Name for the output label set"
     },
     {
-      "key": "modelsOrder",
-      "label": "Passes to run",
-      "type": "chipSelect",
-      "optionsFromGroup": "models",
-      "optionLabelKey": "model",
-      "default": null,
-      "tip": "Click to include a pass; drag to reorder. Earlier passes claim pixels first"
-    },
-    {
       "key": "models",
       "label": "Segmentation models",
       "type": "group",

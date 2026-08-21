@@ -1051,6 +1051,79 @@ function _flatten_sections(task::CciaTask, params::Dict{String,Any})::Dict{Strin
     out
 end
 
+# ── Which entries of a repeatable group to run, and in what order ─────────────────────────────────
+#
+# Stacking entries in a `repeatable` group is how multi-pass work is expressed — a second cellpose
+# model that picks up what the first missed, a coastal fragment pass after a cell pass — and the
+# ORDER is semantic: entries are applied in turn and each fills only what an earlier one left, so
+# the first has first claim on every pixel.
+#
+# The form offers one chip row per repeatable group (`ParamRenderer`, automatically — no spec
+# declares it) and stores the picked entries, in pick order, under `<groupKey>Order`. That key is
+# resolved AWAY here, by rebuilding the group itself: the entries that will not run are dropped and
+# the rest renumbered into run order. So no runner, handler or Python task ever learns that ordering
+# exists — they keep reading the group they always read.
+#
+# Central for the same reason `_flatten_sections` is: the form, a saved chain node and a REPL call
+# must behave identically, and a per-task passthrough would be one more thing every new grouped task
+# has to remember (and the first one didn't).
+function _repeatable_group_keys(task::CciaTask)::Set{String}
+    spec = _task_spec(task)
+    ks = Set{String}()
+    isnothing(spec) && return ks
+    for sub in _composite_steps(task)
+        union!(ks, _repeatable_group_keys(sub))
+    end
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            if string(get(p, "type", "")) == "group" && get(p, "repeatable", false) === true
+                k = string(get(p, "key", ""))
+                isempty(k) || push!(ks, k)
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", []))
+    ks
+end
+
+"""
+    _apply_group_order(task, params) -> Dict
+
+Resolve every `<groupKey>Order` into the group it orders, then drop it.
+
+No value, or a non-list, means every entry in ascending key order — a task saved before the control
+existed, a chain node and a REPL call all carry nothing, and each must keep running everything. An
+empty list means run NOTHING, which is what makes the off switch real. Unknown keys are ignored
+rather than raising: a saved param set outlives the group it was saved against.
+"""
+function _apply_group_order(task::CciaTask, params::Dict{String,Any})::Dict{String,Any}
+    gkeys = _repeatable_group_keys(task)
+    isempty(gkeys) && return params
+    out = params; copied = false
+    for k in gkeys
+        okey = k * "Order"
+        haskey(params, okey) || continue
+        copied || (out = copy(out); copied = true)
+        order = out[okey]
+        delete!(out, okey)
+        grp = get(out, k, nothing)
+        grp isa AbstractDict || continue
+        order isa AbstractVector || continue
+        entries = Dict{String,Any}(string(kk) => vv for (kk, vv) in grp)
+        chosen = String[]
+        for o in order
+            s = string(o)
+            (haskey(entries, s) && !(s in chosen)) && push!(chosen, s)
+        end
+        # Renumbered into run order, so a consumer's plain ascending walk IS the order.
+        out[k] = Dict{String,Any}(string(i - 1) => entries[chosen[i]] for i in eachindex(chosen))
+    end
+    out
+end
+
 """
     _apply_spec_defaults(task, params) -> Dict
 

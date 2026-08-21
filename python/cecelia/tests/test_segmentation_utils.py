@@ -189,54 +189,28 @@ class PostProcessOnACropTest(unittest.TestCase):
 
 
 class ModelOrderTest(unittest.TestCase):
-    """Which model groups run, and in what order.
+    """Ascending key order IS run order.
 
-    Order is SEMANTIC: groups are applied in turn and `_write_tile_to_arr` fills only pixels an
-    earlier group left, so the first group has first claim on every pixel. A small-object pass run
-    before the cell pass is a different segmentation, not the same one relabelled — which is why
-    this is a control and not an implementation detail.
+    Which entries run, and in which order, is settled before Python sees it: `_apply_group_order`
+    (task.jl) rebuilds the group from the form's `<group>Order`, dropping what will not run and
+    renumbering the rest. So the only thing left here is to walk the keys the way the renumbering
+    wrote them — numerically, which is the one thing a plain `sorted` gets wrong past nine entries.
     """
 
-    def _utils(self, params):
+    def _order(self, models):
         from cecelia.utils.segmentation_utils import SegmentationUtils
-        u = SegmentationUtils.__new__(SegmentationUtils)
-        u.params = params
-        return u
+        return SegmentationUtils.model_order(models)
 
-    def test_no_order_runs_every_group_ascending(self):
-        """A task saved before this existed, a chain node and a REPL call all carry no value."""
-        models = {'1': {}, '0': {}, '2': {}}
-        self.assertEqual(self._utils({}).model_order(models), ['0', '1', '2'])
-
-    def test_an_explicit_order_is_honoured(self):
-        models = {'0': {}, '1': {}}
-        u = self._utils({'modelsOrder': ['1', '0']})
-        self.assertEqual(u.model_order(models), ['1', '0'])
-
-    def test_a_group_left_out_does_not_run(self):
-        models = {'0': {}, '1': {}}
-        self.assertEqual(self._utils({'modelsOrder': ['1']}).model_order(models), ['1'])
-
-    def test_running_nothing_is_a_choice_not_a_fallback(self):
-        """An empty list must not quietly mean 'all' — that would make the off switch a no-op."""
-        models = {'0': {}, '1': {}}
-        self.assertEqual(self._utils({'modelsOrder': []}).model_order(models), [])
-
-    def test_a_stale_key_is_dropped_rather_than_raising(self):
-        """A saved param set outlives the group it was saved against."""
-        models = {'0': {}}
-        u = self._utils({'modelsOrder': ['0', '7']})
-        self.assertEqual(u.model_order(models), ['0'])
-
-    def test_a_repeated_key_runs_once(self):
-        models = {'0': {}, '1': {}}
-        u = self._utils({'modelsOrder': ['0', '1', '0']})
-        self.assertEqual(u.model_order(models), ['0', '1'])
+    def test_every_group_runs_ascending(self):
+        self.assertEqual(self._order({'1': {}, '0': {}, '2': {}}), ['0', '1', '2'])
 
     def test_ten_or_more_groups_stay_in_numeric_order(self):
-        models = {str(i): {} for i in range(12)}
-        self.assertEqual(self._utils({}).model_order(models),
+        """`sorted` alone puts '10' before '2', which would silently reorder the passes."""
+        self.assertEqual(self._order({str(i): {} for i in range(12)}),
                          [str(i) for i in range(12)])
+
+    def test_a_single_group_is_unchanged(self):
+        self.assertEqual(self._order({'0': {}}), ['0'])
 
 
 if __name__ == '__main__':
@@ -293,9 +267,7 @@ class LabelSmoothingTest(unittest.TestCase):
         from cecelia.utils.segmentation_utils import SegmentationUtils
 
         class _Stub(SegmentationUtils):
-            def predict_slice(self, tile, model_params, norm_params=None,
-                              context=None, context_index=None, context_id=None,
-                              context_channels=None, context_start=None, context_tile=None):
+            def predict_slice(self, tile, model_params, norm_params=None, window=None):
                 raise NotImplementedError
 
         return _Stub({'taskDir': '/tmp', 'labelSmoothing': sigma}, None)

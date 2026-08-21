@@ -38,16 +38,6 @@ export interface ParamDef {
   hidden?: boolean
   /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown. */
   variant?: 'chips'
-  // chipSelect: draw one chip per ENTRY of the named repeatable group instead of from `options`, so
-  // the control grows and shrinks with the group. The value is the ordered list of entry keys that
-  // are switched ON — picking is "include this entry in the run", dragging is "run it in this
-  // order". Generic on purpose: any group-built control gets ordering by declaring this, rather than
-  // each one growing its own reorder widget. `reorderable` is what makes the picked chips draggable.
-  optionsFromGroup?: string
-  reorderable?: boolean
-  // chipSelect + optionsFromGroup: which field of an entry labels its chip (falls back to its
-  // position). Same idea as a group's own `labelKey`, which names the entry's header.
-  optionLabelKey?: string
   // Show this param only while the form satisfies these conditions: `{ "mode": "attach" }`, or
   // `{ "method": ["gaussian", "bilateral"] }` for one-of. Keys AND, values within a key OR, compared
   // as strings (a spec is JSON; a control's value is a string). This is the DECLARATIVE half of
@@ -79,7 +69,7 @@ export interface ParamDef {
   sortable?: boolean
   collapsed?: boolean
   params?: ParamDef[]
-  labelKey?: string    // group: param key whose value is shown in the entry header
+  labelKey?: string    // group: param key whose value names the entry — its header, and its chip in the order row
 }
 
 export interface TaskDef {

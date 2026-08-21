@@ -131,10 +131,6 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            outputValueName     = out_value_name,
            qcOutPath           = qc_out_path,
            models              = models_converted,
-           # Which model groups run, and in what order — see `SegmentationUtils.model_order`.
-           # Passed through as-authored (a list of group keys, or nothing at all); the Python side
-           # owns what an absent value means, so a chain node and the REPL agree with the form.
-           modelsOrder         = get(params, "modelsOrder", nothing),
            blockSize           = Int(get(params, "blockSize", 512)),
            overlap             = Int(get(params, "overlap", 64)),
            blockSizeZ          = Int(get(params, "blockSizeZ", 0)),
