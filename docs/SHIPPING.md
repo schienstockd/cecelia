@@ -546,7 +546,7 @@ the updated `pixi.toml` + `pixi.lock`.
   `cecelia = { path = "python", editable = true }` dep, which pulls the IO tier transitively so the
   pixi env has everything. `pixi.toml` remains the single source of truth **for the pins it owns**;
   the IO pins are `pyproject.toml`'s. (The old `napari/requirements.txt` is gone.)
-  See [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
+  See [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
 ### Key version pins
 

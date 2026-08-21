@@ -16,8 +16,8 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
   `grep -n -i '<thing>' docs/inventory/FRONTEND.md` gives you the whole answer.
 - **Two directories are excluded from default search — for different reasons.** Pass
   `--exclude-dir=archive --exclude-dir=todo` (grep) or skip `docs/archive/**` and `docs/todo/**`
-  (Glob) unless you are deliberately going there. Together they are 1.6 MB and contributed ~40–50% of
-  doc grep hits on ordinary terms.
+  (Glob) unless you are deliberately going there. Together they are 1.6 MB and supply ~40% of doc
+  grep hits on ordinary terms — measured at ~30% of the tokens a 20-grep discovery sweep returns.
   - `docs/archive/` (380 KB) — **not authoritative**, superseded by definition. Only open one if you
     want the historical ask.
   - `docs/todo/` (1.2 MB) — **authoritative but narrow**: a plan is reference for whoever is working
@@ -39,21 +39,21 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants |
-| [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants. **41 KB — slice it** |
+| [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus. **56 KB — slice it** |
 | [`docs/RUNNER.md`](docs/RUNNER.md) | The detached task runner (dev only): process, lifecycle, routes, staleness, chain claims |
 | [`docs/JOBS.md`](docs/JOBS.md) | Background jobs vs scheduler tasks: `jobs.jl` registry, process-kill primitives, data patches, export/import |
-| [`docs/UI.md`](docs/UI.md) | Frontend conventions, component catalog, module pages, plots, design tokens. **188 KB — slice it.** Mandatory subsets: [`ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md), [`ui/COPY.md`](docs/ui/COPY.md) |
-| [`docs/MODULES.md`](docs/MODULES.md) | Adding task functions and module pages; task JSON, registry, param widgets, composite pattern, the module file pattern |
+| [`docs/UI.md`](docs/UI.md) | Frontend conventions, component catalog, module pages, plots, design tokens. **190 KB — slice it.** Mandatory subsets: [`ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md), [`ui/COPY.md`](docs/ui/COPY.md) |
+| [`docs/MODULES.md`](docs/MODULES.md) | Adding task functions and module pages; task JSON, registry, param widgets, composite pattern, the module file pattern. **88 KB — slice it** |
 | [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) | User drop-in tasks: `<config_dir>/modules/`, `register_task!`, `/api/tasks/custom-modules` |
-| [`docs/NAPARI.md`](docs/NAPARI.md) | Napari: process model, restart rules, OME-ZARR layouts, byte order, contrast limits, layer props |
+| [`docs/NAPARI.md`](docs/NAPARI.md) | Napari: process model, restart rules, OME-ZARR layouts, byte order, contrast limits, layer props. **91 KB — slice it** |
 | [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) | Project/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions, calibration |
-| [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) | Segmentation pipeline: class hierarchy, base/nuc label types, tiling, output zarr, staged stores |
-| [`docs/TRACKING.md`](docs/TRACKING.md) | Cell tracking (btrack): gated-population input, track lineage in H5AD obs, vendored config |
+| [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) | Segmentation pipeline: class hierarchy, base/nuc label types, tiling, output zarr, staged stores. **81 KB — slice it** |
+| [`docs/TRACKING.md`](docs/TRACKING.md) | Cell tracking (btrack): gated-population input, track lineage in H5AD obs, vendored config. **50 KB — slice it** |
 | [`docs/DATAMODEL.md`](docs/DATAMODEL.md) | AnnData conventions: `.h5ad` layout, feature names, `label_props`, mesh paths |
-| [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track |
-| [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions |
-| [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec |
+| [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track. **56 KB — slice it** |
+| [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions. **102 KB — slice it** |
+| [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec. **52 KB — slice it** |
 | [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export |
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
 | [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers** |

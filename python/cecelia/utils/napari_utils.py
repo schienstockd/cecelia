@@ -12,7 +12,7 @@ The sibling ``coastal`` project **imports these helpers** — its ``coastal/napa
 ``add_*`` calls here and keeps only coastal-specific orchestration (viewer setup, array unpacking, its
 µm→pixel track matrix). coastal already installs cecelia editable and uses cecelia's IO helpers, so the
 napari layer conventions are single-sourced here rather than duplicated — coastal renders identically
-by SHARING this code, not mirroring it. See ``docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md``.
+by SHARING this code, not mirroring it. See ``../coastal/docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md``.
 
 Conventions (kept consistent across EVERY layer so napari's unit-aware rendering stays enabled — a
 mismatch makes napari warn "Inconsistent units across layers" and disable it for ALL layers):

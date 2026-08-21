@@ -449,7 +449,7 @@ def zarr_data_to_list(zarr_store, multiscales=None, mode='r'):
 # here so the bridge, the pipeline and any consumer (e.g. coastal) read OME-ZARR geometry ONE way.
 #
 # THIS IS ALSO WHERE v2-vs-v3 IS ANSWERED, for the same reason flat-vs-series is answered here: one
-# resolver per question, per language (CLAUDE.md → *OME-ZARR dual-format*). Do not add a parallel set
+# resolver per question, per language (docs/ARCHITECTURE.md → *OME-ZARR dual-format*). Do not add a parallel set
 # of v3 readers next to these — route through `ngff_attrs`.
 
 def ngff_attrs(attrs):
@@ -479,7 +479,7 @@ def write_ngff_attrs(group, updates):
     store would keep whatever multiscales it already had and silently ignore the update. That is the
     failure mode for a calibration RE-stamp (`resync_ome_meta!` / `sync_zarr_calibration!`, and
     `write_calibration` here): the numbers appear to have been written and are not there, which
-    `CLAUDE.md` → *Calibration — three copies, one stamp* exists to prevent.
+    `docs/OBJECTMODEL.md` → *Calibration — three copies, one stamp* exists to prevent.
 
     Detected from the store's own zarr format rather than a flag, so a caller never has to know.
     """

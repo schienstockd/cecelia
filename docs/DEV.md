@@ -578,7 +578,7 @@ tested. Prefer that over a fourth copy — but keep the shared file dependency-f
 
 **Git workflow:** branch + PR for everything; **never commit or push to `main`** (releases are
 tagged off `main` after merge). Full conventions — branch naming, commit style, how PRs are
-opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). **Agents: ask before every commit
+opened, release tagging — are under *Branches* and *Commits* below. **Agents: ask before every commit
 and before opening/pushing a PR — explicitly, each time; don't commit or push proactively** (a
 "go ahead" to do the work is not approval to commit it).
 
@@ -587,7 +587,7 @@ PR url — that request itself calls the commit), first volunteer honest reserva
 what's unverified (e.g. never run in a browser, an untested regression surface), plus real
 limitations (perf, edge cases, silent no-ops) — as a short prioritized list. Don't reassure or wait
 to be asked "any reservations?". Surface the risk at the decision point, then commit on the go-ahead.
-See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
+See *Commits* below.
 
 **Dev dir config — single source of truth:** `cecelia-feijoa/.env`
 ```

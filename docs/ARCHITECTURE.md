@@ -603,7 +603,7 @@ each task's co-located Python runner; `python/` is the **installable IO library*
 > (e.g. `"writers/…"`) under `python/cecelia/`, and sets `PYTHONPATH=python/` so runners still
 > `import cecelia.*`. Dependency split:
 > the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
-> `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
+> `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
 **Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
 

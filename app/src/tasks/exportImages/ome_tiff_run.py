@@ -8,7 +8,7 @@ is the input for the `.ims` route too. The route this replaces went OME-TIFF -> 
 Z spacing. So the `<Pixels>` block written here is the deliverable, not a detail.
 
 Calibration is passed IN by the Julia handler, read from `ccid.json` — the authoritative copy (see
-CLAUDE.md -> *Calibration — three copies, one stamp*). This runner deliberately does NOT re-derive it
+docs/OBJECTMODEL.md -> *Calibration — three copies, one stamp*). This runner deliberately does NOT re-derive it
 from the store's own OME-XML, which is a derived copy and can have drifted.
 
 Written plane-by-plane through `TiffWriter.write(<iterator>, shape=…, dtype=…)`: a full
@@ -139,7 +139,7 @@ def run(params):
     # an uncalibrated image. Writing both costs nothing and makes XY self-describing everywhere.
     #
     # Derived from the SAME `cal` the OME-XML is written from, never a second source — the two copies
-    # must agree (CLAUDE.md → *Calibration — three copies, one stamp*).
+    # must agree (docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*).
     #
     # Z spacing has NO plain-TIFF tag. That is the whole reason this task exists rather than exporting
     # a plain TIFF, so it stays OME-only and a tag-reader legitimately sees no Z.

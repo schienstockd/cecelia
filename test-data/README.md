@@ -66,7 +66,7 @@ the layout) after any change to the anisotropy `uns` block; keep it tiny.
 Two OME-ZARR **image stores** holding the *same* real pixels, written by `bioformats2raw 0.12.1` in
 the two on-disk formats. They exist because the v2-vs-v3 read path fails **silently** when it is
 wrong — a missed `attributes.ome` nesting makes `read_axes`/`read_scale` return `None`, which becomes
-"1 µm, 1 second per frame" downstream (`CLAUDE.md` → *Calibration — three copies, one stamp*). Only a
+"1 µm, 1 second per frame" downstream (`docs/OBJECTMODEL.md` → *Calibration — three copies, one stamp*). Only a
 real store of each format catches that, so both are committed. See `docs/todo/ZARR_V3_PLAN.md`.
 
 ```

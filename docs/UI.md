@@ -1375,7 +1375,7 @@ active, shown on every module page), and a `pi-sync` **"Resync flagged from file
 physical-size/timing `meta` was tracked at all. Their OME-ZARR is already correct, so this
 re-derives `meta` straight from the `"default"` (original bioformats2raw) zarr, deliberately never
 whichever version is currently `active` — drift/cellpose-correct outputs carry no OME calibration
-metadata at all, see CLAUDE.md → *OME-ZARR dual-format* — rather than asking the user to type
+metadata at all, see docs/ARCHITECTURE.md → *OME-ZARR dual-format* — rather than asking the user to type
 known-good values back in or re-import. Both header buttons operate on `flaggedUids`, not the
 checkbox selection.
 

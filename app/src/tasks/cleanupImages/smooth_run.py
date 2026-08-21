@@ -8,7 +8,7 @@ Why it exists: on photon-limited resonance data (86-95% of voxels exactly zero) 
 triangle threshold lands *inside* the signal, because the histogram has no background population to
 find — measured on `zolIMa/fXgbTl`, the reference channel kept 8.6% of its signal past background
 subtraction, 80% after smoothing. So this runs BETWEEN drift correction and AF. Full record:
-`docs/todo/SMOOTHING_PLAN.md`, and coastal's `docs/SMOOTHING.md`.
+`docs/todo/SMOOTHING_PLAN.md`, and `../coastal/docs/SMOOTHING.md` in the sibling repo.
 
 Two invariants, both load-bearing and both measured (they live in `coastal.smooth`; this file only
 has to not break them):

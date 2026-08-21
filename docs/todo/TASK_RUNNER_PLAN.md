@@ -358,7 +358,7 @@ the Quit/Restart asymmetry (D3) land here — without them the thing is not cont
 
 > **Also settled here: the runner runs in the `api/` environment** (`api/runner.jl`), not a new one.
 > `Cecelia` is path-sourced by three environments, each with its own committed `Manifest.toml` that has
-> to be re-resolved together (`CLAUDE.md` → *Adding a Julia dependency to `app/`*). The runner needs
+> to be re-resolved together (`docs/ARCHITECTURE.md` → *Adding a Julia dependency to `app/`*). The runner needs
 > exactly what the API server needs — Cecelia, HTTP, JSON3 — so a fourth manifest would be pure
 > maintenance cost for no isolation.
 

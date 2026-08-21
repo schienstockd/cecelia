@@ -27,7 +27,7 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
 ## Genuinely new (scope)
 
 1. `HypothesisTests.jl` added to `app/Project.toml` — **triple-instantiate** `app/`, `api/`,
-   `pluto/` (per CLAUDE.md → *Adding a Julia dependency to `app/`*).
+   `pluto/` (per docs/ARCHITECTURE.md → *Adding a Julia dependency to `app/`*).
 2. `app/src/plotting/stats.jl` — pure Julia stats module with `StatsResult`.
 3. `PlotDataResponse.comparisons?: Comparison[]` — optional field on the existing response.
 4. Marks builder in `frontend/src/plots/plot.ts` — brackets + p-value/star text as native Plot
@@ -180,5 +180,5 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
 - `frontend/src/components/plots/PlotChart.vue` — Plot spec renderer + SVG export.
 - `frontend/src/composables/useSummaryData.ts:18-60` — shared canvas bag.
 - `frontend/src/composables/useViewState.ts` — the persistence primitive.
-- `CLAUDE.md` → *Adding a Julia dependency to `app/`* — triple-manifest rule.
+- `docs/ARCHITECTURE.md` → *Adding a Julia dependency to `app/`* — triple-manifest rule.
 - `WHATS_NEW_PLAN.md`, `SKETCH_ENGINE_PLAN.md` — downstream consumers of `StatsResult`.

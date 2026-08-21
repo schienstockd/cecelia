@@ -89,7 +89,7 @@ end
 Directory whose `.zattrs` carries the NGFF `multiscales` — the bioformats2raw series wrapper
 (`zarr/0`) or, for a flat `create_multiscales` store, `zarr` itself. Julia mirror of Python's
 `zarr_utils.series_base`; the ONE place on this side that decides the layout, so a reader or a
-writer can't quietly understand only one of the two (CLAUDE.md → **OME-ZARR dual-format**).
+writer can't quietly understand only one of the two (docs/ARCHITECTURE.md → **OME-ZARR dual-format**).
 
 Detection is STRUCTURAL — does `0/.zattrs` actually carry a `multiscales` attr — not the path
 suffix, because both layouts have a `0/` child: a group in the series layout, the level-0 ARRAY
@@ -107,7 +107,7 @@ NGFF attributes of a zarr GROUP directory, for **either** zarr format. `nothing`
 carries no readable group metadata.
 
 This is the Julia half of the v2-vs-v3 question, and it lives next to `series_base` on purpose: one
-resolver per question per language (CLAUDE.md → **OME-ZARR dual-format**). Do NOT add a parallel set
+resolver per question per language (docs/ARCHITECTURE.md → **OME-ZARR dual-format**). Do NOT add a parallel set
 of v3 readers — route through here.
 
 * zarr v2 / NGFF 0.4 — `.zattrs`, attributes at the **top level**

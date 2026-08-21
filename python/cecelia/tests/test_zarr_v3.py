@@ -2,7 +2,7 @@
 
 Why this needs pinning: NGFF 0.5 moved every attribute one level down, under `ome`. Nothing errors
 when a reader misses that — `read_axes`/`read_scale` simply return None, and downstream that becomes
-"1 µm, 1 second per frame" (CLAUDE.md → *Calibration — three copies, one stamp*). A v3 store would
+"1 µm, 1 second per frame" (docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*). A v3 store would
 look like it worked and produce wrong physical numbers, which is the failure mode these tests exist
 to make impossible. See docs/todo/ZARR_V3_PLAN.md.
 

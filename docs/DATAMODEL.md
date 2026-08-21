@@ -379,7 +379,7 @@ gating engine, and gate↔track composition.
 
 **Never touch `.h5ad` (or its HDF5 internals) directly. There are dedicated readers and writers
 in both languages — use them. This applies to every cell-level read and write.** See
-[`docs/DATAMODEL.md`](docs/DATAMODEL.md) → *Reading `.h5ad`* for the full idiom.
+*Reading and writing `.h5ad` — the full rule* below for the full idiom.
 
 The interface is the same chain in both languages — build a view, refine it, finish with a
 terminal verb. `as_df` reads a label-keyed DataFrame; `add_obs(df).save!`/`.save()` writes one

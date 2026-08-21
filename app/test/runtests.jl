@@ -113,7 +113,7 @@ end
 # the hard parts by luck rather than construction, and the hard parts are real: `params` nests
 # through `section`/`group` containers, and the key type depends on WHERE the spec came from — a spec
 # read from disk (`JSON3.read`) has SYMBOL keys, one from `Cecelia._task_spec` has STRING keys (see
-# CLAUDE.md → *JSON3 gotcha*). A walker that handles only one of those silently sees no params, which
+# app/CLAUDE.md → *JSON3 gotcha*). A walker that handles only one of those silently sees no params, which
 # reads as "nothing to report" rather than as a broken walk.
 
 """A spec param's field, whichever key type the spec was parsed with (Symbol or String)."""
