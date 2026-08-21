@@ -36,9 +36,12 @@ Parameter contract (JSON written by Julia):
   foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma
 """
 
+import contextlib
+import io
 import json
 import datetime
 import os
+import time
 
 import numpy as np
 
@@ -379,7 +382,7 @@ def run(params):
 
     use_gpu, gpu_device = torch_device()
     log.log(f'>> GPU: {gpu_device if use_gpu else "none (CPU)"}')
-    log.log(f'>> {len(movies)} movie(s) to prepare')
+    log.log(f'>> reading {len(movies)} movie(s) — project, normalise, crop (no flow yet)')
 
     # ── progress ────────────────────────────────────────────────────────────────────────────────
     # One monotonic scale over the whole run: a tick per movie prepared, one for the flow metrics,
@@ -530,12 +533,29 @@ def run(params):
     #
     # The two reductions are `reduce_metrics`: drop the unwanted metrics here rather than after the
     # split, and hold the rest as float16.
+    #
+    # coastal prints ~40 lines per call — a banner, a per-metric dtype list, and "PROCESSING 1 MOVIES"
+    # (one, because we hand it one sequence at a time). At 60 sequences that is ~2400 lines of
+    # identical output, which buries this task's own log and reads as if the flow were being computed
+    # twice. Captured and replaced with one line per sequence carrying the thing the banner never
+    # said: how long it took. Released on failure, so a crash still shows whatever coastal managed to
+    # say before it.
     all_frames, all_metrics = [], []
     for i, seq in enumerate(sequences):
-        seq_frames, seq_metrics = prepare_data_for_unet_batch(
-            [seq], temporal_scales=scales, cumulative_window=cumulative)
+        t_seq = time.perf_counter()
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                seq_frames, seq_metrics = prepare_data_for_unet_batch(
+                    [seq], temporal_scales=scales, cumulative_window=cumulative)
+        except Exception:
+            log.log(captured.getvalue())
+            raise
         all_frames.append(seq_frames[0])
         all_metrics.append(reduce_metrics(seq_metrics[0], dropped))
+        log.log(f'>>   [{i + 1}/{len(sequences)}] flow metrics: '
+                f'{seq.shape[0]} frames of {seq.shape[1]}x{seq.shape[2]} '
+                f'in {time.perf_counter() - t_seq:.1f}s')
         # The source plane sequence is a normalised copy inside `seq_frames` now; holding the
         # original as well costs a frame stack per movie for nothing.
         sequences[i] = None

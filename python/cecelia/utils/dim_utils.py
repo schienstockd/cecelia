@@ -46,10 +46,6 @@ class DimUtils:
 
     im_shape = list(im_shape)
 
-    print(im_shape)
-    print(im_dim)
-    print(im_dim_order)
-
     if im_shape != im_dim:
       im_shape.reverse()
 
