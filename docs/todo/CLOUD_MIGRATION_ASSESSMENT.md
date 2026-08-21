@@ -1,10 +1,12 @@
 # Cloud migration: tenancy scope + headless-render spike
 
 > **STATUS: assessed and declined, 2026-08-21.** Dominik's call: not realistic. This is kept as a
-> decision record, not a plan — nothing here is scheduled. If the cloud mandate returns, start from
-> sections 3b and 3c, which are the parts that decide it. The one code change that came out of this
-> is a correction to `docs/INSTALL.md` (the headless `offscreen` advice was wrong); it is unrelated
-> to the cloud question and stands on its own.
+> decision record, not a plan — nothing here is scheduled. **One exception: NCI ARE + VirtualGL
+> (section 3d) is not closed** — it was raised after the decision and is the only route that
+> survives the findings below. If the cloud mandate returns, start at 3d, then 3b and 3c.
+>
+> The one code change that came out of this is a correction to `docs/INSTALL.md` (the headless
+> `offscreen` advice was wrong); it is unrelated to the cloud question and stands on its own.
 >
 > The findings that bear on "not realistic", so they need not be re-derived:
 > - A network-hosted working store is not viable (3b): 12.4 ms/chunk on CIFS, saturating at ~748
@@ -234,6 +236,43 @@ Verified on a real 249 MB / 3,849-file store (`zolIMa/0/fXgbTl/ccidSmoothed.ome.
 scratch is standard cloud practice, not a workstation under a desk. Conceding that one point is
 what makes the rest work; conceding a share-backed `projects_dir` makes the product unusable at
 the numbers in section 3b.
+
+## 3d. The one route that is NOT closed: NCI ARE + VirtualGL
+
+Raised 2026-08-21 by a colleague, after the assessment above was already declined. It is recorded
+here because it is the only proposal that survives sections 2 and 3b, and it should not have to be
+rediscovered.
+
+**Why it fits.** NCI's ARE (Australian Research Environment) offers GPU-backed virtual desktops with
+VirtualGL. That is *exactly* the topology section 2 concluded was the only viable one — a real X
+server plus hardware GL reached through VirtualGL — except it is somebody else's infrastructure
+rather than an image we have to build. Both of section 2's blockers (`offscreen` and `eglfs` give no
+GL context; an X server becomes a hard dependency) stop being our problem.
+
+**The colleague's evidence, and its limit.** They report 2D annotation in QuPath on NCI with
+tolerable lag, and are explicit that they have not tried 3D/4D. That distinction matters more
+than it sounds: 2D annotation dirties a small region per interaction, which is the case VNC-style frame
+differencing handles well. Rotating a 3D MIP changes **every pixel in the viewport every frame** —
+the worst case for that encoder, on top of the volume-rendering cost itself. So it is good evidence
+for 2D and nearly none for 3D+time. The test that would settle it is a rotate-and-scrub on real 4D
+data in an ARE GPU desktop.
+
+**The risk that is NOT about pixels — inodes.** `zolIMa/0/ldYr8J/ccidSmoothed.ome.zarr` is 200,998
+chunk files (section 3b). NCI `/scratch` and `/g/data` carry **file-count** quotas, not only
+capacity, so ~200k files *per image* is a policy problem before it is a performance one. Lustre
+handles small-file metadata far better than the CIFS measured in 3b, so the latency picture would
+improve — but the file count does not. This is where `.ccbundle` (section 3c) stops being an
+optimisation and becomes the entry ticket: one `.zarr.tar` per store makes the footprint O(stores)
+instead of O(chunks).
+
+**Order to check, cheapest gate first.**
+1. File-count quota on the target NCI project. A policy answer, one email, and it gates everything.
+2. A 3D+time rotate-and-scrub in an ARE GPU desktop on real data — the interactive-latency question
+   this assessment never answered.
+3. Cecelia's pixi env under ARE (no root; the env is not relocatable, see `docs/INSTALL.md`).
+
+Unchanged by this: interactive latency is still unmeasured. NCI removes the *infrastructure*
+blockers, not the open question.
 
 ## 4. Reservations
 
