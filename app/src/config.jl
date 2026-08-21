@@ -516,6 +516,41 @@ function task_worker_threads()::Int
     n >= 1 ? n : default_task_worker_threads()
 end
 
+# The ceiling the throttle offers. Not `Sys.CPU_THREADS`: a task may legitimately be given more
+# threads than the box has cores when it is I/O-bound between them, and the slider is a perf knob, not
+# a safety one. Wide enough to be silly on purpose, so the number is the user's judgement.
+const TASK_WORKERS_MAX = 64
+
+"""
+    set_task_worker_threads!(n) -> Int
+
+Persist `[tasks].workerThreads` in the user's `custom.toml` and hot-reload, so the NEXT task spawns
+with it. `n <= 0` REMOVES the key, which is how you get back to the machine-derived default rather
+than a number that merely happens to equal it today — the derived value follows the box, a written
+one does not. Returns the value now in effect.
+
+Mirrors `set_pool_limit!` (merged write, so unrelated keys survive) with one difference that matters:
+a pool resize takes effect on the next *admission*, whereas this reaches a task through an env var
+`run_py` sets at SPAWN time, so a task already running keeps the threads it started with. Nothing can
+change that — the variable is read when the child imports numpy.
+"""
+function set_task_worker_threads!(n::Integer)::Int
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    tasks = get(cfg, "tasks", Dict{String,Any}())
+    if n <= 0
+        delete!(tasks, "workerThreads")
+    else
+        tasks["workerThreads"] = clamp(Int(n), 1, TASK_WORKERS_MAX)
+    end
+    # An empty `[tasks]` table left behind reads as a setting that exists and is blank.
+    isempty(tasks) ? delete!(cfg, "tasks") : (cfg["tasks"] = tasks)
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    task_worker_threads()
+end
+
 # ── The detached task runner (Settings → System) ──────────────────────────────────────────────────
 #
 # Whether tasks execute in a SEPARATE process, so restarting the backend does not kill work in flight.

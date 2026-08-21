@@ -5,9 +5,16 @@
   Under each slider a "running / limit" line + mini bar shows how many tasks are executing in that
   pool right now (polled from /api/pools while open — there is no pool:* WS event). Compact 2×2 grid:
   cpu/gpu on the first row, io/network on the second. Lives in a popover off the Task Manager.
+
+  Below the pools, the THREAD budget: how wide one task may go, as opposed to how many run at once.
+  Same control because it is the same question — how hard may this machine work — and both are
+  properties of the box rather than of any one task (`cpu_utils.py` on why it is not a task param).
+  It has an "auto" state the pools do not: absent config means a number derived from the core count,
+  which is not the same as the identical number written down. Applies to the NEXT task started.
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { threadReadout, threadTip, clampWorkers, type ThreadBudget } from '../utils/threadBudget'
 
 interface PoolInfo { name: string; limit: number; running?: number; queued?: number }
 const POOL_ORDER = ['cpu', 'gpu', 'io', 'network']
@@ -64,8 +71,40 @@ async function setPool(name: string, limit: number) {
   finally { poolBusy.value = null }
 }
 
+// ── thread budget ───────────────────────────────────────────────────────────
+const threads     = ref<ThreadBudget | null>(null)
+const threadsBusy = ref(false)
+const threadText  = computed(() => threadReadout(threads.value))
+const threadHint  = computed(() => threadTip(threads.value))
+
+async function loadThreads() {
+  try {
+    const res = await fetch('/api/tasks/threads')
+    if (res.ok) threads.value = await res.json() as ThreadBudget
+  } catch { /* backend may not be ready */ }
+}
+
+// `workers = 0` clears the setting and returns to the derived default — a distinct action, not the
+// bottom of the slider's range, which is why "Auto" is its own button.
+async function setThreads(workers: number) {
+  const b = threads.value
+  if (!b) return
+  threadsBusy.value = true
+  try {
+    const res = await fetch('/api/tasks/threads/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workers }),
+    })
+    if (res.ok) {
+      const d = await res.json() as { workers: number; derived: boolean }
+      threads.value = { ...b, workers: d.workers, derived: d.derived }
+    }
+  } catch { /* ignore */ }
+  finally { threadsBusy.value = false }
+}
+
 let timer: number | undefined
-onMounted(() => { loadPools(); timer = window.setInterval(refreshOccupancy, 1500) })
+onMounted(() => { loadPools(); loadThreads(); timer = window.setInterval(refreshOccupancy, 1500) })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
@@ -92,6 +131,26 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
       </div>
     </div>
     <p class="pt-hint cc-muted cc-fs-xs">Lower to throttle, raise to run more at once. Saved automatically.</p>
+
+    <!-- threads per task: the other axis — how WIDE one task may go, not how many run -->
+    <div v-if="threads" class="pt-threads">
+      <div class="pt-head">Threads per task</div>
+      <div class="pt-cell" v-tooltip.bottom="threadHint">
+        <div class="pt-cell-head">
+          <span class="pt-label">Worker threads</span>
+          <span class="pt-val" :class="{ auto: threads.derived }">{{ threadText }}</span>
+        </div>
+        <input type="range" class="pt-slider" min="1" :max="threads.max"
+               :value="threads.workers" :disabled="threadsBusy"
+               @input="threads.workers = clampWorkers(+($event.target as HTMLInputElement).value, threads.max)"
+               @change="setThreads(clampWorkers(+($event.target as HTMLInputElement).value, threads.max))" />
+      </div>
+      <button v-if="!threads.derived" class="cc-btn cc-btn-bare cc-btn-dense cc-fs-2xs pt-auto"
+              :disabled="threadsBusy"
+              v-tooltip.bottom="'Back to the number derived from this machine'"
+              @click="setThreads(0)">Reset to auto</button>
+      <p class="pt-hint cc-muted cc-fs-xs">Applies to the next task started.</p>
+    </div>
   </div>
 </template>
 
@@ -116,4 +175,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .pt-bar-fill { height: 100%; background: var(--cc-accent); transition: width 0.3s; }
 
 .pt-hint { margin: 0.55rem 0 0; }
+
+/* thread budget — separated from the pools by a rule, because it rations a different thing */
+.pt-threads { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid var(--cc-border); }
+.pt-val.auto { color: var(--cc-text-dim); }
+.pt-auto { margin-top: 0.35rem; color: var(--cc-accent); }
 </style>

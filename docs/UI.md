@@ -1465,6 +1465,15 @@ its scrolling body so the handle stays put while the panel scrolls.)
 
 Task definitions are loaded once per session via `useTaskDefs`, which calls `GET /api/tasks/definitions?category=X`.
 
+**Threads per task** (in the same `PoolThrottle` popover, under a rule below the pool sliders): one
+slider for `CECELIA_TASK_WORKERS` — how WIDE one task may go, as opposed to how many run at once.
+`GET`/`POST /api/tasks/threads[/set]`. Two things the pool sliders do not have: the readout reads
+`auto · 8` when the number is derived from the core count rather than configured (a bare `8` reads as
+a choice someone made, and the derived one follows the hardware), and a **Reset to auto** button that
+clears the setting rather than writing the derived number down. The tooltip says the change lands on
+the next task started, because the value reaches a task as an env var set at spawn. Formatting logic
+is in `utils/threadBudget.ts` (`threadReadout`/`threadTip`/`clampWorkers`), tested there.
+
 **Pool dropdown**: a `<select>` populated from `GET /api/pools`. On task switch, automatically
 selects the pool matching the task def's `resource_pool` field. The chosen pool name is sent as
 `poolName` in the `task:run` WS message, which `handle_task_run` in `sockets.jl` passes to

@@ -198,6 +198,31 @@ A task that has **measured** a need for more raises it locally with
 `cecelia.utils.cpu_utils.limit_blas_threads`. Do not raise it on a hunch; the table above is what
 "obviously wants all cores" actually looks like when measured.
 
+**`CECELIA_TASK_WORKERS` is settable live**, in the same popover as the pool sliders (`PoolThrottle`,
+Task Manager / module pages / Chain page) via `GET`+`POST /api/tasks/threads[/set]` →
+`set_task_worker_threads!`. It belongs there because it answers the same question the pool limits do —
+how hard may this machine work — and a number that can only be changed by hand-editing `config.toml`
+is a number nobody changes.
+
+Two things differ from a pool slider and both are surfaced in the UI:
+
+- **It applies to the NEXT task started**, not the running one. The value reaches a task as an env var
+  `run_py` sets at spawn, and it is read when the child imports numpy — nothing can retrofit it. A
+  pool resize, by contrast, takes effect at the next admission.
+- **It has an `auto` state.** No `[tasks].workerThreads` key means the machine-derived number, and
+  clearing the setting REMOVES the key rather than writing today's derived value — a written 16 stops
+  following the box the moment the config moves to another machine. The readout says `auto · 16` for
+  the first and `16` for the second, because they are not the same setting.
+
+With the detached runner enabled, the set is **forwarded to the runner** (`/threads/set`) as well as
+applied locally: the runner is then the process that spawns Python, so it is the process whose config
+decides the budget. Best-effort — a runner that is down does not fail the control, the same rule the
+pool limit follows.
+
+`BLAS_THREADS_PER_TASK` stays a constant, deliberately: it is a measured number (the table above),
+not a preference, and the workload that wants it changed wants `limit_blas_threads` at the call site
+instead.
+
 ### Queue visibility — :queued vs :running
 
 A node that is waiting for a pool slot and a node actively executing are **different states**, and

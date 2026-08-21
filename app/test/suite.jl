@@ -13250,6 +13250,35 @@ end
 # `foregroundBlurSigma` (docs/SEGMENTATION.md), so `memTom` stays reproducible from a chain or the
 # REPL. Pinned because "the form no longer offers it" and "the runner no longer reads it" are
 # different things, and only the first one is wanted.
+# ── task thread budget ───────────────────────────────────────────────────────
+# The CPU sibling of the pool limits, and the same reason for a live setter: a number that can only be
+# changed by hand-editing a config file is one nobody changes. What is worth pinning is the DERIVED
+# state — clearing the setting must go back to following the box, not freeze today's derived number.
+@testset "task thread budget round-trips and clears" begin
+    mktempdir() do dir
+        withenv("CECELIA_DEV_DIR" => dir) do
+            init_cecelia!()
+            derived = default_task_worker_threads()
+            @test task_worker_threads() == derived          # nothing configured yet
+
+            @test set_task_worker_threads!(3) == 3
+            @test task_worker_threads() == 3
+            cfg = Cecelia.TOML.parsefile(Cecelia.custom_toml_path())
+            @test cfg["tasks"]["workerThreads"] == 3
+
+            # clamped to the offered ceiling, not written through
+            @test set_task_worker_threads!(10_000) == Cecelia.TASK_WORKERS_MAX
+
+            # …and clearing REMOVES the key — a written copy of the derived number would stop
+            # following the machine the moment the config moved to another box.
+            @test set_task_worker_threads!(0) == derived
+            cfg2 = Cecelia.TOML.parsefile(Cecelia.custom_toml_path())
+            @test !haskey(get(cfg2, "tasks", Dict{String,Any}()), "workerThreads")
+        end
+    end
+    init_cecelia!()   # restore the suite's config
+end
+
 @testset "intensity loss is off by default and not a form control" begin
     spec = Cecelia._task_spec(TrainFlowModel())
 

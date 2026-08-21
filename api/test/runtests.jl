@@ -105,6 +105,26 @@ end
     @test st2 == 400
 end
 
+@testset "API: task thread budget — reports where the number came from" begin
+    # The `derived` flag is the point of the route: an effective 16 means something different when it
+    # came from the core count than when someone chose it, because the derived value follows the box.
+    # A readout that cannot tell them apart shows a setting nobody set.
+    st, body = api_task_threads_get(HTTP.Request("GET", "/api/tasks/threads"))
+    @test st == 200
+    r = JSON3.read(body)
+    @test r.workers >= 1 && r.workers <= r.max
+    @test r.default >= 1
+    @test r.derived isa Bool
+    @test r.cores >= 1
+
+    # A non-numeric value is a 400, not a silent fall back to the default — the caller asked for
+    # something specific and got neither it nor a complaint.
+    st2, _ = _post(api_task_threads_set, Dict("workers" => "lots"))
+    @test st2 == 400
+    # The success path is covered in app/test, where the config dir is redirected to a temp so the
+    # real custom.toml is untouched.
+end
+
 @testset "API: maintenance patches" begin
     st, body = api_maintenance_patches(HTTP.Request("GET", "/api/maintenance/patches"))
     @test st == 200
@@ -4445,7 +4465,7 @@ end
         "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
-        "/api/plots/umap", "/api/pools", "/api/runner/status",
+        "/api/plots/umap", "/api/pools", "/api/tasks/threads", "/api/runner/status",
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
@@ -4507,7 +4527,7 @@ end
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
-        "/api/pools/set", "/api/preview/run", "/api/runner/restart", "/api/runner/enabled",
+        "/api/pools/set", "/api/tasks/threads/set", "/api/preview/run", "/api/runner/restart", "/api/runner/enabled",
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
         "/api/projects/canvases", "/api/projects/create",
@@ -4562,7 +4582,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 81 && length(POST_ROUTES) == 113
+    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 114
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

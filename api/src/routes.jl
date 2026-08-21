@@ -711,6 +711,42 @@ end
 
 # Set a pool's concurrency limit live (Settings sliders): resize now + persist to custom.toml.
 # Only already-configured pools are settable (no typo pools accumulating in custom.toml).
+# ── Task thread budget ───────────────────────────────────────────────────────
+# The CPU sibling of the pool throttles, and it sits in the same popover. A pool limit rations how
+# many tasks run at once; this rations how wide ONE of them may go. Both are properties of the
+# machine, so both belong to the same control — a per-task param would be N knobs that all had to
+# agree (see `cpu_utils.py`).
+#
+# GET → { workers, default, max, derived }. `derived` says the effective number came from the box
+# rather than the config, which is the difference between "16 because you chose it" and "16 because
+# this happens to be a 64-core machine" — the second follows the hardware, the first does not.
+function api_task_threads_get(_req)
+    conf_n = get(get(Cecelia.cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
+    200, JSON3.write((; workers = Cecelia.task_worker_threads(),
+                        default = Cecelia.default_task_worker_threads(),
+                        max     = Cecelia.TASK_WORKERS_MAX,
+                        derived = isnothing(conf_n),
+                        cores   = Sys.CPU_THREADS))
+end
+
+# Set it live: persists + hot-reloads, so the NEXT task spawns with it. `workers <= 0` clears the
+# setting and goes back to the machine-derived default.
+#
+# Forwarded to the runner when it is enabled, for the same reason the pool limit is: with the runner
+# on, the runner is the process that spawns Python, so it is the process whose config decides
+# `CECELIA_TASK_WORKERS`. Applied locally too, so the in-process fallback path stays governed by the
+# same number. Best-effort — a runner that is down must not fail the control.
+function api_task_threads_set(body_bytes)
+    data = JSON3.read(body_bytes)
+    n = try Int(get(data, :workers, 0)) catch; return 400, JSON3.write((; error = "workers must be an integer")) end
+    applied = Cecelia.set_task_worker_threads!(n)
+    if _runner_enabled()
+        try; Cecelia.runner_set_task_workers(_RUNNER, n)
+        catch e; @warn "Could not apply the task thread budget on the runner" n exception = e; end
+    end
+    200, JSON3.write((; workers = applied, derived = n <= 0))
+end
+
 # ── Image store compression ──────────────────────────────────────────────────
 # GET → { current, default, choices: [{name, label, detail}] }. The choice list is served, never
 # duplicated in Vue — same rule as task param specs (CLAUDE.md → the JSON spec is the single source).
