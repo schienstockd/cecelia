@@ -37,6 +37,60 @@ is what "obviously wants all cores" actually looks like when measured.
 """
 
 import contextlib
+import os
+
+# ── Task-internal WORKER threads (not BLAS) ───────────────────────────────────────────────────────
+#
+# `BLAS_THREADS_PER_TASK` above bounds the pools numpy/scipy open underneath you. This bounds the
+# pools a task opens ITSELF — coastal maps its z-planes over a `ThreadPoolExecutor`, and that number
+# was a constant chosen on one 32-core laptop. On a 4-core machine it oversubscribes; on a 128-core
+# one it leaves the machine idle.
+#
+# The value travels as an env var set by `run_py` (`CECELIA_TASK_WORKERS`), for the same reason the
+# BLAS budget does: it is a property of the MACHINE and the scheduler, not of any one task's params,
+# and putting it in every task's param list would be a knob per task that all had to agree.
+#
+# The default assumes roughly `_ASSUMED_ACTIVE_TASKS` tasks are actually computing at once — the
+# `cpu` pool allows 20, but a limit is not an expectation, and sizing for the worst case would leave
+# a single running task on one core. It matches how `BLAS_THREADS_PER_TASK` was arrived at.
+TASK_WORKERS_ENV = 'CECELIA_TASK_WORKERS'
+_ASSUMED_ACTIVE_TASKS = 4
+_MAX_DEFAULT_WORKERS = 16
+# A floor, because the divisor alone turns a small machine SERIAL: 4 cores / 4 is one thread, and
+# a 4-core laptop is not going to be running four heavy tasks anyway. Still never wider than the box.
+_MIN_DEFAULT_WORKERS = 2
+
+
+def default_task_workers(n_cpus=None):
+    """The worker budget for one task when nothing has been configured — derived, not hardcoded."""
+    n = max(1, int(n_cpus if n_cpus is not None else (os.cpu_count() or 1)))
+    share = min(_MAX_DEFAULT_WORKERS, max(_MIN_DEFAULT_WORKERS, n // _ASSUMED_ACTIVE_TASKS))
+    return max(1, min(share, n))
+
+
+def task_workers(cap=None, env=None):
+    """How many threads this task may run its own work on.
+
+    `cap` is an ALGORITHMIC ceiling, not a preference: a stage that has been measured to stop
+    scaling — or to get worse — past some width passes it, and the budget is then the smaller of the
+    two. Coastal's region growing is the case that motivated it (it peaks at 4 threads and is slower
+    at 8), and no amount of machine says otherwise, so that number belongs next to the measurement
+    rather than in a config file.
+
+    An unparseable or non-positive setting falls back to the derived default rather than raising:
+    a typo in a config file should not stop a run, and every value here is a performance choice.
+    """
+    raw = (env if env is not None else os.environ).get(TASK_WORKERS_ENV)
+    try:
+        workers = int(str(raw).strip())
+    except (TypeError, ValueError):
+        workers = 0
+    if workers < 1:
+        workers = default_task_workers()
+    if cap is not None:
+        workers = min(workers, max(1, int(cap)))
+    return max(1, workers)
+
 
 # Best measured for the many-small-matmuls case above. The curve is flat between 4 and 8, so this
 # is not a knife edge; both are ~1.8x better than uncapped and ~1.6x better than 1 thread.

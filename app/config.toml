@@ -42,6 +42,12 @@ imageCompressor = "zstd-shuffle"
 
 [tasks]
 concurrentLimit = 20
+# How many threads ONE task may run its own work on (coastal's per-z segmentation is the first to
+# use it). Distinct from the pool limits below, which cap how many tasks run at once, and from the
+# BLAS budget in py_runner.jl, which caps the pools numpy opens underneath a task.
+# Commented out = derived from this machine (cores / 4, capped at 16) rather than a fixed number.
+# Raise it if you run one big task at a time; lower it if you queue many.
+# workerThreads = 8
 
 # Named resource pools for the task scheduler — one per real bottleneck resource.
 # Each module function's JSON spec declares which pool it uses via "resource_pool".
