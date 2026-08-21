@@ -40,7 +40,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Index of every plan in here
 
-**Complete as of 2026-08-20 — 57 files.** `docs/todo/` is **excluded from
+**Complete as of 2026-08-21 — 61 files.** `docs/todo/` is **excluded from
 default search** (see `CLAUDE.md` → *How to read the docs*): 1.2 MB of design docs contributed ~40–50%
 of doc grep hits, and 349 citations from code already reach these files **by name**. So this index is
 the search surface. Grep *this file*, then open the one plan you need.
@@ -53,6 +53,7 @@ disagree, the plan's header wins — and fix the row.
 
 | Plan | Status (from its own header) | What it covers |
 |---|---|---|
+| [`CLOUD_MIGRATION_ASSESSMENT.md`](CLOUD_MIGRATION_ASSESSMENT.md) | **assessed and declined** (2026-08-21) — decision record, not a plan | Whether Cecelia can move to the cloud with a web/remoted napari. Measured: OME-Zarr on CIFS (12.4 ms/chunk) and Google Drive (9.7 s/chunk) cannot host a working store; `offscreen`/`eglfs` give no GL context; multi-user itself is cheap (per-process singletons). Read before re-opening |
 | [`CORRECTION_PLAN.md`](CORRECTION_PLAN.md) | P1+P4a built (#590); P2, P3 open | Fix a wrong mask / wrong track in napari and have the correction become the data everything downstream uses |
 | [`VALUE_NAME_INPUT_PLAN.md`](VALUE_NAME_INPUT_PLAN.md) | P1–2 built; **P3 open** | One canonical "what does this task write to" input; P3 tracked in `docs/TODO.md` → *Value-name input* |
 | [`QC_PLAN.md`](QC_PLAN.md) | Phase 1 landed; **2–3 open** | Objective per-task QC: convention + producers + badges. Durable parts in `docs/ARCHITECTURE.md` |
