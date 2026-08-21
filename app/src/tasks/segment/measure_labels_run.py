@@ -69,6 +69,7 @@ def run(params: dict):
 
     # Open each label zarr and map to its label type
     label_zarrs: dict = {}
+    label_passes: list = []
     for fname in label_files:
         fpath = os.path.join(label_dir, fname)
         if not os.path.exists(fpath):
@@ -82,13 +83,19 @@ def run(params: dict):
             log.log(f'>> opened label "{ltype}": {fpath}')
         except Exception as e:
             log.log(f'[WARN] Could not open {fpath}: {e}')
+            continue
+        if ltype == 'base':
+            # Which model group found each object, recorded on the store by the segmenter. The BASE
+            # store only: a matched `nuc` store's ids were rewritten to the base label they matched,
+            # so its own ranges name ids that no longer exist (see `write_label_passes`).
+            label_passes = zarr_utils.read_label_passes(fpath)
 
     if 'base' not in label_zarrs:
         log.log('[ERROR] No base label file found — cannot measure')
         raise SystemExit(1)
 
     mu = MeasureUtils(params, dim_utils)
-    out_path = mu.measure_from_zarr(label_zarrs, im_dat, log)
+    out_path = mu.measure_from_zarr(label_zarrs, im_dat, log, label_passes=label_passes)
 
     if out_path is None:
         log.log('[ERROR] Measurement returned no output')

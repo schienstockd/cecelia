@@ -17,7 +17,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'preview'))
-from preview_worker import _run_tile_seams          # noqa: E402
+from preview_worker import _run_tile_seams, _base_groups, _merge_pass   # noqa: E402
 
 FULL = {'Y': 2048, 'X': 2048}
 
@@ -132,3 +132,120 @@ class PreviewCallsPredictSliceCorrectlyTest(unittest.TestCase):
         from preview_worker import _next_window_id
         ids = {_next_window_id() for _ in range(50)}
         self.assertEqual(50, len(ids))
+
+
+class PreviewMultiPassMergeTest(unittest.TestCase):
+    """A multi-group preview must show what the RUN would write, not one group of it.
+
+    The bug: both preview backends looped the base model groups and REASSIGNED their output block
+    each time, with no id offset and no fill-only merge. So a two-pass coastal config previewed as
+    the last group alone — full-frame and unclipped, because nothing had claimed pixels ahead of it.
+    On Dominik's `flowTom` config that is the small-seed pass on its own, which looks like a
+    fragmented mess and is not what the run produces.
+
+    Pinned against `SegmentationUtils`'s own primitives rather than a hand-written expectation, so
+    the preview cannot drift from the run: if the run's merge rule changes, this fails.
+    """
+
+    class _Seg:
+        """Enough of SegmentationUtils for the merge helpers — they are static."""
+        from cecelia.utils.segmentation_utils import SegmentationUtils as _SU
+        LABEL_DTYPE = _SU.LABEL_DTYPE
+        model_order = staticmethod(_SU.model_order)
+        offset_pass = staticmethod(_SU.offset_pass)
+        fill_unlabelled = staticmethod(_SU.fill_unlabelled)
+
+    @staticmethod
+    def _count(masks):
+        import numpy as np
+        return int(np.unique(masks[masks > 0]).size)
+
+    def test_the_second_pass_fills_only_what_the_first_left(self):
+        import numpy as np
+        seg = self._Seg()
+        # pass 1 claims the top row; pass 2 would claim the whole array
+        p1 = np.array([[1, 1], [0, 0]], dtype=np.uint32)
+        p2 = np.array([[1, 1], [1, 1]], dtype=np.uint32)
+        merged, passes = _merge_pass(seg, None, p1, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p2, '1', passes, self._count)
+        np.testing.assert_array_equal(merged, np.array([[1, 1], [2, 2]], dtype=np.uint32))
+        self.assertEqual([p['group'] for p in passes], ['0', '1'])
+        self.assertEqual([p['objects'] for p in passes], [1, 1])
+
+    def test_a_pass_entirely_covered_reports_zero_objects(self):
+        """The number being judged on a two-pass config: what pass 2 added. A merged total cannot
+        say it is zero, and zero is the answer a config where both passes are near-identical gives."""
+        import numpy as np
+        seg = self._Seg()
+        p1 = np.ones((2, 2), dtype=np.uint32)
+        p2 = np.ones((2, 2), dtype=np.uint32)
+        merged, passes = _merge_pass(seg, None, p1, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p2, '1', passes, self._count)
+        self.assertEqual(passes[0]['objects'], 1)
+        self.assertEqual(passes[1]['objects'], 0, 'pass 2 contributed nothing and must say so')
+        self.assertEqual(int(merged.max()), 1, 'pass 1 must keep every pixel it claimed')
+
+    def test_ids_do_not_collide_between_passes(self):
+        """Both passes label "1" locally. Without the offset the merge would fuse two unrelated
+        objects into one label, and the pass ranges would be meaningless.
+
+        `passes` has to be THREADED, not re-seeded per call: it carries the running id counter (see
+        `PreviewPassCounterTest`). Handing a fresh list to the second call resets the counter and
+        both passes come out as id 1 — which is what this asserted against before the counter moved
+        off `merged.max()`.
+        """
+        import numpy as np
+        seg = self._Seg()
+        p1 = np.array([[1, 0]], dtype=np.uint32)
+        p2 = np.array([[0, 1]], dtype=np.uint32)
+        merged, passes = _merge_pass(seg, None, p1, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p2, '1', passes, self._count)
+        self.assertEqual(sorted(int(v) for v in np.unique(merged) if v), [1, 2])
+
+    def test_base_groups_follow_the_run_order_and_drop_nuc(self):
+        seg = self._Seg()
+        models = {'10': {'matchAs': 'base'}, '2': {'matchAs': 'base'},
+                  '1': {'matchAs': 'nuc'}, '0': {'matchAs': 'base'}}
+        # numeric order (model_order), base only — '1' is a nuc pass the run matches INTO the base
+        self.assertEqual(_base_groups(seg, models), ['0', '2', '10'])
+
+    def test_a_preview_backend_never_orders_groups_with_plain_sorted(self):
+        """The regression guard. `sorted()` over group keys is the lexicographic bug this replaced,
+        and it reads as correct for the two-group case that is being tested above."""
+        here = os.path.dirname(__file__)
+        src = open(os.path.join(here, '..', '..', '..', 'preview', 'preview_worker.py'),
+                   encoding='utf-8').read()
+        self.assertNotIn('for key in sorted(models.keys())', src,
+                         'a preview backend is ordering model groups lexicographically again')
+
+
+class PreviewPassCounterTest(unittest.TestCase):
+    """The id counter must not be read back off the merged array.
+
+    A pass whose output is entirely covered by an earlier one leaves nothing in the array, so
+    `merged.max()` falls back to the previous pass's top — and the pass after it then reuses ids the
+    covered pass already owns. The ranges overlap, `label_pass_lookup`-style attribution becomes
+    ambiguous, and every later count is wrong. Needs THREE passes to show up, which is why the
+    two-pass tests above all passed with the bug present.
+    """
+
+    _Seg = PreviewMultiPassMergeTest._Seg
+    _count = staticmethod(PreviewMultiPassMergeTest._count)
+
+    def test_three_passes_with_a_fully_covered_middle_keep_disjoint_ranges(self):
+        import numpy as np
+        seg = self._Seg()
+        merged, passes = None, []
+        # pass 1 claims the left half; pass 2 is entirely inside it; pass 3 takes the right half
+        for masks, key in ((np.array([[1, 1, 0, 0]], dtype=np.uint32), '0'),
+                           (np.array([[1, 0, 0, 0]], dtype=np.uint32), '1'),
+                           (np.array([[0, 0, 1, 1]], dtype=np.uint32), '2')):
+            merged, passes = _merge_pass(seg, merged, masks, key, passes, self._count)
+
+        spans = [(p['from'], p['to']) for p in passes]
+        self.assertEqual(len(spans), 3, 'a covered pass still owns its id block')
+        for (_, a_hi), (b_lo, _) in zip(spans, spans[1:]):
+            self.assertLess(a_hi, b_lo, f'ranges must stay disjoint: {spans}')
+        self.assertEqual([p['objects'] for p in passes], [1, 0, 1])
+        # pass 3's label must not collide with pass 1's
+        self.assertEqual(sorted(int(v) for v in np.unique(merged) if v), [1, 3])

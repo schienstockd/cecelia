@@ -23,6 +23,7 @@ import pandas as pd
 import skimage.measure as skmeas
 import skimage.filters as skfilt
 from cecelia.utils.atomic_io import write_h5ad_atomic
+import cecelia.utils.zarr_utils as zarr_utils
 import anndata as ad
 
 from cecelia.utils.label_props_utils import skimage_centroid_axis_names
@@ -68,16 +69,27 @@ class MeasureUtils:
 
     # ── public entry point ────────────────────────────────────────────────────
 
-    def measure_from_zarr(self, label_zarrs: dict, im_dat, log):
+    def measure_from_zarr(self, label_zarrs: dict, im_dat, log, label_passes=None):
         """
         label_zarrs : {'base': [level0, level1, …], 'nuc': […], …}  – multiscale level lists
                       (as returned by zarr_utils.open_as_zarr; level 0 is full-res)
         im_dat      : multiscale level list for the intensity image (im_dat[0] = full-res)
         log         : script_utils logfile helper (has .log(str))
+        label_passes: `zarr_utils.read_label_passes` entries for the BASE store, or None/[].
+                      Turns into an `obs['pass']` column naming the model group that found each
+                      object — which is what makes a multi-pass run usable downstream.
 
         All label types are measured together and written to a single .h5ad file.
         Non-base types (nuc, cyto, halo) contribute extra intensity columns to the
         base measurement: {type}_mean_intensity_{c}.
+
+        **Why the pass belongs here and not in a napari colour.** A two-pass run exists to find two
+        POPULATIONS — cells in one pass, apoptotic fragments in the second — and the split between
+        them is a gating decision, not a segmentation parameter (docs/SEGMENTATION.md). Gating reads
+        `.h5ad`, so a column is the only form of this fact that anything downstream can act on; a
+        colour in the viewer would answer "which pass" for the eye and for nothing else. The store
+        has recorded the id ranges since two-pass shipped and NOTHING read them, which is why a
+        two-pass result could not be told apart from a single-pass one.
 
         Returns the path to the written .h5ad file, or None on failure.
         """
@@ -99,6 +111,14 @@ class MeasureUtils:
 
         if is_3d and self.extended_measures and not _HAS_TRIMESH:
             log.log('[WARN] trimesh not installed — falling back to skimage 3D props')
+
+        # One binary search per object rather than a dict per label — the ranges exist because the
+        # label count is the big number here. `None` for a single-pass store, which is the common
+        # case and must add no column at all (an all-one-value `pass` would be noise in every gate).
+        pass_of = zarr_utils.label_pass_lookup(label_passes) if label_passes else None
+        if pass_of is not None:
+            log.log(f'>> label passes: {len(label_passes)} '
+                    f'({", ".join(sorted({str(e["group"]) for e in label_passes}))})')
 
         all_dfs: list[pd.DataFrame] = []
 
@@ -131,6 +151,11 @@ class MeasureUtils:
                 sec_vol = self._extract_t(lzarr[0], l_la_t, t_idx)
                 morph_df = self._measure_secondary_intensities(
                     morph_df, sec_vol, im_vol, la_c, la_t, n_c, ltype)
+
+            if pass_of is not None:
+                # HERE, not after the concat: `pd.concat(..., ignore_index=True)` below discards the
+                # index, and the index is the label id. Stamped as a column it survives.
+                morph_df['pass'] = [pass_of(lbl) for lbl in morph_df.index]
 
             morph_df['t'] = t_idx
             all_dfs.append(morph_df)
@@ -369,18 +394,29 @@ class MeasureUtils:
         spatial_src   = sorted((c for c in df.columns if c.startswith('centroid-')),
                                key=lambda c: int(c.split('-')[1]))
         temporal_src  = ['t'] if 't' in df.columns else []
+        # A model-group key, not a quantity — categorical in `obs`, never a float in X, where it
+        # would join every distance and clustering computation as if a pass number were a measurement.
+        obs_src       = ['pass'] if 'pass' in df.columns else []
 
         # separate spatial/temporal into obsm; keep everything else in X
         obsm_spatial  = df[spatial_src].values.astype(np.float32) if spatial_src  else None
         obsm_temporal = df[temporal_src].values.astype(np.float32) if temporal_src else None
 
         feature_cols = [c for c in df.columns
-                        if c not in spatial_src and c not in temporal_src]
+                        if c not in spatial_src and c not in temporal_src
+                        and c not in obs_src]
         X = df[feature_cols].values.astype(np.float32)
+
+        obs = pd.DataFrame(index=df.index.astype(str))
+        for c in obs_src:
+            # str, and NaN spelt as a real category: an id no range covers means the store predates
+            # pass recording, so "unknown" is the honest value and dropping the row would be a lie.
+            obs[c] = pd.Categorical(df[c].astype('object')
+                                        .where(df[c].notna(), 'unknown').astype(str).values)
 
         adata = ad.AnnData(
             X   = X,
-            obs = pd.DataFrame(index=df.index.astype(str)),
+            obs = obs,
             var = pd.DataFrame(index=feature_cols),
         )
         if obsm_spatial is not None:

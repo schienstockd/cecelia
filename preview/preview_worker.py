@@ -578,12 +578,10 @@ def _preview_cellpose(ctx):
     tile = ctx.crop()
     axes, full_shape, block_shape = ctx.block_geometry()
 
-    counts, block = {}, None
-    for key in sorted(models.keys()):
+    _, count_labels = _cellpose_imports()
+    merged, passes = None, []
+    for key in _base_groups(seg, models):
         model_params = models[key]
-        match_as = str(model_params.get('matchAs', 'base'))
-        if match_as != 'base':
-            continue            # one type per preview: it is the primary you are judging
         # Whole-image intensity statistics, applied to the crop: percentiles over the visible
         # region alone would normalise differently from the run, so the preview would show a
         # result the run cannot reproduce. Cached across previews — see `PreviewState.norm_params`.
@@ -595,16 +593,17 @@ def _preview_cellpose(ctx):
         # warning covers that). `real_border` keeps it honest about being a CROP: see `post_process`.
         masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
                                  real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
-        block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
-        _, count_labels = _cellpose_imports()
-        counts[match_as] = count_labels(masks)
+        merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
-    if block is None:
+    if merged is None:
         raise ValueError('no base model in preview params')
+    counts = {'base': count_labels(merged)}
+    block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
     return {
         'counts': counts,
+        'passes': passes,
         'hasSignal': has_signal,
         'noSignalWhy': why,
         # tile seams the RUN would place inside this region, which the preview does not reproduce
@@ -612,6 +611,49 @@ def _preview_cellpose(ctx):
         'blockSize': int(seg.block_size),
         'layers': [_layer('labels', 'Preview', block, axes, full_shape)],
     }
+
+
+def _base_groups(seg, models):
+    """The `base` model groups a preview segments, in the order the RUN applies them.
+
+    `SegmentationUtils.model_order`, not `sorted()` — the ordering rule is numeric, so past nine
+    groups a plain sort puts `'10'` before `'2'` and previews the passes in an order no run uses.
+    Only `base`: a preview judges the primary label type, and a `nuc` pass is matched INTO the base
+    by the run rather than shown beside it.
+    """
+    return [k for k in seg.model_order(models)
+            if str(models[k].get('matchAs', 'base')) == 'base']
+
+
+def _merge_pass(seg, merged, masks, key, passes, count_labels):
+    """Stack one pass onto the preview exactly as `predict_from_zarr` stacks it into the store.
+
+    `offset_pass` + `fill_unlabelled` are the run's own two primitives, so this cannot drift from
+    what a run produces — which is the whole point, and what the previous version got wrong by
+    overwriting its output block per group.
+
+    `passes` accumulates `{group, from, to, objects}`: the same id ranges the run stamps onto the
+    store via `write_label_passes`, plus a count, so the reply can say what the SECOND pass actually
+    contributed. On a two-pass config that number is the one being judged — it is the objects pass 1
+    missed, and a preview showing only a merged total cannot tell you it is zero.
+    """
+    masks = np.asarray(masks, dtype=seg.LABEL_DTYPE)
+    # The running id counter comes from the RANGES, not from `merged.max()`. A pass whose output is
+    # entirely covered by an earlier one leaves no trace in the array, so `merged.max()` would fall
+    # back to the previous pass's top and the NEXT pass would reuse ids this one already owns —
+    # overlapping ranges, and every later `objects` count wrong. `predict_from_zarr` keeps
+    # `max_labels` as a separate monotonic counter for exactly this reason.
+    top = passes[-1]['to'] if passes else 0
+    first_id = top + 1
+    masks, top = seg.offset_pass(masks, top)
+    merged = masks if merged is None else seg.fill_unlabelled(merged, masks)
+    if top >= first_id:
+        # Counted AFTER the merge: a pass-2 object entirely covered by pass 1 contributes nothing to
+        # the picture, so counting its own output would report objects that are not on screen.
+        kept = merged[(merged >= first_id) & (merged <= top)]
+        passes.append({'group': str(key), 'from': first_id, 'to': top,
+                       'objects': int(np.unique(kept).size)})
+    return merged, passes
 
 
 _WINDOW_ID = itertools.count(1)
@@ -695,25 +737,24 @@ def _preview_coastal(ctx):
         tile=(int(y0), int(y1), int(x0), int(x1)),
         channels=None, id=_next_window_id())
 
-    counts, block = {}, None
-    for key in sorted(models.keys()):
+    merged, passes = None, []
+    for key in _base_groups(seg, models):
         model_params = models[key]
-        match_as = str(model_params.get('matchAs', 'base'))
-        if match_as != 'base':
-            continue            # one type per preview: it is the primary you are judging
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params, window)
         masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
                                  real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
-        block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
-        counts[match_as] = count_labels(masks)
+        merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
-    if block is None:
+    if merged is None:
         raise ValueError('no base model in preview params')
+    counts = {'base': count_labels(merged)}
+    block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
     return {
         'counts': counts,
+        'passes': passes,
         'hasSignal': has_signal,
         'noSignalWhy': why,
         'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),

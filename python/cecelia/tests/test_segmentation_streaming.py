@@ -421,3 +421,56 @@ class PassProvenanceTest(unittest.TestCase):
                     zarr_utils.read_label_passes(os.path.join(d, 'labels', name)), [],
                     f'{name} holds one group\'s labels, so there is nothing to tell apart')
 
+
+
+class MergePrimitivesTest(unittest.TestCase):
+    """`fill_unlabelled` + `offset_pass` — the two rules that make stacking passes work.
+
+    Extracted from `_write_tile_to_arr` and the run loop specifically so the PREVIEW can reuse them.
+    It could not before, and reimplemented the loop without either: it reassigned its output block
+    per group, so a two-group config previewed as the last group ALONE — full-frame and unclipped,
+    because nothing had claimed pixels ahead of it. Tested here rather than only through a run so the
+    rules are pinned independently of the tiling machinery that applies them.
+    """
+
+    def test_fill_unlabelled_keeps_the_earlier_pass(self):
+        dst = np.array([[0, 5], [0, 0]], dtype=np.uint32)
+        src = np.array([[7, 7], [7, 0]], dtype=np.uint32)
+        got = SegmentationUtils.fill_unlabelled(dst, src)
+        # 5 survives where it sits; 7 fills only the three background pixels.
+        np.testing.assert_array_equal(got, np.array([[7, 5], [7, 0]], dtype=np.uint32))
+
+    def test_fill_unlabelled_is_not_maximum(self):
+        """It used to be `np.maximum`, which let a later pass win every overlapping pixel — a
+        small-diameter second pass silently ate the first pass's cells."""
+        dst = np.array([[3]], dtype=np.uint32)
+        src = np.array([[9]], dtype=np.uint32)
+        self.assertEqual(int(SegmentationUtils.fill_unlabelled(dst, src)[0, 0]), 3)
+
+    def test_offset_pass_lifts_ids_above_the_running_max(self):
+        masks = np.array([[0, 1], [2, 2]], dtype=np.uint32)
+        got, top = SegmentationUtils.offset_pass(masks, 10)
+        np.testing.assert_array_equal(got, np.array([[0, 11], [12, 12]], dtype=np.uint32))
+        self.assertEqual(top, 12)
+        # background must NOT be lifted — a shifted 0 would relabel the whole background
+        self.assertEqual(int(got[0, 0]), 0)
+
+    def test_offset_pass_leaves_the_counter_alone_for_an_empty_pass(self):
+        """A pass that finds nothing must consume no ids, or it leaves an empty range behind and
+        every later pass's range is off by the gap."""
+        masks = np.zeros((2, 2), dtype=np.uint32)
+        got, top = SegmentationUtils.offset_pass(masks, 7)
+        self.assertEqual(top, 7)
+        np.testing.assert_array_equal(got, masks)
+
+    def test_offset_pass_does_not_mutate_its_input(self):
+        masks = np.array([[1]], dtype=np.uint32)
+        SegmentationUtils.offset_pass(masks, 4)
+        self.assertEqual(int(masks[0, 0]), 1, 'caller-visible mutation')
+
+    def test_model_order_is_numeric_not_lexicographic(self):
+        """Past nine groups a plain `sorted` puts '10' before '2' and runs the passes in an order
+        nobody chose. Both the run and the preview order through this."""
+        models = {str(i): {} for i in range(12)}
+        self.assertEqual(SegmentationUtils.model_order(models),
+                         [str(i) for i in range(12)])

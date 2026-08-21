@@ -875,6 +875,53 @@ the stacking UI, and `_write_tile_to_arr` fills only unlabelled pixels, so a sec
 what the first missed without overwriting it. Splitting cells from apoptotic bodies afterwards is a
 **gating** decision, not a segmentation parameter.
 
+The two primitives are `SegmentationUtils.offset_pass` (this pass's ids move above every earlier
+pass's) and `fill_unlabelled` (`np.where(dst > 0, dst, src)`). They are extracted rather than inline
+because the **preview** has to apply the same two, and for a long time it did not: it looped the
+groups and reassigned its output block each time, so a two-group config previewed as the LAST group
+alone — full-frame and unclipped, because nothing had claimed pixels ahead of it. The preview also
+ignored the `<group>Order` chips entirely, since `preview_params_for_run` skipped
+`_apply_group_order`; it neither reordered the passes nor dropped the ones the user had unticked.
+Both are fixed and both are ratcheted (`the preview prepares params with every step run_task uses`;
+`test_preview_tiling.PreviewMultiPassMergeTest`).
+
+**Which pass found an object reaches the measured table as `obs['pass']`** — a categorical naming
+the model group. The store has recorded the id ranges since two-pass shipped
+(`zarr_utils.write_label_passes`) and nothing read them, which made a two-pass result
+indistinguishable from a single-pass one everywhere downstream. Since the cells-vs-fragments split
+is a gating decision on the `.h5ad`, a column is the only form of the fact that anything can act on;
+a colour in the viewer would answer "which pass" for the eye and for nothing else. An id no range
+covers reads `unknown` (a store written before recording existed), and a single-pass run adds **no**
+column — an all-one-value category would be noise in every gate. The preview reports the same
+breakdown live (`pass 1: 36, pass 2: 4`) and warns when a pass contributed nothing.
+
+That warning is the common failure, and it is a config error rather than a bug: **the two passes
+have to want opposite settings.** Coastal's own tuned pair (`two_pass_movie.py`, in pixels) against
+the form, which is in µm — at 0.33 µm/px on `zolIMa/fXgbTl`:
+
+| form control | pass 1 (cells) | pass 2 (fragments) |
+|---|---|---|
+| Seed window | 4.5 µm (14 px) | 2.5 µm (7 px) |
+| Seed blur | 1.75 µm (5 px) | **0** |
+| Foreground threshold | 0.3 | 0.3 |
+| Growing threshold | 0.3 | 0.4 |
+| Embedding blur | 0.5 µm (1.5 px) | 0.25 µm (0.75 px) |
+| Min fragment | 6.5 µm² (59 px) | 0.5 µm² (4.5 px) |
+| Merge threshold | 0.65 | 0.60 |
+
+The two bolded-by-absence rows carry the whole idea. **Seed blur** must be heavy on pass 1 (so one
+cell does not fragment into several) and **zero** on pass 2, which is looking *for* small objects and
+must not have them blurred together. **Min fragment** must be high on pass 1 precisely so the small
+objects survive to pass 2, and low on pass 2 so they are kept. Give both passes the same values and
+pass 1 claims every foreground pixel, pass 2 adds nothing, and the run costs twice as much for one
+pass's output. Keep `minCellSize`/`cellSizeMax` at 0 — those are top level, and a global floor would
+delete pass 2's objects after the fact.
+
+`seedSize` and `minComponentSize` were typed `int` in the spec with a step of 0.5 until 2026-08-21,
+and `ParamRenderer` runs `parseInt` on an int slider — so half the stops were dead and neither
+column above was reachable. Both are `float` now, ratcheted by `an int param never declares a
+fractional step`.
+
 **Measured, first end-to-end run** (`zolIMa/fXgbTl`, 31 T × 32 Z × 420 × 441, mem-TOM, one tile):
 training 67 s; segmentation **689 s**; 6220 objects, 175–222 per timepoint with no drift. On the
 mid-plane that is 37/28/34 objects against an intensity watershed's 33/29/29 — within ~10%, with

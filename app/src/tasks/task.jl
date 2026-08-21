@@ -338,8 +338,14 @@ end
     preview_params_for_run(task, params, img) -> Dict{String,Any}
 
 Params prepared **exactly as a real run would prepare them**: `section` sub-params lifted to the top
-level (`_flatten_sections`, what `run_task` does), then the task's own translation (`preview_params`).
-The single entry point for the preview path — call this, never `preview_params` directly.
+level (`_flatten_sections`), the `<group>Order` chips resolved into their group (`_apply_group_order`),
+the spec's defaults filled in (`_apply_spec_defaults`) — the same three steps `run_task` runs, in the
+same order — and then the task's own translation (`preview_params`). The single entry point for the
+preview path — call this, never `preview_params` directly.
+
+**Every step here is one `run_task` also runs, and each omission has been a live bug.** The list is
+kept in sync by `preview_prepares_params_like_a_run` (app/test), which reads both call sites and fails
+when `run_task` gains a step this does not.
 
 The two steps exist for the same underlying reason and each has already been a live bug. A `section` is
 a UI grouping, so the frontend sends its sub-params NESTED; every `_run_task` reads them flat. Skipping
@@ -348,10 +354,22 @@ own default. `blockSize` (inside the `imageTiling` include) fell back to 512 on 
 wide, so the preview reported a tile seam on a run configured for 4096 that would never tile; the same
 silence applies to `normaliseToWhole`, `overlap` and every other section param, which is the part that
 would have gone on being wrong quietly. Flattening is idempotent, so this is safe on already-flat params.
+
+`_apply_group_order` was the third such bug and the loudest. A repeatable group's run order and its
+off switches live in a SIBLING key (`<group>Order`) that only this resolves, so a preview that skipped
+it ignored the order chips entirely: it neither reordered the passes nor dropped the entries the user
+had unticked. On a two-pass coastal config that meant previewing whichever group happened to hold the
+highest numeric key — with the chips visibly saying otherwise.
+
+`_apply_spec_defaults` is here for the same reason the flatten is: whatever the caller omits, the run
+fills from the spec and the preview would otherwise fill from a Python-side `get(k, default)`, and
+those disagreed for five params before the spec became the single authority.
 """
 function preview_params_for_run(task::CciaTask, params::AbstractDict,
                                 img::CciaImage)::AbstractDict
     flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    flat = _apply_group_order(task, flat)
+    flat = _apply_spec_defaults(task, flat)
     preview_params(task, flat, img)
 end
 

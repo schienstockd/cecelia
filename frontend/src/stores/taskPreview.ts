@@ -22,7 +22,8 @@ import {
   previewBlocker, previewNotice, previewSummary, baseOnlyWarning, tilingWarning,
   compositeWarning, warmPollAction,
   PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
-  type PreviewContext, type PreviewStatus, type PreviewBlocker, previewFailureLog } from '../utils/taskPreview'
+  type PreviewContext, type PreviewStatus, type PreviewBlocker, type PreviewPass,
+  previewFailureLog } from '../utils/taskPreview'
 import { useWsStore } from './ws'
 import { useLogStore } from './log'
 
@@ -49,6 +50,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const status   = ref<PreviewStatus | null>(null)
   const context  = ref<PreviewContext | null>(null)
   const counts   = ref<Record<string, number> | null>(null)
+  // Per model group, for a multi-pass config — see `previewSummary`. Null for a single pass.
+  const passes   = ref<PreviewPass[] | null>(null)
   const fallback2d = ref(false)
   const signal   = ref<{ hasSignal?: boolean; noSignalWhy?: string } | null>(null)
   const tiling   = ref<{ runSeams?: Record<string, number>; blockSize?: number } | null>(null)
@@ -81,6 +84,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   /** Forget the last result. Called whenever it stops describing what is on screen. */
   function clearResult() {
     counts.value = null
+    passes.value = null
     fallback2d.value = false
     signal.value = null
     tiling.value = null
@@ -92,7 +96,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   /** the one line under the button: what is wrong, and whether it is amber */
   const notice  = computed(() => previewNotice(
     blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))
-  const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined))
+  const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined, passes.value))
   /** a two-model run previews only its base type — say so rather than let it look complete */
   const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
   /** a run would split this region at a tile seam; the preview segments it whole */
@@ -138,6 +142,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     if (res?.starting) { starting.value = true; pollUntilWarm(); return }
     starting.value = false
     counts.value = res?.counts ?? null
+    passes.value = res?.passes ?? null
     fallback2d.value = Boolean(res?.fallback2d)
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
     tiling.value = { runSeams: res?.runSeams, blockSize: res?.blockSize }
@@ -272,7 +277,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   })
 
   return {
-    enabled, pinned, runState, status, context, counts, fallback2d, signal, tiling,
+    enabled, pinned, runState, status, context, counts, passes, fallback2d, signal, tiling,
     error, errorCode, starting,
     blocker, notice, summary, busy, baseOnly, tiled, composite, warnings, notPreviewed,
     setContext, request, start, stop, toggle, refreshStatus,
