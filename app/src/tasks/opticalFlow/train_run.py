@@ -36,6 +36,7 @@ Parameter contract (JSON written by Julia):
   foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma
 """
 
+import json
 import datetime
 import os
 
@@ -225,6 +226,95 @@ def reduce_metrics(per_frame, dropped):
             for mm in per_frame]
 
 
+def _coastal_build():
+    """Which coastal produced this model — `{version, commit}`, or `None` if neither is knowable.
+
+    `coastal.__version__` alone is not enough: it is `0.1.0` and is not bumped per change, while the
+    pin in `pixi.toml` is a **git revision** and is described there as "a HARD floor, not a snapshot".
+    So the useful identifier is the commit, which pip records in the distribution's `direct_url.json`
+    for a VCS install. Absent for a PyPI or editable install, and `None` then rather than a version
+    number that implies more than it knows.
+
+    Worth recording because coastal's inference is under active change (`perf/coastal-speed`), and one
+    of those changes moved a DEFAULT that decides object size. A model whose output cannot be tied to
+    an engine build cannot be reproduced, which is the first thing a published model has to be.
+    See docs/todo/MODEL_VAULT_PLAN.md.
+    """
+    out = {}
+    try:
+        import coastal
+        v = getattr(coastal, '__version__', None)
+        if v:
+            out['version'] = str(v)
+    except Exception:
+        pass
+    try:
+        import importlib.metadata as md
+        from pathlib import Path
+        dist = md.distribution('coastal')
+        # Located and read explicitly rather than through `Distribution.read_text`, which takes no
+        # encoding — and `test_atomic_io` rightly refuses text IO without one.
+        for f in (dist.files or ()):
+            if f.name != 'direct_url.json':
+                continue
+            info = json.loads(Path(dist.locate_file(f)).read_text(encoding='utf-8'))
+            commit = (info.get('vcs_info') or {}).get('commit_id')
+            if commit:
+                out['commit'] = str(commit)
+            break
+    except Exception:
+        # No `direct_url.json` is the normal PyPI case, not a failure worth a warning: the manifest
+        # simply says less.
+        pass
+    return out or None
+
+
+def _physical_scale(dim_utils, planes):
+    """What one pixel and one frame of THIS movie are, physically — or `None` where the file is silent.
+
+    Recorded because every number coastal is configured with is in pixels and frames, and none of them
+    means anything without this: `temporalScales` are FRAMES (5 s/frame and 30 s/frame present entirely
+    different displacements at scale 1), `cropSize` and `foregroundBlurSigma` are PIXELS. A model is
+    therefore only applicable to a movie acquired at a comparable scale, and until this was written down
+    nothing — not the manifest, not the vault UI, not a shared model — could answer that. Same class of
+    silent train/inference mismatch as the metric set, which is why the manifest exists at all.
+    See docs/todo/MODEL_VAULT_PLAN.md.
+
+    Values are recorded AS READ, with their units, and deliberately NOT converted: there is no unit
+    converter in this codebase and inventing one to run over metadata that is already µm/s in practice
+    would be a silent numeric error waiting for the one file that isn't. `None` where OME carried
+    nothing — an invented 1.0 (which is what `im_physical_size`'s default would give) reads as a real
+    measurement and is worse than an admitted gap.
+
+    `z` is the gap between the planes actually TRAINED ON, not the stack's own step: training takes
+    every `zSpacing`-th plane, so the stack's 1 µm step at spacing 2 means the model saw 2 µm.
+    """
+    out = {}
+    dx = dim_utils.im_physical_size('x', default=None)
+    dy = dim_utils.im_physical_size('y', default=None)
+    if dx is not None:
+        out['x'] = float(dx)
+        out['xUnit'] = dim_utils.im_physical_unit('x')
+    # Y only when it differs from X — the anisotropic case is real and rare, and repeating an equal
+    # value on every entry would bury it.
+    if dy is not None and (dx is None or float(dy) != float(dx)):
+        out['y'] = float(dy)
+        out['yUnit'] = dim_utils.im_physical_unit('y')
+    dz = dim_utils.im_physical_size('z', default=None)
+    if dz is not None and planes and len(planes) > 1 and planes[0] is not None:
+        gaps = {b - a for a, b in zip(planes, planes[1:])}
+        # One gap, or the plane list was not evenly spaced (it is, by construction — but if that ever
+        # changes, a single number would be a lie rather than an approximation).
+        if len(gaps) == 1:
+            out['z'] = float(dz) * gaps.pop()
+            out['zUnit'] = dim_utils.im_physical_unit('z')
+    dt = dim_utils.im_time_increment(default=None)
+    if dt is not None:
+        out['t'] = float(dt)
+        out['tUnit'] = dim_utils.im_time_increment_unit()
+    return out or None
+
+
 def _training_sequence(im_dat, dim_utils, params, z, window=None):
     """`[T, H, W]` float32 in 0–255 for ONE Z plane — the same projection inference builds per tile.
 
@@ -316,6 +406,7 @@ def run(params):
     crop_size = int(params.get('cropSize', 0))
     z_spacing = int(params.get('zSpacing', 0))
     sequences, used, planes_used, windows, crops = [], [], {}, {}, {}
+    scales = {}
     for i, m in enumerate(movies):
         im_path = m['imPath']
         uid = m.get('uID', '')
@@ -366,6 +457,12 @@ def run(params):
                         f'not the {n_planes} requested')
         else:
             planes = [None]
+
+        # Per movie, like `zPlanesUsed` and for the same reason: pooling movies from two microscopes
+        # (or two objectives) is legitimate and invisible in a single pooled number.
+        scale = _physical_scale(dim_utils, planes)
+        if scale is not None:
+            scales[uid] = scale
 
         n_y, n_x = int(dim_utils.dim_val('Y')), int(dim_utils.dim_val('X'))
         for zi, z in enumerate(planes):
@@ -606,6 +703,19 @@ def run(params):
         # different depths, and which ones a model saw is the question you ask when it does badly on
         # a stack of a different thickness. Empty for 2D movies.
         'zPlanesUsed': planes_used,
+        # What a pixel and a frame ARE, per movie — see `_physical_scale`. The one field that says
+        # whether this model can be applied to somebody else's movie, and the reason a vault entry
+        # can state a resolution range at all (docs/todo/MODEL_VAULT_PLAN.md).
+        'physicalScales': scales,
+        # Whether that is a measurement or a gap: `ome` = every movie carried it, `partial` = some
+        # did, `none` = the images have no physical metadata and this model's scale is unknown. A
+        # reader must not have to compare `physicalScales`' keys against `sourceImages` to find out.
+        'physicalScaleSource': ('ome' if len(scales) == len(used)
+                                else 'none' if not scales else 'partial'),
+        # The engine, not just its parameters. Coastal's inference is under active change and one of
+        # those changes moved a default that decides object size, so "which coastal" is part of what
+        # this model IS — see `_coastal_build`.
+        'coastalBuild': _coastal_build(),
         'lossCurves': curves,
         # SEPARATE from lossCurves, not a `floor_foreground` entry inside it: a reader that walks
         # lossCurves to draw one line per term would otherwise draw the floors as terms of their own.

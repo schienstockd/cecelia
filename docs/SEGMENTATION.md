@@ -754,6 +754,14 @@ REPL/chain override rather than a form control. Note both models land on their o
 0.0006 — the loss says σ=1 is far better (0.265 vs 0.357) and it is simply measuring two different
 objectives. Next probe and the coverage question: `docs/TODO.md`.
 
+**A model's manifest records the scale it was trained at** (`physicalScales`, per source movie —
+µm/px, the µm gap between the planes actually used, and s/frame; `physicalScaleSource` says whether
+the images carried any). This is not decoration: `temporalScales` are FRAMES and `cropSize` is
+PIXELS, so neither means anything without it, and a model is only applicable to a movie acquired at a
+comparable scale. Values are kept in the unit OME gave them, unconverted. Models trained before
+2026-08-21 have no such record and the vault shows the row as unknown. See
+`docs/todo/MODEL_VAULT_PLAN.md`.
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the
