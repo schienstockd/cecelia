@@ -2,7 +2,7 @@
 // unit-tested): the timelapse-duration formatter and the CSV-export row builder. Kept out of the SFCs
 // per the "testable logic lives in src/utils/*" convention (docs/DEV.md → Tests).
 import type { CciaImage } from '../stores/project'
-import { isExcluded } from './inclusion'
+import { isExcluded, isBlocked } from './inclusion'
 import { sortRows, type SortDir } from './sortRows'
 import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
 
@@ -20,8 +20,9 @@ export function timelapseDuration(sizeT?: number | null, timeIncrement?: number 
 
 // ── Sorting ──────────────────────────────────────────────────────────────────
 // Clickable-header sort for the image table. Column keys: 'name', 'ch' (channel count), 'z'
-// (z-slices), 'duration' (timelapse length), `attr:<key>` (a user attribute column). Kept pure +
-// tested here; the SFC only holds the sort state (which column + direction) and calls sortImages.
+// (z-slices), 'duration' (timelapse length), 'scale' (physical calibration, blocked first),
+// `attr:<key>` (a user attribute column). Kept pure + tested here; the SFC only holds the sort state
+// (which column + direction) and calls sortImages.
 export type ImageSortKey = string
 export type ImageSortDir = SortDir
 
@@ -32,6 +33,10 @@ export function imageSortValue(img: CciaImage, key: ImageSortKey): string | numb
   if (key === 'ch') return img.sizeC ?? null
   if (key === 'z') return img.sizeZ ?? null
   if (key === 'duration') return durationSeconds(img)
+  // Blocked FIRST, then by pixel size. Sorting this column is how you find the images that need the
+  // metadata editor, so the ones with nothing recorded have to lead rather than fall to the end with
+  // the other blanks — hence a real value (-1) rather than `null`.
+  if (key === 'scale') return isBlocked(img) ? -1 : (img.physicalSizeX ?? 0)
   if (key.startsWith('attr:')) return img.attr?.[key.slice(5)] ?? null
   return null
 }
@@ -80,6 +85,9 @@ export function imageTableCsvRows(images: CciaImage[], attrKeys: string[]): Reco
     row['Pixel size Y'] = img.physicalSizeY ?? ''
     row['Pixel size Z'] = img.physicalSizeZ ?? ''
     row['Pixel unit'] = img.physicalSizeUnit ?? ''
+    // Exported because "which of these can I actually analyse" is a question people answer in a
+    // spreadsheet, and it is not derivable from the columns above without knowing the gate's rule.
+    row.Blocked = isBlocked(img) ? 'yes' : 'no'
     for (const k of attrKeys) row[`attr:${k}`] = img.attr?.[k] ?? ''
     row.Excluded = isExcluded(img) ? 'yes' : 'no'
     row['Exclusion note'] = isExcluded(img) ? (img.note ?? '') : ''

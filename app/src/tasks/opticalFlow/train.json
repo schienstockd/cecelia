@@ -8,6 +8,7 @@
   ],
   "resource_pool": "gpu",
   "scope": "set",
+  "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [
     {
       "key": "valueName",

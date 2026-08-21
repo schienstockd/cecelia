@@ -91,8 +91,11 @@ export interface TaskDef {
                            // every spec today — outputField still answers it for image versions/labels.
   qcPlot?: string         // plotDefinitions id of this task's default QC plot (e.g. "segmentation_qc"); if set,
                           // the whiteboard Live view auto-shows a QC thumbnail linked to this node
-  requires?: { axes?: string[] }  // task-applicability gate: axis codes the image must carry (e.g. ["T"]);
-                                  // absent = applies to any image. See utils/taskGating.ts + docs/MODULES.md.
+  // Task-applicability gate. `axes`: axis codes the image must carry (e.g. ["T"]). `scale`: physical
+  // scales it must RECORD (["xy"], ["xy","t"]) — declared by anything computing in microns, because
+  // a missing pixel size falls back to 1.0 and reports pixels as microns. Absent = applies to any
+  // image. See utils/taskGating.ts + docs/MODULES.md.
+  requires?: { axes?: string[]; scale?: string[] }
   hidden?: boolean        // keep this task OUT of the module page's function list, while leaving it
                           // registered, runnable from the REPL, and available as a chain node. For a
                           // task whose job a purpose-built UI now does better — `importImages.remove`

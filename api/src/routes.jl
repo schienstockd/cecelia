@@ -480,17 +480,24 @@ function api_task_definitions(req::HTTP.Request)
             if !isnothing(composite) && !isempty(composite)
                 merged = Any[]
                 seen   = Set{String}()
-                # Union `requires.axes` across sub-tasks so the frontend gate sees the composite's
-                # true axis needs without walking steps (mirrors Cecelia.task_requires_axes on the
-                # backend). A composite with its own explicit `requires.axes` still contributes.
-                req_axes = Set{String}()
-                own_req  = get(spec, "requires", nothing)
-                if own_req isa AbstractDict
-                    for a in get(own_req, "axes", String[])
-                        s = uppercase(string(a))
-                        isempty(s) || push!(req_axes, s)
+                # Union `requires` across sub-tasks so the frontend gate sees the composite's true
+                # needs without walking steps (mirrors Cecelia.task_requires_axes /
+                # task_requires_scale on the backend). A composite with its own explicit `requires`
+                # still contributes. BOTH keys are collected together: the assignment below replaces
+                # the whole `requires` dict, so gathering one key and not the other would silently
+                # drop it.
+                req_axes  = Set{String}()
+                req_scale = Set{String}()
+                collect_req!(req) = begin
+                    req isa AbstractDict || return
+                    for (key, into) in (("axes", req_axes), ("scale", req_scale))
+                        for a in get(req, key, String[])
+                            s = uppercase(string(a))
+                            isempty(s) || push!(into, s)
+                        end
                     end
                 end
+                collect_req!(get(spec, "requires", nothing))
                 for fn_ref in composite
                     sub = get(by_fun, string(fn_ref), nothing)
                     isnothing(sub) && continue
@@ -503,16 +510,14 @@ function api_task_definitions(req::HTTP.Request)
                         push!(seen, k)
                         push!(merged, p)
                     end
-                    sub_req = get(sub, "requires", nothing)
-                    sub_req isa AbstractDict || continue
-                    for a in get(sub_req, "axes", String[])
-                        s = uppercase(string(a))
-                        isempty(s) || push!(req_axes, s)
-                    end
+                    collect_req!(get(sub, "requires", nothing))
                 end
                 spec["params"] = merged
-                if !isempty(req_axes)
-                    spec["requires"] = Dict{String,Any}("axes" => sort!(collect(req_axes)))
+                if !isempty(req_axes) || !isempty(req_scale)
+                    req = Dict{String,Any}()
+                    isempty(req_axes)  || (req["axes"]  = sort!(collect(req_axes)))
+                    isempty(req_scale) || (req["scale"] = sort!(collect(req_scale)))
+                    spec["requires"] = req
                 end
                 push!(out, spec)
             else

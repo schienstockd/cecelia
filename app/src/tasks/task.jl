@@ -811,6 +811,50 @@ function task_requires_axes(task::CciaTask)::Set{Symbol}
 end
 # The CompositeTask overload (union across steps) lives further down, after the type is defined.
 
+"""
+    task_requires_scale(task) -> Set{Symbol}
+
+The physical scales the task needs the image to have RECORDED, from its spec's `requires.scale`
+(default empty). Codes are `:XY` / `:Z` / `:T`, matching [`img_scale_axes`](@ref).
+
+Declared by any task that computes in microns or µm/min. The failure this prevents is silent:
+`img_physical_sizes` falls back to `1.0` for a missing axis, which is indistinguishable from a
+genuine 1 µm/px, so the run succeeds and reports pixels as microns.
+"""
+function task_requires_scale(task::CciaTask)::Set{Symbol}
+    spec = _task_spec(task)
+    isnothing(spec) && return Set{Symbol}()
+    _scale_from_requires(get(spec, "requires", nothing))
+end
+# The CompositeTask overload (union across steps) lives with the axes one, further down.
+
+function _scale_from_requires(req)::Set{Symbol}
+    req isa AbstractDict || return Set{Symbol}()
+    scale = get(req, "scale", nothing)
+    scale isa AbstractVector || return Set{Symbol}()
+    Set{Symbol}(Symbol(uppercase(string(s))) for s in scale if !isempty(string(s)))
+end
+
+"""
+    task_missing_scale(task, img) -> Set{Symbol}
+
+Which required scales this image does not record — empty when the task can run.
+
+**Intersected with the image's own axes**, which is the whole subtlety: a task declaring
+`scale: ["xy", "t"]` needs no time scale from a static image, and a 3D-capable task needs no `:Z`
+from a single plane. So a declaration says "these, for whichever axes this image has" rather than
+forcing every task to enumerate the 2D/3D/static/timelapse combinations itself.
+"""
+function task_missing_scale(task::CciaTask, img::CciaImage)::Set{Symbol}
+    need = task_requires_scale(task)
+    isempty(need) && return Set{Symbol}()
+    axes = img_axes(img)
+    # XY always applies (every image has X and Y); Z and T only when the image carries that axis.
+    relevant = Set{Symbol}(s for s in need
+                           if s === :XY || (s === :Z && :Z ∈ axes) || (s === :T && :T ∈ axes))
+    setdiff(relevant, img_scale_axes(img))
+end
+
 function _axes_from_requires(req)::Set{Symbol}
     req isa AbstractDict || return Set{Symbol}()
     axes = get(req, "axes", nothing)
@@ -827,8 +871,8 @@ executor uses the per-image form to skip a step; the frontend uses the same pred
 the picker; `run_task` raises `TaskApplicabilityError` when it's false.
 """
 function task_applies(task::CciaTask, img::CciaImage)::Bool
-    isempty(task_requires_axes(task)) && return true
-    issubset(task_requires_axes(task), img_axes(img))
+    issubset(task_requires_axes(task), img_axes(img)) &&
+        isempty(task_missing_scale(task, img))
 end
 task_applies(task::CciaTask, imgs::AbstractVector{CciaImage})::Bool =
     all(img -> task_applies(task, img), imgs)
@@ -844,11 +888,21 @@ function task_applicability_reason(task::CciaTask, img::CciaImage)::String
     isempty(need) && return ""
     have    = img_axes(img)
     missing = sort!(collect(setdiff(need, have)))
-    isempty(missing) && return ""
     fn = try _fun_name_from_task(task) catch; string(typeof(task)) end
-    have_s    = join(sort!(collect(have)), ", ")
-    missing_s = join(missing, ", ")
-    "$(fn) requires axis $(missing_s) — image $(img.uid) has $(have_s)"
+    if !isempty(missing)
+        have_s    = join(sort!(collect(have)), ", ")
+        missing_s = join(missing, ", ")
+        return "$(fn) requires axis $(missing_s) — image $(img.uid) has $(have_s)"
+    end
+    # Scale second, and reported as an ACTION rather than as a fact: unlike a missing axis, this one
+    # the user can fix — the metadata editor is where, and saying so is the difference between a
+    # blocked run and a dead end.
+    no_scale = sort!(collect(task_missing_scale(task, img)))
+    isempty(no_scale) && return ""
+    what = join([s === :XY ? "pixel size" : s === :T ? "time interval" : "z spacing"
+                 for s in no_scale], " and ")
+    "$(fn) measures in microns and image $(img.uid) records no $(what) — set it in the image's " *
+    "metadata (Fix metadata) first"
 end
 
 # ── Internal dispatch ─────────────────────────────────────────────────────────
@@ -1003,6 +1057,18 @@ function task_requires_axes(task::CompositeTask)::Set{Symbol}
         union!(axes, task_requires_axes(sub))
     end
     axes
+end
+
+# Same union, same reason: a composite needs whatever any of its steps needs, so segment+measure
+# inherits the segmenter's scale requirement without restating it.
+function task_requires_scale(task::CompositeTask)::Set{Symbol}
+    spec = _task_spec(task)
+    isnothing(spec) && return Set{Symbol}()
+    scale = _scale_from_requires(get(spec, "requires", nothing))
+    for sub in _composite_steps(task)
+        union!(scale, task_requires_scale(sub))
+    end
+    scale
 end
 
 # Override spec caching: CompositeTask type alone is not unique — include fun_name.

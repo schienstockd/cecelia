@@ -7,11 +7,7 @@
     "local"
   ],
   "resource_pool": "cpu",
-  "requires": {
-    "axes": [
-      "T"
-    ]
-  },
+  "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [
     {
       "key": "valueName",

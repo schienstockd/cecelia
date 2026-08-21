@@ -69,6 +69,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "metadata.frame_interval_no_unit" => (
         short = "Frame interval has no unit",
         long  = "A frame interval is recorded without a unit — re-enter it with seconds/minutes."),
+    "metadata.pixel_size_unknown" => (
+        short = "Pixel size unknown",
+        long  = "No XY pixel size found — nothing that measures in microns can run until it is set (enter it from your acquisition settings)."),
     "metadata.pixel_size_no_unit" => (
         short = "Pixel size has no unit",
         long  = "A pixel size is recorded without a unit — re-enter it with a unit."),
@@ -395,6 +398,16 @@ function metadata_qc_findings(meta::AbstractDict)
     # `key` defaults to the code; the z-axis unit case is the one place they differ.
     mf(code, field; key = code) =
         push!(fs, qc_finding("warn", code; key = key, detail = Dict{String,Any}("field" => field)))
+
+    # XY pixel size — FIRST, because it is the one that blocks rather than merely warns: every task
+    # declaring `requires.scale` refuses an image without it (`task_missing_scale`), and
+    # `metadata_warning` on the frontend shows the first finding. It was also the one case this
+    # function did not cover at all: it read PhysicalSizeX/Y only to check their unit and their ratio
+    # to z, so an image with NO pixel size got no finding — the most severe state was the silent one.
+    # A zero counts as absent: 0 µm/px is not a measurement.
+    for (v, field) in ((phys_x, "x"), (phys_y, "y"))
+        (v === nothing || v <= 0) && mf("metadata.pixel_size_unknown", field)
+    end
 
     # Z spacing — the first applicable case only (mirrors the frontend if/elseif chain)
     if size_z > 1 && phys_z === nothing
