@@ -36,12 +36,11 @@ Parameter contract (JSON written by Julia):
   foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma
 """
 
-import contextlib
-import io
 import json
 import datetime
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 
@@ -52,6 +51,7 @@ from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.gpu_utils import torch_device
 from cecelia.utils.atomic_io import write_json_atomic
 from cecelia.utils import coastal_utils
+import cecelia.utils.cpu_utils as cpu_utils
 
 
 # Advisory only, and deliberately not a limit: what is too much depends on the box, and refusing to
@@ -369,9 +369,12 @@ def _training_sequence(im_dat, dim_utils, params, z, window=None):
 def run(params):
     log = script_utils.get_logfile_utils(params)
 
-    # All three live in coastal.train — `prepare_data_for_unet_batch` reads as a flow helper and is
-    # not one, which cost an end-to-end run to find (unit tests stub coastal, so nothing caught it).
-    from coastal.train import (prepare_data_for_unet_batch, train_test_split_per_movie,
+    # Imported here, not at module scope, so the module can be introspected without torch. Note
+    # `prepare_data_for_unet` is in coastal.FLOW while the rest are in coastal.TRAIN — the batch
+    # wrapper around it lives in train and reads as a flow helper, which cost an end-to-end run to
+    # find once (unit tests stub coastal, so nothing caught it).
+    from coastal.flow import prepare_data_for_unet
+    from coastal.train import (train_test_split_per_movie,
                                train_with_metrics, save_model)
 
     movies = list(params['movies'])
@@ -524,42 +527,90 @@ def run(params):
 
     log.log(f'>> computing flow metrics for {len(sequences)} sequence(s) '
             f'(scales {scales}, cumulative {cumulative})')
-    # ONE SEQUENCE AT A TIME, and each one reduced to what training keeps before the next is computed.
-    # `prepare_data_for_unet_batch` is a plain per-movie loop with no cross-movie state, so this is
-    # the same computation — but handing it all six at once means the full float32 metric stack of
-    # every movie is live at the peak, which for a six-movie zolIMa set is ~23 GB held before
-    # training allocates anything. Reduced here it is ~9 GB held (measured 1.55 GB per movie), and
-    # what sits above that is one movie's flow fields rather than six.
+    # Sequences are INDEPENDENT — `prepare_data_for_unet_batch` is a per-movie loop with no
+    # cross-movie state — so the only thing that ever forced one at a time was memory: the full
+    # float32 metric stack of a sequence is live while it is computed, and six whole 1046x1104 movies
+    # at once measured ~23 GB before training allocated anything.
     #
-    # The two reductions are `reduce_metrics`: drop the unwanted metrics here rather than after the
-    # split, and hold the rest as float16.
+    # That reason expires at crop size. A 256x256 crop of 60 frames holds ~0.24 GB, not 1.55 GB, so
+    # the same decision that was right for whole movies leaves 86% of this phase (measured: Farneback
+    # is 86%, metric materialisation 14%) running one-at-a-time for nothing.
     #
-    # coastal prints ~40 lines per call — a banner, a per-metric dtype list, and "PROCESSING 1 MOVIES"
-    # (one, because we hand it one sequence at a time). At 60 sequences that is ~2400 lines of
-    # identical output, which buries this task's own log and reads as if the flow were being computed
-    # twice. Captured and replaced with one line per sequence carrying the thing the banner never
-    # said: how long it took. Released on failure, so a crash still shows whatever coastal managed to
-    # say before it.
-    all_frames, all_metrics = [], []
-    for i, seq in enumerate(sequences):
+    # So the width is DERIVED, not chosen: compute the FIRST sequence alone, price its transient peak
+    # from the process high-water mark, then divide the memory we may use by that — capped by the task
+    # thread budget, because this is also CPU work and the budget is what the throttle sets. A
+    # measurement rather than a constant means it follows the crop size and the machine, and the
+    # number is logged so a bad estimate is visible rather than silent.
+    #
+    # THREADS, not processes: the heavy parts release the GIL (coastal's flow is joblib, which forks
+    # its own workers; the metric materialisation is numpy), and results stay in this process instead
+    # of being pickled back. Two reductions still happen per sequence as before — drop the unwanted
+    # metrics, hold the rest as float16 — so what accumulates is the reduced stack, not the raw one.
+    #
+    # coastal's own logging is OFF (`verbose=False`, see `_one`). It printed ~40 lines per call — a
+    # banner, a per-metric dtype list, and "PROCESSING 1 MOVIES" — which at 60 sequences was ~2400
+    # lines of identical output that buried this task's log and read as if the flow were being
+    # computed twice. One line per sequence replaces it, carrying what the banner never said: how long
+    # it took.
+    n_seq = len(sequences)
+    all_frames, all_metrics = [None] * n_seq, [None] * n_seq
+
+    def _one(i):
+        seq = sequences[i]
         t_seq = time.perf_counter()
-        captured = io.StringIO()
-        try:
-            with contextlib.redirect_stdout(captured):
-                seq_frames, seq_metrics = prepare_data_for_unet_batch(
-                    [seq], temporal_scales=scales, cumulative_window=cumulative)
-        except Exception:
-            log.log(captured.getvalue())
-            raise
-        all_frames.append(seq_frames[0])
-        all_metrics.append(reduce_metrics(seq_metrics[0], dropped))
-        log.log(f'>>   [{i + 1}/{len(sequences)}] flow metrics: '
-                f'{seq.shape[0]} frames of {seq.shape[1]}x{seq.shape[2]} '
-                f'in {time.perf_counter() - t_seq:.1f}s')
-        # The source plane sequence is a normalised copy inside `seq_frames` now; holding the
-        # original as well costs a frame stack per movie for nothing.
+        # `prepare_data_for_unet` rather than the `_batch` wrapper around it, for `verbose=False`. The
+        # wrapper is a per-movie loop that calls exactly this and prints a banner the loop cannot turn
+        # off, and we hand it one sequence anyway. Silencing it with `redirect_stdout` instead was the
+        # first attempt and is WRONG here: that swaps `sys.stdout` process-wide, so with several
+        # sequences in flight the threads swallow each other's output and race to restore it.
+        seq_frames, flows, cum, seq_metrics = prepare_data_for_unet(
+            seq, temporal_scales=scales, cumulative_window=cumulative, verbose=False)
+        all_frames[i] = seq_frames
+        all_metrics[i] = reduce_metrics(list(seq_metrics), dropped)
+        del flows, cum
+        # The source plane sequence is a normalised copy inside `seq_frames` now; holding the original
+        # as well costs a frame stack per sequence for nothing.
         sequences[i] = None
         del seq, seq_frames, seq_metrics
+        return time.perf_counter() - t_seq
+
+    rss_before = cpu_utils.rss_bytes()
+    dt = _one(0)
+    log.log(f'>>   [1/{n_seq}] flow metrics in {dt:.1f}s')
+
+    # Two readings, largest wins, because each can miss on its own:
+    #   • the high-water mark is the PROCESS's, so it may already have been set by reading the movies
+    #     — then it prices this sequence at zero;
+    #   • the current delta is only what was RETAINED (the reduced float16 stack), so it understates
+    #     the transient float32 peak.
+    # A `None`/0 answer means "could not price it", and `concurrency_for_memory` then falls back to
+    # the CPU cap rather than inventing a size. The 50% reserve is what covers the understatement.
+    peak, after = cpu_utils.peak_rss_bytes(), cpu_utils.rss_bytes()
+    per_seq = None if rss_before is None else max(
+        (0 if peak is None else peak - rss_before),
+        (0 if after is None else after - rss_before), 0)
+    avail = cpu_utils.available_memory_bytes()
+    workers = cpu_utils.concurrency_for_memory(per_seq, avail, cap=cpu_utils.task_workers())
+    if n_seq > 1:
+        gb = lambda b: 'unknown' if b is None else f'{b / 2**30:.2f} GB'
+        log.log(f'>> {n_seq - 1} sequence(s) left, {workers} at a time '
+                f'(one costs {gb(per_seq)}, {gb(avail)} available)')
+
+    if workers <= 1:
+        for i in range(1, n_seq):
+            log.log(f'>>   [{i + 1}/{n_seq}] flow metrics in {_one(i):.1f}s')
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(_one, i): i for i in range(1, n_seq)}
+            for n, fut in enumerate(as_completed(futures), start=2):
+                # Completion order, not submission order — the index says WHICH sequence finished,
+                # the counter says how many are done, and conflating them would report progress that
+                # goes backwards.
+                dt = fut.result()
+                log.log(f'>>   [{n}/{n_seq} done] sequence {futures[fut] + 1} '
+                        f'flow metrics in {dt:.1f}s')
+
+    assert all(f is not None for f in all_frames), 'a sequence produced no frames'
     log.progress(len(movies) + 1, total_steps)
 
     # Pool AFTER the per-sequence metrics: concatenating frames first would make flow cross a
