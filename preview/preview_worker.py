@@ -38,6 +38,7 @@ before the AF backend existed ignored `funName`, fell through to the segmentatio
 """
 import asyncio
 import base64
+import itertools
 import json
 import os
 import traceback
@@ -613,12 +614,20 @@ def _preview_cellpose(ctx):
     }
 
 
+_WINDOW_ID = itertools.count(1)
+
+
+def _next_window_id():
+    """A window id that is never reused in this process — what `TemporalWindow.id` requires."""
+    return next(_WINDOW_ID)
+
+
 def _coastal_imports():
     """Deferred like `_cellpose_imports`, and for the same reason: torch + coastal cost a session
     that never previews a flow model nothing."""
     from cecelia.utils.coastal_utils import CoastalUtils
-    from cecelia.utils.segmentation_utils import count_labels
-    return CoastalUtils, count_labels
+    from cecelia.utils.segmentation_utils import count_labels, TemporalWindow
+    return CoastalUtils, count_labels, TemporalWindow
 
 
 def _temporal_window(ctx, radius):
@@ -656,13 +665,35 @@ def _preview_coastal(ctx):
     if not models:
         raise ValueError('no models in preview params')
 
-    CoastalUtils, count_labels = _coastal_imports()
+    CoastalUtils, count_labels, TemporalWindow = _coastal_imports()
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
 
     axes, full_shape, block_shape = ctx.block_geometry()
     context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
     tile = context[centre]
+
+    # `predict_slice` takes ONE `TemporalWindow` (segmentation_utils) — it used to take `context=` and
+    # `context_index=`, and it grew to six such kwargs before they were collected into the object. This
+    # caller was not updated, so every coastal preview raised `unexpected keyword argument 'context'`.
+    # Built here rather than inside `_temporal_window` because the other caller of that helper wants
+    # the raw pair for `_project_window`, not a window object.
+    #
+    #   start:    the movie index of `frames[0]`. `centre` is `t_now - lo`, so this recovers `lo` —
+    #             which is not `t_now - radius` at the start of a movie, where the window is clamped.
+    #   tile:     full-image Y/X, so work can be carried between timepoints of the SAME region and
+    #             not across a region that moved sideways.
+    #   channels: None — `crop_at_t` reads every channel, unlike the run, which narrows.
+    #   id:       monotonic per process. The per-window caches key on it and must never see a value
+    #             twice, so it cannot be derived from the timepoint (the user nudges t back and forth
+    #             over a region that has changed).
+    y0, y1 = ctx.bounds.get('Y', (0, int(ctx.axis_len.get('Y', 0))))
+    x0, x1 = ctx.bounds.get('X', (0, int(ctx.axis_len.get('X', 0))))
+    window = TemporalWindow(
+        frames=context, index=centre,
+        start=int(ctx.bounds.get('T', (0, 1))[0]) - centre,
+        tile=(int(y0), int(y1), int(x0), int(x1)),
+        channels=None, id=_next_window_id())
 
     counts, block = {}, None
     for key in sorted(models.keys()):
@@ -671,8 +702,7 @@ def _preview_coastal(ctx):
         if match_as != 'base':
             continue            # one type per preview: it is the primary you are judging
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
-        masks = seg.predict_slice(tile, model_params, norm_params,
-                                  context=context, context_index=centre)
+        masks = seg.predict_slice(tile, model_params, norm_params, window)
         masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
                                  real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
@@ -731,7 +761,7 @@ def _flow_frame_and_metrics(ctx):
     if not models:
         raise ValueError('no models in preview params')
 
-    CoastalUtils, _ = _coastal_imports()
+    CoastalUtils, _, _ = _coastal_imports()
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     mp = models[sorted(models.keys())[0]]
