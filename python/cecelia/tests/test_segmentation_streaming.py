@@ -270,13 +270,12 @@ class _TemporalStub(_StubSeg):
 
     TEMPORAL_RADIUS = 2
 
-    def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None,
-                      context_channels=None, context_start=None, context_tile=None):
+    def predict_slice(self, tile, model_params, norm_params=None, window=None):
         self.seen = getattr(self, 'seen', [])
-        self.seen.append((None if context is None else context.shape, context_index,
-                          None if context is None else
-                          np.array_equal(context[context_index], tile)))
+        self.seen.append((None if window is None else window.frames.shape,
+                          None if window is None else window.index,
+                          None if window is None else
+                          np.array_equal(window.frames[window.index], tile)))
         return super().predict_slice(tile, model_params, norm_params)
 
 
@@ -290,13 +289,13 @@ class TemporalContextTest(unittest.TestCase):
 
     def test_default_radius_leaves_the_call_untouched(self):
         """The load-bearing one: every tuned parameter set and every existing subclass was built
-        against a predict_slice that takes no context, so radius 0 must not even PASS the kwarg."""
+        against a predict_slice that takes no window, so radius 0 must not even PASS the kwarg."""
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             c1, base1, nuc1 = _run(a, self.SIZES, self.SHAPE, cls=_StubSeg)
             c2, base2, nuc2 = _run(b, self.SIZES, self.SHAPE, cls=_StubSeg)
         self.assertEqual(_fingerprint(base1), _fingerprint(base2))
         self.assertEqual(c1, c2)
-        # _StubSeg.predict_slice has NO context kwarg — that it runs at all is the assertion
+        # _StubSeg.predict_slice has NO window kwarg — that it runs at all is the assertion
         self.assertEqual(SegmentationUtils.TEMPORAL_RADIUS, 0)
 
     def test_subclass_receives_the_window_centred_on_its_own_tile(self):
@@ -315,7 +314,7 @@ class TemporalContextTest(unittest.TestCase):
         matches = [m for _, _, m in seg.seen]
 
         self.assertTrue(all(m for m in matches),
-                        'context[context_index] must be the tile the call is about')
+                        'window.frames[window.index] must be the tile the call is about')
         # T=7, radius 2: windows are 3,4,5,5,5,4,3 — TRUNCATED at the ends, never padded, because
         # repeating a frame invents zero motion and mirroring invents motion outright.
         self.assertEqual(sorted({s[0] for s in shapes}), [3, 4, 5])
@@ -323,7 +322,7 @@ class TemporalContextTest(unittest.TestCase):
         self.assertEqual(min(idxs), 0)
 
     def test_window_is_tile_extent_not_whole_frames(self):
-        """The memory decision: context must be the TILE through time, not full frames."""
+        """The memory decision: the window must be the TILE through time, not full frames."""
         with tempfile.TemporaryDirectory() as tmp:
             du = DimUtils(ome_types.from_xml(_ome_xml(*self.SIZES)), use_channel_axis=True)
             du.calc_image_dimensions(self.SHAPE)
@@ -335,4 +334,4 @@ class TemporalContextTest(unittest.TestCase):
         full_y, full_x = self.SIZES[3], self.SIZES[4]
         for shp, _, _ in seg.seen:
             self.assertLess(shp[-2] * shp[-1], full_y * full_x,
-                            f'context {shp} is whole-frame sized, not tile-extent')
+                            f'window {shp} is whole-frame sized, not tile-extent')

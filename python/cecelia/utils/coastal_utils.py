@@ -363,17 +363,15 @@ class CoastalUtils(SegmentationUtils):
 
     # ── Prediction ────────────────────────────────────────────────────────────
 
-    def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None,
-                      context_channels=None, context_start=None, context_tile=None):
+    def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Segment one XY tile at one timepoint from its temporal window.
 
-        tile:    [C, Z, Y, X] or [C, Y, X] — present for the base's contract; the pixels used come
-                 from `context[context_index]`, which is the same data.
-        context: [W, C, Z, Y, X] or [W, C, Y, X]
+        tile:   [C, Z, Y, X] or [C, Y, X] — present for the base's contract; the pixels used come
+                from `window.frames[window.index]`, which is the same data.
+        window: a `TemporalWindow`; `.frames` is [W, C, Z, Y, X] or [W, C, Y, X]
         Returns: uint32 labels [Z, Y, X] or [Y, X]
         """
-        if context is None or context_index is None:
+        if window is None:
             raise ValueError(
                 'CoastalUtils needs the temporal window; the base supplies it when '
                 'TEMPORAL_RADIUS > 0 (see SegmentationUtils.predict_slice)')
@@ -381,14 +379,14 @@ class CoastalUtils(SegmentationUtils):
         is_3d = (tile.ndim == 4)
         scales, cumulative, dropped = temporal_config(self._manifest(model_params))
         inference = self._get_inference(model_params)
-        window = self._project_window(context, model_params, norm_params, context_channels)
-        feature_key = self._feature_key(context_id, model_params, scales, cumulative, dropped)
-        flow_caches = self._flow_caches_for(context_tile, context_start, context_index, cumulative)
+        projected = self._project_window(window.frames, model_params, norm_params, window.channels)
+        feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped)
+        flow_caches = self._flow_caches_for(window.tile, window.start, window.index, cumulative)
 
         if not is_3d:
             frame, metrics = self._cached_features(
-                feature_key, 0, window, context_index, scales, cumulative, dropped,
-                flow_caches, context_start)
+                feature_key, 0, projected, window.index, scales, cumulative, dropped,
+                flow_caches, window.start)
             return np.asarray(inference.predict_frame(frame, metrics)[1]).astype(self.LABEL_DTYPE)
 
         # Per-Z 2D, then IoU matching across Z. Right choice here rather than a fallback: voxels are
@@ -402,12 +400,12 @@ class CoastalUtils(SegmentationUtils):
         # (`Executor.map` yields in input order), so `_match_3d` still sees the planes bottom-to-top
         # and stitching is unchanged; the labels themselves are per-plane and independent, so this
         # is a scheduling change only and the output is identical to the serial loop.
-        n_z = window.shape[1]
+        n_z = projected.shape[1]
         features = self._map_z(
             FLOW_WORKERS, n_z,
-            lambda z: self._cached_features(feature_key, z, window[:, z], context_index,
+            lambda z: self._cached_features(feature_key, z, projected[:, z], window.index,
                                             scales, cumulative, dropped,
-                                            flow_caches, context_start))
+                                            flow_caches, window.start))
         planes = self._map_z(
             PREDICT_WORKERS, n_z,
             lambda z: np.asarray(inference.predict_frame(*features[z])[1]).astype(self.LABEL_DTYPE))

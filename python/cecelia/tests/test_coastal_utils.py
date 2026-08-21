@@ -22,6 +22,17 @@ import unittest
 import numpy as np
 
 
+def _window(frames, index, wid=0, start=0, tile=(0, 16, 0, 16), channels=None):
+    """A `TemporalWindow` for a test, with everything but the frames defaulted.
+
+    The point of the object is that a test says only what it is about — a stack of frames and which
+    one is the tile — instead of restating six positional facts at every call site.
+    """
+    from cecelia.utils.segmentation_utils import TemporalWindow
+    return TemporalWindow(frames=frames, index=index, start=start, tile=tile,
+                          channels=channels, id=wid)
+
+
 class _DimUtils:
     """Enough of DimUtils for the base's __init__ and the temporal guard."""
 
@@ -322,11 +333,11 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
         cu._flow_metrics = _metrics
         return cu
 
-    def _step(self, cu, t, tile=(0, 16, 0, 16), radius=8, n_z=2):
+    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2):
         ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
         cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3,
-                         context_id=t, context_start=t - 3, context_tile=tile)
+                         norm_params={0: (0.0, 1000.0)},
+                         window=_window(ctx, 3, wid=t, start=t - 3, tile=tile))
 
     def _computed(self, cu):
         return [p for p in cu._pairs if p[0] == 'compute']
@@ -398,16 +409,16 @@ class SharedFlowBetweenPassesTest(unittest.TestCase):
         cu._flow_metrics = _metrics
         return cu, params['models']
 
-    def _run(self, cu, mp, context_id):
+    def _run(self, cu, mp, wid):
         ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
         return cu.predict_slice(ctx[3], mp, norm_params={0: (0.0, 1000.0)},
-                                context=ctx, context_index=3, context_id=context_id)
+                                window=_window(ctx, 3, wid=wid))
 
     def test_a_second_group_reuses_the_first_groups_flow(self):
         cu, models = self._two_group_utils()
-        self._run(cu, models['0'], context_id=7)
+        self._run(cu, models['0'], wid=7)
         after_first = len(cu._seen)
-        self._run(cu, models['1'], context_id=7)
+        self._run(cu, models['1'], wid=7)
 
         self.assertEqual(after_first, 3, 'one flow computation per z on the first pass')
         self.assertEqual(len(cu._seen), 3,
@@ -415,16 +426,16 @@ class SharedFlowBetweenPassesTest(unittest.TestCase):
 
     def test_a_new_window_is_not_served_from_the_old_one(self):
         cu, models = self._two_group_utils()
-        self._run(cu, models['0'], context_id=7)
-        self._run(cu, models['0'], context_id=8)
+        self._run(cu, models['0'], wid=7)
+        self._run(cu, models['0'], wid=8)
         self.assertEqual(len(cu._seen), 6, 'a different window must be recomputed, not reused')
 
     def test_groups_reading_different_channels_do_not_share(self):
         """The cached planes are derived from the PROJECTED window, so a different channel set is a
         different frame — sharing there would segment pass 2 on pass 1's pixels."""
         cu, models = self._two_group_utils(second={'cellChannels': [1]})
-        self._run(cu, models['0'], context_id=7)
-        self._run(cu, models['1'], context_id=7)
+        self._run(cu, models['0'], wid=7)
+        self._run(cu, models['1'], wid=7)
         self.assertEqual(len(cu._seen), 6)
 
     def test_a_single_group_run_caches_nothing(self):
@@ -432,8 +443,7 @@ class SharedFlowBetweenPassesTest(unittest.TestCase):
         cu._match_3d = lambda planes, threshold: planes
         ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
         cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3,
-                         context_id=1)
+                         norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3, wid=1))
         self.assertEqual(cu._feature_cache, {},
                          'the common case must not carry the memory of a cache it cannot use')
 
@@ -445,7 +455,7 @@ class PredictSliceTest(unittest.TestCase):
         ctx = np.ones((9, 2, 32, 32), np.float32) * 500
         tile = ctx[3]
         out = cu.predict_slice(tile, {'model': 'm.pt', 'cellChannels': [0]},
-                               norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                               norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
         self.assertEqual(out.shape, (32, 32))
         self.assertEqual(out.dtype, np.uint32)
         (window, center, scales, cumulative), = cu._seen
@@ -463,7 +473,7 @@ class PredictSliceTest(unittest.TestCase):
         out = cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0],
                                         'stitchThreshold': 0.25},
                                norm_params={0: (0.0, 1000.0)},
-                               context=ctx, context_index=3)
+                               window=_window(ctx, 3))
 
         self.assertEqual(stitched, [0.25], 'Z stitching must get the task param, not a constant')
         self.assertEqual(out.shape, (3, 16, 16))
@@ -477,7 +487,7 @@ class PredictSliceTest(unittest.TestCase):
         cu._manifest_cache['m.pt'] = {'droppedMetrics': ['divergence']}
         ctx = np.ones((9, 2, 16, 16), np.float32) * 500
         cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                         norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
         (_, metrics), = cu._stub.calls
         self.assertNotIn('divergence', metrics)
         self.assertIn('mag_1', metrics)
@@ -509,7 +519,7 @@ class PredictSliceTest(unittest.TestCase):
 
         ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
         out = cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                               norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                               norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
 
         self.assertEqual(out.shape, (n_z, 16, 16))
         np.testing.assert_array_equal(
@@ -531,7 +541,7 @@ class PredictSliceTest(unittest.TestCase):
             mod.FLOW_WORKERS, mod.PREDICT_WORKERS = workers
             try:
                 results[workers] = cu.predict_slice(
-                    ctx[3], mp, norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                    ctx[3], mp, norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
             finally:
                 mod.FLOW_WORKERS, mod.PREDICT_WORKERS = before
 

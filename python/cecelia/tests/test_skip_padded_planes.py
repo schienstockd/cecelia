@@ -61,18 +61,17 @@ class _TemporalStubSeg(SegmentationUtils):
     """A TEMPORAL subclass, shaped like `CoastalUtils`: the mask comes from the temporal WINDOW.
 
     That is the contract that matters here — coastal's `predict_slice` documents the tile as
-    "present for the base's contract; the pixels used come from `context[context_index]`" — so a
+    "present for the base's contract; the pixels used come from `window.frames[window.index]`" — so a
     window the base forgot to narrow is not a cosmetic mismatch, it decides the output's depth.
     """
     TEMPORAL_RADIUS = 1
 
-    def predict_slice(self, tile, model_params, norm_params=None,
-                      context=None, context_index=None, context_id=None,
-                      context_channels=None, context_start=None, context_tile=None):
+    def predict_slice(self, tile, model_params, norm_params=None, window=None):
         self.seen = getattr(self, 'seen', [])
-        self.seen.append((tile.shape[-3], context[context_index].shape[-3], context.shape[0],
-                          np.array_equal(context[context_index], tile)))
-        return np.ones(context[context_index].shape[-3:], dtype=np.uint32)
+        centre = window.frames[window.index]
+        self.seen.append((tile.shape[-3], centre.shape[-3], window.frames.shape[0],
+                          np.array_equal(centre, tile)))
+        return np.ones(centre.shape[-3:], dtype=np.uint32)
 
 
 class SkipPaddedPlanesTest(unittest.TestCase):
@@ -153,7 +152,7 @@ class TemporalWindowMatchesTheTileTest(SkipPaddedPlanesTest):
     predicts from the window turns into a mask of the wrong depth. Not silent: the write into the
     frame buffer then raises `operands could not be broadcast together`.
 
-    `test_segmentation_streaming.TemporalContextTest` already asserts `context[context_index]` IS
+    `test_segmentation_streaming.TemporalContextTest` already asserts `window.frames[window.index]` IS
     the tile — the same invariant, on an image with no valid box, which is why the skip could break
     it unnoticed. This is that assertion with a box in play.
     """
@@ -165,7 +164,7 @@ class TemporalWindowMatchesTheTileTest(SkipPaddedPlanesTest):
             self.assertEqual(tile_z, Z1 - Z0, 'the tile was not narrowed')
             self.assertEqual(ctx_z, tile_z,
                              f'the temporal window is {ctx_z} planes deep, the tile {tile_z}')
-            self.assertTrue(same, 'context[context_index] is no longer the tile')
+            self.assertTrue(same, 'window.frames[window.index] is no longer the tile')
             self.assertGreater(w, 1, 'no temporal window was built at all')
         # and the labels still land where the non-temporal path puts them
         for z in range(Z):
@@ -251,7 +250,7 @@ class TemporalWindowMatchesTheTileInXYTest(TemporalWindowMatchesTheTileTest):
 
     Exactly the bug the z skip already had once, one axis over: `read_yx` addresses the narrowed
     frame, so passing it straight to the full store reads the wrong part of the image — silently, and
-    only when XY is narrowed. `context[context_index] IS the tile` is what catches it, which is why
+    only when XY is narrowed. `window.frames[window.index] IS the tile` is what catches it, which is why
     this class exists rather than a new assertion.
     """
 
