@@ -388,6 +388,31 @@ watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.v
   () => { loadAdvisory() }, { immediate: true, deep: true })
 onUnmounted(() => advisoryRun.cancel())
 
+// chipSelect over a group — the chips ARE the sibling group's entries, read from the form (the same
+// `context.values` that `showIf` reads). An unset value means "all of them, in entry order": a task
+// that has never been reordered must behave exactly as it did before this control existed, and that
+// has to hold for a chain and the REPL too, where no form ever ran (see `groupOrderKeys`).
+const groupChipEntries = computed<{ key: string; vals: ParamValues }[]>(() => {
+  const g = (props.context?.values?.[props.param.optionsFromGroup ?? ''] ?? {}) as GroupValues
+  return Object.keys(g).sort((a, b) => Number(a) - Number(b)).map(k => ({ key: k, vals: g[k] ?? {} }))
+})
+
+const groupChipOptions = computed(() => groupChipEntries.value.map((e, i) => {
+  const raw = props.param.optionLabelKey ? e.vals[props.param.optionLabelKey] : undefined
+  const named = Array.isArray(raw) ? raw[0] : raw
+  return {
+    value: e.key,
+    label: named ? String(named) : `${i + 1}`,
+    tip: named ? undefined : 'Entry ' + (i + 1),
+  }
+}))
+
+const groupChipValue = computed<string[]>(() => {
+  const keys = groupChipEntries.value.map(e => e.key)
+  const v = Array.isArray(val.value) ? (val.value as unknown[]).map(String) : null
+  return v === null ? keys : v.filter(k => keys.includes(k))
+})
+
 // group helpers — value is Record<string, ParamValues> keyed by "0", "1", ...
 const groupEntries = computed(() => {
   if (props.param.type !== 'group') return []
@@ -573,6 +598,18 @@ const pct = computed(() => {
         <i class="pi pi-folder-open" />
       </button>
     </div>
+
+    <!-- chipSelect over a GROUP: one chip per entry, so the control grows and shrinks with it. The
+         picked chips are the entries that will run, dragged into the order they run in; the dimmed
+         ones are switched off for this run. Deliberately the same ChipSelect as everything else —
+         multi-select with `reorderable` already means "an ordered pick", which is exactly this. -->
+    <ChipSelect v-else-if="param.type === 'chipSelect' && param.optionsFromGroup"
+      :options="groupChipOptions"
+      :model-value="groupChipValue"
+      multiple reorderable
+      :aria-label="param.label"
+      @update:model-value="v => val = v as string[]"
+    />
 
     <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
          parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive

@@ -66,3 +66,34 @@ export function selectAllState(
   const next = state === 'all' ? [] : [...kept, ...pickable.filter(v => !chosen.has(v))]
   return { state, next, enabled: pickable.length > 0 }
 }
+
+/**
+ * Keep a group-order selection in step with the group it orders.
+ *
+ * A `chipSelect` with `optionsFromGroup` draws one chip per entry of a repeatable group: the picked
+ * chips are the entries that will RUN, in the order they will run in, and the dimmed ones are
+ * switched off. So the value has to follow the group as entries are added and removed.
+ *
+ * It is reconciled against the group's keys BEFORE and AFTER the edit, not against the current keys
+ * alone, because those two cases are indistinguishable from the value on its own: a key absent from
+ * the selection is either an entry the user just added or one they deliberately switched off, and
+ * guessing re-enables a pass somebody turned off the moment they add another. With both sides:
+ *
+ *   - an entry that disappeared is dropped, wherever it sat;
+ *   - an entry that appeared is appended, switched ON, because adding a pass means wanting it;
+ *   - every other entry keeps its state and its position.
+ *
+ * An empty selection is left empty rather than filled — "run nothing" is a state a user can choose,
+ * and the caller decides what an unset value means (see `groupOrderKeys` in paramValues).
+ */
+export function syncGroupOrder(
+  prevKeys: readonly string[],
+  nextKeys: readonly string[],
+  selected: readonly string[],
+): string[] {
+  const before = new Set(prevKeys)
+  const now = new Set(nextKeys)
+  const kept = selected.filter(k => now.has(k))
+  const added = nextKeys.filter(k => !before.has(k) && !kept.includes(k))
+  return [...kept, ...added]
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toggleValue, moveItem, partitionOptions, selectAllState } from './chipSelect'
+import { toggleValue, moveItem, partitionOptions, selectAllState, syncGroupOrder } from './chipSelect'
 
 describe('toggleValue', () => {
   it('appends a new value at the end (pick order)', () => {
@@ -91,5 +91,33 @@ describe('selectAllState', () => {
   it('drops stale values that are no longer options', () => {
     // Channel lists change with the image selection; a leftover value must not survive a fill.
     expect(selectAllState(opts, ['gone', 'b']).next).toEqual(['b', 'a', 'c'])
+  })
+})
+
+describe('syncGroupOrder', () => {
+  it('appends an entry that was just added, switched on', () => {
+    expect(syncGroupOrder(['0'], ['0', '1'], ['0'])).toEqual(['0', '1'])
+  })
+
+  it('drops an entry that was removed, wherever it sat', () => {
+    expect(syncGroupOrder(['0', '1', '2'], ['0', '2'], ['2', '1', '0'])).toEqual(['2', '0'])
+  })
+
+  it('does not re-enable an entry the user switched off', () => {
+    // the case that makes the before/after comparison necessary: '1' is off, '2' is new
+    expect(syncGroupOrder(['0', '1'], ['0', '1', '2'], ['0'])).toEqual(['0', '2'])
+  })
+
+  it('keeps the run order across an unrelated edit', () => {
+    expect(syncGroupOrder(['0', '1'], ['0', '1'], ['1', '0'])).toEqual(['1', '0'])
+  })
+
+  it('leaves an empty selection empty', () => {
+    expect(syncGroupOrder(['0'], ['0'], [])).toEqual([])
+  })
+
+  it('is a no-op when nothing about the group changed', () => {
+    const sel = ['1', '0']
+    expect(syncGroupOrder(['0', '1'], ['0', '1'], sel)).toEqual(sel)
   })
 })
