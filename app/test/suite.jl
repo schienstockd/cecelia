@@ -13263,6 +13263,57 @@ end
 # is the part that had no measurement behind it either way, and removing it also made
 # `paramsFromManifest` drop it silently — a model trained at 1.0 handed back a form that would not
 # reproduce it.
+# ── the flow-boundary term and the metrics it is built from ──────────────────
+# `foregroundBoundaryWeight` reached coastal as its default 0.0 because nothing passed it, and per
+# `ForegroundLoss.target` it is "the ONLY path by which optical flow reaches the labels" — everywhere
+# else flow enters as an input channel or through the contrastive term. Now plumbed.
+#
+# The trap it ships with: `coastal.loss.flow_discontinuity` builds the signal from |strain| +
+# |vorticity| + |divergence|, and cecelia's DEFAULT metric set drops two of those three
+# (`FLAT_FLOW_METRICS` — they are flat as input channels, which is a different question from whether
+# their gradient marks a boundary). `flow_discontinuity` sums whichever are present and normalises, so
+# a partial set trains against a weaker signal and says nothing. Refused rather than warned about,
+# because a warning is read after the hour of training.
+@testset "flow boundary weight requires the metrics it is built from" begin
+    @test Set(Cecelia.FLOW_BOUNDARY_METRICS) == Set(["strain", "vorticity", "divergence"])
+    # the collision is real and worth asserting, so a future change to either set surfaces it here
+    @test !isempty(intersect(Set(Cecelia.FLOW_BOUNDARY_METRICS), Set(Cecelia.FLAT_FLOW_METRICS)))
+
+    # off → nothing is required, whatever the metric set
+    @test isempty(Cecelia.flow_boundary_missing(nothing, 0.0))
+    @test isempty(Cecelia.flow_boundary_missing(["strain"], 0.0))
+
+    # on with the shipped default → the two dropped ones are named
+    @test Set(Cecelia.flow_boundary_missing(nothing, 0.5)) == Set(["vorticity", "divergence"])
+    # on with all three ticked → nothing missing
+    all_three = ["strain", "vorticity", "divergence", "acceleration"]
+    @test isempty(Cecelia.flow_boundary_missing(all_three, 0.5))
+
+    # …and the validator turns that into a submit-time error rather than a weak model
+    @test validate_params(TrainFlowModel(),
+        Dict{String,Any}("foregroundBoundaryWeight" => 0.0)) === nothing
+    @test validate_params(TrainFlowModel(),
+        Dict{String,Any}("foregroundBoundaryWeight" => 0.5,
+                         "flowMetrics" => all_three)) === nothing
+    @test_throws ParamValidationError validate_params(TrainFlowModel(),
+        Dict{String,Any}("foregroundBoundaryWeight" => 0.5, "flowMetrics" => ["strain"]))
+
+    # the message has to NAME them — "check your metrics" costs a round trip to the docs
+    err = try
+        validate_params(TrainFlowModel(),
+            Dict{String,Any}("foregroundBoundaryWeight" => 0.5, "flowMetrics" => ["strain"]))
+        nothing
+    catch e; e end
+    @test occursin("vorticity", err.msg) && occursin("divergence", err.msg)
+
+    # the control is offered, and OFF by default: switching it on also requires re-ticking metrics,
+    # so it cannot be a silent default
+    spec = Cecelia._task_spec(TrainFlowModel())
+    flat(ps) = reduce(vcat, [haskey(p, "params") ? flat(p["params"]) : [p] for p in ps]; init = [])
+    fb = only(p for p in flat(spec["params"]) if get(p, "key", "") == "foregroundBoundaryWeight")
+    @test fb["default"] == 0.0
+end
+
 @testset "intensity loss is an offered dial at the measured default" begin
     spec = Cecelia._task_spec(TrainFlowModel())
     keys_of(ps) = reduce(vcat, [haskey(p, "params") ? keys_of(p["params"]) : [get(p, "key", "")]

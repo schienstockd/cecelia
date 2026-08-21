@@ -247,6 +247,16 @@
           "tip": "Merge/coverage dial: raise to claim more signal, lower for tighter objects"
         },
         {
+          "key": "foregroundBoundaryWeight",
+          "label": "Flow boundary",
+          "type": "float",
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.25,
+          "default": 0.0,
+          "tip": "Pinch the mask where the flow tears; needs strain, vorticity and divergence"
+        },
+        {
           "key": "temporalWeight",
           "label": "Temporal loss",
           "type": "float",

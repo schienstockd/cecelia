@@ -33,7 +33,8 @@ Parameter contract (JSON written by Julia):
   trainRatio               - fraction of each sequence to train on; 1.0 = no held-out split
   temporalScales           - already parsed + validated by Julia
   cumulativeWindow, droppedMetrics, epochs, embeddingDim, seed, normalise
-  foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma
+  foregroundWeight, intensityWeight, temporalWeight, foregroundBlurSigma,
+  foregroundBoundaryWeight
 """
 
 import json
@@ -714,6 +715,11 @@ def run(params):
         intensity_weight=loss_weights['intensity'],
         foreground_weight=loss_weights['foreground'],
         foreground_blur_sigma=blur_sigma,
+        # The flow-boundary term inside ForegroundLoss: subtracts a blob-scaled flow-discontinuity
+        # map from the target, so the prob map pinches where the velocity field tears. 0 = off, which
+        # is the default; `validate_params` refuses a non-zero weight unless the three metrics
+        # `flow_discontinuity` needs are ticked, because it degrades silently on a partial set.
+        foreground_boundary_weight=float(params.get('foregroundBoundaryWeight', 0.0)),
         temporal_weight=loss_weights['temporal'],
         variance_weight=loss_weights['variance'],
         warp_weight=loss_weights['warp'],
@@ -758,6 +764,7 @@ def run(params):
         # target, raising its entropy and therefore the floor, so the better-shaped objective scores
         # worse. Without this in the manifest that difference is invisible.
         'foregroundBlurSigma': blur_sigma,
+        'foregroundBoundaryWeight': float(params.get('foregroundBoundaryWeight', 0.0)),
         'intensityWeight': float(params.get('intensityWeight', 0.25)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
         'maxFrames': max_frames,
