@@ -735,6 +735,11 @@ end
     values = [string(o["value"]) for o in model_sel["options"]]
     # Built-ins are always there
     @test issubset(["cpsam_v2", "cpsam"], values)
+    # …and exactly ONCE each. `optionsFrom` APPENDS to the spec's literal `options`, so a spec that
+    # also declares an option the lister enumerates gets it twice — which is what this picker did,
+    # showing "Cellpose-SAM v2" and "v1" twice each in the browser (Dominik, 2026-08-21). An
+    # `issubset` assertion cannot see that, which is why it survived; this can.
+    @test length(values) == length(unique(values))
 
     # A genuinely-unknown checkpoint name is still rejected — the enumeration is real
     @test_throws ParamValidationError validate_params(CellposeSegment(),
@@ -12216,6 +12221,28 @@ end
     # value == label here: the user types the stem, so the suggestion IS what goes in the field.
     tr = flat(Cecelia._task_spec(Cecelia._task_from_fun_name("opticalFlow.train")))["modelName"]
     @test all(o -> o["label"] == o["value"], tr["options"])
+
+    # …and every picker filled this way lists each value ONCE. The append is what makes coastal's
+    # "None" work, and it is also what duplicated cellpose's built-ins: the spec declared `cpsam_v2`
+    # and `cpsam` as literals while `cellposeModels` enumerates the same tuple, so the Model select
+    # showed both twice (Dominik, 2026-08-21, in the browser). Neither the `issubset` check above nor
+    # a `Set ==` comparison can see a duplicate — both collapse them — which is why it shipped.
+    for (fn, key) in (("segment.cellpose", "model"), ("segment.coastal", "model"),
+                      ("opticalFlow.train", "modelName"))
+        vals = [string(o["value"])
+                for o in flat(Cecelia._task_spec(Cecelia._task_from_fun_name(fn)))[key]["options"]]
+        @test length(vals) == length(unique(vals))
+    end
+
+    # A declared option that the source ALSO enumerates keeps the SPEC's wording and position: the
+    # label is the author's, and order is what keeps a "None" first.
+    dup = Dict{String,Any}("params" => Any[Dict{String,Any}(
+        "key" => "k", "type" => "select", "optionsFrom" => "cellposeModels",
+        "options" => Any[Dict{String,Any}("value" => "cpsam_v2", "label" => "Mine")])])
+    Cecelia._apply_options_from!(dup)
+    opts = dup["params"][1]["options"]
+    @test count(o -> string(o["value"]) == "cpsam_v2", opts) == 1
+    @test string(first(opts)["label"]) == "Mine"
 
     # An unregistered name leaves the declared options alone rather than emptying the picker — a
     # typo in a spec must not silently produce a control nobody can choose anything in.

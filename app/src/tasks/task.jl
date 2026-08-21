@@ -169,9 +169,17 @@ function _apply_options_from!(spec::Dict{String,Any})::Dict{String,Any}
                             Dict{String,Any}[Dict{String,Any}(string(k) => v for (k, v) in o)
                                              for o in fixed if o isa AbstractDict] :
                             Dict{String,Any}[]
+                    # Appended, and DEDUPED BY VALUE against what the spec already declares.
+                    # Without the dedupe a spec that lists an option the lister also enumerates gets
+                    # it twice — which is what `segment.cellpose` did: it declared `cpsam_v2`/`cpsam`
+                    # as literals AND names `cellposeModels`, whose builtin half is the same tuple,
+                    # so the Model picker showed each of them twice (Dominik, 2026-08-21, seen in the
+                    # browser). The declared entry WINS, because its label is the spec author's
+                    # wording and order is what keeps coastal's "None" first.
+                    seen = Set{String}(string(get(o, "value", "")) for o in base)
                     p["options"] = vcat(base,
                         [Dict{String,Any}("label" => o.label, "value" => o.value)
-                         for o in _OPTION_SOURCES[src]()])
+                         for o in _OPTION_SOURCES[src]() if string(o.value) ∉ seen])
                 else
                     @warn "Unknown optionsFrom source; leaving the declared options alone" source = src
                 end
