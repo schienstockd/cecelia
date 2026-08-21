@@ -82,4 +82,9 @@ export function guidesByGroup(): { group: string; guides: GuideDef[] }[] {
   return ordered
 }
 
+// Recipes — the "which pipeline is mine" axis over this same catalogue. Re-exported here so a
+// consumer imports one module for both, and so the picker never reaches past `lib/guides`.
+export { RECIPES, recipeById, isWanted } from './recipes'
+export type { RecipeDef, RecipeStep, WrittenRecipe, WantedRecipe } from './recipes'
+
 export type { GuideDef, GuideStep, GuideCtx, Prereq } from './types'

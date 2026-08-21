@@ -255,7 +255,7 @@ export const trackCellsGuide = moduleTaskGuide({
 //
 // No `flowModelTrained` prereq, deliberately: every prereq in `prereqs.ts` is answerable from state
 // the frontend already holds, and the vault list arrives with the served task spec instead. So the
-// dependency is said in the copy — see WORKFLOW_RECIPES_PLAN P3 for the version that could gate on it.
+// dependency is said in the copy — see WORKFLOW_RECIPES_PLAN.md D8 for the version that could gate on it.
 export const trainFlowModelGuide = moduleTaskGuide({
   id: 'train-flow-model',
   title: 'Train a flow model',

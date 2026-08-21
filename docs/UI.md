@@ -936,6 +936,44 @@ be a real matching pair, and teaching the bare half of a composite must be decla
 - **No demo data.** Guides run on real projects, which is what the prerequisite system makes honest.
   Guides are not a substitute for the first-launch wizard and shouldn't grow into one.
 
+### Recipes — "what are you trying to do?" (the second axis over the same guides)
+
+The guides are indexed on ONE axis: *where in the pipeline am I* (the picker's Start / Data /
+Populations / … groups, mirroring the sidebar). A **recipe** is the other axis — *which pipeline is
+mine*: an ordered list of existing guides with a one-line reason attached to each, rendered as the
+first section of `GuidesDialog`. Catalogue: `lib/guides/recipes.ts`. Design:
+`docs/todo/WORKFLOW_RECIPES_PLAN.md`.
+
+**The reasons are the product.** `segmentGuide` cannot say "use the motion segmentation instead" — it
+is the cellpose guide. A recipe is the one place where "for this data, that tool, and here is why" gets
+said once, instead of as a tip on every affected control. So a `why` states the FORK, not a summary of
+the step, and `whenThisIsYou` is a recognition test ("photon-limited movie of moving cells inside
+tissue") rather than a description.
+
+**A recipe adds no runtime.** Starting a step starts the ordinary guide with the ordinary bubble;
+`RecipeStep.guide` is a `GuideDef` id and `guides.test.ts` fails on one that does not resolve. Per-row
+readiness is `guide.prereqsMet()` over the steps' own prereqs — including the derived "your view
+profile hides this page" miss — so there is nothing recipe-specific to check.
+
+**A scenario we have not written is a REQUEST, not a stub.** A `wanted: true` entry is a title plus a
+link to the `recipe_request.yml` issue form (`recipeRequestUrl()` in `lib/links.ts` — outward URLs live
+there, never inline in an SFC), because the forks in a real recipe come from measuring real data: the
+intravital one is only writable because `SEG_QUALITY_PLAN.md` measured this lab's own movies. What the
+request asks for is what we cannot guess — what they image, what they want out of it, and an example
+image. The ask is stated ONCE above the request links, not as a sentence per row.
+
+Copy budget: `whenThisIsYou` ≤100 chars, each `why` ≤110, both enforced in `guides.test.ts`. A number
+appears only where it has been measured, and the plan cites where.
+
+**Called "recipe", not "scenario", in the code** — `utils/cssScenarios.ts` and *pick a scenario, then a
+size* already own that word here, and one grep should not return both concepts. The picker heading is
+the user-facing wording and is a copy decision, not a rename of the type.
+
+**Task names do not belong in `recipes.ts`.** `app/test/suite.jl` reads every non-test `.ts` in
+`lib/guides/` as one blob and pairs the `funName`/`taskKey` literals in it against the Julia registry —
+a task name pasted into a recipe would be counted as a guide's. A recipe names guides; the guides name
+tasks. Pinned from the recipes side too, in `guides.test.ts`.
+
 ### The orientation tour — the one guide with no prerequisites
 
 `lib/guides/tour.ts` (**Find your way around**, group `Start`, first in the picker) is the exception to

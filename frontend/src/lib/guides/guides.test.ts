@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { GUIDES, GROUP_ORDER, guideById, guidesByGroup } from './index'
+import { GUIDES, GROUP_ORDER, guideById, guidesByGroup, RECIPES, isWanted } from './index'
+import { recipeRequestUrl } from '../links'
 import { PREREQ } from './prereqs'
 import { TASK_RUN_USES } from './moduleTask'
 import { anchorSelector, NAV_PREFIX } from '../../utils/guideAnchor'
@@ -21,7 +22,12 @@ const SFC = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default'
 const MAIN_TS = import.meta.glob('/src/main.ts', { query: '?raw', import: 'default', eager: true }) as
   Record<string, string>
 
+// The recipes module read as text, for the "no task names in here" check below — same `?raw` idiom.
+const RECIPES_RAW = import.meta.glob('/src/lib/guides/recipes.ts', { query: '?raw', import: 'default', eager: true }) as
+  Record<string, string>
+
 const SOURCE = Object.values(SFC).join('\n')
+const RECIPES_SRC = Object.values(RECIPES_RAW)[0] ?? ''
 const mainTs = Object.values(MAIN_TS)[0] ?? ''
 
 // Every anchor a step can point at, including the ones only a `reveal` uses.
@@ -199,6 +205,78 @@ describe('the What\'s New tips link to real guides', () => {
       .filter(t => !guideById(t.guideId!))
       .map(t => `${t.id} → ${t.guideId}`)
     expect(dangling).toEqual([])
+  })
+})
+
+// Recipes (plan D1/D9): a list of existing guides with a reason attached. The catalogue ratchets above
+// keep a GUIDE honest; these keep a recipe from pointing at something that isn't there, and from
+// shipping half-written — a row with neither steps nor the request link reads as a recipe that exists
+// and does nothing.
+describe('recipes compose real guides', () => {
+  it('every step names a guide in the catalogue', () => {
+    const dangling: string[] = []
+    for (const r of RECIPES) {
+      for (const s of r.steps ?? []) {
+        if (!guideById(s.guide)) dangling.push(`${r.id} → ${s.guide}`)
+      }
+    }
+    expect(dangling).toEqual([])
+  })
+
+  it('ids are unique, and distinct from the guide ids they compose', () => {
+    const ids = RECIPES.map(r => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    // A recipe and a guide are two different things behind the same Start button; sharing an id would
+    // make `recipeById`/`guideById` disagree about what the user clicked.
+    expect(ids.filter(id => guideById(id))).toEqual([])
+  })
+
+  it('is either written or wanted, never neither and never both', () => {
+    for (const r of RECIPES) {
+      if (isWanted(r)) {
+        expect(r.steps, `${r.id} is wanted but carries steps`).toBeUndefined()
+      } else {
+        expect(r.steps.length, `${r.id} has no steps`).toBeGreaterThan(0)
+        expect(r.whenThisIsYou.trim().length, `${r.id} has no recognition line`).toBeGreaterThan(0)
+        for (const s of r.steps) {
+          expect(s.why.trim().length, `${r.id} → ${s.guide} has no reason`).toBeGreaterThan(0)
+        }
+      }
+    }
+  })
+
+  // Same discipline as the guide copy budget: one line each. `whenThisIsYou` is a recognition test and
+  // a `why` states one fork — either one running long means it has become a summary of the steps,
+  // which is what the guides themselves are for.
+  it('keeps recipe copy to one line', () => {
+    const over: string[] = []
+    for (const r of RECIPES) {
+      if (isWanted(r)) continue
+      if (r.whenThisIsYou.length > 100) over.push(`${r.id} whenThisIsYou ${r.whenThisIsYou.length} chars`)
+      for (const s of r.steps) {
+        if (s.why.length > 110) over.push(`${r.id} → ${s.guide} why ${s.why.length} chars`)
+      }
+    }
+    expect(over).toEqual([])
+  })
+
+  // A recipe names guides, never task functions — those live in the guide definitions, where the Julia
+  // ratchet (`app/test/suite.jl` → "guide catalogue names real tasks") can check each against the task
+  // registry. It reads this whole directory as one blob, so a task name pasted in here would be
+  // counted as a guide's and break the pairing.
+  it('keeps task names out of the recipes module', () => {
+    expect(RECIPES_SRC.length).toBeGreaterThan(0)
+    expect(RECIPES_SRC).not.toMatch(/funName:\s*'/)
+    expect(RECIPES_SRC).not.toMatch(/taskKey:\s*'/)
+  })
+
+  // The request rows are the one place the app admits a gap, so the link has to reach the form that
+  // asks for what would close it — what they image, and an example image (plan D9).
+  it('a request link points at the recipe issue form, prefilled', () => {
+    const url = recipeRequestUrl('Large multiplex images')
+    expect(url).toContain('/issues/new?')
+    expect(url).toContain('template=recipe_request.yml')
+    expect(url).toContain('title=Recipe%3A+Large+multiplex+images')
   })
 })
 
