@@ -300,11 +300,23 @@ What normalisation cannot touch, and therefore what actually fails to transfer:
 So "physical units" means **choosing the feature geometry in physical units**, in two independent
 pieces:
 
-- **Temporal — cheap and unambiguous.** Declare the scales in SECONDS and resolve them per movie to
-  frame offsets (`round(seconds / frameInterval)`), at training and at inference, recording the
-  seconds in the manifest. A recipient's movie then adapts itself instead of the recipient matching a
-  frame count. Coarser-than-declared data cannot be fixed (you cannot interpolate frames you did not
-  acquire), so a model would also declare a maximum usable frame interval.
+- **Temporal — cheap and unambiguous. The INFERENCE half is built (2026-08-21).** Declare the scales
+  in SECONDS and resolve them per movie to frame offsets (`round(seconds / frameInterval)`), at
+  training and at inference, recording the seconds in the manifest. A recipient's movie then adapts
+  itself instead of the recipient matching a frame count. Coarser-than-declared data cannot be fixed
+  (you cannot interpolate frames you did not acquire), so a model would also declare a maximum usable
+  frame interval.
+
+  What exists now: `segment.coastal`'s **Temporal scale** param, `frames` (default, unchanged
+  behaviour) or `seconds`, which derives the durations from the manifest's own `physicalScales × the
+  trained frame offsets` and re-resolves them for the target movie. **No retraining, no manifest
+  change, no model invalidated** — the durations are recoverable from what P0 already records, so this
+  did not have to wait behind the training-side change. A rate mismatch is warned about in BOTH modes,
+  which was the actual gap: nothing told you the model was fitted at another frame rate.
+
+  Still to do on this axis, and it does need the retrain: declaring the seconds **primarily** (so a
+  model has no frame offsets at all), and the *maximum usable frame interval* — the current code
+  clamps a too-short duration to 1 frame and says so, where a declared ceiling would refuse.
 - **Spatial — a choice between two known approaches.** Either resample XY to a canonical µm/px
   (exactly what cellpose 1–3 did with diameter → 30 px, and what v4 gave up), or train across scales
   by resampling as augmentation and let the net absorb it. The first is predictable and costs a

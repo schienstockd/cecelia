@@ -96,6 +96,76 @@ def read_manifest(model_path):
         return json.load(f)
 
 
+def manifest_frame_interval(manifest):
+    """Seconds per frame the model was TRAINED at, or None when that cannot be known.
+
+    Read from `physicalScales` (written by `opticalFlow.train`; see MODEL_VAULT_PLAN P0), which
+    records one entry per source movie, unconverted, with its unit. Three cases return None, and the
+    distinction matters because the caller uses this to decide whether to touch the scales at all:
+
+    * no `physicalScales` — a model trained before P0, or a checkpoint dropped in by hand;
+    * a unit that is not seconds — there is no unit converter in this codebase and inventing one to
+      run over metadata is the silent numeric error P0 avoided by recording units instead;
+    * source movies that DISAGREE — a model fitted across intervals has no single scale to convert
+      from, so "cannot resolve" is the honest answer rather than a mean nobody chose.
+    """
+    scales = manifest.get('physicalScales')
+    if not isinstance(scales, dict):
+        return None
+    seen = set()
+    for entry in scales.values():
+        if not isinstance(entry, dict) or entry.get('t') is None:
+            return None
+        if str(entry.get('tUnit', 's')) != 's':
+            return None
+        seen.add(round(float(entry['t']), 6))
+    if len(seen) != 1:
+        return None
+    dt = seen.pop()
+    return dt if dt > 0 else None
+
+
+def resolve_scales_for_interval(scales, cumulative, dt_model, dt_target):
+    """Re-express a model's FRAME offsets as the frame offsets of the same DURATIONS on this movie.
+
+    A temporal scale of 4 on a 15 s/frame movie is a 60 s displacement. Run the same model on a
+    5 s/frame movie and scale 4 is 20 s — a different physical motion, fed to a network fitted on
+    the first. Nothing detects that today: the flow is computed, normalised per plane, and comes out
+    wrong-but-in-range, which is the failure mode hardest to notice in someone else's hands
+    (docs/todo/MODEL_VAULT_PLAN.md -> *Would you train in physical units instead?*).
+
+    Returns `(scales, cumulative, note)` — `note` is a human-readable summary, or '' when nothing
+    changed. Collapsed duplicates are why the returned list can be SHORTER: on a coarser movie two
+    declared durations can land on the same frame offset, and the model then sees the same plane
+    twice under two names, which is worse than one plane. Nothing here can invent frames that were
+    not acquired, so a duration below one target frame clamps to 1 and is reported.
+    """
+    if not dt_model or not dt_target or dt_model <= 0 or dt_target <= 0:
+        return sorted(set(scales)), cumulative, ''
+    if abs(dt_model - dt_target) < 1e-9:
+        return sorted(set(scales)), cumulative, ''
+
+    ratio = dt_model / dt_target
+    out, clamped = [], []
+    for sc in sorted(set(int(s) for s in scales)):
+        want = int(round(sc * ratio))
+        if want < 1:
+            want = 1
+            clamped.append(sc)
+        out.append(want)
+    resolved = sorted(set(out))
+    cum = max(1, int(round(cumulative * ratio)))
+
+    parts = [f'temporal scales {sorted(set(int(s) for s in scales))} -> {resolved}',
+             f'cumulative window {cumulative} -> {cum}',
+             f'({dt_model:g} s/frame trained, {dt_target:g} s/frame here)']
+    if len(resolved) < len(set(int(s) for s in scales)):
+        parts.append('- durations collapsed onto the same frame offset')
+    if clamped:
+        parts.append(f'- {clamped} are shorter than one frame here and clamped to 1')
+    return resolved, cum, ' '.join(parts)
+
+
 def temporal_config(manifest):
     """`(scales, cumulative_window, dropped_metrics)` — the flow feature set a model expects.
 
@@ -167,25 +237,109 @@ class CoastalUtils(SegmentationUtils):
         if not models:
             raise ValueError('coastal segmentation needs at least one model group')
 
+        if not dim_utils.is_timeseries():
+            raise ValueError(
+                'coastal segments by motion and needs a time series; this image has no T axis')
+
+        # Resolved ONCE here rather than per plane in `predict_slice`: it reads a manifest and, in
+        # `seconds` mode, does arithmetic that must give the same answer for every tile of the run.
+        # Keyed by MODEL PATH, because that is all the resolution depends on (the manifest, plus the
+        # run-constant mode and this image's interval) — so two groups sharing a model share the
+        # answer and the warning is logged once, not once per pass.
+        self._temporal = {}
+        for mp in models.values():
+            key = str(mp.get('model', ''))
+            if key not in self._temporal:
+                self._temporal[key] = self._resolve_temporal(mp)
+
         # The radius is a property of the RUN, not of one model group: the base builds one window
         # per tile and hands it to every group. Stacking a second group with different scales
         # therefore widens the window for both, which is harmless (each group indexes the flows it
         # needs) but must be the max, never the first group's.
-        self.TEMPORAL_RADIUS = max(
-            max(temporal_config(self._manifest(mp))[0]) for mp in models.values())
-
-        if not dim_utils.is_timeseries():
-            raise ValueError(
-                'coastal segments by motion and needs a time series; this image has no T axis')
+        self.TEMPORAL_RADIUS = max(max(cfg[0]) for cfg in self._temporal.values())
 
         n_t = int(dim_utils.dim_val('T'))
         if n_t < self.TEMPORAL_RADIUS + 1:
             # Not a warning. Coastal would drop the largest scale's plane and shift every later
             # channel, producing a plausible-looking wrong mask.
+            hint = ('Train a model with smaller temporal scales, or segment a longer movie.'
+                    if str(self.params.get('temporalScaleMode', 'frames')) == 'frames' else
+                    'This movie is faster than the model was trained on, so matching DURATIONS '
+                    'needs proportionally more frames. Segment a longer movie, or set Temporal '
+                    'scale back to "As trained".')
             raise ValueError(
                 f'coastal needs at least {self.TEMPORAL_RADIUS + 1} timepoints for temporal scale '
-                f'{self.TEMPORAL_RADIUS}; this image has {n_t}. Train a model with smaller '
-                f'temporal scales, or segment a longer movie.')
+                f'{self.TEMPORAL_RADIUS}; this image has {n_t}. {hint}')
+
+    # Whether a model's temporal scales are taken as FRAMES (as trained) or as the DURATIONS they
+    # represented at training and re-resolved for this movie. Default `frames` = exactly the previous
+    # behaviour, because `seconds` changes what the network is fed and therefore what a re-run of an
+    # existing pipeline produces. Exposed rather than chosen here: on a movie acquired at the model's
+    # own interval the two modes are identical, and on any other movie the right answer depends on
+    # whether the user is reproducing an old result or applying a model to new data.
+    TEMPORAL_SCALE_MODES = ('frames', 'seconds')
+
+    def _temporal_for(self, model_params):
+        """The resolved `(scales, cumulative, dropped)` for a group, by model path.
+
+        Resolves on a miss rather than raising: `predict_slice` is also driven DIRECTLY — by the
+        preview, by a test, by a REPL session — with a group the constructor never saw. Memoised, so
+        a real run still resolves once per model and logs its warning once.
+        """
+        key = str(model_params.get('model', ''))
+        if key not in self._temporal:
+            self._temporal[key] = self._resolve_temporal(model_params)
+        return self._temporal[key]
+
+    def _resolve_temporal(self, model_params):
+        """`(scales, cumulative, dropped)` for one model group, after the scale-mode decision.
+
+        The mismatch is logged in BOTH modes — that is the point. In `seconds` mode it says what was
+        changed; in `frames` mode it says what was *not*, because until now nothing told you that the
+        model in the picker was fitted at a different frame rate than the movie you pointed it at.
+        """
+        manifest = self._manifest(model_params)
+        scales, cumulative, dropped = temporal_config(manifest)
+
+        dt_model  = manifest_frame_interval(manifest)
+        dt_target = self.dim_utils.im_time_increment(default=None)
+        dt_target = None if dt_target is None else float(dt_target)
+        if str(self.dim_utils.im_time_increment_unit()) != 's':
+            dt_target = None
+
+        mode = str(self.params.get('temporalScaleMode', 'frames'))
+        if mode not in self.TEMPORAL_SCALE_MODES:
+            raise ValueError(f'temporalScaleMode must be one of {self.TEMPORAL_SCALE_MODES}, '
+                             f'got {mode!r}')
+
+        new_scales, new_cum, note = resolve_scales_for_interval(
+            scales, cumulative, dt_model, dt_target)
+
+        if not note:
+            # Nothing changed. Silent when the two intervals agree — but NOT when one of them is
+            # unknown, because "these match" and "nobody can tell" are different answers and only
+            # one of them is reassuring.
+            #
+            # Suppressed for a model with no manifest at all: `coastal_models_for_python` already
+            # says that one, with the better advice (the metric set is a guess too), and repeating
+            # it here would put two warnings about one cause in the log.
+            if manifest and dt_model is None:
+                self.logger.log('[WARN] Model records no frame interval — its temporal scales '
+                                'cannot be checked against this movie. Re-train it to record one.')
+            elif manifest and dt_target is None:
+                self.logger.log('[WARN] This image records no frame interval in seconds — the '
+                                "model's temporal scales cannot be checked against it.")
+            return new_scales, new_cum, dropped
+
+        if mode == 'seconds':
+            self.logger.log(f'>> temporal scales matched by duration: {note}')
+            return new_scales, new_cum, dropped
+
+        self.logger.log(
+            f'[WARN] Frame rate differs from the model\'s: {note}. The model sees different '
+            f'displacements than it was fitted on. Set Temporal scale to "Match durations" to '
+            f'convert.')
+        return scales, cumulative, dropped
 
     @staticmethod
     def _quieten_cv2_threads():
@@ -377,7 +531,7 @@ class CoastalUtils(SegmentationUtils):
                 'TEMPORAL_RADIUS > 0 (see SegmentationUtils.predict_slice)')
 
         is_3d = (tile.ndim == 4)
-        scales, cumulative, dropped = temporal_config(self._manifest(model_params))
+        scales, cumulative, dropped = self._temporal_for(model_params)
         inference = self._get_inference(model_params)
         projected = self._project_window(window.frames, model_params, norm_params, window.channels)
         feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped)

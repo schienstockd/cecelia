@@ -36,10 +36,15 @@ def _window(frames, index, wid=0, start=0, tile=(0, 16, 0, 16), channels=None):
 class _DimUtils:
     """Enough of DimUtils for the base's __init__ and the temporal guard."""
 
-    def __init__(self, n_t=30, order='TCZYX', shape=(30, 2, 4, 64, 64)):
+    def __init__(self, n_t=30, order='TCZYX', shape=(30, 2, 4, 64, 64), frame_interval=None,
+                 frame_interval_unit='s'):
         self.im_dim_order = list(order)
         self._shape = shape
         self._n_t = n_t
+        # None = the OME file carried no TimeIncrement, which is a real and common case and the one
+        # that must NOT be filled with an invented 1.0 — see `manifest_frame_interval`.
+        self._dt = frame_interval
+        self._dt_unit = frame_interval_unit
 
     def is_timeseries(self):
         return 'T' in self.im_dim_order
@@ -55,6 +60,12 @@ class _DimUtils:
 
     def im_physical_size(self, ax, default=1.0):
         return default
+
+    def im_time_increment(self, default=None):
+        return self._dt if self._dt is not None else default
+
+    def im_time_increment_unit(self, default='s'):
+        return self._dt_unit or default
 
 
 class _StubInference:
@@ -80,15 +91,29 @@ class _PlaneIdInference:
         return None, np.full(frame.shape, value, np.uint32), None
 
 
-def _utils(model_params=None, dim_utils=None, task_dir='/tmp'):
-    """A CoastalUtils with the coastal calls stubbed out."""
+def _utils(model_params=None, dim_utils=None, task_dir='/tmp', params_extra=None,
+           manifest=None):
+    """A CoastalUtils with the coastal calls stubbed out.
+
+    `manifest`, when given, is returned by `_manifest` via a subclass — it has to be in place BEFORE
+    construction, because `__init__` resolves the temporal config from it and that is what sets
+    `TEMPORAL_RADIUS`. Assigning to `_manifest_cache` after the fact arrives too late (and `__init__`
+    clears it anyway).
+    """
     from cecelia.utils.coastal_utils import CoastalUtils
 
     mp = {'model': '/nonexistent/model.pt', 'cellChannels': [0]}
     mp.update(model_params or {})
     params = {'taskDir': task_dir, 'models': {'0': mp}}
+    params.update(params_extra or {})
 
-    cu = CoastalUtils(params, dim_utils or _DimUtils())
+    if manifest is not None:
+        class _WithManifest(CoastalUtils):
+            def _manifest(self, _model_params):
+                return manifest
+        cu = _WithManifest(params, dim_utils or _DimUtils())
+    else:
+        cu = CoastalUtils(params, dim_utils or _DimUtils())
     stub = _StubInference()
     cu._get_inference = lambda _mp: stub
     cu._stub = stub
@@ -556,3 +581,131 @@ class PredictSliceTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FrameIntervalFromManifestTest(unittest.TestCase):
+    """What frame rate a model was trained at — or a refusal to guess.
+
+    `physicalScales` records one entry per source movie, unconverted, with its unit (MODEL_VAULT_PLAN
+    P0). Turning that into one number is only sound in a narrow case, and every other case has to
+    return None rather than something plausible: the caller uses this to decide whether to REWRITE
+    the model's temporal scales, so a wrong interval silently feeds the network the wrong motion.
+    """
+
+    @staticmethod
+    def _fi(manifest):
+        from cecelia.utils import coastal_utils
+        return coastal_utils.manifest_frame_interval(manifest)
+
+    def test_one_source_movie_in_seconds(self):
+        self.assertEqual(self._fi({'physicalScales': {'a': {'t': 15.0, 'tUnit': 's'}}}), 15.0)
+
+    def test_several_movies_that_agree(self):
+        self.assertEqual(self._fi({'physicalScales': {'a': {'t': 15.0, 'tUnit': 's'},
+                                                      'b': {'t': 15.0, 'tUnit': 's'}}}), 15.0)
+
+    def test_movies_that_disagree_are_unresolvable(self):
+        """A model fitted across intervals has no single scale to convert FROM. A mean would be a
+        number nobody chose, applied to every scale."""
+        self.assertIsNone(self._fi({'physicalScales': {'a': {'t': 15.0, 'tUnit': 's'},
+                                                       'b': {'t': 5.0, 'tUnit': 's'}}}))
+
+    def test_a_unit_that_is_not_seconds_is_refused(self):
+        """There is no unit converter in this codebase, and inventing one to run over metadata is
+        the silent numeric error P0 avoided by recording units in the first place."""
+        self.assertIsNone(self._fi({'physicalScales': {'a': {'t': 0.25, 'tUnit': 'min'}}}))
+
+    def test_a_manifest_without_the_field(self):
+        self.assertIsNone(self._fi({'temporalScales': [1, 2, 4]}))
+        self.assertIsNone(self._fi({}))
+
+    def test_an_entry_missing_t(self):
+        """An image whose OME carried no TimeIncrement — `physicalScaleSource: "partial"`."""
+        self.assertIsNone(self._fi({'physicalScales': {'a': {'x': 0.33, 'xUnit': 'um'}}}))
+
+    def test_a_nonsense_interval(self):
+        self.assertIsNone(self._fi({'physicalScales': {'a': {'t': 0.0, 'tUnit': 's'}}}))
+
+
+class ResolveScalesForIntervalTest(unittest.TestCase):
+    """Re-expressing a model's frame offsets as the same DURATIONS on another movie."""
+
+    @staticmethod
+    def _r(scales, cumulative, dt_model, dt_target):
+        from cecelia.utils import coastal_utils
+        return coastal_utils.resolve_scales_for_interval(scales, cumulative, dt_model, dt_target)
+
+    def test_the_same_interval_changes_nothing_and_says_nothing(self):
+        scales, cum, note = self._r([1, 2, 4, 8], 5, 15.0, 15.0)
+        self.assertEqual((scales, cum, note), ([1, 2, 4, 8], 5, ''))
+
+    def test_a_faster_movie_needs_more_frames_for_the_same_time(self):
+        # 15 s/frame trained, 5 s/frame here: scale 4 was 60 s, which is 12 frames now.
+        scales, cum, note = self._r([1, 2, 4, 8], 5, 15.0, 5.0)
+        self.assertEqual(scales, [3, 6, 12, 24])
+        self.assertEqual(cum, 15)
+        self.assertIn('15 s/frame trained, 5 s/frame here', note)
+
+    def test_a_slower_movie_collapses_durations_and_says_so(self):
+        # 5 s/frame trained, 15 s/frame here: 5 s, 10 s and 20 s all land on 1 frame.
+        scales, cum, note = self._r([1, 2, 4, 8], 5, 5.0, 15.0)
+        self.assertEqual(scales, [1, 3])
+        self.assertIn('collapsed', note)
+        self.assertIn('clamped to 1', note)
+
+    def test_duplicates_never_survive(self):
+        """Two declared durations on one frame offset would feed the model the same plane twice
+        under two channel names — worse than one plane, and it shifts every later channel."""
+        scales, _, _ = self._r([2, 3], 5, 5.0, 15.0)
+        self.assertEqual(len(scales), len(set(scales)))
+
+    def test_an_unknown_interval_leaves_everything_alone(self):
+        for dt_model, dt_target in ((None, 5.0), (15.0, None), (None, None), (0, 5.0)):
+            scales, cum, note = self._r([1, 2, 4], 5, dt_model, dt_target)
+            self.assertEqual((scales, cum, note), ([1, 2, 4], 5, ''),
+                             f'{dt_model!r}/{dt_target!r} must be a no-op')
+
+
+class TemporalScaleModeTest(unittest.TestCase):
+    """The mode is a run-level decision, and the default must reproduce the old behaviour exactly."""
+
+    _MANIFEST = {'temporalScales': [1, 2, 4, 8], 'cumulativeWindow': 5,
+                 'physicalScales': {'a': {'t': 15.0, 'tUnit': 's'}}}
+
+    def test_frames_mode_keeps_the_trained_offsets(self):
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0))
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0], [1, 2, 4, 8])
+        self.assertEqual(cu.TEMPORAL_RADIUS, 8)
+
+    def test_seconds_mode_resolves_them_and_widens_the_window(self):
+        """`TEMPORAL_RADIUS` follows, which is the consequence to notice: on a 3x faster movie the
+        window is 3x deeper, so the run reads and holds 3x the frames per tile."""
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0], [3, 6, 12, 24])
+        self.assertEqual(cu.TEMPORAL_RADIUS, 24)
+
+    def test_the_two_modes_agree_at_the_trained_rate(self):
+        for mode in ('frames', 'seconds'):
+            cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=15.0),
+                        params_extra={'temporalScaleMode': mode})
+            self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0],
+                             [1, 2, 4, 8], mode)
+
+    def test_an_unknown_mode_raises_rather_than_falling_back(self):
+        """A typo must not silently pick a behaviour — the two modes feed the network different data."""
+        with self.assertRaises(ValueError):
+            _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0),
+                   params_extra={'temporalScaleMode': 'Seconds'})
+
+    def test_a_movie_with_no_interval_is_never_rewritten(self):
+        """Even in seconds mode: nothing is known, so nothing may be converted."""
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=None),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0], [1, 2, 4, 8])
+
+    def test_a_non_second_time_unit_is_never_rewritten(self):
+        cu = _utils(manifest=self._MANIFEST,
+                    dim_utils=_DimUtils(frame_interval=5.0, frame_interval_unit='ms'),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0], [1, 2, 4, 8])

@@ -865,6 +865,38 @@ instead is silently 2× off at 0.5 µm/px), and a radius the user set never roun
 Still px, and correctly so: `blockSize` and `overlap`. Those describe the TILING, which is about
 memory and array layout, not about cells.
 
+**Temporal scale: `frames` (default) or `seconds`.** A model's `temporalScales` are FRAME offsets,
+and a frame offset only means a displacement once you know the frame interval. Scale 4 on a 15 s/frame
+movie is a 60 s displacement; run the same model on a 5 s/frame movie and scale 4 is 20 s — different
+physical motion, fed to a network fitted on the first. Nothing detected that: the flow is computed,
+normalised per plane, and comes out wrong-but-in-range, which is the failure mode hardest to notice.
+
+`manifest_frame_interval` reads what the model was trained at from `physicalScales` (recorded by
+`opticalFlow.train`; MODEL_VAULT_PLAN P0) and **refuses to guess** in three cases, each of which
+returns `None` and leaves the scales untouched: no `physicalScales` (a pre-P0 model, or a hand-dropped
+checkpoint), a `tUnit` that is not seconds (there is no unit converter here, and inventing one to run
+over metadata is the error P0 avoided by recording units), and source movies that DISAGREE (a model
+fitted across intervals has no single interval to convert from, and a mean is a number nobody chose).
+
+- **`frames`** — the trained offsets, verbatim. Exactly the previous behaviour, and the default,
+  because the alternative changes what the network is fed and so what a re-run of an existing
+  pipeline produces. A mismatch is now **logged as a warning** either way: until this existed nothing
+  told you the model in the picker was fitted at a different frame rate than the movie you aimed it at.
+- **`seconds`** — `resolve_scales_for_interval` re-expresses each offset as the same DURATION on this
+  movie (`round(scale × dt_model / dt_target)`, floor 1). Two consequences worth knowing before
+  picking it. On a **faster** movie the offsets grow, and `TEMPORAL_RADIUS` grows with them — a 3×
+  faster movie reads and holds a 3× deeper window per tile, and needs proportionally more timepoints
+  (the existing "not enough timepoints" guard now says so). On a **slower** movie durations
+  **collapse** onto the same offset and the list gets shorter, which is deliberate: two declared
+  durations landing on one frame offset would feed the model the same plane twice under two channel
+  names, shifting every later channel.
+
+This is the temporal half of *"choosing the feature geometry in physical units"*
+([`MODEL_VAULT_PLAN.md`](todo/MODEL_VAULT_PLAN.md) → *Would you train in physical units instead?*),
+done at **inference only**. It needs no retraining and invalidates no model, which is why it is
+separable from the training-side change the plan sequences behind `perf/coastal-speed`. The spatial
+half is untouched — pixel sizes are still matched by the user, not by the code.
+
 **Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
 label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis
 downstream. The composite (`segment.coastal` → `segment.measureLabels`) is what the Segment page is
