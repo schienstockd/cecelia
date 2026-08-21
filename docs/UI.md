@@ -1465,6 +1465,12 @@ its scrolling body so the handle stays put while the panel scrolls.)
 
 Task definitions are loaded once per session via `useTaskDefs`, which calls `GET /api/tasks/definitions?category=X`.
 
+`PoolThrottle` has **three hosts**, one component: the Task Manager toolbar, every module page's
+runner (in the pool row), and **Settings → Task concurrency**. The Settings host exists because the
+other two attach it to a task context — with nothing selected and an empty task list there was nowhere
+to change a machine-level setting, which is what a concurrency limit is. Don't add a fourth surface
+and don't copy the sliders.
+
 **Threads per task** (in the same `PoolThrottle` popover, under a rule below the pool sliders): one
 slider for `CECELIA_TASK_WORKERS` — how WIDE one task may go, as opposed to how many run at once.
 `GET`/`POST /api/tasks/threads[/set]`. Two things the pool sliders do not have: the readout reads

@@ -234,7 +234,7 @@ A task that has **measured** a need for more raises it locally with
 "obviously wants all cores" actually looks like when measured.
 
 **`CECELIA_TASK_WORKERS` is settable live**, in the same popover as the pool sliders (`PoolThrottle`,
-Task Manager / module pages / Chain page) via `GET`+`POST /api/tasks/threads[/set]` →
+Task Manager / module pages / Chain page, and inline in Settings → Task concurrency) via `GET`+`POST /api/tasks/threads[/set]` →
 `set_task_worker_threads!`. It belongs there because it answers the same question the pool limits do —
 how hard may this machine work — and a number that can only be changed by hand-editing `config.toml`
 is a number nobody changes.
