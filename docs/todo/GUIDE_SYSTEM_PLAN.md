@@ -472,6 +472,18 @@ Plus four **obvious candidates** added in the same pass, each answering a questi
     It therefore does NOT need a time series (a keyframed move over a z-stack is valid), which is why its
     prereqs stop at an imported image.
 
+Added later, on a reason rather than as a candidate:
+
+18. **Train a flow model** † (`/optical-flow`) and **Segment a movie by motion** † (`/segment`,
+    `segment.coastalMeasure`) — added 2026-08-21 with the cellpose 4 migration. Not "another obvious
+    candidate": the catalogue taught cellpose as *the* way to segment, and
+    `SEG_QUALITY_PLAN.md` measured cellpose 4's one model at **0.0% QC-pass** on an intravital movie
+    where tuned `cyto2` reached 13.4% — with `cyto2` no longer selectable. The guidance was therefore
+    walking exactly the users this lab has into the tool that cannot read their data. Two guides
+    because they are two runs on two pages, and a model is trained once per kind of movie then reused
+    across projects. The cellpose guide gained one line saying when not to use it. See
+    `CELLPOSE_V4_PLAN.md` and `WORKFLOW_RECIPES_PLAN.md` (P0).
+
 Still-obvious candidates NOT built: **spatial neighbour analysis** and **export/share a project**.
 
 Copy budget per step: **one sentence, plus at most 2–4 imperative lines** — the same shape as a tip
