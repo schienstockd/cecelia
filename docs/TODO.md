@@ -163,10 +163,29 @@ default, stays a REPL/chain override, or is **derived from the image's physical 
 last is the interesting option, since "one cell radius" is what anyone actually means and it is the
 one form of the parameter that does not need re-tuning per dataset.
 
-Note the other unexposed dial while you are there: `foregroundBoundaryWeight` is 0.0 in every run so
-far, and per `flow_discontinuity`'s docstring it is "the ONLY path by which optical flow reaches the
-labels". Nothing in `flow.cyto` supervises segmentation with flow; flow enters as input channels and
-through the contrastive embedding term only.
+(`foregroundBoundaryWeight` was the other unexposed dial here; it is now a form control, off by
+default, guarded against the metric set it needs — see `docs/SEGMENTATION.md`. Nothing has been trained
+with it yet, so whether flow supervision helps the masks is still an open experiment.)
+
+### One thread budget for stages with opposite scaling curves
+
+`cpu_utils.task_workers()` is a single number, and the three stages it governs disagree about what
+they want (measured table in `docs/SCHEDULER.md` → *Three stages, three curves*):
+
+- segmentation's flow metrics scale to the **box** — 14x at 32 threads, 6.8x at 8, so the default
+  leaves ~2x unclaimed on a lone run;
+- segmentation's region growing **degrades** past 4, which is what `cap=` already handles;
+- training's joblib stage improves in steady state but pays a spawn cost that grows with width, so its
+  optimum depends on how many sequences the run has.
+
+`cap=` can only say "less than the budget". There is no way for a stage measured to scale linearly to
+say "take the machine when nobody else is using it", which is the case that costs the most. The
+plumbing for it is small — `run_py` would have to say whether `CECELIA_TASK_WORKERS` was DERIVED or
+chosen, so a linear stage can widen in the first case and obey the slider in the second — but it
+changes how much of the machine one task takes, so it wants a decision rather than a patch.
+
+Deliberately not done on the measurements above: they are synthetic arrays at production geometry on
+one loaded box, which is enough to correct a doc claim and not enough to change what every task does.
 
 ### Flow-training QC measures the drop on a number that is mostly a constant
 `flow_training_qc_findings` warns when `lossDrop` (first/final `total`) is ≤ 1.0. Now that the floor

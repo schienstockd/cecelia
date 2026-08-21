@@ -183,10 +183,41 @@ running on one core of thirty-two. It is the same assumption `BLAS_THREADS_PER_T
 under.
 
 Read it through `cpu_utils.task_workers(cap=…)`. The `cap` is for a stage **measured** to stop
-scaling: coastal's flow metrics scale to 8+ threads while its region growing peaks at 4 and is
-*slower* at 8, so the two halves of one task take different widths. An algorithmic ceiling like that
-belongs next to its measurement, not in a config file — no machine makes 8 the right number for a
-stage that degrades past 4.
+scaling. An algorithmic ceiling like that belongs next to its measurement, not in a config file — no
+machine makes 8 the right number for a stage that degrades past 4.
+
+#### Three stages, three curves, and one number governing all of them
+
+"Coastal's flow metrics" names two different mechanisms, and an earlier version of this section
+conflated them. Measured on a 32-core box (synthetic arrays at production geometry; a second session
+measured the same shapes independently with a different harness and agreed on every direction):
+
+| stage | mechanism | 1 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| **segmentation** flow metrics | threads over Z | 8.37 s | 2.13 | 1.23 | 0.84 | **0.60** |
+| **segmentation** region growing | threads over Z | — | **peak** | 1.5× worse | 2× worse | — |
+| **training** flow metrics | joblib PROCESSES over frames | 2.80 s/seq | 1.33 | 1.01 | 0.84 | **0.78** |
+
+Two things follow, and neither was written down before:
+
+**Segmentation's flow stage scales to the box** — 14× at 32 threads against 6.8× at 8. `FLOW_WORKERS`
+is `task_workers()`, so on a 32-core machine it runs at 8 and leaves ~2× unclaimed. Raising the
+throttle is worth ~2× on a lone segmentation. `PREDICT_WORKER_CAP = 4` is exactly right and should not
+be touched: it is the one stage measured to degrade.
+
+**Training's flow stage is not the same curve, because it is not the same mechanism.** joblib forks a
+worker process per job and pickles the frame stack to each, so its steady state improves with width
+but its POOL SPAWN grows with it: 2.99 s for the first sequence at 8 workers, 4.79 s at 32. Over six
+sequences 8 wins on total; over sixty, steady state dominates and 32 does. So "raise the slider when
+the machine is yours" is right for segmentation, and for training only if the run is long.
+
+Beware measuring this by sweeping `n_jobs` inside one process: changing it **respawns** loky's pool, so
+the spawn cost lands on whichever width was measured first. That artefact is what makes the joblib
+stage look like it degrades past 4 workers. One width per process is the only honest harness.
+
+The open design question this exposes — `task_workers()` is asked to be one number for stages with
+opposite curves, and a stage measured to scale linearly has no way to say "give me the box when nobody
+else is using it". `cap=` covers the degrading case only. See `docs/TODO.md`.
 
 **The budget is sized from what this PROCESS may use, not from the machine.** `Sys.CPU_THREADS`
 counts the box, which is the wrong number the moment the process is confined — a PBS/Slurm job with
@@ -215,6 +246,9 @@ resolves through `joblib.cpu_count()`, which honours **`LOKY_MAX_CPU_COUNT`**, s
 to the same `task_worker_threads()` — one number for "how wide may one task go", reaching coastal with
 no change on the coastal side and no per-task param. The preview worker gets it too: uncapped, a
 preview forked a process per core for a viewport-sized region while a real task was running.
+
+(The per-stage numbers, and why "raise the slider" cuts differently for training and segmentation,
+are in *Three stages, three curves* above.)
 
 This is why "is training using the budget?" had a surprising answer. `train_run.py` reads
 `CECELIA_TASK_WORKERS` nowhere and torch ignores `OPENBLAS_NUM_THREADS`, so the answer looked like
