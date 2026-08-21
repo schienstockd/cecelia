@@ -297,10 +297,15 @@ export const useGuideStore = defineStore('guide', () => {
   // Start still works — the page is still reachable, this is decluttering not access control.
   // See docs/todo/VIEW_PROFILES_PLAN.md.
   const profileNavGroups = computed(() => allNavGroups(useCustomModulesStore().categories))
+  // The menu's own paths, before and after the profile. Both, because only the difference between
+  // them is a hidden page: a route that is in NEITHER is chrome the sidebar reaches some other way
+  // (`/settings` from the footer, `/` as the welcome route) and no profile can hide it.
+  const profileCuratablePaths = computed(() => availablePaths(profileNavGroups.value))
   const profileVisiblePaths = computed(() =>
     availablePaths(applyProfile(profileNavGroups.value, useViewProfilesStore().activeItems)))
 
-  const hiddenPagesOf = (g: GuideDef) => hiddenGuideRoutes(g.steps, profileVisiblePaths.value)
+  const hiddenPagesOf = (g: GuideDef) =>
+    hiddenGuideRoutes(g.steps, profileVisiblePaths.value, profileCuratablePaths.value)
 
   function profilePrereq(g: GuideDef): (Prereq & { met: boolean }) | null {
     const hidden = hiddenPagesOf(g)

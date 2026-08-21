@@ -10,6 +10,8 @@
 // disagree with what the sidebar renders. Nothing here picks a landing page — `/` is its own neutral
 // welcome route (`modules/WelcomeModule.vue`) precisely so no page has to be chosen.
 
+import { NAV_PREFIX } from './guideAnchor'
+
 export interface ProfileNavItem { to: string }
 export interface ProfileNavGroup<T extends ProfileNavItem = ProfileNavItem> {
   heading: string
@@ -66,11 +68,19 @@ export function unknownPaths(items: string[] | null | undefined, available: stri
  * The distinct route paths a guide's steps visit, in step order. A `GuideStep.route` is optional (the
  * orientation tour and the lab-log guide are not tied to a page), so a guide can legitimately declare
  * none.
+ *
+ * A `nav:/movies` ANCHOR counts as one of those pages: it points at the sidebar row for that page, so
+ * a profile that hides the page removes the very element the step is about. Reading `route` alone
+ * missed the two steps that only ever name a page that way ("Where they land" / "Where it lands",
+ * both pointing at Movies) — the picker said Ready and the step then rendered the centred "That
+ * control isn't on screen right now" card.
  */
-export function guideRoutes(steps: { route?: string }[]): string[] {
+export function guideRoutes(steps: { route?: string; anchor?: string }[]): string[] {
   const out: string[] = []
+  const add = (p: string) => { if (!out.includes(p)) out.push(p) }
   for (const s of steps) {
-    if (s.route && !out.includes(s.route)) out.push(s.route)
+    if (s.anchor?.startsWith(NAV_PREFIX)) add(s.anchor.slice(NAV_PREFIX.length))
+    if (s.route) add(s.route)
   }
   return out
 }
@@ -80,10 +90,22 @@ export function guideRoutes(steps: { route?: string }[]): string[] {
  * menu does not show, so the picker says so as a prerequisite miss (amber, Start still works — a
  * missing prereq is a warning about fit, not a lock; the page is still reachable).
  *
- * `visible` is the profile-filtered path list. A guide with no routes is never affected.
+ * `visible` is the profile-filtered path list; `curatable` is the UNfiltered one — every path a
+ * profile is allowed to list. Both are needed: a route outside the catalogue is not a page a profile
+ * declined to show, it is chrome that was never on offer (`/settings` lives in the sidebar footer,
+ * `/` is the welcome route, `/console` is a popout), so it can never be hidden and must not be
+ * counted. Comparing against `visible` alone flagged the orientation tour's two `/settings` steps for
+ * everyone, including a first launch with no profile chosen.
+ *
+ * A guide with no routes is never affected.
  */
-export function hiddenGuideRoutes(steps: { route?: string }[], visible: string[]): string[] {
+export function hiddenGuideRoutes(
+  steps: { route?: string; anchor?: string }[],
+  visible: string[],
+  curatable: string[],
+): string[] {
   if (!visible.length) return []          // no profile resolved ⇒ nothing is hidden
   const shown = new Set(visible)
-  return guideRoutes(steps).filter(r => !shown.has(r))
+  const canHide = new Set(curatable)
+  return guideRoutes(steps).filter(r => canHide.has(r) && !shown.has(r))
 }

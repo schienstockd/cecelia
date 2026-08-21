@@ -4,6 +4,8 @@ import { recipeRequestUrl } from '../links'
 import { PREREQ } from './prereqs'
 import { TASK_RUN_USES } from './moduleTask'
 import { anchorSelector, NAV_PREFIX } from '../../utils/guideAnchor'
+import { allNavGroups } from '../navGroups'
+import { applyProfile, availablePaths, hiddenGuideRoutes } from '../../utils/viewProfiles'
 import type { GuideCtx } from './types'
 
 // THE ratchet for the guide system (plan D4). A guide's step points at a control by anchor id; if the
@@ -349,5 +351,44 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     expect(PREREQ.tracked.ok(ctx({
       images: [img({ trackValueNames: [], runLog: [ran('tracking.bayesian_tracking')] })],
     }))).toBe(false)
+  })
+})
+
+// The view-profile prereq is DERIVED from each guide's `route`s (stores/guide.ts), so no guide
+// declares it and no guide author can get it wrong — which also means a mistake in the derivation
+// hits the whole catalogue at once. It did: `/settings` is reached from the sidebar FOOTER and is
+// deliberately absent from NAV_GROUPS (navGroups.test.ts pins that a profile must not be able to hide
+// it), so measuring the tour's two `/settings` steps against the menu's paths reported "1 missing ·
+// needs pages your view profile hides (/settings)" — on a first launch, with no profile chosen, on
+// the one guide App.vue starts by itself.
+describe('the derived view-profile prereq', () => {
+  const curatable = availablePaths(allNavGroups([]))
+  // the implicit "All pages" profile — what every user has until they choose one
+  const allPages = availablePaths(applyProfile(allNavGroups([]), null))
+
+  it('flags nothing for any guide when no profile is active', () => {
+    const bad = GUIDES
+      .map(g => ({ id: g.id, hidden: hiddenGuideRoutes(g.steps, allPages, curatable) }))
+      .filter(g => g.hidden.length)
+      .map(g => `${g.id} → ${g.hidden.join(', ')}`)
+    expect(bad).toEqual([])
+  })
+
+  it('still flags a guide whose page a profile drops', () => {
+    const gate = guideById('gate-populations')!
+    const visible = availablePaths(applyProfile(allNavGroups([]), ['/manage-images']))
+    expect(hiddenGuideRoutes(gate.steps, visible, curatable)).toContain('/gate')
+  })
+
+  // The other half of the same bug: `record-a-movie` step 5 and `build-an-animation` step 8 point at
+  // `nav:/movies` — the sidebar ROW for the Movies page — and neither guide has a step with
+  // `route: '/movies'`. Read from `route` alone, a profile without Movies left both saying "Ready" and
+  // then showed the centred "That control isn't on screen right now" card where the row should be.
+  it('flags a guide that names a page only through a nav: anchor', () => {
+    const visible = availablePaths(
+      applyProfile(allNavGroups([]), curatable.filter(p => p !== '/movies')))
+    for (const id of ['record-a-movie', 'build-an-animation']) {
+      expect(hiddenGuideRoutes(guideById(id)!.steps, visible, curatable)).toContain('/movies')
+    }
   })
 })

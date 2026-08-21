@@ -2002,7 +2002,15 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
 - A guide whose steps visit hidden pages gets one **derived prereq** in the picker
   (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
   counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new
-  guide is covered without declaring anything.
+  guide is covered without declaring anything. **Only a page the menu offers can be hidden**:
+  `hiddenGuideRoutes` takes the profile-filtered paths AND the unfiltered catalogue, because a route in
+  neither (`/settings` from the sidebar footer, `/` the welcome page, `/console` the popout) is chrome
+  a profile was never able to list. Measuring against the filtered list alone made the orientation
+  tour — whose last steps walk `/settings` — read "1 missing" for everybody on a first launch, with no
+  profile chosen. And a step names its page **two ways** — `route`, and a `nav:/movies` anchor, which
+  points at the sidebar ROW for a page: `guideRoutes` reads both, since two guides ("Record a movie",
+  "Build an animation") name Movies only that way and were silently unflagged. Pinned in
+  `guides.test.ts`: with no profile active, no guide is flagged; drop Movies and both are.
 - A listed path the app no longer has is dropped from the menu and named in Settings — a profile that
   quietly shrinks gives the user nothing to act on.
 
