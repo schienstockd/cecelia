@@ -66,6 +66,27 @@ _Changes on `main` that have not yet been tagged in a release._
   track→cell expansion carried only the requested columns, so a gated or clustered track's cells came back
   with no centroids at all — which is exactly what a track plot draws.
 
+### Fixed
+
+- **"Find your way around" no longer opens with a warning.** The orientation tour — the guide Cecelia
+  starts by itself on a first launch — read "1 missing · needs pages your view profile hides
+  (/settings)", for everyone, including users who had never chosen a view profile. Settings is reached
+  from the sidebar footer and is deliberately not in the nav catalogue a profile curates, so the guide
+  picker was comparing the tour's `/settings` steps against a list that could never contain them. Only
+  a page the menu offers can now be reported as hidden.
+- **A guide no longer reports someone else's run as yours.** A guide step that waits for a task
+  ("Segmenting — I'll pick up when it finishes") adopted the newest run of that function, whether or
+  not it was the one you had just started. Since Next always moves on, walking past the Run step in a
+  session where you had already run that function meant the guide acted on the old run — skipping the
+  step if it had succeeded, or claiming "That run failed." if it hadn't. It now waits for a run you
+  started during the guide, or one still in flight. **"Wait again" after a failure really does wait
+  for the next run**, instead of re-adopting the dead one.
+- **A guide that sends you to a page your view profile hides now says so.** The warning was derived
+  from each step's declared page, but a step can also name one by pointing at its sidebar row — which
+  is how "Record a movie" and "Build an animation" name the Movies page, and neither declares it. With
+  Movies hidden both guides read "Ready" and then showed "That control isn't on screen right now"
+  where the menu row should have been.
+
 ## [0.1.3] — 2026-08-15
 
 41 pull requests since `v0.1.2`. Still `0.1.x`.
