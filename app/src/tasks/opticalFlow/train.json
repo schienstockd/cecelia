@@ -237,6 +237,16 @@
           "tip": "Supervises the probability head at cell scale"
         },
         {
+          "key": "intensityWeight",
+          "label": "Intensity loss",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.25,
+          "default": 0.25,
+          "tip": "Merge/coverage dial: raise to claim more signal, lower for tighter objects"
+        },
+        {
           "key": "temporalWeight",
           "label": "Temporal loss",
           "type": "float",

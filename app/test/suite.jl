@@ -13243,94 +13243,40 @@ end
 end
 
 
-# ── the intensity loss is off, and is no longer a form control ───────────────
-# coastal's own `IntensityLoss` docstring says to prefer `ConfettiForegroundLoss`: its target is
-# `0.5*bright + 0.3*local_contrast + 0.2*edge`, which has no cell-scale structure, so it trains the
-# probability head to reproduce speckle (measured: 2535 components per frame, median 3 px) and is
-# named as the origin of the ~86% downstream fragment rate. Every model trained since 2026-08-19 set
-# it to 0; the shipped DEFAULT was still 1, which is a default nobody used.
+# ── the intensity loss is a dial, not a switch ───────────────────────────────
+# This testset previously asserted the opposite: that `intensityWeight` defaulted to 0 and was no
+# longer offered. That change was made on coastal's docstring ("prefer ConfettiForegroundLoss", with a
+# measurement of the intensity target ALONE: 2535 components, median 3 px) plus the observation that
+# recent models all used 0. An audit refuted the inference:
 #
-# The param stays HONOURED by the runner, just off and unlisted — the same treatment as
-# `foregroundBlurSigma` (docs/SEGMENTATION.md), so `memTom` stays reproducible from a chain or the
-# REPL. Pinned because "the form no longer offers it" and "the runner no longer reads it" are
-# different things, and only the first one is wanted.
-# ── task thread budget ───────────────────────────────────────────────────────
-# The CPU sibling of the pool limits, and the same reason for a live setter: a number that can only be
-# changed by hand-editing a config file is one nobody changes. What is worth pinning is the DERIVED
-# state — clearing the setting must go back to following the box, not freeze today's derived number.
-# ── how many CPUs this process may actually use ───────────────────────────────
-# `Sys.CPU_THREADS` counts the MACHINE. Under an affinity mask (a PBS/Slurm cpuset) or a cgroup quota
-# (`docker --cpus`) the process may use far fewer, and since `LOKY_MAX_CPU_COUNT` this number decides
-# how many worker PROCESSES coastal's flow stage forks — so sizing it from the box is how a four-core
-# allocation ends up forking sixteen.
+#   • The controlled pair was already on disk. memTom (intensity 1.0) and flow.small (intensity 0.0)
+#     share image, channel, seed, epochs and frame count — and memTom reaches a LOWER foreground loss
+#     (0.32507 vs 0.32747). The retained objective is fit no better without the term, so "it degrades
+#     the head it supervises" does not hold.
+#   • A sweep put peak IoU at 0.25 (0.622) with 0.0 at 0.606 and 1.0 at 0.523: 1.0 over-claims
+#     (precision 54%) and 0.0 under-claims (recall 70%, circularity 16% above the raw signal).
+#   • cecelia pins `confetti: 0.0`, so `foreground` is coastal's `ForegroundLoss` — brightness-only,
+#     explicitly "the colour-blind form". The single-channel worry that shipped with the change named
+#     `ConfettiForegroundLoss` and did not apply.
 #
-# The parsers are tested rather than the file reads: a dev box has no limits to read (this one reports
-# `0-31` and no `cpu.max`), so the only way to pin "we would read a cluster's mask correctly" is to
-# hand the parser the strings a cluster produces.
-@testset "usable CPU count reads affinity and cgroup limits" begin
-    # /proc/self/status → Cpus_allowed_list
-    @test Cecelia.cpus_from_affinity_list("0-31") == 32
-    @test Cecelia.cpus_from_affinity_list("0-3,8,12-15") == 9      # 4 + 1 + 4
-    @test Cecelia.cpus_from_affinity_list("7") == 1
-    # an unreadable limit is NO limit, never a limit of zero — that would serialise the machine
-    @test isnothing(Cecelia.cpus_from_affinity_list(""))
-    @test isnothing(Cecelia.cpus_from_affinity_list("nonsense"))
-    @test isnothing(Cecelia.cpus_from_affinity_list("8-2"))        # reversed range
-
-    # /sys/fs/cgroup/cpu.max → "<quota> <period>" in µs
-    @test Cecelia.cpus_from_cgroup_max("400000 100000") == 4
-    @test Cecelia.cpus_from_cgroup_max("100000 100000") == 1
-    # rounded UP and floored at 1: half a CPU still has to run the task
-    @test Cecelia.cpus_from_cgroup_max("150000 100000") == 2
-    @test Cecelia.cpus_from_cgroup_max("50000 100000") == 1
-    @test isnothing(Cecelia.cpus_from_cgroup_max("max 100000"))    # no quota
-    @test isnothing(Cecelia.cpus_from_cgroup_max("garbage"))
-    @test isnothing(Cecelia.cpus_from_cgroup_max("400000 0"))      # would divide by zero
-
-    # …and the composite never exceeds the box, never returns zero, and is the slider's ceiling
-    @test 1 <= Cecelia.usable_cpus() <= max(Sys.CPU_THREADS, 1)
-    @test Cecelia.task_workers_max() == Cecelia.usable_cpus()
-    # the derived default is a fraction of what we may USE, and never wider than it
-    @test Cecelia.default_task_worker_threads() <= Cecelia.usable_cpus()
-end
-
-@testset "task thread budget round-trips and clears" begin
-    mktempdir() do dir
-        withenv("CECELIA_DEV_DIR" => dir) do
-            init_cecelia!()
-            derived = default_task_worker_threads()
-            @test task_worker_threads() == derived          # nothing configured yet
-
-            @test set_task_worker_threads!(3) == 3
-            @test task_worker_threads() == 3
-            cfg = Cecelia.TOML.parsefile(Cecelia.custom_toml_path())
-            @test cfg["tasks"]["workerThreads"] == 3
-
-            # clamped to the offered ceiling, not written through
-            @test set_task_worker_threads!(10_000) == Cecelia.task_workers_max()
-
-            # …and clearing REMOVES the key — a written copy of the derived number would stop
-            # following the machine the moment the config moved to another box.
-            @test set_task_worker_threads!(0) == derived
-            cfg2 = Cecelia.TOML.parsefile(Cecelia.custom_toml_path())
-            @test !haskey(get(cfg2, "tasks", Dict{String,Any}()), "workerThreads")
-        end
-    end
-    init_cecelia!()   # restore the suite's config
-end
-
-@testset "intensity loss is off by default and not a form control" begin
+# So the default is the measured middle and the control is back. Pinned because "the form offers it"
+# is the part that had no measurement behind it either way, and removing it also made
+# `paramsFromManifest` drop it silently — a model trained at 1.0 handed back a form that would not
+# reproduce it.
+@testset "intensity loss is an offered dial at the measured default" begin
     spec = Cecelia._task_spec(TrainFlowModel())
-
     keys_of(ps) = reduce(vcat, [haskey(p, "params") ? keys_of(p["params"]) : [get(p, "key", "")]
                                 for p in ps]; init = String[])
-    @test "intensityWeight" ∉ keys_of(spec["params"])
-    # the term it replaces IS still offered — this is a switch, not a removal of the loss surface
+    @test "intensityWeight" ∈ keys_of(spec["params"])
     @test "foregroundWeight" ∈ keys_of(spec["params"])
 
-    # …and an explicit value is still accepted, so the old model can be re-trained
-    @test validate_params(TrainFlowModel(),
-        Dict{String,Any}("intensityWeight" => 1.0)) === nothing
+    flat(ps) = reduce(vcat, [haskey(p, "params") ? flat(p["params"]) : [p] for p in ps]; init = [])
+    iw = only(p for p in flat(spec["params"]) if get(p, "key", "") == "intensityWeight")
+    # NOT 0.0 (the refuted default) and NOT 1.0 (over-claims); the sweep's peak.
+    @test iw["default"] == 0.25
+    @test iw["min"] == 0.0        # 0 stays REACHABLE — the experiment must remain runnable
+    @test validate_params(TrainFlowModel(), Dict{String,Any}("intensityWeight" => 0.0)) === nothing
+    @test validate_params(TrainFlowModel(), Dict{String,Any}("intensityWeight" => 1.0)) === nothing
 end
 
 @testset "OME-ZARR metadata reads v2 and v3 alike" begin

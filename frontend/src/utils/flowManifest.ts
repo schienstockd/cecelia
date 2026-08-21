@@ -45,6 +45,13 @@ export interface FlowManifest {
   zSlice?: number
   trainedAt?: string
   lossWeights?: Record<string, number>
+  /**
+   * The per-pixel brightness/edge weight, against `foregroundWeight`'s cell-scale one — the
+   * merge/coverage dial (docs/SEGMENTATION.md). Declared separately from `lossWeights` because the
+   * manifest records it at top level and `paramsFromManifest` carries it back to the form; while it
+   * was undeclared, the mapper dropped it and a model trained at 1.0 came back as the default.
+   */
+  intensityWeight?: number
   lossCurves?: Record<string, number[]>
   /** Per-term irreducible loss — `mean H(target)`. Keyed like `lossCurves`; BCE terms only. */
   lossFloors?: Record<string, number[]>
@@ -78,6 +85,7 @@ const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
+  'intensityWeight',
   'maxFrames', 'frameWindows', 'trainRatio', 'zSpacing', 'cropSize', 'cropWindows', 'metricDtype',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves', 'lossFloors',

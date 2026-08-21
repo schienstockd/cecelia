@@ -763,24 +763,41 @@ comparable scale. Values are kept in the unit OME gave them, unconverted. Models
 2026-08-21 have no such record and the vault shows the row as unknown. See
 `docs/todo/MODEL_VAULT_PLAN.md`.
 
-**The intensity loss is off, and off the form.** coastal's own `IntensityLoss` docstring says to
-prefer `ConfettiForegroundLoss`: its target is `0.5*bright + 0.3*local_contrast + 0.2*edge` — half a
-per-pixel threshold, half two edge detectors — so it carries no cell-scale structure and trains the
-probability head to reproduce speckle. Measured: **2535 connected components per frame, 98% under
-100 px, median 3 px**, and the foreground term's docstring names that speckle as the origin of the
-**~86% downstream fragment rate**. Every model trained since 2026-08-19 (`flow.cyto`, `flow.cytoFg`,
-`flow.cytoBlur6`) set `intensityWeight` to 0; only `memTom` (2026-08-07) used 1. So the shipped
-default of 1.0 was one nobody had used in two weeks — the same stale-default trap as
-`embeddingBlurSigma`.
+**The intensity loss is a merge/coverage dial, default 0.25.** `intensityWeight` weights a per-pixel
+brightness/edge target against `foregroundWeight`'s cell-scale one. It was briefly set to 0 and taken
+off the form, on coastal's `IntensityLoss` docstring ("prefer `ConfettiForegroundLoss`") plus its
+measurement of that target ALONE — 2535 components per frame, median 3 px. An audit refuted the
+inference from that to zero, and the evidence was already on disk:
 
-`intensityWeight` therefore defaults to **0.0** and is no longer a form control, but the runner still
-honours it, so `memTom` stays reproducible from a chain or the REPL. `foregroundWeight` stays on the
-form: this is a switch between two supervisions of the same head, not the removal of one.
+`memTom` (intensity 1.0) and `flow.small` (intensity 0.0) are a controlled pair — same image, channel,
+seed, epochs, 24 frames — and **memTom reaches the LOWER foreground loss** (0.32507 vs 0.32747). The
+term the change was meant to protect is fit no better without it, so "it degrades the head it
+supervises" does not hold. A sweep on `zolIMa/fXgbTl` z16 mem-TOM (4 frames, Otsu on the raw frame as a
+common yardstick, not ground truth):
 
-One caveat, unmeasured: `ConfettiForegroundLoss` builds its target from `softmax_ch_*`, a *per-channel*
-local softmax, so it is multi-channel by construction. `flow.cytoFg` trained on a single channel with
-`foregroundWeight: 1.0`, so either that degrades gracefully to brightness or it contributed little —
-worth knowing which before recommending foreground as the only supervision for single-channel movies.
+| `intensityWeight` | objects | field claimed | circularity | recall | precision | IoU |
+|---|---|---|---|---|---|---|
+| raw signal | 157 | 10.3% | 0.407 | — | — | — |
+| 0.0 | 102 | 8.6% | 0.471 | 69.5% | 83.2% | 0.606 |
+| **0.25** | 129 | 12.1% | 0.442 | 83.5% | 71.4% | **0.622** |
+| 0.5 | 139 | 15.0% | 0.406 | 89.7% | 61.9% | 0.576 |
+| 1.0 | 145 | 18.0% | 0.387 | 94.2% | 54.2% | 0.523 |
+
+Monotonic in coverage: 1.0 over-claims (precision 54%), 0.0 under-claims (recall 70%, 30% of signal
+unclaimed, circularity 16% above the data's own). IoU peaks at 0.25, which is the default; 0 stays
+reachable because the comparison has to remain runnable. In scope: one image, one Z plane, four frames,
+one channel, and it is the image both models were trained on — so in-domain, and it says nothing about
+a six-image set.
+
+**Which foreground loss is in play.** cecelia pins `confetti: 0.0`, so `foregroundWeight` selects
+coastal's `ForegroundLoss` — brightness-only, explicitly "the colour-blind form of
+`ConfettiForegroundLoss`". A caveat about `softmax_ch_*` and single-channel movies shipped with the
+earlier change and was wrong for that reason: it described the confetti variant, which cecelia never
+enables.
+
+**Still open:** `foregroundBoundaryWeight` is never passed by `train_run.py`, so it sits at 0 — and per
+coastal's `flow_discontinuity` it is the only path by which optical flow reaches mask geometry. See
+`docs/TODO.md`.
 
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
