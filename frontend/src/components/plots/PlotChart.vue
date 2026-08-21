@@ -12,7 +12,7 @@
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
-import { legendOverlay, titleOverlay } from '../../plots/overlays'
+import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import type { PlotDataResponse } from '../../plots/types'
@@ -59,11 +59,9 @@ async function render(pass = 0) {
   // panel — the bottom x-axis can't be clipped. We draw the legend ourselves as an absolute overlay
   // (consumes no layout height), so it never pushes the axis out of view.
   node = Plot.plot({ ...base, width: w, height: h }) as SVGElement
-  // Observable Plot's tooltip (`tip: true`) fills its background rect from the CSS var
-  // `--plot-background` (default white), NOT from style.background — so in dark theme the tip was
-  // white-on-white (light ink over a white rect). Point the var at the theme ground so the tip rect
-  // matches the plot ink.
-  ;(node as SVGElement).style.setProperty('--plot-background', props.opts?.darkTheme ? '#1f2226' : 'white')
+  // Point Plot's `--plot-background` at the theme ground so a `tip: true` rect matches the plot ink
+  // rather than staying white — see `applyPlotTheme`, which every Plot.plot() site now shares.
+  applyPlotTheme(node as SVGElement, !!props.opts?.darkTheme)
   host.value.append(node)
   // report any setting the builder substituted (`_autoRotatedX`) — but only when it actually CHANGED.
   // The host stores this and the board stores the host's readout, so an unconditional emit makes every
@@ -76,7 +74,7 @@ async function render(pass = 0) {
     lastOverrides = overrides; emit('auto-override', overrides)
   }
 
-  const ink = props.opts.darkTheme ? '#e6e6e6' : '#111'
+  const ink = plotTheme(!!props.opts.darkTheme).ink
   if (props.opts.legend && base._colorLegend) {
     // continuous colour legend for matrix/heatmap (plot.ts stashes the colour scale in `_colorLegend`).
     legendNode = legendOverlay(Plot, base._colorLegend.color, ink)
@@ -123,6 +121,9 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
   const off = Plot.plot({ ...base, width: w, height: h }) as SVGElement
+  // Light by construction (`darkTheme: false` above), so this only restates Plot's own default — but
+  // stated, so the ratchet holds and an export never inherits a ground nobody chose.
+  applyPlotTheme(off, false)
   return svgToImageURL(svgOf(off as unknown as Element), type)
 }
 defineExpose({ toImageURL })

@@ -50,6 +50,7 @@ import { distinctColors } from '../../plots/plot'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 import { lossSeries, lossTable, type LossCurves } from '../../plots/lossCurves'
+import { applyPlotTheme, plotTheme } from '../../plots/overlays'
 
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
                        model?: string }
@@ -158,8 +159,7 @@ async function render() {
   const w = Math.max(200, host.value.clientWidth || 360)
   const h = Math.max(160, host.value.clientHeight || 240)
   const dark = !forceLight.value
-  const fg = dark ? '#e6e6e6' : '#111'
-  const bg = dark ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(dark)
   const domain = shown.value.map(s => s.term)
   node = Plot.plot({
     width: w, height: h, marginLeft: 58, marginRight: 12, marginTop: 12,
@@ -184,6 +184,9 @@ async function render() {
                                  strokeDasharray: '3,3' }),
     ],
   }) as SVGElement
+  // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
+  // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
+  applyPlotTheme(node, dark)
   host.value.append(node)
 }
 
