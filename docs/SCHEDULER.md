@@ -188,6 +188,25 @@ scaling: coastal's flow metrics scale to 8+ threads while its region growing pea
 belongs next to its measurement, not in a config file — no machine makes 8 the right number for a
 stage that degrades past 4.
 
+**The budget is sized from what this PROCESS may use, not from the machine.** `Sys.CPU_THREADS`
+counts the box, which is the wrong number the moment the process is confined — a PBS/Slurm job with
+four cores of a 128-core node, a container run with `--cpus`. Since the same number now caps joblib's
+worker *processes*, sizing from the box means forking workers for CPUs the process cannot touch.
+`usable_cpus()` narrows it by two Linux limits, smallest wins: the affinity mask
+(`/proc/self/status: Cpus_allowed_list`) and the cgroup-v2 quota (`/sys/fs/cgroup/cpu.max`). On macOS
+and Windows the machine count is the best available. Both numbers are reported by
+`GET /api/tasks/threads` (`cores` = usable, `machineCores` = the box) and the throttle names both only
+when they differ.
+
+**The throttle's ceiling is `usable_cpus()`, not a round number.** It was a flat 64 on the reasoning
+that an I/O-bound task may want more threads than cores — which stopped being true when the number
+began capping processes. 64 processes on 32 cores is not a perf choice, it is contention.
+
+**`Threads.nthreads()` is not this.** Settings → Diagnostics reports it as *Server threads* and it is
+Julia's own pool, fixed at start by `-t`. It bounds the API's concurrency, not a task's width, and
+reading it as a CPU budget is the obvious mistake — so diagnostics reports `cpus` and `cpusMachine`
+beside it.
+
 **A third parallelism, and the one that was escaping: joblib.** coastal's optical flow — the heaviest
 CPU stage of BOTH training and segmentation — is `Parallel(n_jobs=-1)`, which spawns a worker
 **process** per core. None of the variables above touch it: each child inherits its own

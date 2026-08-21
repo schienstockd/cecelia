@@ -504,10 +504,94 @@ const _TASK_WORKERS_MAX_DEFAULT = 16
 # laptop is not the one running four heavy tasks at once. Never wider than the box either.
 const _TASK_WORKERS_MIN_DEFAULT = 2
 
+# ── How many CPUs this PROCESS may actually use ───────────────────────────────────────────────────
+#
+# `Sys.CPU_THREADS` counts the MACHINE, which is the wrong number the moment the process is confined:
+# a PBS/Slurm job with four cores of a 128-core node, or a container run with `--cpus`. Sizing a
+# budget from the box then hands out threads (and, since `LOKY_MAX_CPU_COUNT`, worker PROCESSES) for
+# hardware the process cannot touch — the scheduler is not fooled, it just thrashes.
+#
+# Two limits, both Linux, both cheap to read, and the smallest wins along with the machine count:
+#   • the affinity mask (`taskset`, a cluster's cpuset) — `/proc/self/status: Cpus_allowed_list`
+#   • the cgroup-v2 CPU quota (`--cpus`, a systemd slice) — `/sys/fs/cgroup/cpu.max`
+# Elsewhere (macOS, Windows) the machine count is the best available and is what we use, which is no
+# worse than before.
+#
+# The parsers are pure and separately tested: the file reads cannot be exercised on a box that has no
+# limits, and "we would parse a cluster's mask correctly" is exactly the claim worth pinning.
+
+"""
+    cpus_from_affinity_list(s) -> Union{Int,Nothing}
+
+`"0-3,8,12-15"` → `8`. `nothing` when the line is absent or unparseable — an unreadable limit must not
+read as a limit of zero.
+"""
+function cpus_from_affinity_list(s::AbstractString)::Union{Int,Nothing}
+    n = 0
+    for part in split(strip(s), ',')
+        isempty(part) && continue
+        if occursin('-', part)
+            lo, hi = split(part, '-')
+            a = tryparse(Int, lo); b = tryparse(Int, hi)
+            (isnothing(a) || isnothing(b) || b < a) && return nothing
+            n += b - a + 1
+        else
+            isnothing(tryparse(Int, part)) && return nothing
+            n += 1
+        end
+    end
+    n > 0 ? n : nothing
+end
+
+"""
+    cpus_from_cgroup_max(s) -> Union{Int,Nothing}
+
+cgroup v2 `cpu.max` is `"<quota> <period>"` in microseconds: `"400000 100000"` → 4 CPUs. `"max ..."`
+means no quota → `nothing`. Rounded UP, and never below 1: a 0.5-CPU quota still gets one worker,
+because zero would mean the task cannot run at all.
+"""
+function cpus_from_cgroup_max(s::AbstractString)::Union{Int,Nothing}
+    parts = split(strip(s))
+    length(parts) == 2 || return nothing
+    parts[1] == "max" && return nothing
+    quota = tryparse(Int, parts[1]); period = tryparse(Int, parts[2])
+    (isnothing(quota) || isnothing(period) || period <= 0 || quota <= 0) && return nothing
+    max(1, cld(quota, period))
+end
+
+_read_limit(path, parse) = try
+    isfile(path) ? parse(read(path, String)) : nothing
+catch
+    nothing
+end
+
+"""
+    usable_cpus() -> Int
+
+Logical CPUs this process may use: the machine count, narrowed by the affinity mask and the cgroup
+quota where those exist. Always at least 1. See the block comment above for why the machine count
+alone is not it.
+"""
+function usable_cpus()::Int
+    n = max(Sys.CPU_THREADS, 1)
+    if Sys.islinux()
+        aff = _read_limit("/proc/self/status", s -> begin
+            m = match(r"Cpus_allowed_list:\s*(\S+)", s)
+            isnothing(m) ? nothing : cpus_from_affinity_list(m.captures[1])
+        end)
+        isnothing(aff) || (n = min(n, aff))
+        cg = _read_limit("/sys/fs/cgroup/cpu.max", cpus_from_cgroup_max)
+        isnothing(cg) || (n = min(n, cg))
+    end
+    max(n, 1)
+end
+
 default_task_worker_threads()::Int =
-    min(clamp(Sys.CPU_THREADS ÷ _TASK_WORKERS_ASSUMED_ACTIVE,
-              _TASK_WORKERS_MIN_DEFAULT, _TASK_WORKERS_MAX_DEFAULT),
-        max(Sys.CPU_THREADS, 1))
+    let cpus = usable_cpus()
+        min(clamp(cpus ÷ _TASK_WORKERS_ASSUMED_ACTIVE,
+                  _TASK_WORKERS_MIN_DEFAULT, _TASK_WORKERS_MAX_DEFAULT),
+            cpus)
+    end
 
 function task_worker_threads()::Int
     conf = get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
@@ -516,10 +600,15 @@ function task_worker_threads()::Int
     n >= 1 ? n : default_task_worker_threads()
 end
 
-# The ceiling the throttle offers. Not `Sys.CPU_THREADS`: a task may legitimately be given more
-# threads than the box has cores when it is I/O-bound between them, and the slider is a perf knob, not
-# a safety one. Wide enough to be silly on purpose, so the number is the user's judgement.
-const TASK_WORKERS_MAX = 64
+# The ceiling the throttle offers: the CPUs this process may actually use, not a round number. It was
+# a flat 64 on the reasoning that a task may want more threads than cores when it is I/O-bound between
+# them — which stopped being true when the same number began capping joblib's worker PROCESSES
+# (`LOKY_MAX_CPU_COUNT`, py_runner.jl). 64 processes on 32 cores is not a perf choice, it is
+# contention, and offering it invites exactly the setting nobody wants.
+#
+# A function, not a const: the answer depends on an affinity mask and a cgroup quota, and a value
+# frozen at load time would be the machine's rather than this process's.
+task_workers_max()::Int = usable_cpus()
 
 """
     set_task_worker_threads!(n) -> Int
@@ -542,7 +631,7 @@ function set_task_worker_threads!(n::Integer)::Int
     if n <= 0
         delete!(tasks, "workerThreads")
     else
-        tasks["workerThreads"] = clamp(Int(n), 1, TASK_WORKERS_MAX)
+        tasks["workerThreads"] = clamp(Int(n), 1, task_workers_max())
     end
     # An empty `[tasks]` table left behind reads as a setting that exists and is blank.
     isempty(tasks) ? delete!(cfg, "tasks") : (cfg["tasks"] = tasks)

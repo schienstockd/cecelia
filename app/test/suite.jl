@@ -13258,6 +13258,42 @@ end
 # The CPU sibling of the pool limits, and the same reason for a live setter: a number that can only be
 # changed by hand-editing a config file is one nobody changes. What is worth pinning is the DERIVED
 # state — clearing the setting must go back to following the box, not freeze today's derived number.
+# ── how many CPUs this process may actually use ───────────────────────────────
+# `Sys.CPU_THREADS` counts the MACHINE. Under an affinity mask (a PBS/Slurm cpuset) or a cgroup quota
+# (`docker --cpus`) the process may use far fewer, and since `LOKY_MAX_CPU_COUNT` this number decides
+# how many worker PROCESSES coastal's flow stage forks — so sizing it from the box is how a four-core
+# allocation ends up forking sixteen.
+#
+# The parsers are tested rather than the file reads: a dev box has no limits to read (this one reports
+# `0-31` and no `cpu.max`), so the only way to pin "we would read a cluster's mask correctly" is to
+# hand the parser the strings a cluster produces.
+@testset "usable CPU count reads affinity and cgroup limits" begin
+    # /proc/self/status → Cpus_allowed_list
+    @test Cecelia.cpus_from_affinity_list("0-31") == 32
+    @test Cecelia.cpus_from_affinity_list("0-3,8,12-15") == 9      # 4 + 1 + 4
+    @test Cecelia.cpus_from_affinity_list("7") == 1
+    # an unreadable limit is NO limit, never a limit of zero — that would serialise the machine
+    @test isnothing(Cecelia.cpus_from_affinity_list(""))
+    @test isnothing(Cecelia.cpus_from_affinity_list("nonsense"))
+    @test isnothing(Cecelia.cpus_from_affinity_list("8-2"))        # reversed range
+
+    # /sys/fs/cgroup/cpu.max → "<quota> <period>" in µs
+    @test Cecelia.cpus_from_cgroup_max("400000 100000") == 4
+    @test Cecelia.cpus_from_cgroup_max("100000 100000") == 1
+    # rounded UP and floored at 1: half a CPU still has to run the task
+    @test Cecelia.cpus_from_cgroup_max("150000 100000") == 2
+    @test Cecelia.cpus_from_cgroup_max("50000 100000") == 1
+    @test isnothing(Cecelia.cpus_from_cgroup_max("max 100000"))    # no quota
+    @test isnothing(Cecelia.cpus_from_cgroup_max("garbage"))
+    @test isnothing(Cecelia.cpus_from_cgroup_max("400000 0"))      # would divide by zero
+
+    # …and the composite never exceeds the box, never returns zero, and is the slider's ceiling
+    @test 1 <= Cecelia.usable_cpus() <= max(Sys.CPU_THREADS, 1)
+    @test Cecelia.task_workers_max() == Cecelia.usable_cpus()
+    # the derived default is a fraction of what we may USE, and never wider than it
+    @test Cecelia.default_task_worker_threads() <= Cecelia.usable_cpus()
+end
+
 @testset "task thread budget round-trips and clears" begin
     mktempdir() do dir
         withenv("CECELIA_DEV_DIR" => dir) do
@@ -13271,7 +13307,7 @@ end
             @test cfg["tasks"]["workerThreads"] == 3
 
             # clamped to the offered ceiling, not written through
-            @test set_task_worker_threads!(10_000) == Cecelia.TASK_WORKERS_MAX
+            @test set_task_worker_threads!(10_000) == Cecelia.task_workers_max()
 
             # …and clearing REMOVES the key — a written copy of the derived number would stop
             # following the machine the moment the config moved to another box.

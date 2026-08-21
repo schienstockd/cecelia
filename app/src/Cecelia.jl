@@ -7,6 +7,7 @@ export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coas
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 export task_worker_threads, default_task_worker_threads, set_task_worker_threads!
+export usable_cpus, task_workers_max
 export runner_enabled, set_runner_enabled!, is_dev_session
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON

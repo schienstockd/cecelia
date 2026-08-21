@@ -18,8 +18,10 @@ export interface ThreadBudget {
   max: number
   /** true when `workers` came from the machine, not from `custom.toml` */
   derived: boolean
-  /** cores on the box, for the tooltip */
+  /** CPUs this PROCESS may use — affinity mask + cgroup quota, not the machine's count */
   cores?: number
+  /** what the box has. Differs from `cores` under a cpuset or `--cpus`; equal on a workstation */
+  machineCores?: number
 }
 
 /** The value shown beside the label. Says WHERE the number came from, not just what it is. */
@@ -34,11 +36,25 @@ export function threadReadout(b: ThreadBudget | null): string {
  * on this machine.
  */
 export function threadTip(b: ThreadBudget | null): string {
-  if (!b) return 'Threads one task may use for its own work.'
-  const box = b.cores ? `${b.cores} cores` : 'this machine'
+  if (!b) return 'How wide one task may go.'
+  const box = cpuPhrase(b)
   return b.derived
-    ? `Auto: ${b.workers} threads, derived from ${box}. Applies to the next task started.`
-    : `${b.workers} threads per task (auto would be ${b.default} on ${box}). Applies to the next task started.`
+    ? `Auto: ${b.workers}, derived from ${box}. Applies to the next task started.`
+    : `${b.workers} per task (auto would be ${b.default} on ${box}). Applies to the next task started.`
+}
+
+/**
+ * How the machine is described. Says "usable" and names both numbers only when they DIFFER — on a
+ * cluster node or in a container the process may use a fraction of the box, and a budget sized from
+ * the box hands out workers for CPUs it cannot touch. On an ordinary workstation they are equal and
+ * saying it twice would be noise.
+ */
+export function cpuPhrase(b: ThreadBudget): string {
+  if (!b.cores) return 'this machine'
+  if (b.machineCores && b.machineCores !== b.cores) {
+    return `${b.cores} of ${b.machineCores} CPUs usable here`
+  }
+  return `${b.cores} CPUs`
 }
 
 /** Clamp a slider value the way the backend will, so the UI can't show a number it won't get. */

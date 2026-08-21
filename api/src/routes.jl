@@ -724,9 +724,14 @@ function api_task_threads_get(_req)
     conf_n = get(get(Cecelia.cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
     200, JSON3.write((; workers = Cecelia.task_worker_threads(),
                         default = Cecelia.default_task_worker_threads(),
-                        max     = Cecelia.TASK_WORKERS_MAX,
+                        max     = Cecelia.task_workers_max(),
                         derived = isnothing(conf_n),
-                        cores   = Sys.CPU_THREADS))
+                        # `cores` is what this PROCESS may use (affinity mask + cgroup quota), which
+                        # on a cluster node or in a container is not the machine's count — and the
+                        # machine's is what a budget must NOT be sized from. Both are reported so the
+                        # UI can say which it means; they are equal on an ordinary workstation.
+                        cores        = Cecelia.usable_cpus(),
+                        machineCores = Sys.CPU_THREADS))
 end
 
 # Set it live: persists + hot-reloads, so the NEXT task spawns with it. `workers <= 0` clears the
