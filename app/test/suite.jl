@@ -13238,6 +13238,32 @@ end
     @test parse_temporal_scales(["1", "2", "8"]) == [1, 2, 8]
 end
 
+
+# ── the intensity loss is off, and is no longer a form control ───────────────
+# coastal's own `IntensityLoss` docstring says to prefer `ConfettiForegroundLoss`: its target is
+# `0.5*bright + 0.3*local_contrast + 0.2*edge`, which has no cell-scale structure, so it trains the
+# probability head to reproduce speckle (measured: 2535 components per frame, median 3 px) and is
+# named as the origin of the ~86% downstream fragment rate. Every model trained since 2026-08-19 set
+# it to 0; the shipped DEFAULT was still 1, which is a default nobody used.
+#
+# The param stays HONOURED by the runner, just off and unlisted — the same treatment as
+# `foregroundBlurSigma` (docs/SEGMENTATION.md), so `memTom` stays reproducible from a chain or the
+# REPL. Pinned because "the form no longer offers it" and "the runner no longer reads it" are
+# different things, and only the first one is wanted.
+@testset "intensity loss is off by default and not a form control" begin
+    spec = Cecelia._task_spec(TrainFlowModel())
+
+    keys_of(ps) = reduce(vcat, [haskey(p, "params") ? keys_of(p["params"]) : [get(p, "key", "")]
+                                for p in ps]; init = String[])
+    @test "intensityWeight" ∉ keys_of(spec["params"])
+    # the term it replaces IS still offered — this is a switch, not a removal of the loss surface
+    @test "foregroundWeight" ∈ keys_of(spec["params"])
+
+    # …and an explicit value is still accepted, so the old model can be re-trained
+    @test validate_params(TrainFlowModel(),
+        Dict{String,Any}("intensityWeight" => 1.0)) === nothing
+end
+
 @testset "OME-ZARR metadata reads v2 and v3 alike" begin
     # `read_ome_metadata` feeds ccid.json `meta`, which docs/OBJECTMODEL.md → *Calibration* makes authoritative
     # for every physical number in the app. NGFF 0.5 nests attributes under `ome`; a reader that misses

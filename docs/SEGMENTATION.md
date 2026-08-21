@@ -750,7 +750,8 @@ limitation biting: the p99 rescale is purely relative and has no way to say "the
 so a wider blur spreads the claim rather than sharpening it.
 
 **Neither σ dominates, so the default stays at coastal's 1.0** and `foregroundBlurSigma` stays a
-REPL/chain override rather than a form control. Note both models land on their own floor to within
+REPL/chain override rather than a form control. (`intensityWeight` now gets the same treatment, for
+the opposite reason — see below.) Note both models land on their own floor to within
 0.0006 — the loss says σ=1 is far better (0.265 vs 0.357) and it is simply measuring two different
 objectives. Next probe and the coverage question: `docs/TODO.md`.
 
@@ -761,6 +762,25 @@ PIXELS, so neither means anything without it, and a model is only applicable to 
 comparable scale. Values are kept in the unit OME gave them, unconverted. Models trained before
 2026-08-21 have no such record and the vault shows the row as unknown. See
 `docs/todo/MODEL_VAULT_PLAN.md`.
+
+**The intensity loss is off, and off the form.** coastal's own `IntensityLoss` docstring says to
+prefer `ConfettiForegroundLoss`: its target is `0.5*bright + 0.3*local_contrast + 0.2*edge` — half a
+per-pixel threshold, half two edge detectors — so it carries no cell-scale structure and trains the
+probability head to reproduce speckle. Measured: **2535 connected components per frame, 98% under
+100 px, median 3 px**, and the foreground term's docstring names that speckle as the origin of the
+**~86% downstream fragment rate**. Every model trained since 2026-08-19 (`flow.cyto`, `flow.cytoFg`,
+`flow.cytoBlur6`) set `intensityWeight` to 0; only `memTom` (2026-08-07) used 1. So the shipped
+default of 1.0 was one nobody had used in two weeks — the same stale-default trap as
+`embeddingBlurSigma`.
+
+`intensityWeight` therefore defaults to **0.0** and is no longer a form control, but the runner still
+honours it, so `memTom` stays reproducible from a chain or the REPL. `foregroundWeight` stays on the
+form: this is a switch between two supervisions of the same head, not the removal of one.
+
+One caveat, unmeasured: `ConfettiForegroundLoss` builds its target from `softmax_ch_*`, a *per-channel*
+local softmax, so it is multi-channel by construction. `flow.cytoFg` trained on a single channel with
+`foregroundWeight: 1.0`, so either that degrades gracefully to brightness or it contributed little —
+worth knowing which before recommending foreground as the only supervision for single-channel movies.
 
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing

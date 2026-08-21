@@ -619,7 +619,7 @@ def run(params):
     # whatever coastal's signature happens to say later.
     blur_sigma = float(params.get('foregroundBlurSigma', 1.0))
     loss_weights = {
-        'intensity': float(params.get('intensityWeight', 1.0)),
+        'intensity': float(params.get('intensityWeight', 0.0)),
         'foreground': float(params.get('foregroundWeight', 1.0)),
         'temporal': float(params.get('temporalWeight', 2.0)),
         'variance': 0.0, 'confetti': 0.0, 'warp': 0.0, 'boundary': 0.0,
@@ -684,7 +684,7 @@ def run(params):
         # target, raising its entropy and therefore the floor, so the better-shaped objective scores
         # worse. Without this in the manifest that difference is invisible.
         'foregroundBlurSigma': blur_sigma,
-        'intensityWeight': float(params.get('intensityWeight', 1.0)),
+        'intensityWeight': float(params.get('intensityWeight', 0.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
         'maxFrames': max_frames,
         'trainRatio': train_ratio,
