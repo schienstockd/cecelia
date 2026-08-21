@@ -232,6 +232,8 @@ const RO_EXEMPT: Record<string, string> = {
   // on the observed element and cannot move its box
   'composables/useCanvasWorkspace.ts': 'sizes an out-of-flow child in a non-scrolling box — cannot move what it observes',
   'composables/usePlotResize.ts': 'IS the fix',
+  'components/TeleportPopover.vue':
+    're-places a floating box: writes only fixed top/left, whose box size is position-independent — but through rafCoalesce, NOT in the callback (pinned below)',
   'modules/MoviesModule.vue':
     'measures the viewport into the video\'s box — but through rafCoalesce, NOT in the callback (pinned below)',
   'components/plots/PlotChart.vue': 'already coalesces through rafCoalesce (the pattern usePlotResize generalises)',
@@ -269,6 +271,10 @@ describe('no plot re-renders into the element it observes', () => {
     // never moves — which is how "measures a video element; writes nothing" read as safe for a release,
     // and why `roLoopTrace` now measures the inner box too.
     'modules/MoviesModule.vue': 'measureViewport',
+    // observes the popover it also MOVES. Moving a `position: fixed` box cannot resize it, so this is
+    // not the self-resize the other two are — but a box that grows (async content, a collapsible
+    // section) fires the observer per step, and a re-place is a paint, so it takes the same route.
+    'components/TeleportPopover.vue': 'reposition',
   }
   it.each(Object.entries(RO_SCHEDULED))(
     '%s schedules its write instead of writing in the callback', (path, inlineFn) => {
