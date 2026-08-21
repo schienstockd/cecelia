@@ -1,0 +1,50 @@
+name: Processing recipe request
+description: Tell us what you image, so we can write the steps for it
+title: "Recipe: "
+labels: ["enhancement", "recipe"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        A **recipe** is Cecelia's in-app answer to "what are you trying to do?" — which steps to run,
+        in which order, and which branch to take at each fork. The forks are the useful part, and they
+        come from measuring real data rather than from guessing, so this form asks about your images
+        rather than about Cecelia. The recipes that exist are behind the compass in the header.
+  - type: textarea
+    id: images
+    attributes:
+      label: What do you image?
+      description: >-
+        Modality, dimensions and what is in the frame.
+      placeholder: >-
+        Intravital two-photon, 3D + time, ~40 timepoints. Dim motile T cells in lymph node,
+        3 channels, one of them autofluorescent.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What do you want out of it?
+      description: >-
+        The numbers or figures you are after — counts per population, tracks and speeds, behaviour
+        states, contacts between two cell types, something else.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today?
+      description: >-
+        The steps you run now, in Cecelia or elsewhere, and where it stops working (optional).
+  - type: textarea
+    id: example-data
+    attributes:
+      label: Can you share an example image?
+      description: >-
+        This is what actually turns a request into a recipe: a representative image lets us measure
+        which segmentation, which parameters and which branch is right for your data, instead of
+        recommending something plausible. One image is usually enough. Say here whether you can share
+        one and how you would rather send it — please do **not** attach sensitive or unpublished
+        imaging data to this issue.
+    validations:
+      required: true
