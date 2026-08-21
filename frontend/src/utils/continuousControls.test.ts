@@ -227,9 +227,13 @@ describe('live napari view-property endpoints have exactly one owner', () => {
 const RO_EXEMPT: Record<string, string> = {
   'components/canvas/CanvasPanel.vue':
     'writes its OWN height to keep a square plot square — but through rafCoalesce, NOT in the callback (pinned below)',
-  'composables/useCanvasWorkspace.ts': 'measures only — no DOM write in the callback',
+  // it DOES size a child from the measurement (the zoom workspace), which is the Movies trap — but
+  // that child is `position: absolute` inside a box with no `overflow`, so it cannot put a scrollbar
+  // on the observed element and cannot move its box
+  'composables/useCanvasWorkspace.ts': 'sizes an out-of-flow child in a non-scrolling box — cannot move what it observes',
   'composables/usePlotResize.ts': 'IS the fix',
-  'modules/MoviesModule.vue': 'measures a video element; writes nothing',
+  'modules/MoviesModule.vue':
+    'measures the viewport into the video\'s box — but through rafCoalesce, NOT in the callback (pinned below)',
   'components/plots/PlotChart.vue': 'already coalesces through rafCoalesce (the pattern usePlotResize generalises)',
   'components/plots/GateOverlay.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
   'components/plots/PlotLayers.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
@@ -251,16 +255,27 @@ describe('no plot re-renders into the element it observes', () => {
     expect(offenders).toEqual([])
   })
 
-  // The exemption above is conditional, and the condition is the whole point: CanvasPanel writes
-  // `root.style.height` on the element it OBSERVES. Inline in the callback, that is a self-resize
-  // during delivery — exactly what the browser reports as "ResizeObserver loop completed with
-  // undelivered notifications", and it did, in the log rail. The `>1px` guard bounds the loop but not
-  // the message, so prose ("it does not render into itself") was not enough to keep this right.
-  it('CanvasPanel schedules its square/persist write instead of writing in the callback', () => {
-    const src = roSources.find(s => s.path === 'components/canvas/CanvasPanel.vue')!.text
+  // Two exemptions are CONDITIONAL, and the condition is the whole point: each writes layout that the
+  // observed element's own box depends on. Inline in the callback that is a self-resize during
+  // delivery — exactly what the browser reports as "ResizeObserver loop completed with undelivered
+  // notifications", and both of them did, in the log rail. Prose was not enough to keep either right,
+  // so the callback line itself is pinned. The value is the function that must NOT be called inline.
+  const RO_SCHEDULED: Record<string, string> = {
+    // writes `root.style.height` on the element it OBSERVES; the `>1px` guard bounds the loop, not the
+    // message
+    'components/canvas/CanvasPanel.vue': 'enforceSquare',
+    // measures into `displaySize`, which sizes the video INSIDE the observed viewport: grown past the
+    // box a scrollbar appears, and that shrinks the CONTENT box the observer reports. The border box
+    // never moves — which is how "measures a video element; writes nothing" read as safe for a release,
+    // and why `roLoopTrace` now measures the inner box too.
+    'modules/MoviesModule.vue': 'measureViewport',
+  }
+  it.each(Object.entries(RO_SCHEDULED))(
+    '%s schedules its write instead of writing in the callback', (path, inlineFn) => {
+    const src = roSources.find(s => s.path === path)!.text
     const ctorLine = src.split('\n').find(l => l.includes('new ResizeObserver(')) ?? ''
     expect(ctorLine).toContain('schedule')
-    expect(ctorLine).not.toContain('enforceSquare')
+    expect(ctorLine).not.toContain(inlineFn)
   })
 
   it('the exemption list stays honest — every entry still exists and still observes', () => {
