@@ -74,3 +74,61 @@ class RunTileSeamsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PreviewCallsPredictSliceCorrectlyTest(unittest.TestCase):
+    """The preview's call to `predict_slice` matches the method's own signature.
+
+    This is a bug that reached Dominik: `predict_slice` used to take `context=` and `context_index=`,
+    grew to six such kwargs, and had them collected into ONE `TemporalWindow`. The preview worker was
+    not updated, so every coastal preview raised
+
+        TypeError: CoastalUtils.predict_slice() got an unexpected keyword argument 'context'
+
+    Nothing caught it because the preview path needs torch, coastal and a real movie to execute, so no
+    test called it — while the thing that broke was not the computation at all, it was the argument
+    list. That IS checkable without any of the above: bind the call the preview makes against the
+    signature the method declares.
+    """
+
+    def test_the_parameter_list_is_the_one_the_preview_was_written_against(self):
+        import inspect
+        from cecelia.utils.coastal_utils import CoastalUtils
+        params = list(inspect.signature(CoastalUtils.predict_slice).parameters)
+        # NAMES, not just arity. The preview passes the window POSITIONALLY, so a rename back to
+        # `context=` would still bind — and then fail deep inside on an object of the wrong shape.
+        # Asserting the names is what makes the drift visible at the seam instead of at runtime.
+        self.assertEqual(['self', 'tile', 'model_params', 'norm_params', 'window'], params)
+
+    def test_the_preview_call_binds(self):
+        import inspect
+        from cecelia.utils.coastal_utils import CoastalUtils
+        sig = inspect.signature(CoastalUtils.predict_slice)
+        # exactly what `_preview_coastal` passes: three positionals + the window, no keywords
+        sig.bind(object(), object(), {'model': 'm.pt'}, None, object())
+
+    def test_the_kwargs_that_broke_it_are_rejected(self):
+        # fails loudly if `context=` is ever reintroduced as an alias, which would let the two call
+        # shapes drift apart again
+        import inspect
+        from cecelia.utils.coastal_utils import CoastalUtils
+        sig = inspect.signature(CoastalUtils.predict_slice)
+        with self.assertRaises(TypeError):
+            sig.bind(object(), object(), {}, None, context=object(), context_index=0)
+
+    def test_the_window_the_preview_builds_has_every_field_the_run_sets(self):
+        """A window missing `start`/`tile`/`id` reads as valid and breaks the per-window caches."""
+        from cecelia.utils.segmentation_utils import TemporalWindow
+        import numpy as np
+        w = TemporalWindow(frames=np.zeros((3, 1, 4, 4), np.float32), index=1, start=7,
+                           tile=(0, 4, 0, 4), channels=None, id=1)
+        self.assertEqual(1, w.index)
+        self.assertEqual(7, w.start)                 # the movie index of frames[0], not t_now
+        self.assertEqual((0, 4, 0, 4), w.tile)
+        self.assertIsNone(w.channels)                # the preview reads every channel
+        self.assertGreater(w.id, 0)                  # 0 is the default and means "no window to key on"
+
+    def test_the_preview_never_reuses_a_window_id(self):
+        from preview_worker import _next_window_id
+        ids = {_next_window_id() for _ in range(50)}
+        self.assertEqual(50, len(ids))

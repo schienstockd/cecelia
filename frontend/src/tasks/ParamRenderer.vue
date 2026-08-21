@@ -774,15 +774,22 @@ const pct = computed(() => {
          switched off is a worse way to say "don't run this task".
          The control is the shared ChipSelect in its multi-select + reorderable mode, which already
          means exactly "an ordered pick". -->
-    <ChipSelect v-if="param.repeatable && groupEntries.length > 1"
-      class="group-order"
-      :options="groupOrderOptions"
-      :model-value="groupOrderValue"
-      multiple reorderable
-      :aria-label="`Order of ${param.label}`"
-      v-tooltip.right="'Click to include, drag to reorder — earlier entries claim pixels first'"
-      @update:model-value="v => emit('update:groupOrder', orderKey, v as string[])"
-    />
+    <!-- The tip is on the LABEL, not on the chips. `docs/ui/COPY.md` has this exact case: a tooltip
+         anchored to a `ChipSelect` renders on top of the control, so the hover help hides the thing
+         you were about to click — and in a narrow column `.right` flips upward onto the chips, which
+         is what Dominik saw. A tipped label preceding it in the same row is how chips are covered. -->
+    <div v-if="param.repeatable && groupEntries.length > 1" class="group-order-row cc-row cc-row-tight">
+      <span class="group-order-label cc-muted cc-fs-2xs"
+        v-tooltip.right="'Drag to reorder — earlier entries claim pixels first'">Order</span>
+      <ChipSelect
+        class="group-order"
+        :options="groupOrderOptions"
+        :model-value="groupOrderValue"
+        multiple reorderable
+        :aria-label="`Order of ${param.label}`"
+        @update:model-value="v => emit('update:groupOrder', orderKey, v as string[])"
+      />
+    </div>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -862,6 +869,10 @@ const pct = computed(() => {
 </template>
 
 <style scoped>
+/* The order chips sat flush against the group heading above and the first entry below, with no rule
+   of their own — they read as part of whichever neighbour you looked at first. */
+.group-order-row { margin: 0.35rem 0 0.5rem; }
+.group-order-label { flex: 0 0 auto; }
 .param-row {
   display: flex;
   flex-direction: column;
