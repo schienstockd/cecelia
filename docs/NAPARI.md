@@ -548,7 +548,7 @@ def native_dtype(dtype):
     return np.dtype(dtype).newbyteorder('=')   # no-op for 1-byte and already-native dtypes
 ```
 
-It used to be an `output_np.astype(...)` line in each correction runner — which is why it's documented here at all. Task runners now just hand the writer `im_dat[0].dtype` and let it force byte order (see the comment in `af_correct_run.py` / `drift_correct_run.py` / `cellpose_correct_run.py`).
+It used to be an `output_np.astype(...)` line in each correction runner — which is why it's documented here at all. Task runners now just hand the writer `im_dat[0].dtype` and let it force byte order (see the comment in `af_correct_run.py` / `drift_correct_run.py` / `smooth_run.py`).
 
 If a raw (uncorrected) image appears empty, check `zarr_array.dtype` — `>u2` on an x86 machine is the culprit. The original bioformats2raw output is never rewritten; only correction outputs are guaranteed little-endian.
 

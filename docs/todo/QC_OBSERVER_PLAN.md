@@ -109,7 +109,8 @@ the observer redesign lands. Each slice: pure helper unit-tested + wiring + doc 
 - Auto-calling Claude on "multiple warnings" (escalation ladder) — Dom chose on-demand-only; revisit
   only if on-demand proves insufficient.
 - `qc_flag_fired` / `:flagged` node state + hold (needs QC_PLAN.md advisory-vs-blocking ratification).
-- ~~afCorrect~~ / cellposeCorrect QC (no agreed objective metric — see the QC-coverage notes).
+- ~~afCorrect~~ / ~~cellposeCorrect~~ QC (no agreed objective metric — see the QC-coverage notes;
+  cellposeCorrect no longer exists, see `CELLPOSE_V4_PLAN.md`).
   **afCorrect shipped in #437** and is no longer parked. The metrics changed when the ratio was replaced
   by the power weight: the correction has no free parameter left to land badly, so the two signals are
   `saturatedFrac` (the INPUT was clipped at the sensor — the action is at the microscope) and

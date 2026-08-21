@@ -58,12 +58,19 @@ scikit-image 0.26.0, numba 0.65.1). Audited 2026-07-27 for cohesion.
 **Upstream dependency (NOT in this PR, but load-bearing for real use):** the segmentation input to
 branching, on real fibrous images (dendritic cells, SHG collagen, FRC networks), was produced by
 the custom Cellpose model **`ccia.fluo`** in the old R version (`inst/models/cellposeModels/ccia.fluo`,
-~26 MiB). **RESOLVED** (2026-08-05): custom checkpoints are drop-in. The model picker is populated at serve time
-from `list_cellpose_models()`, any name outside cellpose's built-ins resolves through
+~26 MiB).
+
+**RE-OPENED (2026-08-21), was RESOLVED 2026-08-05.** The drop-in mechanism still works exactly as
+described below, but there is nothing to drop in: `ccia.fluo` is a cellpose **3** checkpoint and
+cellpose 4 refuses to load it (*"This model does not appear to be a CP4 model"*), so the installers
+stopped fetching it — see `docs/todo/CELLPOSE_V4_PLAN.md`. "Segment SHG → branch it" needs either
+`cpsam_v2` shown to be adequate on fibrous signal (untested) or `ccia.fluo` retrained on v4.
+
+The mechanism, unchanged: the model picker is populated at serve time from
+`list_cellpose_models()`, any name outside cellpose's built-ins resolves through
 `cellpose_model_path` (user dir → bundled dir) and is loaded by the Python runner as
-`CellposeModel(pretrained_model=<path>)`; `install.sh`/`install.ps1` fetch `ceceliaModels` at install
-time and `pixi run models-fetch` does the same for a clone. So the real workflow — "segment SHG →
-branch it" — is available to a new user. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
+`CellposeModel(pretrained_model=<path>)`; `pixi run models-fetch` populates the bundled slot.
+See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 
 ---
 

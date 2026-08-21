@@ -87,9 +87,10 @@ end
 
 Three tasks each carried twenty lines of identical dict-walking to do this — cellpose, coastal and
 opticalFlow.train — differing only in which lister they called. Worse for the reason plugins exist: a
-plugin author ships JSON and a task `.jl`, so offering a model vault meant writing a Julia hook, and
-a fourth task (`cleanupImages.cellposeCorrect`) hardcodes its model list with no hook at all, which
-is why a user-dropped denoise checkpoint is unreachable there.
+plugin author ships JSON and a task `.jl`, so offering a model vault meant writing a Julia hook.
+(A fourth task, `cleanupImages.cellposeCorrect`, hardcoded its model list with no hook at all, so a
+user-dropped denoise checkpoint was unreachable there. That task is gone — see
+docs/todo/CELLPOSE_V4_PLAN.md — but the shape it argued against is the reason this exists.)
 
 Vault options are **appended** to any literal `options` the spec already declares, rather than
 replacing them. That is how coastal keeps `None` first and selectable: the vault is empty until the
@@ -1282,6 +1283,18 @@ end
 # ── fun_name dispatch ─────────────────────────────────────────────────────────
 # _FUN_NAME_MAP is populated in task_registry.jl (included after all task types).
 
+# A task that USED to exist, and the sentence a saved param set / chain node naming it should get.
+# The generic "Unknown fun_name" below lists every available task, which reads like a typo report —
+# for a removed task the user needs to know it was removed and what replaced it. Existing OUTPUT is
+# untouched: `cpCorrected` stores stay on disk and stay readable, only the task that wrote them is
+# gone. See docs/todo/CELLPOSE_V4_PLAN.md.
+const RETIRED_FUN_NAMES = Dict{String,String}(
+    "cleanupImages.cellposeCorrect" =>
+        "Cellpose denoising was removed with the cellpose 4 migration (v4 has no DenoiseModel). " *
+        "Use \"cleanupImages.smooth\" instead. Images already corrected keep their \"cpCorrected\" " *
+        "version — nothing on disk was removed.",
+)
+
 function _task_from_fun_name(fun_name::String)::CciaTask
     map = _fun_name_map()
     haskey(map, fun_name) && return map[fun_name]   # built-ins win on clash
@@ -1289,6 +1302,8 @@ function _task_from_fun_name(fun_name::String)::CciaTask
         get(_CUSTOM_TASKS, fun_name, nothing)
     end
     isnothing(custom) || return custom
+    haskey(RETIRED_FUN_NAMES, fun_name) &&
+        error("Task \"$fun_name\" no longer exists. $(RETIRED_FUN_NAMES[fun_name])")
     avail = vcat(collect(keys(map)), lock(_CUSTOM_TASK_LOCK) do; collect(keys(_CUSTOM_TASKS)) end)
     error("Unknown fun_name: \"$fun_name\". Available: $(join(avail, ", "))")
 end

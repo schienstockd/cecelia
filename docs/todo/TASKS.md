@@ -83,9 +83,9 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       `labelProps` namespace, sourced from `labelPropsNames`.
 
 
-- [ ] **`cleanupImages.cellposeCorrect` hardcodes its denoise models** — no hook at all, so a
-      user-dropped checkpoint is unreachable. One `optionsFrom` away, but it needs a lister for that
-      vault first, which is the open half of the known custom-models gap.
+- [x] ~~**`cleanupImages.cellposeCorrect` hardcodes its denoise models**~~ — moot: the task was
+      removed in the cellpose 4 migration (v4 has no `DenoiseModel`); `cleanupImages.smooth` covers
+      the cleanup case. See `docs/todo/CELLPOSE_V4_PLAN.md`.
 
 - [x] ~~**`importImages.omezarr` ignored the Settings store layout.**~~ `defaultFrom` added, paralleling
       `optionsFrom`: `{"key":"ngffVersion","defaultFrom":"zarr.ngffVersion"}`. The form carried a

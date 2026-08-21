@@ -373,9 +373,11 @@ observer is read-only summary-first by design.
 3. **The `uns` key rename is breaking** for anything already banked. Nothing in-tree reads the old
    names, and no notebook exists yet, so the blast radius is Dominik's own EaMaVq run — which
    needs re-running anyway (item 1).
-4. **`ccia.fluo` reaches a new user** (resolved 2026-08-05): the installers fetch `ceceliaModels` and
-   the picker lists any checkpoint in the models dir, so "segment SHG → branch → quiver" from scratch
-   is available. Verified by reading the chain end-to-end, not yet by running it on a fresh install.
+4. **`ccia.fluo` reaches a new user** — RE-OPENED 2026-08-21, was resolved 2026-08-05. The picker
+   still lists any checkpoint in the models dir, but `ccia.fluo` is a cellpose 3 file and cellpose 4
+   cannot load it, so the installers no longer fetch it and "segment SHG → branch → quiver" from
+   scratch has no model. Needs `cpsam_v2` tested on fibrous signal, or a v4 retrain. See
+   `docs/todo/CELLPOSE_V4_PLAN.md`.
 5. **`segmentation_qc.json` declares `groupByOptions: ["t"]`** while the columns API reports
    `["centroid_t"]`, so its LOESS trend chart is unreachable. A one-word fix, deliberately NOT
    applied here — it would enable a chart nobody asked for. Its own change if the trend is wanted.

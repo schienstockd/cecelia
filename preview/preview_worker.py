@@ -2,7 +2,8 @@
 
 A runtime process, like `napari/napari_bridge.py` and `mcp/` (not part of the `cecelia` IO library).
 It exists for one measured reason: the fixed cost of a Python process that can segment is **17.7 s**
-(11.7 s `import cecelia.utils` + 5.7 s `import cellpose` + 0.2 s model construction), which is fatal
+(11.7 s `import cecelia.utils` + 5.7 s `import cellpose` + 0.2 s model construction; cellpose 4's
+cpsam is a 1.2 GB ViT-L, so construction is ~2 s rather than 0.2 s), which is fatal
 per preview and irrelevant once. Staying resident pays it at toggle-on. Model construction is cheap
 enough that warm *models* are a minor bonus, not the point — see
 docs/todo/TASK_PREVIEW_PLAN.md (Decision 8).
@@ -11,10 +12,14 @@ What it does NOT do:
 
 * **No second cellpose implementation.** It calls `CellposeUtils.predict_slice`, the same method the
   full run uses, so a preview cannot drift from the thing it is previewing.
-* **No 3D.** One z-plane, always. A visible z-stack costs ~90 s with no shortcut available
-  (downsampling doesn't help — cellpose rescales to a canonical diameter, so cost tracks CELLS, not
-  pixels), and that is not a preview. In 3D display mode it previews the current plane and reports
-  `fallback2d` so the caller can say so.
+* **No 3D.** One z-plane, always. A visible z-stack is many times the cost of a plane and that is
+  not a preview. In 3D display mode it previews the current plane and reports `fallback2d` so the
+  caller can say so. (Under cellpose 3 there was also no shortcut, because cyto* rescaled to a
+  canonical diameter and cost tracked CELLS rather than pixels. **Cellpose 4 is the opposite** —
+  cpsam runs fixed 256 px tiles, so cost tracks PIXELS and is linear in region area: measured
+  0.28 s / 1.03 s / 4.14 s for 256² / 512² / 1024² on an RTX 2000 Ada, ~1.5 GiB peak VRAM. A
+  downsampled preview would now be cheaper, which makes it a real option rather than a dead end —
+  but it would no longer be "the same compute as the run", so it is not taken here.)
 * **Nothing on disk.** The mask block is RETURNED (`cecelia.utils.block_transfer`), not written. An
   earlier design wrote a never-promoted scratch store and let the bridge open it; that put throwaway
   bytes in the user's project tree, needed its own staging + sweep lifecycle, and left debris to

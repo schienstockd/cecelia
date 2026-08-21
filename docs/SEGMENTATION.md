@@ -321,7 +321,7 @@ is segmented, which is most images.
 | `valueName` | valueNameSelection | "default" | Which image version to segment |
 | `outputValueName` | text | "default" | Output subdirectory name |
 | `models` | group (repeatable) | see below | One entry per model |
-| `models[].model` | select | "cyto3" | Cellpose model type or path to custom model |
+| `models[].model` | select | "cpsam_v2" | v4 model name (`cpsam_v2` / `cpsam`) or path to a v4 custom checkpoint |
 | `models[].matchAs` | select | "base" | "base" = primary, "nuc" = nucleus |
 | `models[].cellChannels` | channelSelection | [] | Channels for cell signal; merged via np.maximum |
 | `models[].nucChannels` | channelSelection | [] | Channels for nucleus signal (passed to cellpose as second channel) |
@@ -330,7 +330,7 @@ is segmented, which is most images.
 | `models[].medianFilter` | int | 0 | Median filter kernel (0=off) |
 | `models[].gaussianFilter` | float | 0.0 | Gaussian sigma (0=off) |
 | `models[].threshold` | int | 0 | Absolute intensity gate; pixels below set to 0 |
-| `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch) |
+| `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch — see *Cellpose 4* below) |
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
 | `labelOverlap` | float | 0.0 | IoU threshold for tile seam stitching; 0 = simple np.maximum merge |
@@ -349,20 +349,43 @@ is segmented, which is most images.
 
 The Julia handler converts channel names → 0-based indices before writing params JSON.
 
+### Cellpose 4 (Cellpose-SAM)
+
+cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, all verified against
+`4.2.1.1` (see `docs/todo/CELLPOSE_V4_PLAN.md` for the migration record):
+
+1. **One model.** `cpsam_v2` (and `cpsam`, the v1 release, kept so an older run still resolves). The
+   v3 zoo — `cyto3` / `cyto2` / `cyto` / `nuclei` — is gone. Weights (~1.2 GB) download from
+   HuggingFace into `~/.cellpose/models` on first use; `CELLPOSE_LOCAL_MODELS_PATH` relocates that.
+2. **A v3 model name is rejected, not translated.** v4 answers an unknown `pretrained_model` with a
+   log warning and loads `cpsam_v2` anyway, so a saved `cyto3` run would silently come back as a
+   different segmentation. `cellpose_models_for_python` raises instead (`RETIRED_CELLPOSE_MODELS`).
+   Old runs cannot be reproduced — there is no v4 path to a cyto3 result.
+3. **v3 checkpoints cannot load.** cellpose itself raises *"This model does not appear to be a CP4
+   model"*. A custom checkpoint has to be trained on v4.
+4. **Cost tracks pixels, not cells.** cyto* rescaled the image to a canonical diameter; cpsam runs
+   fixed 256 px tiles. Measured on an RTX 2000 Ada (8 GB): 0.28 s / 1.03 s / 4.14 s for
+   256² / 512² / 1024², ~1.5 GiB peak VRAM. `diameter` is still honoured (it rescales to 30 px).
+
+`stitchThreshold = 0` also takes a different call path: `eval(z_axis=…, stitch_threshold=0)` is a
+`ValueError` in v4, so a Z stack with no stitching is passed plane-by-plane instead. Same result as
+v3 — labels numbered independently per plane — see `test_cellpose_v4_callpath.py`.
+
 ### Custom cellpose checkpoints
 
-Cellpose ships four built-in models (`cyto3` / `cyto2` / `cyto` / `nuclei`). Custom checkpoints —
-e.g. **`ccia.fluo`**, the fluorescence model that segments dendritic / SHG stroma (upstream of
-`segment.branching`) — live outside the code. There are two slots, in **override → bundled**
-precedence (matches `bioformats2raw_bin()`):
+Custom **cellpose 4** checkpoints live outside the code. There are two slots, in
+**override → bundled** precedence (matches `bioformats2raw_bin()`):
 
 | Slot | Path | Populated by | Purpose |
 |---|---|---|---|
 | User drop-in | `<config_dir>/models/cellposeModels/<name>` | You | Drop your own checkpoint here (same convention as [custom modules](CUSTOM_MODULES.md)) |
-| Bundled | `<install root>/models/cellposeModels/<name>` | `install.sh` / `install.ps1` / `pixi run models-fetch` | The shared set fetched from [`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) |
+| Bundled | `<install root>/models/cellposeModels/<name>` | `pixi run models-fetch` | A distributed set. Empty today — see below |
 
-A user-drop of the same filename **wins** over the bundled copy — so you can fine-tune
-`ccia.fluo` and replace it locally without touching the repo/install.
+A user-drop of the same filename **wins** over the bundled copy — so a fine-tuned checkpoint can
+shadow a bundled one without touching the repo/install. **Nothing is bundled today:** the shared set
+was a single v3 model (`ccia.fluo`, the fluorescence model for dendritic / SHG stroma upstream of
+`segment.branching`), which cellpose 4 cannot load, so the installers stopped fetching it. Retraining
+it on v4 is open work — see `docs/todo/CELLPOSE_V4_PLAN.md`.
 
 #### Drop-in convention (no rebuild)
 
@@ -389,10 +412,11 @@ At run time the Julia handler resolves the selected name to an absolute path via
 pixi run models-fetch     # schienstockd/ceceliaModels master → <repo>/models/cellposeModels/
 ```
 
-Override the ref with `--ref v1.2` or the destination with `--dest /some/path`. The installers
-do the same fetch at install time (`CECELIA_MODELS_REF` env var to pin a ref there). Only
+Override the ref with `--ref v1.2` or the destination with `--dest /some/path`. Only
 `cellposeModels/` is installed — the feijoa btrack task uses a vendored config beside its
-runner, so `btrackModels/` from upstream is skipped.
+runner, so `btrackModels/` from upstream is skipped. **The installers no longer run this** —
+everything in that repo is a v3 checkpoint. The task stays because the mechanism is still the way to
+distribute a v4 checkpoint once one exists.
 
 #### Design notes
 

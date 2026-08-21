@@ -124,8 +124,8 @@ input `valueName` (see *Value-name propagation* in `docs/SCHEDULER.md`). The fal
 working if the JSON field is ever missing.
 
 ```json
-{ "task": "cellposeCorrect", "fun_name": "cleanupImages.cellposeCorrect",
-  "resource_pool": "gpu", "outputValueName": "cpCorrected", "params": [ … ] }
+{ "task": "afCorrect", "fun_name": "cleanupImages.afCorrect",
+  "resource_pool": "cpu", "outputValueName": "afCorrected", "params": [ … ] }
 ```
 
 Two other output shapes exist, both already introspectable and not to be re-expressed as a bare
@@ -843,16 +843,16 @@ and `docs/examples/plugins`. Add a field here when you add it to `ParamDef`, not
 
 ---
 
-**`group`** — repeatable/sortable list of sub-param sets. Each entry is keyed `"0"`, `"1"`, … in the values dict. Use for things like "one denoise model per set of channels":
+**`group`** — repeatable/sortable list of sub-param sets. Each entry is keyed `"0"`, `"1"`, … in the values dict. Use for things like "one segmentation model per set of channels":
 ```json
 {
-  "key": "models", "label": "Denoise models", "type": "group",
+  "key": "models", "label": "Segmentation models", "type": "group",
   "repeatable": true,
-  "default": { "0": { "model": "denoise_cyto3", "modelChannels": [], "diameter": 10 } },
+  "default": { "0": { "model": "cpsam_v2", "cellChannels": [], "cellDiameter": 10 } },
   "params": [
-    { "key": "model",         "label": "Model",    "type": "select",           "options": [...] },
-    { "key": "modelChannels", "label": "Channels", "type": "channelSelection", "multiple": true, "default": [] },
-    { "key": "diameter",      "label": "Diameter", "type": "int", "min": 1, "max": 200, "default": 10 }
+    { "key": "model",        "label": "Model",    "type": "select",           "options": [...] },
+    { "key": "cellChannels", "label": "Channels", "type": "channelSelection", "multiple": true, "default": [] },
+    { "key": "cellDiameter", "label": "Diameter", "type": "int", "min": 1, "max": 500, "default": 10 }
   ]
 }
 ```
@@ -1397,7 +1397,7 @@ The API endpoint `GET /api/tasks/definitions?category=X` reads specs by looking 
 
 **`fun_name` must be consistent.** The same string must appear in: the JSON spec's `"fun_name"` field, the `_fun_name_map` key in `task_registry.jl`, and the `funName` field sent in the WS `task:run` message. The frontend derives `funName` from `TaskDef.fun_name` which it reads from the JSON spec. A mismatch between the map key and the spec field causes the task to be found by fun_name but dispatched to the wrong handler.
 
-**Group param values arrive as a dict with string keys.** In Julia: `params["models"]` is a `Dict` (or JSON3 object) with keys `"0"`, `"1"`, … If you iterate entries, coerce with `String(k)`. See the cellpose_correct handler for the pattern.
+**Group param values arrive as a dict with string keys.** In Julia: `params["models"]` is a `Dict` (or JSON3 object) with keys `"0"`, `"1"`, … If you iterate entries, coerce with `String(k)`. See `cellpose_models_for_python` (`tasks/segment/cellpose.jl`) for the pattern.
 
 **JSON3 yields `Symbol` keys, not `String` keys.** When reading `ccid.json`, always do:
 ```julia

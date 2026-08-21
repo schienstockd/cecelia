@@ -105,9 +105,10 @@ Detailed plan + current state: **`docs/SHIPPING.md`**.
   + desktop icon come from conda `constructor` + menuinst (Phase 2, per-OS/CI build).
 - **CI**: GitHub Actions matrix building per-platform release artifacts — DONE (`ci.yml` on three
   OSes, `release.yml` publishes the bundle + a SHA-256 on every `v*` tag).
-- **Installers — DONE**: `install.sh` / `install.ps1` provision Pixi + Julia, fetch bioformats2raw and
-  the `ceceliaModels` cellpose checkpoints, and register a desktop launcher; `pixi run app` opens the
-  browser at `:8080`. Constructor/menuinst native installers remain the only unbuilt piece.
+- **Installers — DONE**: `install.sh` / `install.ps1` provision Pixi + Julia, fetch bioformats2raw
+  and register a desktop launcher; `pixi run app` opens the browser at `:8080`. (The `ceceliaModels`
+  cellpose fetch was dropped in the cellpose 4 migration — those are v3 checkpoints.)
+  Constructor/menuinst native installers remain the only unbuilt piece.
 
 ## Phase 5 — Self-update via GitHub — **LANDED**
 

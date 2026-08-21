@@ -121,11 +121,14 @@ custom_toml_path(dev_dir::Union{String,Nothing} = nothing)::String =
 # ── User-supplied model checkpoints ────────────────────────────────────────────
 # Custom DL checkpoints live under `<config_dir>/models/{family}/{name}` (mirroring the old R
 # version's `cciaModels()` layout). Cellpose's `cellposeModels/` subfolder holds `.pt` / no-ext
-# files that cellpose's `CellposeModel(pretrained_model=path)` can load — e.g. `ccia.fluo`, the
-# custom fluorescence model that segments dendritic / SHG stroma (upstream of the branching task).
-# The Julia handler resolves a user-selected model NAME to its FILE PATH before calling the
-# Python runner, so cellpose's own `os.path.isfile(model_type)` branch (`cellpose_utils.py`) picks
-# the custom path up automatically. See docs/SEGMENTATION.md → *Custom cellpose checkpoints*.
+# files that cellpose's `CellposeModel(pretrained_model=path)` can load. The Julia handler resolves
+# a user-selected model NAME to its FILE PATH before calling the Python runner, so the runner's
+# `os.path.isfile` branch (`cellpose_utils.py`) picks the custom path up automatically.
+#
+# The checkpoint must be a **Cellpose 4** file. Cellpose 4 rejects a v3 checkpoint outright
+# (`ValueError: This model does not appear to be a CP4 model`), which is why the bundled v3
+# `ccia.fluo` was dropped in the v4 migration — see docs/todo/CELLPOSE_V4_PLAN.md. The slot itself
+# is unchanged and takes v4 fine-tunes. See docs/SEGMENTATION.md → *Custom cellpose checkpoints*.
 
 """Absolute directory for user cellpose checkpoints. Just a path — no I/O, no side-effects."""
 cellpose_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
@@ -139,8 +142,9 @@ exist. Empty/whitespace name → `nothing` (no false positive on directory-only 
 
 Two locations are checked, in order — mirrors `bioformats2raw_bin()`'s **explicit override →
 bundled** shape: a user's config-dir drop-in takes precedence over the bundled copy of the same
-filename. That's what lets someone replace `ccia.fluo` with a fine-tuned version without
-touching the repo/install.
+filename. That's what lets someone shadow a bundled checkpoint with a fine-tuned version without
+touching the repo/install. Nothing is bundled since the v4 migration, so in practice slot 1 is the
+only one that hits — slot 2 stays because a distribution may still ship checkpoints.
 
   1. `<config_dir>/models/cellposeModels/{name}` — user drop-in slot. Same convention as
      custom modules under `<config_dir>/modules/` (see `docs/CUSTOM_MODULES.md`): the file
@@ -160,15 +164,31 @@ function cellpose_model_path(name::AbstractString,
     isfile(bundled) ? bundled : nothing
 end
 
-# Cellpose's built-in model names (documented in the cellpose 3 CLI + Python API). Enumerated
-# separately from filesystem checkpoints so the picker always offers them even before any
-# checkpoint file is installed.
-const _BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
+# Cellpose's built-in model names, and the labels the picker shows for them. Enumerated separately
+# from filesystem checkpoints so the picker always offers them even before any checkpoint file is
+# installed.
+#
+# **This is the one copy.** `cellpose.jl` reads it for the builtin-vs-custom fork rather than
+# keeping a second tuple (it did, and the two could drift). Cellpose 4 has one architecture and
+# publishes its weights on HuggingFace; `cpsam_v2` is the current default, `cpsam` the v1 release,
+# kept so a run recorded against it stays reproducible. `cpdino*` is deliberately absent — it needs
+# `dinov3` from git, which we do not ship.
+const BUILTIN_CELLPOSE_MODELS = (
+    ("cpsam_v2", "Cellpose-SAM v2"),
+    ("cpsam",    "Cellpose-SAM v1"),
+)
+
+# The Cellpose 3 model zoo. Gone in v4 — and v4 does NOT error on them: an unknown
+# `pretrained_model` logs a warning and silently loads `cpsam_v2` instead, so a saved `cyto3` run
+# would come back as a DIFFERENT segmentation with nothing in the log to say so. We reject them
+# instead; see `cellpose_models_for_python` in tasks/segment/cellpose.jl.
+const RETIRED_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei",
+                                 "cyto3torch_0", "cyto2torch_0", "cytotorch_0", "nucleitorch_0")
 
 """
     list_cellpose_models() -> Vector{NamedTuple}
 
-Every cellpose model the picker should offer: the four built-ins, then any filenames present
+Every cellpose model the picker should offer: the built-ins, then any filenames present
 in the bundled `<install>/models/cellposeModels/` and the user drop-in
 `<config_dir>/models/cellposeModels/`. Deduped by name; a user drop-in shadows a bundled file
 of the same name (matches the resolver's precedence). Each entry is `(name, label, source)`,
@@ -180,8 +200,8 @@ rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 """
 function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
-    for m in _BUILTIN_CELLPOSE_MODELS
-        push!(out, (name = m, label = uppercasefirst(m), source = "builtin"))
+    for (m, label) in BUILTIN_CELLPOSE_MODELS
+        push!(out, (name = m, label = label, source = "builtin"))
     end
     seen = Set{String}(String(m.name) for m in out)
     # user drop-ins first so they shadow bundled files of the same name (matches resolver order)
