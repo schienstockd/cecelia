@@ -248,7 +248,7 @@ class NapariState:
         # Delegate the actual layer creation to the SHARED generic helper (cecelia.utils.napari_utils,
         # which coastal mirrors): per-channel colormaps, additive blending, contrast-from-sample and the
         # list-name guard live there so both projects render identically. The bridge keeps all the
-        # disk/scale/units logic above. See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
+        # disk/scale/units logic above. See ../coastal/docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
         napari_utils.add_image(
             self._viewer, self._im_data,
             scale=self._im_scale, units=self._im_units,
@@ -1418,7 +1418,7 @@ class NapariState:
                     except Exception:
                         layer_color_by, layer_cmap, layer_cmaps_dict = "track_id", "turbo", None
                 # Delegate to the shared helper (passes scale AND units so napari keeps unit-aware
-                # rendering across layers). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
+                # rendering across layers). See ../coastal/docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
                 layer = napari_utils.add_tracks(
                     self._viewer, sub, name=name,
                     scale=self._im_scale, units=self._im_units, properties=props,

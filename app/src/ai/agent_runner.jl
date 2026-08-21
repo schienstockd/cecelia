@@ -444,7 +444,7 @@ function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_p
     # `exitcode != 0` alone misses the case this function most needs to catch: the timeout above kills
     # the process, and libuv reports exitcode 0 for a signal-killed child — so a timed-out agent looked
     # like a clean exit and its TRUNCATED output was handed to the parser. Check the signal too (the
-    # same rule as `run_py`; see CLAUDE.md → *Task system*).
+    # same rule as `run_py`; see app/CLAUDE.md → *Task system*).
     killed = proc.termsignal != 0
     if (proc.exitcode != 0 || killed) && !occursin("\"result\"", output)
         # Name the signal rather than the exit code when it was killed — "agent exited 0" for a

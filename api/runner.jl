@@ -1,7 +1,7 @@
 # Launch script for the detached task runner (`pixi run runner`, and the API server's own
 # `runner_launch!`). Runs in the `api/` environment on purpose: the runner needs exactly what the API
 # server needs — Cecelia, HTTP, JSON3 — and Cecelia is path-sourced by three environments whose
-# Manifests must be re-resolved together (CLAUDE.md → *Adding a Julia dependency to `app/`*). A fourth
+# Manifests must be re-resolved together (docs/ARCHITECTURE.md → *Adding a Julia dependency to `app/`*). A fourth
 # would be maintenance cost for no isolation.
 #
 # Deliberately thin, and NOT Revise-tracked: the runner pins the code it started with and reports the

@@ -1,7 +1,7 @@
 """Unit tests for the generic napari display helpers (cecelia.utils.napari_utils).
 
 Headless / napari-free: we patch `require_napari` and pass a fake viewer + duck-typed layer, so these
-run without importing napari (per docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md). They pin the wrapping
+run without importing napari (per ../coastal/docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md). They pin the wrapping
 conventions the cecelia bridge AND coastal both rely on: the list-name guard, contrast-from-sample
 percentiles, and the kwargs forwarded to viewer.add_image / add_labels / add_tracks.
 """

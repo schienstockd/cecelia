@@ -34,7 +34,7 @@ Two of those matter more than the rest:
 * **`open_as_zarr` crashing is the hard blocker** — every Python task reads pixels through it, so
   segmentation/tracking/measurement stop dead. At least it is loud.
 * **`read_scale`/`read_time_increment` → `None` is the quiet one.** That is exactly the trap in
-  `CLAUDE.md` → *Calibration — three copies, one stamp*: "we don't know" silently becomes "1 µm,
+  `docs/OBJECTMODEL.md` → *Calibration — three copies, one stamp*: "we don't know" silently becomes "1 µm,
   1 second per frame" downstream. Combined with Julia *guessing* the axis order rather than reading
   it, a v3 store would appear to work and produce wrong physical numbers. **This is the reason the
   read side ships before anything else, and why v3 writing must not be enabled until it is done.**
@@ -71,7 +71,7 @@ Real v3 level-0 codec chain from bioformats2raw 0.12.1:
 ## Locked decisions
 
 **D1 — One NGFF-attribute resolver per language; extend the existing one, do not add a variant.**
-`CLAUDE.md` → *OME-ZARR dual-format* already names `series_base` as the single resolver per language
+`docs/ARCHITECTURE.md` → *OME-ZARR dual-format* already names `series_base` as the single resolver per language
 for the flat-vs-series question. The v2-vs-v3 question goes in the **same** place, not into a parallel
 set of readers. In Python it collapses to unwrapping one key, because `zarr-python`'s `Group.attrs`
 already abstracts `.zattrs` vs `zarr.json`:
@@ -292,7 +292,7 @@ stamp*). Mutation-verified: reverting to the naive top-level write fails both ne
 * `store_compressor(kind, zarr_format, shard_shape)` (D5); `create_multiscales` /
   `open_multiscales_for_writing` / `create_zarr_from_ndarray` take a format.
 * `write_calibration` writes `zarr.json` attributes for v3 — **both** copies from the one derivation,
-  per `CLAUDE.md` → *Calibration*.
+  per `docs/OBJECTMODEL.md` → *Calibration*.
 * `set_ngff_axes`, `write_valid_box` / `read_valid_box`, `multiscales_metadata` (NGFF 0.5 needs a
   `version` key and the `ome` wrapper).
 * Verify `staged_store` / `promote_store` are format-agnostic (they rename directories, so expected

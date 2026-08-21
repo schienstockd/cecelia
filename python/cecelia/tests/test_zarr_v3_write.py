@@ -217,7 +217,7 @@ class CalibrationRestampTest(unittest.TestCase):
 
     This is the dangerous one. Writing `attrs['multiscales']` on a v3 store puts it at the top level,
     where no reader looks — the store keeps its OLD multiscales and the update is silently ignored. The
-    numbers appear written and are not there (CLAUDE.md → *Calibration — three copies, one stamp*).
+    numbers appear written and are not there (docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*).
     """
 
     def setUp(self):

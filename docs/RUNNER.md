@@ -1,9 +1,9 @@
 # The detached task runner
 
 **A development tool.** It moves task and chain execution into a second Julia process, so restarting
-the backend does not kill work in flight. `api/src/*.jl` is not hot-reloaded (see `CLAUDE.md` →
-*Hot reload*), so a backend edit means a restart — and a restart used to cost you a running
-segmentation. This is the fix: not fewer restarts, but restarts that cost nothing.
+the backend does not kill work in flight. `api/src/*.jl` is not hot-reloaded (see `docs/DEV.md` →
+*What to press after you change something*), so a backend edit means a restart — and a restart used
+to cost you a running segmentation. This is the fix: not fewer restarts, but restarts that cost nothing.
 
 Design record, including the routes not taken: [`docs/todo/TASK_RUNNER_PLAN.md`](todo/TASK_RUNNER_PLAN.md).
 

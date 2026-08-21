@@ -110,7 +110,7 @@ whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssS
 
 > **Where the checks live:** `frontend/src/utils/cssScenarios.ts` and `cssTokens.ts`, each with a
 > `.test.ts` beside it (`pixi run test-frontend`). Full index of what each detector owns and what its
-> bar is: [`docs/todo/UX_PRIMITIVES_PLAN.md`](todo/UX_PRIMITIVES_PLAN.md) → *The detectors*. Need a
+> bar is: [`docs/todo/UX_PRIMITIVES_PLAN.md`](../todo/UX_PRIMITIVES_PLAN.md) → *The detectors*. Need a
 > count for this area? Read those — never re-derive one by grep.
 
 **Never re-declare a utility in scoped CSS — compose it.** A `<style scoped>` rule whose selector *is*

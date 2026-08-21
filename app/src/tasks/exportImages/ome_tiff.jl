@@ -1,7 +1,7 @@
 struct ExportOmeTiff <: CciaTask end
 
 # Pure: the calibration an export carries into its OME-XML, read from `ccid.json` — which is the
-# AUTHORITATIVE copy (see CLAUDE.md → *Calibration — three copies, one stamp*). The store's own
+# AUTHORITATIVE copy (see docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*). The store's own
 # OME-XML is a derived copy, so a source whose sidecar drifted would otherwise export the wrong
 # scale. Absent fields are simply omitted: OME treats a missing PhysicalSize as unknown, which is
 # honest, whereas defaulting to 1.0 would state a pixel size we do not have.

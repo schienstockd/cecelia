@@ -538,7 +538,7 @@ unambiguous mistake, caught before the task does its work rather than after.
 **`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel.
 The submitted value is a list of channel **names**; the handler resolves them with
 `channel_indices(get(params, "channels", nothing), channel_names(img; value_name = value_name), …)`
-— 0-based, errors by name. Both helpers are mandatory (`CLAUDE.md` → *Channel names → indices*) and a
+— 0-based, errors by name. Both helpers are mandatory (`app/CLAUDE.md` → *Channel names → indices*) and a
 suite detector fails a handler that skips them:
 ```json
 { "key": "driftChannel", "label": "Drift channel", "type": "channelSelection", "multiple": false, "default": [] }
@@ -1432,7 +1432,7 @@ When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
 `metrics` count + a `warn` finding for the bad case) and add cohort-comparable metrics to
 `COHORT_METRICS`. This is mandatory, not optional; the only exemption is a task with genuinely no
 objective signal (e.g. perceptual denoising), and it must be an explicit comment. Full guide + the
-pattern: [`docs/MODULES.md`](docs/MODULES.md) → *QC — REQUIRED for every new task*.
+pattern: *QC — REQUIRED for every new task* above.
 
 ---
 

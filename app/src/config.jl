@@ -542,7 +542,7 @@ Compressor choices for an IMAGE store, mirroring `zarr_utils.IMAGE_COMPRESSOR_CH
 Julia needs its own copy for two reasons: bioformats2raw is handed flags on a command line (it cannot
 read a Python constant), and the API serves the list to Settings. Kept in the SAME order as the Python
 dict, and asserted equal by `app/test/suite.jl` → *"import metrics"* — same arrangement as the
-calibration writers (CLAUDE.md → *Calibration — three copies, one stamp*). If you change one, that
+calibration writers (docs/OBJECTMODEL.md → *Calibration — three copies, one stamp*). If you change one, that
 test is the contract.
 
 Each entry carries its MEASURED numbers as display strings (`size`/`write`/`read`), because Settings

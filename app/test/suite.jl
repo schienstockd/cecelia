@@ -10676,7 +10676,7 @@ end
 
     # Julia and Python each carry the compressor table — a bioformats2raw command line cannot read a
     # Python constant, and the API serves the list to Settings. Same arrangement as the calibration
-    # writers (CLAUDE.md -> *Calibration - three copies, one stamp*): two copies, one contract test.
+    # writers (docs/OBJECTMODEL.md -> *Calibration - three copies, one stamp*): two copies, one contract test.
     @testset "image compressor: the two tables agree" begin
         py = read(joinpath(@__DIR__, "..", "..", "python", "cecelia", "utils", "zarr_utils.py"), String)
 
@@ -13031,7 +13031,7 @@ end
 end
 
 @testset "OME-ZARR metadata reads v2 and v3 alike" begin
-    # `read_ome_metadata` feeds ccid.json `meta`, which CLAUDE.md → *Calibration* makes authoritative
+    # `read_ome_metadata` feeds ccid.json `meta`, which docs/OBJECTMODEL.md → *Calibration* makes authoritative
     # for every physical number in the app. NGFF 0.5 nests attributes under `ome`; a reader that misses
     # that returns an EMPTY Dict, and the caller then has no PhysicalSize/TimeIncrement at all — which
     # downstream becomes 1.0 rather than an error. So the two formats are asserted to agree, against two

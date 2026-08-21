@@ -9,7 +9,7 @@ model. Measured on a 180-timepoint Imaris 11 file:
 
 while the same table shows `Time_Step = 30.000` and 180 wall-clock `TimePointN` stamps 30 s apart. So
 bioformats2raw has nothing to write, the converted store carries no interval at all, and cecelia
-correctly refuses to invent one (docs/CLAUDE.md → *a `unit` on the t axis means the interval is
+correctly refuses to invent one (docs/OBJECTMODEL.md → *a `unit` on the t axis means the interval is
 KNOWN*). The number is in the file; it just never reaches us through Bio-Formats. This reads it
 directly, the same way `read_imagej_physical_size_run.py` re-derives Z spacing for ImageJ TIFFs.
 
