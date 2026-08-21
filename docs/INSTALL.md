@@ -212,12 +212,23 @@ MPS (Metal Performance Shaders) is the Apple Silicon GPU backend for PyTorch.
 Cellpose 4.x supports MPS. Use `torch.backends.mps.is_available()` to check.
 
 ### Napari on headless / SSH
-Napari requires a display. On a headless machine set:
+Napari requires a display **and a working OpenGL context**. `QT_QPA_PLATFORM=offscreen` gives the
+first but not the second — Qt's offscreen platform plugin provides no GL context, so napari cannot
+render at all (measured: `offscreen`, `minimal` and `vnc` all fail to create one). `eglfs` is also
+not an option with the PyQt5 wheel we ship: it carries no EGL device integration plugins
+(`EGL device integration plugin keys: ()`), so it falls back to an integration that requires
+`/dev/fb0`.
+
+What works is a real X server with the `xcb` platform — `Xvfb`, or `Xorg` in a headless config:
 ```bash
-export QT_QPA_PLATFORM=offscreen
+export QT_QPA_PLATFORM=xcb
+export DISPLAY=:99            # e.g. Xvfb :99 -screen 0 1920x1080x24
 ```
-Note: offscreen disables interactive viewing. Cecelia is designed for local desktop
-use and is not tested headless.
+Note that `Xvfb` alone renders in software (`llvmpipe`), which is too slow for 3D volumes; hardware
+GL needs VirtualGL or a GPU-backed X server. On a hybrid-graphics Linux box, also set the discrete-GPU
+env (see `app/src/napari.jl`) or the renderer silently falls back to `llvmpipe`.
+
+Cecelia is designed for local desktop use and is not tested headless.
 
 ---
 
