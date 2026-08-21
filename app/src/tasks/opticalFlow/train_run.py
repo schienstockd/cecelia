@@ -406,7 +406,10 @@ def run(params):
     crop_size = int(params.get('cropSize', 0))
     z_spacing = int(params.get('zSpacing', 0))
     sequences, used, planes_used, windows, crops = [], [], {}, {}, {}
-    scales = {}
+    # NOT `scales` — that name is the temporal scale LIST, six lines up, and shadowing it turned
+    # `max(scales)` into a crash and would have written this dict into the manifest as
+    # `temporalScales`.
+    phys_scales = {}
     for i, m in enumerate(movies):
         im_path = m['imPath']
         uid = m.get('uID', '')
@@ -462,7 +465,7 @@ def run(params):
         # (or two objectives) is legitimate and invisible in a single pooled number.
         scale = _physical_scale(dim_utils, planes)
         if scale is not None:
-            scales[uid] = scale
+            phys_scales[uid] = scale
 
         n_y, n_x = int(dim_utils.dim_val('Y')), int(dim_utils.dim_val('X'))
         for zi, z in enumerate(planes):
@@ -706,12 +709,12 @@ def run(params):
         # What a pixel and a frame ARE, per movie — see `_physical_scale`. The one field that says
         # whether this model can be applied to somebody else's movie, and the reason a vault entry
         # can state a resolution range at all (docs/todo/MODEL_VAULT_PLAN.md).
-        'physicalScales': scales,
+        'physicalScales': phys_scales,
         # Whether that is a measurement or a gap: `ome` = every movie carried it, `partial` = some
         # did, `none` = the images have no physical metadata and this model's scale is unknown. A
         # reader must not have to compare `physicalScales`' keys against `sourceImages` to find out.
-        'physicalScaleSource': ('ome' if len(scales) == len(used)
-                                else 'none' if not scales else 'partial'),
+        'physicalScaleSource': ('ome' if len(phys_scales) == len(used)
+                                else 'none' if not phys_scales else 'partial'),
         # The engine, not just its parameters. Coastal's inference is under active change and one of
         # those changes moved a default that decides object size, so "which coastal" is part of what
         # this model IS — see `_coastal_build`.

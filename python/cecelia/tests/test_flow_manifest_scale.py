@@ -126,5 +126,67 @@ class PhysicalScaleTest(unittest.TestCase):
         self.assertEqual((s['t'], s['tUnit']), (500.0, 'ms'))
 
 
+class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
+    """The manifest's accumulators are each bound once, and to different names.
+
+    A real bug, found by Dominik running a training job: `physicalScales`' accumulator was called
+    `scales`, which is already the temporal-scale LIST six lines above it. `max(scales)` raised
+    `ValueError: max() iterable argument is empty`, and had that guard not crashed first, the manifest
+    would have been written with a dict of pixel sizes under `temporalScales`.
+
+    Unit-testing `_physical_scale` in isolation could never catch this — the collision lives in the
+    caller, not the callee. This is the cheap check that can: the runner needs torch, coastal and a
+    real movie to execute, but its source parses here in milliseconds.
+
+    Deliberately NOT "no local is ever rebound" — rebinding is ordinary and that check reports ten
+    false positives. These are the names whose identity the manifest depends on.
+    """
+
+    #: accumulators built once before the movie loop and read again when the manifest is written
+    SINGLE_BINDING = ('scales', 'phys_scales', 'used', 'planes_used', 'windows', 'crops')
+
+    @classmethod
+    def setUpClass(cls):
+        import ast, inspect
+        cls.fn = ast.parse(inspect.getsource(_load_runner().run)).body[0]
+
+    def _bindings(self):
+        import ast
+        counts = {}
+        for node in ast.walk(self.fn):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                names = ([target] if isinstance(target, ast.Name)
+                         else [e for e in getattr(target, 'elts', []) if isinstance(e, ast.Name)])
+                for n in names:
+                    counts[n.id] = counts.get(n.id, 0) + 1
+        return counts
+
+    def test_each_manifest_accumulator_is_bound_exactly_once(self):
+        counts = self._bindings()
+        for name in self.SINGLE_BINDING:
+            self.assertEqual(
+                1, counts.get(name, 0),
+                f'`{name}` is bound {counts.get(name, 0)} time(s) in run(). It feeds the manifest, so '
+                'a second binding silently changes what gets written. Rename the newcomer.')
+
+    def test_the_two_scale_fields_do_not_read_the_same_variable(self):
+        """`temporalScales` is the frame-lag list; `physicalScales` is the per-movie µm/s dict."""
+        import ast
+        pairs = {}
+        for node in ast.walk(self.fn):
+            if not isinstance(node, ast.Dict):
+                continue
+            for k, v in zip(node.keys, node.values):
+                if isinstance(k, ast.Constant) and k.value in ('temporalScales', 'physicalScales') \
+                        and isinstance(v, ast.Name):
+                    pairs[k.value] = v.id
+        self.assertEqual({'temporalScales', 'physicalScales'}, set(pairs),
+                         'both manifest fields should be written from a plain local')
+        self.assertNotEqual(pairs['temporalScales'], pairs['physicalScales'],
+                            f'both read `{pairs["temporalScales"]}` — this is the shadowing bug')
+
+
 if __name__ == '__main__':
     unittest.main()
