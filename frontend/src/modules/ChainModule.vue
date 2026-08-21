@@ -888,7 +888,7 @@ function onCanvasDrop(event: DragEvent) {
 }
 
 // ── Value-name propagation ────────────────────────────────────────────────────
-// A processing task's output value_name (e.g. cellposeCorrect → "cpCorrected") only exists on
+// A processing task's output value_name (e.g. afCorrect → "afCorrected") only exists on
 // disk after the chain runs, so a downstream node's `valueNameSelection` can't offer it from the
 // image. Instead we read the producer's declared output (TaskDef.outputValueName, or an
 // `outputValueName` param for tasks whose output name is user-set) and, when an edge is drawn,

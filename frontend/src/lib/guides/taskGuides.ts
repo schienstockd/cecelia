@@ -148,6 +148,7 @@ export const segmentGuide = moduleTaskGuide({
   funHint: [
     'Plain "Cellpose segmentation" makes labels only — no measures to gate or cluster on.',
     'This one measures too, so everything downstream has something to read.',
+    'Dim moving cells in tissue? Segment by motion instead — cellpose is for static signal.',
   ],
   params: [
     'Cell channels — the channels carrying the cell signal; they are merged by maximum.',
@@ -237,6 +238,111 @@ export const trackCellsGuide = moduleTaskGuide({
         'Every cell has a track_id and a position at each timepoint.',
         'Behaviour → HMM fits states to those measures; Cluster tracks groups on them.',
       ],
+    },
+  ],
+})
+
+// ── Optical flow: train, then segment by motion ───────────────────────────────
+// Why these exist at all: cellpose 4 replaced the cyto*/nuclei zoo with one generalist model, and
+// `docs/todo/SEG_QUALITY_PLAN.md` measured that model at 0.0% QC-pass on an intravital movie where
+// tuned `cyto2` reached 13.4% — with `cyto2` no longer selectable. So the guides shipped teaching
+// cellpose as THE way to segment, on an app whose answer for dim moving cells is now this pair.
+// (docs/todo/CELLPOSE_V4_PLAN.md, docs/todo/WORKFLOW_RECIPES_PLAN.md P0.)
+//
+// Two guides, not one, because they are two runs on two pages with a real gap between them: a model
+// is trained once per kind of movie and then reused across projects (the vault is in `config_dir`, not
+// the project — `list_coastal_models` in config.jl).
+//
+// No `flowModelTrained` prereq, deliberately: every prereq in `prereqs.ts` is answerable from state
+// the frontend already holds, and the vault list arrives with the served task spec instead. So the
+// dependency is said in the copy — see WORKFLOW_RECIPES_PLAN P3 for the version that could gate on it.
+export const trainFlowModelGuide = moduleTaskGuide({
+  id: 'train-flow-model',
+  title: 'Train a flow model',
+  group: 'Data',
+  icon: 'pi-sync',
+  summary: 'Teach a model what moving cells look like in your own movies — the step before motion segmentation.',
+  route: '/optical-flow',
+  navLabel: 'Optical flow',
+  taskKey: 'trainFlowModel',
+  funName: 'opticalFlow.train',
+  funLabel: 'Train flow model',
+  selectionModule: 'opticalFlow',
+  waitLabel: 'Training',
+  // A time series, not just an image: flow is computed between frames, so one frame trains nothing.
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
+  intro: 'Motion segmentation learns from movement, so it needs a model trained on movies like yours.',
+  params: [
+    'Model name — the vault entry this writes; you pick it again when you segment.',
+    'Channels — the ones showing cell bodies move; the model reads motion, not markers.',
+    'Max frames per movie — cap it for a first pass, then retrain on more.',
+    'Epochs — 30 to start; the loss curve says whether it needed more.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/optical-flow',
+      placement: 'top-start',
+      title: 'Read the training curves',
+      text: 'This is how you tell a model that learned from one that stalled.',
+      bullets: [
+        'A loss still falling at the last epoch means train again with more.',
+        'Flow metrics show what the model was actually fed.',
+      ],
+    },
+    {
+      title: 'What you now have',
+      text: 'A model in the vault, not in this project — the same one segments any movie of this kind.',
+      bullets: ['Segment with it next, on the Segment page.'],
+    },
+  ],
+})
+
+export const segmentByMotionGuide = moduleTaskGuide({
+  id: 'segment-by-motion',
+  title: 'Segment a movie by motion',
+  group: 'Data',
+  icon: 'pi-th-large',
+  summary: 'Find cells by how they move rather than how bright they are — for dim, moving cells in tissue.',
+  route: '/segment',
+  navLabel: 'Segment',
+  // The COMPOSITE, same reason as cellpose above: bare labels carry no measures, so gating, tracking
+  // and clustering would all have nothing to read.
+  taskKey: 'coastalMeasure',
+  funName: 'segment.coastalMeasure',
+  funLabel: 'Optical flow segment + measure',
+  selectionModule: 'segment',
+  waitLabel: 'Segmenting',
+  withPreview: true,
+  prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
+  intro: 'This segments by motion, so it works where a cell is too dim to find in any single frame.',
+  funHint: [
+    'Needs a trained flow model — run "Train a flow model" first.',
+    'Plain "Optical flow segmentation" makes labels only, with no measures to gate on.',
+  ],
+  params: [
+    'Model — the one you trained; its manifest fixes the metrics and scales used.',
+    'Cell channels — the same channels the model was trained on.',
+    'Seed window (µm) — about one cell across; it decides what counts as one object.',
+    'Foreground threshold — raise it if background is coming through as cells.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/segment',
+      placement: 'top-start',
+      title: 'Check the QC first',
+      text: 'Same plots as any segmentation — too few cells, implausible sizes, edge artefacts.',
+      bullets: ['Compare it against a cellpose run on the same image if you have one.'],
+    },
+    ...napariCheck('mask', 'viewer.toggleLabels', [
+      'Do the labels stay on the same cell as it moves?',
+      'Is a moving cell one object, or does it break up between frames?',
+    ]),
+    {
+      title: 'What you now have',
+      text: 'Labels and measures on a movie cellpose could not read — track them next.',
+      bullets: ['Tracking is the point of segmenting a movie; gating works on these too.'],
     },
   ],
 })

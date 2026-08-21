@@ -179,16 +179,16 @@ comes from the Pixi env, so only the JARs are downloaded. This also means the **
 gets bioformats2raw too** — the branch tarball never contained it (it's not in git), so before this
 the dev channel had no working image import.
 
-**Custom cellpose checkpoints are NOT in the bundle either.** Same reason: the fluorescence
-model `ccia.fluo` alone is ~26 MB, larger than the entire app tarball, and more checkpoints will
-follow. `install.sh` / `install.ps1` fetch them from
-[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into
-`<install>/models/cellposeModels/` (only `cellposeModels/`; the upstream `btrackModels/` isn't
-needed here — feijoa's btrack config is vendored beside its runner). The Julia
-resolver`cellpose_model_path(name)` (config.jl) mirrors bioformats2raw's bundled/override pattern:
+**Custom cellpose checkpoints are NOT in the bundle either**, and as of the cellpose 4 migration
+they are not fetched at install time either: everything in
+[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) is a cellpose 3
+checkpoint, and v4 refuses to load one. The Julia resolver `cellpose_model_path(name)` (config.jl)
+still mirrors bioformats2raw's bundled/override pattern —
 `<install>/models/cellposeModels/` first, `<config_dir>/models/cellposeModels/` as a user override
-slot. Dev shortcut: `pixi run models-fetch` — same fetch, driven by `scripts/models_fetch.py`.
-Override the ref with `CECELIA_MODELS_REF=v1.2` (install) or `--ref v1.2` (pixi task).
+slot — and `pixi run models-fetch` (`scripts/models_fetch.py`, `--ref` to pin) still works for
+whenever there is a v4 set to fetch. What DOES download at first use is cellpose's own `cpsam_v2`
+(~1.2 GB, HuggingFace → `~/.cellpose/models`, relocatable via `CELLPOSE_LOCAL_MODELS_PATH`) —
+bigger than everything else here combined, and not something the installer controls.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
 `releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a
@@ -552,7 +552,7 @@ the updated `pixi.toml` + `pixi.lock`.
 
 | Package | Pin | Reason |
 |---------|-----|--------|
-| `cellpose==3.1.1.2` | exact | `DenoiseModel` removed in v4; we need it for cleanup/denoise tasks. Do NOT upgrade. |
+| `cellpose>=4.2` | lower bound | v4 (Cellpose-SAM). v4 dropped `DenoiseModel`, the cyto*/nuclei zoo and v3-checkpoint loading — `cleanupImages.cellposeCorrect` was retired for it and `cleanupImages.smooth` covers the cleanup case. `cpsam_v2` weights (1.2 GB) download from HuggingFace on first use; `CELLPOSE_LOCAL_MODELS_PATH` can pre-seed them. See docs/todo/CELLPOSE_V4_PLAN.md. |
 | `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
 
 ### GPU detection (cellpose tasks)

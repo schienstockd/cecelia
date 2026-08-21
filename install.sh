@@ -198,29 +198,13 @@ else
 fi
 
 # ── Custom cellpose models (segmentation) ─────────────────────────────────────
-# ~26 MB (schienstockd/ceceliaModels — `ccia.fluo` for fluorescence today; more later), fetched
-# here for the same reason as bioformats2raw: too large to ship in the bundle. Only
-# `cellposeModels/` is installed — the feijoa btrack config is vendored beside its runner
-# (`app/src/tasks/tracking/cell_config.json`), so `btrackModels/` from the upstream repo is
-# skipped. The app resolves them at <install>/models/cellposeModels/ (cellpose_model_path() in
-# config.jl). Skipped if already present (re-fetch by removing the directory).
-if [ -f "$INSTALL_DIR/models/cellposeModels/ccia.fluo" ]; then
-  say "Using cecelia models already at $INSTALL_DIR/models/cellposeModels/."
-else
-  have unzip || err "unzip is required to install cecelia models."
-  MODELS_REF="${CECELIA_MODELS_REF:-master}"
-  MODELS_URL="https://github.com/schienstockd/ceceliaModels/archive/refs/heads/$MODELS_REF.zip"
-  say "Fetching cecelia models ($MODELS_REF; ~26 MB)…"
-  curl -fSL "$MODELS_URL" -o "$TMP/ceceliaModels.zip" \
-    || err "models download failed ($MODELS_URL)."
-  unzip -q "$TMP/ceceliaModels.zip" -d "$TMP/models"
-  mkdir -p "$INSTALL_DIR/models"
-  rm -rf "$INSTALL_DIR/models/cellposeModels"
-  mv "$TMP"/models/ceceliaModels-*/cellposeModels "$INSTALL_DIR/models/"
-  [ -f "$INSTALL_DIR/models/cellposeModels/ccia.fluo" ] \
-    || err "cellpose models missing after unpack (ccia.fluo not found)."
-  say "Installed cecelia models."
-fi
+# NOT fetched. `schienstockd/ceceliaModels` holds cellpose 3 checkpoints (`ccia.fluo`), and
+# cellpose 4 cannot load them — it raises "This model does not appear to be a CP4 model". The
+# drop-in slot itself is unchanged and takes a v4 checkpoint: <install>/models/cellposeModels/ or
+# <config_dir>/models/cellposeModels/ (cellpose_model_path() in config.jl), and `pixi run
+# models-fetch` still exists for whenever there is a v4 set to fetch. Cellpose's own weights
+# (`cpsam_v2`, ~1.2 GB) are downloaded by cellpose on first use, not here.
+# See docs/SEGMENTATION.md → Custom cellpose checkpoints and docs/todo/CELLPOSE_V4_PLAN.md.
 
 # ── Provision ────────────────────────────────────────────────────────────────
 cd "$INSTALL_DIR"

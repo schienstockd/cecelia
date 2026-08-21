@@ -9,7 +9,7 @@ const e = (fun: string, at: string, status?: string): RunLogEntry => ({ fun, at,
 // oldest→newest, like the backend ships it
 const log: RunLogEntry[] = [
   e('importImages.omezarr',        '2026-07-10T09:00:00'),
-  e('cleanupImages.cellposeCorrect', '2026-07-11T10:00:00'),
+  e('cleanupImages.smooth', '2026-07-11T10:00:00'),
   e('segment.cellpose',            '2026-07-12T11:00:00', 'failed'),
 ]
 
@@ -34,13 +34,13 @@ describe('lastRun', () => {
 
 describe('lastSuccessfulRun', () => {
   it('skips a failed newest run and returns the last non-failed one', () => {
-    // newest entry (segment.cellpose) failed → falls back to cleanupImages.cellposeCorrect
-    expect(lastSuccessfulRun(log)?.fun).toBe('cleanupImages.cellposeCorrect')
+    // newest entry (segment.cellpose) failed → falls back to cleanupImages.smooth
+    expect(lastSuccessfulRun(log)?.fun).toBe('cleanupImages.smooth')
   })
   it('returns the newest when it succeeded', () => {
     const l2: RunLogEntry[] = [e('importImages.omezarr', '2026-07-10T09:00:00'),
-                               e('cleanupImages.cellposeCorrect', '2026-07-11T10:00:00')]
-    expect(lastSuccessfulRun(l2)?.fun).toBe('cleanupImages.cellposeCorrect')
+                               e('cleanupImages.smooth', '2026-07-11T10:00:00')]
+    expect(lastSuccessfulRun(l2)?.fun).toBe('cleanupImages.smooth')
   })
   it('undefined when nothing succeeded / empty', () => {
     expect(lastSuccessfulRun([e('segment.cellpose', 'x', 'failed')])).toBeUndefined()
@@ -51,7 +51,7 @@ describe('lastSuccessfulRun', () => {
 
 describe('funsRun', () => {
   it('collects funs, dropping failed runs by default', () => {
-    expect([...funsRun(log)].sort()).toEqual(['cleanupImages.cellposeCorrect', 'importImages.omezarr'])
+    expect([...funsRun(log)].sort()).toEqual(['cleanupImages.smooth', 'importImages.omezarr'])
   })
   it('includes failed runs when succeededOnly=false', () => {
     expect(funsRun(log, false).has('segment.cellpose')).toBe(true)
@@ -65,14 +65,14 @@ describe('funsRunAcross', () => {
   it('unions across images and sorts', () => {
     const other: RunLogEntry[] = [e('tracking.bayesian_tracking', '2026-07-13T09:00:00')]
     expect(funsRunAcross([log, other, undefined])).toEqual([
-      'cleanupImages.cellposeCorrect', 'importImages.omezarr', 'tracking.bayesian_tracking',
+      'cleanupImages.smooth', 'importImages.omezarr', 'tracking.bayesian_tracking',
     ])
   })
 })
 
 describe('wasProcessedWith', () => {
   it('ever: matches any non-failed run', () => {
-    expect(wasProcessedWith(log, 'cleanupImages.cellposeCorrect', 'ever')).toBe(true)
+    expect(wasProcessedWith(log, 'cleanupImages.smooth', 'ever')).toBe(true)
     expect(wasProcessedWith(log, 'importImages.omezarr', 'ever')).toBe(true)
   })
   it('ever: a failed-only run does not count as processed (by default)', () => {
@@ -83,12 +83,12 @@ describe('wasProcessedWith', () => {
     // newest run here is segment.cellpose, but it failed → not "processed" by default
     expect(wasProcessedWith(log, 'segment.cellpose', 'last')).toBe(false)
     expect(wasProcessedWith(log, 'segment.cellpose', 'last', false)).toBe(true)
-    expect(wasProcessedWith(log, 'cleanupImages.cellposeCorrect', 'last')).toBe(false)
+    expect(wasProcessedWith(log, 'cleanupImages.smooth', 'last')).toBe(false)
   })
   it('last: matches a successful newest run', () => {
     const l2: RunLogEntry[] = [e('importImages.omezarr', '2026-07-10T09:00:00'),
-                               e('cleanupImages.cellposeCorrect', '2026-07-11T10:00:00')]
-    expect(wasProcessedWith(l2, 'cleanupImages.cellposeCorrect', 'last')).toBe(true)
+                               e('cleanupImages.smooth', '2026-07-11T10:00:00')]
+    expect(wasProcessedWith(l2, 'cleanupImages.smooth', 'last')).toBe(true)
     expect(wasProcessedWith(l2, 'importImages.omezarr', 'last')).toBe(false)
   })
   it('empty fun or empty log never matches', () => {
@@ -99,12 +99,12 @@ describe('wasProcessedWith', () => {
 
 describe('funCategory / funModuleLabel', () => {
   it('splits the category off the fun_name', () => {
-    expect(funCategory('cleanupImages.cellposeCorrect')).toBe('cleanupImages')
+    expect(funCategory('cleanupImages.smooth')).toBe('cleanupImages')
     expect(funCategory('segment.cellpose')).toBe('segment')
     expect(funCategory('')).toBe('')
   })
   it('prettifies the module label', () => {
-    expect(funModuleLabel('cleanupImages.cellposeCorrect')).toBe('Cleanup')
+    expect(funModuleLabel('cleanupImages.smooth')).toBe('Cleanup')
     expect(funModuleLabel('importImages.omezarr')).toBe('Import')
     expect(funModuleLabel('segment.cellpose')).toBe('Segment')
     expect(funModuleLabel('clustPops.cluster')).toBe('Clust Pops')

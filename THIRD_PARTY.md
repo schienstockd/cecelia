@@ -40,10 +40,12 @@ license.
 | PyQt5 | GPL-3.0 (Qt bindings) |
 | websockets | BSD-3-Clause |
 
-> **Cellpose image restoration (denoise) — method lineage.** The cleanup/denoise task
-> (`cleanupImages.cellposeCorrect`, using Cellpose 3's `DenoiseModel` — `denoise_cyto3`/`_cyto2`/
-> `_nuclei`, weights distributed with **cellpose 3.1.1.2**) builds on prior content-aware /
-> self-supervised fluorescence-restoration work, whose attribution is preserved here:
+> **Cellpose image restoration (denoise) — method lineage.** cecelia no longer runs a Cellpose
+> denoiser: `cleanupImages.cellposeCorrect` was retired with the move to **cellpose 4**, which has no
+> `DenoiseModel` (see docs/todo/CELLPOSE_V4_PLAN.md). `cleanupImages.smooth` uses coastal's
+> model-free restorers instead. The lineage is kept here because the sibling **coastal** project
+> still carries a reimplementation of that inference path, and because the restoration work it
+> builds on is worth attributing:
 > **CARE / CSBDeep** — Weigert et al., *Nature Methods* 2018,
 > [DOI 10.1038/s41592-018-0216-7](https://doi.org/10.1038/s41592-018-0216-7); **Noise2Void** —
 > Krull et al., CVPR 2019; **Noise2Self** — Batson & Royer, ICML 2019. The sibling **coastal**

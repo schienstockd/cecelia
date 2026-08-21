@@ -10,7 +10,7 @@ Parameter contract (JSON written by Julia):
   taskDir           - metadata directory ({proj}/1/{uid}/)
   outputValueName   - output subdirectory name (default 'default')
   models            - dict keyed "0","1",…; each entry:
-      model           - model type ('cyto3', 'cyto2', 'nuclei', …)
+      model           - v4 model name ('cpsam_v2', 'cpsam') or a checkpoint path
       matchAs         - 'base' or 'nuc'
       cellChannels    - 0-based channel indices for cell signal
       nucChannels     - 0-based indices for nucleus signal (optional)

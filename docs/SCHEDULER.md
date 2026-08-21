@@ -434,14 +434,14 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 ## Value-name propagation between linked nodes
 
 A processing task consumes an input image version (a `valueName`) and produces a new one — e.g.
-`cleanupImages.cellposeCorrect` reads `default` and writes `cpCorrected`. Because the output only
+`cleanupImages.smooth` reads `default` and writes `smoothed`. Because the output only
 exists on disk **after** the chain runs, a downstream node's `valueNameSelection` widget can't
 offer it from the image (the image still only has `default` at authoring time). Two pieces close
-this gap so a chain like `import → cellposeCorrect → afDriftCorrect` can be wired before any image
+this gap so a chain like `import → smooth → afDriftCorrect` can be wired before any image
 is processed:
 
 1. **Declared output (introspectable).** Every producer declares its output value_name in the JSON
-   spec — a top-level `"outputValueName"` for a fixed output (`cpCorrected`, `driftCorrected`,
+   spec — a top-level `"outputValueName"` for a fixed output (`smoothed`, `driftCorrected`,
    `afCorrected`), or an `outputValueName` **param** when the user names it (`segment.cellpose`).
    The task's `_run_task` reads the fixed form via `_spec_output_value_name(task, default)` instead
    of hardcoding the string, so exactly one place states it. `GET /api/tasks/definitions` serves
@@ -876,14 +876,14 @@ init_cecelia!()
 # Build a chain with the thin helpers (auto-generates node IDs)
 make_chain(proj, "my-pipeline", [
     chain_node("importImages.omezarr"),
-    chain_node("cleanupImages.cellposeCorrect"; resource_pool="gpu",
-               params=Dict("model" => "cyto2")),
+    chain_node("segment.cellpose"; resource_pool="gpu",
+               params=Dict("models" => Dict("0" => Dict("model" => "cpsam_v2")))),
     chain_node("testTasks.set_task"),                # picnic node — "set" comes from its spec
 ])
 
 # Or build manually (identical result, more control over node IDs)
 n1 = ChainNode(; id="import",  fn="importImages.omezarr")
-n2 = ChainNode(; id="denoise", fn="cleanupImages.cellposeCorrect", resource_pool="gpu")
+n2 = ChainNode(; id="smooth", fn="cleanupImages.smooth")
 save_chain_template!(proj, ChainTemplate("my-pipeline", [n1, n2], [ChainEdge(n1.id, n2.id)]))
 
 # Fresh run (pool concurrency comes from config.toml [pools], not from run_chain)

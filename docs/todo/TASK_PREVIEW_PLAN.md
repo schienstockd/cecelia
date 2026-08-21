@@ -31,7 +31,7 @@ Previewability is a property of a task's *compute*, not of a category:
 |---|---|---|
 | `segment.cellpose` | labels | Yes — modulo tile seams and whole-image normalisation |
 | `cleanupImages.afCorrect` | image | Yes — per-pixel channel competition. Preserves the input shape, but needs **whole-image globals** (`af_weight_stats`: one background level per participating channel), so the preview derives them once over the whole image and caches them, exactly as cellpose caches `norm_params` |
-| `cleanupImages.cellposeCorrect` (denoise) | image | Yes in principle, but **not a build target** — see *Denoise waits for coastal* |
+| ~~`cleanupImages.cellposeCorrect`~~ (denoise) | image | Task REMOVED in the cellpose 4 migration — see *Denoise waits for coastal* |
 | `cleanupImages.driftCorrect` | — | **No.** `drift_correction_shifts` derives shifts from the whole timecourse; a crop cannot produce the real shifts, and the shifts are the thing you would want to judge. Declares nothing. |
 
 `driftCorrect` is why this is opt-in per task rather than automatic for a category.
@@ -213,6 +213,11 @@ reusable.
 **Dropped.** Cellpose denoise is unmaintained upstream and phased out in v4 (Dominik, 2026-07-31), so there
 is no version to migrate it to; `coastal` replaces it. Extracting it would be refactoring code on its way
 out, and the preview would then be re-pointed at the replacement anyway.
+
+**Settled, 2026-08-21:** the task is gone (cellpose 4 migration — `CELLPOSE_V4_PLAN.md`), so there is
+nothing here to preview. `cleanupImages.smooth` is the cleanup task now, and it is an image-output
+preview candidate on exactly the terms this section describes — its compute lives in
+`smooth_run.py`, not in a reusable helper, so the same extraction question applies to it.
 
 What to do instead: **define the denoise seam, not the extraction.** Segmentation already has one —
 `SegmentationUtils` owns the loop and a backend implements `predict_slice`, so coastal adds a backend with a

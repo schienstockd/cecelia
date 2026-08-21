@@ -15,6 +15,33 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+### Changed — Cellpose 4, and no more Cellpose denoising  ⚠️ breaking
+
+- **Segmentation now runs Cellpose 4 (Cellpose-SAM).** The pin moved from `cellpose==3.1.1.2` to
+  `>=4.2`. v4 has one model instead of a zoo: pick **Cellpose-SAM v2** (`cpsam_v2`). Weights (~1.2 GB)
+  download from HuggingFace on first use into `~/.cellpose/models` — set `CELLPOSE_LOCAL_MODELS_PATH`
+  to put them elsewhere or to pre-seed a machine with no internet access.
+- **`cyto3` / `cyto2` / `cyto` / `nuclei` are gone, and a saved run that names one now fails with a
+  message rather than running.** That is deliberate: cellpose 4 answers an unknown model name with a
+  log warning and quietly substitutes `cpsam_v2`, so a silently-different segmentation was the
+  alternative. Re-select the model and re-check the cell diameter; the numbers will not match the old
+  run, and there is no way to reproduce it — v3 and v4 are the same package and cannot coexist.
+  Existing label stores are untouched.
+- **Custom Cellpose checkpoints have to be retrained on v4.** Cellpose refuses a v3 file outright
+  (*"This model does not appear to be a CP4 model"*). The drop-in slots
+  (`<config_dir>/models/cellposeModels/`, `<install>/models/cellposeModels/`) are unchanged, but the
+  installers no longer fetch the shared `ceceliaModels` set, because all of it is v3 — including
+  `ccia.fluo`, the fluorescence model used upstream of branching.
+- **On dim, moving, 3D data prefer Optical flow segmentation (`segment.coastal`).** Cellpose-SAM was
+  measured at 0% QC-pass on an intravital movie where tuned `cyto2` reached 13.4%
+  (`docs/todo/SEG_QUALITY_PLAN.md`), and `cyto2` is no longer available as a fallback. Cellpose's
+  case is static / clean-signal images.
+- **Cellpose correction (denoising) was removed.** Cellpose 4 has no denoise model, and the measured
+  comparison did not favour it: use **Smooth** (`cleanupImages.smooth`, gaussian + temporal median),
+  which kept more signal, produced fewer merged cells and ran ~30× faster on the same data. Images
+  already denoised keep their `cpCorrected` version and stay readable; only the task is gone. Deblur
+  and upsample had no replacement and are gone with it.
+
 ### Changed — the two track plots compare a cohort
 
 - **Tracks and the track diagnostics now put treatments and populations side by side**, like every other

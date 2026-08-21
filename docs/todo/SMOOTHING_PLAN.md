@@ -155,10 +155,13 @@ for `gaussian σ=1 + temporal median 3`. The structural objection is void.
 **The one thing the net genuinely wins is SNR (45 vs 27)** — and AF does not need it. AF needs a findable
 background and objects that stay separate, which is exactly the trade the net takes the wrong side of.
 
-**This does NOT retire coastal's port.** `cleanupImages.cellposeCorrect` still exists and still wants the
-cellpose pin dropped — `DENOISE_PLAN.md` A4/A5 stands, independent of this task.
+**Superseded 2026-08-21.** `cleanupImages.cellposeCorrect` was REMOVED in the cellpose 4 migration
+(`CELLPOSE_V4_PLAN.md`) — Dominik: *"cellpose denoise is not that useful. we will scratch that.
+coastal denoise and smooth will replace that."* So the pin is dropped, this task is the cleanup path,
+and coastal's own `denoise.py` (the CPnet port) stays available in the library without cecelia calling
+it. The paragraph below is kept because the bug it describes is in DATA already on disk.
 
-**And it leaves a real bug to fix there.** `normalize99` blanks a plane whenever `p99 − p1 ≤ 1e-3`:
+**It left a real bug in output already written.** `normalize99` blanks a plane whenever `p99 − p1 ≤ 1e-3`:
 
 | channel | median p99−p1 | planes zeroed |
 |---|---|---|
@@ -166,8 +169,8 @@ cellpose pin dropped — `DENOISE_PLAN.md` A4/A5 stands, independent of this tas
 | nuc-GFP / mem-Tom / CD169-Kat | 34 / 81 / 35 | 3.1% each |
 
 `2h06xA` was run with `modelChannels: [0,1,2,3]`, so **SHG in `ccidCpCorrected` is a flat constant, not
-data**, with nothing in the log saying so. That needs a QC warning in `cellposeCorrect` regardless of
-this decision.
+data**, with nothing in the log saying so. No QC warning will ever be written for it now — the task is
+gone — so treat any existing `cpCorrected` store as suspect on a low-dynamic-range channel.
 
 So this task needs **none of coastal's weights** — only the idea behind its `gaussian_restorer`, applied
 per channel instead of to a projection, and a temporal median in place of its `temporal_mean_restorer`.

@@ -17,11 +17,13 @@ live_outputs(::CellposeSegment, params::AbstractDict) = segment_live_outputs(par
 # `CellposeUtils.predict_slice`, the same method the full run uses. See `task_previewable` in task.jl.
 task_previewable(::CellposeSegment) = true
 
-# Cellpose's built-in model names. Anything outside this set is treated as a *custom* checkpoint name
-# and resolved via `cellpose_model_path` into a file path the Python runner loads with
-# `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model` (its
-# `os.path.isfile(model_type)` branch is the pickup point). See docs/SEGMENTATION.md → *Custom cellpose checkpoints*.
-const BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
+# Cellpose's built-in model names live in `config.jl` (`BUILTIN_CELLPOSE_MODELS`, one copy —
+# `list_cellpose_models` builds the picker from the same tuple). Anything outside that set is treated
+# as a *custom* checkpoint name and resolved via `cellpose_model_path` into a file path the Python
+# runner loads with `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model`
+# (its `os.path.isfile` branch is the pickup point). See docs/SEGMENTATION.md → *Custom cellpose
+# checkpoints*.
+_builtin_cellpose_names() = (first(m) for m in BUILTIN_CELLPOSE_MODELS)
 
 """
     cellpose_models_for_python(params, raw; on_log) -> Dict
@@ -58,12 +60,21 @@ function cellpose_models_for_python(params::AbstractDict, raw::AbstractDict;
             m[field] = channel_indices(get(m, field, []), ch_names; what = field)
         end
         model_name = String(get(m, "model", ""))
-        if !isempty(model_name) && !(model_name in BUILTIN_CELLPOSE_MODELS) && !isfile(model_name)
+        # A Cellpose 3 model name is REJECTED, never passed through: cellpose 4 answers an unknown
+        # `pretrained_model` with a log warning and `cpsam_v2`, so letting one through would silently
+        # return a different segmentation. See RETIRED_CELLPOSE_MODELS in config.jl.
+        if model_name in RETIRED_CELLPOSE_MODELS
+            error("Cellpose model '$model_name' no longer exists: cellpose 4 replaced the " *
+                  "cyto/nuclei zoo with one model. Select '$(first(first(BUILTIN_CELLPOSE_MODELS)))' " *
+                  "and re-check the cell diameter. Results will not match the old run.")
+        end
+        if !isempty(model_name) && !(model_name in _builtin_cellpose_names()) && !isfile(model_name)
             path = cellpose_model_path(model_name)
             isnothing(path) && error(
                 "Custom cellpose model '$model_name' not found at " *
                 "$(joinpath(cellpose_models_dir(), model_name)). Place the checkpoint there or " *
-                "select a built-in model.")
+                "select a built-in model. Note it must be a cellpose 4 checkpoint — a v3 file is " *
+                "rejected on load.")
             on_log("[INFO] Custom model: $model_name → $path")
             m["model"] = path
         end

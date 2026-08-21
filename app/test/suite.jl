@@ -326,7 +326,7 @@ end
 
     # Built-ins are always first, in a stable order.
     names = [m.name for m in list_cellpose_models(td)]
-    @test names[1:4] == ["cyto3", "cyto2", "cyto", "nuclei"]
+    @test names[1:2] == ["cpsam_v2", "cpsam"]
 
     # No user drop-in → nothing tagged "user" for THIS td.
     base = list_cellpose_models(td)
@@ -721,10 +721,10 @@ end
 end
 
 # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a
-# dropped-in checkpoint under `<repo>/models/cellposeModels/` (this worktree has ccia.fluo
-# from `pixi run models-fetch`) appears in the Model select's options — that's what makes
-# validate_params accept the name. If the bundled dir is empty (no models-fetch), the picker
-# still returns builtins; the test guards both regimes.
+# dropped-in checkpoint under `<repo>/models/cellposeModels/` appears in the Model select's
+# options — that's what makes validate_params accept the name. The bundled dir is normally EMPTY
+# since the cellpose 4 migration (the `ceceliaModels` set is all v3 checkpoints and is no longer
+# fetched), so the picker returns builtins only; the test guards both regimes.
 @testset "CellposeSegment spec dynamic Model options" begin
     spec = Cecelia._task_spec(CellposeSegment())
     @test !isnothing(spec)
@@ -734,7 +734,7 @@ end
                         if get(p, "key", "") == "model")
     values = [string(o["value"]) for o in model_sel["options"]]
     # Built-ins are always there
-    @test issubset(["cyto3", "cyto2", "cyto", "nuclei"], values)
+    @test issubset(["cpsam_v2", "cpsam"], values)
 
     # A genuinely-unknown checkpoint name is still rejected — the enumeration is real
     @test_throws ParamValidationError validate_params(CellposeSegment(),
@@ -2575,8 +2575,6 @@ end
     rm(proj2.root; recursive=true)
 end
 
-# ── Param validation — CellposeCorrect (constraints live inside a `group`) ───
-
 # ── Axis gating (task_applies + img_axes) ────────────────────────────────
 @testset "Axis gating — img_axes + task_applies" begin
     # img_axes: SizeT > 1 → :T; TimeIncrement present as fallback for pre-SizeT projects.
@@ -4317,7 +4315,6 @@ end
     poolof(fn) = Cecelia._task_pool_name(_task_from_fun_name(fn))
     @test poolof("segment.cellpose")              == "gpu"
     @test poolof("segment.cellposeMeasure")       == "gpu"
-    @test poolof("cleanupImages.cellposeCorrect") == "gpu"
     @test poolof("importImages.omezarr")          == "io"
     @test poolof("importImages.migrateLegacy")    == "io"
     @test poolof("editImages.cropImage")          == "io"
@@ -4621,10 +4618,10 @@ end
     @test read_module_fun_params(r2._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
 
     # a second task's params coexist under its own key (no clobber)
-    write_module_fun_params!(img._dir, "cleanupImages.cellposeCorrect",
+    write_module_fun_params!(img._dir, "cleanupImages.smooth",
                              Dict{String,Any}("valueName" => "default"))
     @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
-    @test read_module_fun_params(img._dir, "cleanupImages.cellposeCorrect")["valueName"] == "default"
+    @test read_module_fun_params(img._dir, "cleanupImages.smooth")["valueName"] == "default"
 
     # set-level memory uses the same dir-based mechanism on the set's ccid.json
     write_module_fun_params!(s._dir, "cleanupImages.driftCorrect",
@@ -5710,7 +5707,6 @@ end
 # ── Producer output value_name is declared in the JSON spec (introspectable) ──
 # The whiteboard reads this to prefill a downstream node's input `valueName`.
 @testset "Output value_name from spec" begin
-    @test Cecelia._spec_output_value_name(CellposeCorrect(), "fallback") == "cpCorrected"
     @test Cecelia._spec_output_value_name(DriftCorrect(),    "fallback") == "driftCorrected"
     @test Cecelia._spec_output_value_name(AfCorrect(),       "fallback") == "afCorrected"
     @test Cecelia._spec_output_value_name(Smooth(),          "fallback") == "smoothed"
@@ -6821,10 +6817,20 @@ end
 end
 
 # ── fun_name dispatch ─────────────────────────────────────────────────────
+@testset "Retired fun_names carry a migration message" begin
+    # A saved param set or chain node naming a removed task must say it was REMOVED and what to use
+    # instead — not fall through to "Unknown fun_name" with a list of everything, which reads as a
+    # typo report. `cpCorrected` stores on disk are untouched by the removal.
+    e = try _task_from_fun_name("cleanupImages.cellposeCorrect"); nothing catch err; err end
+    @test e isa ErrorException
+    @test occursin("no longer exists", e.msg)
+    @test occursin("cleanupImages.smooth", e.msg)
+    @test occursin("cpCorrected", e.msg)
+end
+
 @testset "fun_name dispatch" begin
     @test _task_from_fun_name("importImages.omezarr") isa ImportOmezarr
     @test _task_from_fun_name("importImages.remove")  isa RemoveImage
-    @test _task_from_fun_name("cleanupImages.cellposeCorrect") isa CellposeCorrect
     @test _task_from_fun_name("cleanupImages.afCorrect")       isa AfCorrect
     @test _task_from_fun_name("cleanupImages.driftCorrect")    isa DriftCorrect
     @test _task_from_fun_name("cleanupImages.smooth")          isa Smooth
@@ -12481,13 +12487,26 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             raw = Cecelia.read_ccid_raw(Cecelia.state_file(img))
 
             params = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
-                "model" => "cyto3", "matchAs" => "base",
+                "model" => "cpsam_v2", "matchAs" => "base",
                 "cellChannels" => ["CH3"], "nucChannels" => String[])))
 
             m = Cecelia.cellpose_models_for_python(params, raw)["0"]
             @test m["cellChannels"] == [2]           # 0-based: CH3 is the third channel
             @test m["nucChannels"] == Int[]
-            @test m["model"] == "cyto3"              # a built-in name passes through untouched
+            @test m["model"] == "cpsam_v2"           # a built-in name passes through untouched
+
+            # A cellpose 3 model name is REJECTED here, not forwarded. cellpose 4 answers an unknown
+            # `pretrained_model` with a log warning and loads `cpsam_v2`, so forwarding one would
+            # return a DIFFERENT segmentation with nothing in the run log to say so.
+            for retired in ("cyto3", "cyto2", "cyto", "nuclei")
+                p3 = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                    "model" => retired, "matchAs" => "base",
+                    "cellChannels" => ["CH3"], "nucChannels" => String[])))
+                err = try Cecelia.cellpose_models_for_python(p3, raw); nothing catch e; e end
+                @test err isa ErrorException
+                @test occursin("no longer exists", err.msg)
+                @test occursin("cpsam_v2", err.msg)
+            end
 
             # the hook the preview calls produces the same thing, and leaves other params alone
             got = Cecelia.preview_params(Cecelia.CellposeSegment(), params, img)
@@ -12557,7 +12576,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # back as JSON3 values with SYMBOL keys, which is the standing trap (CLAUDE.md — a
             # `isa Dict` guard is false for `JSON3.Object`). If the lift missed those, this would be
             # the one path that regressed while every hand-built Dict above kept passing.
-            body = """{"models":{"0":{"model":"cyto3","matchAs":"base",
+            body = """{"models":{"0":{"model":"cpsam_v2","matchAs":"base",
                        "cellChannels":["CH3"],"nucChannels":[]}},
                        "imageTiling":{"blockSize":4096,"overlap":128}}"""
             from_json = JSON3.read(body, Dict{String,Any})

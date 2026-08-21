@@ -23,6 +23,23 @@ gating **QC gate gives us a ground-truth-free way to measure it** (Dominik's ide
 
 ~87–92% of labels are rejected by the QC gate — heavy over-segmentation under v3.
 
+> **REVERSED IN PART, 2026-08-21.** cecelia now runs **cellpose 4** (`docs/todo/CELLPOSE_V4_PLAN.md`).
+> Dominik: *"we have to migrate to cellpose v4. v3 is outdated. and doesn't perform as well on static
+> images."* Nothing below is retracted — the Phase 2 numbers stand and are the most important thing
+> anyone reads before running cellpose on intravital data. What changed is the **scope of the
+> conclusion**: it was measured on intravital (`EaMaVq`, T cells, 5 frames), and that case is now
+> coastal's (`segment.coastal`, shipped since). cellpose's remaining job is static / clean-signal
+> images, where v4 is expected to be the stronger of the two and **no comparison has been run**.
+>
+> Two consequences to carry forward:
+> * **cyto2/cyto3 are no longer selectable.** The 13.4%-QC-pass configuration in the table below
+>   cannot be re-run in cecelia — v4 rejects the model names, and the two versions cannot coexist in
+>   one env. The old runs' label stores are still on disk; the recipe is not reproducible.
+> * **On intravital, expect the 0.0% row.** If someone points `segment.cellpose` at a dim 3D movie
+>   they now get cpsam, which measured 65 objects / 0% pass here. `segment.coastal` is the answer for
+>   that data, and this is the strongest argument for the guided workflow builder Dominik sketched
+>   on 2026-08-21 — the tool should not let that pairing happen silently.
+
 ## OUTCOME (2026-07-25) — v4 rejected; pivot to coastal-native segmentation
 
 The phased plan below ran to a conclusion. Summary of what we found:
@@ -56,6 +73,7 @@ The phased plan below ran to a conclusion. Summary of what we found:
   `flow.py`) with the right inductive bias for moving-cell data. **The same QC-gate harness is the
   yardstick** for it. Tracked as task #17; supersedes the "which cellpose version" framing entirely.
   The `cellpose==3` pin now stays until coastal provides *both* denoise and segmentation.
+  *(Both arrived — `coastal.denoise` and `segment.coastal` — and the pin was dropped 2026-08-21.)*
 
 > **2026-08-06 — the flow premise holds, and the thing blocking it was an 8-bit cast.**
 > Two corrections to Phase 3 above, in order of importance.

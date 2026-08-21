@@ -346,7 +346,7 @@ export function imageNamesForField(img: CciaImage, field: string | undefined | n
  *     the global model vault). Only then is an empty list correct.
  *
  * Collapsing `undefined` into `null` emptied the version picker on six task specs — cellpose, coastal,
- * cellposeCorrect, opticalFlow.train, remove and measureLabels all omit `field`. Nothing errored; the
+ * smooth, opticalFlow.train, remove and measureLabels all omit `field`. Nothing errored; the
  * dropdown was simply blank. That is why this lives here with a test on the LIST, rather than inline in
  * the component where only `preferredValueName` was covered.
  */

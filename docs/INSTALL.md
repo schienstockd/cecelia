@@ -120,9 +120,13 @@ pixi run python -c "import torch, napari, cellpose; print('cuda', torch.cuda.is_
 ```
 
 > Always run the stack through `pixi run` (`pixi run dev`, `pixi run napari`, …) so the
-> Julia server's Python subprocesses use this env. The design rationale — the cellpose-v3
-> pin, the dropped `coastal` dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
+> Julia server's Python subprocesses use this env. The design rationale — the cellpose-v4
+> floor, the `coastal` git dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
 > model — lives in `docs/SHIPPING.md`, not here.
+
+> **First cellpose run downloads weights.** Cellpose 4 fetches `cpsam_v2` (~1.2 GB) from
+> HuggingFace into `~/.cellpose/models` on first use. Set `CELLPOSE_LOCAL_MODELS_PATH` to point
+> elsewhere, or to a pre-seeded directory on a machine with no internet access.
 
 ### Don't move or rename the checkout after installing
 
@@ -227,7 +231,7 @@ use and is not tested headless.
 | Python (pixi env) | 3.12 |
 | torch | 2.6.0+cu124 |
 | napari | 0.7.1 |
-| cellpose | 3.1.1.2 |
+| cellpose | 4.2.1.1 |
 | zarr | 3.2.1 |
 | anndata | 0.12.17 |
 | scanpy | 1.12.1 |

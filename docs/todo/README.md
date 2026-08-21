@@ -73,7 +73,9 @@ disagree, the plan's header wins — and fix the row.
 | [`POPULATION_SUMMARY_PLAN.md`](POPULATION_SUMMARY_PLAN.md) | design lock / status snapshot | One generalised population-summary surface |
 | [`COASTAL_SEGMENTATION_PLAN.md`](COASTAL_SEGMENTATION_PLAN.md) | planning (2026-08-06) | coastal as cecelia's own denoise + segmentation engine. Read with `SEGMENTATION_OPEN_PROBLEM.md` |
 | [`OPTICAL_FLOW_MODULE_PLAN.md`](OPTICAL_FLOW_MODULE_PLAN.md) | design (2026-08-06) | Training + inference surface for flow models; companion to `COASTAL_SEGMENTATION_PLAN.md` |
-| [`SEG_QUALITY_PLAN.md`](SEG_QUALITY_PLAN.md) | planning — ran to a conclusion | Better segmentation measured by QC-gate pass-yield. **Cellpose-4 migration DROPPED; the v3 pin stays** |
+| [`SEG_QUALITY_PLAN.md`](SEG_QUALITY_PLAN.md) | ran to a conclusion — partly reversed | Better segmentation measured by QC-gate pass-yield. Its cpsam-vs-v3 numbers still stand for intravital; the v4 rejection was reversed by `CELLPOSE_V4_PLAN.md` |
+| [`WORKFLOW_RECIPES_PLAN.md`](WORKFLOW_RECIPES_PLAN.md) | planning (2026-08-21) | "What are you trying to do?" → the steps. Scenarios composed from the existing guide system; P0 is the missing coastal guide. Came out of `CELLPOSE_V4_PLAN.md` |
+| [`CELLPOSE_V4_PLAN.md`](CELLPOSE_V4_PLAN.md) | in progress (`feat/cellpose-v4`) | Migration to cellpose 4 (Cellpose-SAM), retirement of `cleanupImages.cellposeCorrect`. Reverses the v3 pin in `pixi.toml` and the verdict in `SEG_QUALITY_PLAN.md` |
 | [`SEGMENTATION_QC_PLOT_PLAN.md`](SEGMENTATION_QC_PLOT_PLAN.md) | planned (2026-07-04) | A segmentation-integrity QC plot, per image and per timepoint |
 | [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) | planned (2026-07-22) | In-app 3D crop UI; supersedes the napari-driven crop, which has a low ceiling |
 | [`STATS_ANNOTATIONS_PLAN.md`](STATS_ANNOTATIONS_PLAN.md) | planning · no branch | Server-side hypothesis tests rendered as marks inside existing Observable Plot charts; no new route |

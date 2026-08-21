@@ -76,7 +76,7 @@ export function wasProcessedWith(
   return funsRun(runLog, succeededOnly).has(fun)
 }
 
-// The module (task category) part of a fun_name: 'cleanupImages.cellposeCorrect' → 'cleanupImages'.
+// The module (task category) part of a fun_name: 'cleanupImages.smooth' → 'cleanupImages'.
 export function funCategory(fun: string): string {
   return (fun ?? '').split('.')[0] ?? ''
 }

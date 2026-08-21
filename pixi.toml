@@ -67,10 +67,12 @@ cecelia      = { path = "python", editable = true }
 websockets   = ">=16.0"
 napari       = ">=0.7"
 pyqt5        = ">=5.15"
-# Cellpose is PINNED to v3 on purpose: v4 dropped denoise support, and denoising cannot be
-# excised from v3. Do NOT bump to 4.x — it breaks the denoise path. (INSTALL.md's old version
-# table said 4.2.1.1; that was wrong.) See docs/SHIPPING.md.
-cellpose     = "==3.1.1.2"
+# Cellpose v4 (Cellpose-SAM). v4 has no `DenoiseModel` — the v3 pin existed to keep
+# `cleanupImages.cellposeCorrect` alive, and that task is retired: `cleanupImages.smooth` (coastal's
+# model-free restorers) and `coastal.denoise` (the Cellpose-3 net re-implemented, no `cellpose`
+# import) cover it. v4 also drops the cyto*/nuclei zoo for `cpsam_v2` and cannot load v3
+# checkpoints. See docs/todo/CELLPOSE_V4_PLAN.md and docs/SHIPPING.md.
+cellpose     = ">=4.2"
 anndata      = ">=0.12"
 scanpy       = ">=1.12"
 pandas       = ">=2.3"
@@ -211,9 +213,10 @@ notebooks-instantiate = { cmd = "julia --project -e 'using Pkg; Pkg.resolve(); P
 app = "python app.py"
 
 # Fetch custom cellpose checkpoints (schienstockd/ceceliaModels → <repo>/models/cellposeModels/).
-# Mirrors the install.sh/.ps1 fetch (bioformats2raw pattern; not in git — see .gitignore /models/).
 # `--ref` and `--dest` override the branch + target dir. See docs/SEGMENTATION.md → Custom
-# cellpose checkpoints.
+# cellpose checkpoints. NOTE: everything currently in that repo is a cellpose 3 checkpoint, which
+# cellpose 4 refuses to load — the installers no longer run this, and it is kept for whenever there
+# is a v4 set to distribute. Not in git either way — see .gitignore /models/.
 models-fetch = "python scripts/models_fetch.py"
 
 # Dump every front-facing string (SFCs + task specs + Julia QC text) to UI_COPY_INVENTORY.md, with

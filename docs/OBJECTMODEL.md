@@ -258,7 +258,8 @@ Several fields (`filepath`, `imChannelNames`, `labels`, `label_props`) follow th
 
 - `_active` points to the name of the currently active entry.
 - `"default"` is always the raw/imported version.
-- Correction tasks add named entries (e.g. `"afCorrected"`, `"cpCorrected"`).
+- Correction tasks add named entries (e.g. `"afCorrected"`, `"smoothed"`). `"cpCorrected"` also
+  appears on images processed before cellpose denoising was retired — the stores stay readable.
 - `_active` is updated to the new name after each correction.
 
 **Removing a version** — `remove_image_version!` (`storage.jl`) is the ONE path (used by the

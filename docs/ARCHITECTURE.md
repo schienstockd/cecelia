@@ -116,7 +116,7 @@ run_task(ImportOmezarr(), img, Dict("pyramidScale" => 2))
 run_task("proj-uid", "img-uid"; fun_name="importImages.omezarr", params=Dict("pyramidScale" => 2))
 
 # Batch
-run_tasks("proj-uid", ["uid-1", "uid-2"]; fun_name="cleanupImages.cellposeCorrect", params=params)
+run_tasks("proj-uid", ["uid-1", "uid-2"]; fun_name="cleanupImages.smooth", params=params)
 ```
 
 Both forms validate params against the co-located `.json` spec before running. Invalid params throw `ParamValidationError` with the constraint that was violated.
@@ -142,7 +142,7 @@ its own. This is the mechanism that keeps the package runnable headless — a ta
 | `app/src/tasks/task.jl` | PACKAGE | Abstract type, validation, REPL contract |
 | `app/src/tasks/importImages/omezarr.jl` | PACKAGE | bf2raw via callbacks — no WS |
 | `app/src/tasks/importImages/remove.jl` | PACKAGE | File deletion + ccid.json update — no WS |
-| `app/src/tasks/cleanupImages/cellpose_correct.jl` | PACKAGE | Python subprocess via callbacks — no WS |
+| `app/src/tasks/cleanupImages/smooth.jl` | PACKAGE | Python subprocess via callbacks — no WS |
 | `app/src/tasks/*/*.json` | PACKAGE | Param specs — served via API, not bundled in Vue |
 | `app/src/gating/population_manager.jl` | PACKAGE | Gating engine + `pop_df` unified accessor (cell/track) — pure, no HTTP |
 | `app/src/plotting/plot_data.jl` | PACKAGE | Summary-plot aggregation (`pop_df` → histogram bins / frequency counts) — pure `Dict`, no HTTP |
@@ -257,7 +257,7 @@ z-drift exceeded the 8-plane stack depth.
 **A box that does not survive the pipeline buys nothing.** Drift correction writes one; what people
 then segment is a *smoothed* or *AF-corrected* version of that store. If the box stops there, every
 consumer sees "all valid" and the padding is processed anyway — which is exactly what happened:
-`af_correct` and `cellpose_correct` dropped it silently, and `smooth` carried it via
+`af_correct` and the (since-removed) `cellpose_correct` dropped it silently, and `smooth` carried it via
 `read_valid_box(path)`, which on a per-frame box returns the **union over frames** — nearly the whole
 canvas once the window drifts. The box survived in name while losing the only thing that made it
 useful.

@@ -1383,8 +1383,8 @@ end
 Thin constructor for ChainNode with auto-generated id.
 
     n = chain_node("importImages.omezarr")
-    n = chain_node("cleanupImages.cellpose"; scope="image", resource_pool="gpu",
-                   params=Dict("model" => "cyto2"))
+    n = chain_node("segment.cellpose"; scope="image", resource_pool="gpu",
+                   params=Dict("models" => Dict("0" => Dict("model" => "cpsam_v2"))))
 """
 function chain_node(fn::String;
                     id::String             = gen_uid(),

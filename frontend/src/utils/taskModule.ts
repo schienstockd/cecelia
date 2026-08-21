@@ -68,7 +68,7 @@ const MODULE_OF_CATEGORY: Record<string, string> = {
 
 /**
  * The MODULE KEY for a fun_name — the same string a module page passes as `module=`, so a derived
- * task and its page agree ('cleanupImages.cellposeCorrect' → 'cleanup').
+ * task and its page agree ('cleanupImages.smooth' → 'cleanup').
  *
  * The ONE derivation. It previously existed three times — here, in `runningTasks.moduleFromFun` and
  * inline in the tasks store — and all three lowercased, which quietly broke every multi-word page:

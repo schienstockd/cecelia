@@ -13,10 +13,6 @@ function _spec_path(::MigrateLegacy)
     joinpath(@__DIR__, "importImages", "migrateLegacy.json")
 end
 
-function _spec_path(::CellposeCorrect)
-    joinpath(@__DIR__, "cleanupImages", "cellpose_correct.json")
-end
-
 function _spec_path(::CellposeSegment)
     joinpath(@__DIR__, "segment", "cellpose.json")
 end
@@ -152,7 +148,6 @@ function _fun_name_map()::Dict{String, CciaTask}
         "importImages.omezarr"              => ImportOmezarr(),
         "importImages.remove"               => RemoveImage(),
         "importImages.migrateLegacy"        => MigrateLegacy(),
-        "cleanupImages.cellposeCorrect"     => CellposeCorrect(),
         "segment.cellpose"                  => CellposeSegment(),
         "segment.coastal"                   => CoastalSegment(),
         "opticalFlow.train"                 => TrainFlowModel(),

@@ -157,7 +157,6 @@ export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixel
 export ngff_group_attrs, ngff_multiscales, zarr_array_meta, ngff_version
 export resync_ome_meta!
 export RemoveImage
-export CellposeCorrect
 export CellposeSegment
 export CoastalSegment, coastal_models_for_python
 export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
@@ -273,7 +272,6 @@ include("tasks/testTasks/incremental_plot_task.jl")
 include("tasks/importImages/omezarr.jl")
 include("tasks/importImages/remove.jl")
 include("tasks/importImages/migrateLegacy.jl")
-include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/smooth.jl")

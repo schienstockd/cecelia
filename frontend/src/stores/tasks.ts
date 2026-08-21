@@ -17,7 +17,7 @@ export interface TaskEntry {
   finishedAt?: Date
   log: string[]           // live log lines
   progress?: number       // 0–1 when the task emits [PROGRESS] lines; undefined otherwise
-  taskName: string        // backend task key, e.g. 'cellposeCorrect'
+  taskName: string        // backend task key, e.g. 'smooth'
   funName: string         // canonical "category.task" identifier sent to backend
   params: Record<string, unknown>
   projectUid: string
