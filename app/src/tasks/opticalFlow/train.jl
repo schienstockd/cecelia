@@ -200,7 +200,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            droppedMetrics   = dropped,
            epochs           = Int(get(params, "epochs", 30)),
            foregroundWeight = Float64(get(params, "foregroundWeight", 1.0)),
-           intensityWeight  = Float64(get(params, "intensityWeight", 1.0)),
+           intensityWeight  = Float64(get(params, "intensityWeight", 0.25)),
            temporalWeight   = Float64(get(params, "temporalWeight", 2.0)),
            # Coastal's default, forwarded rather than left implicit: it decides the SHAPE of the
            # foreground target, and it was silently pinned at coastal's 1.0 because nothing passed

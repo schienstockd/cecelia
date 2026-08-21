@@ -209,6 +209,13 @@ runner_logs(h::RunnerHandle; since::Integer = 0) =
 runner_set_pool_limit(h::RunnerHandle, name::AbstractString, limit::Integer) =
     _runner_post(h, "/pools/set", Dict{String,Any}("name" => string(name), "limit" => Int(limit)))
 
+# The runner is the process that SPAWNS python when it is enabled, so it is the process whose
+# `custom.toml` and in-memory config decide `CECELIA_TASK_WORKERS`. Without this the throttle writes a
+# number on the API side that the spawning process never reads — the same failure the pool comment
+# warns about, one layer further out.
+runner_set_task_workers(h::RunnerHandle, n::Integer) =
+    _runner_post(h, "/threads/set", Dict{String,Any}("workers" => Int(n)))
+
 # ── Event stream ──────────────────────────────────────────────────────────────
 
 """

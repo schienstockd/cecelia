@@ -242,9 +242,9 @@
           "type": "float",
           "min": 0.0,
           "max": 10.0,
-          "step": 0.5,
-          "default": 1.0,
-          "tip": "Per-pixel brightness target; lower it if the mask fragments"
+          "step": 0.25,
+          "default": 0.25,
+          "tip": "Merge/coverage dial: raise to claim more signal, lower for tighter objects"
         },
         {
           "key": "temporalWeight",

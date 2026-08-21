@@ -188,6 +188,41 @@ scaling: coastal's flow metrics scale to 8+ threads while its region growing pea
 belongs next to its measurement, not in a config file — no machine makes 8 the right number for a
 stage that degrades past 4.
 
+**The budget is sized from what this PROCESS may use, not from the machine.** `Sys.CPU_THREADS`
+counts the box, which is the wrong number the moment the process is confined — a PBS/Slurm job with
+four cores of a 128-core node, a container run with `--cpus`. Since the same number now caps joblib's
+worker *processes*, sizing from the box means forking workers for CPUs the process cannot touch.
+`usable_cpus()` narrows it by two Linux limits, smallest wins: the affinity mask
+(`/proc/self/status: Cpus_allowed_list`) and the cgroup-v2 quota (`/sys/fs/cgroup/cpu.max`). On macOS
+and Windows the machine count is the best available. Both numbers are reported by
+`GET /api/tasks/threads` (`cores` = usable, `machineCores` = the box) and the throttle names both only
+when they differ.
+
+**The throttle's ceiling is `usable_cpus()`, not a round number.** It was a flat 64 on the reasoning
+that an I/O-bound task may want more threads than cores — which stopped being true when the number
+began capping processes. 64 processes on 32 cores is not a perf choice, it is contention.
+
+**`Threads.nthreads()` is not this.** Settings → Diagnostics reports it as *Server threads* and it is
+Julia's own pool, fixed at start by `-t`. It bounds the API's concurrency, not a task's width, and
+reading it as a CPU budget is the obvious mistake — so diagnostics reports `cpus` and `cpusMachine`
+beside it.
+
+**A third parallelism, and the one that was escaping: joblib.** coastal's optical flow — the heaviest
+CPU stage of BOTH training and segmentation — is `Parallel(n_jobs=-1)`, which spawns a worker
+**process** per core. None of the variables above touch it: each child inherits its own
+`OPENBLAS_NUM_THREADS`, so on a 32-core box one task meant 32 processes × 4 BLAS threads. `n_jobs=-1`
+resolves through `joblib.cpu_count()`, which honours **`LOKY_MAX_CPU_COUNT`**, so `run_py` sets that
+to the same `task_worker_threads()` — one number for "how wide may one task go", reaching coastal with
+no change on the coastal side and no per-task param. The preview worker gets it too: uncapped, a
+preview forked a process per core for a viewport-sized region while a real task was running.
+
+This is why "is training using the budget?" had a surprising answer. `train_run.py` reads
+`CECELIA_TASK_WORKERS` nowhere and torch ignores `OPENBLAS_NUM_THREADS`, so the answer looked like
+"no" — but its expensive stage is coastal's flow, which was taking the whole box through joblib. The
+budget now governs it. **The trade-off is real**: a LONE run goes less wide than it could. That is the
+same trade the pool limits and the BLAS budget already make, and it is now visible — raise the slider
+when the machine is yours.
+
 **`OPENBLAS_NUM_THREADS` only — deliberately not `OMP_NUM_THREADS`.** That one also throttles torch's
 intra-op parallelism, and torch on CPU is the one workload measured that genuinely wants the cores: a
 cellpose-shaped conv stack goes 0.19 s → 0.34 s at 4 threads. Capping OpenBLAS alone leaves torch
@@ -197,6 +232,31 @@ simply keeps the old behaviour — no regression, no benefit.
 A task that has **measured** a need for more raises it locally with
 `cecelia.utils.cpu_utils.limit_blas_threads`. Do not raise it on a hunch; the table above is what
 "obviously wants all cores" actually looks like when measured.
+
+**`CECELIA_TASK_WORKERS` is settable live**, in the same popover as the pool sliders (`PoolThrottle`,
+Task Manager / module pages / Chain page, and inline in Settings → Task concurrency) via `GET`+`POST /api/tasks/threads[/set]` →
+`set_task_worker_threads!`. It belongs there because it answers the same question the pool limits do —
+how hard may this machine work — and a number that can only be changed by hand-editing `config.toml`
+is a number nobody changes.
+
+Two things differ from a pool slider and both are surfaced in the UI:
+
+- **It applies to the NEXT task started**, not the running one. The value reaches a task as an env var
+  `run_py` sets at spawn, and it is read when the child imports numpy — nothing can retrofit it. A
+  pool resize, by contrast, takes effect at the next admission.
+- **It has an `auto` state.** No `[tasks].workerThreads` key means the machine-derived number, and
+  clearing the setting REMOVES the key rather than writing today's derived value — a written 16 stops
+  following the box the moment the config moves to another machine. The readout says `auto · 16` for
+  the first and `16` for the second, because they are not the same setting.
+
+With the detached runner enabled, the set is **forwarded to the runner** (`/threads/set`) as well as
+applied locally: the runner is then the process that spawns Python, so it is the process whose config
+decides the budget. Best-effort — a runner that is down does not fail the control, the same rule the
+pool limit follows.
+
+`BLAS_THREADS_PER_TASK` stays a constant, deliberately: it is a measured number (the table above),
+not a preference, and the workload that wants it changed wants `limit_blas_threads` at the call site
+instead.
 
 ### Queue visibility — :queued vs :running
 

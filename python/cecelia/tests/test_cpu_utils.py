@@ -146,3 +146,54 @@ class CoastalUsesTheBudgetTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MemoryBoundedConcurrencyTest(unittest.TestCase):
+    """`concurrency_for_memory` — how wide a RAM-bounded stage may run.
+
+    Written for the flow-metrics loop in `opticalFlow.train`, which ran strictly one sequence at a
+    time. That was correct when a sequence was a whole 1046x1104 movie (~1.55 GB of live float32
+    planes) and pure waste once sequences became 256x256 crops (~0.24 GB) — the same constant, two
+    orders of decision apart. So the width is derived from a MEASURED per-unit cost, and this is the
+    arithmetic that turns the measurement into a number.
+    """
+
+    def test_divides_the_reserved_budget_by_the_measured_cost(self):
+        # 8 GB available, half reserved, 1 GB per unit -> 4
+        self.assertEqual(4, cpu_utils.concurrency_for_memory(2**30, 8 * 2**30, cap=16))
+
+    def test_the_cpu_cap_still_wins_when_memory_is_plentiful(self):
+        # this is CPU work too; RAM saying "32 fit" does not mean the throttle allows 32
+        self.assertEqual(6, cpu_utils.concurrency_for_memory(2**20, 64 * 2**30, cap=6))
+
+    def test_never_below_one_even_when_nothing_fits(self):
+        # the work has to happen; refusing to run is not an option the caller has
+        self.assertEqual(1, cpu_utils.concurrency_for_memory(100 * 2**30, 2**30, cap=8))
+
+    def test_half_is_held_back_because_one_observation_is_not_the_worst_case(self):
+        # 4 GB available, 1 GB per unit: 4 would fit exactly, so 2 is returned
+        self.assertEqual(2, cpu_utils.concurrency_for_memory(2**30, 4 * 2**30, cap=16))
+        # …and the reserve is adjustable for a caller that knows its peak is stable
+        self.assertEqual(4, cpu_utils.concurrency_for_memory(2**30, 4 * 2**30, cap=16, reserve=1.0))
+
+    def test_unmeasurable_memory_is_a_conservative_step_up_not_an_extreme(self):
+        # Windows has no stdlib answer. Staying at 1 makes the platform gratuitously slower; taking
+        # the cap is guessing with someone else's RAM.
+        self.assertEqual(2, cpu_utils.concurrency_for_memory(2**30, None, cap=16))
+        self.assertEqual(1, cpu_utils.concurrency_for_memory(2**30, None, cap=1))   # cap still wins
+
+    def test_an_unmeasurable_per_unit_cost_falls_back_to_the_cpu_cap(self):
+        # we know the memory but not the unit: the CPU budget is then the only real bound
+        self.assertEqual(8, cpu_utils.concurrency_for_memory(None, 8 * 2**30, cap=8))
+        self.assertEqual(8, cpu_utils.concurrency_for_memory(0, 8 * 2**30, cap=8))
+
+    def test_the_live_readings_are_sane_on_this_machine(self):
+        avail = cpu_utils.available_memory_bytes()
+        if avail is not None:
+            self.assertGreater(avail, 0)
+        rss = cpu_utils.rss_bytes()
+        if rss is not None:
+            self.assertGreater(rss, 2**20)          # this interpreter is bigger than a megabyte
+        peak = cpu_utils.peak_rss_bytes()
+        if peak is not None and rss is not None:
+            self.assertGreaterEqual(peak, rss * 0.5)   # the high-water mark is not below current use

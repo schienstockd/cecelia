@@ -330,6 +330,14 @@ function _runner_pools_set(body_bytes::Vector{UInt8})
     _json(200, (; ok = true, pools = pool_status()))
 end
 
+# `workers <= 0` means "back to the machine-derived default" — passed through rather than rejected,
+# because that is a real choice and the runner's box may not be the API's.
+function _runner_threads_set(body_bytes::Vector{UInt8})
+    d = _body_dict(body_bytes)
+    n = try; Int(get(d, "workers", 0)); catch; return _json(400, (; error = "workers must be an integer")); end
+    _json(200, (; ok = true, workers = set_task_worker_threads!(n)))
+end
+
 function _runner_events(ws)
     q = Channel{String}(_RUNNER_OUT_CAP)
     lock(_runner_subs_lock) do; _runner_subs[ws] = q; end
@@ -384,6 +392,7 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
             route == "/submit-chain" && return _runner_submit_chain(body_bytes)
             route == "/cancel-chain" && return _runner_cancel_chain(body_bytes)
             route == "/pools/set" && return _runner_pools_set(body_bytes)
+            route == "/threads/set" && return _runner_threads_set(body_bytes)
         end
         _json(404, (; error = "no route: $(req.method) $route"))
     catch e

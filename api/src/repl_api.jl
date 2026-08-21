@@ -100,7 +100,12 @@ function api_diagnostics(::HTTP.Request)
     commit_now = _git_short(_REPO_ROOT)                  # live HEAD (this request) vs the running commit
     stale = !isempty(_GIT_COMMIT) && !isempty(commit_now) && _GIT_COMMIT != commit_now
     200, JSON3.write((;
+        # Julia's OWN thread pool, fixed at start by `-t`. NOT a CPU budget and not what bounds a
+        # Python task — that is `usable_cpus`/`workerThreads` (docs/SCHEDULER.md → *Thread budgets*).
+        # Both are reported because reading `threads` as "how wide can work go" is the obvious mistake.
         threads     = Threads.nthreads(),
+        cpus        = Cecelia.usable_cpus(),        # what this process may use: affinity + cgroup
+        cpusMachine = Sys.CPU_THREADS,              # what the box has
         julia       = string(VERSION),
         version     = _installed_version(),
         commit      = _GIT_COMMIT,                       # short git SHA the backend is RUNNING (dev)

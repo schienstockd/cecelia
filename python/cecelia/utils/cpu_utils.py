@@ -120,3 +120,84 @@ def limit_blas_threads(n_threads=BLAS_THREADS_SMALL_MATMUL):
     with threadpoolctl.threadpool_limits(limits=int(n_threads), user_api='blas'):
         yield
 
+
+# ── Memory-bounded concurrency ────────────────────────────────────────────────────────────────────
+#
+# Some stages are bounded by RAM, not cores: coastal's flow metrics hold every plane of a sequence as
+# float32 while they are computed, so running N sequences at once costs N times that. The training
+# runner used to run exactly one at a time for this reason — a correct call when a sequence was a
+# whole 1046x1104 movie (~1.55 GB), and a waste once sequences became 256x256 crops (~0.24 GB).
+#
+# So the bound is DERIVED rather than picked: measure what one unit actually cost, then divide the
+# memory we may use by it. That way the decision follows the crop size, the frame count and the
+# machine instead of a constant that is right for one dataset.
+
+def available_memory_bytes():
+    """Memory that could be allocated now without swapping, or `None` if we cannot tell.
+
+    Linux: `MemAvailable` from `/proc/meminfo` — the kernel's own estimate, which counts reclaimable
+    page cache. NOT `SC_AVPHYS_PAGES`, which excludes it and understates badly (3 GiB vs 10 GiB on the
+    box this was written on) — budgeting from that number would keep a stage serial on a machine with
+    plenty of room.
+
+    macOS falls back to `SC_AVPHYS_PAGES`, which is the best stdlib answer there. Windows has none, and
+    `None` is the honest reply — the caller must then not pretend to know.
+    """
+    try:
+        if os.path.exists('/proc/meminfo'):
+            with open('/proc/meminfo', encoding='utf-8') as fh:
+                for line in fh:
+                    if line.startswith('MemAvailable:'):
+                        return int(line.split()[1]) * 1024        # reported in kB
+        return os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')
+    except Exception:
+        return None
+
+
+def concurrency_for_memory(per_unit_bytes, available_bytes, cap, reserve=0.5, unknown=2):
+    """How many units of `per_unit_bytes` to run at once. Pure — the caller measures.
+
+    `reserve` keeps HALF the available memory back by default, because `per_unit_bytes` is one
+    observation of a transient peak and the next unit may be larger: a run that is 2x faster and
+    occasionally killed is worse than a run that is 2x faster and never is.
+
+    `available_bytes=None` means we could not measure (Windows), and the answer is `unknown` — a
+    conservative step up rather than either extreme. Staying at 1 would make the platform gratuitously
+    slower; taking `cap` would be guessing with someone else's RAM.
+
+    Never returns less than 1: the work has to happen even if the estimate says there is no room.
+    """
+    cap = max(int(cap), 1)
+    if available_bytes is None:
+        return max(1, min(int(unknown), cap))
+    if per_unit_bytes is None or per_unit_bytes <= 0:
+        return cap
+    fits = int((available_bytes * reserve) // per_unit_bytes)
+    return max(1, min(fits, cap))
+
+
+def rss_bytes():
+    """Current resident set size, or `None` where it cannot be read (non-Linux without `resource`)."""
+    try:
+        if os.path.exists('/proc/self/statm'):
+            with open('/proc/self/statm', encoding='utf-8') as fh:
+                return int(fh.read().split()[1]) * os.sysconf('SC_PAGE_SIZE')
+    except Exception:
+        pass
+    try:
+        import resource, sys
+        ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Linux reports kB, macOS bytes — and this is the PEAK, not the current value
+        return ru if sys.platform == 'darwin' else ru * 1024
+    except Exception:
+        return None
+
+
+def peak_rss_bytes():
+    """The process high-water mark, or `None`. Used to price a transient peak that is already over."""
+    try:
+        import resource, sys
+        ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return ru if sys.platform == 'darwin' else ru * 1024
+    except Exception:
+        return None

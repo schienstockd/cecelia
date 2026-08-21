@@ -112,4 +112,55 @@ describe('modelDetailGroups', () => {
     expect(fieldsOf({ channelName: 'GFP+RFP', trainChannels: [0, 2] }, 'Input').Channels)
       .toBe('GFP+RFP')
   })
+
+  // Coastal's inference is under active change, so "which coastal" is part of what a model IS.
+  it('names the engine build, shortening the commit to fit the row', () => {
+    expect(fieldsOf({ coastalBuild: { version: '0.1.0', commit: '49d63806f6915a3f681555cd4189be300a711020' } },
+                    'Training').Engine).toBe('coastal 0.1.0 49d63806')
+    // A non-VCS install records no commit and the row says less rather than implying a snapshot.
+    expect(fieldsOf({ coastalBuild: { version: '0.1.0' } }, 'Training').Engine).toBe('coastal 0.1.0')
+    expect(fieldsOf({ epochs: 30 }, 'Training').Engine).toBeUndefined()
+  })
+
+  // The physical scale is the field that says whether a model applies to a different movie at all —
+  // every number coastal is configured with is in pixels or frames. See MODEL_VAULT_PLAN.md.
+  describe('physical scale', () => {
+    const scale = (over = {}) => ({ x: 0.62, xUnit: 'um', z: 2, zUnit: 'um', t: 30, tUnit: 's', ...over })
+
+    it('reads as one row when every movie was acquired the same way', () => {
+      expect(fieldsOf({ physicalScales: { a: scale(), b: scale() }, physicalScaleSource: 'ome' },
+                      'Source').Scale)
+        .toBe('0.62 um/px, 2 um between planes, 30 s/frame')
+    })
+
+    it('breaks the row out per movie when they disagree — pooling two magnifications is legitimate', () => {
+      const v = fieldsOf({ physicalScales: { a: scale(), b: scale({ x: 0.31 }) } }, 'Source').Scale
+      expect(v).toContain('a: 0.62 um/px')
+      expect(v).toContain('b: 0.31 um/px')
+    })
+
+    // The ONE absent field worth saying is absent: everywhere else an omission means "not used",
+    // here it means the model cannot be matched to anyone's data.
+    it('says unknown rather than dropping the row when the images carried no scale', () => {
+      expect(fieldsOf({ physicalScaleSource: 'none' }, 'Source').Scale)
+        .toBe('unknown — the source images carried no physical size')
+    })
+
+    it('flags a partial record, so a missing movie is not read as agreement', () => {
+      expect(Object.keys(fieldsOf(
+        { physicalScales: { a: scale() }, physicalScaleSource: 'partial' }, 'Source')))
+        .toContain('Scale (some movies)')
+    })
+
+    // Every model trained before 2026-08-21 has neither key, and its dialog must look as it did.
+    it('shows nothing at all for a model that predates the field', () => {
+      expect(groupNames({ epochs: 30 })).toEqual(['Training'])
+    })
+
+    it('keeps anisotropic XY and a non-micron unit as recorded, unconverted', () => {
+      expect(fieldsOf({ physicalScales: { a: { x: 320, y: 640, xUnit: 'nm', yUnit: 'nm' } } },
+                      'Source').Scale)
+        .toBe('320×640 nm/px')
+    })
+  })
 })

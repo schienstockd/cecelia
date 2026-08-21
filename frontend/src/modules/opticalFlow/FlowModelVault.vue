@@ -32,6 +32,8 @@ import FlowModelDetails from './FlowModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useProjectStore } from '../../stores/project'
+import { useParamHandoffStore } from '../../stores/paramHandoff'
+import { paramsFromManifest, unmappedFields } from '../../utils/flowModelParams'
 import type { CanvasManagerChrome, CanvasManagerChromeEmits } from '../../components/canvas/canvasManager'
 import type { FlowManifest as Manifest } from '../../utils/flowManifest'
 
@@ -76,7 +78,7 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(() => { load(); loadMetricOptions() })
 defineExpose({ load })
 
 const byName = (n: string): FlowModel => models.value.find(m => m.name === n)!
@@ -118,6 +120,45 @@ const tableRows = computed(() => models.value.map(m => ({
 })))
 const details = ref<FlowModel | null>(null)
 
+// ── "that one looks good, but I want to tweak it" ────────────────────────────
+// A model's manifest is very nearly the form that produced it (13 of 17 controls under the same key),
+// so the vault can load it back into the Train form instead of the user reading the details dialog and
+// re-typing. Handed over through `paramHandoff` because the vault is on the CANVAS and the form is in
+// the module column — siblings with no props between them.
+//
+// NOT the same as typing a name into the Model name field, which restores from this project's run log
+// (`/api/tasks/funparams`). That cannot work for a model trained elsewhere or fetched from a vault,
+// which is the whole point of a published model: the manifest travels with the `.pt`, the run log
+// does not.
+//
+// The metric option list comes from the served spec, not a copy here — the manifest records what was
+// EXCLUDED, so reconstructing the selection needs to know what is on offer now.
+const handoff = useParamHandoffStore()
+const metricOptions = ref<string[]>([])
+
+async function loadMetricOptions() {
+  try {
+    const res = await fetch('/api/tasks/definitions')
+    if (!res.ok) return
+    const defs = await res.json()
+    const list = Array.isArray(defs) ? defs : (defs.tasks ?? defs.definitions ?? [])
+    const def = list.find((d: { fun_name?: string }) => d.fun_name === 'opticalFlow.train')
+    const flat = (ps: { key?: string; options?: { value?: string }[]; params?: unknown[] }[]): typeof ps =>
+      ps.flatMap(p => (p.params ? flat(p.params as typeof ps) : [p]))
+    const metrics = flat(def?.params ?? []).find(p => p.key === 'flowMetrics')
+    metricOptions.value = (metrics?.options ?? []).map(o => String(o.value))
+  } catch { /* the offer still works, just without the metric chips */ }
+}
+
+function useParams(m: FlowModel) {
+  handoff.offer({
+    funName: 'opticalFlow.train',
+    values: paramsFromManifest(m.manifest, metricOptions.value),
+    source: `model ${m.stem}`,
+    missing: unmappedFields(m.manifest),
+  })
+}
+
 // v-model:selected — the canvas owns it (FlowPlots keeps it in the shared bag); this panel is the
 // one place it is EDITED, like the pop manager and its highlight set.
 const picked = computed({
@@ -151,6 +192,11 @@ const picked = computed({
                  @keyup.enter="commitRename(byName(row.name))" @keyup.esc="cancelRename"
                  @blur="commitRename(byName(row.name))" />
           <template v-else>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="!byName(row.name).hasManifest"
+                    v-tooltip.top="'Load these settings into the Train form'"
+                    @click="useParams(byName(row.name))">
+              <i class="pi pi-sliders-h" />
+            </button>
             <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'What it was trained on'"
                     @click="details = byName(row.name)">
               <i class="pi pi-info-circle" />

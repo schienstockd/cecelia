@@ -815,6 +815,10 @@ end
     # and derived from the box rather than a constant — the number it replaced was picked on one
     # 32-core laptop, which oversubscribes a small machine and idles a large one.
     @test env["CECELIA_TASK_WORKERS"] == string(Cecelia.task_worker_threads())
+    # …and the same number in joblib's spelling. coastal's flow stage is `Parallel(n_jobs=-1)` —
+    # processes, not threads, so nothing above bounds it — and `joblib.cpu_count()` honours this.
+    # Asserted EQUAL to the task budget: two numbers for "how wide may one task go" would drift.
+    @test env["LOKY_MAX_CPU_COUNT"] == env["CECELIA_TASK_WORKERS"]
     @test Cecelia.task_worker_threads() >= 1
     @test Cecelia.default_task_worker_threads() <= 16
     # never wider than the machine, however many tasks are assumed concurrent
@@ -13236,6 +13240,43 @@ end
 
     # …and the runner-side parser still takes what the chips produce
     @test parse_temporal_scales(["1", "2", "8"]) == [1, 2, 8]
+end
+
+
+# ── the intensity loss is a dial, not a switch ───────────────────────────────
+# This testset previously asserted the opposite: that `intensityWeight` defaulted to 0 and was no
+# longer offered. That change was made on coastal's docstring ("prefer ConfettiForegroundLoss", with a
+# measurement of the intensity target ALONE: 2535 components, median 3 px) plus the observation that
+# recent models all used 0. An audit refuted the inference:
+#
+#   • The controlled pair was already on disk. memTom (intensity 1.0) and flow.small (intensity 0.0)
+#     share image, channel, seed, epochs and frame count — and memTom reaches a LOWER foreground loss
+#     (0.32507 vs 0.32747). The retained objective is fit no better without the term, so "it degrades
+#     the head it supervises" does not hold.
+#   • A sweep put peak IoU at 0.25 (0.622) with 0.0 at 0.606 and 1.0 at 0.523: 1.0 over-claims
+#     (precision 54%) and 0.0 under-claims (recall 70%, circularity 16% above the raw signal).
+#   • cecelia pins `confetti: 0.0`, so `foreground` is coastal's `ForegroundLoss` — brightness-only,
+#     explicitly "the colour-blind form". The single-channel worry that shipped with the change named
+#     `ConfettiForegroundLoss` and did not apply.
+#
+# So the default is the measured middle and the control is back. Pinned because "the form offers it"
+# is the part that had no measurement behind it either way, and removing it also made
+# `paramsFromManifest` drop it silently — a model trained at 1.0 handed back a form that would not
+# reproduce it.
+@testset "intensity loss is an offered dial at the measured default" begin
+    spec = Cecelia._task_spec(TrainFlowModel())
+    keys_of(ps) = reduce(vcat, [haskey(p, "params") ? keys_of(p["params"]) : [get(p, "key", "")]
+                                for p in ps]; init = String[])
+    @test "intensityWeight" ∈ keys_of(spec["params"])
+    @test "foregroundWeight" ∈ keys_of(spec["params"])
+
+    flat(ps) = reduce(vcat, [haskey(p, "params") ? flat(p["params"]) : [p] for p in ps]; init = [])
+    iw = only(p for p in flat(spec["params"]) if get(p, "key", "") == "intensityWeight")
+    # NOT 0.0 (the refuted default) and NOT 1.0 (over-claims); the sweep's peak.
+    @test iw["default"] == 0.25
+    @test iw["min"] == 0.0        # 0 stays REACHABLE — the experiment must remain runnable
+    @test validate_params(TrainFlowModel(), Dict{String,Any}("intensityWeight" => 0.0)) === nothing
+    @test validate_params(TrainFlowModel(), Dict{String,Any}("intensityWeight" => 1.0)) === nothing
 end
 
 @testset "OME-ZARR metadata reads v2 and v3 alike" begin

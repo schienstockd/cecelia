@@ -45,11 +45,36 @@ export interface FlowManifest {
   zSlice?: number
   trainedAt?: string
   lossWeights?: Record<string, number>
+  /**
+   * The per-pixel brightness/edge weight, against `foregroundWeight`'s cell-scale one — the
+   * merge/coverage dial (docs/SEGMENTATION.md). Declared separately from `lossWeights` because the
+   * manifest records it at top level and `paramsFromManifest` carries it back to the form; while it
+   * was undeclared, the mapper dropped it and a model trained at 1.0 came back as the default.
+   */
+  intensityWeight?: number
   lossCurves?: Record<string, number[]>
   /** Per-term irreducible loss — `mean H(target)`. Keyed like `lossCurves`; BCE terms only. */
   lossFloors?: Record<string, number[]>
   /** Cell-scale blur on the foreground target, in px. Decides the target's SHAPE, not its weight. */
   foregroundBlurSigma?: number
+  /**
+   * uID → what one pixel and one frame of that movie physically are, as OME recorded them:
+   * `{x, xUnit, y?, yUnit?, z?, zUnit?, t?, tUnit?}`. `z` is the gap between the planes TRAINED ON,
+   * not the stack's own step. Values are unconverted — a movie in nm keeps its unit.
+   *
+   * The field that says whether a model applies to a different movie at all: every number coastal
+   * is configured with is in pixels (`cropSize`) or frames (`temporalScales`), and neither means
+   * anything without this. Absent on every model trained before 2026-08-21.
+   */
+  physicalScales?: Record<string, Record<string, number | string>>
+  /** `ome` = every source movie carried a scale, `partial` = some, `none` = the scale is unknown. */
+  physicalScaleSource?: 'ome' | 'partial' | 'none' | string
+  /**
+   * Which coastal produced this model — `{version, commit}`. The version alone does not move
+   * (`0.1.0`), so the commit is the identifier that means anything, and coastal's inference is under
+   * active change. Absent for models trained before 2026-08-21 and for a non-VCS install.
+   */
+  coastalBuild?: { version?: string; commit?: string } | null
 }
 
 export interface DetailField { label: string; value: string; mono?: boolean }
@@ -60,10 +85,12 @@ const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
+  'intensityWeight',
   'maxFrames', 'frameWindows', 'trainRatio', 'zSpacing', 'cropSize', 'cropWindows', 'metricDtype',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves', 'lossFloors',
   'foregroundBlurSigma',
+  'physicalScales', 'physicalScaleSource', 'coastalBuild',
 ])
 
 const list = (v: unknown): string =>
@@ -108,6 +135,34 @@ function zPlaneFields(m: FlowManifest): (DetailField | null)[] {
 }
 
 /**
+ * What a pixel and a frame were, physically. One row when every movie agrees, one row per movie when
+ * they do not — pooling two magnifications is legitimate and a single averaged number would hide it.
+ *
+ * Reads as "unknown" rather than being dropped when the images carried no scale. This is the one
+ * absent field worth SAYING is absent: everywhere else an omission means "not used", here it means
+ * the model cannot be matched to anyone's data, which is a property of the model.
+ */
+function scaleFields(m: FlowManifest): (DetailField | null)[] {
+  if (m.physicalScaleSource === 'none' || (m.physicalScaleSource && !m.physicalScales)) {
+    return [{ label: 'Scale', value: 'unknown — the source images carried no physical size' }]
+  }
+  const per = Object.entries(m.physicalScales ?? {})
+  if (!per.length) return []
+  const one = (v: Record<string, number | string>) => {
+    const xy = v.x === undefined ? '' :
+      `${v.x}${v.y !== undefined ? `×${v.y}` : ''} ${v.xUnit ?? 'um'}/px`
+    const z = v.z === undefined ? '' : `${v.z} ${v.zUnit ?? 'um'} between planes`
+    const t = v.t === undefined ? '' : `${v.t} ${v.tUnit ?? 's'}/frame`
+    return [xy, z, t].filter(Boolean).join(', ')
+  }
+  const distinct = new Set(per.map(([, v]) => one(v)))
+  const label = m.physicalScaleSource === 'partial' ? 'Scale (some movies)' : 'Scale'
+  return distinct.size === 1
+    ? [field(label, [...distinct][0])]
+    : [{ label, mono: true, value: per.map(([uid, v]) => `${uid}: ${one(v)}`).join('  ') }]
+}
+
+/**
  * The manifest grouped for display. Empty when there is no manifest at all — the caller says so in
  * its own words rather than rendering a set of dashes.
  *
@@ -139,7 +194,14 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
       : m.metricKeys?.length ? { label: 'Excluded', value: 'none' } : null,
   ]
 
+  // Short commit, not the full 40: the point is to identify a build at a glance and to be able to
+  // compare two models, and the full hash pushes the row past the column.
+  const build = m.coastalBuild
   const training: (DetailField | null)[] = [
+    field('Engine', build
+      ? ['coastal', build.version, build.commit ? build.commit.slice(0, 8) : null]
+        .filter(Boolean).join(' ')
+      : undefined),
     field('Epochs', m.epochs),
     // Spelled out rather than shown as "1": a model with no held-out split has a loss curve that
     // cannot distinguish convergence from memorising, and that is worth reading off the dialog.
@@ -165,6 +227,7 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
   const crops = Object.values(m.cropWindows ?? {}).reduce((n, v) => n + v.length, 0)
   const source: (DetailField | null)[] = [
     field('Trained', m.trainedAt),
+    ...scaleFields(m),
     field('Frames pooled', m.nFrames),
     field('Max frames/movie', m.maxFrames ? m.maxFrames : m.maxFrames === 0 ? 'all' : undefined),
     field('Crop', m.cropSize
