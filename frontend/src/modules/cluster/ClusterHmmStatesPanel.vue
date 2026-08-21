@@ -20,7 +20,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import { DEFAULT_VIS, paletteRange, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
-import { legendOverlay, titleOverlay } from '../../plots/overlays'
+import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 
 const props = defineProps<{
@@ -109,8 +109,7 @@ async function render() {
   const w = Math.max(200, host.value.clientWidth || 360)
   const h = Math.max(160, host.value.clientHeight || 260)
   const o = v.value
-  const fg = effDark.value ? '#e6e6e6' : '#111'
-  const bg = effDark.value ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(effDark.value)
   // palette knob → explicit colours for the state levels; 'standard' (null) keeps a categorical scheme
   const domain = cats.value.map(c => `${c}`)
   const range = paletteRange(o, domain.length)
@@ -133,6 +132,9 @@ async function render() {
       Plot.ruleX([0, 1], { stroke: 'currentColor' }),
     ],
   }) as SVGElement
+  // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
+  // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
+  applyPlotTheme(node, effDark.value)
   host.value.append(node)
   if (legendNode) host.value.append(legendNode)   // move legend to the end → it paints ON TOP of the plot
   if (o.title) { titleNode = titleOverlay(o.title, fg); host.value.append(titleNode) }

@@ -60,6 +60,7 @@ import {
   cohortParams, cohortKey, facetPlan, groupLabel, type CompareMode,
 } from '../../plots/trackGroups'
 import type { SeriesTarget } from '../../plots/types'
+import { applyPlotTheme, plotTheme } from '../../plots/overlays'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -177,8 +178,7 @@ async function render() {
   if (!m || !d || !groups.value.length) { host.value.replaceChildren(); node = null; return }
 
   const dark = !forceLight.value
-  const fg = dark ? '#e6e6e6' : '#111'
-  const bg = dark ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = plan.value.facet
   const grid = facetGrid(facet ? groups.value.length : 1)
   const ML = 54, MB = 36, MT = 10, MR = 12
@@ -252,6 +252,9 @@ async function render() {
     ...(facet ? { fx: { axis: null }, fy: { axis: null } } : {}),
     marks: marks as never[],
   }) as SVGElement
+  // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
+  // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
+  applyPlotTheme(node, dark)
   host.value.replaceChildren(node)
 }
 
