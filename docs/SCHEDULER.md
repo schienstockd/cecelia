@@ -188,6 +188,22 @@ scaling: coastal's flow metrics scale to 8+ threads while its region growing pea
 belongs next to its measurement, not in a config file — no machine makes 8 the right number for a
 stage that degrades past 4.
 
+**A third parallelism, and the one that was escaping: joblib.** coastal's optical flow — the heaviest
+CPU stage of BOTH training and segmentation — is `Parallel(n_jobs=-1)`, which spawns a worker
+**process** per core. None of the variables above touch it: each child inherits its own
+`OPENBLAS_NUM_THREADS`, so on a 32-core box one task meant 32 processes × 4 BLAS threads. `n_jobs=-1`
+resolves through `joblib.cpu_count()`, which honours **`LOKY_MAX_CPU_COUNT`**, so `run_py` sets that
+to the same `task_worker_threads()` — one number for "how wide may one task go", reaching coastal with
+no change on the coastal side and no per-task param. The preview worker gets it too: uncapped, a
+preview forked a process per core for a viewport-sized region while a real task was running.
+
+This is why "is training using the budget?" had a surprising answer. `train_run.py` reads
+`CECELIA_TASK_WORKERS` nowhere and torch ignores `OPENBLAS_NUM_THREADS`, so the answer looked like
+"no" — but its expensive stage is coastal's flow, which was taking the whole box through joblib. The
+budget now governs it. **The trade-off is real**: a LONE run goes less wide than it could. That is the
+same trade the pool limits and the BLAS budget already make, and it is now visible — raise the slider
+when the machine is yours.
+
 **`OPENBLAS_NUM_THREADS` only — deliberately not `OMP_NUM_THREADS`.** That one also throttles torch's
 intra-op parallelism, and torch on CPU is the one workload measured that genuinely wants the cores: a
 cellpose-shaped conv stack goes 0.19 s → 0.34 s at 4 threads. Capping OpenBLAS alone leaves torch

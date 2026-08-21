@@ -103,7 +103,13 @@ function launch!(w::PreviewWorker)::PreviewWorker
     w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
                           addenv(`$(python_bin_path()) $PREVIEW_WORKER`,
                                  "PYTHONPATH" => _python_dir(),
-                                 "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK)))
+                                 "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
+                                 # Same reason as the BLAS budget, for the OTHER parallelism this
+                                 # compute uses: coastal's flow stage is `Parallel(n_jobs=-1)`, so
+                                 # uncapped a preview forks a worker per core — while a real task is
+                                 # running, and for a region the size of the viewport. See
+                                 # `_py_task_env` in py_runner.jl.
+                                 "LOKY_MAX_CPU_COUNT" => string(task_worker_threads())))
     deadline = time() + 90
     squatter = nothing
     while time() < deadline

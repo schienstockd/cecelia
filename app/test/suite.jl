@@ -815,6 +815,10 @@ end
     # and derived from the box rather than a constant — the number it replaced was picked on one
     # 32-core laptop, which oversubscribes a small machine and idles a large one.
     @test env["CECELIA_TASK_WORKERS"] == string(Cecelia.task_worker_threads())
+    # …and the same number in joblib's spelling. coastal's flow stage is `Parallel(n_jobs=-1)` —
+    # processes, not threads, so nothing above bounds it — and `joblib.cpu_count()` honours this.
+    # Asserted EQUAL to the task budget: two numbers for "how wide may one task go" would drift.
+    @test env["LOKY_MAX_CPU_COUNT"] == env["CECELIA_TASK_WORKERS"]
     @test Cecelia.task_worker_threads() >= 1
     @test Cecelia.default_task_worker_threads() <= 16
     # never wider than the machine, however many tasks are assumed concurrent

@@ -1,8 +1,9 @@
 /**
- * How many threads ONE task may run its own work on — the CPU sibling of the pool limits, and the
- * other half of "how hard is this machine allowed to work". A pool limit rations how many tasks run
- * at once; this rations how wide one of them may go. Backed by `[tasks].workerThreads` and delivered
- * to a task as `CECELIA_TASK_WORKERS` (docs/SCHEDULER.md → *Thread budgets*).
+ * How wide ONE task may go — the CPU sibling of the pool limits, and the other half of "how hard is
+ * this machine allowed to work". A pool limit rations how many tasks run at once; this rations the
+ * width of one. Backed by `[tasks].workerThreads`, delivered as `CECELIA_TASK_WORKERS` (a task's own
+ * thread pools) and `LOKY_MAX_CPU_COUNT` (coastal's flow stage, which parallelises over processes).
+ * docs/SCHEDULER.md → *Thread budgets*.
  *
  * The logic worth pinning is the DERIVED distinction, not the fetch: an effective 16 means something
  * different when it came from the box than when someone typed it, because the derived value follows

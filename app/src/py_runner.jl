@@ -125,6 +125,17 @@ _py_task_env(pythonpath::AbstractString) = [
     "CECELIA_PY_CONTRACT" => string(PY_CONTRACT_VERSION),
     "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
     "CECELIA_TASK_WORKERS" => string(task_worker_threads()),
+    # The SAME budget again, in the spelling joblib understands. coastal's optical flow is the
+    # heaviest CPU stage of both training and segmentation and it parallelises with
+    # `Parallel(n_jobs=-1)` — all cores, as PROCESSES, ignoring every variable above (each child then
+    # inherits its own `OPENBLAS_NUM_THREADS`, so 32 workers meant 32×4 threads). `n_jobs=-1`
+    # resolves through `joblib.cpu_count()`, which honours this, so one env var brings coastal under
+    # the same number the throttle sets — no coastal change and no per-task param.
+    #
+    # It is the same knob deliberately: two budgets for "how wide may one task go" would be two
+    # numbers that had to agree. The trade-off is real and now VISIBLE rather than baked in — a lone
+    # run goes less wide than it could, which is what the slider is for.
+    "LOKY_MAX_CPU_COUNT" => string(task_worker_threads()),
 ]
 
 """
