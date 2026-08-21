@@ -22,6 +22,7 @@ import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
+import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
@@ -236,9 +237,41 @@ async function onParamCommit(key: string, value: unknown) {
   drafts.set(currentDraftKey.value, paramValues.value)
 }
 
+// ── an offer of params from elsewhere ────────────────────────────────────────
+// Something that knows a param set (today: the flow-model vault, whose manifest IS the form that
+// produced the model) hands it over through `paramHandoff`. Applied here rather than pushed by the
+// sender, because reconciling a param bag against the CURRENT spec is `resolveInitialParams`' job and
+// there must not be a second answer to it.
+//
+// `take` consumes, so an offer is applied once: a remount or a selection change cannot re-apply it
+// over edits the user has since made. It is also checked against the function on screen, so clicking
+// in the vault while a different task is selected leaves the offer for the form that can use it —
+// which is why the watcher covers `taskDef` as well as the offer itself.
+const handoff = useParamHandoffStore()
+const handoffNote = ref('')
+
+function applyOffer() {
+  const def = taskDef.value
+  if (!def) return
+  const offer = handoff.take(def.fun_name)
+  if (!offer) return
+  const next = resolveInitialParams(def, offer.values, null)
+  if (next === null) return
+  paramValues.value = next
+  // A draft, because this is now an un-run edit like any other — navigating away must not lose it.
+  drafts.set(currentDraftKey.value, paramValues.value)
+  refreshOptionsForForm(def)
+  handoffNote.value = offer.missing?.length
+    ? `Settings from ${offer.source} — ${offer.missing.join(', ')} left unchanged`
+    : `Settings from ${offer.source}`
+}
+
+watch([() => handoff.pending, taskDef], applyOffer, { immediate: true })
+
 // Persist a param edit as a draft (USER edits only — never on programmatic init) so navigating away
 // and back keeps it. Keyed to the current image→set scope.
 function onParamEdit(key: string, value: unknown) {
+  handoffNote.value = ''          // the form has moved on; the note described where it started
   const before = paramValues.value[key]
   paramValues.value[key] = value
   syncGroupOrders(key, before, value)
@@ -544,6 +577,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Parameters ── -->
     <section class="runner-section params-section" v-if="taskDef">
+      <!-- what the form was just filled from, and what could not be filled. Dismissible because it
+           describes an action, not a state — and cleared by the first edit. -->
+      <p v-if="handoffNote" class="handoff-note cc-fs-xs">
+        <i class="pi pi-sliders-h" />
+        <span>{{ handoffNote }}</span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" v-tooltip.left="'Dismiss'"
+                @click="handoffNote = ''"><i class="pi pi-times" /></button>
+      </p>
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
       <div class="params-list" data-guide="task.params">
         <ParamRenderer
@@ -627,6 +668,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </template>
 
 <style scoped>
+.handoff-note {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin: 0 0 0.5rem; padding: 0.3rem 0.45rem;
+  border-radius: var(--cc-radius-sm);
+  background: var(--cc-surface-2); color: var(--cc-text-dim);
+}
+.handoff-note span { flex: 1; }
 .task-runner {
   /* fills the host panel, which owns the width — see the note by the `pane` setup */
   flex: 1;

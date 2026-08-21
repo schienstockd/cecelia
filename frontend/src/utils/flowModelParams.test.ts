@@ -1,0 +1,117 @@
+import { describe, it, expect } from 'vitest'
+import { paramsFromManifest, unmappedFields } from './flowModelParams'
+import type { FlowManifest } from './flowManifest'
+
+// the real shape, from `flow.cyto.json` in the dev vault
+const M: FlowManifest = {
+  temporalScales: [1, 2, 4, 8],
+  cumulativeWindow: 5,
+  cropSize: 256,
+  zSpacing: 2,
+  zPlanes: 10,
+  epochs: 100,
+  trainRatio: 0.8,
+  maxFrames: 60,
+  normalise: 99.99,
+  embeddingDim: 16,
+  foregroundWeight: 1.0,
+  temporalWeight: 2.0,
+  channelName: 'mem-TOM',
+  sourceValueName: 'smoothed',
+  droppedMetrics: ['divergence', 'flow_structure_alignment', 'vorticity'],
+  metricKeys: ['acceleration', 'mag_1', 'mag_2', 'mag_4', 'mag_8', 'strain'],
+} as FlowManifest
+
+const OFFERED = ['acceleration', 'cell_boundary_likelihood', 'cumulative_mag', 'direction_stability',
+                 'divergence', 'edge_strength', 'flow_structure_alignment', 'normal_flow', 'strain',
+                 'tangential_flow', 'vorticity']
+
+describe('paramsFromManifest', () => {
+  it('copies the params recorded under the same key', () => {
+    const p = paramsFromManifest(M, OFFERED)
+    expect(p.cropSize).toBe(256)
+    expect(p.epochs).toBe(100)
+    expect(p.zSpacing).toBe(2)
+    expect(p.normalise).toBe(99.99)
+    // an Advanced-section param, emitted flat — buildParamValues reads either
+    expect(p.embeddingDim).toBe(16)
+    expect(p.temporalWeight).toBe(2)
+  })
+
+  it('stringifies the temporal scales, because chipSelect validates strings', () => {
+    expect(paramsFromManifest(M, OFFERED).temporalScales).toEqual(['1', '2', '4', '8'])
+  })
+
+  it('rebuilds the metric set from the EXCLUSIONS, not from metricKeys', () => {
+    // metricKeys holds the derived mag_<scale> planes, which are not options — using it would put
+    // values in the chip list that the spec rejects
+    const p = paramsFromManifest(M, OFFERED)
+    expect(p.flowMetrics).not.toContain('mag_1')
+    expect(p.flowMetrics).not.toContain('divergence')
+    expect(p.flowMetrics).toContain('acceleration')
+    expect(p.flowMetrics).toContain('strain')
+    expect((p.flowMetrics as string[]).length).toBe(OFFERED.length - 3)
+  })
+
+  it('picks up a metric added to the form since the model was trained', () => {
+    // the exclusion list is what was said NO to; anything new defaults to in
+    const p = paramsFromManifest(M, [...OFFERED, 'brand_new_metric'])
+    expect(p.flowMetrics).toContain('brand_new_metric')
+  })
+
+  it('turns the joined channel name back into the names the picker holds', () => {
+    expect(paramsFromManifest(M, OFFERED).trainChannels).toEqual(['mem-TOM'])
+    expect(paramsFromManifest({ ...M, channelName: 'mem-TOM+GFP' }, OFFERED).trainChannels)
+      .toEqual(['mem-TOM', 'GFP'])
+  })
+
+  it('uses the channel NAME, never the recorded indices — those mean nothing on another image', () => {
+    const p = paramsFromManifest({ ...M, trainChannels: [2] } as FlowManifest, OFFERED)
+    expect(p.trainChannels).toEqual(['mem-TOM'])
+  })
+
+  it('restores which version of the image was read', () => {
+    expect(paramsFromManifest(M, OFFERED).valueName).toBe('smoothed')
+  })
+
+  it('carries the intensity weight — a model trained at 1.0 must not come back as the default', () => {
+    // This is the bug an audit caught before it shipped: while `intensityWeight` was off the form,
+    // the mapper dropped it, so "use memTom's settings" produced a form that trained at a different
+    // weight with no warning. memTom is the only model on disk where it diverges.
+    expect(paramsFromManifest({ ...M, intensityWeight: 1.0 } as FlowManifest, OFFERED).intensityWeight)
+      .toBe(1.0)
+    expect(paramsFromManifest({ ...M, intensityWeight: 0 } as FlowManifest, OFFERED).intensityWeight)
+      .toBe(0)
+  })
+
+  it('never fills in the model name or overwrite — that would target the model being copied', () => {
+    const p = paramsFromManifest(M, OFFERED)
+    expect(p.modelName).toBeUndefined()
+    expect(p.overwrite).toBeUndefined()
+  })
+
+  it('omits what a pre-field manifest does not have, rather than inventing it', () => {
+    const p = paramsFromManifest({ epochs: 30 } as FlowManifest, OFFERED)
+    expect(p).toEqual({ epochs: 30 })
+  })
+
+  it('is empty for no manifest at all', () => {
+    expect(paramsFromManifest(null)).toEqual({})
+    expect(paramsFromManifest(undefined)).toEqual({})
+  })
+
+  it('leaves the metric chips alone when the form offered no options to reconcile against', () => {
+    expect(paramsFromManifest(M, []).flowMetrics).toBeUndefined()
+  })
+})
+
+describe('unmappedFields', () => {
+  it('is empty when the manifest carries everything', () => {
+    expect(unmappedFields(M)).toEqual([])
+  })
+
+  it('names what an older manifest cannot supply, so the UI can say so', () => {
+    expect(unmappedFields({ epochs: 30 } as FlowManifest))
+      .toEqual(['channels', 'image version', 'metrics'])
+  })
+})

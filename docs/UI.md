@@ -1474,6 +1474,22 @@ clears the setting rather than writing the derived number down. The tooltip says
 the next task started, because the value reaches a task as an env var set at spawn. Formatting logic
 is in `utils/threadBudget.ts` (`threadReadout`/`threadTip`/`clampWorkers`), tested there.
 
+**Loading a param set from somewhere else** (`stores/paramHandoff.ts`): the flow-model vault's row has
+a sliders icon — *"Load these settings into the Train form"* — because a model's manifest is very
+nearly the form that produced it (13 of the 17 controls under the same key). The vault is on the
+canvas and the form is in the module column, so the set travels through a one-shot store rather than
+props. `TaskRunner` applies it via `resolveInitialParams`, saves it as a draft (it is now an un-run
+edit) and shows a dismissible note saying where the settings came from and which fields the source
+could not supply. The note clears on the first edit, since it describes where the form STARTED.
+
+This is deliberately separate from the `valueNameInput` restore below, which reads this project's run
+log: that cannot answer for a model trained elsewhere or fetched from a vault, which is the case a
+published model is. Mapping quirks live in `utils/flowModelParams.ts` — the temporal scales are
+stringified for `chipSelect`, the metric set is rebuilt from `droppedMetrics` against the options the
+form offers NOW (so a newly-added metric defaults to in), channels come from the joined `channelName`
+rather than the recorded indices (which mean nothing on another image), and `modelName`/`overwrite` are
+never filled in, because targeting the model you were admiring is the opposite of the intent.
+
 **Pool dropdown**: a `<select>` populated from `GET /api/pools`. On task switch, automatically
 selects the pool matching the task def's `resource_pool` field. The chosen pool name is sent as
 `poolName` in the `task:run` WS message, which `handle_task_run` in `sockets.jl` passes to
