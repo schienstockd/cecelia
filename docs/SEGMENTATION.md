@@ -795,9 +795,25 @@ coastal's `ForegroundLoss` — brightness-only, explicitly "the colour-blind for
 earlier change and was wrong for that reason: it described the confetti variant, which cecelia never
 enables.
 
-**Still open:** `foregroundBoundaryWeight` is never passed by `train_run.py`, so it sits at 0 — and per
-coastal's `flow_discontinuity` it is the only path by which optical flow reaches mask geometry. See
-`docs/TODO.md`.
+**The flow-boundary term is now reachable, and off by default.** `foregroundBoundaryWeight` was never
+passed by `train_run.py`, so it sat at coastal's default 0 — and per `ForegroundLoss.target` it is *"the
+ONLY path by which optical flow reaches the labels"*: everywhere else flow enters as an input channel
+or through the contrastive embedding term, neither of which supervises mask geometry. It subtracts a
+blob-scaled flow-discontinuity map from the foreground target, so the prob map pinches where the
+velocity field tears rather than where it is merely fast.
+
+Switching it on requires re-ticking two metrics, and the reason is a genuine collision:
+`coastal.loss.flow_discontinuity` builds the signal from **|strain| + |vorticity| + |divergence|** — the
+symmetric, antisymmetric and trace parts of the velocity gradient, which together span ‖∇v‖ — while
+`divergence` and `vorticity` are in `FLAT_FLOW_METRICS` and dropped by default. They were dropped for
+being flat *as input channels* (cell/background 1.00 and 0.99), which says nothing about their spatial
+gradient. A plane can carry no contrast and still tear informatively at a boundary.
+
+`flow_discontinuity` degrades **silently** on a partial set — it sums whichever of the three it finds
+and normalises, so with `strain` alone it returns a plausible strain-only map. `validate_params`
+therefore refuses a non-zero weight with the metrics missing, naming them, rather than warning: a
+warning is read after the hour of training. Worth an experiment, on coastal's own measurement that
+75.7% of 465 real touching different-colour pairs have relative motion above the flow noise floor.
 
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing

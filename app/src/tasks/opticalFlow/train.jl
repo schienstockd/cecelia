@@ -57,6 +57,50 @@ const FIXED_FLOW_METRICS = ("acceleration", "cell_boundary_likelihood", "cumulat
 # intravital dataset, and the Flow metrics plot exists so the user can judge their own.
 const FLAT_FLOW_METRICS = ("divergence", "vorticity", "flow_structure_alignment")
 
+# The three planes `coastal.loss.flow_discontinuity` builds the flow-boundary signal from: |strain| +
+# |vorticity| + |divergence|, the symmetric, antisymmetric and trace parts of the velocity gradient.
+# Together they span ||grad v||, which is what marks a cell-cell contact — a spatial DISCONTINUITY of
+# the velocity field rather than its magnitude.
+#
+# Note the collision with `FLAT_FLOW_METRICS`: `divergence` and `vorticity` are dropped by default
+# because they are flat AS INPUT CHANNELS (cell/background ratios 1.00 and 0.99). That says nothing
+# about their spatial gradient, which is what this uses — a plane can carry no contrast and still tear
+# informatively at a boundary. So the two sets legitimately disagree, and turning the boundary term on
+# means re-ticking the two that were dropped for a different reason.
+#
+# `flow_discontinuity` degrades SILENTLY on a partial set: it sums whichever of the three are present
+# and normalises, so with only `strain` it returns a plausible strain-only map rather than an error.
+# That is the same class of silent train/inference mismatch as the metric set itself, which is why
+# `validate_params` refuses the combination instead of warning about it.
+const FLOW_BOUNDARY_METRICS = ("strain", "vorticity", "divergence")
+
+"""
+    flow_boundary_missing(selected, weight) -> Vector{String}
+
+Which of `FLOW_BOUNDARY_METRICS` the run would NOT have, given the ticked metrics — empty when the
+boundary term is off, since then nothing needs them. Pure, so the message and the check cannot drift.
+"""
+function flow_boundary_missing(selected, weight::Real)::Vector{String}
+    weight > 0 || return String[]
+    dropped = Set(flow_dropped_metrics(selected))
+    [m for m in FLOW_BOUNDARY_METRICS if m in dropped]
+end
+
+# Spec validation plus the boundary/metric agreement — a ParamValidationError at submit time rather
+# than a model trained for an hour against a third of the signal it was asked for.
+function validate_params(task::TrainFlowModel, params::Dict{String,Any})
+    invoke(validate_params, Tuple{CciaTask, Dict{String,Any}}, task, params)
+    missing_m = flow_boundary_missing(get(params, "flowMetrics", nothing),
+                                     Float64(get(params, "foregroundBoundaryWeight", 0.0)))
+    isempty(missing_m) || throw(ParamValidationError(
+        "Flow boundary weight needs the metrics it is built from: tick " *
+        join(missing_m, ", ") * ". Without them coastal falls back to whichever of " *
+        join(FLOW_BOUNDARY_METRICS, "/") * " remain and trains against a weaker signal without " *
+        "saying so. (They are unticked by default because they are flat as INPUT channels, which " *
+        "is a different question from whether their gradient marks a boundary.)"))
+    nothing
+end
+
 """
     flow_dropped_metrics(selected) -> Vector{String}
 
@@ -200,6 +244,13 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            droppedMetrics   = dropped,
            epochs           = Int(get(params, "epochs", 30)),
            foregroundWeight = Float64(get(params, "foregroundWeight", 1.0)),
+           # The flow-boundary term: subtracts a blob-scaled flow-discontinuity map from the
+           # foreground target, so the prob map pinches where the velocity field tears. Per
+           # `ForegroundLoss.target`, "the ONLY path by which optical flow reaches the labels" —
+           # everywhere else flow enters as input channels or through the contrastive term. OFF by
+           # default because switching it on also requires two metrics the default set drops (see
+           # `FLOW_BOUNDARY_METRICS`), so it cannot be a silent default.
+           foregroundBoundaryWeight = Float64(get(params, "foregroundBoundaryWeight", 0.0)),
            intensityWeight  = Float64(get(params, "intensityWeight", 0.25)),
            temporalWeight   = Float64(get(params, "temporalWeight", 2.0)),
            # Coastal's default, forwarded rather than left implicit: it decides the SHAPE of the
