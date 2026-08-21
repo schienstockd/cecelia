@@ -24,6 +24,15 @@
       "tip": "Name for the output label set"
     },
     {
+      "key": "modelsOrder",
+      "label": "Passes to run",
+      "type": "chipSelect",
+      "optionsFromGroup": "models",
+      "optionLabelKey": "model",
+      "default": null,
+      "tip": "Click to include a pass; drag to reorder. Earlier passes claim pixels first"
+    },
+    {
       "key": "models",
       "label": "Segmentation models",
       "type": "group",
@@ -41,7 +50,7 @@
           "minComponentSize": 2.0,
           "stitchThreshold": 0.2,
           "probBlurSigma": 0.0,
-          "embeddingBlurSigma": 0.5,
+          "embeddingBlurSigma": 1.5,
           "mergeAffinityThreshold": 0.65,
           "mergeMaxDistance": 0.5,
           "probWeight": 0.3,

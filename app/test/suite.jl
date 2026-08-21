@@ -806,6 +806,15 @@ end
     @test env["PYTHONPATH"] == "/tmp/py"
     @test haskey(env, "CECELIA_PY_CONTRACT") && haskey(env, "CECELIA_IMAGE_COMPRESSOR")
 
+    # A task's OWN thread pools (coastal maps z-planes over one) are a separate budget from BLAS,
+    # and derived from the box rather than a constant — the number it replaced was picked on one
+    # 32-core laptop, which oversubscribes a small machine and idles a large one.
+    @test env["CECELIA_TASK_WORKERS"] == string(Cecelia.task_worker_threads())
+    @test Cecelia.task_worker_threads() >= 1
+    @test Cecelia.default_task_worker_threads() <= 16
+    # never wider than the machine, however many tasks are assumed concurrent
+    @test Cecelia.default_task_worker_threads() <= max(Sys.CPU_THREADS, 1)
+
     # The preview worker runs the tasks' OWN compute, so it inherits the same budget. Napari
     # deliberately does not — un-pooled interactive viewer, not BLAS-bound, unmeasured.
     prev = read(joinpath(Cecelia._app_dir(), "src", "preview.jl"), String)
@@ -3110,6 +3119,47 @@ end
         end
     end
     @test checked > 20      # the sweep actually found the sliders
+end
+
+# A repeatable group carries defaults in TWO places: the group's own `default` dict (what entry "0"
+# starts as) and each nested param's `default` (what a NEWLY ADDED entry starts as). When they
+# disagree, the first entry and the second silently begin on different values — which is exactly the
+# shape of a multi-pass segmentation, so the two passes differ by a parameter nobody set.
+#
+# Found live: `segment.coastal` had `embeddingBlurSigma` at 0.5 in the group default and 1.5 in the
+# param spec (whose tip says "Calibrated at 1.5"). A second pass added in the GUI therefore ran at a
+# different embedding blur from the first, and on real data that mismatch turned 56% of the second
+# pass's objects into rims around the first pass's cells instead of standalone fragments.
+@testset "a group's two sets of defaults agree" begin
+    checked = 0
+    for (fun_name, task) in sort(collect(Cecelia._fun_name_map()); by = first)
+        path = try Cecelia._spec_path(task) catch; nothing end
+        (isnothing(path) && continue)
+        isfile(path) || continue
+        each_spec_param(get(JSON3.read(read(path, String)), :params, [])) do p, _
+            String(something(spec_get(p, "type", ""), "")) == "group" || return
+            entry0 = spec_get(p, "default", nothing)
+            entry0 isa AbstractDict || return
+            # the group's default is keyed by entry index ("0"); take the first entry's values
+            vals = get(entry0, Symbol("0"), get(entry0, "0", nothing))
+            vals isa AbstractDict || return
+            gkey = String(something(spec_get(p, "key", ""), ""))
+            each_spec_param(get(p, :params, get(p, "params", []))) do q, _
+                qkey = String(something(spec_get(q, "key", ""), ""))
+                isempty(qkey) && return
+                qdef = spec_get(q, "default", nothing)
+                isnothing(qdef) && return
+                gdef = get(vals, Symbol(qkey), get(vals, qkey, nothing))
+                isnothing(gdef) && return
+                checked += 1
+                same = (gdef isa Real && qdef isa Real) ? isapprox(Float64(gdef), Float64(qdef)) :
+                                                          string(gdef) == string(qdef)
+                same || @error "group default disagrees with the param default — entry 0 and a newly added entry start differently" task = fun_name group = gkey param = qkey group_default = gdef param_default = qdef
+                @test same
+            end
+        end
+    end
+    @test checked > 10      # the sweep actually found the groups
 end
 
 @testset "plot specs live on the page that EXPLORES, not the one that DEFINES" begin
