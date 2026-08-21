@@ -22,6 +22,17 @@ import unittest
 import numpy as np
 
 
+def _window(frames, index, wid=0, start=0, tile=(0, 16, 0, 16), channels=None):
+    """A `TemporalWindow` for a test, with everything but the frames defaulted.
+
+    The point of the object is that a test says only what it is about — a stack of frames and which
+    one is the tile — instead of restating six positional facts at every call site.
+    """
+    from cecelia.utils.segmentation_utils import TemporalWindow
+    return TemporalWindow(frames=frames, index=index, start=start, tile=tile,
+                          channels=channels, id=wid)
+
+
 class _DimUtils:
     """Enough of DimUtils for the base's __init__ and the temporal guard."""
 
@@ -61,6 +72,14 @@ class _StubInference:
         return None, inst, None
 
 
+class _PlaneIdInference:
+    """Labels the whole plane with the value carried in `mag_1` — i.e. its z index."""
+
+    def predict_frame(self, frame, metrics):
+        value = int(np.asarray(metrics['mag_1']).flat[0])
+        return None, np.full(frame.shape, value, np.uint32), None
+
+
 def _utils(model_params=None, dim_utils=None, task_dir='/tmp'):
     """A CoastalUtils with the coastal calls stubbed out."""
     from cecelia.utils.coastal_utils import CoastalUtils
@@ -77,7 +96,7 @@ def _utils(model_params=None, dim_utils=None, task_dir='/tmp'):
     # record the window it was given.
     cu._seen = []
 
-    def _metrics(window, center, scales, cumulative):
+    def _metrics(window, center, scales, cumulative, **_):
         cu._seen.append((np.asarray(window).copy(), center, tuple(scales), cumulative))
         return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center]),
                                             'divergence': np.zeros_like(window[center])}
@@ -242,6 +261,193 @@ class ProjectionTest(unittest.TestCase):
         self.assertTrue(np.all(out > 254.0), 'max-merge should fill the whole frame')
 
 
+class ContextChannelsTest(unittest.TestCase):
+    """Reading fewer channels renumbers the window's channel axis — the failure mode is silent.
+
+    Dropping the channels coastal never projects is most of the biggest read in the task, but it
+    means `context[:, 2]` no longer means image channel 2. These pin that the narrowing asks for
+    the right set and that the projection lands on the SAME pixels either way.
+    """
+
+    def _utils_for(self, groups):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        params = {'taskDir': '/tmp', 'models': groups}
+        return CoastalUtils(params, _DimUtils(shape=(30, 4, 4, 16, 16)))
+
+    def test_the_union_across_groups_is_requested(self):
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]},
+                              '1': {'model': 'm.pt', 'cellChannels': [0, 2]}})
+        self.assertEqual(cu._context_channels(), (0, 2),
+                         'one window serves every group; a per-group answer starves the others')
+
+    def test_a_narrowed_window_projects_the_same_pixels(self):
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]}})
+        rng = np.random.default_rng(0)
+        full = rng.random((5, 4, 8, 8)).astype(np.float32) * 1000
+        norm = {2: (0.0, 1000.0)}
+
+        wide = cu._project_window(full, {'cellChannels': [2]}, norm)
+        narrow = cu._project_window(full[:, [0, 2]], {'cellChannels': [2]}, norm,
+                                    context_channels=(0, 2))
+        np.testing.assert_array_equal(wide, narrow)
+
+    def test_a_group_whose_channel_is_absent_raises(self):
+        """Better a stopped task than a label set segmented on the wrong channel."""
+        cu = self._utils_for({'0': {'model': 'm.pt', 'cellChannels': [2]}})
+        window = np.zeros((5, 2, 8, 8), np.float32)
+        with self.assertRaises(ValueError):
+            cu._project_window(window, {'cellChannels': [3]}, None, context_channels=(0, 2))
+
+
+class SharedFlowBetweenTimepointsTest(unittest.TestCase):
+    """Consecutive windows overlap by all but one frame; the flow they share must be computed once.
+
+    The cache is the one place in this class that carries state ACROSS calls, so the tests that
+    matter are the ones about when it must NOT be used: a different tile is different pixels, and a
+    lag pair is never asked for twice and so must not be kept.
+    """
+
+    def _utils(self, n_z=2):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        params = {'taskDir': '/tmp',
+                  'models': {'0': {'model': 'm.pt', 'cellChannels': [0]}}}
+        cu = CoastalUtils(params, _DimUtils(shape=(30, 2, n_z, 16, 16)))
+        cu._get_inference = lambda _mp: _StubInference()
+        cu._match_3d = lambda planes, threshold: planes
+        cu._pairs = []
+
+        def _metrics(window, center, scales, cumulative, flow_cache=None, window_offset=0):
+            # stand in for coastal: ask the cache for the pairs a real call would
+            for scale in scales:
+                cu._pairs.append(('ask', window_offset + center - 1,
+                                  window_offset + center - 1 + scale))
+            for k in range(center - cumulative // 2, center + cumulative // 2):
+                key = (window_offset + k, window_offset + k + 1)
+                if flow_cache is not None and key in flow_cache:
+                    continue
+                cu._pairs.append(('compute', *key))
+                if flow_cache is not None:
+                    flow_cache[key] = ('flow', key)
+            return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center])}
+
+        cu._flow_metrics = _metrics
+        return cu
+
+    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2):
+        ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
+        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                         norm_params={0: (0.0, 1000.0)},
+                         window=_window(ctx, 3, wid=t, start=t - 3, tile=tile))
+
+    def _computed(self, cu):
+        return [p for p in cu._pairs if p[0] == 'compute']
+
+    def test_a_later_timepoint_reuses_the_overlap(self):
+        cu = self._utils()
+        self._step(cu, 10); first = len(self._computed(cu))
+        self._step(cu, 11); second = len(self._computed(cu)) - first
+        self.assertGreater(first, 0)
+        self.assertLess(second, first,
+                        'consecutive windows share all but one frame — most pairs were already had')
+
+    def test_moving_to_another_tile_starts_over(self):
+        """A flow is a property of the PIXELS. Reusing one tile's flow for another segments the
+        wrong motion, and nothing downstream would report it."""
+        cu = self._utils()
+        self._step(cu, 10, tile=(0, 16, 0, 16)); first = len(self._computed(cu))
+        self._step(cu, 11, tile=(16, 32, 0, 16)); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first, 'a different tile must not be served from the old one')
+        self.assertEqual(cu._flow_cache_tile, (16, 32, 0, 16))
+
+    def test_only_consecutive_pairs_are_kept(self):
+        """A lag pair moves with the centre frame, so it is never requested twice — keeping it grows
+        the cache by three dead entries per timepoint per z-plane."""
+        cu = self._utils()
+        self._step(cu, 10)
+        for cache in cu._flow_caches.values():
+            for (i, j) in cache:
+                self.assertEqual(j, i + 1, f'({i}, {j}) is not a consecutive pair')
+
+    def test_the_cache_does_not_grow_without_bound(self):
+        cu = self._utils()
+        sizes = []
+        for t in range(10, 30):
+            self._step(cu, t)
+            sizes.append(max(len(c) for c in cu._flow_caches.values()))
+        self.assertLessEqual(max(sizes[5:]), 6,
+                             f'entries a later timepoint can never read are not being pruned: {sizes}')
+
+    def test_each_z_plane_has_its_own(self):
+        cu = self._utils(n_z=3)
+        self._step(cu, 10, n_z=3)
+        self.assertEqual(sorted(cu._flow_caches), [0, 1, 2])
+
+
+class SharedFlowBetweenPassesTest(unittest.TestCase):
+    """Two-pass runs are a second `models` group, and both groups read the same window.
+
+    The optical flow derived from that window is the most expensive thing in the task and does not
+    depend on the group, so computing it twice is pure waste — but sharing it is only safe when the
+    two groups really would have computed the same planes. These pin both halves.
+    """
+
+    def _two_group_utils(self, second=None):
+        from cecelia.utils.coastal_utils import CoastalUtils
+
+        base = {'model': '/nonexistent/model.pt', 'cellChannels': [0]}
+        params = {'taskDir': '/tmp',
+                  'models': {'0': dict(base), '1': dict(base, **(second or {}))}}
+        cu = CoastalUtils(params, _DimUtils(shape=(30, 2, 3, 16, 16)))
+        cu._get_inference = lambda _mp: _StubInference()
+        cu._match_3d = lambda planes, threshold: planes
+        cu._seen = []
+
+        def _metrics(window, center, scales, cumulative, **_):
+            cu._seen.append(center)
+            return np.asarray(window)[center], {'mag_1': np.zeros_like(window[center])}
+
+        cu._flow_metrics = _metrics
+        return cu, params['models']
+
+    def _run(self, cu, mp, wid):
+        ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
+        return cu.predict_slice(ctx[3], mp, norm_params={0: (0.0, 1000.0)},
+                                window=_window(ctx, 3, wid=wid))
+
+    def test_a_second_group_reuses_the_first_groups_flow(self):
+        cu, models = self._two_group_utils()
+        self._run(cu, models['0'], wid=7)
+        after_first = len(cu._seen)
+        self._run(cu, models['1'], wid=7)
+
+        self.assertEqual(after_first, 3, 'one flow computation per z on the first pass')
+        self.assertEqual(len(cu._seen), 3,
+                         'the second pass recomputed the flow it was handed by the first')
+
+    def test_a_new_window_is_not_served_from_the_old_one(self):
+        cu, models = self._two_group_utils()
+        self._run(cu, models['0'], wid=7)
+        self._run(cu, models['0'], wid=8)
+        self.assertEqual(len(cu._seen), 6, 'a different window must be recomputed, not reused')
+
+    def test_groups_reading_different_channels_do_not_share(self):
+        """The cached planes are derived from the PROJECTED window, so a different channel set is a
+        different frame — sharing there would segment pass 2 on pass 1's pixels."""
+        cu, models = self._two_group_utils(second={'cellChannels': [1]})
+        self._run(cu, models['0'], wid=7)
+        self._run(cu, models['1'], wid=7)
+        self.assertEqual(len(cu._seen), 6)
+
+    def test_a_single_group_run_caches_nothing(self):
+        cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 3, 16, 16)))
+        cu._match_3d = lambda planes, threshold: planes
+        ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
+        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                         norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3, wid=1))
+        self.assertEqual(cu._feature_cache, {},
+                         'the common case must not carry the memory of a cache it cannot use')
+
+
 class PredictSliceTest(unittest.TestCase):
 
     def test_window_and_centre_reach_the_metric_call(self):
@@ -249,7 +455,7 @@ class PredictSliceTest(unittest.TestCase):
         ctx = np.ones((9, 2, 32, 32), np.float32) * 500
         tile = ctx[3]
         out = cu.predict_slice(tile, {'model': 'm.pt', 'cellChannels': [0]},
-                               norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                               norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
         self.assertEqual(out.shape, (32, 32))
         self.assertEqual(out.dtype, np.uint32)
         (window, center, scales, cumulative), = cu._seen
@@ -267,7 +473,7 @@ class PredictSliceTest(unittest.TestCase):
         out = cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0],
                                         'stitchThreshold': 0.25},
                                norm_params={0: (0.0, 1000.0)},
-                               context=ctx, context_index=3)
+                               window=_window(ctx, 3))
 
         self.assertEqual(stitched, [0.25], 'Z stitching must get the task param, not a constant')
         self.assertEqual(out.shape, (3, 16, 16))
@@ -281,10 +487,65 @@ class PredictSliceTest(unittest.TestCase):
         cu._manifest_cache['m.pt'] = {'droppedMetrics': ['divergence']}
         ctx = np.ones((9, 2, 16, 16), np.float32) * 500
         cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                         norm_params={0: (0.0, 1000.0)}, context=ctx, context_index=3)
+                         norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
         (_, metrics), = cu._stub.calls
         self.assertNotIn('divergence', metrics)
         self.assertIn('mag_1', metrics)
+
+    def test_z_planes_come_back_in_z_order(self):
+        """The per-z work is threaded; `_match_3d` stitches neighbours, so ORDER is load-bearing.
+
+        `ThreadPoolExecutor.map` yields in input order regardless of completion order, which is the
+        whole reason it is used here rather than `as_completed`. Asserted with a stub whose label
+        value IS the plane index and a deliberately uneven per-plane cost, so a result assembled in
+        completion order would come back shuffled.
+        """
+        import time
+
+        cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 8, 16, 16)))
+        cu._match_3d = lambda planes, threshold: planes
+
+        n_z = 8
+        counter = {'z': 0}
+
+        def _slow_metrics(window, center, scales, cumulative, **_):
+            z = counter['z']
+            counter['z'] += 1
+            time.sleep(0.02 * (n_z - z))     # earlier planes finish LAST
+            return np.asarray(window)[center], {'mag_1': np.full_like(window[center], z)}
+
+        cu._flow_metrics = _slow_metrics
+        cu._get_inference = lambda _mp: _PlaneIdInference()
+
+        ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
+        out = cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
+                               norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
+
+        self.assertEqual(out.shape, (n_z, 16, 16))
+        np.testing.assert_array_equal(
+            [int(out[z][0, 0]) for z in range(n_z)], list(range(n_z)),
+            'planes came back out of z order — stitching would pair the wrong neighbours')
+
+    def test_threaded_and_serial_agree(self):
+        """Widening the pools is a scheduling change; it must not move a single label."""
+        import cecelia.utils.coastal_utils as mod
+
+        ctx = np.linspace(0, 1000, 9 * 2 * 6 * 16 * 16, dtype=np.float32).reshape(9, 2, 6, 16, 16)
+        mp = {'model': 'm.pt', 'cellChannels': [0]}
+
+        results = {}
+        for workers in ((1, 1), (4, 3)):
+            cu = _utils(dim_utils=_DimUtils(shape=(30, 2, 6, 16, 16)))
+            cu._match_3d = lambda planes, threshold: planes
+            before = (mod.FLOW_WORKERS, mod.PREDICT_WORKERS)
+            mod.FLOW_WORKERS, mod.PREDICT_WORKERS = workers
+            try:
+                results[workers] = cu.predict_slice(
+                    ctx[3], mp, norm_params={0: (0.0, 1000.0)}, window=_window(ctx, 3))
+            finally:
+                mod.FLOW_WORKERS, mod.PREDICT_WORKERS = before
+
+        np.testing.assert_array_equal(results[(1, 1)], results[(4, 3)])
 
     def test_missing_context_is_an_error_not_a_silent_single_frame_run(self):
         cu = _utils()

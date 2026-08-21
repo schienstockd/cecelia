@@ -18,6 +18,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
 import { flattenParams, resolveInitialParams, missingRequired } from './paramValues'
+import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
@@ -238,9 +239,36 @@ async function onParamCommit(key: string, value: unknown) {
 // Persist a param edit as a draft (USER edits only — never on programmatic init) so navigating away
 // and back keeps it. Keyed to the current image→set scope.
 function onParamEdit(key: string, value: unknown) {
+  const before = paramValues.value[key]
   paramValues.value[key] = value
+  syncGroupOrders(key, before, value)
   drafts.set(currentDraftKey.value, paramValues.value)
   if (optionTriggerKeys.value.has(key)) optionRefetch.schedule(null)
+}
+
+// Which entries of a repeatable group run, and in what order. A sibling key of the group's own —
+// `<groupKey>Order` — resolved away server-side by `_apply_group_order`, so no runner sees it.
+function onGroupOrderEdit(key: string, value: string[]) {
+  paramValues.value[key] = value
+  drafts.set(currentDraftKey.value, paramValues.value)
+}
+
+// Editing a repeatable GROUP has to move its order with it. Reconciled here, with the group's keys
+// from both before and after the edit, because those two are what tell the cases apart: a key
+// missing from the selection is either an entry just added or one deliberately switched off, and
+// from the new value alone they are identical — guessing switches a pass back on the moment another
+// is added.
+//
+// Only an EXPLICIT order is reconciled. An unset one means "every entry, in order" (see
+// `groupOrderKeys`), which stays true however many entries there are, so a group nobody has
+// reordered never acquires a stored order at all.
+function syncGroupOrders(editedKey: string, before: unknown, after: unknown) {
+  const key = `${editedKey}Order`
+  const current = paramValues.value[key]
+  if (!Array.isArray(current)) return
+  const keysOf = (v: unknown) =>
+    Object.keys((v ?? {}) as Record<string, unknown>).sort((a, b) => Number(a) - Number(b))
+  paramValues.value[key] = syncGroupOrder(keysOf(before), keysOf(after), current.map(String))
 }
 
 // ── Options that depend on the form ───────────────────────────────────────────────────────────────
@@ -525,6 +553,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           :modelValue="paramValues[p.key]"
           @update:modelValue="onParamEdit(p.key, $event)"
           @commit="onParamCommit"
+          @update:groupOrder="onGroupOrderEdit"
           :context="paramContext"
         />
       </div>

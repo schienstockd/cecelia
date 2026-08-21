@@ -69,7 +69,7 @@ export interface ParamDef {
   sortable?: boolean
   collapsed?: boolean
   params?: ParamDef[]
-  labelKey?: string    // group: param key whose value is shown in the entry header
+  labelKey?: string    // group: param key whose value names the entry — its header, and its chip in the order row
 }
 
 export interface TaskDef {

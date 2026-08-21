@@ -1,4 +1,4 @@
-"""`cpu_utils.limit_blas_threads` — the BLAS thread budget for small-matmul work.
+"""`cpu_utils` — the two thread budgets: BLAS pools underneath a task, and the task's own.
 
 A numpy/scipy call that lands in BLAS takes every core by default, and every Python task here runs
 inside one `cpu` pool slot, so `n` concurrent tasks ask for `n × cores`. On drift estimation that is
@@ -91,6 +91,57 @@ class DriftUsesTheBudgetTest(unittest.TestCase):
         src = inspect.getsource(cu._drift_pair_measurements)
         self.assertIn('limit_blas_threads', src,
                       'drift pair measurement must bound the BLAS pool — see cpu_utils')
+
+
+class DefaultTaskWorkersTest(unittest.TestCase):
+
+    def test_scales_with_the_machine(self):
+        small = cpu_utils.default_task_workers(4)
+        big = cpu_utils.default_task_workers(64)
+        self.assertLess(small, big, 'a bigger box must get a bigger budget')
+
+    def test_never_wider_than_the_box(self):
+        for n in (1, 2, 3, 4, 8):
+            self.assertLessEqual(cpu_utils.default_task_workers(n), n)
+
+    def test_a_small_machine_is_not_left_serial(self):
+        """cores // 4 alone gives 1 thread on a 4-core laptop — which is the un-parallelised path."""
+        self.assertGreaterEqual(cpu_utils.default_task_workers(4), 2)
+
+    def test_a_huge_machine_is_capped(self):
+        self.assertEqual(cpu_utils.default_task_workers(1024),
+                         cpu_utils.default_task_workers(128))
+
+
+class TaskWorkersTest(unittest.TestCase):
+
+    def test_the_environment_wins(self):
+        self.assertEqual(cpu_utils.task_workers(env={cpu_utils.TASK_WORKERS_ENV: '12'}), 12)
+
+    def test_an_algorithmic_cap_is_a_ceiling_not_a_preference(self):
+        """Coastal's region growing peaks at 4 threads and is slower at 8 — no machine changes that."""
+        env = {cpu_utils.TASK_WORKERS_ENV: '32'}
+        self.assertEqual(cpu_utils.task_workers(cap=4, env=env), 4)
+        # …but it must not RAISE a smaller budget up to the cap
+        self.assertEqual(cpu_utils.task_workers(cap=4, env={cpu_utils.TASK_WORKERS_ENV: '2'}), 2)
+
+    def test_an_unusable_setting_falls_back_rather_than_raising(self):
+        """Every value here is a performance choice; a typo should not stop a run."""
+        for bad in ('', 'eight', '0', '-4', None):
+            with self.subTest(bad=bad):
+                env = {} if bad is None else {cpu_utils.TASK_WORKERS_ENV: bad}
+                self.assertEqual(cpu_utils.task_workers(env=env),
+                                 cpu_utils.default_task_workers())
+
+
+class CoastalUsesTheBudgetTest(unittest.TestCase):
+
+    def test_the_two_stages_take_their_widths_from_it(self):
+        from cecelia.utils import coastal_utils
+        self.assertEqual(coastal_utils.FLOW_WORKERS, cpu_utils.task_workers())
+        self.assertEqual(coastal_utils.PREDICT_WORKERS,
+                         cpu_utils.task_workers(cap=coastal_utils.PREDICT_WORKER_CAP))
+        self.assertLessEqual(coastal_utils.PREDICT_WORKERS, coastal_utils.FLOW_WORKERS)
 
 
 if __name__ == '__main__':

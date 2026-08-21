@@ -188,6 +188,31 @@ class PostProcessOnACropTest(unittest.TestCase):
         self.assertEqual(self._run(seg, self._mask(), {'X': (False, False)}), {1, 3, 4})
 
 
+class ModelOrderTest(unittest.TestCase):
+    """Ascending key order IS run order.
+
+    Which entries run, and in which order, is settled before Python sees it: `_apply_group_order`
+    (task.jl) rebuilds the group from the form's `<group>Order`, dropping what will not run and
+    renumbering the rest. So the only thing left here is to walk the keys the way the renumbering
+    wrote them — numerically, which is the one thing a plain `sorted` gets wrong past nine entries.
+    """
+
+    def _order(self, models):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        return SegmentationUtils.model_order(models)
+
+    def test_every_group_runs_ascending(self):
+        self.assertEqual(self._order({'1': {}, '0': {}, '2': {}}), ['0', '1', '2'])
+
+    def test_ten_or_more_groups_stay_in_numeric_order(self):
+        """`sorted` alone puts '10' before '2', which would silently reorder the passes."""
+        self.assertEqual(self._order({str(i): {} for i in range(12)}),
+                         [str(i) for i in range(12)])
+
+    def test_a_single_group_is_unchanged(self):
+        self.assertEqual(self._order({'0': {}}), ['0'])
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -242,8 +267,7 @@ class LabelSmoothingTest(unittest.TestCase):
         from cecelia.utils.segmentation_utils import SegmentationUtils
 
         class _Stub(SegmentationUtils):
-            def predict_slice(self, tile, model_params, norm_params=None,
-                              context=None, context_index=None):
+            def predict_slice(self, tile, model_params, norm_params=None, window=None):
                 raise NotImplementedError
 
         return _Stub({'taskDir': '/tmp', 'labelSmoothing': sigma}, None)

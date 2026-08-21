@@ -412,3 +412,22 @@ export function preferredValueName(
 export function isChosenValueName(value: unknown, specDefault: unknown): boolean {
   return typeof value === 'string' && value !== '' && value !== specDefault
 }
+
+/**
+ * Which entries of a repeatable group to run, in order — the resolved form of `<groupKey>Order`,
+ * which `_apply_group_order` (task.jl) applies for real before any runner sees the group.
+ *
+ * `null`/absent means **all of them, in entry order**. That is not a default to be filled in
+ * somewhere: a task saved before the control existed, a chain node, and a REPL call all carry no
+ * value, and every one of them has to keep running every entry. Only an explicit list narrows or
+ * reorders. Keys that no longer name an entry are dropped rather than trusted — a saved param set
+ * outlives the group it was saved against.
+ */
+export function groupOrderKeys(
+  group: Record<string, unknown> | null | undefined,
+  order: unknown,
+): string[] {
+  const keys = Object.keys(group ?? {}).sort((a, b) => Number(a) - Number(b))
+  if (!Array.isArray(order)) return keys
+  return order.map(String).filter(k => keys.includes(k))
+}

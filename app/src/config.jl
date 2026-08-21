@@ -490,6 +490,32 @@ napari_discrete_gpu()::Bool =
 tasks_concurrent_limit()::Int =
     Int(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "concurrentLimit", 4))
 
+# How many threads ONE task may run its own work on (`CECELIA_TASK_WORKERS`; see `py_runner.jl` and
+# docs/SCHEDULER.md → *Thread budgets*). `[tasks].workerThreads`, default derived from the box.
+#
+# The default divides the cores by how many tasks are expected to be COMPUTING at once, which is not
+# the `cpu` pool limit: that limit is 20, and sizing for it would leave a lone task on one core of
+# thirty-two. Four matches the assumption `BLAS_THREADS_PER_TASK` was chosen under. Capped at 16
+# because nothing measured here keeps scaling past that, and a machine with hundreds of cores is
+# more likely running many tasks than one very wide one.
+const _TASK_WORKERS_ASSUMED_ACTIVE = 4
+const _TASK_WORKERS_MAX_DEFAULT = 16
+# A floor: the divisor alone turns a small machine serial (4 cores / 4 = 1 thread), and a 4-core
+# laptop is not the one running four heavy tasks at once. Never wider than the box either.
+const _TASK_WORKERS_MIN_DEFAULT = 2
+
+default_task_worker_threads()::Int =
+    min(clamp(Sys.CPU_THREADS ÷ _TASK_WORKERS_ASSUMED_ACTIVE,
+              _TASK_WORKERS_MIN_DEFAULT, _TASK_WORKERS_MAX_DEFAULT),
+        max(Sys.CPU_THREADS, 1))
+
+function task_worker_threads()::Int
+    conf = get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
+    n = isnothing(conf) ? 0 : try Int(conf) catch; 0 end
+    # A typo in a config file is a slow run, not a failed one — every value here is a perf choice.
+    n >= 1 ? n : default_task_worker_threads()
+end
+
 # ── The detached task runner (Settings → System) ──────────────────────────────────────────────────
 #
 # Whether tasks execute in a SEPARATE process, so restarting the backend does not kill work in flight.

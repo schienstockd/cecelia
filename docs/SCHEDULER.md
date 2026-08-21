@@ -171,6 +171,23 @@ faster with all cores and one thing gets much slower:
 Four concurrent drift tasks *uncapped* (309.7 s) are slower than running them one after another
 (4 × 56.3 = 225 s) — past a point the threads fight for cache rather than work.
 
+**A task's own thread pools are a second budget.** The table above is about the pools numpy and
+scipy open *underneath* a task. A task that parallelises its own work — coastal maps its z-planes
+over a `ThreadPoolExecutor` — opens pools the BLAS variable never sees, so `run_py` also sets
+**`CECELIA_TASK_WORKERS`** (`task_worker_threads()`, `[tasks].workerThreads`).
+
+Its default is **derived from the machine**, not a constant: `cores ÷ 4`, capped at 16. The divisor
+is how many tasks are expected to be *computing* at once, which is deliberately not the `cpu` pool
+limit of 20 — a limit is not an expectation, and sizing for the worst case would leave a lone task
+running on one core of thirty-two. It is the same assumption `BLAS_THREADS_PER_TASK` was chosen
+under.
+
+Read it through `cpu_utils.task_workers(cap=…)`. The `cap` is for a stage **measured** to stop
+scaling: coastal's flow metrics scale to 8+ threads while its region growing peaks at 4 and is
+*slower* at 8, so the two halves of one task take different widths. An algorithmic ceiling like that
+belongs next to its measurement, not in a config file — no machine makes 8 the right number for a
+stage that degrades past 4.
+
 **`OPENBLAS_NUM_THREADS` only — deliberately not `OMP_NUM_THREADS`.** That one also throttles torch's
 intra-op parallelism, and torch on CPU is the one workload measured that genuinely wants the cores: a
 cellpose-shaped conv stack goes 0.19 s → 0.34 s at 4 threads. Capping OpenBLAS alone leaves torch

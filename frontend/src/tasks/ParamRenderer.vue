@@ -15,7 +15,7 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
-         scopeValueName } from './paramValues'
+         scopeValueName, groupOrderKeys } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
@@ -50,6 +50,10 @@ const emit = defineEmits<{
   // keystroke: reloading the form from a half-typed name would swap every other field while the user
   // is still deciding, and typing "Tcell2" passes through "Tcell" on the way.
   (e: 'commit', key: string, v: unknown): void
+  // Which entries of a repeatable group run, and in what order — a SIBLING key (`<groupKey>Order`),
+  // not this param's own value, so it cannot go through `update:modelValue`. Bubbled to the form
+  // like `commit` is, because a repeatable group can sit inside a section and the renderer recurses.
+  (e: 'update:groupOrder', key: string, v: string[]): void
 }>()
 
 // Two ways a param can not apply, and they are deliberately separate:
@@ -387,6 +391,23 @@ function loadAdvisory() {
 watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value)],
   () => { loadAdvisory() }, { immediate: true, deep: true })
 onUnmounted(() => advisoryRun.cancel())
+
+// The order row over this group's own entries. Its value does NOT live in `val` — that is the
+// group's entries — but in a sibling key, `<groupKey>Order`, which `_apply_group_order` (Julia)
+// resolves away before any runner sees it. An unset value means "all of them, in entry order": a
+// task saved before this control existed, a chain node and a REPL call all carry nothing, and each
+// must keep running everything (see `groupOrderKeys`).
+const orderKey = computed(() => `${props.param.key}Order`)
+
+const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
+  const raw = props.param.labelKey ? e.vals[props.param.labelKey] : undefined
+  const named = Array.isArray(raw) ? raw[0] : raw
+  return { value: e.key, label: named ? String(named) : `${i + 1}` }
+}))
+
+const groupOrderValue = computed<string[]>(() =>
+  groupOrderKeys(Object.fromEntries(groupEntries.value.map(e => [e.key, e.vals])),
+                 props.context?.values?.[orderKey.value]))
 
 // group helpers — value is Record<string, ParamValues> keyed by "0", "1", ...
 const groupEntries = computed(() => {
@@ -728,6 +749,7 @@ const pct = computed(() => {
         @update:modelValue="val = { ...(val as ParamValues ?? {}), [p.key]: $event }"
         :context="context"
         @commit="(k, v) => emit('commit', k, v)"
+        @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
       />
     </div>
   </div>
@@ -742,6 +764,25 @@ const pct = computed(() => {
         <i class="pi pi-plus" />
       </button>
     </div>
+
+    <!-- Which entries run, and in what order. Every `repeatable` group gets this — it is not a
+         spec-authored field, because the reason it exists is a property of repeatable groups
+         themselves: entries are applied in turn and each fills only what an earlier one left, so
+         the order is semantic and "run this one but not that one" is a per-run choice, not a
+         reason to delete an entry and retype its parameters.
+         Only from two entries up: with one there is nothing to order, and a lone chip that can be
+         switched off is a worse way to say "don't run this task".
+         The control is the shared ChipSelect in its multi-select + reorderable mode, which already
+         means exactly "an ordered pick". -->
+    <ChipSelect v-if="param.repeatable && groupEntries.length > 1"
+      class="group-order"
+      :options="groupOrderOptions"
+      :model-value="groupOrderValue"
+      multiple reorderable
+      :aria-label="`Order of ${param.label}`"
+      v-tooltip.right="'Click to include, drag to reorder — earlier entries claim pixels first'"
+      @update:model-value="v => emit('update:groupOrder', orderKey, v as string[])"
+    />
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -785,6 +826,7 @@ const pct = computed(() => {
                 @update:modelValue="updateGroupEntry(entry.key, sp.key, $event)"
                 :context="context"
         @commit="(k, v) => emit('commit', k, v)"
+        @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
               />
             </div>
           </template>
@@ -795,6 +837,7 @@ const pct = computed(() => {
             @update:modelValue="updateGroupEntry(entry.key, p.key, $event)"
             :context="context"
         @commit="(k, v) => emit('commit', k, v)"
+        @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
           />
         </template>
       </div>

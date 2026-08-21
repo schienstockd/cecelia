@@ -104,6 +104,17 @@ end
 # `cecelia.utils.cpu_utils.limit_blas_threads`. See `docs/SCHEDULER.md` → *Thread budgets*.
 const BLAS_THREADS_PER_TASK = 4
 
+# How many threads a task may run its OWN work on — distinct from the BLAS budget above, which
+# bounds the pools numpy/scipy open underneath it. Coastal maps its z-planes over a thread pool and
+# is the first task to need this; the number was a constant picked on one 32-core laptop, which
+# oversubscribes a 4-core machine and idles a 128-core one.
+#
+# Derived from the box, then overridable with `[tasks].workerThreads` — see `task_worker_threads`.
+# An env var rather than a param for the same reason as the BLAS budget: it describes the machine
+# and the scheduler, not any one task, and a per-task knob would be N knobs that all had to agree.
+# `cecelia.utils.cpu_utils.task_workers` reads it, and applies any ALGORITHMIC cap on top (a stage
+# measured to stop scaling keeps its own ceiling next to the measurement, not in a config file).
+
 # The environment every Python task runs under, as pairs. Standalone so it can be ASSERTED rather
 # than grepped for — `run_py` builds and spawns in one call, so there is otherwise no seam to test
 # what a task actually inherits, and "is OMP_NUM_THREADS absent?" cannot be answered by reading the
@@ -113,6 +124,7 @@ _py_task_env(pythonpath::AbstractString) = [
     "CECELIA_IMAGE_COMPRESSOR" => image_compressor(),
     "CECELIA_PY_CONTRACT" => string(PY_CONTRACT_VERSION),
     "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
+    "CECELIA_TASK_WORKERS" => string(task_worker_threads()),
 ]
 
 """

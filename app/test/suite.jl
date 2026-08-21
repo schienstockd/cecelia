@@ -806,6 +806,15 @@ end
     @test env["PYTHONPATH"] == "/tmp/py"
     @test haskey(env, "CECELIA_PY_CONTRACT") && haskey(env, "CECELIA_IMAGE_COMPRESSOR")
 
+    # A task's OWN thread pools (coastal maps z-planes over one) are a separate budget from BLAS,
+    # and derived from the box rather than a constant — the number it replaced was picked on one
+    # 32-core laptop, which oversubscribes a small machine and idles a large one.
+    @test env["CECELIA_TASK_WORKERS"] == string(Cecelia.task_worker_threads())
+    @test Cecelia.task_worker_threads() >= 1
+    @test Cecelia.default_task_worker_threads() <= 16
+    # never wider than the machine, however many tasks are assumed concurrent
+    @test Cecelia.default_task_worker_threads() <= max(Sys.CPU_THREADS, 1)
+
     # The preview worker runs the tasks' OWN compute, so it inherits the same budget. Napari
     # deliberately does not — un-pooled interactive viewer, not BLAS-bound, unmeasured.
     prev = read(joinpath(Cecelia._app_dir(), "src", "preview.jl"), String)
@@ -3110,6 +3119,101 @@ end
         end
     end
     @test checked > 20      # the sweep actually found the sliders
+end
+
+# A repeatable group carries defaults in TWO places: the group's own `default` dict (what entry "0"
+# starts as) and each nested param's `default` (what a NEWLY ADDED entry starts as). When they
+# disagree, the first entry and the second silently begin on different values — which is exactly the
+# shape of a multi-pass segmentation, so the two passes differ by a parameter nobody set.
+#
+# Found live: `segment.coastal` had `embeddingBlurSigma` at 0.5 in the group default and 1.5 in the
+# param spec (whose tip says "Calibrated at 1.5"). A second pass added in the GUI therefore ran at a
+# different embedding blur from the first, and on real data that mismatch turned 56% of the second
+# pass's objects into rims around the first pass's cells instead of standalone fragments.
+# Ordering and switching off entries of a repeatable group is offered for EVERY such group, by the
+# renderer, with no spec field — the reason it exists is a property of repeatable groups themselves
+# (entries are applied in turn, each filling only what an earlier one left, so the order is
+# semantic). It is resolved away here rather than forwarded: `_apply_group_order` rebuilds the group
+# so no handler, runner or Python task learns that ordering exists. The first version of this WAS a
+# hand-authored `modelsOrder` param plus a passthrough in one task's .jl — i.e. exactly the thing
+# every future grouped task would have had to remember.
+@testset "a repeatable group's run order is resolved into the group" begin
+    task = Cecelia._fun_name_map()["segment.coastal"]
+    @test "models" in Cecelia._repeatable_group_keys(task)
+
+    three = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "a"),
+        "1" => Dict{String,Any}("model" => "b"),
+        "2" => Dict{String,Any}("model" => "c")))
+
+    # no order at all: every entry, untouched. A task saved before the control existed, a chain node
+    # and a REPL call all look like this.
+    kept = Cecelia._apply_group_order(task, copy(three))
+    @test sort(collect(keys(kept["models"]))) == ["0", "1", "2"]
+
+    # reordered AND filtered, renumbered so a consumer's ascending walk IS the run order
+    ord = merge(copy(three), Dict{String,Any}("modelsOrder" => ["2", "0"]))
+    got = Cecelia._apply_group_order(task, ord)
+    @test !haskey(got, "modelsOrder")            # resolved away, never forwarded
+    @test sort(collect(keys(got["models"]))) == ["0", "1"]
+    @test got["models"]["0"]["model"] == "c"
+    @test got["models"]["1"]["model"] == "a"
+
+    # an empty list means run NOTHING — otherwise the off switch would be a no-op
+    none = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => String[])))
+    @test isempty(none["models"])
+
+    # a stale key outlives the group it was saved against; ignore it rather than fail the run
+    stale = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => ["1", "9"])))
+    @test length(stale["models"]) == 1
+    @test stale["models"]["0"]["model"] == "b"
+
+    # the same entry twice would offset its labels against itself and write nothing the second time
+    dup = Cecelia._apply_group_order(task, merge(copy(three), Dict{String,Any}("modelsOrder" => ["0", "0", "1"])))
+    @test length(dup["models"]) == 2
+
+    # idempotent, because `run_task` is not the only thing that may normalise a bag of params
+    @test Cecelia._apply_group_order(task, copy(got))["models"] == got["models"]
+
+    # EVERY repeatable group gets it, not just the one that motivated it
+    reps = String[]
+    for (fun_name, t) in Cecelia._fun_name_map()
+        isempty(Cecelia._repeatable_group_keys(t)) || push!(reps, fun_name)
+    end
+    @test "segment.cellpose" in reps
+    @test length(reps) >= 3
+end
+
+@testset "a group's two sets of defaults agree" begin
+    checked = 0
+    for (fun_name, task) in sort(collect(Cecelia._fun_name_map()); by = first)
+        path = try Cecelia._spec_path(task) catch; nothing end
+        (isnothing(path) && continue)
+        isfile(path) || continue
+        each_spec_param(get(JSON3.read(read(path, String)), :params, [])) do p, _
+            String(something(spec_get(p, "type", ""), "")) == "group" || return
+            entry0 = spec_get(p, "default", nothing)
+            entry0 isa AbstractDict || return
+            # the group's default is keyed by entry index ("0"); take the first entry's values
+            vals = get(entry0, Symbol("0"), get(entry0, "0", nothing))
+            vals isa AbstractDict || return
+            gkey = String(something(spec_get(p, "key", ""), ""))
+            each_spec_param(get(p, :params, get(p, "params", []))) do q, _
+                qkey = String(something(spec_get(q, "key", ""), ""))
+                isempty(qkey) && return
+                qdef = spec_get(q, "default", nothing)
+                isnothing(qdef) && return
+                gdef = get(vals, Symbol(qkey), get(vals, qkey, nothing))
+                isnothing(gdef) && return
+                checked += 1
+                same = (gdef isa Real && qdef isa Real) ? isapprox(Float64(gdef), Float64(qdef)) :
+                                                          string(gdef) == string(qdef)
+                same || @error "group default disagrees with the param default — entry 0 and a newly added entry start differently" task = fun_name group = gkey param = qkey group_default = gdef param_default = qdef
+                @test same
+            end
+        end
+    end
+    @test checked > 10      # the sweep actually found the groups
 end
 
 @testset "plot specs live on the page that EXPLORES, not the one that DEFINES" begin
