@@ -1028,17 +1028,6 @@ async function switchWt(path: string) {
     </div>
     <div class="settings-col">
 
-    <!-- ── Task concurrency ───────────────────────────────────────────────
-         The SAME `PoolThrottle` as the Task Manager toolbar and every module page's runner — not a
-         second copy of the sliders. It is here because the popover is the only place it lived, and
-         both places attach it to a task context: with no task selected and an empty task list there
-         was nowhere to change a machine-level setting. `app/CLAUDE.md` already claimed these limits
-         were "adjustable live in Settings", which is now true. -->
-    <section class="settings-section">
-      <h2 class="section-title">Task concurrency</h2>
-      <PoolThrottle />
-    </section>
-
     <!-- ── System (service control panel) ──────────────────────────────── -->
     <section class="settings-section">
       <h2 class="section-title">System
@@ -1286,6 +1275,20 @@ async function switchWt(path: string) {
       </div>
       <span v-if="diag && diag.threads > 1" class="field-hint cc-muted cc-fs-xs">Multithreaded API active ({{ diag.threads }} threads).</span>
       <span v-else-if="diag" class="field-hint cc-muted cc-fs-xs">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
+    </section>
+
+    <!-- ── Task concurrency ───────────────────────────────────────────────
+         The SAME `PoolThrottle` as the Task Manager toolbar and every module page's runner — not a
+         second copy of the sliders. It is here because the popover was the only place it lived, and
+         both of those attach it to a task context: with nothing selected and an empty task list there
+         was nowhere to change a machine-level setting. `app/CLAUDE.md` already claimed these limits
+         were "adjustable live in Settings", which is now true.
+
+         `compact` drops the live occupancy readouts and the hint lines: those are for watching a run,
+         which is what the popover is for, and here they were most of the height. -->
+    <section class="settings-section">
+      <h2 class="section-title">Task concurrency</h2>
+      <PoolThrottle compact />
     </section>
 
     <!-- ── Developer ───────────────────────────────────────────────────── -->
