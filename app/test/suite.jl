@@ -819,6 +819,25 @@ end
     # processes, not threads, so nothing above bounds it — and `joblib.cpu_count()` honours this.
     # Asserted EQUAL to the task budget: two numbers for "how wide may one task go" would drift.
     @test env["LOKY_MAX_CPU_COUNT"] == env["CECELIA_TASK_WORKERS"]
+
+    # The escape hatch for a stage MEASURED to keep scaling with width — coastal's flow metrics,
+    # 14x at 32 threads against 6.8x at 8. Two variables, and both halves matter:
+    #
+    #   * WIDEN is the AND of the user's flag and "the budget was derived". Computed HERE rather than
+    #     in Python, so the config decision has one home; a Python-side `or` would let a stage widen
+    #     past a thread count somebody typed, making the slider a suggestion.
+    #   * USABLE_CPUS is `usable_cpus()` — the affinity mask and cgroup quota applied. Passed in
+    #     because re-deriving it from `os.cpu_count()` would hand out threads for CPUs this process
+    #     cannot touch, which is the entire reason that helper exists.
+    @test haskey(env, "CECELIA_TASK_WORKERS_WIDEN")
+    @test env["CECELIA_TASK_WORKERS_WIDEN"] in ("0", "1")
+    @test env["CECELIA_TASK_WORKERS_WIDEN"] ==
+          ((Cecelia.task_workers_widen() && Cecelia.task_workers_derived()) ? "1" : "0")
+    @test env["CECELIA_USABLE_CPUS"] == string(Cecelia.usable_cpus())
+    @test parse(Int, env["CECELIA_USABLE_CPUS"]) >= 1
+    # Never wider than the box: the widening target is a real ceiling, not "unbounded".
+    @test parse(Int, env["CECELIA_USABLE_CPUS"]) <= max(Sys.CPU_THREADS, 1)
+
     @test Cecelia.task_worker_threads() >= 1
     @test Cecelia.default_task_worker_threads() <= 16
     # never wider than the machine, however many tasks are assumed concurrent
@@ -830,6 +849,35 @@ end
     @test occursin("OPENBLAS_NUM_THREADS", prev)
     @test !occursin("OPENBLAS_NUM_THREADS",
                     read(joinpath(Cecelia._app_dir(), "src", "napari.jl"), String))
+end
+
+@testset "widening a linear stage needs BOTH conditions" begin
+    # `task_workers_widen()` alone is not enough, and neither is a derived budget alone. The AND is
+    # computed in Julia (see `_py_task_env`) precisely so there is one place that can be read.
+    #
+    # No config is WRITTEN here — `set_task_workers_widen!` touches the user's own custom.toml, and a
+    # test must not. The predicates are pure over `cecelia_conf()`, so they are exercised directly.
+    @test Cecelia.task_workers_widen() isa Bool
+    @test Cecelia.task_workers_derived() isa Bool
+
+    # `task_workers_derived()` must agree with the number actually in effect, or the UI offers a
+    # control the backend ignores. A typo counts as DERIVED, matching `task_worker_threads`'s own
+    # fallback — a bad value there does not stop a run, it falls back to the machine.
+    conf = get(get(Cecelia.cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
+    expected = isnothing(conf) || (try Int(conf) < 1 catch; true end)
+    @test Cecelia.task_workers_derived() == expected
+    if Cecelia.task_workers_derived()
+        @test Cecelia.task_worker_threads() == Cecelia.default_task_worker_threads()
+    end
+
+    # Only ONE call site claims linear scaling, and it is the measured one. `PREDICT_WORKERS` must
+    # never claim it — its curve turns DOWN past 4, the opposite claim, already served by `cap=`.
+    src = read(joinpath(dirname(dirname(@__DIR__)), "python", "cecelia", "utils",
+                        "coastal_utils.py"), String)
+    @test occursin("FLOW_WORKERS = cpu_utils.task_workers(scales_linearly=True)", src)
+    predict = src[findfirst("PREDICT_WORKERS =", src)[1]:end]
+    predict = predict[1:findfirst("\n", predict)[1]]
+    @test !occursin("scales_linearly", predict)
 end
 
 # ── First-launch setup wizard (isolated temp config dir) ────────────────────

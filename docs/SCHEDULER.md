@@ -201,8 +201,9 @@ measured the same shapes independently with a different harness and agreed on ev
 Two things follow, and neither was written down before:
 
 **Segmentation's flow stage scales to the box** — 14× at 32 threads against 6.8× at 8. `FLOW_WORKERS`
-is `task_workers()`, so on a 32-core machine it runs at 8 and leaves ~2× unclaimed. Raising the
-throttle is worth ~2× on a lone segmentation. `PREDICT_WORKER_CAP = 4` is exactly right and should not
+was `task_workers()`, so on a 32-core machine it ran at 8 and left ~2× unclaimed; it now passes
+`scales_linearly=True` (below), which is opt-in. Raising the throttle is worth ~2× on a lone
+segmentation. `PREDICT_WORKER_CAP = 4` is exactly right and should not
 be touched: it is the one stage measured to degrade.
 
 **Training's flow stage is not the same curve, because it is not the same mechanism.** joblib forks a
@@ -215,9 +216,37 @@ Beware measuring this by sweeping `n_jobs` inside one process: changing it **res
 the spawn cost lands on whichever width was measured first. That artefact is what makes the joblib
 stage look like it degrades past 4 workers. One width per process is the only honest harness.
 
-The open design question this exposes — `task_workers()` is asked to be one number for stages with
-opposite curves, and a stage measured to scale linearly has no way to say "give me the box when nobody
-else is using it". `cap=` covers the degrading case only. See `docs/TODO.md`.
+**So each stage now states its own shape, and `task_workers()` answers accordingly.** It was one
+number for stages with opposite curves; `cap=` could only ever say *less than* the budget.
+
+| the stage's claim | how it says so | what it gets |
+|---|---|---|
+| degrades past N | `task_workers(cap=N)` | `min(budget, N)` — an algorithmic ceiling, next to its measurement |
+| keeps scaling | `task_workers(scales_linearly=True)` | `max(budget, usable CPUs)`, but only if allowed |
+| neither | `task_workers()` | the budget |
+
+Widening needs **both** conditions, because either alone is wrong:
+
+1. **The budget must be DERIVED.** An explicit `[tasks].workerThreads` is the user saying how wide a
+   task may go, and a stage exceeding it would make the slider a suggestion. Julia computes the AND
+   (`task_workers_widen() && task_workers_derived()`) and ships the result as
+   `CECELIA_TASK_WORKERS_WIDEN`, so the decision has one home — a Python-side `or` could widen past a
+   number somebody typed.
+2. **`[tasks].widenLinearStages` must be on. Default OFF** — and not because widening is unproven.
+   The `cpu` pool admits several tasks at once, so a linear stage inside each of them oversubscribes
+   the box. That is a judgement about how a machine is shared, which is the user's, so it is a control
+   in the throttle popover (shown only while the budget is derived, since it does nothing otherwise)
+   rather than a default anybody inferred.
+
+The widening TARGET is `usable_cpus()`, passed in as `CECELIA_USABLE_CPUS` rather than re-derived from
+`os.cpu_count()` — the affinity mask and cgroup quota are exactly what that helper exists to apply, and
+a second implementation of it is the drift this codebase keeps one canonical helper to avoid.
+
+`FLOW_WORKERS` is the one call site claiming linear scaling, and `PREDICT_WORKERS` must never claim it
+— its curve turns down, which is the opposite claim and already served by `cap=`. Test-enforced.
+
+Training's joblib stage fits neither shape and is deliberately left alone — its optimum moves with the
+sequence count, which is a third shape. See `docs/TODO.md`.
 
 **The budget is sized from what this PROCESS may use, not from the machine.** `Sys.CPU_THREADS`
 counts the box, which is the wrong number the moment the process is confined — a PBS/Slurm job with

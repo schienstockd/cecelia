@@ -197,3 +197,64 @@ class MemoryBoundedConcurrencyTest(unittest.TestCase):
         peak = cpu_utils.peak_rss_bytes()
         if peak is not None and rss is not None:
             self.assertGreaterEqual(peak, rss * 0.5)   # the high-water mark is not below current use
+
+
+class LinearStageWideningTest(unittest.TestCase):
+    """`scales_linearly=True` — the escape hatch for a stage measured to keep scaling.
+
+    The budget's divisor assumes four tasks are computing at once, which is ~2x pessimistic for a
+    lone run. Coastal's flow metrics are the case that earns it (14x at 32 threads against 6.8x at 8
+    — docs/SCHEDULER.md). Every guard below exists because the opposite behaviour would be wrong in a
+    way nobody would notice: a slider silently exceeded, a cap silently ignored, or a stage widened
+    on a machine where the process cannot touch the cores it asked for.
+    """
+
+    ENV = cpu_utils.TASK_WORKERS_ENV
+    WIDEN = cpu_utils.TASK_WORKERS_WIDEN_ENV
+    CPUS = cpu_utils.USABLE_CPUS_ENV
+
+    def test_widening_is_off_unless_asked_for(self):
+        """Default off, and not because it is unproven: several tasks CAN run at once, so widening
+        every one of them oversubscribes the box. That is the user's call."""
+        env = {self.ENV: '8', self.CPUS: '32'}
+        self.assertEqual(cpu_utils.task_workers(scales_linearly=True, env=env), 8)
+
+    def test_a_widened_linear_stage_takes_the_usable_cpus(self):
+        env = {self.ENV: '8', self.WIDEN: '1', self.CPUS: '32'}
+        self.assertEqual(cpu_utils.task_workers(scales_linearly=True, env=env), 32)
+
+    def test_a_stage_that_did_not_claim_linear_scaling_is_untouched(self):
+        """The flag is per CALL SITE, and only a measurement earns it. Coastal's region growing
+        passes `cap=` instead, because its curve turns down."""
+        env = {self.ENV: '8', self.WIDEN: '1', self.CPUS: '32'}
+        self.assertEqual(cpu_utils.task_workers(env=env), 8)
+
+    def test_an_algorithmic_cap_still_wins(self):
+        """A cap is a ceiling, not a budget — the two arguments are not contradictory, and the
+        degrades-past-4 measurement must survive the widening flag."""
+        env = {self.ENV: '8', self.WIDEN: '1', self.CPUS: '32'}
+        self.assertEqual(cpu_utils.task_workers(cap=4, scales_linearly=True, env=env), 4)
+
+    def test_widening_never_lowers_the_budget(self):
+        """On a machine where the usable count is BELOW a configured budget, this must not become a
+        back-door way to shrink it — `max`, not assignment."""
+        env = {self.ENV: '16', self.WIDEN: '1', self.CPUS: '4'}
+        self.assertEqual(cpu_utils.task_workers(scales_linearly=True, env=env), 16)
+
+    def test_the_usable_count_is_taken_as_given_not_re_derived(self):
+        """Julia passes `usable_cpus()` — the affinity mask and cgroup quota applied. Re-deriving it
+        from `os.cpu_count()` would hand out threads for CPUs this process cannot touch, which is
+        the whole reason that helper exists."""
+        env = {self.ENV: '2', self.WIDEN: '1', self.CPUS: '6'}
+        self.assertEqual(cpu_utils.task_workers(scales_linearly=True, env=env), 6)
+
+    def test_a_missing_usable_count_falls_back_without_raising(self):
+        """Reached only outside `run_py` — a REPL session, a test, an external consumer."""
+        env = {self.ENV: '2', self.WIDEN: '1'}
+        got = cpu_utils.task_workers(scales_linearly=True, env=env)
+        self.assertGreaterEqual(got, 2)
+
+    def test_only_an_affirmative_flag_counts(self):
+        for raw in ('0', '', 'no', 'off', 'false', 'maybe'):
+            env = {self.ENV: '8', self.WIDEN: raw, self.CPUS: '32'}
+            self.assertEqual(cpu_utils.task_workers(scales_linearly=True, env=env), 8, raw)

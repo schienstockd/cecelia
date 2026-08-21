@@ -14,7 +14,9 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { threadReadout, threadTip, clampWorkers, type ThreadBudget } from '../utils/threadBudget'
+import { threadReadout, threadTip, clampWorkers, widenApplies, widenTip,
+  type ThreadBudget } from '../utils/threadBudget'
+import CcToggle from './CcToggle.vue'
 
 // `compact` is for a host that is NOT watching a run: Settings. It drops the live occupancy readouts
 // and the hint lines, which are what you want beside a running task and noise in a settings pane, and
@@ -82,6 +84,7 @@ const threads     = ref<ThreadBudget | null>(null)
 const threadsBusy = ref(false)
 const threadText  = computed(() => threadReadout(threads.value))
 const threadHint  = computed(() => threadTip(threads.value))
+const widenHint   = computed(() => widenTip(threads.value))
 
 async function loadThreads() {
   try {
@@ -102,8 +105,27 @@ async function setThreads(workers: number) {
       body: JSON.stringify({ workers }),
     })
     if (res.ok) {
-      const d = await res.json() as { workers: number; derived: boolean }
-      threads.value = { ...b, workers: d.workers, derived: d.derived }
+      const d = await res.json() as { workers: number; derived: boolean; widen: boolean }
+      threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
+    }
+  } catch { /* ignore */ }
+  finally { threadsBusy.value = false }
+}
+
+// The linear-stage flag, sent alone — the endpoint treats `{widen}` without `{workers}` as this
+// control, so flipping it cannot accidentally write a thread count the user never chose.
+async function setWiden(on: boolean) {
+  const b = threads.value
+  if (!b) return
+  threadsBusy.value = true
+  try {
+    const res = await fetch('/api/tasks/threads/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widen: on }),
+    })
+    if (res.ok) {
+      const d = await res.json() as { workers: number; derived: boolean; widen: boolean }
+      threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
     }
   } catch { /* ignore */ }
   finally { threadsBusy.value = false }
@@ -161,6 +183,15 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
                @input="threads.workers = clampWorkers(+($event.target as HTMLInputElement).value, threads.max)"
                @change="setThreads(clampWorkers(+($event.target as HTMLInputElement).value, threads.max))" />
       </div>
+      <!-- Only while the budget is DERIVED: an explicit thread count is the user saying how wide a
+           task may go, so the backend ignores this there and a dead toggle is worse than none. -->
+      <label v-if="widenApplies(threads)" class="pt-widen cc-row cc-row-tight"
+             v-tooltip.bottom="widenHint">
+        <CcToggle :model-value="threads.widen === true" :disabled="threadsBusy"
+                  aria-label="Use every core for stages that keep scaling"
+                  @update:model-value="setWiden" />
+        <span class="cc-fs-2xs">{{ props.compact ? 'Wide when idle' : 'Use every core when idle' }}</span>
+      </label>
       <button v-if="!props.compact && !threads.derived"
               class="cc-btn cc-btn-bare cc-btn-dense cc-fs-2xs pt-auto"
               :disabled="threadsBusy"
@@ -173,6 +204,12 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .pt-root { width: 260px; padding: 0.6rem 0.7rem; }
+
+/* The widen toggle sits under the threads slider, not beside it: it is a consequence of the number
+   above rather than a second axis, and in `compact` the four pool cells are already a 2x2 grid the
+   threads cell spans. `.cc-row cc-row-tight` is the shared row primitive — see docs/ui/PRIMITIVES.md. */
+.pt-widen { margin-top: 0.35rem; cursor: pointer; }
+.pt-root.compact .pt-widen { grid-column: 1 / -1; margin-top: 0.15rem; }
 /* Inline in a settings column, on ONE row of controls (two if the column is narrow) rather than a
    2x2 card plus a separate threads block. `display: contents` dissolves the two group wrappers so
    their cells become direct flex items here — the grouping only exists for the popover, where the

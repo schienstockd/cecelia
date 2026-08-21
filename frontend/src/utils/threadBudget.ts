@@ -22,6 +22,15 @@ export interface ThreadBudget {
   cores?: number
   /** what the box has. Differs from `cores` under a cpuset or `--cpus`; equal on a workstation */
   machineCores?: number
+  /**
+   * May a stage MEASURED to scale linearly take the usable CPU count instead of this budget? The
+   * budget's divisor assumes four tasks are computing at once, which is ~2x pessimistic for a lone
+   * run — but several tasks CAN run at once (the `cpu` pool admits more than one), so widening every
+   * one of them oversubscribes the box. That trade-off is the user's, hence a control.
+   */
+  widen?: boolean
+  /** what `widen` would resolve to — the usable CPU count */
+  widenCap?: number
 }
 
 /** The value shown beside the label. Says WHERE the number came from, not just what it is. */
@@ -41,6 +50,25 @@ export function threadTip(b: ThreadBudget | null): string {
   return b.derived
     ? `Auto: ${b.workers}, derived from ${box}. Applies to the next task started.`
     : `${b.workers} per task (auto would be ${b.default} on ${box}). Applies to the next task started.`
+}
+
+/**
+ * Whether the widen control is worth showing. Only while the budget is DERIVED: an explicit thread
+ * count is the user saying how wide a task may go, and a stage widening past it would make the
+ * slider a suggestion — so the backend ignores the flag there, and a toggle that does nothing is
+ * worse than no toggle.
+ */
+export function widenApplies(b: ThreadBudget | null): boolean {
+  return !!b && b.derived === true
+}
+
+/** The widen control's tooltip — says what it costs, not just what it does. */
+export function widenTip(b: ThreadBudget | null): string {
+  if (!b) return 'Let stages that keep scaling use every core.'
+  const cap = b.widenCap ?? b.cores
+  const to = cap ? `${b.workers} → ${cap}` : 'more'
+  return `Stages measured to keep scaling take every core (${to}). Faster alone, ` +
+         `oversubscribed when several tasks run.`
 }
 
 /**

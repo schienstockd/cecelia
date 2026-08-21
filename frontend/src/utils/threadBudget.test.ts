@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { threadReadout, threadTip, clampWorkers, cpuPhrase, type ThreadBudget } from './threadBudget'
+import { threadReadout, threadTip, clampWorkers, cpuPhrase, widenApplies, widenTip,
+  type ThreadBudget } from './threadBudget'
 
 const AUTO: ThreadBudget = { workers: 8, default: 8, max: 64, derived: true, cores: 32 }
 const SET: ThreadBudget  = { workers: 4, default: 8, max: 64, derived: false, cores: 32 }
@@ -64,5 +65,41 @@ describe('clampWorkers', () => {
 
   it('rounds, because a range input can hand back a float', () => {
     expect(clampWorkers(7.6, 64)).toBe(8)
+  })
+})
+
+describe('widenApplies', () => {
+  it('offers the control only while the budget is derived', () => {
+    // An explicit thread count is the user saying how wide a task may go. The backend ignores the
+    // widen flag there (it would make the slider a suggestion), so a toggle would do nothing —
+    // and a dead toggle is worse than no toggle.
+    expect(widenApplies(AUTO)).toBe(true)
+    expect(widenApplies(SET)).toBe(false)
+  })
+
+  it('is hidden before the budget loads', () => {
+    expect(widenApplies(null)).toBe(false)
+  })
+})
+
+describe('widenTip', () => {
+  it('names both the gain and the cost', () => {
+    const t = widenTip({ ...AUTO, widenCap: 32 })
+    expect(t).toContain('8 → 32')
+    expect(t).toMatch(/oversubscribed/)
+  })
+
+  it('falls back to the usable core count when no cap was reported', () => {
+    expect(widenTip({ ...AUTO, cores: 12 })).toContain('8 → 12')
+  })
+
+  it('says something useful with no numbers at all', () => {
+    const t = widenTip({ ...AUTO, cores: undefined, widenCap: undefined })
+    expect(t).toContain('more')
+    expect(t).not.toContain('undefined')
+  })
+
+  it('has a placeholder before the budget loads', () => {
+    expect(widenTip(null)).toMatch(/keep scaling/)
   })
 })
