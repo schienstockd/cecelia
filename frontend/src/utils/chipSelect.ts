@@ -70,9 +70,9 @@ export function selectAllState(
 /**
  * Keep a group-order selection in step with the group it orders.
  *
- * A `chipSelect` with `optionsFromGroup` draws one chip per entry of a repeatable group: the picked
- * chips are the entries that will RUN, in the order they will run in, and the dimmed ones are
- * switched off. So the value has to follow the group as entries are added and removed.
+ * Every repeatable group gets a chip row (`ParamRenderer`): the picked chips are the entries that
+ * will RUN, in the order they will run in, and the dimmed ones are switched off. The value lives in
+ * a sibling key, `<groupKey>Order`, so it has to follow the group as entries are added and removed.
  *
  * It is reconciled against the group's keys BEFORE and AFTER the edit, not against the current keys
  * alone, because those two cases are indistinguishable from the value on its own: a key absent from

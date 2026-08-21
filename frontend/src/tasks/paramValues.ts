@@ -414,8 +414,8 @@ export function isChosenValueName(value: unknown, specDefault: unknown): boolean
 }
 
 /**
- * Which entries of a repeatable group to run, in order — the resolved form of a `chipSelect` with
- * `optionsFromGroup`.
+ * Which entries of a repeatable group to run, in order — the resolved form of `<groupKey>Order`,
+ * which `_apply_group_order` (task.jl) applies for real before any runner sees the group.
  *
  * `null`/absent means **all of them, in entry order**. That is not a default to be filled in
  * somewhere: a task saved before the control existed, a chain node, and a REPL call all carry no
