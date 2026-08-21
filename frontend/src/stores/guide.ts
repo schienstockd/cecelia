@@ -21,7 +21,7 @@ import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
-import { useTaskStore, type TaskEntry } from './tasks'
+import { useTaskStore } from './tasks'
 import { useCustomModulesStore } from './customModules'
 import { useViewProfilesStore } from './viewProfiles'
 import { allNavGroups, navLabelFor } from '../lib/navGroups'
@@ -29,6 +29,7 @@ import { applyProfile, availablePaths, hiddenGuideRoutes } from '../utils/viewPr
 import { GUIDES, guideById } from '../lib/guides'
 import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from '../lib/guides/types'
 import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
+import { awaitedRun, highestSeq } from '../utils/guideAwait'
 
 const doneKey = (id: string) => `cc.guide.${id}.done`
 const POLL_MS = 250
@@ -49,6 +50,9 @@ export const useGuideStore = defineStore('guide', () => {
   const phase = ref<GuidePhase>('step')
   // The task an `awaitTask` step is parked on, and why it stopped if it didn't finish.
   const awaitedTaskId = ref<string | null>(null)
+  // The highest task number in the list when this guide started — everything at or below it is work
+  // that finished before the guide, so an `awaitTask` step must not park on it. See utils/guideAwait.
+  const startSeq = ref(0)
   const failureNote = ref('')
   const completed = ref<Set<string>>(new Set())
   // Bumped by the poll; anything DOM-derived reads this so it re-evaluates. See the header comment.
@@ -176,6 +180,7 @@ export const useGuideStore = defineStore('guide', () => {
     const g = guideById(id)
     if (!g) return
     syncPath()                                 // never start a guide against a stale route
+    startSeq.value = highestSeq(tasks.tasks)   // runs from before now are not what a step waits for
     active.value = g
     index.value = 0
     resetStepState()
@@ -234,14 +239,11 @@ export const useGuideStore = defineStore('guide', () => {
   }, { flush: 'post' })
 
   // ── parking on a long task (plan D3) ────────────────────────────────────────────────────────
-  // On entering an `awaitTask` step, adopt the NEWEST matching task (the user has usually just
-  // pressed Run, so it already exists); if none does yet, adopt the first that shows up.
-  function matchingTasks(): TaskEntry[] {
-    const a = currentStep.value?.awaitTask
-    if (!a) return []
-    return tasks.tasks.filter(t =>
-      (!a.fun || t.funName === a.fun) && (!a.module || t.module === a.module))
-  }
+  // On entering an `awaitTask` step, adopt the newest run the step could be waiting for (the user has
+  // usually just pressed Run, so it already exists); if none does yet, adopt the first that shows up.
+  // WHICH runs qualify is `utils/guideAwait.ts` — a run from before the guide that has already
+  // finished is not one of them, and taking the newest match outright made a Next past the Run step
+  // act on it. `startSeq` is that "before the guide" line.
 
   const awaitedTask = computed(() =>
     awaitedTaskId.value ? tasks.tasks.find(t => t.id === awaitedTaskId.value) ?? null : null)
@@ -249,8 +251,7 @@ export const useGuideStore = defineStore('guide', () => {
   watch([currentStep, () => tasks.tasks.length], () => {
     if (!currentStep.value?.awaitTask) return
     if (!awaitedTaskId.value) {
-      const newest = matchingTasks().reduce<TaskEntry | null>(
-        (best, t) => (!best || t.seq > best.seq ? t : best), null)
+      const newest = awaitedRun(tasks.tasks, currentStep.value.awaitTask, startSeq.value)
       if (newest) awaitedTaskId.value = newest.id
     }
     if (phase.value === 'step' && awaitedTaskId.value) phase.value = 'waiting'
@@ -265,8 +266,12 @@ export const useGuideStore = defineStore('guide', () => {
     }
   })
 
-  // Retry after a failure: drop the dead task and wait for the next matching one.
+  // Retry after a failure: drop the dead task and wait for the next matching one. Dropping the id is
+  // not enough on its own — the dead run is still the newest match, so the next thing that changes the
+  // task list re-adopts it and the failure card comes straight back. Raising the mark past it is what
+  // makes "the next matching one" true.
   function rearm() {
+    if (awaitedTask.value) startSeq.value = Math.max(startSeq.value, awaitedTask.value.seq)
     awaitedTaskId.value = null
     failureNote.value = ''
     phase.value = 'step'
