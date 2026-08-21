@@ -23,6 +23,8 @@ import contextlib
 import os
 import shutil
 import time
+import bisect
+
 import numpy as np
 from copy import copy
 
@@ -917,6 +919,72 @@ def write_valid_box(path, axes, boxes):
     ns['validBox'] = entry
     g.attrs[CECELIA_ATTR] = ns
     return True
+
+
+def write_label_passes(path, entries):
+    """Record which segmentation PASS produced each label, as label-id ranges. Returns whether it did.
+
+    A stacked run — a second cellpose model that picks up what the first missed, a coastal fragment
+    pass after a cell pass — writes ONE label store, and the merged labels alone cannot answer "which
+    pass found this object". Object SIZE is not a substitute: the cell pass can return a small object
+    and the fragment pass a large one, which is exactly the confusion this exists to remove.
+
+    Stored as RANGES rather than a per-label map or a per-pixel plane, because that is what the
+    producer naturally knows: every group's write takes the next block of ids off one monotonic
+    counter, so a run of two passes over thirty timepoints is a few dozen ranges rather than tens of
+    thousands of entries or a second array the size of the labels.
+
+    ``entries`` is ``[{'group': <group key>, 'from': lo, 'to': hi}, …]``, ids INCLUSIVE, disjoint.
+    Ids that no longer exist are fine and expected: seam stitching merges a label into its neighbour
+    and the size filters delete labels outright, so a range is an upper bound on what it covers, and
+    a lookup only ever asks about ids that are actually present.
+    """
+    entries = [e for e in (entries or []) if int(e['to']) >= int(e['from'])]
+    if not entries:
+        return False
+    g = zarr.open_group(series_base(path), mode='a')
+    ns = dict(g.attrs.get(CECELIA_ATTR, {}))
+    ns['labelPasses'] = [{'group': str(e['group']), 'from': int(e['from']), 'to': int(e['to'])}
+                         for e in entries]
+    g.attrs[CECELIA_ATTR] = ns
+    return True
+
+
+def read_label_passes(path):
+    """``write_label_passes``'s entries, or ``[]`` when the store carries none.
+
+    Empty is the honest answer for a single-pass run and for every store written before this existed
+    — NOT "all one pass", which would be a claim the store does not make.
+    """
+    try:
+        g = zarr.open_group(series_base(path), mode='r')
+    except Exception:
+        return []
+    entries = (g.attrs.get(CECELIA_ATTR) or {}).get('labelPasses') or []
+    return [{'group': str(e['group']), 'from': int(e['from']), 'to': int(e['to'])}
+            for e in entries]
+
+
+def label_pass_lookup(entries):
+    """``label_id -> group key`` for `write_label_passes` entries; None for an id no range covers.
+
+    A closure over sorted ranges rather than a dict, so it costs one binary search per query instead
+    of materialising an entry per label — the ranges exist precisely because the label count is the
+    big number here.
+    """
+    ranges = sorted(((int(e['from']), int(e['to']), str(e['group'])) for e in entries or []),
+                    key=lambda r: r[0])
+    starts = [r[0] for r in ranges]
+
+    def lookup(label):
+        label = int(label)
+        i = bisect.bisect_right(starts, label) - 1
+        if i < 0:
+            return None
+        lo, hi, group = ranges[i]
+        return group if lo <= label <= hi else None
+
+    return lookup
 
 
 def carry_valid_box(src, dst):

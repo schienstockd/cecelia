@@ -335,3 +335,89 @@ class TemporalContextTest(unittest.TestCase):
         for shp, _, _ in seg.seen:
             self.assertLess(shp[-2] * shp[-1], full_y * full_x,
                             f'window {shp} is whole-frame sized, not tile-extent')
+
+class PassProvenanceTest(unittest.TestCase):
+    """Which PASS produced each label, through the real run — tiling, seam stitching and all.
+
+    A stacked run writes ONE store, and the merged labels cannot answer "did the cell pass or the
+    fragment pass find this object" — the reason for running two passes in the first place. It is
+    recorded as label-id RANGES rather than a per-pixel plane or a per-label map, which is only
+    sound because of what the post-processing does to ids: seam stitching merges a label INTO an
+    existing one and the size filters delete outright, so neither invents an id outside a recorded
+    block. This runs with stitching enabled (`labelOverlap`) and two tiles per axis, and asserts
+    exactly that.
+    """
+
+    # Second group offset in Y so it lands where the first left background — the fill-only-unlabelled
+    # merge is what makes a second pass additive, and a pattern that fully overlapped would be
+    # entirely discarded and prove nothing.
+    class _TwoPassSeg(SegmentationUtils):
+        def predict_slice(self, tile, model_params, norm_params=None):
+            yx = tile.shape[-2:]
+            masks = np.zeros(yx, dtype=np.uint32)
+            if model_params.get('pass') == 'cells':
+                masks[: yx[0] // 3, :] = 1
+            else:
+                masks[yx[0] - 2:, :] = 1
+            return masks
+
+    def _run_two_pass(self, tmp):
+        sizes, arr_shape = (2, 1, 2, 24, 20), (2, 2, 24, 20)
+        du = DimUtils(ome_types.from_xml(_ome_xml(*sizes)), use_channel_axis=True)
+        du.calc_image_dimensions(arr_shape)
+        rng = np.random.default_rng(0)
+        im0 = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        params = {
+            'taskDir': tmp, 'outputValueName': 'twopass',
+            'blockSize': 12, 'overlap': 4,     # two tiles per axis: seams present
+            'labelOverlap': 0.1,               # and stitching ON, which MERGES ids
+            'matchThreshold': 0.1, 'removeUnmatched': False,
+            'minCellSize': 0, 'cellSizeMax': 0,
+            'labelExpansion': 0, 'labelErosion': 0,
+            'clearTouchingBorder': False, 'clearDepth': False,
+            'normaliseToWhole': False,
+            'models': {'0': {'matchAs': 'base', 'cellChannels': [0], 'pass': 'cells'},
+                       '1': {'matchAs': 'base', 'cellChannels': [0], 'pass': 'fragments'}},
+        }
+        seg = self._TwoPassSeg(params, du)
+        seg.predict_from_zarr([im0])
+        path = os.path.join(tmp, 'labels', 'twopass.zarr')
+        return zarr_utils.read_label_passes(path), zarr.open_group(path, mode='r')['0'][:]
+
+    def test_both_passes_are_recorded_and_disjoint(self):
+        with tempfile.TemporaryDirectory() as d:
+            entries, _ = self._run_two_pass(d)
+            self.assertEqual({e['group'] for e in entries}, {'0', '1'},
+                             'a stacked run must record which pass wrote what')
+            spans = sorted((e['from'], e['to']) for e in entries)
+            for (_, a_hi), (b_lo, _) in zip(spans, spans[1:]):
+                self.assertLess(a_hi, b_lo, f'ranges must be disjoint: {spans}')
+
+    def test_every_label_in_the_store_is_attributable(self):
+        """The claim that makes ranges sufficient: stitching and the filters never mint a new id."""
+        with tempfile.TemporaryDirectory() as d:
+            entries, arr = self._run_two_pass(d)
+            lookup = zarr_utils.label_pass_lookup(entries)
+            present = [int(v) for v in np.unique(arr) if v > 0]
+            self.assertTrue(present, 'the stub produced no labels at all')
+            self.assertEqual([v for v in present if lookup(v) is None], [],
+                             'a label in the store that no recorded pass claims')
+
+    def test_both_passes_actually_survive_into_the_store(self):
+        """Otherwise the test above would pass on a store where one pass wrote nothing."""
+        with tempfile.TemporaryDirectory() as d:
+            entries, arr = self._run_two_pass(d)
+            lookup = zarr_utils.label_pass_lookup(entries)
+            groups = {lookup(int(v)) for v in np.unique(arr) if v > 0}
+            self.assertEqual(groups, {'0', '1'})
+
+    def test_a_single_pass_run_records_nothing(self):
+        """One range covering everything says nothing, and "no passes recorded" has to stay
+        distinguishable from "one pass". The nuc/base pair in `_run` is also one pass PER STORE."""
+        with tempfile.TemporaryDirectory() as d:
+            _run(d, (2, 1, 2, 24, 20), (2, 2, 24, 20))
+            for name in ('stub.zarr', 'stub_nuc.zarr'):
+                self.assertEqual(
+                    zarr_utils.read_label_passes(os.path.join(d, 'labels', name)), [],
+                    f'{name} holds one group\'s labels, so there is nothing to tell apart')
+

@@ -283,6 +283,10 @@ class SegmentationUtils:
             models[k].get('matchAs', 'base') for k in model_keys
         ))
         max_labels = {ma: 0 for ma in match_as_list}
+        # Which pass produced which labels — see `zarr_utils.write_label_passes`. Collected as the
+        # run goes and stamped onto each store at the end, so a stacked run's merged labels can
+        # still answer "did the cell pass or the fragment pass find this object".
+        pass_ranges = {ma: [] for ma in match_as_list}
 
         labels_dir = os.path.join(self.task_dir, 'labels')
         os.makedirs(labels_dir, exist_ok=True)
@@ -452,8 +456,16 @@ class SegmentationUtils:
                         masks = self._crop_masks(masks, crop_yx, is_3d)
 
                         if np.any(masks > 0):
+                            # Every group's write takes the next block of ids off one monotonic
+                            # counter, so the block IS the record of which pass produced them —
+                            # nothing per-pixel or per-label has to be carried through stitching,
+                            # smoothing and the size filters to keep it true.
+                            first_id = max_labels[match_as] + 1
                             masks[masks > 0] += max_labels[match_as]
                             max_labels[match_as] = int(masks.max())
+                            pass_ranges[match_as].append(
+                                {'group': model_key, 'from': first_id,
+                                 'to': max_labels[match_as]})
 
                         # la_t=None → write into the frame buffer at its Y/X (no time index)
                         self._write_tile_to_arr(
@@ -506,6 +518,19 @@ class SegmentationUtils:
                     zarr_utils.write_valid_box(
                         staged[ma], recorded,
                         {t: {ax: spans[t][ax] for ax in recorded} for t in sorted(spans)})
+
+            # Which pass produced which labels. Written per store, EXCEPT that a matched `nuc`
+            # store's ids are not its own: `_match_nuc_cyto` rewrites every kept nucleus to the base
+            # label it matched, so the base store's ranges are the ones that describe it, and its own
+            # would name ids that no longer exist.
+            # Same condition the matching itself ran under, in the per-frame block above.
+            matched_nuc = 'base' in match_as_list and 'nuc' in match_as_list
+            for ma in match_as_list:
+                entries = pass_ranges['base'] if (ma == 'nuc' and matched_nuc) else pass_ranges[ma]
+                # Only worth recording when there was more than one pass to tell apart — a single
+                # pass would write one range covering everything, which says nothing.
+                if len({e['group'] for e in entries}) > 1:
+                    zarr_utils.write_label_passes(staged[ma], entries)
 
             # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
             for ma in match_as_list:
