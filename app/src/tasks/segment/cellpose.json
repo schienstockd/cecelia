@@ -7,6 +7,7 @@
     "local"
   ],
   "resource_pool": "gpu",
+  "requires": { "scale": ["xy"] },
   "params": [
     {
       "key": "valueName",
@@ -50,17 +51,7 @@
           "label": "Model",
           "type": "select",
           "default": "cpsam_v2",
-          "tip": "Cellpose model to use",
-          "options": [
-            {
-              "label": "Cellpose-SAM v2",
-              "value": "cpsam_v2"
-            },
-            {
-              "label": "Cellpose-SAM v1",
-              "value": "cpsam"
-            }
-          ]
+          "tip": "Cellpose model to use"
         },
         {
           "key": "matchAs",

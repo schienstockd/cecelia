@@ -735,6 +735,11 @@ end
     values = [string(o["value"]) for o in model_sel["options"]]
     # Built-ins are always there
     @test issubset(["cpsam_v2", "cpsam"], values)
+    # …and exactly ONCE each. `optionsFrom` APPENDS to the spec's literal `options`, so a spec that
+    # also declares an option the lister enumerates gets it twice — which is what this picker did,
+    # showing "Cellpose-SAM v2" and "v1" twice each in the browser (Dominik, 2026-08-21). An
+    # `issubset` assertion cannot see that, which is why it survived; this can.
+    @test length(values) == length(unique(values))
 
     # A genuinely-unknown checkpoint name is still rejected — the enumeration is real
     @test_throws ParamValidationError validate_params(CellposeSegment(),
@@ -2592,8 +2597,14 @@ end
     @test Cecelia.img_axes(img_static) == Set([:X, :Y, :Z, :C])
     @test !Cecelia.img_has_time(img_static)
 
+    # CALIBRATED, which the axis assertions do not care about but `task_applies` now does: tracking
+    # measures in µm/min, so a live image with no pixel size is not runnable (see the scale gate
+    # below). Keeping the calibration here rather than on a fourth image keeps this testset about
+    # axes with the scale as a given.
     img_live = CciaImage(; uid="a2", name="live", dir="")
-    img_live.meta = Dict{String,Any}("SizeC"=>4, "SizeT"=>10, "SizeZ"=>1)
+    img_live.meta = Dict{String,Any}("SizeC"=>4, "SizeT"=>10, "SizeZ"=>1,
+                                     "PhysicalSizeX"=>0.5, "PhysicalSizeY"=>0.5,
+                                     "TimeIncrement"=>30)
     @test Cecelia.img_axes(img_live) == Set([:X, :Y, :T, :C])
     @test Cecelia.img_has_time(img_live)
 
@@ -2617,6 +2628,46 @@ end
     @test :T ∈ Cecelia.task_requires_axes(hmm)
     @test !task_applies(hmm, img_static)
     @test  task_applies(hmm, img_live)
+
+    # ── The SCALE half of the same gate ──────────────────────────────────────
+    # `requires.scale`: the task computes in microns, so it needs the image to RECORD a scale. The
+    # failure it prevents is silent — `img_physical_sizes` falls back to 1.0 for anything absent, and
+    # 1.0 is indistinguishable from a real 1 µm/px, so the run succeeds and reports pixels as microns.
+    @test Cecelia.task_requires_scale(BayesianTracking()) == Set([:XY, :T])
+    @test isempty(Cecelia.task_requires_scale(ImportOmezarr()))
+
+    # Recorded, per axis, and > 0 — a zero is not a measurement.
+    @test Cecelia.img_scale_axes(img_live) == Set([:XY, :T])
+    @test isempty(Cecelia.img_scale_axes(img_static))
+    img_zero = CciaImage(; uid="a4", name="zero", dir="")
+    img_zero.meta = Dict{String,Any}("PhysicalSizeX"=>0, "PhysicalSizeY"=>0.5)
+    @test isempty(Cecelia.img_scale_axes(img_zero))
+
+    # An uncalibrated live image is BLOCKED, and the reason names the fix rather than the fact —
+    # unlike a missing axis, this the user can do something about.
+    img_nocal = CciaImage(; uid="a5", name="live-uncal", dir="")
+    img_nocal.meta = Dict{String,Any}("SizeC"=>1, "SizeT"=>10, "SizeZ"=>1)
+    @test !task_applies(BayesianTracking(), img_nocal)
+    reason = Cecelia.task_applicability_reason(BayesianTracking(), img_nocal)
+    @test occursin("pixel size", reason) && occursin("time interval", reason)
+    @test occursin("metadata", reason)
+
+    # Intersected with the image's own axes: a 2D task on a static image needs no time interval, so
+    # a calibrated-XY static image runs a µm-measuring task that does not require T.
+    img_static_cal = CciaImage(; uid="a6", name="static-cal", dir="")
+    img_static_cal.meta = Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>1,
+                                           "PhysicalSizeX"=>0.5, "PhysicalSizeY"=>0.5)
+    @test isempty(Cecelia.task_missing_scale(CellposeSegment(), img_static_cal))
+    @test Cecelia.task_missing_scale(CellposeSegment(), img_static) == Set([:XY])
+    # …and a T-scale requirement does not apply to an image with no T axis at all.
+    @test isempty(Cecelia.task_missing_scale(
+        Cecelia._task_from_fun_name("segment.cellpose"), img_static_cal))
+
+    # A composite inherits its steps' scale needs, same union as the axes.
+    cpm = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+    @test :XY ∈ Cecelia.task_requires_scale(cpm)
+    @test !task_applies(cpm, img_static)
+    @test  task_applies(cpm, img_static_cal)
 
     # run_task raises TaskApplicabilityError before scheduling on a static image
     proj = create_project!(name="axis-gate-$(rand(1000:9999))")
@@ -10903,27 +10954,39 @@ end
         @test isempty(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"SizeT"=>5,
             "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeZ"=>2.0,"PhysicalSizeUnit"=>"micron",
             "TimeIncrement"=>30.0,"TimeIncrementUnit"=>"second")))
-        # z stack, no z spacing → z_spacing_unknown
+        # NO xy pixel size → pixel_size_unknown, per missing axis, and FIRST (it blocks every task
+        # that measures in microns, and `metadata_warning` shows the first finding). This case had no
+        # finding at all before 2026-08-21: x/y were read only for their unit and their ratio to z.
+        pu = Cecelia.metadata_qc_findings(Dict("SizeT"=>1,"SizeZ"=>1))
+        @test codes(pu) == ["metadata.pixel_size_unknown", "metadata.pixel_size_unknown"]
+        @test fields(pu) == ["x","y"]
+        # a zero is not a measurement
+        @test codes(Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0,"PhysicalSizeY"=>0.5,
+            "PhysicalSizeUnit"=>"micron"))) == ["metadata.pixel_size_unknown"]
+        # z stack, no z spacing → z_spacing_unknown (y is missing here too, so it is flagged as well)
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
-              ["metadata.z_spacing_unknown"]
+              ["metadata.pixel_size_unknown", "metadata.z_spacing_unknown"]
         # auto-corrected z (PhysicalSizeZ_raw marker) → z_spacing_corrected
-        @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeZ"=>2.0,
-            "PhysicalSizeUnit"=>"micron","PhysicalSizeZ_raw"=>99.0))) == ["metadata.z_spacing_corrected"]
+        @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,
+            "PhysicalSizeZ"=>2.0,"PhysicalSizeUnit"=>"micron","PhysicalSizeZ_raw"=>99.0))) ==
+              ["metadata.z_spacing_corrected"]
         # unusual z:xy ratio (100:1 > 50) → z_spacing_unusual
-        @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>1.0,"PhysicalSizeZ"=>100.0,
-            "PhysicalSizeUnit"=>"micron"))) == ["metadata.z_spacing_unusual"]
+        @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>1.0,"PhysicalSizeY"=>1.0,
+            "PhysicalSizeZ"=>100.0,"PhysicalSizeUnit"=>"micron"))) == ["metadata.z_spacing_unusual"]
         # timelapse, no interval → frame_interval_unknown; string values coerce
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>"8","PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,
             "PhysicalSizeUnit"=>"micron"))) == ["metadata.frame_interval_unknown"]
         # interval present, no unit → frame_interval_no_unit
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,
-            "PhysicalSizeX"=>0.5,"PhysicalSizeUnit"=>"micron"))) == ["metadata.frame_interval_no_unit"]
+            "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
+              ["metadata.frame_interval_no_unit"]
         # no spatial unit, x+y+z present (2D-safe: SizeZ=1 so no z-spacing case) → three no-unit (x,y,z)
         fu = Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeZ"=>2.0))
         @test all(==("metadata.pixel_size_no_unit"), codes(fu)) && fields(fu) == ["x","y","z"]
         # z-spacing case suppresses the z no-unit dup (z already flagged)
         fz = Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5))
         @test codes(fz) == ["metadata.z_spacing_unknown","metadata.pixel_size_no_unit","metadata.pixel_size_no_unit"]
+        @test !("metadata.pixel_size_unknown" in codes(fz))    # a size IS recorded; only its unit is not
         @test fields(fz) == ["z","x","y"]     # no second z entry
 
         # severity symbols: shape-distinct (✅/⚠️/❌), NOT same-shape circles; unknown → ""
@@ -12216,6 +12279,28 @@ end
     # value == label here: the user types the stem, so the suggestion IS what goes in the field.
     tr = flat(Cecelia._task_spec(Cecelia._task_from_fun_name("opticalFlow.train")))["modelName"]
     @test all(o -> o["label"] == o["value"], tr["options"])
+
+    # …and every picker filled this way lists each value ONCE. The append is what makes coastal's
+    # "None" work, and it is also what duplicated cellpose's built-ins: the spec declared `cpsam_v2`
+    # and `cpsam` as literals while `cellposeModels` enumerates the same tuple, so the Model select
+    # showed both twice (Dominik, 2026-08-21, in the browser). Neither the `issubset` check above nor
+    # a `Set ==` comparison can see a duplicate — both collapse them — which is why it shipped.
+    for (fn, key) in (("segment.cellpose", "model"), ("segment.coastal", "model"),
+                      ("opticalFlow.train", "modelName"))
+        vals = [string(o["value"])
+                for o in flat(Cecelia._task_spec(Cecelia._task_from_fun_name(fn)))[key]["options"]]
+        @test length(vals) == length(unique(vals))
+    end
+
+    # A declared option that the source ALSO enumerates keeps the SPEC's wording and position: the
+    # label is the author's, and order is what keeps a "None" first.
+    dup = Dict{String,Any}("params" => Any[Dict{String,Any}(
+        "key" => "k", "type" => "select", "optionsFrom" => "cellposeModels",
+        "options" => Any[Dict{String,Any}("value" => "cpsam_v2", "label" => "Mine")])])
+    Cecelia._apply_options_from!(dup)
+    opts = dup["params"][1]["options"]
+    @test count(o -> string(o["value"]) == "cpsam_v2", opts) == 1
+    @test string(first(opts)["label"]) == "Mine"
 
     # An unregistered name leaves the declared options alone rather than emptying the picker — a
     # typo in a spec must not silently produce a control nobody can choose anything in.

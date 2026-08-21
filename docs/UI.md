@@ -89,6 +89,12 @@ The four notification surfaces — pick the one that fits, don't invent a fifth:
 - **Badge** — persistent "needs attention" (unseen lab-log entry, QC warning) until acknowledged.
 - **Lab log entry** — durable record, kept across sessions.
 - **Traffic light** — per-image summary state in the image table, always current.
+- **Scale column** — the image's calibration (`0.5 µm · 30s`), or **not set** in severity amber when
+  it has none. Always present, sortable, and sorted so the uncalibrated images come FIRST — finding
+  them is the reason to sort it. Clicking "not set" opens the physical-size editor, the same dialog
+  the warning triangle opens. An image with no pixel size cannot run anything that measures in
+  microns (`requires.scale`, `docs/MODULES.md`), and that state is DERIVED from the metadata — never
+  the exclusion flag, which is a user's choice and carries a user's note.
 
 ### Severity (QC / traffic-light) — colour is never the only cue
 

@@ -668,14 +668,43 @@ consumer that *reports* µm (rather than just computing) needs this to tell "unc
 "calibrated at 1.0" — `pop_df(…; centroids = :physical)` uses it to warn instead of relabelling pixels
 as microns. (`api_images_meta_get` keeps the same distinction for the UI by reading `meta` raw.)
 """
-function img_is_calibrated(img::CciaImage)::Bool
-    ok(key) = begin
-        v = get(img.meta, key, nothing)
-        (isnothing(v) || v == "") && return false
-        p = tryparse_f64(v)
-        !isnothing(p) && p > 0
-    end
-    ok("PhysicalSizeX") && ok("PhysicalSizeY")
+img_is_calibrated(img::CciaImage)::Bool =
+    _meta_positive(img, "PhysicalSizeX") && _meta_positive(img, "PhysicalSizeY")
+
+"""One `meta` key, present and parseable and > 0. The definition of "recorded" for a scale — a
+blank, an unparseable string and a zero are the same thing here, and 0 µm/px is not a measurement."""
+function _meta_positive(img::CciaImage, key::AbstractString)::Bool
+    v = get(img.meta, key, nothing)
+    (isnothing(v) || v == "") && return false
+    p = tryparse_f64(v)
+    !isnothing(p) && p > 0
+end
+
+"""
+    img_scale_axes(img) -> Set{Symbol}
+
+Which physical scales the image actually RECORDS — a subset of `{:XY, :Z, :T}`. `:XY` needs both
+`PhysicalSizeX` and `PhysicalSizeY` (i.e. [`img_is_calibrated`](@ref)), `:Z` needs `PhysicalSizeZ`,
+`:T` needs `TimeIncrement`.
+
+The companion to [`img_axes`](@ref), and the canonical predicate for the task gate's `requires.scale`
+(see `task_applies` in `tasks/task.jl`) — as with axes, don't hand-roll the `meta` lookup in a task.
+
+**Recorded, not required.** This says what the file carries; whether the absence MATTERS is the
+task's declaration and depends on the image's own axes — a 2D image needs no `:Z` scale and a static
+one needs no `:T`. `task_missing_scale` does that intersection.
+
+Why it is a gate at all: `img_physical_sizes` falls back to `1.0` for anything absent, and that
+default is deliberately indistinguishable from a genuine 1 µm/px — so a task computing in µm on an
+uncalibrated image produces numbers that look like microns and are pixels. The user-facing fix is the
+metadata editor; the gate is what sends them there instead of letting the run happen.
+"""
+function img_scale_axes(img::CciaImage)::Set{Symbol}
+    out = Set{Symbol}()
+    img_is_calibrated(img) && push!(out, :XY)
+    _meta_positive(img, "PhysicalSizeZ") && push!(out, :Z)
+    _meta_positive(img, "TimeIncrement") && push!(out, :T)
+    out
 end
 
 """

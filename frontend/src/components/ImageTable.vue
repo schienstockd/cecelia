@@ -10,7 +10,7 @@ import { rollupTaskStatus } from '../lib/taskStatus'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
-import { isExcluded, isIncluded, isImported, isStarred } from '../utils/inclusion'
+import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { type SortState } from '../utils/sortRows'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
@@ -83,6 +83,25 @@ function qcTip(img: CciaImage): string | Record<string, unknown> {
   }
   return qcState(img) === 'clean' ? 'QC passed — no findings' : 'No QC yet — nothing has been run'
 }
+// The calibration as one short cell: XY pixel size, then the frame interval when there is one. Unit
+// verbatim from the file (`physicalSizeUnit`) rather than assumed µm — an image calibrated in nm is
+// rare and silently mislabelling it would be worse than the extra character.
+function scaleText(img: CciaImage): string {
+  const u = img.physicalSizeUnit ?? 'µm'
+  const parts: string[] = []
+  if (img.physicalSizeX != null) parts.push(`${img.physicalSizeX} ${u}`)
+  if (img.timeIncrement != null) parts.push(`${img.timeIncrement}${img.timeIncrementUnit ?? 's'}`)
+  return parts.join(' · ') || '—'
+}
+function scaleTip(img: CciaImage): string {
+  const u = img.physicalSizeUnit ?? 'µm'
+  const bits = [`XY ${img.physicalSizeX ?? '?'} × ${img.physicalSizeY ?? '?'} ${u}/px`]
+  if (img.physicalSizeZ != null) bits.push(`Z ${img.physicalSizeZ} ${u}`)
+  if (img.timeIncrement != null)
+    bits.push(`${img.timeIncrement} ${img.timeIncrementUnit ?? 's'} per frame`)
+  return bits.join(' · ')
+}
+
 function pageIconFor(): { tip: string } | null {
   if (props.module === 'metadata' || props.module === 'manageImages')
     return { tip: 'View or edit physical size & timing' }
@@ -503,6 +522,10 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   ...(anyZStack.value ? [{ key: 'z', label: 'Z', sortable: true, fixed: true, width: 48 }] : []),
   ...(anyTimelapse.value
     ? [{ key: 'duration', label: 'Duration', sortable: true, fixed: true, width: 90 }] : []),
+  // Always present, unlike Z/Duration: every image needs a pixel size, and an image that has none
+  // cannot run anything that measures in microns (`requires.scale`, utils/taskGating.ts). Sorting it
+  // is how you find those — see `imageSortValue`, which puts them first rather than last.
+  { key: 'scale', label: 'Scale', sortable: true, fixed: true, width: 104 },
   ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
 ])
 
@@ -713,6 +736,17 @@ const unselectableUids = computed(() =>
       <span v-else class="dim">—</span>
     </template>
 
+    <!-- The numbers, not just a flag: "0.5 µm · 30s" is what tells you two images were acquired
+         differently, which is the question this column gets opened for. A blocked image says what is
+         missing and offers the editor that fixes it — the same dialog the warning triangle opens. -->
+    <template #cell-scale="{ row: img }">
+      <button v-if="isBlocked(img)" class="scale-blocked cc-btn cc-btn-bare"
+        v-tooltip.left="blockedReason(img)" @click.stop="physSizeDialogUid = img.uid">
+        <i class="pi pi-ban" /> not set
+      </button>
+      <span v-else class="scale-cell" v-tooltip.left="scaleTip(img)">{{ scaleText(img) }}</span>
+    </template>
+
     <template #cell-status="{ row: img }">
       <span v-if="imageModuleStatus(img)"
         class="status-badge"
@@ -814,6 +848,17 @@ const unselectableUids = computed(() =>
 
 /* Excluded: greyed but still visible (not hidden) — dim the whole row, un-dim a touch on hover so its
    note + include toggle stay usable. `:deep` because the row is SelectionTable's element. */
+/* Blocked: stated in its own column rather than by dimming the row. An excluded row is dimmed
+   because the user put it aside; a blocked one is still work they probably want to do, so hiding it
+   would be the wrong signal. */
+/* `--cc-sev-warn`, not `--cc-danger`: this is the severity scale (ok/warn/fail), which supersedes
+   the older pair for exactly this meaning — and colour is never the sole cue, so it rides with the
+   ban icon and the words "not set". */
+.scale-blocked { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.3rem;
+                 font-size: var(--cc-fs-sm); padding: 0; }
+.scale-blocked:hover { text-decoration: underline; }
+.scale-cell { font-size: var(--cc-fs-sm); white-space: nowrap; }
+
 .image-table :deep(.row-excluded) { opacity: 0.5; cursor: default; }
 .image-table :deep(.row-excluded:hover) { opacity: 0.8; }
 

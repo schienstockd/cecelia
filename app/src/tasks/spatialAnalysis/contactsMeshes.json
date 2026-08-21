@@ -5,6 +5,7 @@
   "category": "Spatial analysis",
   "env": ["local"],
   "resource_pool": "cpu",
+  "requires": { "scale": ["xy"] },
   "params": [
     {
       "key": "popsA",

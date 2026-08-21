@@ -442,13 +442,14 @@ and the `taskDefs` label store hit the same `/api/tasks/definitions` and must st
 the whiteboard to offer the node, the label store to resolve its name for run tags. Filtering at the
 route would silently take the chain capability away too, which is the opposite of the intent.
 
-### Requires-axes — axis-shape gating
+### Requires — axis-shape and physical-scale gating
 
 A task that only makes sense on a particular image shape (a timelapse for tracking, a Z-stack for
-future 3D-only work) declares it once in its JSON:
+future 3D-only work), or that cannot produce meaningful numbers without a calibration, declares it
+once in its JSON:
 
 ```json
-"requires": { "axes": ["T"] }
+"requires": { "axes": ["T"], "scale": ["xy", "t"] }
 ```
 
 The absent-field default is *"applies to any image"*, so most specs leave it out — annotate only when
@@ -473,6 +474,35 @@ leaves — don't repeat the annotation.
 The image side of the predicate is `img_axes(img)::Set{Symbol}` in `app/src/model/image.jl`, derived
 from `img.meta`'s `SizeT`/`SizeZ`/`SizeC` (persisted at import from OME-XML). `TimeIncrement` is a
 fallback signal for `:T` on pre-SizeT projects. `img_has_time(img)` = `:T ∈ img_axes(img)`.
+
+#### `scale` — the calibration half
+
+`scale` lists the physical scales the task needs the image to have RECORDED: `"xy"` (pixel size),
+`"t"` (frame interval), `"z"` (voxel depth). Declared by anything computing in microns or µm/min —
+every segmenter, tracking and its measures, the spatial analyses, flow training.
+
+**Why it is a gate and not a warning.** `img_physical_sizes` falls back to `1.0` for any axis the file
+does not carry, and that default is deliberately indistinguishable from a genuine 1 µm/px (see its
+docstring, and `img_is_calibrated`). So an uncalibrated image does not fail — it produces numbers that
+look like microns and are pixels. Nothing downstream can tell.
+
+**A declaration is intersected with the image's own axes** (`task_missing_scale`): `scale: ["xy","t"]`
+asks nothing of a static image's time step and `"z"` asks nothing of a single plane, so a task
+declares what its MATHS uses rather than enumerating the 2D/3D/static/timelapse combinations. The
+image side is `img_scale_axes(img)::Set{Symbol}` → `{:XY, :Z, :T}`, each present **and > 0** — a zero
+is not a measurement.
+
+**It is fixable, and the copy says so.** Unlike a missing axis, this is metadata the user can enter,
+so `task_applicability_reason` names the field and points at the metadata editor, and the frontend
+reason reads *"Measures in microns — set the pixel size in the image metadata"*. The same condition
+surfaces per image in the image table's **Scale** column (`isBlocked` in
+`frontend/src/utils/inclusion.ts`), which is sortable so the images needing attention come first.
+
+That predicate is **derived, never stored** — deliberately not the `included` flag with a reason
+written into it. `included` carries a user-authored note that an edit would destroy, a stored flag
+would go stale the moment the metadata is fixed, and the row's "Include in processing" toggle would
+have to lie. Exclusion is a choice; blocking is a fact about the file. They share the row's
+presentation and nothing else.
 
 **Do not** hand-roll `img.meta["SizeT"] > 1` inside a task — reach for `task_applies` (or `img_axes`
 if you truly need the axis set). Tests: `app/test/runtests.jl` → *Axis gating — img_axes +
