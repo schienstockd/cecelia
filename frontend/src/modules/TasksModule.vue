@@ -216,8 +216,8 @@ async function copyLog() {
 // open, and this list is scoped to one (see modules/TasksView.vue).
 function openTaskWindow() {
   const uid = projectMeta.current?.uid
-  openPopoutWindow('/tasks-window' + (uid ? `?project=${encodeURIComponent(uid)}` : ''),
-                   'cecelia-tasks', 1100, 700)
+  openPopoutWindow('/tasks-window', 1100, 700,
+                   uid ? `?project=${encodeURIComponent(uid)}` : '')
 }
 
 const FILTERS: ChipOption[] = [

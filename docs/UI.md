@@ -1628,9 +1628,27 @@ Two things are NOT the same as the console's, and both are load-bearing:
   on shared state rather than on the window: the napari overlay restore (two requests per
   `napari:opened`), the lab-log auto-capture (two captures per finished task) and the tip of the day
   (stamped as shown by a window whose bare route never renders the dialog). `lib/popout.ts`
-  `isPopoutWindow()` gates all three. It reads the hash, not the route — App.vue's setup runs before
-  the first navigation resolves — and it lists `/console` and `/tasks-window` only: `/setup` is bare
-  too, but it *becomes* the main window when the wizard finishes.
+  `isPopoutWindow()` gates all three. It answers synchronously — App.vue's setup runs before the first
+  navigation resolves, so it reads the window, never the router — and it covers `/console` and
+  `/tasks-window` only: `/setup` is bare too, but it *becomes* the main window when the wizard finishes.
+- **The window NAME is the popout's identity; the hash is only where it happens to be.**
+  `POPOUT_WINDOW_NAMES` maps each popout route to the name the opener gives its window
+  (`cecelia-console`, `cecelia-tasks`), and `openPopoutWindow` takes the ROUTE and looks the name up —
+  a popout route can't be opened into the wrong window, or an unnamed one, from a call site. Two things
+  read the name back:
+  - `App.vue`'s `bare` is `popout || route.meta.bare`, and the first half is the load-bearing one.
+    `route.meta` exists only once the first navigation resolves, and that navigation awaits the boot
+    guard's `refreshStartup()` fetch *plus* the route's lazy chunk — so before this, a popup painted
+    the **entire app shell** first and swapped it out (measured on a warm dev server: header + sidebar
+    from ~230ms to ~285ms; a cold boot or a slow backend holds that frame for a second or more). What
+    it looks like is the app "greyed out": every module locked, no project, an empty task list, in a
+    1100×700 window that was never meant to have one.
+  - the boot guard in `main.ts` sends a popout that resolves to any other route back to its own
+    (`popoutRouteOfWindow()`), because such a window cannot fix itself: the Task Manager popup on
+    `/tasks` is `TasksModule` with `standalone` false, so nothing seeds its project and nothing follows
+    the main window's switches — an empty list, permanently. The name survives what the hash does not
+    (a reload, a restored session, a stale dev bundle whose router had no such route yet). Skipped
+    while `setupRequired`, so it and the `/setup` redirect can't bounce a window between them.
 
 ### The Task Manager shows the project's history, not just the session's
 
