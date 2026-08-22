@@ -19,14 +19,14 @@
 import { computed } from 'vue'
 import { SEVERITY, type Severity } from '../lib/severity'
 
-const props = withDefaults(defineProps<{
+// No `withDefaults` — the only prop that had one was `placement`, and it never reached PrimeVue.
+const props = defineProps<{
   short: string
   detail?: string
   severity?: Severity
   /** Override the icon — for a note whose meaning is not severity (e.g. the re-run history hint). */
   icon?: string
-  placement?: 'top' | 'bottom' | 'left' | 'right'
-}>(), { placement: 'right' })
+}>()
 
 const iconClass = computed(() =>
   props.icon ?? (props.severity ? SEVERITY[props.severity].icon : 'pi-info-circle'))
@@ -37,8 +37,16 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
   <span class="inline-note" :class="severity ? `sev-${severity}` : 'cc-muted'">
     <i class="pi" :class="iconClass" :style="color ? { color } : undefined" />
     <!-- the tooltip hangs off the TEXT, not the row: a host may add its own trailing control with a
-         tooltip of its own, and a row-level one fires on top of it (docs/UI.md → nested tooltips) -->
-    <span v-tooltip="detail ? { value: detail, position: placement } : undefined">{{ short }}</span>
+         tooltip of its own, and a row-level one fires on top of it (docs/UI.md → nested tooltips)
+
+         `.bottom` is FIXED, and there used to be a `placement` prop instead. It never worked: it
+         passed `position` inside the tooltip VALUE object, and PrimeVue reads `position` only off
+         `options.arg` (tooltip/index.mjs `getModifiers`), never off the value. So all seven call
+         sites that set one were silently getting the bare default, `alignRight` — the one chain that
+         ends by re-applying itself with no bounds check. A note annotates the control ABOVE it, so
+         `.bottom` points the detail away from that control; and being fixed, it is one decision
+         rather than a knob every call site re-guesses. See `docs/UI.md` → *Tooltip placement*. -->
+    <span v-tooltip.bottom="detail">{{ short }}</span>
     <slot />
   </span>
 </template>

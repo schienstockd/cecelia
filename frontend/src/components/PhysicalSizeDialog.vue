@@ -265,10 +265,10 @@ async function fillFlagged() {
              warning had hardcoded `pi-exclamation-triangle` rather than reading the severity model,
              so a palette or icon change would have missed it. The re-run note keeps an explicit icon
              because its meaning is history, not severity. -->
-        <InlineNote v-if="focusedWarning" class="warn-line" severity="warn" placement="bottom"
+        <InlineNote v-if="focusedWarning" class="warn-line" severity="warn"
                     :short="focusedWarning.short" :detail="focusedWarning.long" />
 
-        <InlineNote v-if="downstreamNote" class="rerun-line" icon="pi-history" placement="bottom"
+        <InlineNote v-if="downstreamNote" class="rerun-line" icon="pi-history"
                     :short="downstreamNote.short" :detail="downstreamNote.long" />
 
         <ChipSelect class="toggle-row" multiple :options="dimOptions" v-model="includeModel"

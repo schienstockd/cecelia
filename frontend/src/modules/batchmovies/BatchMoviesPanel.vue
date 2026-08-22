@@ -456,7 +456,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <span class="bm-ch">{{ ch }}</span>
           <SwatchSelect :model-value="channels[ch] ?? ''" :options="colormapOpts"
                         @update:model-value="v => setChannel(ch, v)"
-                        v-tooltip.left="'Colourmap this channel renders in'" />
+                        v-tooltip.bottom="'Colourmap this channel renders in'" />
         </div>
       </section>
 
@@ -468,17 +468,17 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <div v-if="showTracks" class="bm-inset">
           <span class="bm-lbl cc-muted">tail</span>
           <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
-                 v-tooltip.left="'Thickness of the track tail'" />
+                 v-tooltip.bottom="'Thickness of the track tail'" />
           <span class="bm-val">{{ tailWidth }}</span>
         </div>
         <div v-if="showPops" class="bm-inset">
-          <select v-model="popType" class="bm-mini" v-tooltip.left="'Which population type to draw as points'">
+          <select v-model="popType" class="bm-mini" v-tooltip.bottom="'Which population type to draw as points'">
             <option value="flow">gating</option>
             <option value="clust">clusters</option>
           </select>
           <span class="bm-lbl cc-muted">size</span>
           <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
-                 v-tooltip.left="'Diameter of the population points'" />
+                 v-tooltip.bottom="'Diameter of the population points'" />
           <span class="bm-val">{{ pointsSize }}</span>
         </div>
       </section>
@@ -486,7 +486,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <!-- Colour by -->
       <section class="bm-sec">
         <h4>Colour by <span class="bm-sub cc-muted">measure used to colour tracks / labels</span></h4>
-        <select v-model="colourBy" v-tooltip.left="'Cell measure mapped to track and label colour'">
+        <select v-model="colourBy" v-tooltip.bottom="'Cell measure mapped to track and label colour'">
           <option value="">— none (population / default colour) —</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>
@@ -533,7 +533,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <div class="bm-inset">
           <!-- the caveat, not a restatement of the label — two images CAN share a name, uids cannot -->
           <CcToggle v-model="nameByImage" label="name files after the image"
-                    v-tooltip.left="'Images sharing a name overwrite each other'" />
+                    v-tooltip.bottom="'Images sharing a name overwrite each other'" />
         </div>
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>

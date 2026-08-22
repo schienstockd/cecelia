@@ -559,7 +559,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         class="fn-select"
         data-guide="task.fun"
         v-model="selectedTask"
-        v-tooltip.left="'Select which analysis function to run on the selected images'"
+        v-tooltip.bottom="'Select which analysis function to run on the selected images'"
       >
         <option
           v-for="d in defs"
@@ -655,7 +655,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           Pool
         </span>
         <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
-          v-tooltip.right="'Which resource pool this run queues in'" />
+          v-tooltip.bottom="'Which resource pool this run queues in'" />
         <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon"
           :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
           @click="throttleOpen = !throttleOpen"

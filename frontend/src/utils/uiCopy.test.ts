@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
   tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips, nestedTooltips,
-  hasPerOptionTips, unnamedToggles,
+  hasPerOptionTips, unnamedToggles, misplacedTooltips,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -456,6 +456,75 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
     expect(found.filter(f => !ALLOWED_NESTED.includes(f))).toEqual([])
     // Fails on improvement too: fix one and delete its line, so the list can only shrink.
     expect(found.sort()).toEqual([...ALLOWED_NESTED].sort())
+  })
+
+  // The THIRD way a tooltip lands on top of the UI, and the one the two checks above are blind to,
+  // because it is neither a repeated text nor a nested hover area. PrimeVue's `isOutOfBounds` tests
+  // the VIEWPORT and nothing else, and `alignLeft` is `left = hostLeft - tooltipWidth` — so on a
+  // target that spans its panel, `.left` puts the tooltip outside that panel by construction, over
+  // whatever column is next door, and the library reports it in bounds because it is still on screen.
+  // 123 sites were doing this, 26 of them in PlotOptions alone, where every row tip landed on the
+  // plot it described (Dominik, 2026-08-22: "the tooltip just overlays the actual element").
+  //
+  // Swept to zero in the same change, so this is a plain no-violations check. Before adding an entry:
+  // the fix is `.top` on a label or heading and `.bottom` on a control, never a nudge to the other
+  // side — those are the only two placements PrimeVue clamps horizontally. An entry is only justified
+  // for a host this cannot measure as narrow, and `radio`/`checkbox` are already exempt by type.
+  const ALLOWED_SIDEWAYS: string[] = []
+
+  it('no tooltip on a column-wide target is placed sideways', () => {
+    const found: string[] = []
+    for (const [path, src] of sfcs)
+      for (const m of misplacedTooltips(src, path)) found.push(`${path}:${m.line} <${m.tag}> .${m.side}`)
+    expect(found.filter(f => !ALLOWED_SIDEWAYS.includes(f))).toEqual([])
+    expect(found.sort()).toEqual([...ALLOWED_SIDEWAYS].sort())
+  })
+})
+
+describe('misplacedTooltips', () => {
+  const sfc = (tpl: string) => `<template>${tpl}</template>`
+
+  it('flags a sideways tooltip on a target that fills its column', () => {
+    expect(misplacedTooltips(sfc(`<label v-tooltip.left="'Suffix'">Name</label>`)))
+      .toEqual([{ tag: 'label', line: 1, side: 'left' }])
+    expect(misplacedTooltips(sfc(`<select v-tooltip.right="'Palette'" />`)))
+      .toEqual([{ tag: 'select', line: 1, side: 'right' }])
+  })
+
+  it('accepts the two placements PrimeVue clamps horizontally', () => {
+    expect(misplacedTooltips(sfc(`<label v-tooltip.top="'Suffix'">Name</label>`))).toEqual([])
+    expect(misplacedTooltips(sfc(`<select v-tooltip.bottom="'Palette'" />`))).toEqual([])
+  })
+
+  // No modifier is not "no opinion" — `align()` falls through to `alignRight`, whose flip chain ends
+  // by re-applying itself with no bounds test, so it is the one placement that can land anywhere.
+  it('flags a BARE v-tooltip on a wide host', () => {
+    expect(misplacedTooltips(sfc(`<div v-tooltip="'Row'">x</div>`)))
+      .toEqual([{ tag: 'div', line: 1, side: 'none' }])
+  })
+
+  // Sideways is CORRECT for these: an icon or a word has room beside it and no row above or below
+  // worth covering. Widening the rule to them would turn a real signal into a style sweep.
+  it('leaves narrow, inline hosts alone', () => {
+    expect(misplacedTooltips(sfc(`<button v-tooltip.left="'Delete'"><i class="pi pi-trash" /></button>`)))
+      .toEqual([])
+    expect(misplacedTooltips(sfc(`<span v-tooltip.right="'Note'">n</span>`))).toEqual([])
+    expect(misplacedTooltips(sfc(`<i v-tooltip.right="'Info'" />`))).toEqual([])
+  })
+
+  // A checkbox is ~13px, so beside it is the only sensible place and `.bottom` would drop the tip
+  // onto the next row. Exempt by TYPE, not by allow-list: it is a class of control, not a site.
+  it('exempts a radio or checkbox, but not a range', () => {
+    expect(misplacedTooltips(sfc(`<input type="checkbox" v-tooltip.right="'All'" />`))).toEqual([])
+    expect(misplacedTooltips(sfc(`<input type="radio" v-tooltip.right="'Pick'" />`))).toEqual([])
+    expect(misplacedTooltips(sfc(`<input type="range" v-tooltip.right="'42'" />`)))
+      .toEqual([{ tag: 'input', line: 1, side: 'right' }])
+  })
+
+  it('ignores an untipped element and a primitive\'s own definition', () => {
+    expect(misplacedTooltips(sfc(`<label>Name</label>`))).toEqual([])
+    expect(misplacedTooltips(sfc(`<CcToggle v-tooltip.left="'x'" />`), 'src/components/CcToggle.vue'))
+      .toEqual([])
   })
 })
 

@@ -240,7 +240,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
                 'non-image':    !entry.isdir && !entry.isimage,
               }"
               @click="onRow(entry)"
-              v-tooltip.right="isSelectable(entry)
+              v-tooltip.top="isSelectable(entry)
                 ? `Select ${entry.name}`
                 : entry.isdir
                   ? `Open folder ${entry.name}`

@@ -142,7 +142,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
           features ({{ features.length }})
         </summary>
         <div class="feat-list">
-          <label v-for="f in featureOptions" :key="f" class="feat-row" v-tooltip.right="'Show this feature as a heatmap row'">
+          <label v-for="f in featureOptions" :key="f" class="feat-row" v-tooltip.top="'Show this feature as a heatmap row'">
             <input type="checkbox" :checked="features.includes(f)" @change="toggleFeature(f)" /> {{ label(f) }}
           </label>
           <p v-if="!featureOptions.length" class="feat-empty cc-muted cc-fs-xs">No recorded features — re-run clustering, or this run predates feature tracking.</p>

@@ -158,7 +158,7 @@ function onKeyup(e: KeyboardEvent) {
     @focus="onOpen"
     @click="onOpen"
     @blur="open = false; showAll = false"
-    v-tooltip.right="tip"
+    v-tooltip.bottom="tip"
     v-bind="$attrs"
   />
   <TeleportPopover v-model="open" :anchor="input" placement="bottom-start" flush>

@@ -22,6 +22,7 @@ Both are enforced by tests, so skipping them fails the build.
 | Looking for | Section |
 |---|---|
 | Colours, radii, font sizes, fixed dimensions | **Design tokens** |
+| Which side a tooltip goes on | **Tooltip placement** |
 | Buttons · inputs · toggles · chips | **Button utilities** · **Form controls** |
 | Modals · confirms · deletes · popovers | **Modals & dialogs** |
 | Floating windows, legends | **Floating panels** · **View legend** |
@@ -112,8 +113,9 @@ identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 
 ## Hard requirements
 
-**Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** Place
-it where it reads best (`.left` / `.top` / `.bottom` / `.right`) — there is no default side. A button
+**Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** The
+side is **not** a matter of taste — it follows the target's width, and `.left`/`.right` on a target
+that fills its column puts the tooltip outside the panel. See *Tooltip placement* below. A button
 with a visible caption does **not** need one. CellProfiler is the reference for *density*, one line
 each. The exact scope, what counts as coverage, and the ratchet are in [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* —
 **that section is the rule; this is the pointer.** Don't restate it here.
@@ -359,6 +361,52 @@ exemptions are pinned to their callback LINE, not to prose.
 
 **Say that a slow result is coming.** A control whose effect is coalesced looks broken if nothing
 changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
+
+---
+
+## Tooltip placement — the side follows the target, not taste
+
+**The rule.** A target that fills its column takes `.top` if it is a label or a row heading, `.bottom`
+if it is the control. A narrow target — an icon button, a chip, a radio, a checkbox — keeps
+`.left`/`.right`. Never write a bare `v-tooltip`. Enforced by `misplacedTooltips` in
+`utils/uiCopy.ts`, ratcheted to zero.
+
+**Why, from PrimeVue's own positioning code** (`primevue/tooltip/index.mjs`) — this is not a style
+preference, it is what the library does:
+
+- `isOutOfBounds` tests the **viewport and nothing else**. It has no idea a panel exists.
+- `alignLeft` is `left = hostLeft - tooltipWidth` (and `alignRight` the mirror). So on a target that
+  spans its panel, sideways placement lands the tooltip *outside that panel by construction* — over
+  the next column — and the library reports it in bounds, because it is still on screen.
+- `alignTop`/`alignBottom` are the **only two that clamp horizontally**
+  (`if (left < 0) left = 0; else if (left + tooltipWidth > viewportWidth) …`). On a wide target that
+  clamp is the guarantee: the tooltip stays inside the target's own horizontal span, i.e. inside the
+  panel. They also never cover the target — `top` sits at `hostTop - tooltipHeight`, `bottom` at
+  `hostTop + hostHeight`. The sideways pair instead **centres vertically** on the target, so a
+  two-line tip on a one-line row spills over the rows above and below.
+- A **bare** `v-tooltip` is not "no opinion": `align()` falls through to `alignRight`, whose flip chain
+  (right → left → top → bottom → **right again, unchecked**) is the one that can land anywhere.
+
+**Which of top/bottom.** Point the tooltip *away from the row's own content*: a label names the
+control under it, so it takes `.top`; a control is named by the label above it, so it takes `.bottom`.
+Either way the thing you were reading stays visible while the tip is up.
+
+**This was 123 sites** before the rule existed (2026-08-22), because the requirement above used to say
+"place it where it reads best — there is no default side". 26 were in `PlotOptions.vue` alone, where
+every row tip landed on the plot it described; the one that surfaced it was a param label in
+`ParamRenderer.vue`, whose `.param-row` is `flex-direction: column`, so the label is full panel width
+and `.left` threw its tooltip onto the task list.
+
+**Do not reach for a nudge to the other side** when a tooltip is in the way — that is the hand-rolled
+fix this rule replaced, and it just moves the overlap. Two related failures have their own detectors,
+because neither is about placement: `duplicateTooltips` (a control repeating its heading's tip) and
+`nestedTooltips` (a tipped control inside a tipped row, so hovering fires both). All three live in
+`utils/uiCopy.ts` — see [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* for the presence half.
+
+**`InlineNote` has no placement knob**, deliberately: it is fixed at `.bottom`, because a note
+annotates the control above it. It used to take a `placement` prop that passed `position` inside the
+tooltip *value* object — which PrimeVue reads only off `options.arg`, never off the value — so all
+seven call sites that set one were silently getting the `alignRight` default.
 
 ---
 

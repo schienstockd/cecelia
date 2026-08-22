@@ -96,9 +96,9 @@ async function copy() {
         <p v-if="!siblings.length" class="cg-empty cc-muted">No other images in this set.</p>
 
         <template v-if="available.length">
-          <label class="cg-all" v-tooltip.right="'Tick every listed image at once'"><input type="checkbox" :checked="allPicked" @change="toggleAll" /> Select all</label>
+          <label class="cg-all" v-tooltip.top="'Tick every listed image at once'"><input type="checkbox" :checked="allPicked" @change="toggleAll" /> Select all</label>
           <div class="cg-list">
-            <label v-for="i in available" :key="i.uid" class="cg-item" v-tooltip.right="'Copy the gating strategy to this image'">
+            <label v-for="i in available" :key="i.uid" class="cg-item" v-tooltip.top="'Copy the gating strategy to this image'">
               <input type="checkbox" :checked="picked.has(i.uid)" @change="toggle(i.uid)" />
               <span class="cg-name">{{ i.name }}</span>
             </label>

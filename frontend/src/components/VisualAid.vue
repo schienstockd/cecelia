@@ -104,7 +104,7 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
     <!-- Whatever the caller wants said about the figure. `InlineNote` is the canonical
          short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md). -->
     <InlineNote v-if="props.note" class="vis-warn cc-fs-2xs" :severity="props.noteSeverity"
-      placement="bottom" :short="props.note" />
+      :short="props.note" />
   </div>
 </template>
 
