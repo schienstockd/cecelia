@@ -1466,12 +1466,14 @@ its scrolling body so the handle stays put while the panel scrolls.)
 Task definitions are loaded once per session via `useTaskDefs`, which calls `GET /api/tasks/definitions?category=X`.
 
 `PoolThrottle` has **three hosts**, one component: the Task Manager toolbar, every module page's
-runner (in the pool row), and **Settings → Task concurrency**. The Settings host exists because the
-other two attach it to a task context — with nothing selected and an empty task list there was nowhere
-to change a machine-level setting, which is what a concurrency limit is. Don't add a fourth surface
-and don't copy the sliders.
+runner (in the pool row), and the Chain page. Not Settings — it lived there because the popover was
+once the only host, and a second surface for the same sliders is a place for them to disagree. Don't
+add a fourth and don't copy the sliders.
 
-**Threads per task** (in the same `PoolThrottle` popover, under a rule below the pool sliders): one
+**Threads per task** comes FIRST in the popover, above the pool sliders. It is two rows where the
+pools are four cells with live occupancy and bars, so below them it sat under the fold of a
+`max-height: 100vh` popover on a short window — present, scrollable and invisible, which is how it got
+reported as "only on the module page". The short section goes first so both are reachable. One
 slider for `CECELIA_TASK_WORKERS` — how WIDE one task may go, as opposed to how many run at once.
 `GET`/`POST /api/tasks/threads[/set]`. Two things the pool sliders do not have: the readout reads
 `auto · 8` when the number is derived from the core count rather than configured (a bare `8` reads as
