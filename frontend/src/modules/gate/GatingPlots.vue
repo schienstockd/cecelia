@@ -85,7 +85,11 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PlotState>(zoomRef, () =>
     ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
-       x: '', y: '', renderMode: 'points', channels: [] }), ckey)
+       x: '', y: '', renderMode: 'points', channels: [] }), ckey,
+    // every plot panel here is `:square` (GatePlotPanel / GatePairsPanel), so Tile hands out square
+    // cells; `tileBox` keeps the grid sized to the VIEWPORT even once the workspace has grown taller
+    // than it — see utils/tileGrid.ts
+    { squareCells: true, tileBox: () => workspaceBase.value })
 // show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 
@@ -95,7 +99,10 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
+const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
+  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
+  // a getter, so it may name `contentBounds` from the line above
+  () => contentBounds.value)
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
 // A canvas persisted before a view was renamed still holds the old key; without this its panel falls
@@ -454,7 +461,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
              needs exactly once (docs/UI.md → UI copy), so the fix and the right behaviour agree. -->
         <span v-if="!panels.length" class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
-      <div ref="canvasRef" class="gp-canvas">
+      <div class="gp-canvas">
+        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
+             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
+             box, so it stays put instead of scrolling away with them. -->
+        <div ref="canvasRef" class="gp-scroll">
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
         <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
@@ -475,6 +486,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
+        </div>
         </div>
         <!-- THE RAIL, following the ACTIVE panel (railFor, never a key list here). A track view slices by
              population, so it gets the SERIES PICKER — populations grouped by segmentation, each row
@@ -517,5 +529,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
    min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
    lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
+/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
+   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
+.gp-scroll { position: absolute; inset: 0; overflow: auto; }
 .gp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

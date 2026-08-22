@@ -1,7 +1,14 @@
 import { ref, watch, onBeforeUnmount, type Ref } from 'vue'
 
-/** Tile/Cascade command from the workspace; `seq` bumps to force a re-apply. */
-export interface ArrangeCmd { x: number; y: number; w: number; h: number; seq: number }
+/**
+ * Tile/Cascade command from the workspace; `seq` bumps to force a re-apply.
+ *
+ * `cell` marks `w`/`h` as a GRID CELL — a box the panel must not exceed — rather than a size to
+ * adopt. Tile sets it; Cascade does not, because a staggered window has no row below it to overflow
+ * and clamping it would only make the plot smaller for no reason. It matters to panels that resize
+ * themselves: see `CanvasPanel`'s `fitted` / `utils/tileGrid.ts`.
+ */
+export interface ArrangeCmd { x: number; y: number; w: number; h: number; seq: number; cell?: boolean }
 
 /**
  * Shared drag-to-move + clamp-to-parent behaviour for free-floating canvas panels (the gating

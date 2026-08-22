@@ -1,6 +1,7 @@
 import { computed, unref, watch, type Ref } from 'vue'
 import { useCanvasPanelsStore } from '../stores/canvasPanels'
 import type { ArrangeCmd } from './useFloatingPanel'
+import { tileGrid, tileCell } from '../utils/tileGrid'
 
 /** One panel on a canvas: a stable id, an optional Tile/Cascade command, and opaque per-panel
  *  state owned by the host (e.g. gating's displayed-parent/highlight; a summary plot's spec). */
@@ -21,6 +22,16 @@ export interface CanvasItem<S> { id: number; arrange: ArrangeCmd | null; state: 
 export function useCanvasPanels<S>(
   canvasRef: Ref<HTMLElement | null>, makeState: () => S,
   key: string | Ref<string> | (() => string),
+  // `squareCells`: this canvas's panels snap themselves to 1:1 (`CanvasPanel :square`), so Tile must
+  // hand out SQUARE cells — a cell wider than it is tall makes them overflow their own row. Set by
+  // the gating pages; see utils/tileGrid.ts for the arithmetic and the failure it fixes.
+  //
+  // `tileBox`: the box Tile lays its grid in. Pass the VIEWPORT-derived workspace size
+  // (`useCanvasWorkspace`'s `workspaceBase`), not the live element: the workspace GROWS to hold the
+  // grid Tile produced, so measuring it here would feed that height back in and Tile would lay out
+  // differently the second time you pressed it. Falls back to measuring `canvasRef` when a host
+  // hasn't been wired for growth.
+  opts: { squareCells?: boolean; tileBox?: () => { w: number; h: number } } = {},
 ) {
   const store = useCanvasPanelsStore()
   const keyRef = computed(() => (typeof key === 'function' ? key() : unref(key)))
@@ -70,16 +81,13 @@ export function useCanvasPanels<S>(
   // Tile (grid): fill the workspace with a near-square grid
   function arrangeGrid() {
     const e = cur()
-    const el = canvasRef.value, n = e.panels.length
-    if (!el || !n) return
-    const gap = 8, W = el.clientWidth, H = el.clientHeight
-    const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols)
-    const w = Math.max(300, Math.floor((W - gap * (cols + 1)) / cols))
-    const h = Math.max(260, Math.floor((H - gap * (rows + 1)) / rows))
-    e.panels = e.panels.map((p, i) => {
-      const r = Math.floor(i / cols), c = i % cols
-      return { ...p, arrange: { x: gap + c * (w + gap), y: gap + r * (h + gap), w, h, seq: ++e.arrangeSeq } }
-    })
+    const n = e.panels.length
+    const box = opts.tileBox?.() ??
+      (canvasRef.value && { w: canvasRef.value.clientWidth, h: canvasRef.value.clientHeight })
+    if (!box || !n) return
+    const g = tileGrid(n, box.w, box.h, { mode: opts.squareCells ? 'square' : 'fill' })
+    e.panels = e.panels.map((p, i) =>
+      ({ ...p, arrange: { ...tileCell(i, g), w: g.w, h: g.h, cell: true, seq: ++e.arrangeSeq } }))
   }
   const activePanel = computed(() => panels.value.find(p => p.id === activeId.value))
 

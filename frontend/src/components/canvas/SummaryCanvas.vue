@@ -88,7 +88,8 @@ const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible view
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PanelState>(zoomRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
-    ckey)
+    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
+    ckey, { tileBox: () => workspaceBase.value })
 // show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 
@@ -99,7 +100,10 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
+const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
+  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
+  // a getter, so it may name `contentBounds` from the line above
+  () => contentBounds.value)
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
@@ -317,7 +321,11 @@ watch(segPops, () => {
         <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
         <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
-      <div ref="canvasRef" class="sc-canvas">
+      <div class="sc-canvas">
+        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
+             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
+             box, so it stays put instead of scrolling away with them. -->
+        <div ref="canvasRef" class="sc-scroll">
         <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
         <div ref="zoomRef" class="sc-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
@@ -339,6 +347,7 @@ watch(segPops, () => {
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />
         </template>
+        </div>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
                       :readout="activeReadout" :selection-unused="activeIsPrecomputed"
@@ -368,5 +377,8 @@ watch(segPops, () => {
 /* min 100% so the workspace always at least fills the viewport (like the old inset:0) even before the
    JS size lands — else a 0 measurement collapses it and the panels' offsetParent is ~0-wide, pinning
    drag to the top-left. useCanvasWorkspace only EXTENDS it (width/height) when zoomed out. */
+/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
+   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
+.sc-scroll { position: absolute; inset: 0; overflow: auto; }
 .sc-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

@@ -1901,9 +1901,19 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
   - **Workspace grows on zoom-out** (`composables/useCanvasWorkspace.ts`): the zoom layer is sized to
     `viewport / min(zoom, 1)`, so zooming OUT enlarges the *logical* workspace (Tile spreads into it, a
     panel can be dragged across it) instead of shrinking everything into the top-left and wasting the
-    page — the layer is the panels' `offsetParent`, so `useFloatingPanel`'s clamp and `useCanvasPanels`'
-    `arrangeGrid` both use the enlarged size. At ≥ 100% it stays viewport-sized (zoom-in inspects). "Fit"
-    fits the actual plot bounding box (`useCanvasPanels.contentBounds`), not the zoom-dependent workspace.
+    page — the layer is the panels' `offsetParent`, so `useFloatingPanel`'s clamp uses the enlarged size.
+    At ≥ 100% it stays viewport-sized (zoom-in inspects). "Fit" fits the actual plot bounding box
+    (`useCanvasPanels.contentBounds`), not the zoom-dependent workspace.
+  - **…and grows TALLER with its plots**: the workspace is also at least as tall as the lowest panel
+    (`contentBounds.h` + 16px), so a Tile grid that needs more rows than fit — or a panel dragged down —
+    extends the workspace instead of spilling out of it. **Only the height grows**; the width stays
+    viewport-derived, since Tile takes its columns from the width and a horizontal scrollbar on a plot
+    workspace is worse than a narrower grid. Each host therefore has THREE layers, the same shape
+    `LayoutCanvas` uses for the board: `.{gp,sc,cp,fp}-canvas` (`position: relative` — the rail's
+    offsetParent, so the rail does NOT scroll away with the plots) → `.…-scroll` (`inset: 0;
+    overflow: auto` — the measured viewport) → `.…-zoom` (the workspace, `transform: scale`). Zooming out
+    and growing compose: both are logical px, so a grown height is expressed in the same units as the
+    zoom-expanded base.
 
 **Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
 zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
@@ -1917,6 +1927,30 @@ renders — **Tile · Cascade · Close all** — emitting to `useCanvasPanels`' 
 differs, so only this group is shared. A host that drives `useCanvasPanels` but renders its own
 arrange buttons fails the *every canvas host offers Close all* testset — the point being that a bulk
 close a user asks for on one page has to appear on all of them.
+
+**Tile has two modes, because panels differ in whether they accept the size they are given**
+(`utils/tileGrid.ts`). Free-form panels (summary, cluster, flow) get `fill`: a near-square grid whose
+cells divide the workspace exactly. The GATING pages get `square` (`useCanvasPanels(..., {
+squareCells: true })`), because every plot panel there is `CanvasPanel :square` — it snaps its own
+height to its width. For those, a cell wider than it is tall is a trap: the panel adopts the cell's
+width, squares itself to width + chrome a frame later, and overflows the row it was just placed in.
+Three plots in a 1600×800 workspace tiled 2×2 (cell 788×388) came out ~878 tall — 2.3× their row, the
+"Tile makes the plots super tall" report. Square mode asks the other question — *which column count
+gives the biggest square?* — and those three go 3 across at 522. The panel then has the last word:
+`CanvasPanel` fits its square INSIDE the cell using the chrome it actually measures (the gate pages
+keep their axis selectors in flow, so no shared estimate fits both panel kinds). A cell below the
+The fit applies to **Tile only** (`ArrangeCmd.cell`): a cascaded window has no row below it to
+overflow, so clamping it there would shrink the plot for nothing.
+
+**Neither mode crams — the grid flows DOWN and the workspace grows.** When a cell would fall below the
+readable floor (`MIN_TILE_W` 300 / `MIN_TILE_H` 260), Tile keeps the floor, takes its columns from the
+WIDTH alone, and lets the extra rows go below the fold: 12 gating plots become 5 across × 3 down at
+260px, and the canvas scrolls. It never overflows sideways. The workspace then extends to hold them
+(next bullet), so the bottom rows are reachable both by scrolling and by dragging a panel into the new
+room. **Tile is always sized from the VIEWPORT** (`tileBox`, i.e. `useCanvasWorkspace`'s
+`workspaceBase`), never from the grown workspace — feeding a content-derived height back into the
+layout that produced it is how you get a Tile that lays out differently the second time you press it.
+There is a test for exactly that property.
 
 **Close all arms first.** It is destructive and unrecoverable (panel state + persisted geometry), so
 it goes through `ConfirmButton` like `TabbedCanvas`'s "Close board" — including `needs-confirm` being

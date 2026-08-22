@@ -53,7 +53,9 @@ const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panel
 // MODULE_PREFIXES, so the panels persist with the image at 1/{uid}/moduleCanvases.json).
 const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey)
+  useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey,
+    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
+    { tileBox: () => workspaceBase.value })
 
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
 // `model` + `scope` are the vault's selection, in exactly the shape the population manager's
@@ -69,7 +71,10 @@ for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.s
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
+const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
+  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
+  // a getter, so it may name `contentBounds` from the line above
+  () => contentBounds.value)
 
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
 // the model a given panel is showing, and the one the vault edits — the two halves of the scope
@@ -136,7 +141,11 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
         <span class="fp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
 
-      <div ref="canvasRef" class="fp-canvas">
+      <div class="fp-canvas">
+        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
+             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
+             box, so it stays put instead of scrolling away with them. -->
+        <div ref="canvasRef" class="fp-scroll">
         <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
         <FlowModelVault v-if="showManager" :selected="activeModel" :scope="scope"
                         @update:selected="setModel" @update:scope="scope = $event" />
@@ -149,6 +158,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
                               @activate="activeId = p.id" @remove="remove(p.id)"
                               @duplicate="duplicatePanel(p.state)" />
           </template>
+        </div>
         </div>
       </div>
     </template>
@@ -164,5 +174,8 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 .fp-hint { opacity: 0.7; }
 .fp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* scaled workspace (offsetParent for the panels); size + transform set inline by useCanvasWorkspace */
+/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
+   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
+.fp-scroll { position: absolute; inset: 0; overflow: auto; }
 .fp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

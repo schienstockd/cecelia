@@ -12,6 +12,7 @@ import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloating
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
 import { rafCoalesce } from '../../utils/rafCoalesce'
+import { fitSquare } from '../../utils/tileGrid'
 import CcCycleButton, { type CycleOption } from '../CcCycleButton.vue'
 
 const props = withDefaults(defineProps<{
@@ -90,9 +91,22 @@ const { pos, startDrag } = useFloatingPanel(root, {
   // restore the saved position, else stagger by index
   initial: saved ? { x: saved.x, y: saved.y } : { x: 16 + props.index * 30, y: 16 + props.index * 30 },
   onActivate: () => emit('activate', props.index),
-  arrange: () => props.arrange,
+  arrange: () => fitted(props.arrange),
   zoom: injectedZoom,
 })
+
+// A TILE cell is a BOX TO FIT INTO, not a size to adopt. A :square panel that took the cell's width
+// would square itself to width + chrome a frame later (see enforceSquare) and overflow the row it was
+// just placed in — which is how three gating plots came out ~2x their row height. Fit the square
+// inside the cell instead, using the chrome THIS panel actually has: the gate pages keep their axis
+// selectors in flow, so no shared estimate would be right for both panel kinds.
+// Only for `cell` commands (Tile). Cascade's staggered size has no row below it to overflow, so
+// clamping it there would shrink the plot for nothing. Non-square panels take what they are given.
+function fitted(a: ArrangeCmd | null): ArrangeCmd | null {
+  if (!a?.cell || !props.square || props.docked || !root.value || !mainEl.value) return a
+  const chromeH = root.value.offsetHeight - mainEl.value.offsetHeight
+  return { ...a, ...fitSquare(a, chromeH) }
+}
 
 // persist geometry (position + the CSS-resized size) so the layout survives navigation.
 let ro: ResizeObserver | null = null
