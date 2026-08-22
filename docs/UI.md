@@ -188,7 +188,7 @@ axes** — compose them; never re-declare a button in a component's scoped `<sty
 | Shape | `-icon` (fixed square, so a toolbar row aligns regardless of glyph width) |
 | State | `-on` (+ `-on-tint` washed / `-on-solid` filled) for an engaged toggle button |
 
-`.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`.
+`.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`. In a **mixed** group — an icon-only member beside a labelled one — `style.css` lets the `-icon` square stretch to the group's height: the square is a fixed 1.5rem while a labelled member sizes to padding + line-height, ~1px taller, and the pixel of background missing under the square reads as a smaller, offset glyph (six groups had it). Don't re-fix it per site.
 
 ```html
 <button class="cc-btn cc-btn-ghost" @click="…">Apply</button>

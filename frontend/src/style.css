@@ -350,6 +350,15 @@ body {
   background: var(--cc-surface-2);
 }
 .cc-btn-group > .cc-btn + .cc-btn { border-left: 1px solid var(--cc-border); }
+/* A MIXED group — an icon-only member beside a LABELLED one — must not end up with two heights.
+   `.cc-btn-icon` is a fixed 1.5rem square; a labelled member sizes to padding + line-height, which is
+   ~1px taller at `--cc-fs-sm`. The group takes the taller, so the square's background stopped a pixel
+   short of the group's bottom edge and its glyph sat a pixel high — which reads as "that icon is
+   smaller than its neighbour" even though the two glyphs are the same 1em (gating's napari brush:
+   `pi-pencil` beside `pi-clone` + "Z"). Let the square STRETCH to the group instead; its fixed width,
+   and so the centring of the glyph, is untouched. Scoped with `:has` so a group of only icon buttons
+   keeps its square at whatever density tier it chose (micro/dense/lg). */
+.cc-btn-group:has(> .cc-btn:not(.cc-btn-icon)) > .cc-btn-icon { height: auto; }
 
 /* `ConfirmDeleteButton` is the one group member that is NOT a `.cc-btn` — it owns its own armed/danger
    states, so it keeps `.cc-del` rather than composing. Inside a group it still has to LOOK like a
