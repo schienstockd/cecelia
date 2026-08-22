@@ -416,9 +416,21 @@ function run() {
 
   // params are persisted server-side on run (per image + set); just remember the last-used function
   localStorage.setItem(`cc-fn:${props.module}`, def.task)
-  // the in-progress draft is now the canonical saved value (server-side) — drop it so the next visit
-  // loads the freshly-saved params. Done before the set-scope early-return so both paths clear it.
-  drafts.clear(currentDraftKey.value)
+  // KEEP the draft, as exactly what was submitted — do not clear it.
+  //
+  // THE "my params revert to default after I start a task" bug. Clearing it here assumed the
+  // server-side record replaces it, but that record is not written synchronously, and starting or
+  // finishing a run mutates the project store (`bumpDataVersion`, `refreshImageMeta` in `stores/ws`),
+  // which re-fires the watches below and re-runs `initParams`. In that window there was no draft AND
+  // no record, so the load answered `{"params":null}` — `{}` after `fetchSavedParams` — and
+  // `buildParamValues(def, {})` is every param's spec DEFAULT. The form reset itself, on every task,
+  // seconds after the user pressed Run.
+  //
+  // Writing the submitted values rather than leaving the previous draft: they are the same thing here
+  // (the draft is what was just submitted), and being explicit means this stays correct if a future
+  // caller transforms params on the way out. It converges with the server record — same values — and
+  // the next edit replaces it as before.
+  drafts.set(currentDraftKey.value, paramValues.value)
 
   log.info(
     `Submitting "${def.label}" for ${props.selectedUids.length} image(s)`,
