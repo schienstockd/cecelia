@@ -9,18 +9,31 @@
  * The reason to have it at all: a column of ten numbers does not answer "are these two things
  * different", and two shapes of visibly different size do.
  *
- * Five shapes, because five kinds of quantity read differently:
+ * Four shapes, because four kinds of SIZE read differently:
  *   diameter - a circle of that size          (something's extent)
  *   blur     - a soft ring                    (a fuzziness, not an outline)
  *   distance - a span with end caps           (a reach, not an object)
  *   area     - a disc whose AREA is the value (so the radius carries the square root)
- *   fraction - a marker on a 0-1 track        (a setting, not a size)
+ *
+ * A `text` row (which model, matched as what, on which channels) gets no shape either — the value IS
+ * the content, and it comes first, because it is what you check before any number. An empty channel
+ * list reads `none` rather than blank: it resolves to channel 0 downstream and segments something
+ * nobody picked, so a blank cell would hide a real mistake.
+ *
+ * A `fraction` gets NO shape — just its number. It was a rail with a filled bar, and before that a
+ * rail with a handle; both cost a row of height to say what "0.2" beside "0.8" already says, and the
+ * handled version looked like the real sliders in the form. A picture is worth having when it shows a
+ * ratio the number does not. For a plain 0-1 setting it does not.
+ *
+ * ONE LINE PER ROW. The shapes sit inline in the text, at 16px, not stacked above a caption in their
+ * own 44px band: eleven of those made a panel taller than the screen, and a 16px circle shows a ratio
+ * exactly as well.
  *
  * Shapes only. Every number, scale and comparison decision is in the producer, so it can be tested
  * without mounting anything.
  */
 import { computed } from 'vue'
-import { type VisColumns, MAX_R, TRACK } from '../tasks/paramVis'
+import { type VisColumns, MAX_R } from '../tasks/paramVis'
 import InlineNote from './InlineNote.vue'
 import type { Severity } from '../lib/severity'
 
@@ -37,9 +50,8 @@ const props = defineProps<{
 
 const vis = computed(() => props.vis)
 
-/** Column width and row height, in the SVG's own units. */
-const COL = 78
-const ROW = MAX_R * 2 + 4
+/** The inline shape's box, in CSS px. `MAX_R` is its radius, so the box is a shade wider. */
+const SZ = MAX_R * 2 + 2
 
 const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 </script>
@@ -62,52 +74,29 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
           :class="{ 'is-uniform': row.uniform, 'is-last': ri === vis.rows.length - 1 }">
           {{ row.label }}
         </div>
-        <div v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell"
+        <div v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell cc-fs-2xs"
           :class="{ 'is-last': ri === vis.rows.length - 1 }">
-          <svg :viewBox="`0 0 ${COL} ${ROW}`" class="vis-svg" role="img"
-            :aria-label="`${row.label}: ${cell.text}`">
-            <!-- a circle whose radius IS the value, relative to the widest column in this row -->
-            <circle v-if="row.role === 'diameter'"
-              :cx="COL / 2" :cy="MAX_R + 2" :r="cell.r" class="sh-diameter" />
-
-            <!-- blur as a soft edge: the sigma is a fuzziness, not an outline -->
-            <template v-else-if="row.role === 'blur'">
-              <circle v-if="cell.r > 0" :cx="COL / 2" :cy="MAX_R + 2" :r="cell.r"
-                class="sh-blur" :style="{ filter: `blur(${Math.max(1, cell.r / 2.5)}px)` }" />
-              <line v-else :x1="COL / 2 - 6" :y1="MAX_R + 2" :x2="COL / 2 + 6" :y2="MAX_R + 2"
-                class="sh-off" />
-            </template>
-
-            <!-- a span, drawn as a span: this one is a search radius, not an object -->
+          <!-- The shape INLINE with its number, so a row is one line of text tall. A `fraction` has
+               no shape at all — see the header. -->
+          <svg v-if="row.role !== 'fraction' && row.role !== 'text'" class="vis-svg"
+            :width="SZ" :height="SZ"
+            :viewBox="`0 0 ${SZ} ${SZ}`" role="img" :aria-label="`${row.label}: ${cell.text}`">
+            <circle v-if="row.role === 'diameter'" :cx="SZ / 2" :cy="SZ / 2" :r="cell.r"
+              class="sh-diameter" />
+            <circle v-else-if="row.role === 'area'" :cx="SZ / 2" :cy="SZ / 2" :r="cell.r"
+              class="sh-area" />
+            <circle v-else-if="row.role === 'blur' && cell.r > 0" :cx="SZ / 2" :cy="SZ / 2"
+              :r="cell.r" class="sh-blur"
+              :style="{ filter: `blur(${Math.max(0.5, cell.r / 2.5)}px)` }" />
             <template v-else-if="row.role === 'distance'">
-              <line :x1="COL / 2 - cell.r" :y1="MAX_R + 2" :x2="COL / 2 + cell.r" :y2="MAX_R + 2"
+              <line :x1="SZ / 2 - cell.r" :y1="SZ / 2" :x2="SZ / 2 + cell.r" :y2="SZ / 2"
                 class="sh-distance" />
-              <circle :cx="COL / 2 - cell.r" :cy="MAX_R + 2" r="1.6" class="sh-cap" />
-              <circle :cx="COL / 2 + cell.r" :cy="MAX_R + 2" r="1.6" class="sh-cap" />
             </template>
-
-            <!-- AREA, so the disc's area carries the value (radius is its sqrt — see paramVis) -->
-            <circle v-else-if="row.role === 'area'"
-              :cx="COL / 2" :cy="MAX_R + 2" :r="cell.r" class="sh-area" />
-
-            <!-- A threshold as a FILLED GAUGE on its own 0-1 rail, so two passes at opposite ends
-                 look opposite. Deliberately not a rail plus a round handle: that is exactly what the
-                 real sliders in the form look like, and a control you cannot move is worse than a
-                 picture — you try to drag it. A filled bar reads as a reading. -->
-            <template v-else>
-              <rect :x="(COL - TRACK) / 2" :y="MAX_R" :width="TRACK" height="4" rx="2"
-                class="sh-rail" />
-              <rect :x="(COL - TRACK) / 2" :y="MAX_R" :width="Math.max(1, cell.at * TRACK)"
-                height="4" rx="2" class="sh-fill" />
-            </template>
-
+            <!-- blur at zero: a dim dot, not a dashed rule that reads like a control -->
+            <circle v-else :cx="SZ / 2" :cy="SZ / 2" r="1" class="sh-off" />
           </svg>
-          <!-- The number as TEXT, not an SVG <text>: it reflows, respects the user's font size, and
-               needs no hardcoded px inside a viewBox. In the FORM's units, matching the row label and
-               the control being edited; pixels are the dimmer second line, because that is what the
-               engine receives and what a pixel-tuned reference is checked against. -->
-          <div class="vis-cap cc-muted cc-fs-2xs">{{ cell.text }}</div>
-          <div v-if="cell.pxText" class="vis-cap-px cc-fs-2xs">{{ cell.pxText }}</div>
+          <span class="vis-num">{{ cell.text }}</span>
+          <span v-if="cell.pxText" class="vis-px">{{ cell.pxText }}</span>
         </div>
       </template>
     </div>
@@ -120,42 +109,51 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 </template>
 
 <style scoped>
-.visual-aid { margin: 0.25rem 0 0.6rem; }
+/* Pads ITSELF. `FloatingPanel`'s `.fp-body` has no padding on purpose — `LabLogPanel` needs its
+   section dividers to run full-bleed to the panel edge — so a consumer that wants inset content pads
+   its own root, as `ViewerPanel` does. */
+.visual-aid { padding: 0.35rem 0.6rem 0.45rem; }
 
+/* One line per row. `align-items: stretch` + the SAME symmetric padding on the label and the cells is
+   what makes the label line up with its row — `center` cannot align two boxes whose padding differs,
+   which is why the titles sat high through three attempts. */
 .vis-grid {
   display: grid;
-  align-items: center;
-  column-gap: 0.25rem;
+  align-items: stretch;
+  column-gap: 0.4rem;
   row-gap: 0;
 }
 
-.vis-corner, .vis-head { padding-bottom: 0.2rem; }
+.vis-corner, .vis-head { padding: 0 0 0.25rem; }
 .vis-head { text-align: center; }
 
-/* One rule per row, so eleven rows read as a list rather than as floating shapes. On the CELLS as
-   well as the label, because a grid row is not an element and a single border would stop at the
-   label's edge. `row-gap: 0` so the rule sits between rows instead of inside a gap. */
-.vis-label, .vis-cell { border-bottom: 1px solid var(--cc-border); padding: 0.3rem 0; }
+/* The rule per row, on the cells as well as the label: a grid row is not an element, so one border
+   would stop at the label's edge. */
+.vis-label, .vis-cell {
+  border-bottom: 1px solid var(--cc-border);
+  padding: 0.22rem 0;
+  display: flex;
+  align-items: center;
+  line-height: 1.25;
+}
 .vis-label.is-last, .vis-cell.is-last { border-bottom: 0; }
-.vis-label { text-align: right; padding-right: 0.4rem; line-height: 1.2; }
-/* A row that is identical across passes is the thing to notice, so it is the thing that is marked. */
+
+.vis-label { justify-content: flex-end; text-align: right; }
+/* A row identical across every column is the thing to notice, so it is the thing that is marked. */
 .vis-label.is-uniform { color: var(--cc-warn); }
 
-.vis-cell { display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
-.vis-cap { text-align: center; }
+.vis-cell { gap: 0.3rem; }
+.vis-svg { flex: 0 0 auto; overflow: visible; }
+.vis-num { font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 /* The engine-facing number, subordinate to the one that matches the label. */
-.vis-cap-px { text-align: center; color: var(--cc-text-dim); opacity: 0.75; }
-.vis-svg { width: 100%; max-width: 5rem; height: auto; overflow: visible; }
+.vis-px { color: var(--cc-text-dim); opacity: 0.75; font-variant-numeric: tabular-nums; }
 
-/* Shapes read as "the object" (filled), "the reach" (a line), "the setting" (a marker). */
+/* Shapes read as "the object" (filled), "the reach" (a line), "off" (a dim dot). */
 .sh-diameter { fill: var(--cc-accent-tint); stroke: var(--cc-accent); stroke-width: 1; }
 .sh-blur     { fill: var(--cc-accent); opacity: 0.35; }
 .sh-area     { fill: var(--cc-accent); opacity: 0.55; }
 .sh-distance { stroke: var(--cc-accent); stroke-width: 1.5; }
-.sh-cap      { fill: var(--cc-accent); }
-.sh-off      { stroke: var(--cc-text-dim); stroke-width: 1; stroke-dasharray: 2 2; }
-.sh-rail     { fill: var(--cc-border); }
-.sh-fill     { fill: var(--cc-accent); }
+.sh-off      { fill: var(--cc-text-dim); opacity: 0.5; }
 
-.vis-warn { margin-top: 0.35rem; }
+.vis-warn { margin-top: 0.3rem; }
 </style>

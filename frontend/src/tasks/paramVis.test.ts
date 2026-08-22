@@ -7,13 +7,14 @@
  * is a 500-second run that produces slivers.
  */
 import { describe, it, expect } from 'vitest'
-import { paramVisColumns, uniformWarning, caption, pxCaption, MAX_R } from './paramVis'
+import { paramVisColumns, uniformWarning, caption, pxCaption, MAX_R, MIN_R } from './paramVis'
 import type { ParamDef, ParamValues } from './types'
 
 const GROUP: ParamDef = {
   key: 'models', label: 'Segmentation models', type: 'group', repeatable: true,
   params: [
-    { key: 'model', label: 'Model', type: 'select' },
+    { key: 'model', label: 'Model', type: 'select', vis: 'text' },
+    { key: 'cellChannels', label: 'Channels', type: 'channelSelection', vis: 'text' },
     { key: 'seedSize', label: 'Seed window', type: 'float', vis: 'diameter' },
     { key: 'affinityThreshold', label: 'Growing threshold', type: 'float', vis: 'fraction' },
     { key: 'advanced', label: 'Advanced', type: 'section', params: [
@@ -26,10 +27,10 @@ const GROUP: ParamDef = {
 
 // The reference two-pass config, in the form's microns at ~0.33 µm/px.
 const TWO_PASS: Record<string, ParamValues> = {
-  '0': { model: 'flow.pt', seedSize: 10.61, affinityThreshold: 0.2, seedBlurSigma: 0,
-         minComponentSize: 1.1, mergeMaxDistance: 0.5 },
-  '1': { model: 'flow.pt', seedSize: 2.65, affinityThreshold: 0.8, seedBlurSigma: 0,
-         minComponentSize: 1.1, mergeMaxDistance: 0.5 },
+  '0': { model: 'flow.pt', cellChannels: ['mem-TOM', 'nuc-GFP'], seedSize: 10.61,
+         affinityThreshold: 0.2, seedBlurSigma: 0, minComponentSize: 1.1, mergeMaxDistance: 0.5 },
+  '1': { model: 'flow.pt', cellChannels: ['mem-TOM', 'nuc-GFP'], seedSize: 2.65,
+         affinityThreshold: 0.8, seedBlurSigma: 0, minComponentSize: 1.1, mergeMaxDistance: 0.5 },
 }
 const PX = 0.331456303681194
 
@@ -40,8 +41,8 @@ describe('paramVisColumns', () => {
   it('draws only the params the spec gives a role', () => {
     const v = paramVisColumns(GROUP, TWO_PASS, ['0', '1'])
     expect(v.rows.map(r => r.key).sort()).toEqual(
-      ['affinityThreshold', 'mergeMaxDistance', 'minComponentSize', 'seedBlurSigma', 'seedSize'])
-    expect(v.rows.find(r => r.key === 'model')).toBeUndefined()
+      ['affinityThreshold', 'cellChannels', 'mergeMaxDistance', 'minComponentSize', 'model',
+       'seedBlurSigma', 'seedSize'])
   })
 
   it('reaches params inside a section, which are stored flat', () => {
@@ -70,9 +71,9 @@ describe('paramVisColumns', () => {
     const dist = row(one, 'mergeMaxDistance').cells[0].r   // 0.5 µm against a 10.61 µm seed
     expect(seed).toBe(MAX_R)
     expect(dist).toBeLessThan(seed)
-    // 0.5/10.61 of the full radius is ~1 unit, under the 2-unit floor that keeps a small value
-    // VISIBLE. Clamped, not vanished — and still plainly smaller than the seed window.
-    expect(dist).toBe(2)
+    // 0.5/10.61 of the full radius is under the floor that keeps a small value VISIBLE.
+    // Clamped, not vanished — and still plainly smaller than the seed window.
+    expect(dist).toBe(MIN_R)
     expect(blur).toBe(0)
   })
 
@@ -145,16 +146,20 @@ describe('paramVisColumns', () => {
     expect(r.cells[1].r).toBe(MAX_R)
   })
 
-  it('spatial rows come before thresholds', () => {
-    const v = paramVisColumns(GROUP, TWO_PASS, ['0', '1'])
-    const firstFraction = v.rows.findIndex(r => r.role === 'fraction')
-    const lastSpatial = v.rows.map(r => r.role !== 'fraction').lastIndexOf(true)
-    expect(lastSpatial).toBeLessThan(firstFraction)
+  it('identity comes first, then sizes, then thresholds', () => {
+    // What this pass IS is what you check before any number.
+    const roles = paramVisColumns(GROUP, TWO_PASS, ['0', '1']).rows.map(r => r.role)
+    const rank = { text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2 } as const
+    expect(roles.map(r => rank[r])).toEqual([...roles.map(r => rank[r])].sort())
+    expect(roles[0]).toBe('text')
   })
 
   it('marks the rows that are identical across passes', () => {
     const v = paramVisColumns(GROUP, TWO_PASS, ['0', '1'])
-    expect(v.uniformKeys.sort()).toEqual(['mergeMaxDistance', 'minComponentSize', 'seedBlurSigma'])
+    // model and channels are identical BY DESIGN in a two-pass config; the numeric ones that are
+    // shared here are the three coastal's own reference also shares.
+    expect(v.uniformKeys.sort()).toEqual(
+      ['cellChannels', 'mergeMaxDistance', 'minComponentSize', 'model', 'seedBlurSigma'])
     expect(row(v, 'seedSize').uniform).toBe(false)
   })
 
@@ -242,5 +247,44 @@ describe('uniformWarning', () => {
   it('does not end in a period — it is a UI line', () => {
     const same = { '0': { seedSize: 4 }, '1': { seedSize: 4 } }
     expect(uniformWarning(paramVisColumns(GROUP, same, ['0', '1']))).not.toMatch(/\.$/)
+  })
+})
+
+describe('a text row', () => {
+  it('shows the value, with no shape and no number', () => {
+    const r = row(paramVisColumns(GROUP, TWO_PASS, ['0', '1']), 'model')
+    expect(r.cells[0].text).toBe('flow.pt')
+    expect(r.cells[0].r).toBe(0)
+    expect(r.cells[0].pxText).toBe('')
+  })
+
+  it('joins a channel list', () => {
+    const r = row(paramVisColumns(GROUP, TWO_PASS, ['0', '1']), 'cellChannels')
+    expect(r.cells[0].text).toBe('mem-TOM, nuc-GFP')
+  })
+
+  it('an EMPTY channel list reads "none", not blank', () => {
+    // A blank cell would hide a real mistake: no channels resolves to channel 0 downstream and
+    // segments something nobody picked — which is exactly what one of Dominik's passes was doing.
+    const v = { '0': { cellChannels: [] }, '1': { cellChannels: ['mem-TOM'] } }
+    const r = row(paramVisColumns(GROUP, v, ['0', '1']), 'cellChannels')
+    expect(r.cells[0].text).toBe('none')
+    expect(r.cells[1].text).toBe('mem-TOM')
+  })
+
+  it('is never drawn as a circle, whatever the string looks like', () => {
+    // `numeric()` would happily turn "4" into a radius; a text row must not go near that path.
+    const v = { '0': { model: '4' }, '1': { model: '8' } }
+    const r = row(paramVisColumns(GROUP, v, ['0', '1']), 'model')
+    expect(r.cells.map(c => c.r)).toEqual([0, 0])
+    expect(r.cells.map(c => c.text)).toEqual(['4', '8'])
+  })
+
+  it('marks identical identity without warning about it', () => {
+    // Two passes on the same model and channels is normal — it is how two-pass is meant to work — so
+    // the row is marked but the warning stays quiet.
+    const v = paramVisColumns(GROUP, TWO_PASS, ['0', '1'])
+    expect(row(v, 'model').uniform).toBe(true)
+    expect(uniformWarning(v)).toBe('')
   })
 })

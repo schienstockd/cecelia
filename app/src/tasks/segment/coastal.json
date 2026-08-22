@@ -74,6 +74,7 @@
       "params": [
         {
           "key": "model",
+          "vis": "text",
           "optionsFrom": "coastalModels",
           "label": "Model",
           "type": "select",
@@ -89,6 +90,7 @@
         },
         {
           "key": "matchAs",
+          "vis": "text",
           "label": "Match as",
           "type": "select",
           "default": "base",
@@ -106,6 +108,7 @@
         },
         {
           "key": "cellChannels",
+          "vis": "text",
           "label": "Cell channels",
           "type": "channelSelection",
           "multiple": true,

@@ -869,10 +869,20 @@ not independent, and the cost of not knowing is a second pass configured like th
 compute for almost no extra objects.
 
 **`vis`** — how a numeric param is DRAWN in the figure offered beside a repeatable group
-(`tasks/paramVis.ts` → `components/VisualAid.vue`, in a `FloatingPanel`; off by default). One of `diameter` (a circle of that size),
-`blur` (a soft ring), `distance` (a span), `area` (a disc whose *area* is the value), `fraction` (a
-marker on a 0–1 track). Omit it and the param is not drawn; an unrecognised value is ignored rather
-than guessed at.
+(`tasks/paramVis.ts` → `components/VisualAid.vue`, in a `FloatingPanel`; off by default). One of `text` (the value, no shape — which model,
+matched as what, on which channels), `diameter` (a circle of that size), `blur` (a soft ring),
+`distance` (a span), `area` (a disc whose *area* is the value) or `fraction` (its number only). Omit it
+and the param is not drawn; an unrecognised value is ignored rather than guessed at.
+
+Rows are ordered `text` → sizes → `fraction`: what this entry IS, then what size it looks for, then how
+readily it grows. A `text` row shows `none` for an empty list rather than a blank cell — an empty
+channel set resolves to channel 0 downstream and segments something nobody picked, so blank would hide
+a real mistake. A row no column carries at all is dropped either way.
+
+`fraction` and `text` get no shape on purpose. A rail with a filled bar cost a row of height to say
+what `0.2` beside `0.8` already says, and the earlier rail-plus-handle version looked exactly like the
+real sliders in the form — a control you cannot move is worse than a picture, because you try to drag
+it.
 
 A role, not a key match. Matching on `seedSize` inside the renderer would make the picture a second
 description of the form, free to diverge from it — the same class of bug as the preview that ignored
