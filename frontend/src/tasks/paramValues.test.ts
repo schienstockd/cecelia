@@ -4,7 +4,7 @@ import {
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
-  missingRequired, groupOrderKeysFor } from './paramValues'
+  missingRequired, groupOrderKeysFor, newEntryDefaults } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -666,5 +666,92 @@ describe('unticking every chip is blocked at the button', () => {
 
   it('nor is an unset order — that means every entry', () => {
     expect(missingRequired(ORDER_DEF, { models: { '0': {} } })).toEqual([])
+  })
+})
+
+// ── a new entry of a repeatable group ────────────────────────────────────────
+// THE bug: entries of a repeatable group are applied IN ORDER and each fills only what an earlier one
+// left, so a second entry born as a copy of the first is two passes doing the same work — the second
+// grows to nearly the same regions, gets clipped along the first's boundaries, and leaves slivers at
+// twice the compute. That is what a coastal two-pass config did on real data.
+const MODELS_GROUP: ParamDef = {
+  key: 'models', label: 'Segmentation models', type: 'group', repeatable: true,
+  entryDefaults: [{}, { affinityThreshold: 0.8, seedSize: 2.65, seedBlurSigma: 0 }],
+  params: [
+    { key: 'model', label: 'Model', type: 'select', default: '' },
+    { key: 'cellChannels', label: 'Channels', type: 'channelSelection', default: [] },
+    { key: 'seedSize', label: 'Seed window', type: 'float', default: 4.0 },
+    { key: 'affinityThreshold', label: 'Growing', type: 'float', default: 0.5 },
+    { key: 'advanced', label: 'Advanced', type: 'section', params: [
+      { key: 'seedBlurSigma', label: 'Seed blur', type: 'float', default: 2.5 },
+    ] },
+  ],
+} as ParamDef
+
+describe('newEntryDefaults', () => {
+  it('the first entry is the plain spec defaults', () => {
+    expect(newEntryDefaults(MODELS_GROUP, 0)).toEqual({
+      model: '', cellChannels: [], seedSize: 4.0, affinityThreshold: 0.5, seedBlurSigma: 2.5,
+    })
+  })
+
+  it('collects section sub-params flat, as the entry dict stores them', () => {
+    // Nesting them would put `seedBlurSigma` somewhere the runner never looks.
+    expect(newEntryDefaults(MODELS_GROUP, 0)).toHaveProperty('seedBlurSigma', 2.5)
+  })
+
+  it('a second entry differs from the first where the spec says it must', () => {
+    const second = newEntryDefaults(MODELS_GROUP, 1)
+    expect(second.affinityThreshold).toBe(0.8)
+    expect(second.seedSize).toBe(2.65)
+    expect(second.seedBlurSigma).toBe(0)
+  })
+
+  it('a second entry inherits the first entry\'s model and channels', () => {
+    // The two passes are the same model over the same channels; only how they grow differs. This is
+    // also what stops a pass being born with NO channels, which resolves to `[0]` downstream and
+    // segments a channel nobody picked.
+    const second = newEntryDefaults(MODELS_GROUP, 1,
+      { model: 'flow.small.pt', cellChannels: ['mem-TOM', 'nuc-GFP'], seedSize: 8.0 })
+    expect(second.model).toBe('flow.small.pt')
+    expect(second.cellChannels).toEqual(['mem-TOM', 'nuc-GFP'])
+  })
+
+  it('what must differ wins over what is inherited', () => {
+    // Ordering guard: inherit first, then override. The other way round copies the cell pass's seed
+    // size onto the fragment pass and the whole thing is a no-op.
+    const second = newEntryDefaults(MODELS_GROUP, 1,
+      { seedSize: 8.0, affinityThreshold: 0.5, seedBlurSigma: 2.5 })
+    expect(second.seedSize).toBe(2.65)
+    expect(second.affinityThreshold).toBe(0.8)
+    expect(second.seedBlurSigma).toBe(0)
+  })
+
+  it('does not inherit into the first entry', () => {
+    const first = newEntryDefaults(MODELS_GROUP, 0, { seedSize: 99, affinityThreshold: 0.1 })
+    expect(first.seedSize).toBe(4.0)
+    expect(first.affinityThreshold).toBe(0.5)
+  })
+
+  it('a third entry reuses the last seed rather than falling back to the defaults', () => {
+    // A third pass is much more like the second than like the first.
+    expect(newEntryDefaults(MODELS_GROUP, 2).affinityThreshold).toBe(0.8)
+  })
+
+  it('a key the group no longer declares is dropped, not forwarded', () => {
+    const stale: ParamDef = { ...MODELS_GROUP, entryDefaults: [{}, { gone: 1, seedSize: 3 }] }
+    const second = newEntryDefaults(stale, 1)
+    expect(second).not.toHaveProperty('gone')
+    expect(second.seedSize).toBe(3)
+  })
+
+  it('a group with no entryDefaults still gets the plain defaults', () => {
+    const plain: ParamDef = { ...MODELS_GROUP, entryDefaults: undefined }
+    expect(newEntryDefaults(plain, 1).affinityThreshold).toBe(0.5)
+  })
+
+  it('an inherited key the group does not declare is not smuggled in', () => {
+    const second = newEntryDefaults(MODELS_GROUP, 1, { bogus: 7 } as ParamValues)
+    expect(second).not.toHaveProperty('bogus')
   })
 })

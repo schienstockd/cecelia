@@ -70,6 +70,31 @@ export interface ParamDef {
   collapsed?: boolean
   params?: ParamDef[]
   labelKey?: string    // group: param key whose value names the entry — its header, and its chip in the order row
+  // group + repeatable: starting values for the Nth entry, overlaid on the sub-params' own defaults
+  // when that entry is ADDED. Index 0 is the first entry, so it is normally omitted — the plain
+  // defaults already describe it.
+  //
+  // This exists because entries of a repeatable group are not interchangeable. Coastal's `models`
+  // group is applied in order and each entry fills only what an earlier one left, so a second entry
+  // born as a COPY of the first is the one configuration it must never have: two passes that do the
+  // same thing, at twice the cost, where the second contributes almost nothing. See
+  // docs/SEGMENTATION.md → *Two passes = two model groups*.
+  entryDefaults?: Array<Record<string, unknown>>
+  // group + repeatable: HOW the entries combine, in one line, shown as soon as there are two of
+  // them. Not hardcoded in the renderer because the rule is per task: coastal's and cellpose's
+  // entries are applied in order and each labels only what an earlier one left, while the AF spec's
+  // channel combinations are independent and order means nothing. The renderer used to state
+  // coastal's rule for all of them.
+  entriesTip?: string
+  // How this param is DRAWN in the strip beside a repeatable group (`paramVis.ts`). A role, not a
+  // key match: matching on `seedSize` inside the renderer would make the picture a second, silently
+  // divergent description of the form. Omit it and the param is not drawn.
+  //   diameter - a circle of that size (a seed window)
+  //   blur     - a soft ring (a gaussian sigma)
+  //   distance - a short span (a merge search radius)
+  //   area     - a disc whose AREA is the value (a size floor, in um^2)
+  //   fraction - a marker on a 0-1 track (a threshold, a weight)
+  vis?: 'diameter' | 'blur' | 'distance' | 'area' | 'fraction'
 }
 
 export interface TaskDef {

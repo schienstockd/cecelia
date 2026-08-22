@@ -206,7 +206,7 @@ const FILTERS: ChipOption[] = [
       <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon"
         :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
         @click="throttleOpen = !throttleOpen"
-        v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
+        v-tooltip.left="'Throttle — how many tasks run at once, and how wide each may go'">
         <i class="pi pi-sliders-h" />
       </button>
       <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">

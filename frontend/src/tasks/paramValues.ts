@@ -466,6 +466,63 @@ export function isChosenValueName(value: unknown, specDefault: unknown): boolean
 }
 
 /**
+ * Starting values for a NEW entry of a repeatable group — the sub-params' own defaults, overlaid
+ * with the spec's `entryDefaults` for that position.
+ *
+ * **Why a position matters at all.** Entries of a repeatable group are not interchangeable. Coastal's
+ * `models` group is applied in run order and each entry fills only the pixels an earlier one left
+ * (`fill_unlabelled`), so the second entry is a FRAGMENT pass over what the first did not claim.
+ * Born as a copy of the first, it grows to almost the same regions and is then clipped along the
+ * first pass's boundaries — slivers hugging every cell, at twice the compute, which is the one
+ * configuration two passes must never have. The engine's own reference puts them at opposite ends
+ * (`affinity_threshold` 0.2 then 0.8); the form used to start them identical.
+ *
+ * Applied ONLY when an entry is added, deliberately: filling a saved config's missing keys from a
+ * position default would silently change what an existing run computes. A form that starts you
+ * somewhere sensible is a different thing from a resolver that rewrites history.
+ *
+ * Positions past the end of `entryDefaults` reuse its last element — a third pass is much more like
+ * the second than like the first.
+ */
+export function newEntryDefaults(param: ParamDef, position: number,
+                                 base?: ParamValues): ParamValues {
+  const declared: ParamValues = {}
+  for (const p of param.params ?? []) {
+    // Section sub-params are stored FLAT in the entry dict, so they are collected, not nested.
+    const leaves = p.type === 'section' ? (p.params ?? []) : [p]
+    for (const leaf of leaves) {
+      if (leaf.default !== undefined) declared[leaf.key] = leaf.default as ParamValues[string]
+    }
+  }
+  const out: ParamValues = { ...declared }
+
+  // Then the FIRST entry's live values, for everything the two passes should share: which model,
+  // which channels, the normalisation percentile, what it matches as. A user who has tuned the cell
+  // pass to their data should not have the fragment pass start from bare spec defaults — and this is
+  // also the only thing that stops a second pass inheriting a DIFFERENT channel set from the first,
+  // which resolves to `[0]` downstream and silently segments a channel nobody chose.
+  if (base && position > 0) {
+    for (const [k, v] of Object.entries(base)) {
+      if (k in declared) out[k] = v as ParamValues[string]
+    }
+  }
+
+  // Last, the values that must DIFFER, which is the whole point.
+  const table = param.entryDefaults
+  if (table && table.length && position > 0) {
+    const seed = table[Math.min(position, table.length - 1)]
+    // Only keys the group declares — a stale spec entry must not inject a param that no longer
+    // exists, which would then be forwarded to the runner as an unknown key.
+    if (seed) {
+      for (const [k, v] of Object.entries(seed)) {
+        if (k in declared) out[k] = v as ParamValues[string]
+      }
+    }
+  }
+  return out
+}
+
+/**
  * Which entries of a repeatable group to run, in order — the resolved form of `<groupKey>Order`,
  * which `_apply_group_order` (task.jl) applies for real before any runner sees the group.
  *

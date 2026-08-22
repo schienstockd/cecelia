@@ -15,11 +15,14 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
-         scopeValueName, groupOrderKeys } from './paramValues'
+         scopeValueName, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import VisualAid from '../components/VisualAid.vue'
+import FloatingPanel from '../components/FloatingPanel.vue'
+import { paramVisColumns, uniformWarning } from './paramVis'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 
@@ -405,6 +408,34 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
   return { value: e.key, label: named ? String(named) : `${i + 1}` }
 }))
 
+// µm per pixel for the strip's pixel captions — only when every selected image AGREES on it. A batch
+// spanning two objectives has no single answer, and printing one of them would state a scale that is
+// wrong for the others; the strip falls back to form units and says so.
+const groupPxSize = computed<number | null>(() => {
+  const sizes = (props.context?.images ?? [])
+    .map(i => i.physicalSizeX).filter((v): v is number => typeof v === 'number' && v > 0)
+  if (!sizes.length) return null
+  return sizes.every(v => v === sizes[0]) ? sizes[0] : null
+})
+
+// The figure is FLOATING, not inline. Eleven rows above the entry list pushed the whole form down
+// and was the first thing Dominik said about it — a reference you consult while tuning wants to sit
+// beside the controls, not between them. `FloatingPanel` remembers where you put it.
+const figureOpen = ref(false)
+const groupVis = computed(() =>
+  paramVisColumns(props.param, (val.value as GroupValues) ?? {}, groupOrderValue.value,
+                  groupPxSize.value))
+const groupVisNote = computed(() => uniformWarning(groupVis.value))
+
+const groupVisHeadings = computed<string[]>(() =>
+  groupOrderValue.value.map(k => {
+    const raw = props.param.labelKey ? (val.value as GroupValues)?.[k]?.[props.param.labelKey] : undefined
+    const named = Array.isArray(raw) ? raw[0] : raw
+    // The same heading the entry itself carries, so the strip and the list cannot disagree about
+    // which column is which.
+    return named ? String(named) : String(Number(k) + 1)
+  }))
+
 const groupOrderValue = computed<string[]>(() =>
   groupOrderKeys(Object.fromEntries(groupEntries.value.map(e => [e.key, e.vals])),
                  props.context?.values?.[orderKey.value]))
@@ -421,18 +452,11 @@ function addGroupEntry() {
   const nextKey = String(groupEntries.value.length === 0
     ? 0
     : Math.max(...groupEntries.value.map(e => Number(e.key))) + 1)
-  const defaults: ParamValues = {}
-  for (const p of props.param.params ?? []) {
-    if (p.type === 'section') {
-      // Section sub-params are stored flat in the entry dict
-      for (const sp of p.params ?? []) {
-        if (sp.default !== undefined) defaults[sp.key] = sp.default
-      }
-    } else if (p.default !== undefined) {
-      defaults[p.key] = p.default
-    }
-  }
-  v[nextKey] = defaults
+  // POSITION, not key: what a new entry should start as depends on where it sits in the run order,
+  // and after a removal the next key is not the next position. See `newEntryDefaults` for why a
+  // second entry must not be born as a copy of the first.
+  v[nextKey] = newEntryDefaults(props.param, groupEntries.value.length,
+                                groupEntries.value[0]?.vals)
   val.value = v
 }
 
@@ -758,11 +782,21 @@ const pct = computed(() => {
   <div v-if="param.type === 'group' && !notApplicable" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
-      <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
-        @click="addGroupEntry()"
-        v-tooltip.right="'Add another entry'">
-        <i class="pi pi-plus" />
-      </button>
+      <!-- Both buttons in ONE right-aligned group. The header is `space-between`, so as separate
+           children a second button parked the first in the middle of the row — reading as a label
+           with a stray control after it. `+` stays rightmost, where it was when it was alone. -->
+      <span class="group-actions cc-row cc-row-tight">
+        <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
+          type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
+          v-tooltip.left="'Show these settings as a figure'">
+          <i class="pi pi-chart-bar" />
+        </button>
+        <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
+          @click="addGroupEntry()"
+          v-tooltip.left="'Add another entry'">
+          <i class="pi pi-plus" />
+        </button>
+      </span>
     </div>
 
     <!-- Which entries run, and in what order. Every `repeatable` group gets this — it is not a
@@ -780,7 +814,9 @@ const pct = computed(() => {
          is what Dominik saw. A tipped label preceding it in the same row is how chips are covered. -->
     <div v-if="param.repeatable && groupEntries.length > 1" class="group-order-row cc-row cc-row-tight">
       <span class="group-order-label cc-muted cc-fs-2xs"
-        v-tooltip.right="'Drag to reorder — earlier entries claim pixels first'">Order</span>
+        v-tooltip.right="param.entriesTip
+          ? `${param.entriesTip}; drag to reorder`
+          : 'Drag to reorder'">Order</span>
       <ChipSelect
         class="group-order"
         :options="groupOrderOptions"
@@ -790,6 +826,31 @@ const pct = computed(() => {
         @update:model-value="v => emit('update:groupOrder', orderKey, v as string[])"
       />
     </div>
+
+    <!-- HOW the entries combine. Shown, not tucked into a tooltip: a user who adds a second entry has
+         no way to guess that the entries are not independent — that the first one claims pixels and
+         the second only fills what it left — and the consequence of not knowing is a second pass
+         configured like the first, which costs double and contributes almost nothing. Same condition
+         as the order row, because with one entry there is nothing to combine. Text comes from the
+         spec (`entriesTip`); a task whose entries ARE independent simply omits it and shows no line.
+         `InlineNote` is the canonical short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md);
+         an icon plus a span plus a tooltip by hand is the variant it exists to delete. -->
+    <InlineNote v-if="param.repeatable && groupEntries.length > 1 && param.entriesTip"
+      class="group-entries-note cc-fs-2xs" placement="bottom"
+      :short="param.entriesTip"
+      detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
+              fill only what it left. Two entries configured alike therefore do the same work twice." />
+
+    <!-- A floating figure of what these numbers MEAN, one column per entry. Off by default and
+         remembered per user: it is a reference you consult while tuning, so it belongs beside the
+         controls rather than wedged between them. Only offered when the spec gives some param a
+         `vis` role, so a task with none shows no button. -->
+    <FloatingPanel v-if="figureOpen" :title="`${param.label} — at a glance`"
+      storage-key="param-figure" icon="pi-chart-bar" :default-w="330" :default-h="420"
+      @close="figureOpen = false">
+      <VisualAid :vis="groupVis" :headings="groupVisHeadings"
+        :note="groupVisNote" note-severity="warn" />
+    </FloatingPanel>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -873,6 +934,7 @@ const pct = computed(() => {
    of their own — they read as part of whichever neighbour you looked at first. */
 .group-order-row { margin: 0.35rem 0 0.5rem; }
 .group-order-label { flex: 0 0 auto; }
+.group-entries-note { margin: 0 0 0.4rem; }
 .param-row {
   display: flex;
   flex-direction: column;
@@ -985,6 +1047,7 @@ const pct = computed(() => {
   padding: 0.45rem 0 0.3rem;
 }
 
+.group-actions { flex: 0 0 auto; }
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .group-empty { font-style: italic; padding: 0.3rem 0; }

@@ -138,33 +138,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <template>
   <div class="pt-root" :class="props.compact ? 'compact cc-row cc-row-loose' : ''">
-    <div v-if="!props.compact" class="pt-head">Concurrent tasks</div>
-    <div class="pt-grid">
-      <div v-for="name in orderedPools" :key="name" class="pt-cell"
-           v-tooltip.bottom="POOL_META[name]?.tip">
-        <div class="pt-cell-head">
-          <span class="pt-label">{{ POOL_META[name]?.label ?? name }}</span>
-          <span class="pt-val">{{ pools[name] }}</span>
-        </div>
-        <input type="range" class="pt-slider" min="1" :max="POOL_META[name]?.max ?? 32"
-               :value="pools[name]" :disabled="poolBusy === name"
-               @input="pools[name] = +($event.target as HTMLInputElement).value"
-               @change="setPool(name, +($event.target as HTMLInputElement).value)" />
-        <!-- live occupancy: how many tasks are running now vs the limit, + any queued for this pool -->
-        <div v-if="!props.compact" class="pt-occ cc-readout cc-fs-2xs"
-             :class="{ busy: runningOf(name) > 0 || queuedOf(name) > 0 }">
-          <span><span class="pt-occ-n">{{ runningOf(name) }}</span><span class="pt-occ-sep">/</span>{{ pools[name] }} running</span>
-          <span v-if="queuedOf(name) > 0" class="pt-occ-q">+{{ queuedOf(name) }} queued</span>
-        </div>
-        <div v-if="!props.compact" class="pt-bar">
-          <div class="pt-bar-fill" :style="{ width: fillPct(name) }" />
-        </div>
-      </div>
-    </div>
-    <p v-if="!props.compact" class="pt-hint cc-muted cc-fs-xs">
-      Lower to throttle, raise to run more at once. Saved automatically.
-    </p>
-
+      <!-- THREADS FIRST, deliberately. This section is two rows; the pools are four cells with
+           live occupancy and bars, so with the pools above it the thread slider sat below the
+           fold of a `max-height: 100vh` popover on a short window — present, scrollable, and
+           invisible. The short section goes first so both are reachable without scrolling. -->
     <!-- threads per task: the other axis — how WIDE one task may go, not how many run -->
     <div v-if="threads" class="pt-threads">
       <div v-if="!props.compact" class="pt-head">Threads per task</div>
@@ -199,6 +176,34 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
               @click="setThreads(0)">Reset to auto</button>
       <p v-if="!props.compact" class="pt-hint cc-muted cc-fs-xs">Applies to the next task started.</p>
     </div>
+
+    <div v-if="!props.compact" class="pt-head">Concurrent tasks</div>
+    <div class="pt-grid">
+      <div v-for="name in orderedPools" :key="name" class="pt-cell"
+           v-tooltip.bottom="POOL_META[name]?.tip">
+        <div class="pt-cell-head">
+          <span class="pt-label">{{ POOL_META[name]?.label ?? name }}</span>
+          <span class="pt-val">{{ pools[name] }}</span>
+        </div>
+        <input type="range" class="pt-slider" min="1" :max="POOL_META[name]?.max ?? 32"
+               :value="pools[name]" :disabled="poolBusy === name"
+               @input="pools[name] = +($event.target as HTMLInputElement).value"
+               @change="setPool(name, +($event.target as HTMLInputElement).value)" />
+        <!-- live occupancy: how many tasks are running now vs the limit, + any queued for this pool -->
+        <div v-if="!props.compact" class="pt-occ cc-readout cc-fs-2xs"
+             :class="{ busy: runningOf(name) > 0 || queuedOf(name) > 0 }">
+          <span><span class="pt-occ-n">{{ runningOf(name) }}</span><span class="pt-occ-sep">/</span>{{ pools[name] }} running</span>
+          <span v-if="queuedOf(name) > 0" class="pt-occ-q">+{{ queuedOf(name) }} queued</span>
+        </div>
+        <div v-if="!props.compact" class="pt-bar">
+          <div class="pt-bar-fill" :style="{ width: fillPct(name) }" />
+        </div>
+      </div>
+    </div>
+    <p v-if="!props.compact" class="pt-hint cc-muted cc-fs-xs">
+      Lower to throttle, raise to run more at once. Saved automatically.
+    </p>
+
   </div>
 </template>
 

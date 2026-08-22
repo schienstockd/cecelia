@@ -418,8 +418,9 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 | `io` | 8 | local disk IO — OME-ZARR import/convert, crop |
 | `network` | 1 | remote/SMB reads — reserved for HPC/remote tasks (unused today) |
 
-Limits are starting defaults only — each is adjustable live in Settings, so throttle whenever you
-need (e.g. drop `io` to 1 when importing over a slow network share).
+Limits are starting defaults only — each is adjustable live in the `PoolThrottle` popover (Task
+Manager, any module page, the Chain page), so throttle whenever you need (e.g. drop `io` to 1 when
+importing over a slow network share).
 
 ### `hidden` — a registered task with no module-page entry
 
@@ -839,6 +840,65 @@ should not be collapsed.
 
 **`repeatable`** / **`labelKey`** — on a `group`: whether entries can be added and reordered, and
 which sub-param's value is shown in each entry's header so the list is readable when collapsed.
+
+**`entryDefaults`** — on a `repeatable` `group`: an array of starting values, indexed by ENTRY
+POSITION, overlaid when an entry is added. Index 0 is the first entry and is normally `{}` — the
+sub-params' own defaults already describe it.
+
+Needed because entries of a repeatable group are **not interchangeable**. They are applied in run
+order and each fills only what an earlier one left, so a second entry is a pass over the *remainder*.
+Born as a copy of the first it does the same work twice: it grows to nearly the same regions, is
+clipped along the earlier pass's boundaries, and leaves slivers — measured on a real coastal two-pass
+config where both passes carried the same growing threshold. So a spec that supports stacking has to
+say what a *second* entry should be, not just what *an* entry is.
+
+A new entry is the sub-param defaults, then the FIRST entry's live values for everything the entries
+should share (which model, which channels), then `entryDefaults[position]` for what must differ —
+in that order, so what must differ wins. Positions past the end reuse the last element.
+
+Applied only when an entry is ADDED, never to fill a saved config's missing keys: a resolver that
+back-filled position defaults would silently change what an existing run computes.
+
+**`entriesTip`** — on a `repeatable` `group`: one line saying HOW the entries combine, shown above the
+list as soon as there are two. Per task, not in the renderer: coastal's and cellpose's entries are
+applied in order and each labels only what an earlier one left, while the AF spec's channel
+combinations are independent and order means nothing — the renderer used to assert coastal's rule for
+all three. Omit it and no line appears.
+
+Shown rather than tooltipped, because a user who adds a second entry cannot guess that the entries are
+not independent, and the cost of not knowing is a second pass configured like the first: double the
+compute for almost no extra objects.
+
+**`vis`** — how a numeric param is DRAWN in the figure offered beside a repeatable group
+(`tasks/paramVis.ts` → `components/VisualAid.vue`, in a `FloatingPanel`; off by default). One of `text` (the value, no shape — which model,
+matched as what, on which channels), `diameter` (a circle of that size), `blur` (a soft ring),
+`distance` (a span), `area` (a disc whose *area* is the value) or `fraction` (its number only). Omit it
+and the param is not drawn; an unrecognised value is ignored rather than guessed at.
+
+Rows are ordered `text` → sizes → `fraction`: what this entry IS, then what size it looks for, then how
+readily it grows. A `text` row shows `none` for an empty list rather than a blank cell — an empty
+channel set resolves to channel 0 downstream and segments something nobody picked, so blank would hide
+a real mistake. A row no column carries at all is dropped either way.
+
+`fraction` and `text` get no shape on purpose. A rail with a filled bar cost a row of height to say
+what `0.2` beside `0.8` already says, and the earlier rail-plus-handle version looked exactly like the
+real sliders in the form — a control you cannot move is worse than a picture, because you try to drag
+it.
+
+A role, not a key match. Matching on `seedSize` inside the renderer would make the picture a second
+description of the form, free to diverge from it — the same class of bug as the preview that ignored
+the order chips.
+
+Why it exists: coastal's model group carries eleven numbers per pass, and columns of digits do not
+answer the question that decides whether a multi-pass run works — *are these passes looking for
+different objects?* Two circles of visibly different size do, and two identical columns answer it just
+as clearly.
+
+Scale is shared across every row of the same DIMENSION — all lengths on one scale, areas on their own,
+thresholds on a track. Scaling each row against only its own columns is what the first version did,
+and it made a single-column group draw every shape at full radius, since each row's one value is
+trivially its own maximum. Captions are in image **pixels** when the images agree on a pixel size,
+since pixels are what the engine receives and what a reference tuned in pixels can be checked against.
 
 **`acrossSegmentations`** — on a `popSelection`, list populations from EVERY segmentation
 (value_name-prefixed) rather than just the sibling `valueName`'s.

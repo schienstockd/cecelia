@@ -37,6 +37,19 @@
       "label": "Segmentation models",
       "type": "group",
       "repeatable": true,
+      "entriesTip": "Passes run in order — each labels only the pixels earlier passes left",
+      "entryDefaults": [
+        {},
+        {
+          "seedSize": 2.65,
+          "affinityThreshold": 0.8,
+          "mergeAffinityThreshold": 0.9,
+          "seedBlurSigma": 0.0,
+          "probBlurSigma": 0.0,
+          "minComponentSize": 1.1,
+          "stitchThreshold": 0.2
+        }
+      ],
       "default": {
         "0": {
           "model": "",
@@ -61,6 +74,7 @@
       "params": [
         {
           "key": "model",
+          "vis": "text",
           "optionsFrom": "coastalModels",
           "label": "Model",
           "type": "select",
@@ -76,6 +90,7 @@
         },
         {
           "key": "matchAs",
+          "vis": "text",
           "label": "Match as",
           "type": "select",
           "default": "base",
@@ -93,6 +108,7 @@
         },
         {
           "key": "cellChannels",
+          "vis": "text",
           "label": "Cell channels",
           "type": "channelSelection",
           "multiple": true,
@@ -101,6 +117,7 @@
         },
         {
           "key": "seedSize",
+              "vis": "diameter",
           "label": "Seed window (µm)",
           "type": "float",
           "min": 0.5,
@@ -111,6 +128,7 @@
         },
         {
           "key": "probThreshold",
+              "vis": "fraction",
           "label": "Foreground threshold",
           "type": "float",
           "min": 0.05,
@@ -127,6 +145,7 @@
           "params": [
             {
               "key": "seedBlurSigma",
+              "vis": "blur",
               "label": "Seed blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -137,6 +156,7 @@
             },
             {
               "key": "affinityThreshold",
+              "vis": "fraction",
               "label": "Growing threshold",
               "type": "float",
               "min": 0.1,
@@ -147,6 +167,7 @@
             },
             {
               "key": "minComponentSize",
+              "vis": "area",
               "label": "Min fragment (µm²)",
               "type": "float",
               "min": 0.0,
@@ -167,6 +188,7 @@
             },
             {
               "key": "stitchThreshold",
+              "vis": "fraction",
               "label": "Z-stitch threshold",
               "type": "float",
               "min": 0.0,
@@ -177,6 +199,7 @@
             },
             {
               "key": "probBlurSigma",
+              "vis": "blur",
               "label": "Probability blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -187,6 +210,7 @@
             },
             {
               "key": "embeddingBlurSigma",
+              "vis": "blur",
               "label": "Embedding blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -197,6 +221,7 @@
             },
             {
               "key": "mergeAffinityThreshold",
+              "vis": "fraction",
               "label": "Merge threshold",
               "type": "float",
               "min": 0.1,
@@ -207,6 +232,7 @@
             },
             {
               "key": "mergeMaxDistance",
+              "vis": "distance",
               "label": "Merge distance (µm)",
               "type": "float",
               "min": 0.0,
@@ -217,6 +243,7 @@
             },
             {
               "key": "probWeight",
+              "vis": "fraction",
               "label": "Brightness relaxation",
               "type": "float",
               "min": 0.0,
