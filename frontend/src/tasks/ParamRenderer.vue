@@ -791,12 +791,14 @@ const pct = computed(() => {
          the second only fills what it left — and the consequence of not knowing is a second pass
          configured like the first, which costs double and contributes almost nothing. Same condition
          as the order row, because with one entry there is nothing to combine. Text comes from the
-         spec (`entriesTip`); a task whose entries ARE independent simply omits it and shows no line. -->
-    <div v-if="param.repeatable && groupEntries.length > 1 && param.entriesTip"
-      class="group-entries-note cc-muted cc-fs-2xs">
-      <i class="pi pi-info-circle" />
-      <span>{{ param.entriesTip }}</span>
-    </div>
+         spec (`entriesTip`); a task whose entries ARE independent simply omits it and shows no line.
+         `InlineNote` is the canonical short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md);
+         an icon plus a span plus a tooltip by hand is the variant it exists to delete. -->
+    <InlineNote v-if="param.repeatable && groupEntries.length > 1 && param.entriesTip"
+      class="group-entries-note cc-fs-2xs" placement="bottom"
+      :short="param.entriesTip"
+      detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
+              fill only what it left. Two entries configured alike therefore do the same work twice." />
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -880,13 +882,7 @@ const pct = computed(() => {
    of their own — they read as part of whichever neighbour you looked at first. */
 .group-order-row { margin: 0.35rem 0 0.5rem; }
 .group-order-label { flex: 0 0 auto; }
-/* Reads as a note about the list above it, not as another control: no border, no background, and the
-   icon sits on the first line rather than centred on a wrapped block. */
-.group-entries-note {
-  display: flex; align-items: flex-start; gap: 0.35rem;
-  margin: 0 0 0.4rem; line-height: 1.35;
-}
-.group-entries-note .pi { margin-top: 0.1rem; flex: 0 0 auto; }
+.group-entries-note { margin: 0 0 0.4rem; }
 .param-row {
   display: flex;
   flex-direction: column;
