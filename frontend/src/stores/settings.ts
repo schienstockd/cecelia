@@ -20,6 +20,16 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.tasksThisProjectOnly') !== 'false'  // default true
   )
 
+  // Whether the Task Manager also lists the project's DURABLE run history (each image's run log), not
+  // just the runs this browser session watched. ON by default, because off is what the manager used to
+  // be and it was reported as the list looking empty: a window opened after the work finished — a
+  // reload, or the pop-out task window — had nothing to show for a project with hundreds of runs in it.
+  // A toggle rather than a rule because the two questions are different ("what is happening" vs "what
+  // has been done"), and the session view is the one you want while you are running things.
+  const tasksShowHistory = ref(
+    localStorage.getItem('cc.tasksShowHistory') !== 'false'  // default true
+  )
+
   // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
   // composables/useDataRefresh). On by default; users who find plots refetching under them distracting
   // can turn it off (they then refresh on the next navigation / input change).
@@ -368,6 +378,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
+  watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
@@ -398,7 +409,7 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

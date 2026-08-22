@@ -10,9 +10,18 @@
 export interface RunLogEntry {
   fun: string
   valueName?: string
-  status?: string                       // "done" | "failed" (missing ⇒ done, on legacy entries)
+  // An OPEN set: "done" | "failed" | "cancelled" | "interrupted" (a run whose process died, stamped by
+  // `reap_run_log!` on project load) | "running" (live right now). Missing ⇒ done, on legacy entries.
+  status?: string
   params?: Record<string, unknown>
   at: string
+  // Both written by the modern open/close pair (`open_run_log!` + `close_run_log!`) and ABSENT on an
+  // entry appended in one shot (`append_run_log!` — the REPL, older versions), so a reader must treat
+  // either as unknown rather than assuming every entry has them. `utils/taskHistoryRows.ts` is what
+  // needs them: `finishedAt` is the only way a history row can show an elapsed, and `taskId` is what
+  // matches the row against the live one for the same run.
+  finishedAt?: string
+  taskId?: string
 }
 
 export type ProcMode = 'ever' | 'last'

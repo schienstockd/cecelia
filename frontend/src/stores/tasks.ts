@@ -44,6 +44,12 @@ export interface TaskEntry {
   // only knowable from the `taskId` the chain frames carry. Needed to match a row against a backend
   // outcome (`utils/taskReconcile.ts`); undefined = no correlation available, never assume `id`.
   backendTaskId?: string
+  // A row rebuilt from the project's DURABLE run log (`utils/taskHistoryRows.ts`) rather than from a
+  // frame or the in-flight snapshot — a record of a run, not a handle on one. Three things read it:
+  // `forModule` EXCLUDES these (the per-module sidebar and the image table's status badge are about
+  // this session's work, and neither should suddenly inherit a project's whole history), `canRerunTask`
+  // withholds Re-run, and the manager hides Dismiss (the row is on disk; it would come straight back).
+  history?: boolean
 }
 
 export const useTaskStore = defineStore('tasks', () => {
@@ -157,7 +163,11 @@ export const useTaskStore = defineStore('tasks', () => {
     const done = new Set<TaskStatus>(['done', 'failed', 'cancelled'])
     for (let i = tasks.value.length - 1; i >= 0; i--) {
       const t = tasks.value[i]
-      if (t.module === module && done.has(t.status) && (!projectUid || t.projectUid === projectUid))
+      // `!t.history` for the same reason `forModule` has it: these rows are the project's record, not
+      // this session's list. Clearing one would delete nothing (it is on disk) and it would be back on
+      // the next hydrate — a button that appears to do something and doesn't.
+      if (t.module === module && !t.history && done.has(t.status) &&
+          (!projectUid || t.projectUid === projectUid))
         tasks.value.splice(i, 1)
     }
   }
@@ -165,8 +175,12 @@ export const useTaskStore = defineStore('tasks', () => {
   // projectUid is optional so callers that genuinely want the cross-project view (the /tasks
   // manager) can still get everything — the per-module sidebar (TaskList/TaskRunner) always
   // passes the current project so switching projects doesn't leave a stale task list visible.
+  // NB the `!t.history` — see the field. This is the ONE chokepoint for both the per-module task
+  // sidebar and the image table's per-image status badge, so excluding history here keeps every
+  // surface except the manager exactly as it was.
   function forModule(module: string, projectUid?: string) {
-    return tasks.value.filter(t => t.module === module && (!projectUid || t.projectUid === projectUid))
+    return tasks.value.filter(t => t.module === module && !t.history &&
+                                   (!projectUid || t.projectUid === projectUid))
   }
 
   const running = () => tasks.value.filter(t => t.status === 'running' || t.status === 'queued')
@@ -201,6 +215,30 @@ export const useTaskStore = defineStore('tasks', () => {
         ...(r.params ? {} : { paramsUnknown: true }),
       })
     }
+  }
+
+  /**
+   * Put the project's DURABLE history in the list — the rows built from each image's run log
+   * (`utils/taskHistoryRows.ts`, which is where the reasoning lives).
+   *
+   * Separate from `adopt()` rather than folded into it, because the two differ in every way that
+   * matters: these rows are terminal, they are not the scheduler's, they carry `seq: 0` (the `#N`
+   * counter numbers THIS session's work — handing 300 archived runs a number each would push the next
+   * real task to #301 and mean nothing), and they are REPLACED wholesale on each hydrate instead of
+   * accumulated, because their source is a file that can be re-read rather than a stream that cannot.
+   *
+   * Live rows always win: a row already in the list under the same id is left alone, and the caller
+   * has already dropped those from the input.
+   */
+  function setHistory(rows: TaskEntry[]) {
+    const live = tasks.value.filter(t => !t.history)
+    const liveIds = new Set(live.map(t => t.id))
+    tasks.value = [...live, ...rows.filter(r => !liveIds.has(r.id))]
+  }
+
+  /** Drop every history row and keep the session's — the toggle going off, or a project closing. */
+  function clearHistory() {
+    if (tasks.value.some(t => t.history)) tasks.value = tasks.value.filter(t => !t.history)
   }
 
   // Upsert a task entry from a chain WS event. Creates on first event (usually :queued),
@@ -258,7 +296,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addMany, adopt, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

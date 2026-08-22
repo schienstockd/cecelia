@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useLogStore, type LogLevel } from '../stores/log'
 import { isVisible, formatEntry, logGroup, LOG_GROUPS, type LogGroup } from '../utils/logFilter'
+import { openPopoutWindow } from '../lib/popout'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 // `fill`: render just the open panel filling its container (no docked collapse bar / toggle). Used by
@@ -79,9 +80,10 @@ const groupOptions = computed<ChipOption[]>(() =>
 
 // Pop the console out into its own browser window: a hash-history route → the popup boots the same
 // SPA, sees #/console, and renders this component full-window (App.vue bare mode) with its own WS.
+// The URL, the window name and the re-focus live in `lib/popout.ts` — the Task Manager's ↗ needs the
+// same three, and a hand-rolled second copy is how one of them ends up behaving differently.
 function openConsoleWindow() {
-  const url = location.origin + location.pathname + '#/console'
-  window.open(url, 'cecelia-console', 'width=980,height=600')
+  openPopoutWindow('/console', 'cecelia-console', 980, 600)
 }
 
 const filterCounts = computed(() => ({
