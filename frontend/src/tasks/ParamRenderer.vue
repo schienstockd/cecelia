@@ -20,6 +20,7 @@ import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popG
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import GroupParamVis from '../components/GroupParamVis.vue'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 
@@ -404,6 +405,25 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
   const named = Array.isArray(raw) ? raw[0] : raw
   return { value: e.key, label: named ? String(named) : `${i + 1}` }
 }))
+
+// µm per pixel for the strip's pixel captions — only when every selected image AGREES on it. A batch
+// spanning two objectives has no single answer, and printing one of them would state a scale that is
+// wrong for the others; the strip falls back to form units and says so.
+const groupPxSize = computed<number | null>(() => {
+  const sizes = (props.context?.images ?? [])
+    .map(i => i.physicalSizeX).filter((v): v is number => typeof v === 'number' && v > 0)
+  if (!sizes.length) return null
+  return sizes.every(v => v === sizes[0]) ? sizes[0] : null
+})
+
+const groupVisHeadings = computed<string[]>(() =>
+  groupOrderValue.value.map(k => {
+    const raw = props.param.labelKey ? (val.value as GroupValues)?.[k]?.[props.param.labelKey] : undefined
+    const named = Array.isArray(raw) ? raw[0] : raw
+    // The same heading the entry itself carries, so the strip and the list cannot disagree about
+    // which column is which.
+    return named ? String(named) : String(Number(k) + 1)
+  }))
 
 const groupOrderValue = computed<string[]>(() =>
   groupOrderKeys(Object.fromEntries(groupEntries.value.map(e => [e.key, e.vals])),
@@ -799,6 +819,14 @@ const pct = computed(() => {
       :short="param.entriesTip"
       detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
               fill only what it left. Two entries configured alike therefore do the same work twice." />
+
+    <!-- One column per entry, every drawn parameter to scale. Ten numbers per pass in microns do not
+         answer the question that decides whether a multi-pass run works — are these passes looking
+         for different objects — and two circles of visibly different size do. Rows come from the
+         spec's `vis` roles, so a task with none shows nothing. -->
+    <GroupParamVis v-if="param.repeatable && groupEntries.length"
+      :param="param" :values="(val as GroupValues) ?? {}" :order="groupOrderValue"
+      :px-size="groupPxSize" :headings="groupVisHeadings" />
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.

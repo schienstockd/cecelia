@@ -868,6 +868,24 @@ Shown rather than tooltipped, because a user who adds a second entry cannot gues
 not independent, and the cost of not knowing is a second pass configured like the first: double the
 compute for almost no extra objects.
 
+**`vis`** — how a numeric param is DRAWN in the strip beside a repeatable group
+(`tasks/paramVis.ts` → `components/GroupParamVis.vue`). One of `diameter` (a circle of that size),
+`blur` (a soft ring), `distance` (a span), `area` (a disc whose *area* is the value), `fraction` (a
+marker on a 0–1 track). Omit it and the param is not drawn; an unrecognised value is ignored rather
+than guessed at.
+
+A role, not a key match. Matching on `seedSize` inside the renderer would make the picture a second
+description of the form, free to diverge from it — the same class of bug as the preview that ignored
+the order chips.
+
+Why it exists: coastal's model group carries ten-odd numbers per pass, and two columns of digits do
+not answer the question that decides whether a multi-pass run works — *are these passes looking for
+different objects?* Two circles of visibly different size do, and two identical columns answer it just
+as clearly. Scale within a row is relative across the columns (the largest sets the full radius),
+because the question is a comparison; captions are in image **pixels** when the images agree on a
+pixel size, since pixels are what the engine receives and what a reference tuned in pixels can be
+checked against.
+
 **`acrossSegmentations`** — on a `popSelection`, list populations from EVERY segmentation
 (value_name-prefixed) rather than just the sibling `valueName`'s.
 

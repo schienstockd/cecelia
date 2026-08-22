@@ -114,6 +114,7 @@
         },
         {
           "key": "seedSize",
+              "vis": "diameter",
           "label": "Seed window (µm)",
           "type": "float",
           "min": 0.5,
@@ -124,6 +125,7 @@
         },
         {
           "key": "probThreshold",
+              "vis": "fraction",
           "label": "Foreground threshold",
           "type": "float",
           "min": 0.05,
@@ -140,6 +142,7 @@
           "params": [
             {
               "key": "seedBlurSigma",
+              "vis": "blur",
               "label": "Seed blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -150,6 +153,7 @@
             },
             {
               "key": "affinityThreshold",
+              "vis": "fraction",
               "label": "Growing threshold",
               "type": "float",
               "min": 0.1,
@@ -160,6 +164,7 @@
             },
             {
               "key": "minComponentSize",
+              "vis": "area",
               "label": "Min fragment (µm²)",
               "type": "float",
               "min": 0.0,
@@ -180,6 +185,7 @@
             },
             {
               "key": "stitchThreshold",
+              "vis": "fraction",
               "label": "Z-stitch threshold",
               "type": "float",
               "min": 0.0,
@@ -190,6 +196,7 @@
             },
             {
               "key": "probBlurSigma",
+              "vis": "blur",
               "label": "Probability blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -200,6 +207,7 @@
             },
             {
               "key": "embeddingBlurSigma",
+              "vis": "blur",
               "label": "Embedding blur (µm)",
               "type": "float",
               "min": 0.0,
@@ -210,6 +218,7 @@
             },
             {
               "key": "mergeAffinityThreshold",
+              "vis": "fraction",
               "label": "Merge threshold",
               "type": "float",
               "min": 0.1,
@@ -220,6 +229,7 @@
             },
             {
               "key": "mergeMaxDistance",
+              "vis": "distance",
               "label": "Merge distance (µm)",
               "type": "float",
               "min": 0.0,
@@ -230,6 +240,7 @@
             },
             {
               "key": "probWeight",
+              "vis": "fraction",
               "label": "Brightness relaxation",
               "type": "float",
               "min": 0.0,

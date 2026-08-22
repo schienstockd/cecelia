@@ -86,6 +86,15 @@ export interface ParamDef {
   // channel combinations are independent and order means nothing. The renderer used to state
   // coastal's rule for all of them.
   entriesTip?: string
+  // How this param is DRAWN in the strip beside a repeatable group (`paramVis.ts`). A role, not a
+  // key match: matching on `seedSize` inside the renderer would make the picture a second, silently
+  // divergent description of the form. Omit it and the param is not drawn.
+  //   diameter - a circle of that size (a seed window)
+  //   blur     - a soft ring (a gaussian sigma)
+  //   distance - a short span (a merge search radius)
+  //   area     - a disc whose AREA is the value (a size floor, in um^2)
+  //   fraction - a marker on a 0-1 track (a threshold, a weight)
+  vis?: 'diameter' | 'blur' | 'distance' | 'area' | 'fraction'
 }
 
 export interface TaskDef {
