@@ -15,7 +15,7 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
-         scopeValueName, groupOrderKeys } from './paramValues'
+         scopeValueName, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
@@ -421,18 +421,11 @@ function addGroupEntry() {
   const nextKey = String(groupEntries.value.length === 0
     ? 0
     : Math.max(...groupEntries.value.map(e => Number(e.key))) + 1)
-  const defaults: ParamValues = {}
-  for (const p of props.param.params ?? []) {
-    if (p.type === 'section') {
-      // Section sub-params are stored flat in the entry dict
-      for (const sp of p.params ?? []) {
-        if (sp.default !== undefined) defaults[sp.key] = sp.default
-      }
-    } else if (p.default !== undefined) {
-      defaults[p.key] = p.default
-    }
-  }
-  v[nextKey] = defaults
+  // POSITION, not key: what a new entry should start as depends on where it sits in the run order,
+  // and after a removal the next key is not the next position. See `newEntryDefaults` for why a
+  // second entry must not be born as a copy of the first.
+  v[nextKey] = newEntryDefaults(props.param, groupEntries.value.length,
+                                groupEntries.value[0]?.vals)
   val.value = v
 }
 
@@ -780,7 +773,9 @@ const pct = computed(() => {
          is what Dominik saw. A tipped label preceding it in the same row is how chips are covered. -->
     <div v-if="param.repeatable && groupEntries.length > 1" class="group-order-row cc-row cc-row-tight">
       <span class="group-order-label cc-muted cc-fs-2xs"
-        v-tooltip.right="'Drag to reorder — earlier entries claim pixels first'">Order</span>
+        v-tooltip.right="param.entriesTip
+          ? `${param.entriesTip}; drag to reorder`
+          : 'Drag to reorder'">Order</span>
       <ChipSelect
         class="group-order"
         :options="groupOrderOptions"
@@ -789,6 +784,18 @@ const pct = computed(() => {
         :aria-label="`Order of ${param.label}`"
         @update:model-value="v => emit('update:groupOrder', orderKey, v as string[])"
       />
+    </div>
+
+    <!-- HOW the entries combine. Shown, not tucked into a tooltip: a user who adds a second entry has
+         no way to guess that the entries are not independent — that the first one claims pixels and
+         the second only fills what it left — and the consequence of not knowing is a second pass
+         configured like the first, which costs double and contributes almost nothing. Same condition
+         as the order row, because with one entry there is nothing to combine. Text comes from the
+         spec (`entriesTip`); a task whose entries ARE independent simply omits it and shows no line. -->
+    <div v-if="param.repeatable && groupEntries.length > 1 && param.entriesTip"
+      class="group-entries-note cc-muted cc-fs-2xs">
+      <i class="pi pi-info-circle" />
+      <span>{{ param.entriesTip }}</span>
     </div>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
@@ -873,6 +880,13 @@ const pct = computed(() => {
    of their own — they read as part of whichever neighbour you looked at first. */
 .group-order-row { margin: 0.35rem 0 0.5rem; }
 .group-order-label { flex: 0 0 auto; }
+/* Reads as a note about the list above it, not as another control: no border, no background, and the
+   icon sits on the first line rather than centred on a wrapped block. */
+.group-entries-note {
+  display: flex; align-items: flex-start; gap: 0.35rem;
+  margin: 0 0 0.4rem; line-height: 1.35;
+}
+.group-entries-note .pi { margin-top: 0.1rem; flex: 0 0 auto; }
 .param-row {
   display: flex;
   flex-direction: column;

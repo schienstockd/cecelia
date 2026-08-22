@@ -29,6 +29,7 @@
       "label": "Segmentation models",
       "type": "group",
       "repeatable": true,
+      "entriesTip": "Passes run in order — each labels only the pixels earlier passes left",
       "default": {
         "0": {
           "model": "cpsam_v2",
