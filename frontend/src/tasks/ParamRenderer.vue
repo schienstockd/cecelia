@@ -782,16 +782,21 @@ const pct = computed(() => {
   <div v-if="param.type === 'group' && !notApplicable" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
-      <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
-        @click="addGroupEntry()"
-        v-tooltip.right="'Add another entry'">
-        <i class="pi pi-plus" />
-      </button>
-      <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
-        type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
-        v-tooltip.right="'Show these settings as a figure'">
-        <i class="pi pi-chart-bar" />
-      </button>
+      <!-- Both buttons in ONE right-aligned group. The header is `space-between`, so as separate
+           children a second button parked the first in the middle of the row — reading as a label
+           with a stray control after it. `+` stays rightmost, where it was when it was alone. -->
+      <span class="group-actions cc-row cc-row-tight">
+        <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
+          type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
+          v-tooltip.left="'Show these settings as a figure'">
+          <i class="pi pi-chart-bar" />
+        </button>
+        <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
+          @click="addGroupEntry()"
+          v-tooltip.left="'Add another entry'">
+          <i class="pi pi-plus" />
+        </button>
+      </span>
     </div>
 
     <!-- Which entries run, and in what order. Every `repeatable` group gets this — it is not a
@@ -1042,6 +1047,7 @@ const pct = computed(() => {
   padding: 0.45rem 0 0.3rem;
 }
 
+.group-actions { flex: 0 0 auto; }
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .group-empty { font-style: italic; padding: 0.3rem 0; }

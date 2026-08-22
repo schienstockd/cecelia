@@ -55,11 +55,15 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
         {{ heading(i) }}
       </div>
 
-      <template v-for="row in vis.rows" :key="row.key">
-        <div class="vis-label cc-muted cc-fs-2xs" :class="{ 'is-uniform': row.uniform }">
+      <!-- `ri` only to drop the rule under the LAST row: a grid row is not an element, so the divider
+           has to be a border on each of its cells, and `:last-child` cannot see row boundaries. -->
+      <template v-for="(row, ri) in vis.rows" :key="row.key">
+        <div class="vis-label cc-muted cc-fs-2xs"
+          :class="{ 'is-uniform': row.uniform, 'is-last': ri === vis.rows.length - 1 }">
           {{ row.label }}
         </div>
-        <div v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell">
+        <div v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell"
+          :class="{ 'is-last': ri === vis.rows.length - 1 }">
           <svg :viewBox="`0 0 ${COL} ${ROW}`" class="vis-svg" role="img"
             :aria-label="`${row.label}: ${cell.text}`">
             <!-- a circle whose radius IS the value, relative to the widest column in this row -->
@@ -116,17 +120,23 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
   display: grid;
   align-items: center;
   column-gap: 0.25rem;
-  row-gap: 0.1rem;
+  row-gap: 0;
 }
 
 .vis-corner, .vis-head { padding-bottom: 0.2rem; }
 .vis-head { text-align: center; }
 
+/* One rule per row, so eleven rows read as a list rather than as floating shapes. On the CELLS as
+   well as the label, because a grid row is not an element and a single border would stop at the
+   label's edge. `row-gap: 0` so the rule sits between rows instead of inside a gap. */
+.vis-label, .vis-cell { border-bottom: 1px solid var(--cc-border); padding-bottom: 0.3rem; }
+.vis-label.is-last, .vis-cell.is-last { border-bottom: 0; }
 .vis-label { text-align: right; padding-right: 0.4rem; line-height: 1.2; }
 /* A row that is identical across passes is the thing to notice, so it is the thing that is marked. */
 .vis-label.is-uniform { color: var(--cc-warn); }
 
-.vis-cell { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; }
+.vis-cell { display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+            padding-top: 0.3rem; }
 .vis-cap { text-align: center; }
 .vis-svg { width: 100%; max-width: 5rem; height: auto; overflow: visible; }
 
