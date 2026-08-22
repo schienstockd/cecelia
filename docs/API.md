@@ -382,8 +382,9 @@ coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}`
 | `/api/gating/pop/add` | `name`, `parent` (default `root`), `colour`, `show`, `gate` (gate spec) or `filter` `{measure,fun,values,default_all}`, `is_track` |
 | `/api/gating/pop/set-gate` | `path`, `gate` (gate spec) |
 | `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility), `filter? {measure?,fun?,values?,default_all?}` (only the keys present are mutated — the tick-cluster-into-pop UX rewrites `filter.values` to retoggle which cluster IDs belong to a `clust`/`trackclust` pop) |
-| `/api/gating/pop/delete` | `path` (cascades to descendants) |
+| `/api/gating/pop/delete` | `path` (cascades to descendants); `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population — one request, so one undo step |
 | `/api/gating/pop/rename` | `path`, `newName` (cascades child paths) → also returns `path` (new) |
+| `/api/gating/pop/move` | `path`, `parent` (`"root"` for top level) — re-parents the population and its whole subtree → also returns `path` (new). The gate is unchanged; MEMBERSHIP is re-derived (a pop is its gate ∩ its parent's). Rejects a move into its own subtree, onto an occupied path, or one that would collide with another pop type's name (`pop_name_conflict`, same guard as rename) |
 
 **Undo / redo** (hand-drawn gating only): `POST /api/gating/undo` · `POST /api/gating/redo`, body = the usual `{projectUid, imageUid, valueName, popType}` and nothing else → `{tree, canUndo, canRedo}`, broadcasting `gating:popmap` like any edit. `409` when the stack is empty; `400` for a non-`flow`/`track` pop type. History is a ring of whole-tree snapshots (limit 50) held **in process**, keyed per `(project, image, valueName, popType)` and recorded at `_persist_and_broadcast!` — the one choke point every mutation already goes through, so a new mutation is undoable without doing anything. A step does not record itself; a fresh edit clears the redo branch. Nothing is persisted: history dies with the backend rather than growing a user-facing sidecar with an edit log. See `docs/POPULATION.md` → *Undo / redo*.
 

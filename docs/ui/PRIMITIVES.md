@@ -33,6 +33,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
+| The ITEM LIST inside a row's ⋯ overflow menu | `.cc-actions-menu` + `.cc-actions-item` (+ `.cc-actions-head` for a section label, `.danger`, `.armed`) in `style.css`, inside a `TeleportPopover flush`; destructive items arm in place with `ConfirmButton`. Hosts: `ImageTable`, `canvas/PopulationManager` | a per-component `.menu-item` block, or a dialog for a one-click action |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
 | Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |

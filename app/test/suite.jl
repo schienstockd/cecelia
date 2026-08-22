@@ -7796,6 +7796,88 @@ end
     @test isempty(pop_paths(m))
 end
 
+# ── Re-parenting a population: move_pop! ─────────────────────────────────────
+# The UI (PopulationManager's ⋯ → "Move under…", pop/move) lifts a population out of the gate it was
+# drawn under — the "I gated B under qc and now want it against all cells" case, which used to mean
+# deleting the whole branch and redrawing it. The pop keeps its gate, name, colour and children; what
+# changes is its PARENT, and with it its membership (a pop is its own gate ∩ its parent's).
+@testset "move_pop! re-parents a population and its subtree" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
+    add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 100.0, 0.0, 100.0), colour="#0f0")
+    add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 100.0, 0.0, 100.0))
+
+    # membership BEFORE: B is capped by qc's gate, so the far cell (20, 20) can't be in it
+    df = DataFrame("label" => [1, 2, 3], "x" => [1.0, 7.0, 20.0], "y" => [1.0, 7.0, 20.0])
+    recompute!(m, _ -> df)
+    @test Set(cells_in_pop(m, "/qc/B")) == Set([1, 2])
+
+    @test move_pop!(m, "/qc/B", ROOT) == "/B"
+    @test Set(pop_paths(m)) == Set(["/qc", "/B", "/B/mem+"])
+    @test pop_at(m, "/B").parent == ROOT
+    @test pop_at(m, "/B").name == "B"
+    @test pop_at(m, "/B").colour == "#0f0"                   # identity untouched
+    @test pop_at(m, "/B").gate isa RectangleGate             # gate untouched
+    @test pop_at(m, "/B/mem+").parent == "/B"                # the subtree came along
+    # `order` keeps parents before children, so the moved subtree follows its new parent
+    @test findfirst(==("/B"), pop_paths(m)) < findfirst(==("/B/mem+"), pop_paths(m))
+
+    # membership AFTER: no longer capped by qc — the same gate now takes the far cell too
+    recompute!(m, _ -> df)
+    @test Set(cells_in_pop(m, "/B")) == Set([1, 2, 3])
+    @test Set(cells_in_pop(m, "/B/mem+")) == Set([1, 2, 3])
+    @test Set(cells_in_pop(m, "/qc")) == Set([1, 2])         # the old parent is unaffected
+
+    # and back under a gate again (the other direction)
+    @test move_pop!(m, "/B", "/qc") == "/qc/B"
+    @test pop_at(m, "/qc/B/mem+").parent == "/qc/B"
+    @test move_pop!(m, "/qc/B", "/qc") == "/qc/B"            # already there → no-op, not an error
+
+    # the move survives a save/load round-trip (the tree is nested, so the parent IS the position)
+    td = mktempdir(); save_pop_map!(m, td)
+    @test Set(pop_paths(load_pop_map(td, "B"))) == Set(["/qc", "/qc/B", "/qc/B/mem+"])
+end
+
+@testset "move_pop! rejects a cycle, a collision and an unknown target" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "B";  parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))  # same NAME at root
+
+    # a population cannot become its own descendant's child (that would orphan the whole subtree)
+    @test_throws ErrorException move_pop!(m, "/qc/B", "/qc/B/mem+")
+    @test_throws ErrorException move_pop!(m, "/qc/B", "/qc/B")
+    # …nor land where a population of that name already sits
+    @test_throws ErrorException move_pop!(m, "/qc/B", ROOT)
+    @test_throws ErrorException move_pop!(m, "/qc/B", "/nope")
+    @test_throws ErrorException move_pop!(m, "/nope", ROOT)
+    # every rejection left the tree exactly as it was
+    @test Set(pop_paths(m)) == Set(["/qc", "/qc/B", "/qc/B/mem+", "/B"])
+end
+
+# ── del_children!: prune BELOW a population, keep the population ──────────────
+# The other half of del_pop! (⋯ → "Delete N below it"): re-gating from a gate you want to keep,
+# without redrawing that gate. One call, so one undo step.
+@testset "del_children! prunes the subtree and keeps the pop" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
+    add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
+    add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
+
+    del_children!(m, "/qc")
+    @test pop_paths(m) == ["/qc"]                            # the whole branch below it went
+    @test pop_at(m, "/qc").colour == "#f00"                  # the pop itself survived intact
+    del_children!(m, "/qc")                                  # already a leaf → no-op, not an error
+    @test pop_paths(m) == ["/qc"]
+    @test_throws ErrorException del_children!(m, "/nope")
+
+    # membership of the kept pop is unchanged (nothing below it ever fed into it)
+    df = DataFrame("label" => [1, 2], "x" => [1.0, 20.0], "y" => [1.0, 20.0])
+    recompute!(m, _ -> df)
+    @test Set(cells_in_pop(m, "/qc")) == Set([1])
+end
+
 # ── Gate shape swap: rectangle ⇄ polygon on an EXISTING population ────────────
 # The UI (PopulationManager's convert button, frontend plots/gateGeometry.ts) changes a gate's shape
 # by pushing a new spec of the OTHER kind through pop/set-gate. `set_gate!` must therefore accept a

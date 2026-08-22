@@ -20,11 +20,10 @@ import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import CanvasSidePanel from './CanvasSidePanel.vue'
-import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
-import { popNameError } from '../../utils/popName'
+import { popNameError, popPath, isInSubtree } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
@@ -226,7 +225,11 @@ const filterGroups = computed(() => measureGroups({
   columns: [...g.columns].sort(), channels: g.channels,
   obsColumns: [...g.obsColumns].sort(), popType: g.popType }))
 const filterMeasures = computed(() => groupedCols(filterGroups.value))
-const parentOptions = computed(() => ['root', ...visiblePops.value.map(p => p.path)])
+// Parent choices for the filter-pop form. When EDITING, the pop's own subtree is excluded — moving a
+// population under its own descendant is a cycle (Julia `move_pop!` rejects it; this never offers it).
+const parentOptions = computed(() => ['root', ...visiblePops.value
+  .filter(p => !fpEditPath.value || !isInSubtree(p.path, fpEditPath.value))
+  .map(p => p.path)])
 
 function addFpCond() { fpConds.value.push({ measure: filterMeasures.value[0] ?? '', fun: 'gt', values: '' }) }
 function removeFpCond(i: number) { fpConds.value.splice(i, 1) }
@@ -259,10 +262,12 @@ async function submitFilterPop() {
   const nameErr = popNameError(name, g.flat.map(x => x.name), { currentName: cur?.name })
   if (nameErr) { log.error(nameErr, { source: 'gating' }); return }
   if (fpEditPath.value) {
-    const path = fpEditPath.value
+    let path = fpEditPath.value
     await g.updateFilterPop(path, conds)                                   // conditions
     if (cur && cur.colour !== fpColour.value) await g.updatePop(path, { colour: fpColour.value })  // colour
-    if (cur && name !== cur.name) await g.renamePop(path, name)            // rename LAST (path changes)
+    // rename and move BOTH change the path, so they go last and each one re-derives it for the next
+    if (cur && name !== cur.name) { await g.renamePop(path, name); path = popPath(cur.parent, name) }
+    if (cur && fpParent.value !== cur.parent) await g.movePop(path, fpParent.value)
   } else {
     await g.addFilterPop(name, fpParent.value, fpColour.value, conds)
   }
@@ -272,6 +277,54 @@ async function submitFilterPop() {
 // a hand-drawn gate vs a declarative filter pop (badge in the list)
 const isFilterPop = (p: FlatPop) => !!p.filter && !p.gate
 const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
+
+// ── Row actions overflow menu (⋯) ────────────────────────────────────────────────────────────
+// Same shape as the image table's per-image menu (TeleportPopover + the shared `.cc-actions-*`
+// utilities in style.css). The row keeps only what the user toggles WHILE reading it — colour,
+// highlight, napari visibility — and everything episodic (convert the gate, open its plot, re-parent,
+// delete) moves in here. This panel is ~250px wide, so each icon added to a row came straight out of
+// the name and the count; the actions were also outgrowing what fits beside them.
+const actionsPath   = ref<string | null>(null)
+const actionsAnchor = ref<HTMLElement | null>(null)   // the clicked ⋯ button (drives placement)
+const actionsPop    = computed(() => actionsPath.value
+  ? (visiblePops.value.find(p => p.path === actionsPath.value) ?? null) : null)
+const actionsOpen   = computed({ get: () => actionsPath.value !== null,
+                                 set: v => { if (!v) closeActions() } })
+function closeActions() { actionsPath.value = null; moveMode.value = false }
+function openActions(p: FlatPop, e: MouseEvent) {
+  if (actionsPath.value === p.path) { closeActions(); return }
+  actionsAnchor.value = e.currentTarget as HTMLElement
+  moveMode.value = false
+  actionsPath.value = p.path
+}
+// run the chosen action, THEN close — the item closures read `actionsPop`, which is derived from
+// `actionsPath`, so closing first would null it out from under them (the ImageTable menu's ordering).
+function runAction(fn: () => void) { fn(); closeActions() }
+// how many populations sit BELOW this one — what "delete" takes with it, and what "delete children"
+// removes on its own.
+const childCount = (p: FlatPop) => g.flat.filter(x => x.path.startsWith(p.path + '/')).length
+
+// ── Move (re-parent) ──────────────────────────────────────────────────────────────────────────
+// A pop's cells are its own gate ∩ its parent's, so re-parenting RE-DERIVES membership: lifting a
+// population out of a QC gate re-evaluates it against all cells, keeping the gate, the children and
+// the colours. Before this the only way there was to delete and redraw the whole branch.
+// "Move under…" reuses the SAME popover rather than opening a second one: the choice is a list of
+// populations, which is exactly what a menu renders.
+const moveMode = ref(false)
+const moveTargets = computed<string[]>(() => {
+  const p = actionsPop.value
+  if (!p) return []
+  // every pop except the one being moved, its own subtree (that would be a cycle), the transient
+  // napari selection (never persisted, so it can't parent anything) and its current parent.
+  return ['root', ...visiblePops.value
+    .filter(t => !isInSubtree(t.path, p.path) && !t.transient)
+    .map(t => t.path)].filter(t => t !== p.parent)
+})
+function moveTo(target: string) {
+  const p = actionsPop.value
+  closeActions()
+  if (p) g.movePop(p.path, target)
+}
 </script>
 
 <template>
@@ -315,7 +368,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
         </div>
         <label class="pm-ff-row cc-muted cc-fs-xs">Under
-          <select v-model="fpParent" :disabled="!!fpEditPath" v-tooltip.top="fpEditPath ? 'Parent is fixed when editing — delete & recreate to move' : ''">
+          <select v-model="fpParent" v-tooltip.top="'Parent population — its cells are the ones this filters'">
             <option v-for="o in parentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
           </select>
         </label>
@@ -383,23 +436,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
           </span>
 
-          <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Icon = the shape you
-               get, matching the draw tools. Widening (poly → rect) arms first. -->
-          <ConfirmButton v-if="p.gate && !readonly && !p.transient" :needs-confirm="p.gate.kind === 'polygon'"
-                         @confirm="convertGate(p)" v-slot="{ armed, arm, confirm }">
-            <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ warn: armed }"
-                    v-tooltip.left="armed ? 'Click again to confirm' : convertTip(p)"
-                    @click.stop="armed ? confirm() : arm()">
-              <i :class="armed ? 'pi pi-exclamation-triangle' : convertIcon(p)" />
-            </button>
-          </ConfirmButton>
-          <!-- these `.left` tips are kept SHORT for the same reason as the convert button's: this panel
-               is ~250px, so a wide tooltip can't fit beside an icon and PrimeVue drops it onto the row
-               below (docs/ui/COPY.md). "defining plot" is code-internal jargon — not tooltip copy. -->
-          <button v-if="p.gate" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Show the gate\'s plot'"
-                  @click.stop="emit('showDefiningPlot', p)">
-            <i class="pi pi-search" />
-          </button>
+          <!-- these `.left` tips are kept SHORT: this panel is ~250px, so a wide tooltip can't fit
+               beside an icon and PrimeVue drops it onto the row below (docs/ui/COPY.md). -->
           <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(p) }"
                   v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
                   @click.stop="emit('toggleHighlight', p.path)">
@@ -410,14 +448,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   @click.stop="toggleNapari(p)">
             <i class="pi pi-images" />
           </button>
-          <ConfirmDeleteButton v-if="!p.transient && !readonly"
-                  title="Delete population" armed-title="Click again to delete this population"
-                  @confirm="g.deletePop(p.path)" />
-          <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
-               linger forever; there's no persisted pop to delete. -->
-          <button v-else class="pm-icon cc-btn cc-btn-bare cc-btn-icon danger" v-tooltip.left="'Clear napari selection'"
-                  @click.stop="g.clearNapariSelection()">
-            <i class="pi pi-trash" />
+          <!-- everything episodic (gate shape, its plot, move, delete) is one ⋯ menu — same pattern
+               as the image table's row menu. Read-only surfaces keep only the gate's plot. -->
+          <button v-if="!readonly || !!p.gate" class="pm-icon pm-actions-btn cc-btn cc-btn-bare cc-btn-icon"
+                  :class="{ on: actionsPath === p.path }" v-tooltip.left="'More'"
+                  @click.stop="openActions(p, $event)">
+            <i class="pi pi-ellipsis-h" />
           </button>
         </div>
 
@@ -434,6 +470,62 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-fs-2xs">no clusters at this suffix</span>
         </div>
       </template>
+
+      <!-- ⋯ row menu — the per-population actions that don't fit beside the row. Shares the
+           `.cc-actions-*` utilities with the image table's menu. -->
+      <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end" flush>
+        <div v-if="actionsPop" class="cc-actions-menu pm-actions">
+          <!-- MOVE: the same popover becomes the parent list (the choice IS a list of populations) -->
+          <template v-if="moveMode">
+            <div class="cc-actions-head">Move “{{ actionsPop.name }}” under</div>
+            <button v-for="t in moveTargets" :key="t" class="cc-actions-item pm-move-target"
+                    @click.stop="moveTo(t)">{{ t === 'root' ? 'All cells' : t }}</button>
+            <div v-if="!moveTargets.length" class="cc-actions-head">nowhere else to put it</div>
+          </template>
+          <template v-else>
+            <button v-if="actionsPop.gate" class="cc-actions-item"
+                    @click.stop="runAction(() => emit('showDefiningPlot', actionsPop!))">
+              <i class="pi pi-search" /> Show the gate's plot
+            </button>
+            <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Widening
+                 (poly → rect) arms first; the label names the shape you get. -->
+            <ConfirmButton v-if="actionsPop.gate && !readonly && !actionsPop.transient"
+                           :needs-confirm="actionsPop.gate.kind === 'polygon'"
+                           @confirm="runAction(() => convertGate(actionsPop!))" v-slot="{ armed, arm, confirm }">
+              <button class="cc-actions-item" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                <i :class="armed ? 'pi pi-exclamation-triangle' : convertIcon(actionsPop)" />
+                {{ armed ? 'Click again — the gate widens' : convertTip(actionsPop) }}
+              </button>
+            </ConfirmButton>
+            <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
+                    @click.stop="moveMode = true">
+              <i class="pi pi-arrows-h" /> Move under…
+            </button>
+            <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
+                           @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"
+                           v-slot="{ armed, arm, confirm }">
+              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
+                {{ armed ? 'Click again to delete' : `Delete ${childCount(actionsPop)} below it` }}
+              </button>
+            </ConfirmButton>
+            <ConfirmButton v-if="!readonly && !actionsPop.transient"
+                           @confirm="runAction(() => g.deletePop(actionsPop!.path))"
+                           v-slot="{ armed, arm, confirm }">
+              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
+                {{ armed ? 'Click again to delete' : (childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population') }}
+              </button>
+            </ConfirmButton>
+            <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
+                 linger forever; there's no persisted pop to delete. -->
+            <button v-if="actionsPop.transient && !readonly" class="cc-actions-item danger"
+                    @click.stop="runAction(() => g.clearNapariSelection())">
+              <i class="pi pi-trash" /> Clear napari selection
+            </button>
+          </template>
+        </div>
+      </TeleportPopover>
 
       <!-- pop colour picker popover: Cecelia palette chips + a native picker for custom colours -->
       <TeleportPopover v-model="colourOpen" :anchor="colourAnchor" placement="bottom-start">
@@ -532,9 +624,17 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 /* .pm-icon → cc-btn cc-btn-bare cc-btn-icon; only the STATE variants are its own (the plain `:hover`
    rule was byte-identical to `.cc-btn-bare:hover` and is gone) */
 .pm-icon.lit { color: var(--cc-accent); }
-.pm-icon.danger:hover { color: #f87171; }
-/* armed gate-shape convert (the widening direction) — same warn cue as ConfirmDeleteButton */
-.pm-icon.warn { color: var(--cc-warn); }
+/* ⋯ trigger: faintly visible at rest (discoverable without shouting), full on hover/open — the
+   image table's row menu makes the same call. */
+.pm-actions-btn { opacity: 0.55; }
+.pm-row:hover .pm-actions-btn, .pm-actions-btn.on { opacity: 1; }
+/* the menu's own width: a move target is a pop PATH, which can be long — wrap rather than stretch
+   the popover across the canvas. */
+.pm-actions { max-width: 260px; }
+.pm-actions .cc-actions-item { word-break: break-word; }
+/* move targets carry no icon (the text IS the population path) — indent to the icon gutter so the
+   list still lines up under its heading */
+.pm-move-target { padding-left: 2.15rem; }
 
 /* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
 .pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border);

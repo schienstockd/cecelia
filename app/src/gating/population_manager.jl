@@ -210,6 +210,44 @@ function rename_pop!(m::PopulationMap, path::AbstractString, newname::AbstractSt
     newpath = pop_path(p.parent, newname)
     newpath == path && return path
     has_pop(m, newpath) && error("rename_pop!: target exists: $newpath")
+    _repath!(m, path, newpath)
+end
+
+"""
+    move_pop!(m, path, newparent) -> String
+
+Re-parent a population (with its whole subtree) under `newparent` (`ROOT` for top level), returning
+its new path. The population keeps its name, colour, gate/filter and children — only where it sits in
+the tree changes, and with it its MEMBERSHIP: a pop's cells are its own gate ∩ its parent's, so moving
+`/qc/B` to `/B` re-derives it against all cells instead of the qc-passing ones (`_invalidate!`, then
+`recompute!` on the next read). That is the point of the operation, not a side effect.
+
+Rejects a move into the pop's own subtree (a cycle: a pop cannot be its own ancestor) and one whose
+target path is already taken. Same cascade as `rename_pop!` — both are one path rewrite.
+"""
+function move_pop!(m::PopulationMap, path::AbstractString, newparent::AbstractString)::String
+    has_pop(m, path) || error("move_pop!: not found: $path")
+    path = String(path)
+    newparent = is_root(newparent) ? ROOT : String(newparent)
+    (newparent == ROOT || has_pop(m, newparent)) || error("move_pop!: parent not found: $newparent")
+    (newparent == path || startswith(newparent, path * "/")) &&
+        error("move_pop!: cannot move a population into itself or one of its own descendants")
+    p = m.pops[path]
+    newparent == p.parent && return path
+    newpath = pop_path(newparent, p.name)
+    has_pop(m, newpath) && error("move_pop!: target exists: $newpath")
+    _repath!(m, path, newpath)
+    m.pops[newpath].parent = newparent          # the subtree kept its own parent; this one changes
+    # keep `order`'s parents-before-children invariant: the moved subtree goes after its new parent
+    # (which may sit later in the list than the old one did). Relative order within it is preserved.
+    moved = [newpath; descendants(m, newpath)]
+    m.order = [[o for o in m.order if !(o in moved)]; moved]
+    newpath
+end
+
+# Rewrite `path` and every descendant to sit at `newpath` — the cascade shared by rename (the leaf
+# name changes) and move (the parent does). Callers own the guards; this one only rewrites.
+function _repath!(m::PopulationMap, path::AbstractString, newpath::AbstractString)::String
     affected = [path; descendants(m, path)]
     for old in affected
         np = _replace_prefix(old, path, newpath)
@@ -232,7 +270,22 @@ end
 function del_pop!(m::PopulationMap, path::AbstractString)
     has_pop(m, path) || error("del_pop!: not found: $path")
     path = String(path)
-    targets = Set([path; descendants(m, path)])
+    _del_paths!(m, Set([path; descendants(m, path)]))
+end
+
+"""
+    del_children!(m, path)
+
+Delete everything UNDER `path` — its whole subtree — and keep the population itself. The other half
+of `del_pop!`: pruning a strategy back to a gate you want to re-gate from, without redrawing that
+gate. Membership of `path` is unaffected (nothing below it feeds into it).
+"""
+function del_children!(m::PopulationMap, path::AbstractString)
+    has_pop(m, path) || error("del_children!: not found: $path")
+    _del_paths!(m, Set(descendants(m, String(path))))
+end
+
+function _del_paths!(m::PopulationMap, targets::Set{String})
     for t in targets
         delete!(m.pops, t)
     end

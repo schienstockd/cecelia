@@ -94,7 +94,7 @@ export Density2D, density_2d
 # ── Population manager ─────────────────────────────────────────────────────────
 export Population, PopulationMap, ROOT
 export pop_parent, pop_name, pop_path, is_root
-export add_pop!, set_gate!, rename_pop!, del_pop!
+export add_pop!, set_gate!, rename_pop!, move_pop!, del_pop!, del_children!
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, tracked_pop_parents
 export GATING_POP_TYPES, is_gating_pop_type
 export SPATIAL_UNIT_PX, SPATIAL_UNIT_UM, is_spatial_axis, has_spatial_gate
