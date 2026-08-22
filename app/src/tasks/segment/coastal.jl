@@ -145,7 +145,12 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            labelErosion        = Float64(get(params, "labelErosion", 0.0)),
            clearTouchingBorder = Bool(get(params, "clearTouchingBorder", false)),
            clearDepth          = Bool(get(params, "clearDepth", false)),
-           normaliseToWhole    = Bool(get(params, "normaliseToWhole", true))),
+           normaliseToWhole    = Bool(get(params, "normaliseToWhole", true)),
+           # `frames` (as trained) or `seconds` (same durations, re-resolved for THIS movie's frame
+           # interval) — see docs/SEGMENTATION.md → *Temporal scale*. Listed here because this
+           # NamedTuple is a whitelist: the PREVIEW forwards the whole param bag, so a param missing
+           # from this list is honoured on screen and ignored by the run.
+           temporalScaleMode   = String(get(params, "temporalScaleMode", "frames"))),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

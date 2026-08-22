@@ -3176,6 +3176,38 @@ end
     @test checked > 20      # the sweep actually found the sliders
 end
 
+@testset "coastal forwards every top-level spec param to its runner" begin
+    # `coastal.jl` hands `run_py` an explicit NamedTuple, i.e. a WHITELIST — while `preview_params`
+    # forwards the whole param bag. So a spec param missing from that list is honoured in the preview
+    # and silently ignored by the run, which is the same class of divergence as the group-order bug
+    # and just as quiet. Checked by reading the handler source: the param names are literals there.
+    #
+    # `valueName`/`outputValueName` are excluded because the handler TRANSFORMS them (into `imPath`
+    # and the label store name) rather than forwarding them, and `models` is rebuilt by
+    # `coastal_models_for_python`. Sections are excluded here and covered by the flatten tests —
+    # their sub-params appear individually.
+    raw  = read(joinpath(@__DIR__, "..", "src", "tasks", "segment", "coastal.jl"), String)
+    # COMMENTS STRIPPED, and the key matched QUOTED — i.e. as `get(params, "key", …)` spells it.
+    # A bare `occursin(key, raw)` passes on a param that was deleted and left described in a comment,
+    # which is exactly the state this is meant to catch.
+    src  = join((replace(l, r"#.*$" => "") for l in split(raw, '\n')), "\n")
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "segment", "coastal.json"),
+                           String))
+    transformed = ["valueName", "outputValueName", "models"]
+    checked = 0
+    for p in get(spec, :params, [])
+        key = String(get(p, :key, ""))
+        String(get(p, :type, "")) in ("section", "group") && continue
+        key in transformed && continue
+        isempty(key) && continue
+        checked += 1
+        found = occursin("\"" * key * "\"", src)
+        found || @error "a coastal spec param never reaches coastal_run.py" param = key
+        @test found
+    end
+    @test checked >= 2      # the sweep found the top-level params, not an empty list
+end
+
 @testset "an int param never declares a fractional step" begin
     # `ParamRenderer.vue` runs `parseInt` on an `int` slider's value, so a fractional step makes half
     # the stops DEAD: the control moves and the value does not. Found live on `segment.coastal`, where

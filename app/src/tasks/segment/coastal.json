@@ -7,7 +7,15 @@
     "local"
   ],
   "resource_pool": "gpu",
-  "requires": { "axes": ["T"], "scale": ["xy", "t"] },
+  "requires": {
+    "axes": [
+      "T"
+    ],
+    "scale": [
+      "xy",
+      "t"
+    ]
+  },
   "params": [
     {
       "key": "valueName",
@@ -240,6 +248,23 @@
       "step": 0.25,
       "default": 0.5,
       "tip": "Round the growing frontier's coastline; 0 = raw"
+    },
+    {
+      "key": "temporalScaleMode",
+      "label": "Temporal scale",
+      "type": "select",
+      "default": "frames",
+      "tip": "Match durations when this movie's frame rate differs from the model's",
+      "options": [
+        {
+          "label": "As trained (frames)",
+          "value": "frames"
+        },
+        {
+          "label": "Match durations (seconds)",
+          "value": "seconds"
+        }
+      ]
     },
     {
       "key": "labelModifications",
