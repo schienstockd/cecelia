@@ -188,6 +188,24 @@ image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` va
 dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
 detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
 
+**A population overlay is always DOTS, whatever the base mode is.** The render mode says how to draw a
+*distribution* — a highlighted population (or the napari cell selection) is the different question "where
+are THESE cells", which is per-cell. Contouring an overlay put rings around individual points: a 3-cell
+napari selection rendered as three sets of concentric circles, and a KDE of a handful of events is not a
+density estimate. So the base keeps its rings and its outlier tail (a contour figure stays a contour
+figure) and the overlay lands on top as coloured dots — which also keeps the categorical layer
+true-vector on SVG export in every mode, not just `points`.
+
+**Dimming the base is ONE composite — `plots/dimLayer.ts`.** Under a population overlay (a highlighted
+pop, or the napari cell selection) the base cloud is washed back to `alpha = 0.4` so the overlay reads.
+`globalAlpha` applies per drawing OPERATION, so setting it and then stamping ~10k dots dims each DOT and
+overlapping dots composite back up to `1-(1-alpha)^k` — 0.87 after four overlaps. The wash therefore
+vanished exactly where the cloud is dense, i.e. where the cells are: a napari selection lit up cyan over
+a base that never greyed out. (The raster renderer the dot plot replaced was immune for free — one
+`drawImage`.) `paintDimmed` paints the layer OPAQUE on an offscreen at the host's device scale and lays
+it down once, so coverage is `alpha` no matter how many primitives the layer is made of.
+`dimLayer.test.ts` pins that, and pins the per-dot accumulation it replaced.
+
 **True-vector SVG export (dot plots).** UMAP + gating scatter/pairs export a real vector `.svg` — every
 categorical dot is an editable element **grouped by colour** (one `<g fill=…>` per cluster/population),
 so a figure opens in Illustrator and a whole cluster recolours in one selection (the driving
