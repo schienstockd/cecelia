@@ -830,6 +830,14 @@ form that cannot be submitted and shows nothing explaining why.
 A required param's `default` is unusable by definition — that is what required means — so it is
 exempt from the suite's "the spec's own defaults satisfy the spec" check.
 
+**Overloading `validate_params` for one task** (the spec cannot express a cross-param rule — see
+`TrackCorrect`, `TrainFlowModel`): declare it `(task::YourTask, params::Dict{String,Any}; kwargs...)`
+and forward `kwargs...` through the `invoke`. Keywords do not take part in Julia dispatch, so a
+keyword-**less** overload is skipped — silently, no error — the moment a caller passes one, and the
+call lands on the generic `::CciaTask` method instead. Callers do pass them (`extra_options` from
+chain template validation, `in_composite` from a composite), so without `kwargs...` your check simply
+never runs on those paths. Test-enforced: every method of `validate_params` must accept keywords.
+
 **`multiple`** — on a picker type (`select`, `channelSelection`, `popSelection`,
 `labelPropsColsSelection`), the value becomes an ARRAY and the widget multi-picks.
 
@@ -1112,6 +1120,8 @@ A composite task chains two or more existing tasks in sequence, reusing their Py
 ```
 
 The `"composite"` array lists the `fun_name`s of constituent steps in execution order. No `"params"` block is needed — the GUI merges the param specs from each constituent task automatically (dedup by key, first step wins). A constituent param marked `"hideInComposite": true` is **omitted** from the merged form — use it for a value the composite derives internally rather than asking the user for. Example: `behaviour.hmm_transitions.hmmStates` is hidden in the `behaviour.hmm` composite because the states step's output column is threaded into it automatically (see *Runtime behaviour*).
+
+`hideInComposite` is **two** rules, and a param needs both or the task is unrunnable: the form omits it (above) *and* `validate_params` skips it when the step is validated as part of a composite (`in_composite = true`, `app/src/tasks/task.jl`). The wiring only happens inside `_run_task`, i.e. after validation, so a `required` hidden param would otherwise fail every composite run naming a field the form does not have. Standalone — a module page, a chain node, a REPL call — the requirement still applies, because then nothing supplies it.
 
 ### `outputValueName` — canonical output registration
 

@@ -91,8 +91,14 @@ end
 
 # Spec validation plus the ops check — so a malformed op is a ParamValidationError at submit time,
 # not a stack trace halfway through a run.
-function validate_params(task::TrackCorrect, params::Dict{String,Any})
-    invoke(validate_params, Tuple{CciaTask, Dict{String,Any}}, task, params)
+#
+# `kwargs...` is NOT decoration. Keywords do not participate in dispatch: a keyword-less method is
+# skipped outright when the caller passes one, and the call falls through to the `::CciaTask`
+# fallback — silently, with no error. `validate_params(task, p; extra_options=…)` (chain.jl, and now
+# the composite's `in_composite`) was therefore running the SPEC half only, never the ops check
+# below. Accept-and-forward keeps this overload in play for every caller.
+function validate_params(task::TrackCorrect, params::Dict{String,Any}; kwargs...)
+    invoke(validate_params, Tuple{CciaTask, Dict{String,Any}}, task, params; kwargs...)
     parse_track_ops(get(params, "trackOps", nothing))
     nothing
 end

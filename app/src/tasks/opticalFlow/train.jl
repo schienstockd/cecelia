@@ -88,8 +88,11 @@ end
 
 # Spec validation plus the boundary/metric agreement — a ParamValidationError at submit time rather
 # than a model trained for an hour against a third of the signal it was asked for.
-function validate_params(task::TrainFlowModel, params::Dict{String,Any})
-    invoke(validate_params, Tuple{CciaTask, Dict{String,Any}}, task, params)
+# `kwargs...` accept-and-forward — see the same note on `validate_params(::TrackCorrect, …)`: a
+# keyword-less overload is SKIPPED (not errored) when a caller passes a keyword, so without this the
+# boundary/metric check below never ran for a chain node.
+function validate_params(task::TrainFlowModel, params::Dict{String,Any}; kwargs...)
+    invoke(validate_params, Tuple{CciaTask, Dict{String,Any}}, task, params; kwargs...)
     missing_m = flow_boundary_missing(get(params, "flowMetrics", nothing),
                                      Float64(get(params, "foregroundBoundaryWeight", 0.0)))
     isempty(missing_m) || throw(ParamValidationError(

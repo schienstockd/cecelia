@@ -629,16 +629,24 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
 end
 
 function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Vector;
-                                       extra_options::Set{String} = Set{String}())
+                                       extra_options::Set{String} = Set{String}(),
+                                       in_composite::Bool = false)
     for p in spec_params
         p isa AbstractDict || continue
         key      = string(get(p, "key", ""))
         type_str = string(get(p, "type", ""))
         isempty(key) && continue
 
+        # `hideInComposite` — the composite DERIVES this one and never shows it. The definitions
+        # route strips it from the merged form (api/src/routes.jl), so the user cannot supply it and
+        # the wiring only happens in `_run_task`, AFTER validation. Validating it here made every
+        # `behaviour.hmm` run die on "Select the state columns — run HMM states first" for a field
+        # the form does not have. Standalone (`in_composite == false`) it is still required.
+        (in_composite && get(p, "hideInComposite", false) == true) && continue
+
         if type_str == "section"
             inner = get(p, "params", [])
-            isempty(inner) || _validate_params_against_spec(params, inner; extra_options)
+            isempty(inner) || _validate_params_against_spec(params, inner; extra_options, in_composite)
             continue
         end
 
@@ -650,7 +658,7 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
                 for (_, entry) in val
                     entry isa AbstractDict || continue
                     entry_dict = Dict{String,Any}(string(k) => v for (k, v) in entry)
-                    _validate_params_against_spec(entry_dict, inner; extra_options)
+                    _validate_params_against_spec(entry_dict, inner; extra_options, in_composite)
                 end
             end
             continue
@@ -724,14 +732,15 @@ Throws ParamValidationError with a clear message if any constraint is violated.
 No-ops if the spec file is not found (allows tasks without a spec).
 """
 function validate_params(task::CciaTask, params::Dict{String,Any};
-                         extra_options::Set{String} = Set{String}())
+                         extra_options::Set{String} = Set{String}(),
+                         in_composite::Bool = false)
     # Pass the params through: a task whose options come from a file the user picked resolves them
     # against THESE values, so the validator checks against the same list the form offered.
     spec = _task_spec(task, params)
     isnothing(spec) && return
     spec_params = get(spec, "params", [])
     isempty(spec_params) && return
-    _validate_params_against_spec(params, spec_params; extra_options)
+    _validate_params_against_spec(params, spec_params; extra_options, in_composite)
 end
 
 # ── The name a run writes under ───────────────────────────────────────────────
@@ -1280,11 +1289,16 @@ task_scope(task::CciaTask)::String =
     (s = _task_spec(task); isnothing(s) ? "image" : string(get(s, "scope", "image")))
 
 function validate_params(task::CompositeTask, params::Dict{String,Any};
-                         extra_options::Set{String} = Set{String}())
+                         extra_options::Set{String} = Set{String}(),
+                         in_composite::Bool = false)
     # An unresolvable step is skipped here (`_composite_steps`) and hard-errors in `_run_task`, where
     # the run can actually be stopped — validation stays about the PARAMS.
+    #
+    # `in_composite = true` is the whole point of this method: a step is being validated as part of a
+    # composite, so its `hideInComposite` params are the composite's business, not the user's. (The
+    # keyword is accepted and forwarded so a composite nested in a composite behaves the same.)
     for sub_task in _composite_steps(task)
-        validate_params(sub_task, params; extra_options)
+        validate_params(sub_task, params; extra_options, in_composite = true)
     end
 end
 
