@@ -455,14 +455,14 @@ class SegmentationUtils:
                             masks = self.predict_slice(tile, model_params, norm_p)
                         masks = self._crop_masks(masks, crop_yx, is_3d)
 
-                        if np.any(masks > 0):
-                            # Every group's write takes the next block of ids off one monotonic
-                            # counter, so the block IS the record of which pass produced them —
-                            # nothing per-pixel or per-label has to be carried through stitching,
-                            # smoothing and the size filters to keep it true.
-                            first_id = max_labels[match_as] + 1
-                            masks[masks > 0] += max_labels[match_as]
-                            max_labels[match_as] = int(masks.max())
+                        # Every group's write takes the next block of ids off one monotonic
+                        # counter, so the block IS the record of which pass produced them —
+                        # nothing per-pixel or per-label has to be carried through stitching,
+                        # smoothing and the size filters to keep it true.
+                        first_id = max_labels[match_as] + 1
+                        masks, max_labels[match_as] = self.offset_pass(
+                            masks, max_labels[match_as])
+                        if max_labels[match_as] >= first_id:
                             pass_ranges[match_as].append(
                                 {'group': model_key, 'from': first_id,
                                  'to': max_labels[match_as]})
@@ -629,7 +629,33 @@ class SegmentationUtils:
         idx[la_y] = write_yx[0]
         idx[la_x] = write_yx[1]
         idx = tuple(idx)
-        arr[idx] = np.where(arr[idx] > 0, arr[idx], masks)
+        arr[idx] = self.fill_unlabelled(arr[idx], masks)
+
+    @staticmethod
+    def fill_unlabelled(dst, src):
+        """THE multi-pass merge rule: `src` fills only what `dst` left unlabelled.
+
+        Extracted so the run and the PREVIEW cannot disagree about it. They did: the preview looped
+        the model groups but reassigned its output block each time, so a two-group config previewed
+        as the LAST group alone — full-frame and unclipped, because nothing had claimed pixels ahead
+        of it. See `offset_pass` for the other half.
+        """
+        return np.where(dst > 0, dst, src)
+
+    @staticmethod
+    def offset_pass(masks, max_label):
+        """`(masks, new_max)` with this pass's ids moved above every earlier pass's.
+
+        The other half of stacking, and the reason `fill_unlabelled` is enough to keep provenance:
+        each pass owns a contiguous id block, so which pass found an object is a range check rather
+        than anything carried per-pixel. Returns `max_label` unchanged for an empty pass, so a pass
+        that finds nothing consumes no ids and leaves no empty range behind.
+        """
+        if not np.any(masks > 0):
+            return masks, max_label
+        masks = masks.copy()
+        masks[masks > 0] += max_label
+        return masks, int(masks.max())
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 

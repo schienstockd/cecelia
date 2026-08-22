@@ -3176,6 +3176,35 @@ end
     @test checked > 20      # the sweep actually found the sliders
 end
 
+@testset "an int param never declares a fractional step" begin
+    # `ParamRenderer.vue` runs `parseInt` on an `int` slider's value, so a fractional step makes half
+    # the stops DEAD: the control moves and the value does not. Found live on `segment.coastal`, where
+    # the two params carrying a PHYSICAL unit were the ones affected — `seedSize` (µm, step 0.5) and
+    # `minComponentSize` (µm², step 0.5). At 0.33 µm/px that put coastal's own tuned pass-1 seed window
+    # (14 px = 4.6 µm) and pass-2 size floor (6 px = 0.66 µm²) out of reach entirely, so a two-pass
+    # config could not be given the values the two passes are supposed to differ by.
+    #
+    # The fix is the type, not the step: a µm value is continuous and the conversion to pixels rounds
+    # at the ONE boundary that owns it (`px_from_um` / `px_area_from_um2`). An int with step 1 is fine
+    # and common — this only catches the contradiction.
+    checked = 0
+    for (fun_name, task) in sort(collect(Cecelia._fun_name_map()); by = first)
+        path = try Cecelia._spec_path(task) catch; nothing end
+        (isnothing(path) && continue)
+        isfile(path) || continue
+        each_spec_param(get(JSON3.read(read(path, String)), :params, [])) do p, _
+            String(something(spec_get(p, "type", ""), "")) == "int" || return
+            st = spec_get(p, "step", nothing)
+            st isa Real || return
+            checked += 1
+            frac = !isapprox(Float64(st), round(Float64(st)); atol = 1e-9)
+            frac && @error "int param with a fractional step — half its slider stops do nothing" task = fun_name param = String(something(spec_get(p, "key", ""), "")) step = st
+            @test !frac
+        end
+    end
+    @test checked > 5
+end
+
 # A repeatable group carries defaults in TWO places: the group's own `default` dict (what entry "0"
 # starts as) and each nested param's `default` (what a NEWLY ADDED entry starts as). When they
 # disagree, the first entry and the second silently begin on different values — which is exactly the
@@ -12778,6 +12807,74 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             @test j["overlap"] == 128
             @test !haskey(j, "imageTiling")
             @test j["models"]["0"]["cellChannels"] == [2]
+
+            # ── the THIRD half: `<group>Order` must be resolved, or the preview ignores the chips.
+            # Reported live, on a two-pass coastal config: "is preview actually taking into account
+            # the selected chips? it doesn't look like it". The order and the off switches live in a
+            # SIBLING key that only `_apply_group_order` reads, so the preview neither reordered the
+            # passes nor dropped the entries the user had unticked — while the chips said otherwise.
+            two = Dict{String,Any}(
+                "models" => Dict{String,Any}(
+                    "0" => Dict{String,Any}("model" => "cpsam_v2", "matchAs" => "base",
+                                            "cellChannels" => ["CH3"], "cellDiameter" => 10),
+                    "1" => Dict{String,Any}("model" => "cpsam_v2", "matchAs" => "base",
+                                            "cellChannels" => ["CH3"], "cellDiameter" => 3)),
+                "modelsOrder" => ["1", "0"])
+            rev = Cecelia.preview_params_for_run(cellpose, two, img)
+            @test !haskey(rev, "modelsOrder")                       # consumed, not passed through
+            # renumbered into RUN order: the chip-first entry becomes group "0"
+            @test rev["models"]["0"]["cellDiameter"] == 3
+            @test rev["models"]["1"]["cellDiameter"] == 10
+
+            # an unticked entry is DROPPED, not merely moved — the off switch has to be real
+            off = merge(two, Dict{String,Any}("modelsOrder" => ["0"]))
+            one = Cecelia.preview_params_for_run(cellpose, off, img)
+            @test length(one["models"]) == 1
+            @test one["models"]["0"]["cellDiameter"] == 10
+
+            # no order key at all keeps running everything — a chain node and a REPL call carry none
+            @test length(Cecelia.preview_params_for_run(
+                cellpose, Dict{String,Any}("models" => two["models"]), img)["models"]) == 2
+
+            # ...and through JSON, where the order arrives as a JSON3 array of strings
+            jbody = """{"models":{"0":{"model":"cpsam_v2","matchAs":"base",
+                        "cellChannels":["CH3"],"cellDiameter":10},
+                        "1":{"model":"cpsam_v2","matchAs":"base",
+                        "cellChannels":["CH3"],"cellDiameter":3}},
+                        "modelsOrder":["1","0"]}"""
+            jr = Cecelia.preview_params_for_run(cellpose, JSON3.read(jbody, Dict{String,Any}), img)
+            @test jr["models"]["0"]["cellDiameter"] == 3
+            @test !haskey(jr, "modelsOrder")
+        end
+    end
+
+    @testset "the preview prepares params with every step run_task uses" begin
+        # `preview_params_for_run` mirrors `run_task`'s preparation, and each step it has ever been
+        # missing was a silent bug: a nested `blockSize` defaulting to 512, then `<group>Order`
+        # ignored so the order chips did nothing. Neither failed loudly. So the LIST is pinned by
+        # reading both call sites, and this fails when `run_task` gains a step the preview does not.
+        src   = read(joinpath(@__DIR__, "..", "src", "tasks", "task.jl"), String)
+        sched = read(joinpath(@__DIR__, "..", "src", "tasks", "scheduler.jl"), String)
+
+        prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults"]
+
+        # what the preview entry point calls, taken from its body rather than from this list
+        body = src[findfirst("function preview_params_for_run", src)[1]:end]
+        body = body[1:findfirst("\nend", body)[1]]
+        for step in prep
+            occursin(step, body) || @error "preview_params_for_run is missing a run step" step
+            @test occursin(step, body)
+        end
+
+        # and every step the scheduler applies before `validate_params` is in that list
+        for step in prep
+            @test occursin(step, sched)
+        end
+        run_steps = [m.match for m in eachmatch(r"_apply_[a-z_]+|_flatten_sections", sched)]
+        for step in unique(run_steps)
+            step in prep ||
+                @error "run_task applies a preparation step the preview does not" step = step
+            @test step in prep
         end
     end
 

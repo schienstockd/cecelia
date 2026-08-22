@@ -302,6 +302,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
 
     200, JSON3.write((;
         counts     = get(reply, "counts", Dict{String,Any}()),
+        # per model group, for a multi-pass config: `{group, from, to, objects}`. The merged total
+        # cannot say what the SECOND pass added, and on two near-identical passes that number is
+        # zero — a result indistinguishable from a single-pass run while the form says two.
+        passes     = get(reply, "passes", Any[]),
         region     = get(reply, "region", Dict{String,Any}()),
         fallback2d = Bool(get(reply, "fallback2d", false)),
         # lets the UI tell "your parameters found nothing" from "there is nothing here" — a padded

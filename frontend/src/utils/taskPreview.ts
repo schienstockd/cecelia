@@ -365,6 +365,18 @@ export function tilingWarning(
 }
 
 /**
+ * One model group's contribution to a preview: the id block it owns and how many of its objects
+ * SURVIVED the merge. Counted after merging, deliberately — a pass-2 object entirely covered by
+ * pass 1 is not on screen, so counting the pass's own output would report objects nobody can see.
+ */
+export interface PreviewPass {
+  group: string
+  from: number
+  to: number
+  objects: number
+}
+
+/**
  * What a finished preview says about itself. `cells === 0` is genuinely ambiguous — no signal in the
  * region, or a parameter that finds nothing — so it must NOT be reported as "no cells found" alone.
  */
@@ -372,6 +384,7 @@ export function previewSummary(
   counts: Record<string, number> | null,
   fallback2d: boolean,
   signal?: { hasSignal?: boolean; noSignalWhy?: string },
+  passes?: PreviewPass[] | null,
 ): { cells: number | null; text: string; warn: string; warnDetail: string } {
   const cells = counts && typeof counts.base === 'number' ? counts.base : null
   let warn = fallback2d ? FALLBACK_2D_WARN.short : ''
@@ -390,7 +403,36 @@ export function previewSummary(
   }
 
   if (cells === null) return { cells: null, text: '', warn, warnDetail }
-  return { cells, text: cells === 1 ? '1 cell' : `${cells} cells`, warn, warnDetail }
+
+  // A multi-pass config's real question is what the LATER pass added, and the merged total cannot
+  // answer it. Two passes whose parameters barely differ produce a second pass that contributes
+  // nothing — the first has already claimed every foreground pixel — and the preview then looks
+  // identical to a single-pass run while the form says two. So the breakdown is shown whenever
+  // there is more than one pass, and a zero is called out rather than left to be inferred.
+  const text = cells === 1 ? '1 cell' : `${cells} cells`
+  const breakdown = passBreakdown(passes)
+  if (breakdown && !warn) {
+    const dead = (passes ?? []).filter(p => p.objects === 0)
+    if (dead.length) {
+      warn = dead.length === 1 ? `Pass ${passLabel(dead[0])} found nothing`
+                               : `${dead.length} passes found nothing`
+      warnDetail = 'Every pixel it claimed was already taken by an earlier pass — give the passes '
+                 + 'different seed and size settings, or drop one'
+    }
+  }
+  return { cells, text: breakdown ? `${text} (${breakdown})` : text, warn, warnDetail }
+}
+
+/** One-based pass number for display — the worker sends the model-group key, which is zero-based. */
+function passLabel(p: PreviewPass): string {
+  const n = Number(p.group)
+  return Number.isFinite(n) ? String(n + 1) : String(p.group)
+}
+
+/** `"pass 1: 36, pass 2: 0"`, or '' for a single pass, where it would only add noise. */
+export function passBreakdown(passes?: PreviewPass[] | null): string {
+  if (!passes || passes.length < 2) return ''
+  return passes.map(p => `pass ${passLabel(p)}: ${p.objects}`).join(', ')
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
+  previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary, passBreakdown,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination, previewValueName,
   warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
@@ -386,6 +386,60 @@ describe('tilingWarning', () => {
     expect(w.detail.split(' ').length).toBeLessThanOrEqual(20)
     expect(w.detail).not.toMatch(/\.$/)
     expect(w.detail).not.toMatch(/may vary/i)
+  })
+})
+
+describe('previewSummary — multi-pass breakdown', () => {
+  const P = (group: string, objects: number, from = 1, to = 1) => ({ group, from, to, objects })
+
+  it('says nothing extra for a single pass', () => {
+    // One pass is the common case and "pass 1: 36" beside "36 cells" is pure noise.
+    expect(previewSummary({ base: 36 }, false, undefined, [P('0', 36)]).text).toBe('36 cells')
+    expect(previewSummary({ base: 36 }, false, undefined, null).text).toBe('36 cells')
+  })
+
+  it('breaks down what each pass contributed', () => {
+    const s = previewSummary({ base: 40 }, false, undefined, [P('0', 36), P('1', 4)])
+    expect(s.text).toBe('40 cells (pass 1: 36, pass 2: 4)')
+  })
+
+  it('numbers passes from one, not from the zero-based group key', () => {
+    const s = previewSummary({ base: 3 }, false, undefined, [P('0', 2), P('1', 1)])
+    expect(s.text).toContain('pass 1:')
+    expect(s.text).toContain('pass 2:')
+    expect(s.text).not.toContain('pass 0:')
+  })
+
+  it('warns when a pass contributed nothing', () => {
+    // The live case: two passes whose settings barely differ. The first claims every foreground
+    // pixel, the second adds zero, and the result is indistinguishable from a single-pass run.
+    const s = previewSummary({ base: 36 }, false, undefined, [P('0', 36), P('1', 0)])
+    expect(s.warn).toBe('Pass 2 found nothing')
+    expect(s.warnDetail).toMatch(/already taken by an earlier pass/)
+  })
+
+  it('pluralises the warning for several dead passes', () => {
+    const s = previewSummary({ base: 9 }, false, undefined, [P('0', 9), P('1', 0), P('2', 0)])
+    expect(s.warn).toBe('2 passes found nothing')
+  })
+
+  it('does not overwrite a more important warning', () => {
+    // A blank region explains the zero; the dead-pass message would be a second, wrong explanation.
+    const s = previewSummary({ base: 0 }, false, { hasSignal: false, noSignalWhy: 'padding' },
+                             [P('0', 0), P('1', 0)])
+    expect(s.warn).toBe('No image data here')
+  })
+
+  it('still reports the breakdown when it cannot count at all', () => {
+    expect(previewSummary(null, false, undefined, [P('0', 1), P('1', 1)]).cells).toBeNull()
+  })
+})
+
+describe('passBreakdown', () => {
+  it('is empty below two passes', () => {
+    expect(passBreakdown(null)).toBe('')
+    expect(passBreakdown([])).toBe('')
+    expect(passBreakdown([{ group: '0', from: 1, to: 5, objects: 5 }])).toBe('')
   })
 })
 
