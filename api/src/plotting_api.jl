@@ -97,7 +97,7 @@ function api_plot_definitions(req::HTTP.Request)
 end
 
 # ── GET /api/plots/populations — populations available across selected images/segmentations ──
-# Query: projectUid, popType (default "live"), and an image selector (one of):
+# Query: projectUid, popType (default "live"), an OPTIONAL valueName, and an image selector (one of):
 #   - setUid [+ imageUids? comma-sep subset]  → the set's images (optionally narrowed), OR
 #   - imageUid                                → a single image.
 # Returns the UNION of populations across the selected images, grouped by segmentation:
@@ -105,6 +105,13 @@ end
 # This is the read-only series picker for the summary canvas — it lets the user overlay populations
 # from several images AND several segmentations on one plot (docs/UI.md). Dedup by path per
 # segmentation (first image wins colour/name); segmentations in first-appearance order.
+#
+# `valueName` narrows to ONE segmentation. Absent = every one on the image, which is what the summary
+# canvas and the cross-segmentation task pickers want; the gating/track canvas is pinned to the
+# segmentation its toolbar selects and asks for that one. It is a narrowing of the SOURCE, not a filter
+# on the answer, because the answer is not free: deciding which `_tracked` rows are real evaluates each
+# tracked segmentation's gates (`tracked_pop_parents`), so filtering afterwards would pay for every
+# segmentation on the image to show one.
 function api_plot_populations(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     proj = get(q, "projectUid", "")
@@ -112,6 +119,7 @@ function api_plot_populations(req::HTTP.Request)
     pop_type = get(q, "popType", "live")
     granularity = get(q, "granularity", "")
     scope = get(q, "popScope", "")
+    want_vn = get(q, "valueName", "")
     isempty(proj) && return _gerr(400, "projectUid required")
     imgs = CciaImage[]
     if !isempty(set_uid)
@@ -131,14 +139,24 @@ function api_plot_populations(req::HTTP.Request)
     # All the picker logic (scope/pop_type selection, cross-image/cross-pop_type union + dedup,
     # derived-pop injection, cell-vs-track filtering, pop_type tagging) lives in the PACKAGE
     # (Revise-tracked, tested) — this route just resolves the images and shapes the result as JSON.
-    names_for = img -> versioned_keys(img.label_props)
+    # The one place `valueName` acts: the enumerator's source list. An unknown name simply yields
+    # nothing for that image rather than a 400 — a segmentation can legitimately be absent from some
+    # images of a set, and the picker's answer for those is "no populations", not an error.
+    names_for = img -> (ks = versioned_keys(img.label_props);
+                        isempty(want_vn) ? ks : [v for v in ks if String(v) == want_vn])
     load_map = (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt)
-    # Only offer the root-level `/_tracked` when a segmentation has tracks OUTSIDE its gates (ungated
-    # tracking). When tracking was gated (e.g. to /qc) the root pop is a redundant duplicate of
-    # /<gate>/_tracked and misleadingly implies whole-segmentation tracking.
-    root_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
-        any(im -> (vn in String.(versioned_keys(im.label_props))) &&
-                  has_ungated_tracks(im; value_name = vn), imgs)
+    # A derived `/_tracked` is offered only where it is INFORMATIVE: the segmentation is tracked, that
+    # population holds tracks, and no sub-population holds exactly the same ones (then the deeper pop
+    # is the one that was tracked and this row is a copy of it). `tracked_pop_parents` answers for a
+    # whole segmentation at once, so it is computed once per (image, value_name) and reused for every
+    # candidate path; a population is offered when ANY selected image has it, like the rest of the union.
+    tp_cache = Dict{Tuple{String,String},Set{String}}()
+    tracked_parents = (im, vn) -> get!(tp_cache, (String(im.uid), String(vn))) do
+        (vn in String.(versioned_keys(im.label_props))) ?
+            tracked_pop_parents(im; value_name = vn) : Set{String}()
+    end
+    tracked_ok = (vn, _pt, parent, dpath) -> dpath != "/_tracked" ? true :
+        any(im -> parent in tracked_parents(im, vn), imgs)
     # `accepts` (comma-sep pop_type allow-list, Decision 14) is the module-function picker: the exact
     # pop_types a task's popSelection declares (supersedes `popScope`, which stays as a shim). Then
     # `popScope` (cells|tracks). Absent both → legacy summary-canvas path (raw popType + granularity).
@@ -147,14 +165,14 @@ function api_plot_populations(req::HTTP.Request)
         if !isempty(accepts_raw)
             population_accept_groups(imgs, names_for, load_map,
                                      split(accepts_raw, ","; keepempty = false);
-                                     root_derived_ok = root_ok)
+                                     derived_ok = tracked_ok)
         elseif !isempty(scope)
             include_clusters = get(q, "includeClusters", "true") != "false"
             population_scope_groups(imgs, names_for, load_map, scope;
-                                    include_clusters = include_clusters, root_derived_ok = root_ok)
+                                    include_clusters = include_clusters, derived_ok = tracked_ok)
         else
             plot_population_groups(imgs, names_for, load_map,
-                                   plot_pop_types(pop_type, granularity); root_derived_ok = root_ok)
+                                   plot_pop_types(pop_type, granularity); derived_ok = tracked_ok)
         end
     catch e
         return _gerr(400, sprint(showerror, e))

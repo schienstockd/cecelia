@@ -164,8 +164,10 @@ function _label_suffix(g::TrackPlotGroup, peers)
     _track_pop_label(track_group_pop(g))
 end
 
-# Images → labelled bundles. `key` is stable (uIDs); `label` is what a legend shows, which is the image's
-# NAME — two images can share a name, so the two are not the same string.
+# Images → labelled bundles. `key` is stable (uIDs), and so is the `label` a legend shows: the uID,
+# not the image NAME. A microscope filename ("M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)") is longer
+# than the panel it titles and pushes the population — the part that differs between facets — off the
+# end; the uID is six characters and is what every other surface identifies an image by.
 function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bool)
     if !isempty(group_attrs)
         amap = image_attr_groups(first.(pairs), last.(pairs), group_attrs)
@@ -185,8 +187,8 @@ function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bo
      for (img, uid) in pairs]
 end
 
-# The image as a person names it, falling back to the uID (a name is optional on disk).
-_img_label(img, uid) = (n = try; String(img.name); catch; ""; end; isempty(n) ? String(uid) : n)
+# The uID, which is unique and short. The image's own name is deliberately not used here.
+_img_label(_img, uid) = String(uid)
 
 # Population refs → labelled bundles of (value_name, pop). A pooled bundle carries every ref.
 function _track_pop_groups(pops::Vector{String}, vn0::AbstractString, pool_pops::Bool)
