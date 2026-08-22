@@ -20,6 +20,9 @@ import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popG
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import VisualAid from '../components/VisualAid.vue'
+import FloatingPanel from '../components/FloatingPanel.vue'
+import { paramVisColumns, uniformWarning } from './paramVis'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 
@@ -405,6 +408,34 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
   return { value: e.key, label: named ? String(named) : `${i + 1}` }
 }))
 
+// µm per pixel for the strip's pixel captions — only when every selected image AGREES on it. A batch
+// spanning two objectives has no single answer, and printing one of them would state a scale that is
+// wrong for the others; the strip falls back to form units and says so.
+const groupPxSize = computed<number | null>(() => {
+  const sizes = (props.context?.images ?? [])
+    .map(i => i.physicalSizeX).filter((v): v is number => typeof v === 'number' && v > 0)
+  if (!sizes.length) return null
+  return sizes.every(v => v === sizes[0]) ? sizes[0] : null
+})
+
+// The figure is FLOATING, not inline. Eleven rows above the entry list pushed the whole form down
+// and was the first thing Dominik said about it — a reference you consult while tuning wants to sit
+// beside the controls, not between them. `FloatingPanel` remembers where you put it.
+const figureOpen = ref(false)
+const groupVis = computed(() =>
+  paramVisColumns(props.param, (val.value as GroupValues) ?? {}, groupOrderValue.value,
+                  groupPxSize.value))
+const groupVisNote = computed(() => uniformWarning(groupVis.value))
+
+const groupVisHeadings = computed<string[]>(() =>
+  groupOrderValue.value.map(k => {
+    const raw = props.param.labelKey ? (val.value as GroupValues)?.[k]?.[props.param.labelKey] : undefined
+    const named = Array.isArray(raw) ? raw[0] : raw
+    // The same heading the entry itself carries, so the strip and the list cannot disagree about
+    // which column is which.
+    return named ? String(named) : String(Number(k) + 1)
+  }))
+
 const groupOrderValue = computed<string[]>(() =>
   groupOrderKeys(Object.fromEntries(groupEntries.value.map(e => [e.key, e.vals])),
                  props.context?.values?.[orderKey.value]))
@@ -751,11 +782,21 @@ const pct = computed(() => {
   <div v-if="param.type === 'group' && !notApplicable" class="param-group">
     <div class="group-header">
       <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
-      <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
-        @click="addGroupEntry()"
-        v-tooltip.right="'Add another entry'">
-        <i class="pi pi-plus" />
-      </button>
+      <!-- Both buttons in ONE right-aligned group. The header is `space-between`, so as separate
+           children a second button parked the first in the middle of the row — reading as a label
+           with a stray control after it. `+` stays rightmost, where it was when it was alone. -->
+      <span class="group-actions cc-row cc-row-tight">
+        <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
+          type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
+          v-tooltip.left="'Show these settings as a figure'">
+          <i class="pi pi-chart-bar" />
+        </button>
+        <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
+          @click="addGroupEntry()"
+          v-tooltip.left="'Add another entry'">
+          <i class="pi pi-plus" />
+        </button>
+      </span>
     </div>
 
     <!-- Which entries run, and in what order. Every `repeatable` group gets this — it is not a
@@ -799,6 +840,17 @@ const pct = computed(() => {
       :short="param.entriesTip"
       detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
               fill only what it left. Two entries configured alike therefore do the same work twice." />
+
+    <!-- A floating figure of what these numbers MEAN, one column per entry. Off by default and
+         remembered per user: it is a reference you consult while tuning, so it belongs beside the
+         controls rather than wedged between them. Only offered when the spec gives some param a
+         `vis` role, so a task with none shows no button. -->
+    <FloatingPanel v-if="figureOpen" :title="`${param.label} — at a glance`"
+      storage-key="param-figure" icon="pi-chart-bar" :default-w="330" :default-h="420"
+      @close="figureOpen = false">
+      <VisualAid :vis="groupVis" :headings="groupVisHeadings"
+        :note="groupVisNote" note-severity="warn" />
+    </FloatingPanel>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -995,6 +1047,7 @@ const pct = computed(() => {
   padding: 0.45rem 0 0.3rem;
 }
 
+.group-actions { flex: 0 0 auto; }
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .group-empty { font-style: italic; padding: 0.3rem 0; }
