@@ -991,6 +991,34 @@ pass 1 claims every foreground pixel, pass 2 adds nothing, and the run costs twi
 pass's output. Keep `minCellSize`/`cellSizeMax` at 0 — those are top level, and a global floor would
 delete pass 2's objects after the fact.
 
+**This table, and not `coastal/docs/SEGMENTATION.md`'s.** Coastal carries two two-pass references
+that disagree, and one of them fragments a run. Its own doc says seed 32/8 px, affinity 0.2/0.8,
+merge 0.90, min 10 px² and seed blur **0 on both passes**; `two_pass_movie.py` says the table above.
+Adopting the first on `zolIMa/fXgbTl` produced **60,014 objects of median 14 voxels** end to end
+(`obs['pass']`, 2026-08-22) where the same movie had given ~200 per timepoint.
+
+**Pass 1's seed blur is the parameter that decides both.** One variable at a time, `flow.small.pt`,
+8 planes of t=15, per plane, pass 2 fixed at seed 2.65 µm / affinity 0.8 / blur 0 / min 1.1 µm²;
+`diam` is the equivalent-circle diameter of the median object:
+
+| pass 1 seed blur | pass 1 objects | pass 1 diam | pass 1 foreground | **pass 2 surviving the fill** |
+|---|---|---|---|---|
+| **0** | 752 | **2.56 µm** | 10.2% | **1** |
+| 1.0 | 347 | 6.65 µm | 9.7% | 128 |
+| 1.75 | 242 | 8.28 µm | 9.1% | 172 |
+| **2.5** (the default) | 192 | **8.75 µm** | 8.6% | 209 |
+| 4.0 | 96 | 10.45 µm | 6.5% | 349 |
+
+At 0 every connected component of the thresholded prob map becomes its own object — coastal's
+`predict_frame` docstring says so outright — and the result is speckle at 2.56 µm against an ~11 µm
+cell. Past 2.5 the blur starts suppressing prob below threshold and real foreground goes with it
+(8.6% → 6.5%), so more of pass 1's territory falls to pass 2 for the wrong reason.
+
+**Pass 1's min fragment is NOT the lever**, contrary to the paragraph above: at blur 1.75, sweeping it
+1.1 → 2.0 → 4.0 → 6.5 → 11.0 µm² moves pass 1 from 242 to 235 objects and pass 2 from 172 to 177. It
+matters when pass 1 is producing sub-floor fragments, which is a symptom of the blur being wrong. Fix
+the blur first; the floor is then almost inert.
+
 `seedSize` and `minComponentSize` were typed `int` in the spec with a step of 0.5 until 2026-08-21,
 and `ParamRenderer` runs `parseInt` on an int slider — so half the stops were dead and neither
 column above was reachable. Both are `float` now, ratcheted by `an int param never declares a
