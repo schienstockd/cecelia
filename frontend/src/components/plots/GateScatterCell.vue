@@ -34,6 +34,12 @@ const props = withDefaults(defineProps<{
   xLabel: string
   yLabel: string
   popLayers?: PopLayer[]                         // coloured child-pop overlays
+  // COLOUR BY a third measure (points mode): one transformed value per base point + the ramp's
+  // range/labels from plotmeta. Straight through to PlotLayers, which owns the ramp and its bar.
+  baseValues?: Float32Array | null
+  valueExtent?: [number, number] | null
+  valueTicks?: { pos: number; label: string }[]
+  valueLabel?: string
   renderMode?: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = + tail dots
   showPops?: boolean
   mode?: 'off' | 'rectangle' | 'polygon'         // 'off' = read-only (no draw/edit)
@@ -248,6 +254,8 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :flip-y="flipY"
+                  :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
+                  :value-label="valueLabel"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
                    :flip-y="flipY"

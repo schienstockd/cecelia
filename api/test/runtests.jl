@@ -4912,6 +4912,55 @@ end
   end
 end
 
+# ── COLOUR BY a third measure ────────────────────────────────────────────────────
+# The dots keep their positions and gain a value: `plotdata?z=…` answers TRIPLES instead of pairs,
+# read in one pass so `z[i]` is the same cell as `(x[i], y[i])`. A stride slip here mis-colours every
+# dot with a plausible-looking picture, so pin the pair half against the no-z response, and pin every
+# value inside the ramp `plotmeta` hands the legend.
+@testset "API: gating plotdata carries a colour-by measure" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir(); cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        common = "projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"
+        st, chb = api_gating_channels(HTTP.Request("GET", "/api/gating/channels?" * common))
+        @test st == 200
+        cols = String.(JSON3.read(chb).columns)
+        @test length(cols) >= 3
+        x, y, z = cols[1], cols[2], cols[3]
+        base = "$common&x=$(HTTP.escapeuri(x))&y=$(HTTP.escapeuri(y))"
+        data(t) = (r = api_gating_plotdata(HTTP.Request("GET", "/api/gating/plotdata?" * t));
+                   (r[1], reinterpret(Float32, UInt8.(r[2]))))
+        st1, xy = data(base)
+        st2, xyz = data("$base&z=$(HTTP.escapeuri(z))")
+        n = length(xy) ÷ 2
+        @test st1 == 200 && st2 == 200 && n > 0
+        @test length(xyz) == 3n                                  # triples, not pairs
+        # asking for a colour does not move a single dot
+        @test all(i -> xyz[3i-2] == xy[2i-1] && xyz[3i-1] == xy[2i], 1:n)
+        meta = JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$base&z=$(HTTP.escapeuri(z))"))[2])
+        @test meta.zExtent !== nothing && length(meta.zTicks) == 3 && meta.usedZ == "linear"
+        lo, hi = Float32(meta.zExtent[1]), Float32(meta.zExtent[2])
+        @test all(i -> lo <= xyz[3i] <= hi, 1:n)                 # every value inside the legend's ramp
+        # no colour measure asked for → the response says nothing about a ramp (the client falls back
+        # to the density pseudocolour rather than inventing a range)
+        @test JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?" * base))[2]).zExtent === nothing
+        # An UNREADABLE colour measure (a stale panel naming a column this table doesn't have) tints
+        # nothing — it must not blank the cloud it was only supposed to colour. Triples still (the client
+        # chose the stride), values NaN, and no ramp to describe.
+        st3, bogus = data("$base&z=live.track.nope")
+        @test st3 == 200 && length(bogus) == 3n
+        @test all(i -> bogus[3i-2] == xy[2i-1] && bogus[3i-1] == xy[2i] && isnan(bogus[3i]), 1:n)
+        @test JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$base&z=live.track.nope"))[2]).zExtent === nothing
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
 @testset "API: gating undo/redo steps through the population tree" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"

@@ -69,7 +69,10 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (the correction view reads its own keys) — as in ClusterPlots.
 interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
-  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
+  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[]
+  // colour-by (single plot): the third measure painted as the dot colour, and its ramp scale.
+  // Unset like xt/yt so the panel's per-measure transform default fires (see the comment on ckey).
+  z?: string; zt?: GateKind }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
