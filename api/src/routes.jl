@@ -731,7 +731,14 @@ function api_task_threads_get(_req)
                         # machine's is what a budget must NOT be sized from. Both are reported so the
                         # UI can say which it means; they are equal on an ordinary workstation.
                         cores        = Cecelia.usable_cpus(),
-                        machineCores = Sys.CPU_THREADS))
+                        machineCores = Sys.CPU_THREADS,
+                        # Whether a stage MEASURED to scale linearly may take the usable CPU count
+                        # instead of the budget's lone-run-pessimistic share. Only meaningful while
+                        # the budget is derived — an explicit number is the user saying how wide a
+                        # task may go — so the UI hides the control rather than showing a toggle
+                        # that would do nothing. See `Cecelia.task_workers_widen`.
+                        widen        = Cecelia.task_workers_widen(),
+                        widenCap     = Cecelia.usable_cpus()))
 end
 
 # Set it live: persists + hot-reloads, so the NEXT task spawns with it. `workers <= 0` clears the
@@ -743,13 +750,25 @@ end
 # same number. Best-effort — a runner that is down must not fail the control.
 function api_task_threads_set(body_bytes)
     data = JSON3.read(body_bytes)
+    # `widen` alone: the linear-stage flag without touching the budget. Two controls on one endpoint
+    # because they are one setting to the user ("how wide may a task go"), and a second route would
+    # let the two disagree about which took effect.
+    if haskey(data, :widen) && !haskey(data, :workers)
+        on = try Bool(get(data, :widen, false))
+        catch; return 400, JSON3.write((; error = "widen must be a boolean")) end
+        applied = Cecelia.set_task_workers_widen!(on)
+        return 200, JSON3.write((; workers = Cecelia.task_worker_threads(),
+                                   derived = Cecelia.task_workers_derived(),
+                                   widen = applied))
+    end
     n = try Int(get(data, :workers, 0)) catch; return 400, JSON3.write((; error = "workers must be an integer")) end
     applied = Cecelia.set_task_worker_threads!(n)
     if _runner_enabled()
         try; Cecelia.runner_set_task_workers(_RUNNER, n)
         catch e; @warn "Could not apply the task thread budget on the runner" n exception = e; end
     end
-    200, JSON3.write((; workers = applied, derived = n <= 0))
+    200, JSON3.write((; workers = applied, derived = n <= 0,
+                        widen = Cecelia.task_workers_widen()))
 end
 
 # ── Image store compression ──────────────────────────────────────────────────

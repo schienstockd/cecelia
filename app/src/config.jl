@@ -640,6 +640,67 @@ function set_task_worker_threads!(n::Integer)::Int
     task_worker_threads()
 end
 
+# ── May a LINEARLY-SCALING stage take the whole box? ──────────────────────────────────────────────
+#
+# `task_worker_threads()` is one number, and the stages it governs disagree about what they want.
+# Measured on zolIMa/fXgbTl, 32 z-planes at production geometry (docs/SCHEDULER.md → *Three stages,
+# three curves*): coastal's flow metrics keep scaling to the box (14x at 32 threads, 6.8x at 8),
+# while its region growing DEGRADES past 4. `cap=` already handles the second — an algorithmic
+# ceiling belongs next to its measurement. The first had no expression at all: there was no way for
+# a stage to say "take the machine when nobody else is using it", which the plan identified as the
+# case that costs the most (~2x unclaimed on a lone run).
+#
+# Two conditions, both required, because either alone is wrong:
+#
+#   1. The budget must be DERIVED. An explicit `[tasks].workerThreads` is the user saying how wide a
+#      task may go, and a stage widening past it would make the slider a suggestion.
+#   2. This flag must be on. Default OFF — and NOT because widening is unproven, but because it
+#      interacts with the pool limits: `cpu` admits several tasks at once, so a linear stage in each
+#      of them would oversubscribe the box. That is a judgement about how a machine is shared, which
+#      is the user's to make, not a default to infer.
+#
+# Delivered to Python as `CECELIA_TASK_WORKERS_WIDEN` + `CECELIA_USABLE_CPUS` (py_runner.jl). The
+# usable count is computed HERE rather than re-derived in Python: `usable_cpus()` already reads the
+# affinity mask and the cgroup quota and is tested, and a second implementation of that is exactly
+# the drift this codebase keeps one canonical helper to avoid.
+task_workers_widen()::Bool =
+    Bool(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "widenLinearStages", false))
+
+"""
+    task_workers_derived() -> Bool
+
+Whether the budget in effect came from the MACHINE rather than from `[tasks].workerThreads`. The
+condition `task_workers_widen()` is gated on — see the block comment above. Mirrors the `derived`
+field the threads API already reports, so the UI and the env var cannot disagree about it.
+"""
+function task_workers_derived()::Bool
+    conf = get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "workerThreads", nothing)
+    isnothing(conf) && return true
+    n = try Int(conf) catch; 0 end
+    n < 1                     # a typo falls back to the derived default, so it IS derived
+end
+
+"""
+    set_task_workers_widen!(on) -> Bool
+
+Persist `[tasks].widenLinearStages` and hot-reload, so the NEXT task spawns with it. Same shape as
+`set_task_worker_threads!`, including that a task already running keeps what it started with — the
+value reaches a task as an env var read at spawn.
+"""
+function set_task_workers_widen!(on::Bool)::Bool
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    tasks = get(cfg, "tasks", Dict{String,Any}())
+    # Removed rather than written `false`: the default is the absence of the key, and a written
+    # `false` is indistinguishable from it while looking like a decision somebody made.
+    on ? (tasks["widenLinearStages"] = true) : delete!(tasks, "widenLinearStages")
+    isempty(tasks) ? delete!(cfg, "tasks") : (cfg["tasks"] = tasks)
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    task_workers_widen()
+end
+
 # ── The detached task runner (Settings → System) ──────────────────────────────────────────────────
 #
 # Whether tasks execute in a SEPARATE process, so restarting the backend does not kill work in flight.

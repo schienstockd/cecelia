@@ -136,6 +136,14 @@ _py_task_env(pythonpath::AbstractString) = [
     # numbers that had to agree. The trade-off is real and now VISIBLE rather than baked in — a lone
     # run goes less wide than it could, which is what the slider is for.
     "LOKY_MAX_CPU_COUNT" => string(task_worker_threads()),
+    # The escape hatch for a stage MEASURED to scale linearly — see `task_workers_widen` for why it
+    # needs both conditions and why it is off by default. Two variables rather than one because the
+    # widening target is the usable CPU count, which only Julia knows honestly (`usable_cpus()` reads
+    # the affinity mask and the cgroup quota); re-deriving it in Python would be a second
+    # implementation of the one thing that must not disagree.
+    "CECELIA_TASK_WORKERS_WIDEN" =>
+        (task_workers_widen() && task_workers_derived()) ? "1" : "0",
+    "CECELIA_USABLE_CPUS" => string(usable_cpus()),
 ]
 
 """

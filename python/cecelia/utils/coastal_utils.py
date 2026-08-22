@@ -69,7 +69,12 @@ PERCENTILE_HI = 99.99
 # bigger box widens the flow stage and leaves region growing where the measurement put it.
 PREDICT_WORKER_CAP = 4
 
-FLOW_WORKERS = cpu_utils.task_workers()
+# `scales_linearly`: the measurement above is what earns it — this stage is the one that keeps
+# getting faster with width, so where the budget was DERIVED and the user has opted in it takes the
+# usable CPU count instead of the budget's lone-run-pessimistic share. Off by default; see
+# `Cecelia.task_workers_widen`. `PREDICT_WORKERS` deliberately does NOT pass it: its curve turns
+# down past 4, which is the opposite claim and already expressed by `cap=`.
+FLOW_WORKERS = cpu_utils.task_workers(scales_linearly=True)
 PREDICT_WORKERS = cpu_utils.task_workers(cap=PREDICT_WORKER_CAP)
 
 # What the projected window is scaled to before coastal sees it — coastal's own convention, kept so

@@ -54,6 +54,12 @@ import os
 # `cpu` pool allows 20, but a limit is not an expectation, and sizing for the worst case would leave
 # a single running task on one core. It matches how `BLAS_THREADS_PER_TASK` was arrived at.
 TASK_WORKERS_ENV = 'CECELIA_TASK_WORKERS'
+# Set by `run_py` (app/src/py_runner.jl). `WIDEN` is already the AND of the user's flag and "the
+# budget was derived, not typed" — Julia owns that decision because it owns the config; this side
+# only asks whether it may. `USABLE_CPUS` is `Cecelia.usable_cpus()`: the affinity mask and cgroup
+# quota applied, which is why it is passed in rather than re-derived from `os.cpu_count()`.
+TASK_WORKERS_WIDEN_ENV = 'CECELIA_TASK_WORKERS_WIDEN'
+USABLE_CPUS_ENV = 'CECELIA_USABLE_CPUS'
 _ASSUMED_ACTIVE_TASKS = 4
 _MAX_DEFAULT_WORKERS = 16
 # A floor, because the divisor alone turns a small machine SERIAL: 4 cores / 4 is one thread, and
@@ -68,7 +74,7 @@ def default_task_workers(n_cpus=None):
     return max(1, min(share, n))
 
 
-def task_workers(cap=None, env=None):
+def task_workers(cap=None, env=None, scales_linearly=False):
     """How many threads this task may run its own work on.
 
     `cap` is an ALGORITHMIC ceiling, not a preference: a stage that has been measured to stop
@@ -77,19 +83,53 @@ def task_workers(cap=None, env=None):
     at 8), and no amount of machine says otherwise, so that number belongs next to the measurement
     rather than in a config file.
 
+    `scales_linearly=True` is the OPPOSITE claim, and only a measurement earns it: this stage keeps
+    getting faster with width, so where the budget was DERIVED rather than chosen it may take the
+    usable CPU count instead. Coastal's flow metrics are the case (14x at 32 threads against 6.8x at
+    8 - docs/SCHEDULER.md), and the budget's own divisor assumes four tasks are computing at once,
+    which is wrong by ~2x for a lone run. Gated by `CECELIA_TASK_WORKERS_WIDEN`, which Julia sets to
+    1 only when the user asked for it AND nobody typed a thread count - see `task_workers_widen`.
+
+    `cap` still applies on top and always wins: an algorithmic ceiling is not a budget, so the two
+    arguments are not contradictory even when both are passed. Widening never goes BELOW the budget
+    either, so a configured value can only be exceeded by this path, never undercut.
+
     An unparseable or non-positive setting falls back to the derived default rather than raising:
     a typo in a config file should not stop a run, and every value here is a performance choice.
     """
-    raw = (env if env is not None else os.environ).get(TASK_WORKERS_ENV)
+    environ = env if env is not None else os.environ
+    raw = environ.get(TASK_WORKERS_ENV)
     try:
         workers = int(str(raw).strip())
     except (TypeError, ValueError):
         workers = 0
     if workers < 1:
         workers = default_task_workers()
+    if scales_linearly and _widen_allowed(environ):
+        workers = max(workers, _usable_cpus(environ))
     if cap is not None:
         workers = min(workers, max(1, int(cap)))
     return max(1, workers)
+
+
+def _widen_allowed(environ):
+    """Whether Julia said a linearly-scaling stage may take the box. Absent = no."""
+    return str(environ.get(TASK_WORKERS_WIDEN_ENV, '')).strip() in ('1', 'true', 'True')
+
+
+def _usable_cpus(environ):
+    """`Cecelia.usable_cpus()` as passed in, falling back to this process's own count.
+
+    The fallback matters for a runner invoked OUTSIDE `run_py` - a REPL session, a test, an external
+    consumer of the package - where the variable is absent. `os.cpu_count()` is the machine rather
+    than the affinity mask, so it is a weaker answer; it is only reached when nothing better was
+    supplied, and never when the widen flag is off (which is the default).
+    """
+    try:
+        n = int(str(environ.get(USABLE_CPUS_ENV, '')).strip())
+    except (TypeError, ValueError):
+        n = 0
+    return max(1, n if n > 0 else (os.cpu_count() or 1))
 
 
 # Best measured for the many-small-matmuls case above. The curve is flat between 4 and 8, so this
