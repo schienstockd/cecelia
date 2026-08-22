@@ -9,6 +9,8 @@
     • contour  → nested contour rings of the base density.
     • outliers → contour rings + the sparse-tail dots the rings don't enclose.
     • showPops → each visible child population drawn in its colour, ALWAYS as dots (any base mode).
+    • baseValues → COLOUR BY a third measure (FlowJo's colour-by-parameter): in points mode the dots
+                 take the ramp from that measure instead of from local density, plus a colour bar.
   Subsets come from the server (plotdata?pop=…), so Julia still owns membership; we only colour.
 -->
 <script setup lang="ts">
@@ -16,8 +18,9 @@ import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
 import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
-import { BLUE_HEAT_RGB } from '../../plots/flowColors'
-import { svgImage, svgCircles, svgPath } from '../../plots/export'
+import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
+import { normValues, barTicks, fitLabel } from '../../plots/valueColour'
+import { svgImage, svgCircles, svgPath, svgRect, svgText } from '../../plots/export'
 import { paintDimmed } from '../../plots/dimLayer'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
@@ -31,6 +34,13 @@ const props = defineProps<{
   popLayers: PopLayer[]                      // visible child pops to colour
   showPops: boolean
   viewTick: number                           // bump → redraw (camera moved)
+  // COLOUR BY a third measure: one already-transformed value per base point (same index = same dot,
+  // guaranteed by the server reading x/y/z in one pass) + the ramp's range/labels from plotmeta.
+  // Absent → the base keeps its local-density pseudocolour.
+  baseValues?: Float32Array | null
+  valueExtent?: [number, number] | null      // [lo, hi] in TRANSFORMED value space
+  valueTicks?: { pos: number; label: string }[]   // raw-value labels at transformed positions
+  valueLabel?: string                        // the measure's name, captioning the colour bar
 }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
@@ -62,18 +72,40 @@ const ringToPx = (gx: number, gy: number) => gridToPx(props.viewExtents, box(), 
 // ~B times, not once per point (fast for 100k+ points).
 const DOT_BUCKETS = 64
 const DOT_R = 0.7
+// The 0..1 the ramp is indexed by, per point: the COLOUR-BY measure when one is given (normalised over
+// the served whole-dataset range, so the colours don't re-map as you walk the population tree), else
+// the point's own local density. One source of `t` → one paint loop for both modes, on screen and in
+// both export paths; the colour bar reads the same normalisation. NaN = the measure is missing there.
+function dotRamp(points: Float32Array): Float32Array {
+  const v = props.baseValues, ext = props.valueExtent
+  return v && ext && v.length === points.length / 2
+    ? normValues(v, ext)
+    : pointDensities(points, props.viewExtents)
+}
+const colourBy = () => {
+  const v = props.baseValues, ext = props.valueExtent, pts = props.basePoints
+  return !!(v && ext && pts && v.length === pts.length / 2 && props.renderMode === 'points')
+}
 function paintDensityDots(points: Float32Array) {
   const c = ctx!
-  const t = pointDensities(points, props.viewExtents)
+  const t = dotRamp(points)
   const n = points.length / 2
   const groups: number[][] = Array.from({ length: DOT_BUCKETS }, () => [])
-  for (let i = 0; i < n; i++) groups[Math.min(DOT_BUCKETS - 1, Math.floor(t[i] * DOT_BUCKETS))].push(i)
+  const missing: number[] = []                       // no value for this cell — NOT the ramp's floor
+  for (let i = 0; i < n; i++) {
+    isFinite(t[i]) ? groups[Math.min(DOT_BUCKETS - 1, Math.floor(t[i] * DOT_BUCKETS))].push(i)
+                   : missing.push(i)
+  }
   const s = DOT_R * 2
+  const stamp = (g: number[]) => {
+    for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+  }
+  if (missing.length) { c.fillStyle = ink(); stamp(missing) }
   for (let b = 0; b < DOT_BUCKETS; b++) {
     const g = groups[b]; if (!g.length) continue
     const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
     c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
-    for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+    stamp(g)
   }
 }
 // The "dim under pop overlays" backdrop goes through plots/dimLayer: a dot plot CANNOT be dimmed by
@@ -128,6 +160,65 @@ function drawOutliers(points: Float32Array, colour: string) {
   ctx!.globalAlpha = 1
 }
 
+// ── COLOUR BAR (the colour-by legend) ───────────────────────────────────────────────────────────────
+// Sits INSIDE the plot area, top-right: the gating plot's chrome is a fixed asymmetric padding sized
+// for the x/y axis names (GateScatterCell), so there is no third gutter to put a legend in, and
+// widening one would shrink the dots in every montage tile too. It draws LAST, so the dimmed base
+// can't wash it out, and it is part of the canvas — so the PNG export gets it for free.
+const BAR_W = 9, BAR_PAD = 8, BAR_FS = 9
+function barBox() {
+  const { w, h } = size()
+  return { x: w - BAR_PAD - BAR_W, y: BAR_PAD + BAR_FS + 4, w: BAR_W,
+           h: Math.max(36, Math.min(110, Math.round(h * 0.32))) }
+}
+// ramp stops (hi at the top) — the same lookup the dots use, so the bar can't describe a colour the
+// dots don't paint
+const BAR_STOPS = 24
+function barStop(i: number) { return 1 - i / (BAR_STOPS - 1) }
+function paintColourBar() {
+  const c = ctx!, ext = props.valueExtent
+  if (!ext) return
+  const b = barBox(), { w } = size()
+  const grad = c.createLinearGradient(0, b.y, 0, b.y + b.h)
+  for (let i = 0; i < BAR_STOPS; i++) grad.addColorStop(i / (BAR_STOPS - 1), heatCss(barStop(i)))
+  c.fillStyle = grad; c.fillRect(b.x, b.y, b.w, b.h)
+  c.strokeStyle = ink(); c.lineWidth = 0.6; c.strokeRect(b.x, b.y, b.w, b.h)
+  c.fillStyle = ink(); c.font = `${BAR_FS}px system-ui, sans-serif`
+  c.textAlign = 'right'; c.textBaseline = 'middle'
+  for (const t of barTicks(props.valueTicks ?? [], ext)) {
+    c.fillText(t.label, b.x - 3, b.y + (1 - t.frac) * b.h)
+  }
+  if (props.valueLabel) {
+    c.textBaseline = 'alphabetic'
+    c.fillText(fitLabel(props.valueLabel, Math.max(30, w * 0.45), t => c.measureText(t).width),
+               b.x + b.w, b.y - 4)
+  }
+}
+// the same bar as TRUE VECTOR for the SVG export (stacked rects rather than a gradient <def>, so it
+// needs nothing from svgDoc and stays editable per band)
+function colourBarSvg(): string {
+  const ext = props.valueExtent
+  if (!ext) return ''
+  const b = barBox(), { w } = size(), pen = ink()
+  let out = ''
+  const bandH = b.h / BAR_STOPS
+  for (let i = 0; i < BAR_STOPS; i++) {
+    out += svgRect(b.x, b.y + i * bandH, b.w, bandH + 0.3, { fill: heatCss(barStop(i)) })
+  }
+  out += svgRect(b.x, b.y, b.w, b.h, { stroke: pen, width: 0.6 })
+  for (const t of barTicks(props.valueTicks ?? [], ext)) {
+    out += svgText(b.x - 3, b.y + (1 - t.frac) * b.h + BAR_FS * 0.35, t.label,
+                   { fill: pen, size: BAR_FS, anchor: 'end' })
+  }
+  if (props.valueLabel) {
+    // no ctx here — estimate the width the way plots/plot.ts does outside a browser (0.55em/char)
+    out += svgText(b.x + b.w, b.y - 4,
+                   fitLabel(props.valueLabel, Math.max(30, w * 0.45), t => t.length * BAR_FS * 0.55),
+                   { fill: pen, size: BAR_FS, anchor: 'end' })
+  }
+  return out
+}
+
 function paintContent() {
   ctx!.lineJoin = 'round'
   const mode = props.renderMode
@@ -149,6 +240,7 @@ function paintContent() {
   if (props.showPops) for (const pop of props.popLayers) {
     if (pop.points?.length) drawDots(pop.points, pop.colour)
   }
+  if (colourBy()) paintColourBar()          // last: the legend is never dimmed by the base wash
 }
 
 function draw() {
@@ -193,7 +285,7 @@ function renderBaseRasterUrl(scale = 4): string | null {
   const octx = off.getContext('2d'); if (!octx) return null
   const saved = ctx; ctx = octx
   octx.setTransform(scale, 0, 0, scale, 0, 0); octx.clearRect(0, 0, w, h)
-  drawDensityDots(props.basePoints, props.showPops ? 0.4 : 1)   // base only (same as paintContent points branch)
+  drawDensityDots(props.basePoints, props.showPops ? 0.4 : 1)   // base only — no colour bar (vector, above)
   ctx = saved
   return off.toDataURL('image/png')
 }
@@ -238,11 +330,13 @@ function exportSvgContent(): string {
       body += dotsSvg(pop.points, pop.colour, 1.5)      // categorical → vector, and dots in EVERY mode (paintContent)
     }
   }
+  if (colourBy()) body += colourBarSvg()                // same order as paintContent
   return body
 }
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
-watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick],
+watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick,
+             props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel],
       draw, { deep: true })
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')

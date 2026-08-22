@@ -2594,6 +2594,13 @@ highlight) lives in `GatingPlots` keyed by id. State otherwise lives in `stores/
 columns, stats, CRUD, `applyBroadcast` for the `gating:popmap` WS push; `valueName` self-heals to a
 real segmentation). API: `docs/API.md` gating routes.
 
+**Each plot's controls are four rows: X, Y, `colour`, `pop`.** `colour` is the FlowJo-style
+colour-by-parameter — a third measure painted onto the dots (default `density`, the local-density
+pseudocolour), with its own scale select and the shared amber auto-override marker, and a colour bar on
+the plot. It is a `points`-mode encoding, so its scale select disables in contour/outlier modes. Every
+row is persisted in the panel's `ui` bag like the axes. Model + decisions: `docs/POPULATION.md` →
+*Colour by a third measure*.
+
 **Track-property gating reuses the SAME canvas (`popType` prop) — no clone.** `GatingPlots` takes a
 `popType` prop (`'flow'` default | `'track'`); `TrackingModule.vue` (route `/track`) renders it in
 its `#plots` slot as `<GatingPlots :image-uid pop-type="track" />` (active when exactly one
