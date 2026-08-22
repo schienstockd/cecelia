@@ -286,6 +286,140 @@ class ProjectionTest(unittest.TestCase):
         self.assertTrue(np.all(out > 254.0), 'max-merge should fill the whole frame')
 
 
+class ProjectionInPlaceTest(unittest.TestCase):
+    """The projection was rewritten to work in place. Two things must not have changed."""
+
+    def _reference(self, context, channels, norm):
+        """The expression form the in-place version replaced, verbatim."""
+        from cecelia.utils.coastal_utils import PROJECTION_MAX
+        projected = None
+        for ch in channels:
+            arr = np.asarray(context[:, ch], dtype=np.float32)
+            lo, hi = norm[ch]
+            arr = np.clip((arr - lo) / (hi - lo + 1e-8), 0.0, 1.0)
+            projected = arr if projected is None else np.maximum(projected, arr)
+        return (projected * PROJECTION_MAX).astype(np.float32)
+
+    def test_bit_identical_to_the_expression_form(self):
+        """`assert_array_equal`, not `allclose`: this was a performance change and the output is
+        somebody's segmentation. Folding the 255 into the scale before the clip is 1.5e-5 different,
+        which is why the operations are in the order they are."""
+        cu = _utils()
+        rng = np.random.default_rng(3)
+        ctx = (rng.random((4, 3, 6, 7)) * 5000).astype(np.uint16)
+        norm = {0: (12.0, 3771.0), 1: (0.0, 4999.0), 2: (100.0, 200.0)}
+        for channels in ([0], [0, 1], [2, 0, 1]):
+            np.testing.assert_array_equal(
+                cu._project_window(ctx, {'cellChannels': list(channels)}, norm),
+                self._reference(ctx, channels, norm), f'channels {channels}')
+
+    def test_a_float32_input_is_not_mutated(self):
+        """`np.asarray` on a float32 store returns the input itself, and in-place arithmetic would
+        then rewrite the caller's pixels. Today's stores are uint16, which is what would have made
+        this silent."""
+        cu = _utils()
+        rng = np.random.default_rng(4)
+        ctx = (rng.random((3, 2, 5, 5)) * 1000).astype(np.float32)
+        before = ctx.copy()
+        cu._project_window(ctx, {'cellChannels': [0, 1]}, {0: (0.0, 1000.0), 1: (0.0, 1000.0)})
+        np.testing.assert_array_equal(ctx, before)
+
+
+class SharedProjectionBetweenGroupsTest(unittest.TestCase):
+    """One window, several model groups: the projection must be computed once.
+
+    It sat outside `_feature_key`'s cache, so on a two-group run it was the largest repeated line in
+    the timepoint — and the two arrays were `np.array_equal`.
+    """
+
+    def _cu(self, groups, shape=(30, 3, 4, 8, 8)):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        cu = CoastalUtils({'taskDir': '/tmp', 'models': groups},
+                          _DimUtils(shape=shape))
+        cu.calls = []
+        real = cu._project_window
+
+        def counting(context, model_params, norm_params, context_channels=None):
+            cu.calls.append(tuple(cu._model_channels(model_params)))
+            return real(context, model_params, norm_params, context_channels)
+
+        cu._project_window = counting
+        return cu
+
+    @staticmethod
+    def _frames(shape=(4, 3, 4, 8, 8)):
+        rng = np.random.default_rng(7)
+        return (rng.random(shape) * 4000).astype(np.uint16)
+
+    def test_two_groups_on_the_same_channels_project_once(self):
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1]},
+             '1': {'model': 'm.pt', 'cellChannels': [1]}}
+        cu = self._cu(g)
+        w = _window(self._frames(), 2, wid=1)
+        norm = {1: (0.0, 4000.0)}
+        a = cu._cached_projection(w, g['0'], norm)
+        b = cu._cached_projection(w, g['1'], norm)
+        self.assertEqual(len(cu.calls), 1)
+        self.assertIs(a, b)
+
+    def test_groups_on_different_channels_do_not_share(self):
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1]},
+             '1': {'model': 'm.pt', 'cellChannels': [2]}}
+        cu = self._cu(g)
+        w = _window(self._frames(), 2, wid=1)
+        norm = {1: (0.0, 4000.0), 2: (0.0, 4000.0)}
+        a = cu._cached_projection(w, g['0'], norm)
+        b = cu._cached_projection(w, g['1'], norm)
+        self.assertEqual(len(cu.calls), 2)
+        self.assertFalse(np.array_equal(a, b))
+
+    def test_the_same_channels_at_different_clip_ranges_do_not_share(self):
+        """The bounds reach the pixels, so two groups that disagree about them are not looking at
+        the same frame."""
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1]},
+             '1': {'model': 'm.pt', 'cellChannels': [1]}}
+        cu = self._cu(g)
+        w = _window(self._frames(), 2, wid=1)
+        a = cu._cached_projection(w, g['0'], {1: (0.0, 4000.0)})
+        b = cu._cached_projection(w, g['1'], {1: (500.0, 2000.0)})
+        self.assertEqual(len(cu.calls), 2)
+        self.assertFalse(np.array_equal(a, b))
+
+    def test_a_new_window_drops_the_previous_projection(self):
+        """The largest single allocation this class makes; holding two windows of it is the bug."""
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1]},
+             '1': {'model': 'm.pt', 'cellChannels': [1]}}
+        cu = self._cu(g)
+        norm = {1: (0.0, 4000.0)}
+        for wid in (1, 2, 3):
+            cu._cached_projection(_window(self._frames(), 2, wid=wid), g['0'], norm)
+            self.assertEqual(len(cu._projection_cache), 1, 'one window at a time')
+        self.assertEqual(len(cu.calls), 3)
+
+    def test_a_single_group_caches_nothing(self):
+        """The common case must not carry the memory — the same rule `_feature_key` follows."""
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1]}}
+        cu = self._cu(g)
+        w = _window(self._frames(), 2, wid=1)
+        norm = {1: (0.0, 4000.0)}
+        cu._cached_projection(w, g['0'], norm)
+        cu._cached_projection(w, g['0'], norm)
+        self.assertEqual(len(cu.calls), 2)
+        self.assertEqual(cu._projection_cache, {})
+
+    def test_the_shared_array_is_what_the_uncached_path_returns(self):
+        """Sharing must not change the pixels — only how often they are computed."""
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1, 2]},
+             '1': {'model': 'm.pt', 'cellChannels': [1, 2]}}
+        cu = self._cu(g)
+        frames = self._frames()
+        w = _window(frames, 2, wid=1)
+        norm = {1: (10.0, 3000.0), 2: (0.0, 4000.0)}
+        shared = cu._cached_projection(w, g['1'], norm)
+        direct = cu._project_window(frames, g['1'], norm, None)
+        np.testing.assert_array_equal(shared, direct)
+
+
 class ContextChannelsTest(unittest.TestCase):
     """Reading fewer channels renumbers the window's channel axis — the failure mode is silent.
 
