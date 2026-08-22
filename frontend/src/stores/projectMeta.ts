@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useLogStore } from './log'
 import { useProjectStore, type CciaSet } from './project'
 import { useAnalysisTabsStore } from './analysisTabs'
@@ -7,6 +7,7 @@ import { useAnalysisLayoutStore } from './analysisLayout'
 import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnimationStore } from './animation'
 import { tabGroupOf, type BoardsDoc } from '../utils/boardDoc'
+import { publishOpenProject } from '../lib/openProjectChannel'
 
 export interface ProjectRecord {
   uid: string
@@ -24,6 +25,16 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   const loading = ref(false)
 
   const hasProject = computed(() => current.value !== null)
+
+  // Tell the app's OTHER windows which project is open, so a pop-out can follow a switch made here
+  // (`lib/openProjectChannel.ts`). One watch rather than a call at each of the four sites that move
+  // `current`, since the invariant is about the value, not about who set it.
+  //
+  // NOT `immediate`, and that is the whole correctness of it: every window boots with `current` null,
+  // so publishing on boot would have each new window announce "no project open" — a reload of the main
+  // window would drag an open pop-out to nothing, and opening a pop-out would erase the value the next
+  // one reads at mount. Only a real CHANGE is news.
+  watch(current, p => publishOpenProject(p?.uid ?? ''))
 
   async function fetchRecent() {
     try {

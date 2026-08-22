@@ -23,7 +23,15 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled'])
  *   not what the chain did anyway. Re-run the chain from the board.
  * - **it is not a data patch** (`module === 'maintenance'`) — a non-scheduler producer of the same task
  *   frames, with no `fun_name` the scheduler could dispatch. Relaunch from Settings → Data patches.
+ * - **it is not a history row** (`utils/taskHistoryRows.ts`) — a record of a run read back from the
+ *   project's run log, not a handle on one. Only the entries written by the modern open/close pair
+ *   carry the `taskId` a re-run would have to launch under, which is a minority of any real project's
+ *   log; offering the button on that minority would make it look arbitrary, and offering it on the
+ *   rest would launch a task the list then has no row for. Re-run from the module page.
  */
-export function canRerunTask(t: Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown'>): boolean {
-  return TERMINAL.has(t.status) && !t.paramsUnknown && !t.chainRunId && t.module !== 'maintenance'
+export function canRerunTask(
+  t: Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown' | 'history'>,
+): boolean {
+  return TERMINAL.has(t.status) && !t.paramsUnknown && !t.chainRunId &&
+         t.module !== 'maintenance' && !t.history
 }
