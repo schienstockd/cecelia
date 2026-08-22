@@ -35,6 +35,22 @@ function buildGroupEntry(params: TaskDef['params'][number]['params'], saved: Par
 }
 
 /**
+ * `<groupKey>Order` for every REPEATABLE group the spec declares — the sibling keys that are not spec
+ * params and so are invisible to anything walking `def.params`.
+ *
+ * That invisibility was the bug: `flattenParams` builds the run payload by walking `def.params`, so it
+ * dropped the order on every run. `_apply_group_order` then found no key, treated it as "every entry,
+ * in entry order", and the chips did nothing at all — silently, because that is also the correct
+ * behaviour for a group nobody has reordered. Verified on a real run: the banked params for a
+ * two-entry `segment.coastalMeasure` contain no `modelsOrder`.
+ *
+ * `buildParamValues` dropped it for the same reason, so any re-init reset the chips as well.
+ */
+export function groupOrderKeysFor(def: TaskDef): string[] {
+  return repeatableGroups(def).map(p => `${p.key}Order`)
+}
+
+/**
  * Form values for every param the spec declares, preferring `saved` and falling back to the param's
  * default. Sections are containers: their children are read from the FLAT key (that is how they are
  * stored) with a legacy nested record honoured first.
@@ -73,6 +89,12 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
     } else {
       vals[p.key] = saved[p.key] ?? p.default ?? null
     }
+  }
+  // The order chips' sibling keys, which no walk of `def.params` can see. Absent stays absent — an
+  // unset order means "every entry, in entry order", and inventing one here would turn a group nobody
+  // has reordered into one carrying a stored order.
+  for (const k of groupOrderKeysFor(def)) {
+    if (saved[k] !== undefined) vals[k] = saved[k]
   }
   return vals
 }
@@ -119,6 +141,12 @@ export function flattenParams(def: TaskDef, vals: ParamValues): ParamValues {
     } else {
       flat[p.key] = vals[p.key] ?? p.default ?? null
     }
+  }
+  // The order chips. Forwarded EXACTLY as stored, including an empty list: dropping that would turn
+  // "the user unticked every entry" into "run all of them", which is the silent divergence this whole
+  // key exists to avoid. Absent stays absent, and the server reads that as every entry in order.
+  for (const k of groupOrderKeysFor(def)) {
+    if (vals[k] !== undefined) flat[k] = vals[k]
   }
   return flat
 }
@@ -258,6 +286,30 @@ export function missingRequired(def: TaskDef, values: ParamValues | undefined): 
         if (empty) out.push(p.requiredMessage || `${p.label || p.key} is required`)
       }
       applies && walk(p.params)
+    }
+  }
+  walk(def.params)
+  // A repeatable group whose order chips are ALL unticked. Reachable only now that the order actually
+  // reaches the run: before, the payload dropped it and the server silently ran every entry, so the
+  // state existed in the form and never in a run. Forwarded truthfully it means "run no entries",
+  // which for a segmentation is a task with no model — so it is blocked at the button rather than
+  // discovered as an empty result twenty minutes later.
+  for (const p of repeatableGroups(def)) {
+    const order = values?.[`${p.key}Order`]
+    if (Array.isArray(order) && order.length === 0) {
+      out.push(`${p.label || p.key}: select at least one entry to run`)
+    }
+  }
+  return out
+}
+
+/** Every repeatable group the spec declares, at any depth. */
+function repeatableGroups(def: TaskDef): ParamDef[] {
+  const out: ParamDef[] = []
+  const walk = (ps: ParamDef[] | undefined) => {
+    for (const p of ps ?? []) {
+      if (p.type === 'group' && p.repeatable) out.push(p)
+      walk(p.params)
     }
   }
   walk(def.params)
