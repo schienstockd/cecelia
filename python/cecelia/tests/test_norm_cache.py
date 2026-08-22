@@ -165,17 +165,26 @@ class StalenessTest(unittest.TestCase):
 
 
 class UnwritableTest(unittest.TestCase):
-    def test_a_read_only_location_costs_a_recompute_not_the_run(self):
+    def test_an_unwritable_location_costs_a_recompute_not_the_run(self):
         """Source images legitimately sit on read-only mounts. A run that has already done the work
-        must not fail at the point of saving a convenience."""
+        must not fail at the point of saving a convenience — so any `OSError` from the write has to
+        come back as `False`, not propagate.
+
+        Unwritable via a directory that CANNOT be created, not via `chmod`: Windows ignores POSIX
+        directory permission bits for the owner, so `chmod(dir, 0o500)` blocks nothing there and the
+        assertion inverted on one of the three CI platforms. Creating the sidecar's parent would mean
+        creating a directory under a regular FILE, which fails the same way everywhere.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            p = _store(tmp)
-            fp = norm_cache.fingerprint(p, (4,), 'uint16')
-            os.chmod(tmp, 0o500)
-            try:
-                self.assertFalse(norm_cache.write(p, fp, {'k': (0.0, 1.0)}))
-            finally:
-                os.chmod(tmp, 0o700)
+            blocker = os.path.join(tmp, 'not-a-directory')
+            with open(blocker, 'w', encoding='utf-8') as fh:
+                fh.write('x')
+            store = os.path.join(blocker, 'ccidSmoothed.ome.zarr')
+            self.assertFalse(norm_cache.write(store, 'fingerprint', {'k': (0.0, 1.0)}))
+            # The same arguments succeed one directory up, so the False above is the LOCATION and not
+            # an argument check short-circuiting before the write is ever attempted.
+            ok = os.path.join(tmp, 'ccidSmoothed.ome.zarr')
+            self.assertTrue(norm_cache.write(ok, 'fingerprint', {'k': (0.0, 1.0)}))
 
 
 if __name__ == '__main__':
