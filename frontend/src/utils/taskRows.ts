@@ -48,6 +48,9 @@ export interface TaskRow {
   /** running AND reporting a fraction — i.e. there is a bar to draw */
   hasProgress: boolean
   canRerun: boolean
+  /** read back from the project's run log rather than watched live — see `utils/taskHistoryRows.ts`.
+   *  The manager hides the `#N` counter and the Dismiss button on these. */
+  history: boolean
   entry: TaskEntry
 }
 
@@ -81,6 +84,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     progress:     t.progress,
     hasProgress:  t.status === 'running' && t.progress !== undefined,
     canRerun:     canRerunTask(t),
+    history:      t.history === true,
     entry:        t,
   }
 }

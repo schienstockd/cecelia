@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { canRerunTask } from './taskRerun'
 import type { TaskEntry } from '../stores/tasks'
 
-type Row = Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown'>
+type Row = Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown' | 'history'>
 const row = (over: Partial<Row> = {}): Row =>
   ({ status: 'done', module: 'segment', ...over })
 
@@ -38,5 +38,12 @@ describe('canRerunTask', () => {
   it('withholds it on a data patch', () => {
     // not scheduler-dispatched — no fun_name to run (relaunch from Settings → Data patches)
     expect(canRerunTask(row({ module: 'maintenance' }))).toBe(false)
+  })
+
+  it('withholds it on a history row', () => {
+    // read back from the project's run log (utils/taskHistoryRows.ts) — a record of a run, not a
+    // handle on one: most entries carry no taskId to relaunch under, and `setStatus` no-ops on an id
+    // the store doesn't have, so the click would start a task with no row to show for it
+    expect(canRerunTask(row({ history: true }))).toBe(false)
   })
 })

@@ -22,6 +22,7 @@ Both are enforced by tests, so skipping them fails the build.
 | Looking for | Section |
 |---|---|
 | Colours, radii, font sizes, fixed dimensions | **Design tokens** |
+| Which side a tooltip goes on | **Tooltip placement** |
 | Buttons · inputs · toggles · chips | **Button utilities** · **Form controls** |
 | Modals · confirms · deletes · popovers | **Modals & dialogs** |
 | Floating windows, legends | **Floating panels** · **View legend** |
@@ -112,8 +113,9 @@ identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 
 ## Hard requirements
 
-**Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** Place
-it where it reads best (`.left` / `.top` / `.bottom` / `.right`) — there is no default side. A button
+**Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** The
+side is **not** a matter of taste — it follows the target's width, and `.left`/`.right` on a target
+that fills its column puts the tooltip outside the panel. See *Tooltip placement* below. A button
 with a visible caption does **not** need one. CellProfiler is the reference for *density*, one line
 each. The exact scope, what counts as coverage, and the ratchet are in [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* —
 **that section is the rule; this is the pointer.** Don't restate it here.
@@ -126,9 +128,12 @@ Task failures must never be silent — errors must reach the console bar visible
 One component — `components/ErrorConsole.vue` over the `log` store — mounted in two places: the docked
 bar at the bottom of the app shell, and (with the `fill` prop) full-window in the standalone **console
 window**. Do not build a second console. The window is a `bare` route (`/console`, `meta.bare` →
-`App.vue` renders it without the shell) opened via `window.open(origin + pathname + '#/console', …)`
-from the docked console bar's pop-out (↗) button; being a separate browser window it's a fresh app
-instance with its own WS.
+`App.vue` renders it without the shell) opened from the docked console bar's pop-out (↗) button
+through **`lib/popout.ts`** (`openPopoutWindow`) — the one place that builds the hash URL, names the
+window so a second click re-focuses it rather than stacking copies, and knows which routes are
+popouts; the Task Manager's ↗ needs the same three (see *The Task Manager in its own window*). Being
+a separate browser window it's a fresh app instance with its own WS — and, deliberately, without the
+shell's background workers (`isPopoutWindow()`).
 
 **It shows every producer in the app, not just the backend.** That was not always true — see
 `docs/ARCHITECTURE.md` → *The log rail* for the server half and for what used to be discarded.
@@ -185,7 +190,7 @@ axes** — compose them; never re-declare a button in a component's scoped `<sty
 | Shape | `-icon` (fixed square, so a toolbar row aligns regardless of glyph width) |
 | State | `-on` (+ `-on-tint` washed / `-on-solid` filled) for an engaged toggle button |
 
-`.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`.
+`.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`. In a **mixed** group — an icon-only member beside a labelled one — `style.css` lets the `-icon` square stretch to the group's height: the square is a fixed 1.5rem while a labelled member sizes to padding + line-height, ~1px taller, and the pixel of background missing under the square reads as a smaller, offset glyph (six groups had it). Don't re-fix it per site.
 
 ```html
 <button class="cc-btn cc-btn-ghost" @click="…">Apply</button>
@@ -356,6 +361,52 @@ exemptions are pinned to their callback LINE, not to prose.
 
 **Say that a slow result is coming.** A control whose effect is coalesced looks broken if nothing
 changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
+
+---
+
+## Tooltip placement — the side follows the target, not taste
+
+**The rule.** A target that fills its column takes `.top` if it is a label or a row heading, `.bottom`
+if it is the control. A narrow target — an icon button, a chip, a radio, a checkbox — keeps
+`.left`/`.right`. Never write a bare `v-tooltip`. Enforced by `misplacedTooltips` in
+`utils/uiCopy.ts`, ratcheted to zero.
+
+**Why, from PrimeVue's own positioning code** (`primevue/tooltip/index.mjs`) — this is not a style
+preference, it is what the library does:
+
+- `isOutOfBounds` tests the **viewport and nothing else**. It has no idea a panel exists.
+- `alignLeft` is `left = hostLeft - tooltipWidth` (and `alignRight` the mirror). So on a target that
+  spans its panel, sideways placement lands the tooltip *outside that panel by construction* — over
+  the next column — and the library reports it in bounds, because it is still on screen.
+- `alignTop`/`alignBottom` are the **only two that clamp horizontally**
+  (`if (left < 0) left = 0; else if (left + tooltipWidth > viewportWidth) …`). On a wide target that
+  clamp is the guarantee: the tooltip stays inside the target's own horizontal span, i.e. inside the
+  panel. They also never cover the target — `top` sits at `hostTop - tooltipHeight`, `bottom` at
+  `hostTop + hostHeight`. The sideways pair instead **centres vertically** on the target, so a
+  two-line tip on a one-line row spills over the rows above and below.
+- A **bare** `v-tooltip` is not "no opinion": `align()` falls through to `alignRight`, whose flip chain
+  (right → left → top → bottom → **right again, unchecked**) is the one that can land anywhere.
+
+**Which of top/bottom.** Point the tooltip *away from the row's own content*: a label names the
+control under it, so it takes `.top`; a control is named by the label above it, so it takes `.bottom`.
+Either way the thing you were reading stays visible while the tip is up.
+
+**This was 123 sites** before the rule existed (2026-08-22), because the requirement above used to say
+"place it where it reads best — there is no default side". 26 were in `PlotOptions.vue` alone, where
+every row tip landed on the plot it described; the one that surfaced it was a param label in
+`ParamRenderer.vue`, whose `.param-row` is `flex-direction: column`, so the label is full panel width
+and `.left` threw its tooltip onto the task list.
+
+**Do not reach for a nudge to the other side** when a tooltip is in the way — that is the hand-rolled
+fix this rule replaced, and it just moves the overlap. Two related failures have their own detectors,
+because neither is about placement: `duplicateTooltips` (a control repeating its heading's tip) and
+`nestedTooltips` (a tipped control inside a tipped row, so hovering fires both). All three live in
+`utils/uiCopy.ts` — see [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* for the presence half.
+
+**`InlineNote` has no placement knob**, deliberately: it is fixed at `.bottom`, because a note
+annotates the control above it. It used to take a `placement` prop that passed `position` inside the
+tooltip *value* object — which PrimeVue reads only off `options.arg`, never off the value — so all
+seven call sites that set one were silently getting the `alignRight` default.
 
 ---
 
@@ -1529,6 +1580,102 @@ follow from the panel being ~280px wide:
 Its per-status row tint comes from `TASK_STATUS[...].tone` via `rowClass` + `:deep()` (the
 `ImageTable` `.row-excluded` precedent) — that `tone` field exists precisely so a component tints its
 own chrome from the same tokens as the status light, rather than the raw hexes the card stack carried.
+
+**The Task Manager in its own window.** The `/tasks` toolbar has a pop-out (↗) beside the throttle,
+the same idiom as the console's: `modules/TasksView.vue` is a `bare` route (`/tasks-window`) that
+mounts the SAME `TasksModule` full-window, with `standalone` set so it doesn't offer to pop out the
+window you are in. One task manager, two mount points — do not build a second.
+
+Two things are NOT the same as the console's, and both are load-bearing:
+
+- **The popup has to be told which project, and then kept on it.** Cecelia has no "reopen the last
+  project on load" — `/` is a neutral welcome page — so a popup starts with nothing open, and this list
+  is scoped to the open project: with no project the window opens empty, `ws.adoptInFlight()` declines
+  (no image names to resolve rows against) and none of the work already running appears. So the window
+  reads **`lib/openProjectChannel.ts`** at mount, falling back to the `?project=<uid>` seeded into its
+  URL when it was opened (the answer on a first ever run, before the channel has been written), and
+  **follows switches made in the main window** thereafter — a popped-out list quietly scoped to the
+  project you just left, still labelled as if it were current, is worse than an empty one. Not a
+  toggle: turning OFF the manager's own *This project* is how you watch across projects. Both paths go
+  through the ordinary `projectMeta.openProject`, so following costs a real project load in that window
+  per switch. Two windows on one project is a state the app already supports; the boards'
+  optimistic-concurrency check exists for exactly it.
+
+  **The loads are serialised** through `utils/debouncedLatest.ts`, and that is not a nicety:
+  `openProject` awaits a fetch before it writes anything, so two overlapping calls resolve
+  LAST-RESPONDED rather than last-requested — switch A→B faster than A's response returns and the popup
+  lands on A while the app is on B, silently and for good, since nothing re-checks afterwards. The
+  window is most exposed at mount, with its first load already in flight. The shared scheduler queues a
+  request that arrives during a run instead of racing it; don't replace it with a bare `await`.
+
+  **The window names its project, in the toolbar and in `document.title`, and re-titles when it
+  follows.** On `/tasks` the sidebar already says which project is open; the pop-out has no header and
+  no sidebar, so without this the list silently rebuilds itself around a different project with nothing
+  on screen to say why. It is also the only always-on evidence that following works at all — a bare
+  route does not mount the docked console, so a log line would go nowhere visible, whereas the OS
+  window title is readable without opening anything.
+
+  The channel is `localStorage` + the `storage` event rather than a `BroadcastChannel`, for the one
+  reason that decides it: the event carries state that PERSISTS, so a window that reloads or opens late
+  reads the current answer from the same key it would have received an event about. Two things in there
+  are load-bearing and easy to undo by accident — the publish watch is **not `immediate`** (every window
+  boots with `current` null, so publishing on boot would have each new window announce "no project
+  open", and a reload of the main window would drag an open pop-out to nothing), and the `storage` event
+  **never fires in the window that wrote it**, so the publisher can't hear itself and the follower's own
+  publish bounces back as an event every reader no-ops on.
+- **A popout does not run the shell's background workers.** It is a second full app instance with its
+  own WS, so everything `App.vue` starts, it starts again — and three of those act on the backend or
+  on shared state rather than on the window: the napari overlay restore (two requests per
+  `napari:opened`), the lab-log auto-capture (two captures per finished task) and the tip of the day
+  (stamped as shown by a window whose bare route never renders the dialog). `lib/popout.ts`
+  `isPopoutWindow()` gates all three. It reads the hash, not the route — App.vue's setup runs before
+  the first navigation resolves — and it lists `/console` and `/tasks-window` only: `/setup` is bare
+  too, but it *becomes* the main window when the wizard finishes.
+
+### The Task Manager shows the project's history, not just the session's
+
+The manager's list was built from WS frames THIS tab received plus the backend's in-flight snapshot on
+connect — both of them about *now*. So a window opened after the work finished had nothing to show: an
+empty manager for a project with hundreds of runs in it. The pop-out window is where that became
+impossible to ignore, but a reload of the main window always had the same hole.
+
+The history was never missing. Every run opens and closes an entry in its image's run log
+(`app/src/run_log.jl` → `CciaImage.runLog`), which ships to the frontend **with the project** and is
+already the source of truth for the image table's run tag and its per-image history popover
+(`utils/runLog.ts`). **`utils/taskHistoryRows.ts`** turns those entries into the same `TaskEntry` rows
+the live half produces, so there is one list, one row mapper and one log pane — and clicking a run from
+three weeks ago fetches its real output from `{img}/logs/{fun}.log` through the backfill that already
+existed for adopted rows. Toggle: **History** in the toolbar (`settings.tasksShowHistory`), **off by default** — the two are
+different questions (*what is happening* vs *what has been done*) and the session view is the one
+you want while you are running things, so the manager keeps the meaning it has always had.
+
+They are kept distinguishable by `TaskEntry.history`, and that flag is doing real work in four places:
+
+- **`forModule()` excludes them** — the ONE chokepoint for both the per-module task sidebar and the
+  image table's per-image status badge, so neither surface inherits the project's whole history from a
+  change that was about the manager. `clearFinished()` skips them for the same reason: clearing a row
+  that lives on disk deletes nothing and it is back on the next hydrate. Because that exclusion is
+  SILENT — a wrongly-flagged row would vanish from the sidebar and stop contributing to the badge, with
+  nothing on screen to say so — **`setStatus` clears the flag when a history row goes `running` or
+  `queued`**. It can: a history row is keyed by the run's own scheduler id, so a relaunch under that id
+  lands its frames on it. The guard makes "a live task invisible on the page that started it"
+  unreachable by construction rather than by argument.
+- **Re-run is withheld** (`taskRerun.ts`). A history row is a *record of* a run, not a handle on one.
+  Only the entries written by the modern `open_run_log!`/`close_run_log!` pair carry the `taskId` a
+  re-run would launch under — measured at ~16% of the entries across this developer's own projects —
+  so offering it would put the button on one row in six for no visible reason, and offering it on the
+  rest would launch a task the list then has no row for (`setStatus` no-ops on an unknown id).
+- **Dismiss is hidden**, same argument.
+- **`seq` is 0 and the `#N` is not rendered.** That counter numbers this session's work; handing 300
+  archived runs a number each would push the next real task to #301 and mean nothing.
+
+Two fields are genuinely sparse and **degrade rather than lie**: `finishedAt` (~12% of entries — no
+elapsed, and `taskRow` already renders a blank Time and sorts blanks last, which reads as "not
+recorded" rather than "instant"), and `taskId`, which is the dedup key against a live row. `taskId` is
+sparse overall but present on exactly the runs that CAN collide — a run finishing in this session is
+written by the same modern path — so the dedup is exact where it matters and vacuous where it cannot
+apply. Rows are re-read wholesale on each hydrate (project, toggle, sets arriving) rather than
+accumulated: the source is a file, not a stream.
 
 **Task list scoping.** `useTaskStore().forModule(module, projectUid?)` and `clearFinished(module,
 projectUid?)` take an optional `projectUid` — `TaskList.vue`/`TaskRunner.vue` always pass the

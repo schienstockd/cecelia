@@ -21,6 +21,7 @@ import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import CanvasSidePanel from './CanvasSidePanel.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
+import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { popNameError } from '../../utils/popName'
@@ -29,6 +30,7 @@ import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
+import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const AXIS_OPTIONS: ChipOption[] = [
@@ -140,6 +142,29 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+// ── Change a gate's SHAPE in place: rectangle ⇄ polygon ───────────────────────────────────────
+// The POPULATION survives — same name, colour, children, place in the tree; only the geometry is
+// rewritten (`pop/set-gate` → Julia `set_gate!`, which re-derives membership for it and everything
+// below it). Before this the only way to turn a rectangle into a polygon was to delete the pop and
+// redraw it, which took its children with it.
+// rect → poly is LOSSLESS (the four corners, same region, same cells) so it fires on the first
+// click; poly → rect is the vertices' BOUNDING BOX, which can only widen the gate, so that
+// direction arms first (ConfirmButton `needs-confirm`). Geometry lives in gateGeometry.ts.
+const convertTo = (p: FlatPop) => p.gate ? otherGateKind(p.gate.kind) : null
+const convertIcon = (p: FlatPop) => convertTo(p) === 'polygon' ? 'pi pi-share-alt' : 'pi pi-stop'
+// SHORT on purpose. This panel is ~250px and the button sits at the LEFT of the icon cluster, so a
+// wide `.left` tooltip cannot fit beside it: PrimeVue's align() falls through left → top → bottom and
+// drops it onto the row below, hiding the controls there (docs/ui/COPY.md — a tooltip that covers the
+// thing you were about to click). "Rectangle" already implies the bounding box; the widening is in
+// docs/POPULATION.md, not in hover help.
+const convertTip = (p: FlatPop) =>
+  convertTo(p) === 'polygon' ? 'Convert to polygon' : 'Convert to rectangle'
+async function convertGate(p: FlatPop) {
+  const gate = p.gate && convertGateKind(p.gate)
+  if (!gate) { log.error('This gate has no geometry to convert', { source: 'gating' }); return }
+  await g.setGate(p.path, gate)
+}
 
 // ── Cluster mode (clust / trackclust): a population IS a set of cluster IDs (a filter on
 // clusters.{suffix}). Instead of drawing gates, the user ticks cluster IDs into a pop here. A
@@ -328,8 +353,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
              :class="{ active: p.path === props.selected, transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">
+          <!-- `.bottom`, not `.left`: this marker is the row's LEFTMOST element, so there is never room
+               beside it and PrimeVue drops the tip somewhere it covers a pop row. The injected napari
+               pop is always the last root child, so below it is the panel edge, not a control. The row
+               already reads "Napari selection" — the tip carries only what the label can't. -->
           <i v-if="p.transient" class="pi pi-map-marker pm-napari"
-             v-tooltip.left="'Cells selected in napari (temporary)'" :style="{ color: p.colour }" />
+             v-tooltip.bottom="'Temporary — not saved'" :style="{ color: p.colour }" />
           <button v-else type="button" class="pm-swatch" :style="{ background: p.colour }" :disabled="readonly"
                   v-tooltip.left="readonly ? '' : 'Colour'"
                   @click.stop="openColour(p, $event)" />
@@ -354,7 +383,20 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
           </span>
 
-          <button v-if="p.gate" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Show the plot where this gate was drawn'"
+          <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Icon = the shape you
+               get, matching the draw tools. Widening (poly → rect) arms first. -->
+          <ConfirmButton v-if="p.gate && !readonly && !p.transient" :needs-confirm="p.gate.kind === 'polygon'"
+                         @confirm="convertGate(p)" v-slot="{ armed, arm, confirm }">
+            <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ warn: armed }"
+                    v-tooltip.left="armed ? 'Click again to confirm' : convertTip(p)"
+                    @click.stop="armed ? confirm() : arm()">
+              <i :class="armed ? 'pi pi-exclamation-triangle' : convertIcon(p)" />
+            </button>
+          </ConfirmButton>
+          <!-- these `.left` tips are kept SHORT for the same reason as the convert button's: this panel
+               is ~250px, so a wide tooltip can't fit beside an icon and PrimeVue drops it onto the row
+               below (docs/ui/COPY.md). "defining plot" is code-internal jargon — not tooltip copy. -->
+          <button v-if="p.gate" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Show the gate\'s plot'"
                   @click.stop="emit('showDefiningPlot', p)">
             <i class="pi pi-search" />
           </button>
@@ -364,7 +406,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
           </button>
           <button v-if="!p.transient" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: p.show }"
-                  v-tooltip.left="p.show ? 'Visible in napari (click to hide)' : 'Hidden in napari (click to show)'"
+                  v-tooltip.left="p.show ? 'Hide in napari' : 'Show in napari'"
                   @click.stop="toggleNapari(p)">
             <i class="pi pi-images" />
           </button>
@@ -491,6 +533,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
    rule was byte-identical to `.cc-btn-bare:hover` and is gone) */
 .pm-icon.lit { color: var(--cc-accent); }
 .pm-icon.danger:hover { color: #f87171; }
+/* armed gate-shape convert (the widening direction) — same warn cue as ConfirmDeleteButton */
+.pm-icon.warn { color: var(--cc-warn); }
 
 /* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
 .pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border);

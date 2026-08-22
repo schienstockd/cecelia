@@ -4883,6 +4883,19 @@ end
         m3 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test st == 200 && pop_at(m3, "/cd4").gate.x_max == 1.0
 
+        # …including a change of gate KIND, which is what the panel's rectangle ⇄ polygon convert
+        # does (same `pop/set-gate` route). Worth its own step: undoing it has to bring back a
+        # RectangleGate through the snapshot, not just different numbers in the same struct.
+        st, _  = post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/cd4",
+            "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "c1", "y_channel" => "c2",
+                                       "vertices" => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])))
+        m4 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test st == 200 && pop_at(m4, "/cd4").gate isa PolygonGate
+        st, _  = post(api_gating_undo, Dict{String,Any}())
+        m5 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test st == 200 && pop_at(m5, "/cd4").gate isa RectangleGate
+        @test pop_at(m5, "/cd4").gate.x_max == 1.0
+
         # filter pops (cluster / region) are OUT of scope: their edit is a tick you can un-tick, and
         # they mirror set-wide, so there is nothing coherent to step back on one image
         st, body = post(api_gating_undo, Dict{String,Any}("popType" => "clust"))

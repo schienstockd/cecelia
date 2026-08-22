@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from cecelia.utils.segmentation_utils import SegmentationUtils
+from cecelia.utils import flow_probe
 from cecelia.utils.gpu_utils import torch_device
 import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.script_utils as script_utils
@@ -224,11 +225,21 @@ class CoastalUtils(SegmentationUtils):
         self.use_gpu, self.gpu_device = torch_device()
         self._quieten_cv2_threads()
 
+        # Probed lazily and once — see `_check_flow_engine`. None means "not measured yet", which is
+        # distinct from `{}` ("measured, and this engine cannot be probed").
+        self._flow_fp = None
+
         # Model input shared between the model groups that read one window — see
         # *Sharing the flow between passes*. Guarded because `_map_z` fills it from several threads.
         self._feature_cache = {}
         self._feature_cache_key = None
         self._feature_lock = threading.Lock()
+
+        # The projected window shared between the model groups that read it — see
+        # `_cached_projection`. One entry per (window, channels, clip range).
+        self._projection_cache = {}
+        self._projection_cache_id = None
+        self._projection_lock = threading.Lock()
 
         # Optical flow shared between TIMEPOINTS — see *Sharing the flow between timepoints*.
         self._flow_caches = {}
@@ -373,6 +384,43 @@ class CoastalUtils(SegmentationUtils):
     # Keys a caller may supply directly when there is no trained model to read them from.
     _FEATURE_KEYS = ('temporalScales', 'cumulativeWindow', 'droppedMetrics')
 
+    def _flow_fingerprint(self):
+        """This process's flow-engine fingerprint, computed once. See `flow_probe`."""
+        if self._flow_fp is None:
+            self._flow_fp = flow_probe.fingerprint()
+        return self._flow_fp
+
+    def _check_flow_engine(self, manifest):
+        """Warn when the flow features this engine computes are not the ones the model was fitted on.
+
+        The manifest already pins the feature CONFIG and inference checks all of it. What nothing
+        checked is the RECIPE: swap the optical-flow estimator and `temporalScales`, `metricKeys`,
+        `droppedMetrics` and `coastalBuild`-minus-the-commit all still agree while the network is fed
+        a different distribution. `flow_probe` measures the recipe numerically; this reports it.
+
+        A WARN, not a refusal. The probe compares numbers, and numbers can move for a reason that is
+        not a recipe change — a different cv2 build picking a different SIMD path, on a machine that
+        is not the one that trained the model. `RTOL` is set orders of magnitude above that drift, so
+        a fire here is almost certainly real; but "almost certainly" is not the standard for refusing
+        to run somebody's segmentation, and the mismatch is stated precisely enough to act on.
+        """
+        if not manifest:
+            # No manifest at all is already reported, with better advice, by
+            # `coastal_models_for_python`. Two warnings about one cause is one too many.
+            return
+        recorded = manifest.get('flowFingerprint')
+        if not recorded:
+            # "These agree" and "nobody can tell" are different answers and only one is reassuring —
+            # the same reason `_resolve_temporal` speaks up when a frame interval is unknown.
+            self.logger.log('[WARN] Model records no flow-engine fingerprint — whether this build '
+                            'computes the flow it was trained on cannot be checked. Re-train it to '
+                            'record one.')
+            return
+        note = flow_probe.compare(recorded, self._flow_fingerprint())
+        if note:
+            self.logger.log(f'[WARN] {note}. The model was fitted on different features than it is '
+                            f'being given; re-train it on this build.')
+
     def _manifest(self, model_params):
         """The feature-set config for a model group.
 
@@ -385,6 +433,10 @@ class CoastalUtils(SegmentationUtils):
         path = str(model_params.get('model', ''))
         if path not in self._manifest_cache:
             self._manifest_cache[path] = read_manifest(path)
+            # Here rather than in `_resolve_temporal`, because this is a property of the ENGINE and
+            # not of the scale resolution — and here rather than per group, because this cache is
+            # keyed by model path and a run's groups normally share one model.
+            self._check_flow_engine(self._manifest_cache[path])
         manifest = self._manifest_cache[path]
         if manifest:
             return manifest
@@ -489,19 +541,31 @@ class CoastalUtils(SegmentationUtils):
         else:
             position = None
 
+        # IN PLACE, and the same operations in the same ORDER — `np.array_equal` with the expression
+        # form, not merely close. `(arr - lo) / (hi - lo) -> clip -> * 255` reads better and allocates
+        # a fresh temporary of the WHOLE window at every step: a 17-frame window of a 32 x 420 x 441
+        # tile is 201.5 Mpx per channel, so each temporary is 403 MB and the projection is
+        # bandwidth-bound rather than arithmetic-bound. Measured on zolIMa/fXgbTl (2 channels):
+        # 5.85 s -> 1.21 s, 4.8x, bit-identical.
+        #
+        # `np.array` and not `np.asarray`: asarray returns the input itself when it is already
+        # float32, and the arithmetic below would then rewrite the CALLER's pixels. The stores in
+        # play are uint16 today, which is exactly why this would go unnoticed.
         projected = None
         for ch in channels:
-            arr = np.asarray(context[:, ch if position is None else position[ch]],
-                             dtype=np.float32)
+            arr = np.array(context[:, ch if position is None else position[ch]], dtype=np.float32)
             if norm_params and ch in norm_params:
                 lo, hi = norm_params[ch]
             else:
                 lo = float(np.percentile(arr, PERCENTILE_LO))
                 hi = float(np.percentile(arr, PERCENTILE_HI))
-            arr = np.clip((arr - lo) / (hi - lo + 1e-8), 0.0, 1.0)
-            projected = arr if projected is None else np.maximum(projected, arr)
+            arr -= lo
+            arr /= (hi - lo + 1e-8)
+            np.clip(arr, 0.0, 1.0, out=arr)
+            projected = arr if projected is None else np.maximum(projected, arr, out=projected)
 
-        return (projected * PROJECTION_MAX).astype(np.float32)
+        projected *= PROJECTION_MAX
+        return projected
 
     # The two coastal entry points sit behind one-line methods so the imports stay lazy (importing
     # this module must not pull torch) and so tests can exercise the window/tiling logic without a
@@ -538,8 +602,8 @@ class CoastalUtils(SegmentationUtils):
         is_3d = (tile.ndim == 4)
         scales, cumulative, dropped = self._temporal_for(model_params)
         inference = self._get_inference(model_params)
-        projected = self._project_window(window.frames, model_params, norm_params, window.channels)
         feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped)
+        projected = self._cached_projection(window, model_params, norm_params)
         flow_caches = self._flow_caches_for(window.tile, window.start, window.index, cumulative)
 
         if not is_3d:
@@ -637,6 +701,60 @@ class CoastalUtils(SegmentationUtils):
     # nothing.
     #
     # The base now builds one window per (tile, timepoint) and stamps it with `context_id`, so the
+    def _projection_key(self, window, model_params, norm_params):
+        """What makes two groups' PROJECTIONS the same array — or None to not cache.
+
+        Same shape of decision as `_feature_key`, one step earlier in the pipeline, and it has to be
+        separate: the feature key carries the temporal scales and the dropped metric set, which the
+        projection does not depend on. Two groups running the same channels off one model at different
+        scales share this and not that.
+
+        The clip RANGE is in the key, not the `normalise` percentile that produced it. They are not
+        the same thing — `norm_params` comes from the base's global statistic and a group whose
+        percentile differs gets different bounds — and it is the bounds that reach the pixels.
+        """
+        if window.id is None or len(self.params.get('models') or {}) < 2:
+            return None
+        channels = tuple(self._model_channels(model_params))
+        bounds = tuple((c, None if not norm_params else norm_params.get(c)) for c in channels)
+        return (window.id, channels, bounds)
+
+    def _cached_projection(self, window, model_params, norm_params):
+        """`_project_window`, shared between the model groups that read one window.
+
+        The projection was the one part of a timepoint that ran once PER GROUP on identical input:
+        `_feature_key` covers the flow metrics, but the projection sat outside it. On zolIMa/fXgbTl's
+        two-group config the two calls return `np.array_equal` arrays and cost 5.85 s each — the
+        single largest line in the timepoint, ahead of all the flow and all 64 plane predictions.
+        Sharing it holds ONE window instead of allocating a second, so peak memory goes down, not up.
+
+        What this does NOT do is carry the projection between TIMEPOINTS, where 16 of 17 frames repeat
+        — see *Sharing the flow between timepoints* for the same argument applied to the flow. That
+        needs the per-frame planes to be the storage rather than a `[W, Z, Y, X]` array, because
+        holding both would double the peak on a 1046 x 1104 movie. Left out deliberately, not missed.
+        """
+        key = self._projection_key(window, model_params, norm_params)
+        if key is None:
+            return self._project_window(window.frames, model_params, norm_params, window.channels)
+
+        with self._projection_lock:
+            if self._projection_cache_id != window.id:
+                # A new window: the previous one's projection is unreachable, and it is the largest
+                # single allocation this class makes.
+                self._projection_cache = {}
+                self._projection_cache_id = window.id
+            hit = self._projection_cache.get(key)
+        if hit is not None:
+            return hit
+
+        # Outside the lock, for the reason `_cached_features` gives: this is the expensive call. Two
+        # groups cannot race here — the base walks them in sequence.
+        value = self._project_window(window.frames, model_params, norm_params, window.channels)
+        with self._projection_lock:
+            if self._projection_cache_id == window.id:
+                self._projection_cache[key] = value
+        return value
+
     # groups sharing a window can be recognised. What is cached is the model INPUT — the projected
     # frame and its metric planes — because that is everything upstream of the first
     # group-dependent decision.

@@ -53,6 +53,7 @@ from cecelia.utils.gpu_utils import torch_device
 from cecelia.utils.atomic_io import write_json_atomic
 from cecelia.utils import coastal_utils
 from cecelia.utils import norm_cache
+from cecelia.utils import flow_probe
 import cecelia.utils.cpu_utils as cpu_utils
 
 
@@ -862,6 +863,13 @@ def run(params):
         # those changes moved a default that decides object size, so "which coastal" is part of what
         # this model IS — see `_coastal_build`.
         'coastalBuild': _coastal_build(),
+        # What that build's flow actually COMPUTES, measured rather than named. `coastalBuild`
+        # identifies the code; it cannot say whether a given change touched the feature recipe, so as
+        # a check it fires on every commit. This is the numeric answer: a summary of every metric
+        # plane the real inference entry point returns on a fixed synthetic window, which inference
+        # re-measures and compares. ~4 ms, and the coastal import it needs is already paid.
+        # See `cecelia.utils.flow_probe` and MODEL_VAULT_PLAN.md P0.
+        'flowFingerprint': flow_probe.fingerprint(),
         'lossCurves': curves,
         # SEPARATE from lossCurves, not a `floor_foreground` entry inside it: a reader that walks
         # lossCurves to draw one line per term would otherwise draw the floors as terms of their own.

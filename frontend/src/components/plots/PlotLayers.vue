@@ -8,7 +8,7 @@
     • points   → density raster of the base population (dimmed when showing pops).
     • contour  → nested contour rings of the base density.
     • outliers → contour rings + the sparse-tail dots the rings don't enclose.
-    • showPops → each visible child population drawn in its colour (dots in points mode, rings otherwise).
+    • showPops → each visible child population drawn in its colour, ALWAYS as dots (any base mode).
   Subsets come from the server (plotdata?pop=…), so Julia still owns membership; we only colour.
 -->
 <script setup lang="ts">
@@ -18,6 +18,7 @@ import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB } from '../../plots/flowColors'
 import { svgImage, svgCircles, svgPath } from '../../plots/export'
+import { paintDimmed } from '../../plots/dimLayer'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
@@ -61,21 +62,34 @@ const ringToPx = (gx: number, gy: number) => gridToPx(props.viewExtents, box(), 
 // ~B times, not once per point (fast for 100k+ points).
 const DOT_BUCKETS = 64
 const DOT_R = 0.7
-function drawDensityDots(points: Float32Array, alpha = 1) {
+function paintDensityDots(points: Float32Array) {
   const c = ctx!
   const t = pointDensities(points, props.viewExtents)
   const n = points.length / 2
   const groups: number[][] = Array.from({ length: DOT_BUCKETS }, () => [])
   for (let i = 0; i < n; i++) groups[Math.min(DOT_BUCKETS - 1, Math.floor(t[i] * DOT_BUCKETS))].push(i)
   const s = DOT_R * 2
-  c.save(); c.globalAlpha = alpha
   for (let b = 0; b < DOT_BUCKETS; b++) {
     const g = groups[b]; if (!g.length) continue
     const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
     c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
     for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
   }
-  c.restore()
+}
+// The "dim under pop overlays" backdrop goes through plots/dimLayer: a dot plot CANNOT be dimmed by
+// setting globalAlpha and then stamping ~10k dots, because that dims each DOT and overlaps composite
+// back up to 1-(1-alpha)^k. The dense core returned to full opacity, so the wash disappeared exactly
+// where the cells are — a napari selection lit up cyan over a base that was supposed to grey out. (The
+// raster renderer this replaced got it right for free: it was a single drawImage.)
+function drawDensityDots(points: Float32Array, alpha = 1) {
+  if (alpha < 1) {
+    const { w, h } = size()
+    const host = ctx!
+    // toPx/size() read props, not the ctx transform, so the offscreen geometry matches the direct paint
+    const done = paintDimmed(host, w, h, alpha, (octx) => { ctx = octx; paintDensityDots(points); ctx = host })
+    if (done) return                                   // no offscreen → fall through: undimmed beats blank
+  }
+  paintDensityDots(points)
 }
 
 // clean nested contour rings (d3-contour on the blurred grid). Outer levels faint → inner solid.
@@ -126,13 +140,14 @@ function paintContent() {
       if (mode === 'outliers') drawOutliers(props.basePoints, base)
     }
   }
-  // child POPULATION overlays
-  if (props.showPops) {
-    for (const pop of props.popLayers) {
-      if (!pop.points?.length) continue
-      if (mode === 'points') drawDots(pop.points, pop.colour)
-      else { drawContours(pop.points, pop.colour); if (mode === 'outliers') drawOutliers(pop.points, pop.colour) }
-    }
+  // child POPULATION overlays — ALWAYS DOTS, whatever the base mode is. The render mode answers "what
+  // shape is this cloud", which is a question about a distribution; an overlay answers "where are THESE
+  // cells", which is per-cell. Contouring a small overlay produces rings around individual points — a
+  // 3-cell napari selection came out as three sets of concentric circles — and a KDE of a handful of
+  // events is not a density estimate. Dots also keep the categorical layer true-vector on SVG export in
+  // every mode. The base keeps its rings (and its outlier tail), so a contour figure stays a contour figure.
+  if (props.showPops) for (const pop of props.popLayers) {
+    if (pop.points?.length) drawDots(pop.points, pop.colour)
   }
 }
 
@@ -220,8 +235,7 @@ function exportSvgContent(): string {
   if (props.showPops) {
     for (const pop of props.popLayers) {
       if (!pop.points?.length) continue
-      if (mode === 'points') body += dotsSvg(pop.points, pop.colour, 1.5)     // categorical → vector
-      else { body += contoursSvg(pop.points, pop.colour); if (mode === 'outliers') body += dotsSvg(outlierPoints(pop.points, props.viewExtents, G), pop.colour, 1.3, 0.8) }
+      body += dotsSvg(pop.points, pop.colour, 1.5)      // categorical → vector, and dots in EVERY mode (paintContent)
     }
   }
   return body

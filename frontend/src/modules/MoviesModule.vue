@@ -535,7 +535,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                           v-model="settings.moviesChannelMode" aria-label="Channel columns"
                           v-tooltip.bottom="'Which channels the columns show'" />
               <CcToggle v-model="settings.moviesShowDetails" label="Details"
-                        v-tooltip.left="'Show the image channels and attributes'" />
+                        v-tooltip.bottom="'Show the image channels and attributes'" />
             </div>
 
             <!-- Bulk actions on the CHECKED movies — the Import page's model: file operations act on the
@@ -620,7 +620,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                     <i class="pi pi-sliders-h" />
                   </button>
                   <input v-if="isRenaming(row.name)" :ref="focusRenameInput" v-model="nameDraft"
-                         class="cc-input-2xs mov-cell-edit" v-tooltip.right="'Enter to save, Esc to cancel'"
+                         class="cc-input-2xs mov-cell-edit" v-tooltip.bottom="'Enter to save, Esc to cancel'"
                          @click.stop @keyup.enter="saveRename(row)" @keyup.esc="cancelRename"
                          @blur="saveRename(row)" />
                   <span v-else class="mov-label" :title="row.name"

@@ -50,6 +50,9 @@ const router = createRouter({
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },
     // bare = rendered full-window without the app shell (opened in its own window via window.open)
     { path: '/console',   component: () => import('./modules/ConsoleView.vue'),         meta: { label: 'Console', bare: true } },
+    // the Task Manager in its own window — same idiom, and it carries `?project=<uid>` because a
+    // popup opens with no project and this list is scoped to one (modules/TasksView.vue).
+    { path: '/tasks-window', component: () => import('./modules/TasksView.vue'),          meta: { label: 'Task Manager', bare: true } },
     // first-launch setup wizard — bare (clean welcome screen, no sidebar/header). The boot guard
     // below routes here when the backend reports setupRequired. See docs/todo/ONBOARDING_PLAN.md.
     { path: '/setup',     component: () => import('./modules/SetupModule.vue'),          meta: { label: 'Setup', bare: true } },

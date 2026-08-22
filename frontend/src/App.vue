@@ -28,6 +28,7 @@ import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useNapariAutoShow } from './composables/useNapariAutoShow'
+import { isPopoutWindow } from './lib/popout'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -80,11 +81,20 @@ watch([() => pm.current?.uid, () => projectStore.loadedProjectUid], ([openUid, l
     { source: 'project' })
 }, { immediate: true })
 
+// A pop-out window (the console, the Task Manager) is a second FULL app instance with its own WS, so
+// everything App.vue starts here would run twice. That is invisible for anything that only touches
+// this window, and not invisible at all for the three below, which act on the BACKEND or on shared
+// state: two overlay-restore requests to napari per `napari:opened`, two lab-log captures per
+// finished task, and a tip-of-the-day silently consumed (stamped by a window whose bare route never
+// renders the dialog). A popout is a VIEW of the app, not a second copy of it.
+// `lib/popout.ts` reads the hash, not the route: the first navigation has not resolved during setup.
+const popout = isPopoutWindow()
+
 // Restore each image's remembered napari overlays (labels, branches, tracks, populations) when it
 // opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with
 // the floating Viewer panel closed (its default) nothing was listening for `napari:opened`, so the
 // toggles read ON but no overlay was ever requested until the user flipped them by hand.
-useNapariAutoShow()
+if (!popout) useNapariAutoShow()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
 // project export/import, task:run) registers via taskStore.add(), which bumps `lastStarted`. One
@@ -99,7 +109,7 @@ watch(() => taskStore.lastStarted, (t) => {
 // Cecelia's automatic activity summaries: fire capture_context! after a task/chain node finishes,
 // which upserts the rolling DAILY [Cecelia] digest (app-lifetime install, since the lab-log panel is
 // v-if'd). Firing per task is cheap — the backend regenerates today's one block. See stores/labCapture.ts.
-useLabCaptureStore().installAutoCapture()
+if (!popout) useLabCaptureStore().installAutoCapture()
 onMounted(async () => {
   ws.connect()
   appCtl.checkUpdate()   // surfaces the header update badge app-wide (fire-and-forget)
@@ -108,7 +118,7 @@ onMounted(async () => {
   // tip on top. The `Don't show tips on launch` checkbox on any tip card sets tipsOnLaunch=false
   // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
   const today = todayKey()
-  if (settings.tipsOnLaunch && settings.tipsLastShown !== today) {
+  if (!popout && settings.tipsOnLaunch && settings.tipsLastShown !== today) {
     // `tipsLastShown` is '' until this branch has run ONCE, ever — so reading it before the stamp is
     // the first-launch signal, and no second flag has to be persisted to get it. See onWhatsNewClose.
     firstEverTips = settings.tipsLastShown === ''

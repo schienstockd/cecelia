@@ -243,6 +243,18 @@ effect.
   in the AF-on-raw arm.
 - **The AF weight exponent.** `p = 1/2/8` was already compared upstream; not the lever.
 - **Scale normalisation across channels.** Spread is only 1.54×; changed retention 8.2% → 8.4%.
+- **DIS / PCAFlow instead of Farneback, for speed.** `cv2.DISOpticalFlow.calc` asserts
+  `I0.depth() == CV_8U` — it accepts 8-bit input ONLY, so adopting it reintroduces the cast coastal
+  PR #19 removed, which is what put every velocity metric at chance. Measured on `fXgbTl` mem-TOM,
+  z=16, 5 real frame pairs, `setNumThreads(1)`: Farneback float32 37.9 ms, cell/bg separation
+  **3.68**; DIS ultrafast/fast/medium 2.2/3.6/16.2 ms, separation **0.84/0.88/0.66** and magnitude
+  correlated **−0.003/−0.023/0.000** with the current field — i.e. fast, and uncorrelated with the
+  features every trained model was fitted on. The 8-bit Farneback control scores 0.86, so DIS is not
+  merely inheriting the cast; it is also worse. PCAFlow needs `cv2.optflow` (opencv-contrib), which
+  is not in the env, so it is untestable without a new dependency. And the speed would not pay: the
+  "86% Farneback" figure is the **training-prep** phase (`train_run.py`), where flow quality still
+  trains the model; in *segmentation* the flow metrics are ~6% of the timepoint. Any future revisit
+  is now detectable rather than silent — see `flowFingerprint` in `MODEL_VAULT_PLAN.md` Part 1b.
 - **Lucas–Kanade instead of Farneback, as segmentation input.** *Reason withdrawn.* Both scored at
   chance (0.53–0.61) because both were fed 8-bit-quantised frames whose background flowed as fast as
   the cells — not because the two implementations are equivalent, and not because there is no motion.

@@ -80,7 +80,7 @@ const label = computed(() => {
            it has to be as loud as the other warnings. `utils/taskPreview.previewNotice` decides. -->
       <InlineNote v-if="preview.notice.short"
         :class="preview.notice.warn ? 'preview-warn cc-fs-2xs' : 'cc-fs-2xs'"
-        :severity="preview.notice.warn ? 'warn' : undefined" placement="left"
+        :severity="preview.notice.warn ? 'warn' : undefined"
         :short="preview.notice.short" :detail="preview.notice.detail || undefined" />
       <!-- Every "the run will not look exactly like this" caveat: 2D fallback / no signal, base model
            only, run-would-tile, composite steps not previewed. Collected in the store (`warnings`) —
@@ -88,7 +88,7 @@ const label = computed(() => {
            each. All go through the severity model: shape-distinct icon + text, never colour alone
            (lib/severity.ts, WCAG 1.4.1). -->
       <InlineNote v-for="w in preview.warnings" :key="w.short" class="preview-warn cc-fs-2xs"
-        severity="warn" placement="left" :short="w.short" :detail="w.detail" />
+        severity="warn" :short="w.short" :detail="w.detail" />
     </div>
   </div>
 </template>

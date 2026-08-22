@@ -2,10 +2,14 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
+import { openPopoutWindow } from '../lib/popout'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useProjectStore } from '../stores/project'
+import { useTaskDefsStore } from '../stores/taskDefs'
+import { taskHistoryEntries } from '../utils/taskHistoryRows'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -22,10 +26,42 @@ import { canRerunTask } from '../utils/taskRerun'
 // the foreign-project LABEL now comes off the row (utils/taskRows.ts); the scope predicate stays here
 import { taskInScope } from '../utils/taskScope'
 
+// `standalone` = this is the pop-out window (modules/TasksView.vue), not the /tasks page. The only
+// thing it changes is the pop-out button itself, which would otherwise offer to open the window you
+// are already looking at.
+const props = defineProps<{ standalone?: boolean }>()
+
 const tasks    = useTaskStore()
 const ws       = useWsStore()
 const settings = useSettingsStore()
 const projectMeta = useProjectMetaStore()
+const project     = useProjectStore()
+const taskDefs    = useTaskDefsStore()
+
+// ── The project's durable run history in the list ──────────────────────────────
+// The store only ever holds what this tab watched happen, plus the backend's in-flight set on connect
+// — so a window opened after the work finished (a reload, or the pop-out task window) showed an empty
+// manager for a project with hundreds of runs on disk. Those runs are already HERE, in each image's
+// `runLog` shipped with the project; `utils/taskHistoryRows.ts` turns them into the same rows, and the
+// store keeps them apart from the session's (`history`), so every other surface is unaffected.
+//
+// Re-read wholesale on each trigger rather than accumulated: the source is a file, not a stream. The
+// `sets.length` trigger is the pop-out's: it mounts, asks for the project, and the images arrive after.
+async function hydrateHistory() {
+  const uid = projectMeta.current?.uid
+  if (!settings.tasksShowHistory || !uid) { tasks.clearHistory(); return }
+  await taskDefs.ensureLoaded()             // so a row is labelled "Cellpose", not "cellpose"
+  // A live row always wins over its own record — matched on the SCHEDULER id, which for a chain row
+  // lives on `backendTaskId` rather than `id` (same rule as `utils/taskReconcile.ts`).
+  const live = new Set(tasks.tasks.filter(t => !t.history).map(t => t.backendTaskId || t.id))
+  tasks.setHistory(taskHistoryEntries(project.sets.flatMap(s => s.images), {
+    projectUid: uid,
+    labelFor:   (f: string) => taskDefs.labelFor(f),
+    hasId:      id => live.has(id),
+  }))
+}
+watch([() => projectMeta.current?.uid, () => settings.tasksShowHistory, () => project.sets.length],
+      () => void hydrateHistory(), { immediate: true })
 
 // live scheduler throttle — a quick popover off the toolbar (not buried in Settings)
 const throttleBtn  = ref<HTMLElement | null>(null)
@@ -175,6 +211,15 @@ async function copyLog() {
 // status icon/colour/label come from the ONE canonical map (lib/taskStatus.ts)
 
 
+// Pop the Task Manager out into its own browser window — the same idiom as the console's ↗, through
+// the same helper. The open project rides in the query: the popup is a fresh app instance with none
+// open, and this list is scoped to one (see modules/TasksView.vue).
+function openTaskWindow() {
+  const uid = projectMeta.current?.uid
+  openPopoutWindow('/tasks-window' + (uid ? `?project=${encodeURIComponent(uid)}` : ''),
+                   'cecelia-tasks', 1100, 700)
+}
+
 const FILTERS: ChipOption[] = [
   { value: 'all',       label: 'All' },
   { value: 'active',    label: 'Active' },
@@ -189,7 +234,12 @@ const FILTERS: ChipOption[] = [
 
     <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
     <div class="tm-toolbar">
-      <span class="tm-title">Task Manager</span>
+      <!-- The pop-out window has no header and no sidebar, so nothing else in it names the project —
+           and it FOLLOWS switches made in the main window, silently rebuilding the list. Naming the
+           project here is what makes that legible (and is how you can see the follow working at all).
+           On /tasks the sidebar already says it, so it would be a second copy. -->
+      <span class="tm-title">Task Manager<template v-if="props.standalone && projectMeta.current">
+        <span class="tm-title-proj cc-muted"> · {{ projectMeta.current.name }}</span></template></span>
 
       <ChipSelect
         class="filter-chips" :options="FILTERS" :model-value="statusFilter"
@@ -197,11 +247,14 @@ const FILTERS: ChipOption[] = [
         v-tooltip.bottom="'Show only tasks in this state'"
         @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
+      <CcToggle class="follow-toggle" v-model="settings.tasksShowHistory" label="History"
+        v-tooltip.bottom="'Include runs recorded before this session'" />
+
       <CcToggle class="follow-toggle" v-model="settings.tasksThisProjectOnly" label="This project"
         v-tooltip.bottom="'Hide tasks from other projects'" />
 
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
-        v-tooltip.left="'Automatically select the newest running task'" />
+        v-tooltip.bottom="'Automatically select the newest running task'" />
 
       <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon"
         :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
@@ -212,6 +265,12 @@ const FILTERS: ChipOption[] = [
       <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
         <PoolThrottle />
       </TeleportPopover>
+
+      <button v-if="!props.standalone" class="tm-window cc-btn cc-btn-bare cc-btn-icon"
+        @click="openTaskWindow"
+        v-tooltip.left="'Open the Task Manager in a separate window'">
+        <i class="pi pi-external-link" />
+      </button>
     </div>
 
     <!-- ── Body ───────────────────────────────────────────────────────── -->
@@ -228,7 +287,7 @@ const FILTERS: ChipOption[] = [
              `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
              scrolls away with the rows. -->
         <div class="tm-divider" @mousedown="onListResizeStart"
-          v-tooltip.right="'Drag to resize the list'" />
+          v-tooltip.top="'Drag to resize the list'" />
         <div class="tm-list-scroll">
         <SelectionTable
           class="tm-table" selection-mode="single" density="compact"
@@ -252,7 +311,8 @@ const FILTERS: ChipOption[] = [
           </template>
 
           <template #cell-task="{ row: r }">
-            <span class="row-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
+            <!-- the `#N` counter numbers THIS session's work; a row read back from the run log has none -->
+            <span v-if="!r.history" class="row-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
             <span v-if="r.chainLabel" class="chain-pill" v-tooltip.right="r.chainTip">
               <i class="pi pi-sitemap" />{{ r.chainLabel }}
             </span>
@@ -288,7 +348,7 @@ const FILTERS: ChipOption[] = [
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(r.entry)" v-tooltip.left="'Rerun'">
               <i class="pi pi-replay" />
             </button>
-            <button v-if="r.status === 'done' || r.status === 'failed' || r.status === 'cancelled'"
+            <button v-if="!r.history && (r.status === 'done' || r.status === 'failed' || r.status === 'cancelled')"
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(r.id)" v-tooltip.left="'Dismiss'">
               <i class="pi pi-trash" />
             </button>
@@ -375,6 +435,7 @@ const FILTERS: ChipOption[] = [
   flex-shrink: 0;
   background: var(--cc-surface-1);
 }
+.tm-title-proj { font-weight: 400; }
 .tm-title {
   font-size: var(--cc-fs-md);
   font-weight: 600;
@@ -399,6 +460,10 @@ const FILTERS: ChipOption[] = [
 
 .tm-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .tm-throttle:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
+
+/* the pop-out (↗) — same bare-icon treatment as the throttle beside it */
+.tm-window { transition: background 0.1s, color 0.1s; }
+.tm-window:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 .tm-body {

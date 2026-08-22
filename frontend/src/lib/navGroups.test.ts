@@ -26,6 +26,7 @@ const NOT_IN_MENU: Record<string, string> = {
   '/':                  'the neutral welcome page — the shell is the landmark, not a nav row',
   '/settings':          'lives in the sidebar FOOTER, and must never be hideable (a profile could strand the user)',
   '/console':           'bare route, opened in its own window',
+  '/tasks-window':      'bare route, the Task Manager opened in its own window',
   '/setup':             'bare route, the first-launch wizard',
   '/custom/:category':  'parameterised — the Custom group is generated per category at runtime',
 }

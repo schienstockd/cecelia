@@ -482,6 +482,15 @@ cells are read **and** where any output/annotation is written.
 - Cascade `rename_pop!` (rewrite child paths) and `del_pop!` (remove descendants).
 - **Time-agnostic**: gate eval is identical on timecourse segmentations (gates pooled
   cell-instances across timepoints) — no special code.
+- **A gate's SHAPE can be changed without deleting the population.** `set_gate!` takes any `Gate`
+  on a live pop, so rectangle ⇄ polygon is an in-place edit: name, colour, children and tree
+  position all survive, and `_invalidate!` re-derives membership for the pop and everything under
+  it. The population manager exposes it as one icon per gated pop (`convertGateKind` in
+  `frontend/src/plots/gateGeometry.ts` rewrites the geometry, then `pop/set-gate`). Rectangle →
+  polygon is the four corners — **lossless**, same cells. Polygon → rectangle is the vertices'
+  **bounding box** — lossy and widening (the pop can only gain cells), so that direction arms
+  before it fires. Both keep the channels and per-axis transforms, since the stored coords are
+  already in transformed space.
 
 ## Undo / redo
 

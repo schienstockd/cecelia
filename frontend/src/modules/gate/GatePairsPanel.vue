@@ -168,7 +168,7 @@ function exportAs(kind: string) {
                 <template v-for="grp in pickGroups" :key="grp.title">
                   <div class="chan-grp cc-eyebrow cc-fs-2xs">{{ grp.title }}</div>
                   <label v-for="c in grp.cols" :key="c" class="chan-item"
-                         v-tooltip.right="'Include this measure in the pair grid'"
+                         v-tooltip.top="'Include this measure in the pair grid'"
                          :class="{ disabled: !channels.includes(c) && atCap }">
                     <input type="checkbox" :checked="channels.includes(c)"
                            :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />

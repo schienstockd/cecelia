@@ -530,7 +530,7 @@ const pct = computed(() => {
        above a collapsible headed "ADVANCED". They are siblings of this row, not children of it, so
        the row was contributing a duplicate label and an empty body. -->
   <div v-else-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
-    <label class="param-label" v-tooltip.left="param.tip">
+    <label class="param-label" v-tooltip.top="param.tip">
       {{ param.label }}
       <i v-if="param.tip" class="pi pi-info-circle tip-icon" />
     </label>
@@ -548,7 +548,7 @@ const pct = computed(() => {
           ? parseInt(($event.target as HTMLInputElement).value)
           : parseFloat(($event.target as HTMLInputElement).value)"
         :style="`--pct: ${pct}%`"
-        v-tooltip.right="`${val} (range ${param.min}–${param.max})`"
+        v-tooltip.bottom="`${val} (range ${param.min}–${param.max})`"
       />
       <span class="slider-val">{{ val }}</span>
     </div>
@@ -570,7 +570,7 @@ const pct = computed(() => {
         :value="val as string"
         :list="param.options?.length ? `dl-${param.key}` : undefined"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.right="param.tip"
+        v-tooltip.bottom="param.tip"
       />
       <datalist v-if="param.options?.length" :id="`dl-${param.key}`">
         <option v-for="o in param.options" :key="o.value" :value="o.value" />
@@ -598,7 +598,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'dirPath'" class="cc-row cc-row-tight dir-path">
       <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.right="param.tip" />
+        v-tooltip.bottom="param.tip" />
       <button type="button" class="cc-btn cc-btn-ghost" @click="showDirBrowser = true"
         v-tooltip.top="'Browse for a folder'">
         <i class="pi pi-folder-open" />
@@ -612,7 +612,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'filePath'" class="cc-row cc-row-tight dir-path">
       <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.right="param.tip" />
+        v-tooltip.bottom="param.tip" />
       <button type="button" class="cc-btn cc-btn-ghost" @click="showFileBrowser = true"
         v-tooltip.top="'Browse for a file'">
         <i class="pi pi-folder-open" />
@@ -648,7 +648,7 @@ const pct = computed(() => {
       class="select-input"
       :value="val as string"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.right="param.tip"
+      v-tooltip.bottom="param.tip"
     >
       <option v-for="opt in param.options" :key="opt.value" :value="opt.value">
         {{ opt.label }}
@@ -660,7 +660,7 @@ const pct = computed(() => {
       class="select-input"
       :value="val as string"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.right="param.tip"
+      v-tooltip.bottom="param.tip"
     >
       <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
       <option v-if="availableValueNames.length === 0" value="" disabled>— no versions available —</option>
@@ -668,7 +668,7 @@ const pct = computed(() => {
 
     <!-- popSelection (multi / across segmentations): chip list of value_name-prefixed populations -->
     <div v-else-if="param.type === 'popSelection' && popAcross" class="channel-select-wrap"
-      v-tooltip.right="param.tip">
+      v-tooltip.top="param.tip">
       <div v-if="popMultiOptions.length === 0" class="channel-empty cc-muted">
         No populations — select an image first.
       </div>
@@ -685,14 +685,14 @@ const pct = computed(() => {
       class="select-input"
       :value="(val as string) ?? 'NONE'"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.right="param.tip"
+      v-tooltip.bottom="param.tip"
     >
       <option v-for="opt in popOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
     </select>
 
     <!-- labelPropsColsSelection: grouped (Tracking / Object) multi-select chip lists -->
     <div v-else-if="param.type === 'labelPropsColsSelection'" class="channel-select-wrap"
-      v-tooltip.right="param.tip">
+      v-tooltip.top="param.tip">
       <div v-if="colGroups.length === 0" class="channel-empty cc-muted">
         No measures — select a population first.
       </div>
@@ -708,7 +708,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'motionDimsSelection'" class="motion-dims">
       <select class="select-input" :value="(val as string) ?? 'auto'"
               @change="val = ($event.target as HTMLSelectElement).value"
-              v-tooltip.right="param.tip">
+              v-tooltip.bottom="param.tip">
         <option value="auto">Auto (recommended)</option>
         <option value="2D">2D (in-plane)</option>
         <option value="3D">3D</option>
@@ -729,7 +729,7 @@ const pct = computed(() => {
 
     <!-- fallback -->
     <div v-else class="picker-placeholder"
-      v-tooltip.right="`${param.type} — populated from image metadata`">
+      v-tooltip.top="`${param.type} — populated from image metadata`">
       <i class="pi pi-spinner pi-spin" style="font-size:var(--cc-fs-xs)" />
       {{ param.type }}
     </div>
@@ -754,7 +754,7 @@ const pct = computed(() => {
     <!-- Per-OPTION guidance for a select: what this choice means and when to pick it. Deliberately NOT
          an advisory — nothing about the user's data was consulted, and borrowing `severity: ok` would
          render a green check claiming a verdict nobody reached. -->
-    <InlineNote v-if="optionHelp" class="param-advisory" :short="optionHelp" placement="bottom" />
+    <InlineNote v-if="optionHelp" class="param-advisory" :short="optionHelp" />
   </div>
 
   <!-- section rendered outside .param-row so it spans full width -->
@@ -836,7 +836,7 @@ const pct = computed(() => {
          `InlineNote` is the canonical short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md);
          an icon plus a span plus a tooltip by hand is the variant it exists to delete. -->
     <InlineNote v-if="param.repeatable && groupEntries.length > 1 && param.entriesTip"
-      class="group-entries-note cc-fs-2xs" placement="bottom"
+      class="group-entries-note cc-fs-2xs"
       :short="param.entriesTip"
       detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
               fill only what it left. Two entries configured alike therefore do the same work twice." />

@@ -170,14 +170,14 @@ function onScopeChange(v: string) {
         <span class="del-lbl cc-muted" v-tooltip.right="'Image versions to delete from disk'">Versions</span>
         <ChipSelect class="del-chips" multiple :options="versionOptions"
           :model-value="pickedVersions" @update:model-value="v => onVersionsChange(v as string[])"
-          v-tooltip.right="'A version only some images have is skipped for the rest'" />
+          v-tooltip.bottom="'A version only some images have is skipped for the rest'" />
       </div>
       <div v-if="anySurvivor" class="del-row">
         <span class="del-lbl cc-muted"
           v-tooltip.right="'Stays active where it survives; each image falls back to its own'">Keep active</span>
         <ChipSelect class="del-chips" :options="survivorOptions" :model-value="newActive"
           @update:model-value="v => newActive = v as string"
-          v-tooltip.right="'Which surviving version becomes the active one'" />
+          v-tooltip.bottom="'Which surviving version becomes the active one'" />
       </div>
       <!-- BLOCKS: an image keeps a version, but not the one chosen to stay active -->
       <p v-if="activeConflicts > 0" class="del-note cc-muted-warn">
@@ -202,7 +202,7 @@ function onScopeChange(v: string) {
         <span class="del-lbl cc-muted" v-tooltip.right="'Segmentations to delete, with their measurements'">Label sets</span>
         <ChipSelect class="del-chips" multiple :options="labels.map(nameChip)"
           :model-value="pickedLabels" @update:model-value="v => pickedLabels = v as string[]"
-          v-tooltip.right="'A set only some images have is skipped for the rest'" />
+          v-tooltip.bottom="'A set only some images have is skipped for the rest'" />
       </div>
       <!-- Warns but never blocks: a set only some images have is simply skipped for the rest -->
       <p v-if="partialLabels.length" class="del-note cc-muted-warn">
