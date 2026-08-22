@@ -37,6 +37,19 @@
       "label": "Segmentation models",
       "type": "group",
       "repeatable": true,
+      "entriesTip": "Passes run in order — each labels only the pixels earlier passes left",
+      "entryDefaults": [
+        {},
+        {
+          "seedSize": 2.65,
+          "affinityThreshold": 0.8,
+          "mergeAffinityThreshold": 0.9,
+          "seedBlurSigma": 0.0,
+          "probBlurSigma": 0.0,
+          "minComponentSize": 1.1,
+          "stitchThreshold": 0.2
+        }
+      ],
       "default": {
         "0": {
           "model": "",

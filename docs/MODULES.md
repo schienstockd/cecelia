@@ -840,6 +840,34 @@ should not be collapsed.
 **`repeatable`** / **`labelKey`** — on a `group`: whether entries can be added and reordered, and
 which sub-param's value is shown in each entry's header so the list is readable when collapsed.
 
+**`entryDefaults`** — on a `repeatable` `group`: an array of starting values, indexed by ENTRY
+POSITION, overlaid when an entry is added. Index 0 is the first entry and is normally `{}` — the
+sub-params' own defaults already describe it.
+
+Needed because entries of a repeatable group are **not interchangeable**. They are applied in run
+order and each fills only what an earlier one left, so a second entry is a pass over the *remainder*.
+Born as a copy of the first it does the same work twice: it grows to nearly the same regions, is
+clipped along the earlier pass's boundaries, and leaves slivers — measured on a real coastal two-pass
+config where both passes carried the same growing threshold. So a spec that supports stacking has to
+say what a *second* entry should be, not just what *an* entry is.
+
+A new entry is the sub-param defaults, then the FIRST entry's live values for everything the entries
+should share (which model, which channels), then `entryDefaults[position]` for what must differ —
+in that order, so what must differ wins. Positions past the end reuse the last element.
+
+Applied only when an entry is ADDED, never to fill a saved config's missing keys: a resolver that
+back-filled position defaults would silently change what an existing run computes.
+
+**`entriesTip`** — on a `repeatable` `group`: one line saying HOW the entries combine, shown above the
+list as soon as there are two. Per task, not in the renderer: coastal's and cellpose's entries are
+applied in order and each labels only what an earlier one left, while the AF spec's channel
+combinations are independent and order means nothing — the renderer used to assert coastal's rule for
+all three. Omit it and no line appears.
+
+Shown rather than tooltipped, because a user who adds a second entry cannot guess that the entries are
+not independent, and the cost of not knowing is a second pass configured like the first: double the
+compute for almost no extra objects.
+
 **`acrossSegmentations`** — on a `popSelection`, list populations from EVERY segmentation
 (value_name-prefixed) rather than just the sibling `valueName`'s.
 

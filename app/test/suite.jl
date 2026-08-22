@@ -3224,6 +3224,57 @@ end
     @test checked > 20      # the sweep actually found the sliders
 end
 
+@testset "a second model group is not born a copy of the first" begin
+    # Entries of a `repeatable` group are applied IN RUN ORDER and each fills only the pixels an
+    # earlier one left (`fill_unlabelled`), so entry 2 is a FRAGMENT pass over what the cell pass did
+    # not claim. Born identical it grows to nearly the same regions, is clipped along the first pass's
+    # boundaries, and leaves slivers at twice the compute — measured on zolIMa/fXgbTl, where both
+    # passes carried `affinityThreshold` 0.5 and the run took 508 s to produce that.
+    #
+    # `entryDefaults[2]` is what the form seeds a second entry with. This pins that it actually
+    # DIFFERS on the parameters that decide how far a pass grows: identical values here would make the
+    # whole feature a no-op and nothing else would notice.
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "segment", "coastal.json"),
+                           String))
+    models = nothing
+    for p in get(spec, :params, [])
+        String(get(p, :key, "")) == "models" && (models = p)
+    end
+    @test !isnothing(models)
+    seeds = get(models, :entryDefaults, nothing)
+    @test !isnothing(seeds)
+    @test length(seeds) >= 2
+    second = seeds[2]
+
+    # The sub-param defaults, i.e. what entry 1 starts as.
+    firsts = Dict{String,Any}()
+    function collect_leaves!(ps)
+        for p in ps
+            if String(get(p, :type, "")) == "section"
+                collect_leaves!(get(p, :params, []))
+            else
+                haskey(p, :default) && (firsts[String(p[:key])] = p[:default])
+            end
+        end
+    end
+    collect_leaves!(get(models, :params, []))
+
+    # These three decide how far a pass grows and how readily its fragments re-merge. If the second
+    # pass matches the first on them, it is the first pass again.
+    for k in ("affinityThreshold", "seedSize", "seedBlurSigma")
+        @test haskey(second, Symbol(k))
+        @test second[Symbol(k)] != firsts[k]
+    end
+    # Directions, not just difference: the fragment pass grows LESS freely and blurs its seeds LESS.
+    @test second[:affinityThreshold] > firsts["affinityThreshold"]
+    @test second[:seedSize] < firsts["seedSize"]
+    @test second[:seedBlurSigma] < firsts["seedBlurSigma"]
+    # Every seeded key must be one the group declares, or it reaches the runner as an unknown param.
+    for k in keys(second)
+        @test haskey(firsts, String(k))
+    end
+end
+
 @testset "coastal forwards every top-level spec param to its runner" begin
     # `coastal.jl` hands `run_py` an explicit NamedTuple, i.e. a WHITELIST — while `preview_params`
     # forwards the whole param bag. So a spec param missing from that list is honoured in the preview
