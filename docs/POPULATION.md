@@ -317,7 +317,11 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   gating a segmentation before tracking no longer lists a `_tracked` under every gate. This
   generalises the older root-only rule (`has_ungated_tracks`), which is gone. `is_tracked(img;
   value_name)` (cheap obs-column check) is the first exit, and gates track-grained plots too — an
-  untracked segmentation shows "track first", not an error/empty plot.
+  untracked segmentation shows "track first", not an error/empty plot. The answer is **cached on the
+  gating sidecar's + h5ad's mtimes** (module-level, like `_MOTION_DIMS_CACHE`; `flush=true` overrides),
+  because the picker asks on every load while a full gate evaluation per tracked segmentation is what
+  it costs — measured 0.27 s → ~1 ms per repeat load on `zolIMa/fXgbTl`. A saved gate edit or a
+  re-tracked segmentation changes a stamp and recomputes.
 
 ## Gating pop types & copy across images
 

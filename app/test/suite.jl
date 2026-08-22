@@ -8652,6 +8652,15 @@ end
         img.label_props["C"] = "C.h5ad"
         @test !is_tracked(img; value_name="C")
         @test isempty(tracked_pop_parents(img; value_name="C"))
+
+        # The picker asks this on every load, so the answer is cached on the gating + h5ad mtimes —
+        # and a SAVED GATE EDIT has to invalidate it, or the rail keeps answering for the old tree.
+        # Deleting /all/pos leaves /all as the deepest pop holding the tracks, so the set changes.
+        t0 = @elapsed tracked_pop_parents(img; value_name="B")
+        t1 = @elapsed tracked_pop_parents(img; value_name="B")
+        @test t1 <= max(t0, 0.001)                      # second ask is not a second gate evaluation
+        del_pop!(m, "/all/pos"); sleep(0.01); save_pop_map!(m, img)
+        @test tracked_pop_parents(img; value_name="B") == Set(["/all"])
         rm(td; recursive=true)
     end
 end

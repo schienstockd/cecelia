@@ -962,8 +962,17 @@ surface them. Generic over `_DERIVED_POPS`, so future reserved pops appear autom
 derived_pop_paths(pop_type::AbstractString)::Vector{String} =
     ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == String(pop_type)]
 
+# Cached by the gating sidecar's + the h5ad's mtimes, the same auto-invalidation `pop_df` keys on
+# (`_pop_df_mtime`): a saved gate edit or a re-tracked segmentation changes a stamp, anything else
+# reuses the answer. Worth caching because the picker asks on EVERY load and the answer costs a full
+# gate evaluation per tracked segmentation. Module-level, NOT on the image — `init_object` builds a
+# fresh `CciaImage` per request, so an object-held cache (`img._pop_df_cache`) never survives one.
+# Written from concurrent request handlers, hence the lock (mirrors `_MOTION_DIMS_CACHE`).
+const _TRACKED_PARENTS_CACHE = Dict{String,Set{String}}()
+const _TRACKED_PARENTS_LOCK  = ReentrantLock()
+
 """
-    tracked_pop_parents(img; value_name, pop_type = "flow") -> Set{String}
+    tracked_pop_parents(img; value_name, pop_type = "flow", flush = false) -> Set{String}
 
 The populations whose derived `_tracked` child SAYS SOMETHING the tree does not already say —
 `""` standing for the segmentation root (`/_tracked`). A population qualifies when it holds tracks
@@ -979,12 +988,26 @@ segmentation no longer offers a `_tracked` under every gate before tracking has 
 Membership is counted in TRACKS (a track belongs to a population if any of its cells do — `pop_df`'s
 track rule), because that is the unit the `_tracked` row plots. Cheap exit first: `is_tracked` reads
 only the obs column list, so an untracked segmentation costs no gate evaluation.
+
+Cached on the two mtimes it reads (see above); `flush = true` recomputes, for an in-memory edit that
+was never written to disk — the same override `pop_df`'s `flush_cache` is.
 """
 function tracked_pop_parents(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing,
-                             pop_type::AbstractString="flow")::Set{String}
-    out = Set{String}()
-    is_tracked(img; value_name=value_name) || return out
+                             pop_type::AbstractString="flow", flush::Bool=false)::Set{String}
     vn = resolve_value_name(img, value_name)
+    gp = gating_path(img._dir, vn; pop_type=pop_type)
+    lp = img_label_props_path(img, vn)
+    key = string(pop_type, "|", gp, "@", _pop_df_mtime(gp), "|", lp, "@", _pop_df_mtime(lp))
+    lock(_TRACKED_PARENTS_LOCK) do
+        (!flush && haskey(_TRACKED_PARENTS_CACHE, key)) && return _TRACKED_PARENTS_CACHE[key]
+        _TRACKED_PARENTS_CACHE[key] = _tracked_pop_parents(img, vn, pop_type)
+    end
+end
+
+function _tracked_pop_parents(img::CciaImage, vn::AbstractString,
+                              pop_type::AbstractString)::Set{String}
+    out = Set{String}()
+    is_tracked(img; value_name=vn) || return out
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
     "track_id" in names(cell) || return out
     tid = Dict{Int,Int}()                              # cell label → track_id, tracked cells only
