@@ -146,8 +146,18 @@ onMounted(async () => {
 
 // `bare` routes (e.g. the standalone console window) render full-window without the app shell
 // (header / sidebar / docked console). See the /console route in main.ts.
+//
+// `popout ||` is not belt-and-braces, it is the whole point: `route.meta` arrives only once the FIRST
+// navigation resolves, and that navigation awaits the boot guard's `refreshStartup()` fetch plus the
+// route's lazy chunk. Until then `route` is the start location — no `meta`, so `bare` read false and
+// a popout window painted the entire app shell before swapping it out (measured on a warm dev server:
+// header + sidebar from ~230ms to ~285ms; a cold boot or a slow backend holds that frame for a
+// second or more, which is exactly what it looks like — the app "greyed out", every module locked,
+// because no project is open in a window that was never meant to have one). Whether this window is a
+// popout is knowable synchronously here (`lib/popout.ts` reads the window's name and the hash), so
+// the shell never gets the chance.
 const route = useRoute()
-const bare = computed(() => route.meta.bare === true)
+const bare = computed(() => popout || route.meta.bare === true)
 </script>
 
 <template>
