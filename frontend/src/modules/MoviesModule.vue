@@ -29,6 +29,7 @@ import ConfirmButton from '../components/ConfirmButton.vue'
 import BaseModal from '../components/BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import AttrFilterPanel from '../components/AttrFilterPanel.vue'
+import { isTypingTarget } from '../utils/typingTarget'
 
 const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
@@ -98,8 +99,7 @@ function onWheel(e: WheelEvent) {
 }
 function onKey(e: KeyboardEvent) {
   if (!e.shiftKey) return
-  const t = e.target as HTMLElement | null
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (isTypingTarget(e)) return
   const vp = viewportEl.value
   if (!vp) return
   const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2

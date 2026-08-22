@@ -143,6 +143,19 @@ export const useGatingStore = defineStore('gating', () => {
     return centroidLabel(col)
   }
 
+  // ── Undo / redo (hand-drawn gating only: flow + track) ────────────────────────
+  // History lives on the SERVER — the whole population tree is one serialisable document, and the
+  // server is the only place that sees every writer (this tab, another tab, napari). Keeping a
+  // client stack would give each tab its own idea of "before". So these two are just the server's
+  // answer, refreshed with the tree on every fetch and every broadcast.
+  const canUndo = ref(false)
+  const canRedo = ref(false)
+  // absent fields (a response that predates this, or a pop type with no history) read as "no history"
+  const _setHistory = (d: { canUndo?: boolean; canRedo?: boolean }) => {
+    canUndo.value = d.canUndo === true
+    canRedo.value = d.canRedo === true
+  }
+
   function bump(p: string) {
     popVersion.value = { ...popVersion.value, [p]: (popVersion.value[p] ?? 0) + 1 }
   }
@@ -176,7 +189,8 @@ export const useGatingStore = defineStore('gating', () => {
         body: JSON.stringify({ projectUid: projectUid(), imageUid: imageUid.value,
                                valueName: valueName.value, popType: popType.value, ...body }),
       })
-      const data = await res.json().catch(() => ({})) as { tree?: PopTree; error?: string }
+      const data = await res.json().catch(() => ({})) as
+        { tree?: PopTree; error?: string; canUndo?: boolean; canRedo?: boolean }
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
       // set-wide: replay the SAME mutation to the other clustered images (cluster pops only). The
       // body is image-independent (filter on clusters.{suffix}), so paths stay in sync. Await these
@@ -189,6 +203,7 @@ export const useGatingStore = defineStore('gating', () => {
                                  valueName: valueName.value, popType: popType.value, ...body }),
         }).catch(() => undefined)))
       if (data.tree) setTree(data.tree)
+      _setHistory(data)
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -241,8 +256,9 @@ export const useGatingStore = defineStore('gating', () => {
     try {
       const res = await fetch(`/api/gating/popmap?${_params()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const d = await res.json() as { tree: PopTree }
+      const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean }
       setTree(d.tree)
+      _setHistory(d)
     } catch (e) {
       log.error(`Gating popmap: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
@@ -279,6 +295,11 @@ export const useGatingStore = defineStore('gating', () => {
     _post('/api/gating/pop/update', { path,
       filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun, values: conditions[0]?.values } })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
+  // Step through the server's history. `_post` handles the response tree + flags like any other
+  // mutation, so an undo lands on screen exactly the way the edit it reverses did. `mirrorUids` is
+  // empty on the gating pages (it is the cluster pages' set-wide replay), so no mirroring here.
+  const undo = () => _post('/api/gating/undo', {})
+  const redo = () => _post('/api/gating/redo', {})
   const deletePop  = (path: string)                  => _post('/api/gating/pop/delete', { path })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
   const updatePop  = (path: string,
@@ -286,9 +307,18 @@ export const useGatingStore = defineStore('gating', () => {
     _post('/api/gating/pop/update', { path, ...patch })
 
   // WS push: server broadcasts gating:popmap after any mutation (incl. from other clients / napari)
-  function applyBroadcast(data: { imageUid?: string; valueName?: string; tree?: PopTree }) {
-    if (data.imageUid === imageUid.value && data.valueName === valueName.value && data.tree)
+  // The guard matches the DOCUMENT the broadcast is about — image + segmentation + pop type. popType
+  // was missing: an edit to the same image's cluster pops (another tab, the cluster page) broadcasts
+  // under the same image/valueName, and its tree would have been applied straight onto the gating
+  // page's list. The undo flags are per document too, so they would have been overwritten with the
+  // other document's answer.
+  function applyBroadcast(data: { imageUid?: string; valueName?: string; popType?: string
+                                  tree?: PopTree; canUndo?: boolean; canRedo?: boolean }) {
+    if (data.imageUid === imageUid.value && data.valueName === valueName.value &&
+        (data.popType === undefined || data.popType === popType.value) && data.tree) {
       setTree(data.tree)
+      _setHistory(data)
+    }
   }
 
   // ── Napari linked brushing ────────────────────────────────────────────────────
@@ -344,6 +374,7 @@ export const useGatingStore = defineStore('gating', () => {
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
+    canUndo, canRedo, undo, redo,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
 })

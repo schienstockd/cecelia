@@ -18,3 +18,11 @@ export function clusterMeasure(popType: string, suffix: string): string {
 export function isClusterPopType(popType: string): boolean {
   return popType === 'clust' || popType === 'trackclust' || popType === 'region'
 }
+
+// The HAND-DRAWN pop types — the frontend mirror of Julia's `GATING_POP_TYPES` (flow = cells,
+// track = tracks). The complement of the cluster/filter families above: these are the ones where a
+// population is a shape somebody drew, which is why they are the ones that carry undo/redo
+// (docs/POPULATION.md — a wrong drag destroys work no re-tick can restore).
+export function isGatingPopType(popType: string): boolean {
+  return popType === 'flow' || popType === 'track'
+}

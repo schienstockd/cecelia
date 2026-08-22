@@ -375,7 +375,7 @@ A blank/stale `valueName` is resolved server-side to a real labelProps key (the 
 coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}` where
 `pos` is the transformed position and `label` the raw (inverse) value.
 
-### Mutate (POST, JSON body) — each returns `{tree}` and broadcasts `gating:popmap`
+### Mutate (POST, JSON body) — each returns `{tree, canUndo, canRedo}` and broadcasts `gating:popmap`
 
 | Path | Body (besides project/image/valueName/popType) |
 |---|---|
@@ -384,6 +384,10 @@ coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}`
 | `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility), `filter? {measure?,fun?,values?,default_all?}` (only the keys present are mutated — the tick-cluster-into-pop UX rewrites `filter.values` to retoggle which cluster IDs belong to a `clust`/`trackclust` pop) |
 | `/api/gating/pop/delete` | `path` (cascades to descendants) |
 | `/api/gating/pop/rename` | `path`, `newName` (cascades child paths) → also returns `path` (new) |
+
+**Undo / redo** (hand-drawn gating only): `POST /api/gating/undo` · `POST /api/gating/redo`, body = the usual `{projectUid, imageUid, valueName, popType}` and nothing else → `{tree, canUndo, canRedo}`, broadcasting `gating:popmap` like any edit. `409` when the stack is empty; `400` for a non-`flow`/`track` pop type. History is a ring of whole-tree snapshots (limit 50) held **in process**, keyed per `(project, image, valueName, popType)` and recorded at `_persist_and_broadcast!` — the one choke point every mutation already goes through, so a new mutation is undoable without doing anything. A step does not record itself; a fresh edit clears the redo branch. Nothing is persisted: history dies with the backend rather than growing a user-facing sidecar with an edit log. See `docs/POPULATION.md` → *Undo / redo*.
+
+`canUndo`/`canRedo` also ride on `GET /api/gating/popmap` and on every `gating:popmap` broadcast, so a client that reconnects or switches image gets the right button state without asking for it.
 
 **Copy gating across images** (does NOT return `{tree}`): `POST /api/gating/copy` `{projectUid, imageUid (source), valueName, popType, toImageUids:[…]}` → `{copied:[uid], skipped:{uid→why}}`. Replaces each target's gating sidecar for the ONE gating pop_type (`flow`/`track`; validated via `is_gating_pop_type`) with the source's — membership recomputes per image on read, so gates alone suffice (no per-image recompute). Targets lacking the `valueName` segmentation are skipped. Broadcasts `gating:popmap` per target. Plot layout is copied client-side (canvas store), not here. Ports R "Propagate to Selected".
 

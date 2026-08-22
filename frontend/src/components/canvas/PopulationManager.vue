@@ -14,7 +14,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
@@ -26,7 +26,8 @@ import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { popNameError } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
-import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
+import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
+import { isTypingTarget } from '../../utils/typingTarget'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
@@ -119,6 +120,26 @@ async function toggleNapari(p: FlatPop) {
   await g.updatePop(p.path, { show: !p.show })
   g.refreshNapari()
 }
+
+// ── Undo / redo ───────────────────────────────────────────────────────────────
+// Hand-drawn gating only (flow = cells, track = tracks). A cluster/region/filter pop's edit is a
+// tick you can un-tick, so it needs no history; a gate you dragged or a population you deleted with
+// its children is work you cannot get back. History itself lives on the server — see the gating
+// store — so these two flags are its answer, not a local guess.
+// Read-only surfaces (the Analysis board) get nothing: they cannot mutate in the first place.
+const historyMode = computed(() => !props.readonly && isGatingPopType(props.popType))
+// Ctrl/⌘+Z and Ctrl/⌘+Shift+Z, the bindings every user already has in their fingers. Bound to the
+// WINDOW, so it works with focus on the plot canvas where the gate was just dragged — hence the
+// typing guard, or "z" in a rename field would undo the rename you are in the middle of typing.
+function onKey(e: KeyboardEvent) {
+  if (!historyMode.value || isTypingTarget(e)) return
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
+  e.preventDefault()
+  if (e.shiftKey) { if (g.canRedo) g.redo() }
+  else if (g.canUndo) g.undo()
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 // ── Cluster mode (clust / trackclust): a population IS a set of cluster IDs (a filter on
 // clusters.{suffix}). Instead of drawing gates, the user ticks cluster IDs into a pop here. A
@@ -247,6 +268,19 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                 v-tooltip.bottom="'Define a population by filtering on obs measures'">
           <i class="pi pi-filter" /> New filter population
         </button>
+        <!-- Undo/redo for hand-drawn gating. In this bar rather than a bar of their own: the panel is
+             the document these act on, and a third stacked row costs more than two icons do. -->
+        <template v-if="historyMode">
+          <span class="pm-add-spacer" />
+          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canUndo"
+                  v-tooltip.bottom="'Undo (Ctrl+Z)'" @click="g.undo()">
+            <i class="pi pi-undo" />
+          </button>
+          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canRedo"
+                  v-tooltip.bottom="'Redo (Ctrl+Shift+Z)'" @click="g.redo()">
+            <i class="pi pi-replay" />
+          </button>
+        </template>
       </div>
       <div v-if="showFilterForm && !readonly && !clusterMode" class="pm-ff">
         <div class="pm-ff-title">{{ fpEditPath ? 'Edit filter population' : 'New filter population' }}</div>
@@ -459,7 +493,9 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-icon.danger:hover { color: #f87171; }
 
 /* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
-.pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border); }
+.pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
+  display: flex; align-items: center; gap: 4px; }
+.pm-add-spacer { flex: 1; }
 .pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cc-fs-xs); padding: 4px 9px;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2);
   color: var(--cc-text); cursor: pointer; }

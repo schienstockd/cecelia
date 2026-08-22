@@ -1,5 +1,6 @@
 import { ref, inject, onMounted, onBeforeUnmount, type Ref, type InjectionKey } from 'vue'
 import { rafCoalesce } from '../utils/rafCoalesce'
+import { isTypingTarget } from '../utils/typingTarget'
 
 // Generic VISUAL zoom for any plot canvas (the Analysis board's fixed grid AND the free-floating module
 // canvases). A CSS `transform: scale` on the content — purely visual, so it never resizes the plots'
@@ -76,8 +77,7 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   }
   const onKey = (e: KeyboardEvent) => {
     if (!e.shiftKey) return
-    const t = e.target as HTMLElement | null
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    if (isTypingTarget(e)) return
     if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomBy(STEP) }
     else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomBy(1 / STEP) }
     else if (e.key === ')' || e.key === '0') { e.preventDefault(); reset() }
