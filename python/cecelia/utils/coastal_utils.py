@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from cecelia.utils.segmentation_utils import SegmentationUtils
+from cecelia.utils import flow_probe
 from cecelia.utils.gpu_utils import torch_device
 import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.script_utils as script_utils
@@ -224,6 +225,10 @@ class CoastalUtils(SegmentationUtils):
         self.use_gpu, self.gpu_device = torch_device()
         self._quieten_cv2_threads()
 
+        # Probed lazily and once — see `_check_flow_engine`. None means "not measured yet", which is
+        # distinct from `{}` ("measured, and this engine cannot be probed").
+        self._flow_fp = None
+
         # Model input shared between the model groups that read one window — see
         # *Sharing the flow between passes*. Guarded because `_map_z` fills it from several threads.
         self._feature_cache = {}
@@ -373,6 +378,43 @@ class CoastalUtils(SegmentationUtils):
     # Keys a caller may supply directly when there is no trained model to read them from.
     _FEATURE_KEYS = ('temporalScales', 'cumulativeWindow', 'droppedMetrics')
 
+    def _flow_fingerprint(self):
+        """This process's flow-engine fingerprint, computed once. See `flow_probe`."""
+        if self._flow_fp is None:
+            self._flow_fp = flow_probe.fingerprint()
+        return self._flow_fp
+
+    def _check_flow_engine(self, manifest):
+        """Warn when the flow features this engine computes are not the ones the model was fitted on.
+
+        The manifest already pins the feature CONFIG and inference checks all of it. What nothing
+        checked is the RECIPE: swap the optical-flow estimator and `temporalScales`, `metricKeys`,
+        `droppedMetrics` and `coastalBuild`-minus-the-commit all still agree while the network is fed
+        a different distribution. `flow_probe` measures the recipe numerically; this reports it.
+
+        A WARN, not a refusal. The probe compares numbers, and numbers can move for a reason that is
+        not a recipe change — a different cv2 build picking a different SIMD path, on a machine that
+        is not the one that trained the model. `RTOL` is set orders of magnitude above that drift, so
+        a fire here is almost certainly real; but "almost certainly" is not the standard for refusing
+        to run somebody's segmentation, and the mismatch is stated precisely enough to act on.
+        """
+        if not manifest:
+            # No manifest at all is already reported, with better advice, by
+            # `coastal_models_for_python`. Two warnings about one cause is one too many.
+            return
+        recorded = manifest.get('flowFingerprint')
+        if not recorded:
+            # "These agree" and "nobody can tell" are different answers and only one is reassuring —
+            # the same reason `_resolve_temporal` speaks up when a frame interval is unknown.
+            self.logger.log('[WARN] Model records no flow-engine fingerprint — whether this build '
+                            'computes the flow it was trained on cannot be checked. Re-train it to '
+                            'record one.')
+            return
+        note = flow_probe.compare(recorded, self._flow_fingerprint())
+        if note:
+            self.logger.log(f'[WARN] {note}. The model was fitted on different features than it is '
+                            f'being given; re-train it on this build.')
+
     def _manifest(self, model_params):
         """The feature-set config for a model group.
 
@@ -385,6 +427,10 @@ class CoastalUtils(SegmentationUtils):
         path = str(model_params.get('model', ''))
         if path not in self._manifest_cache:
             self._manifest_cache[path] = read_manifest(path)
+            # Here rather than in `_resolve_temporal`, because this is a property of the ENGINE and
+            # not of the scale resolution — and here rather than per group, because this cache is
+            # keyed by model path and a run's groups normally share one model.
+            self._check_flow_engine(self._manifest_cache[path])
         manifest = self._manifest_cache[path]
         if manifest:
             return manifest

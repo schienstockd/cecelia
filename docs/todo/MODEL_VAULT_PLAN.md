@@ -147,6 +147,55 @@ physical size"*, which is the one absent field worth saying is absent. **Every m
 vault predates this and shows nothing at all**, exactly as it did before — correct, not a migration
 failure.
 
+### Part 1b — `flowFingerprint`, the engine check — **BUILT**
+
+`coastalBuild` says which code produced a model. It cannot say whether a given change touched the
+**feature recipe**, so as a check it fires on every commit — which is why point 5 below concedes it
+"makes a discrepancy explainable; it does not prevent one". This is the part that prevents one.
+
+```jsonc
+{
+  "flowFingerprint": {
+    "version": 1,                                // `flow_probe.VERSION`; a different probe is not compared
+    "metrics": { "mag_1": [0.148, 0.611], … }    // [spread, 99th percentile of |value|] per metric plane
+  }
+}
+```
+
+Measured, not declared: `flow_probe.fingerprint()` runs the real inference entry point
+(`coastal.flow.flow_metrics_for_frame`, asserted elementwise-equal to the training path's
+`prepare_data_for_unet`, so one probe covers both) on a fixed analytic window, and summarises every
+metric plane it returns. Inference re-measures and compares (`CoastalUtils._check_flow_engine`).
+~4 ms, and the coastal import it needs is paid by the run anyway.
+
+Four choices worth keeping:
+
+- **Numeric, not a source hash.** A hash over coastal's flow module would fire on a comment edit —
+  a false positive for the one reason a user cannot act on. The probe is sensitive to exactly what
+  matters: anything that moves the numbers.
+- **The probe's config is FIXED** (`scales (1, 2)`, `cumulative 3`), not the model's. This measures
+  the engine; the configuration is recorded and checked separately by `temporal_config`. Mixing them
+  would mean two models trained at different scales could never be compared against one engine.
+- **`spread` and `p99(|v|)`, not the mean.** Several metrics are signed and near-symmetric, so their
+  mean sits at ~0 — where a relative tolerance carries no information and an absolute one fires on
+  noise. Both recorded statistics are strictly positive for any non-constant plane, so one tolerance
+  works for the whole stack.
+- **A WARN, not a refusal.** `RTOL` is 1e-3, orders of magnitude above cross-machine SIMD drift and
+  orders of magnitude below a recipe change — but "almost certainly real" is not the standard for
+  refusing to run somebody's segmentation. Absent on either side reads as *cannot be checked*, which
+  is a third answer and says so.
+
+What it catches, measured on `zolIMa/fXgbTl` mem-TOM: swapping Farneback for `cv2.DISOpticalFlow`
+gives a magnitude field correlated **0.00** with the current one and moves cell/background separation
+from **3.68 to 0.84** — background flowing faster than cells — while `temporalScales`, `metricKeys`,
+`droppedMetrics` and `cumulativeWindow` all still match. DIS only accepts 8-bit input
+(`I0.depth() == CV_8U`), so adopting it would reintroduce the cast coastal removed in PR #19, which
+is what put every velocity metric at chance. `test_flow_probe.py` performs that swap and asserts the
+fingerprint disagrees.
+
+**Models trained before this shows nothing**, like `physicalScales` before it, and inference says so
+once per model rather than guessing.
+
 ### Part 2 — the catalogue entry
 
 ```jsonc
@@ -420,7 +469,9 @@ the UI renders, so building the UI first fixes the schema by accident.
 5. **A published model is only as stable as coastal's inference.** `coastalBuild` records which
    build produced it, but nothing pins a recipient to that build — and `perf/coastal-speed` is
    changing inference now, including one default that moves object size. Recording the engine makes a
-   discrepancy explainable; it does not prevent one.
+   discrepancy explainable; it does not prevent one. **Partly closed by `flowFingerprint`** (Part 1b):
+   a change to the flow recipe is now DETECTED and reported. The inference *parameters* are still
+   unpinned — that is what the catalogue's `inference` block is for.
 
 6. **The vault still does not travel with a `.ccbundle`.** A shared project naming a vault model now at
    least gives the recipient something they can fetch — which is an improvement on today, but it is not
