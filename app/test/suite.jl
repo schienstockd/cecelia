@@ -7236,6 +7236,51 @@ end
     @test get(spec, "fun_name", "") == "cleanupImages.afDriftCorrect"
 end
 
+@testset "a composite does not validate the params it derives itself" begin
+    # `behaviour.hmm` = hmm_states → hmm_transitions. `hmm_transitions.hmmStates` is
+    # `required` AND `hideInComposite`: the definitions route strips it from the merged form
+    # (api/src/routes.jl), and the composite threads the states step's `stateColumn` into it in
+    # `_run_task` — AFTER validation. Validating the step standalone-style therefore failed EVERY
+    # composite run on "Select the state columns — run HMM states first", naming a field the form
+    # does not have. Reported on a real set; reproduced here without one, because validation is
+    # pure.
+    #
+    # Both halves matter. `hideInComposite` is skipped only IN a composite — run the step on its
+    # own (a chain node, a REPL call) and the requirement is real, because then nothing supplies it.
+    base = Dict{String,Any}("pops" => ["A/tracked"], "colName" => "default",
+                            "modelMeasurements" => ["live.cell.speed", "live.cell.angle"],
+                            "numStates" => 2)
+    hmm   = Cecelia._task_from_fun_name("behaviour.hmm")
+    trans = Cecelia._task_from_fun_name("behaviour.hmm_transitions")
+
+    @test validate_params(hmm, copy(base)) === nothing            # composite: hmmStates derived
+    @test_throws ParamValidationError validate_params(trans, copy(base))   # standalone: required
+    @test validate_params(trans, merge(base,
+        Dict{String,Any}("hmmStates" => ["live.cell.hmm.state.default"]))) === nothing
+
+    # ABSENT and EMPTY are the same thing for a multi-pick (that is the rule `required` encodes),
+    # and a chain node saved off the standalone form carries the spec default `[]`. Both must pass
+    # in the composite, or the fix only covers the module-page path.
+    @test validate_params(hmm, merge(base, Dict{String,Any}("hmmStates" => Any[]))) === nothing
+end
+
+@testset "a task's own validate_params overload survives a keyword call" begin
+    # Keywords do not participate in dispatch: a keyword-LESS method is skipped outright when the
+    # caller passes one, and the call falls through to the `::CciaTask` fallback — silently, no
+    # error. So `validate_params(task, p; extra_options=…)` (chain template validation) ran the
+    # spec half only and never the task's own check. Same hole would have swallowed `in_composite`.
+    tc = Cecelia._task_from_fun_name("tracking.correct")
+    bad = Dict{String,Any}("trackOps" => "nonsense!!")
+    @test_throws ParamValidationError validate_params(tc, copy(bad))
+    @test_throws ParamValidationError validate_params(tc, copy(bad); extra_options = Set{String}())
+    @test_throws ParamValidationError validate_params(tc, copy(bad); in_composite = true)
+
+    # Every overload of `validate_params` must therefore accept keywords — declared, or `kwargs...`.
+    for m in methods(Cecelia.validate_params)
+        @test !isempty(Base.kwarg_decl(m))
+    end
+end
+
 # ── $include fragment resolution ──────────────────────────────────────────
 # Verifies that {"$include": "imageTiling"} in cellpose.json is expanded
 # to the 4 shared tiling params (blockSize, overlap, blockSizeZ, overlapZ).
