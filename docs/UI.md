@@ -1553,6 +1553,13 @@ Two things are NOT the same as the console's, and both are load-bearing:
   per switch. Two windows on one project is a state the app already supports; the boards'
   optimistic-concurrency check exists for exactly it.
 
+  **The loads are serialised** through `utils/debouncedLatest.ts`, and that is not a nicety:
+  `openProject` awaits a fetch before it writes anything, so two overlapping calls resolve
+  LAST-RESPONDED rather than last-requested — switch A→B faster than A's response returns and the popup
+  lands on A while the app is on B, silently and for good, since nothing re-checks afterwards. The
+  window is most exposed at mount, with its first load already in flight. The shared scheduler queues a
+  request that arrives during a run instead of racing it; don't replace it with a bare `await`.
+
   The channel is `localStorage` + the `storage` event rather than a `BroadcastChannel`, for the one
   reason that decides it: the event carries state that PERSISTS, so a window that reloads or opens late
   reads the current answer from the same key it would have received an event about. Two things in there
@@ -1592,7 +1599,12 @@ They are kept distinguishable by `TaskEntry.history`, and that flag is doing rea
 - **`forModule()` excludes them** — the ONE chokepoint for both the per-module task sidebar and the
   image table's per-image status badge, so neither surface inherits the project's whole history from a
   change that was about the manager. `clearFinished()` skips them for the same reason: clearing a row
-  that lives on disk deletes nothing and it is back on the next hydrate.
+  that lives on disk deletes nothing and it is back on the next hydrate. Because that exclusion is
+  SILENT — a wrongly-flagged row would vanish from the sidebar and stop contributing to the badge, with
+  nothing on screen to say so — **`setStatus` clears the flag when a history row goes `running` or
+  `queued`**. It can: a history row is keyed by the run's own scheduler id, so a relaunch under that id
+  lands its frames on it. The guard makes "a live task invisible on the page that started it"
+  unreachable by construction rather than by argument.
 - **Re-run is withheld** (`taskRerun.ts`). A history row is a *record of* a run, not a handle on one.
   Only the entries written by the modern `open_run_log!`/`close_run_log!` pair carry the `taskId` a
   re-run would launch under — measured at ~16% of the entries across this developer's own projects —

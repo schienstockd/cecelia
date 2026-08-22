@@ -18,40 +18,62 @@
   Following costs a real `openProject` per switch (sets, boards) in this window — the ordinary path,
   not a lighter copy of it. Two windows on one project is a state the app already supports; the
   boards' optimistic-concurrency check exists for exactly it.
+
+  **The loads are serialised, and that is not a nicety.** `openProject` awaits a fetch before it writes
+  anything, so two overlapping calls resolve LAST-RESPONDED rather than last-requested: switch A→B
+  faster than A's response comes back and this window lands on A while the app is on B, silently and
+  permanently (nothing re-checks afterwards). The window is at its most exposed exactly at mount, when
+  the first load is already in flight. So requests go through `utils/debouncedLatest.ts` — the shared
+  scheduler for this, which collapses a burst, and (the rule that matters here) queues a request that
+  arrives during a run instead of racing it. Last requested wins.
 -->
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import TasksModule from './TasksModule.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useLogStore } from '../stores/log'
 import { readOpenProject, openProjectFromStorageEvent, onOpenProjectChange } from '../lib/openProjectChannel'
+import { debouncedLatest } from '../utils/debouncedLatest'
 
 const route = useRoute()
 const projectMeta = useProjectMetaStore()
 
-/** Move this window onto `uid` (`''` = the app closed its project). No-op when already there. */
-async function show(uid: string) {
+/**
+ * Move this window onto `uid` (`''` = the app closed its project). Serialised and latest-wins — see
+ * the header. The short `wait` also collapses flipping through three projects into one load; it is
+ * invisible beside the load itself.
+ */
+const show = debouncedLatest<string>(async (uid) => {
   if (uid === (projectMeta.current?.uid ?? '')) return
   if (uid) await projectMeta.openProject(uid)
   else projectMeta.closeProject()
-}
+}, {
+  wait: 100,
+  // openProject already reports its own failures; this is for anything the scheduler catches that it
+  // did not, which would otherwise be an unhandled rejection out of a timer.
+  onError: e => useLogStore().error(
+    `Could not follow the project switch: ${e instanceof Error ? e.message : String(e)}`,
+    { source: 'project' }),
+})
 
 let stop: (() => void) | undefined
 
-onMounted(async () => {
+onMounted(() => {
   document.title = 'Cecelia — Task Manager'
   // Subscribed BEFORE the first load, so a switch made while this window is still opening its project
-  // is not missed — `show` is idempotent, so the two can't fight.
+  // is not missed — the scheduler queues it behind that load rather than racing it.
   stop = onOpenProjectChange(e => {
     const next = openProjectFromStorageEvent(e, projectMeta.current?.uid)
-    if (next !== null) void show(next)
+    if (next !== null) show.schedule(next)
   })
   // `ws.adoptInFlight()` re-runs whenever a project appears, so the rows already running arrive
   // without anything here waiting for the socket.
-  await show(readOpenProject() || String(route.query.project ?? ''))
+  show.schedule(readOpenProject() || String(route.query.project ?? ''))
 })
 
-onUnmounted(() => stop?.())
+// Drop a queued switch AND supersede one in flight: this window is going away.
+onUnmounted(() => { stop?.(); show.cancel() })
 </script>
 
 <template>

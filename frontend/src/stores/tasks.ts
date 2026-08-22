@@ -118,6 +118,13 @@ export const useTaskStore = defineStore('tasks', () => {
     // Terminal states set by the user (cancelled) are sticky — don't let a late
     // backend "done" or "running" overwrite a cancel the user explicitly requested.
     if (t.status === 'cancelled' && status !== 'cancelled') return
+    // A history row that comes back to LIFE stops being history. It can: a run-log row is keyed by the
+    // run's own scheduler id, so a relaunch under that id (`task:restart`) lands its frames here. The
+    // flag hides the row from `forModule()` — i.e. from the per-module sidebar AND the image table's
+    // status badge — so leaving it set would make a genuinely running task invisible on the very page
+    // that started it. Clearing it here makes that unreachable by construction rather than by
+    // argument, which is the only way a silent exclusion should be relied on.
+    if (t.history && (status === 'running' || status === 'queued')) t.history = false
     t.status = status
     // A backend start is adopted even if we already stamped one locally — it's the real instant, and it
     // only ever moves the number closer to the truth.
