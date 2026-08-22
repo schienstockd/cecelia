@@ -31,3 +31,14 @@ export function popNameError(
   }
   return null
 }
+
+// Join a parent path + leaf name into a pop path — the client twin of Julia `pop_path`
+// (`app/src/gating/population_manager.jl`). Root children are `/name`; everything else `parent/name`.
+// One implementation, because a hand-written variant that forgets the root case builds `root/name`,
+// a path no population in the tree has.
+export const popPath = (parent: string, name: string) =>
+  !parent || parent === 'root' || parent === '/' ? `/${name}` : `${parent}/${name}`
+
+// Is `path` inside `sub`'s own subtree (or `sub` itself)? The cycle guard a re-parent needs — a
+// population cannot be moved under one of its own descendants (Julia `move_pop!` rejects it too).
+export const isInSubtree = (path: string, sub: string) => path === sub || path.startsWith(sub + '/')

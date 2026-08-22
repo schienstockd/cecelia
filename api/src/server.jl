@@ -351,6 +351,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/gating/pop/delete" => (req, body_bytes) -> (api_gating_pop_delete(body_bytes)),
     "/api/gating/pop/update" => (req, body_bytes) -> (api_gating_pop_update(body_bytes)),
     "/api/gating/pop/rename" => (req, body_bytes) -> (api_gating_pop_rename(body_bytes)),
+    "/api/gating/pop/move" => (req, body_bytes) -> (api_gating_pop_move(body_bytes)),
     "/api/gating/copy" => (req, body_bytes) -> (api_gating_copy(body_bytes)),
     "/api/gating/undo" => (req, body_bytes) -> (api_gating_undo(body_bytes)),
     "/api/gating/redo" => (req, body_bytes) -> (api_gating_redo(body_bytes)),

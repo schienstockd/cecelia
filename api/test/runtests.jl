@@ -4528,7 +4528,7 @@ end
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
         "/api/gating/copy", "/api/gating/pop/add",
-        "/api/gating/pop/delete", "/api/gating/pop/rename",
+        "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
         "/api/gating/redo", "/api/gating/undo",
         "/api/images/attr/create", "/api/images/attr/delete",
@@ -4621,7 +4621,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 116
+    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 117
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -4852,6 +4852,66 @@ end
 # pins is the contract that makes that safe: a step must not record ITSELF as an edit (or undo would
 # only ever toggle the last change), a fresh edit must drop the redo branch, and the pop types whose
 # edit is a re-tickable filter must not get history at all.
+# ── pop/move + pop/delete childrenOnly ───────────────────────────────────────────────────────────
+# The population manager's ⋯ menu: re-parent a population (gate kept, membership re-derived) and prune
+# the subtree under one without deleting it. Both are ordinary mutations, so they persist, broadcast
+# and record undo history like any other — asserted here on the ON-DISK document, not just the reply.
+@testset "API: pop/move re-parents, pop/delete childrenOnly prunes" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        vn = "B"
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        onDisk() = Set(pop_paths(load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")))
+
+        post(api_gating_pop_add, Dict{String,Any}("name" => "qc", "gate" => gate(1.0)))
+        post(api_gating_pop_add, Dict{String,Any}("name" => "B", "parent" => "/qc", "gate" => gate(2.0)))
+        post(api_gating_pop_add, Dict{String,Any}("name" => "mem", "parent" => "/qc/B", "gate" => gate(3.0)))
+        @test onDisk() == Set(["/qc", "/qc/B", "/qc/B/mem"])
+
+        # lift B out of qc — the whole subtree comes with it, and the reply names the new path
+        st, b = post(api_gating_pop_move, Dict{String,Any}("path" => "/qc/B", "parent" => "root"))
+        @test st == 200 && String(JSON3.read(b).path) == "/B"
+        @test onDisk() == Set(["/qc", "/B", "/B/mem"])
+
+        # rejected moves leave the document alone
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("path" => "/B", "parent" => "/B/mem"))
+        @test st == 400                                             # into its own subtree = a cycle
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("path" => "/nope", "parent" => "root"))
+        @test st == 404
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("path" => "/B"))
+        @test st == 400                                             # parent is required
+        @test onDisk() == Set(["/qc", "/B", "/B/mem"])
+
+        # a move is undoable like any other edit (history rides on _persist_and_broadcast!)
+        st, _ = post(api_gating_undo, Dict{String,Any}())
+        @test st == 200 && onDisk() == Set(["/qc", "/qc/B", "/qc/B/mem"])
+        st, _ = post(api_gating_redo, Dict{String,Any}())
+        @test st == 200 && onDisk() == Set(["/qc", "/B", "/B/mem"])
+
+        # childrenOnly prunes BELOW the pop; the pop itself survives (plain delete takes it along)
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("path" => "/B", "childrenOnly" => true))
+        @test st == 200 && onDisk() == Set(["/qc", "/B"])
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("path" => "/B"))
+        @test st == 200 && onDisk() == Set(["/qc"])
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
 @testset "API: gating undo/redo steps through the population tree" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"

@@ -141,6 +141,27 @@ body {
 
 /* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
 
+/* SIZE THE ROOT, NEVER THE TEXT. PrimeVue places a tooltip off `getOuterWidth(tooltipElement)` — the
+   `.p-tooltip` container — in all four align functions and in `isOutOfBounds`. Aura caps that container
+   at `tooltip.max.width` = 12.5rem (200px), and a `max-width` on the inner `.p-tooltip-text` cannot
+   raise it: the text simply OVERFLOWS a container the library still measures as 200px wide. Every
+   placement is then wrong by the difference. `alignLeft` is `left = hostLeft - measuredWidth`, so a
+   280px tip measured as 200px lands its right edge 80px PAST the target's left edge — which is how the
+   module pages' CSV button (~56px wide) ended up completely hidden under its own tooltip.
+   `width: max-content` is load-bearing and must be `!important`: the directive writes
+   `width: fit-content` inline, and for an absolutely positioned box `fit-content` is the space
+   remaining to the viewport edge — near the right edge (e.g. the 280px TaskRunner panel) that is ~25px,
+   and the text wraps one character per line into a vertical strip. Worse, that also collapses the
+   width BEFORE `isOutOfBounds` reads it, so the strip "fits" and the library's own flip never fires.
+   Sizing to content keeps the measurement honest; clamping to the viewport keeps a narrow window
+   shortening the line rather than overflowing.
+   The `max-width` wins on the CASCADE LAYER, not on specificity: `main.ts` configures PrimeVue with
+   `cssLayer`, so its `.p-tooltip` sits in `@layer primevue` and this unlayered rule outranks it.
+   Dropping that option would silently restore the 200px cap — and with it this bug. */
+.p-tooltip {
+  width: max-content !important;
+  max-width: min(280px, calc(100vw - 1rem));
+}
 .p-tooltip .p-tooltip-text {
   /* --cc-fs-xs (≈10.9px) is the step nearest the 0.72rem this rule carried before the tokenisation
      sweep. The sweep's own choice (--cc-fs-sm) was defensible on rounding, but it silently turned a
@@ -154,18 +175,6 @@ body {
   border: 1px solid #30363d;
   color: #e6edf3;
   border-radius: var(--cc-radius-sm);
-  /* `width: max-content` is load-bearing, not cosmetic. PrimeVue positions the tooltip by setting
-     `style.left` on an element absolutely positioned in `document.body` and gives it no width, so with
-     only a `max-width` the box shrink-wraps to whatever space is LEFT of the viewport edge. Near the
-     right edge (e.g. the 280px TaskRunner panel) that is ~25px, and the text wraps one character per
-     line into a vertical strip.
-     Worse, it disabled the library's own escape hatch: `align()` tries right → left → top → bottom,
-     testing `isOutOfBounds` each time — but that measures the ALREADY-collapsed width, which fits, so
-     it reported in-bounds and never flipped. Sizing to content keeps the measurement honest, so the
-     flip fires and the tooltip lands on the target's left instead.
-     Clamp the cap to the viewport too, so a narrow window shortens the line rather than overflowing. */
-  width: max-content;
-  max-width: min(280px, calc(100vw - 1rem));
   line-height: 1.45;
 }
 .p-tooltip-arrow { display: none; }
@@ -174,12 +183,13 @@ body {
    that is structured rather than a phrase: an image can carry findings from several tasks at once, so
    each is badged with the task that raised it. Scoped to `.qc-tip` — passed via v-tooltip's object
    form — so the block layout can't leak into the ~200 phrase tooltips everywhere else. */
-.qc-tip .p-tooltip-text {
+.p-tooltip.qc-tip {
   /* wider than the 280px phrase cap: these lines are sentences, and at 280px a three-finding image
-     wrapped into a ~14-line column */
+     wrapped into a ~14-line column. On the ROOT for the same reason as the cap above — the class is
+     passed through v-tooltip's object form and PrimeVue puts it on the container it measures. */
   max-width: min(340px, calc(100vw - 1rem));
-  text-align: left;
 }
+.qc-tip .p-tooltip-text { text-align: left; }
 .qc-tip .qcf + .qcf { margin-top: 0.45rem; }
 .qc-tip .qcf-p { color: var(--cc-text); }
 /* the action line, subdued so the problem reads first — same split as the QC copy convention
@@ -734,3 +744,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    itself, so the plot never silently disagrees with its own options; the WHY is the control's tooltip,
    built by `overrideTooltip` — a marker without an explanation is what this replaces. */
 .cc-auto-override { border-color: var(--cc-sev-warn) !important; color: var(--cc-sev-warn) !important; }
+
+/* ── Row overflow menu (⋯) ─────────────────────────────────────────────────────
+   The item list inside a TeleportPopover (which provides the surface/border/shadow/padding — pass
+   `flush` so a row's hover highlight reaches the edges). THE shape for "this row has more actions
+   than fit beside it": the image table's per-image menu and the population manager's per-population
+   menu render the same list, so it lives here rather than twice in scoped blocks. The ⋯ TRIGGER stays
+   with its host — how visible a button is at rest is a per-table decision. */
+.cc-actions-menu { display: flex; flex-direction: column; min-width: 200px; }
+.cc-actions-item {
+  display: flex; align-items: center; gap: 0.55rem;
+  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);
+  background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
+}
+.cc-actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
+.cc-actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.cc-actions-item .pi { width: 1rem; text-align: center; color: var(--cc-text-dim); flex-shrink: 0; }
+/* destructive item (delete): the icon carries the colour at rest, the whole row once armed */
+.cc-actions-item.danger .pi { color: var(--cc-sev-fail); }
+.cc-actions-item.armed, .cc-actions-item.armed .pi { color: var(--cc-sev-warn); }
+/* a heading inside the menu (e.g. "Move under…") — not clickable */
+.cc-actions-head {
+  padding: 0.35rem 0.6rem 0.2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-2xs);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}

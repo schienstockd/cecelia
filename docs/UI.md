@@ -403,6 +403,19 @@ because neither is about placement: `duplicateTooltips` (a control repeating its
 `nestedTooltips` (a tipped control inside a tipped row, so hovering fires both). All three live in
 `utils/uiCopy.ts` — see [`docs/ui/COPY.md`](ui/COPY.md) → *Tooltip coverage* for the presence half.
 
+**Placement is only half of it — the width has to be measured on the right element.** PrimeVue
+positions off `getOuterWidth(tooltipElement)`, and `tooltipElement` is the `.p-tooltip` *container*,
+which Aura caps at `tooltip.max.width` = 12.5rem. So a `max-width` on the inner `.p-tooltip-text` does
+not widen the tooltip the library sees — the text just overflows a box still measured at 200px, and
+every placement is off by the difference. `alignLeft` being `left = hostLeft - measuredWidth`, a 280px
+tip measured as 200px reaches 80px *past* its target's left edge: that is how the module pages' CSV
+button, correctly placed at `.left`, ended up completely hidden under its own tooltip
+(2026-08-22, after the sweep above). **Size `.p-tooltip`, never `.p-tooltip-text`** — including
+per-tooltip overrides, which anchor on the root (`.p-tooltip.qc-tip`). `width: max-content` there
+needs `!important`, because the directive writes `width: fit-content` inline and, on an absolutely
+positioned box, that is the space left to the viewport edge. Enforced by *tooltip sizing* in
+`utils/cssScenarios.test.ts`.
+
 **`InlineNote` has no placement knob**, deliberately: it is fixed at `.bottom`, because a note
 annotates the control above it. It used to take a `placement` prop that passed `position` inside the
 tooltip *value* object — which PrimeVue reads only off `options.arg`, never off the value — so all
@@ -2816,6 +2829,22 @@ POSTed (`pop/add`), recomputed server-side, and appears in the manager with coun
 Edit a gate by dragging its handles → `pop/set-gate` on release. The manager (draggable,
 clamped on-screen, collapsible) does recolour (`pop/update`), inline rename (`pop/rename`),
 delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
+
+**A population row keeps only what you toggle while reading it** — colour, highlight, napari
+visibility — and everything episodic is one **⋯ menu** (`.cc-actions-menu`, the same list the image
+table's row menu renders): *Show the gate's plot*, rectangle ⇄ polygon, **Move under…**, *Delete N
+below it* (`pop/delete` + `childrenOnly`, so the pop survives and it is ONE undo step) and *Delete
+population*. The panel is ~250px, so every icon parked beside a row came out of the name and the
+count — five of them was already one row's worth of controls per population. Destructive items arm in
+place (`ConfirmButton`), they don't open a dialog.
+
+**Move under…** re-parents the population and its whole subtree (`pop/move`). It reuses the SAME
+popover rather than opening a second one — the choice is a list of populations, which is what a menu
+already renders — and offers root plus every pop except the moved one's own subtree (a cycle) and its
+current parent. This is a MEMBERSHIP edit, not a cosmetic one: a pop's cells are its gate ∩ its
+parent's, so lifting `/qc/B` out to `/B` re-derives it against all cells. The same select is now live
+while editing a filter population (it used to read "delete & recreate to move"). Gates, children and
+colours survive — the alternative was deleting the branch and redrawing every gate in it.
 
 ### Gating plot — rendering & UX hacks
 

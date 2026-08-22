@@ -6,6 +6,7 @@ import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { isCentroidAxis, centroidLabel } from '../utils/gatingAxes'
+import { popPath } from '../utils/popName'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
 // leaf names beginning with `_`. Hand-drawn gates may not use that prefix — mirrors the backend
@@ -53,7 +54,7 @@ function flatten(tree: PopTree): FlatPop[] {
   const out: FlatPop[] = []
   const walk = (nodes: PopNode[], parent: string, depth: number) => {
     for (const n of nodes) {
-      const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
+      const path = popPath(parent, n.name)
       out.push({ path, name: n.name, parent, colour: n.colour, show: n.show, depth,
                  gate: n.gate, transient: n.transient, filter: n.filter })
       walk(n.children ?? [], path, depth + 1)
@@ -68,7 +69,7 @@ function gateSignatures(tree: PopTree): Map<string, string> {
   const m = new Map<string, string>()
   const walk = (nodes: PopNode[], parent: string) => {
     for (const n of nodes) {
-      const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
+      const path = popPath(parent, n.name)
       // include membership_sig so explicit-label pops (the napari selection) bump their version
       // when their cell set changes — they have no gate/filter to diff on.
       m.set(path, JSON.stringify(n.gate ?? null) + '|' + JSON.stringify(n.filter ?? null)
@@ -301,6 +302,11 @@ export const useGatingStore = defineStore('gating', () => {
   const undo = () => _post('/api/gating/undo', {})
   const redo = () => _post('/api/gating/redo', {})
   const deletePop  = (path: string)                  => _post('/api/gating/pop/delete', { path })
+  // prune the subtree UNDER a pop, keeping the pop — one request, so one undo step (not one per child)
+  const deletePopChildren = (path: string)           => _post('/api/gating/pop/delete', { path, childrenOnly: true })
+  // Re-parent a population, subtree and all. The gate is untouched; its MEMBERSHIP is not — a pop is
+  // its own gate ∩ its parent's, so lifting `/qc/B` out to root re-derives it against all cells.
+  const movePop    = (path: string, parent: string)  => _post('/api/gating/pop/move', { path, parent })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
   const updatePop  = (path: string,
                       patch: { colour?: string; show?: boolean; filter?: Record<string, unknown> }) =>
@@ -373,7 +379,8 @@ export const useGatingStore = defineStore('gating', () => {
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, deletePopChildren, movePop,
+    renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }

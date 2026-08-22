@@ -488,7 +488,19 @@ cells are read **and** where any output/annotation is written.
 - `recompute!`: walk the tree in topological order, child membership = parent ∩ child
   gate. Cache the measurement matrix per image. Synchronous, in-process (no task pool) —
   interactive latency.
-- Cascade `rename_pop!` (rewrite child paths) and `del_pop!` (remove descendants).
+- Cascade `rename_pop!` (rewrite child paths) and `del_pop!` (remove descendants). `del_children!`
+  is `del_pop!`'s other half: prune everything BELOW a population and keep the population, for
+  re-gating from a gate you want to keep.
+- **A population can be RE-PARENTED without redrawing it** — `move_pop!(m, path, newparent)` rewrites
+  the pop's path and its whole subtree's (the same cascade `rename_pop!` uses; both are one path
+  rewrite, shared in `_repath!`). Name, colour, gate/filter and children survive; what changes is
+  **membership**, because a pop's cells are its own gate ∩ its parent's — lifting `/qc/B` out to `/B`
+  re-derives it against all cells instead of the QC-passing ones. That re-derivation IS the operation,
+  not a side effect. Rejected: a move into the pop's own subtree (a cycle), and one whose target path
+  is already taken. `order` keeps its parents-before-children invariant (the moved subtree is
+  re-appended after its new parent). Exposed as `POST /api/gating/pop/move` and the population
+  manager's ⋯ → *Move under…*; before it existed the only way to change a pop's parent was to delete
+  the branch and redraw every gate in it.
 - **Time-agnostic**: gate eval is identical on timecourse segmentations (gates pooled
   cell-instances across timepoints) — no special code.
 - **A gate's SHAPE can be changed without deleting the population.** `set_gate!` takes any `Gate`

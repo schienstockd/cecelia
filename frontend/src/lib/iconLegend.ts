@@ -151,7 +151,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-ellipsis-h', means: 'More actions' },
       { icon: 'pi-ellipsis-v', means: 'Drag to place' },
       { icon: 'pi-arrows-alt', means: 'Drag to move or swap' },
-      { icon: 'pi-arrows-h', means: 'Move to another set' },
+      { icon: 'pi-arrows-h', means: 'Move it somewhere else — another set, another parent population' },
       { icon: 'pi-arrows-v', means: 'Fit the height, or stack vertically' },
       { icon: 'pi-equals', means: 'Stacked in a column' },
       { icon: 'pi-window-maximize', means: 'Fill the window' },
