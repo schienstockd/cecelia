@@ -886,7 +886,13 @@ Both are fixed and both are ratcheted (`the preview prepares params with every s
 `test_preview_tiling.PreviewMultiPassMergeTest`).
 
 **Which pass found an object reaches the measured table as `obs['pass']`** — a categorical naming
-the model group. The store has recorded the id ranges since two-pass shipped
+the pass by the number the form and the preview already show it under: `"1"`, `"2"`, one-based. The
+group key is a zero-based position on the wire, so the column is stamped through
+`zarr_utils.pass_display_name`, the Python half of the preview's `passLabel`; a gate offering *0* and
+*1* for the run whose preview said *pass 1 / pass 2* is one fact under two numberings, and a reader
+cannot tell which end is off by one. The two are held together by
+`test_measure_pass_column.PassNumberingMatchesEverySurfaceTest`, which fails if either side stops
+adding the one. The store has recorded the id ranges since two-pass shipped
 (`zarr_utils.write_label_passes`) and nothing read them, which made a two-pass result
 indistinguishable from a single-pass one everywhere downstream. Since the cells-vs-fragments split
 is a gating decision on the `.h5ad`, a column is the only form of the fact that anything can act on;

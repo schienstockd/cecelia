@@ -987,6 +987,25 @@ def label_pass_lookup(entries):
     return lookup
 
 
+def pass_display_name(group):
+    """A group key as the pass number a USER has already been shown — one-based.
+
+    The key is a POSITION in the repeatable `models` group and is zero-based on the wire, but every
+    surface a user reads numbers those entries from one: the form's entry headings and order chips
+    (`ParamRenderer.vue`, `Number(entry.key) + 1`) and the preview's breakdown (`passLabel` in
+    `frontend/src/utils/taskPreview.ts`). A gating dropdown offering "0" and "1" for the run whose
+    preview said *pass 1 / pass 2* is the same fact under two numberings, and the reader cannot tell
+    which end the mismatch is on.
+
+    Non-numeric keys pass through unchanged — the same fallback `passLabel` takes, so a hand-written
+    group name survives rather than becoming a misleading number.
+    """
+    try:
+        return str(int(str(group)) + 1)
+    except (TypeError, ValueError):
+        return str(group)
+
+
 def carry_valid_box(src, dst):
     """Carry ``src``'s valid box onto a DERIVED store ``dst``, unchanged. Returns whether it did.
 

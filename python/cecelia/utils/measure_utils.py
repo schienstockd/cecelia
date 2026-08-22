@@ -77,7 +77,9 @@ class MeasureUtils:
         log         : script_utils logfile helper (has .log(str))
         label_passes: `zarr_utils.read_label_passes` entries for the BASE store, or None/[].
                       Turns into an `obs['pass']` column naming the model group that found each
-                      object — which is what makes a multi-pass run usable downstream.
+                      object — which is what makes a multi-pass run usable downstream. Named
+                      one-based, as the form and the preview number the same passes; see
+                      `zarr_utils.pass_display_name`.
 
         All label types are measured together and written to a single .h5ad file.
         Non-base types (nuc, cyto, halo) contribute extra intensity columns to the
@@ -115,10 +117,20 @@ class MeasureUtils:
         # One binary search per object rather than a dict per label — the ranges exist because the
         # label count is the big number here. `None` for a single-pass store, which is the common
         # case and must add no column at all (an all-one-value `pass` would be noise in every gate).
-        pass_of = zarr_utils.label_pass_lookup(label_passes) if label_passes else None
-        if pass_of is not None:
-            log.log(f'>> label passes: {len(label_passes)} '
-                    f'({", ".join(sorted({str(e["group"]) for e in label_passes}))})')
+        group_of = zarr_utils.label_pass_lookup(label_passes) if label_passes else None
+        pass_of = None
+        if group_of is not None:
+            # Stamped as the number the user has ALREADY been shown, not the raw key — see
+            # `zarr_utils.pass_display_name`. The preview said "pass 1: 36, pass 2: 4"; a gate
+            # offering 0 and 1 for that same run is one fact under two numberings.
+            def pass_of(label, _group_of=group_of):
+                group = _group_of(label)
+                return None if group is None else zarr_utils.pass_display_name(group)
+
+            names = list(dict.fromkeys(zarr_utils.pass_display_name(e['group'])
+                                       for e in label_passes))
+            log.log(f'>> label passes: {len(label_passes)} ranges over '
+                    f'{len(names)} passes ({", ".join(names)})')
 
         all_dfs: list[pd.DataFrame] = []
 

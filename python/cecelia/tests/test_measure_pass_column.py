@@ -11,12 +11,17 @@ distance, PCA and clustering computation as though a pass number were a measurem
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
 """
+import io
+import os
 import unittest
 
 import numpy as np
 import pandas as pd
 
+from cecelia.utils import zarr_utils
 from cecelia.utils.measure_utils import MeasureUtils
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 
 class _Stub(MeasureUtils):
@@ -36,7 +41,9 @@ def _frame(n=4, with_pass=True):
         't': np.zeros(n),
     }, index=pd.Index(range(1, n + 1), name='label'))
     if with_pass:
-        df['pass'] = ['0', '0', '1', None]
+        # display names, one-based — what `measure_from_zarr` now stamps. See
+        # `zarr_utils.pass_display_name`; the raw zero-based key never reaches the table.
+        df['pass'] = ['1', '1', '2', None]
     return df
 
 
@@ -56,7 +63,7 @@ class PassColumnTest(unittest.TestCase):
     def test_pass_lands_in_obs(self):
         a = self._write(_frame())
         self.assertIn('pass', a.obs.columns)
-        self.assertEqual(list(a.obs['pass'].astype(str))[:3], ['0', '0', '1'])
+        self.assertEqual(list(a.obs['pass'].astype(str))[:3], ['1', '1', '2'])
 
     def test_pass_never_lands_in_x(self):
         a = self._write(_frame())
@@ -133,7 +140,8 @@ class MeasureFromZarrStampsThePassTest(unittest.TestCase):
             def log(self, *_a, **_k): pass
             def progress(self, *_a, **_k): pass
 
-        # one timepoint, two objects: label 1 from pass '0', label 2 from pass '1'
+        # one timepoint, two objects: label 1 from group '0', label 2 from group '1' — which the
+        # table must name "1" and "2", the numbers the form and the preview already showed.
         # T=2 (a singleton T is dropped from the shape order), and Y != X so the shape is
         # unambiguous. The second timepoint is empty and skipped, which the loop already handles.
         labels = np.zeros((2, 10, 8), dtype=np.uint32)
@@ -154,10 +162,51 @@ class MeasureFromZarrStampsThePassTest(unittest.TestCase):
         # obs index is positional, so pair the pass with the AREA-ordered rows instead: both objects
         # are 2x2, so use the centroid, which is the only thing that distinguishes them.
         by_pass = dict(zip(a.obs['pass'].astype(str), a.obsm['spatial'][:, 0]))
-        self.assertEqual(set(by_pass), {'0', '1'},
-                         'both passes must be named in the measured table')
-        self.assertLess(by_pass['0'], by_pass['1'],
-                        'pass 0 owns label 1, the object nearer the origin')
+        self.assertEqual(set(by_pass), {'1', '2'},
+                         'the table must name the passes the way the form and preview number them '
+                         "— one-based, not the wire key's 0 and 1")
+        self.assertLess(by_pass['1'], by_pass['2'],
+                        'pass 1 owns label 1, the object nearer the origin')
+
+
+class PassNumberingMatchesEverySurfaceTest(unittest.TestCase):
+    """One pass has ONE number, wherever it is printed.
+
+    THE bug this pins: the column shipped carrying the raw group key while the preview displayed
+    `key + 1`, so the same run read *pass 1 / pass 2* in the preview and offered *0 / 1* in a gating
+    dropdown. Neither surface was wrong on its own — they simply disagreed, and a reader had no way
+    to tell which end was off by one. The form agrees with the preview (`ParamRenderer.vue` numbers
+    both the entry headings and the order chips from one), so the table is what moves.
+    """
+
+    def test_numeric_keys_become_one_based(self):
+        self.assertEqual(zarr_utils.pass_display_name('0'), '1')
+        self.assertEqual(zarr_utils.pass_display_name('1'), '2')
+        self.assertEqual(zarr_utils.pass_display_name(0), '1')
+
+    def test_the_tenth_pass_is_not_sorted_as_text(self):
+        """`'10'` must be pass 11, not `'101'` or a string concatenation — the conversion is
+        arithmetic on the key, and `model_order` already sorts these numerically."""
+        self.assertEqual(zarr_utils.pass_display_name('9'), '10')
+        self.assertEqual(zarr_utils.pass_display_name('10'), '11')
+
+    def test_a_non_numeric_key_passes_through(self):
+        """Same fallback `passLabel` takes: a name is more use than a number derived from nothing."""
+        self.assertEqual(zarr_utils.pass_display_name('fragments'), 'fragments')
+
+    def test_the_preview_still_numbers_passes_the_same_way(self):
+        """The ratchet. The two surfaces are in different languages, so nothing but a test keeps
+        them together — and drifting apart is exactly what happened. If `passLabel` stops adding one,
+        this must fail loudly rather than let the numberings split again."""
+        path = os.path.join(REPO_ROOT, 'frontend', 'src', 'utils', 'taskPreview.ts')
+        with io.open(path, encoding='utf-8') as fh:
+            src = fh.read()
+        self.assertIn('function passLabel', src,
+                      'the preview no longer has a pass label — re-check both numberings')
+        body = src.split('function passLabel', 1)[1].split('\n}', 1)[0]
+        self.assertIn('n + 1', body,
+                      'the preview stopped displaying one-based passes; `pass_display_name` still '
+                      'does, so `obs["pass"]` and the preview breakdown now disagree')
 
 
 if __name__ == '__main__':
