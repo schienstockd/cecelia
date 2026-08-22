@@ -21,6 +21,16 @@ describe('popsUrl', () => {
     expect(q.get('imageUid')).toBeNull()
   })
 
+  it('omits valueName by default, and sends it when the caller is pinned to one segmentation', () => {
+    // absent = every segmentation on the image (the summary canvas overlays them); present = that one.
+    // The gating/track canvas sends it rather than filtering the reply, because the server evaluates
+    // each tracked segmentation's gates to build the list.
+    expect(new URLSearchParams(popsUrl({ ...base, imageUids: ['a'] }).split('?')[1]).get('valueName'))
+      .toBeNull()
+    const q = new URLSearchParams(popsUrl({ ...base, imageUids: ['a'], valueName: 'flowTom' }).split('?')[1])
+    expect(q.get('valueName')).toBe('flowTom')
+  })
+
   it('carries the family AND its granularity — a track family asked at cell granularity answers wrong', () => {
     const q = new URLSearchParams(popsUrl({ ...base, imageUids: ['a'] }).split('?')[1])
     expect(q.get('popType')).toBe('track')

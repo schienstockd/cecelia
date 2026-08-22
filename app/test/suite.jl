@@ -8249,14 +8249,16 @@ end
     @test only(p for p in tp if p.path == "/qc").pop_type == "live"
     @test !any(p.path == "/TEST/_tracked" for p in tp)          # no track-derived pop registered
 
-    # root_derived_ok predicate: hide the root-level /_tracked (the API passes false when tracking
-    # was gated → root is a redundant duplicate of /qc/_tracked) while KEEPING the per-pop derived
-    # children. Default (no predicate) still offers root /_tracked — asserted by `cell` above.
+    # derived_ok predicate, keyed on the PARENT path ("" = root): the API passes false where the
+    # derived set is a copy of a deeper one, so tracking gated to /qc/sub hides /_tracked AND
+    # /qc/_tracked while keeping /qc/sub/_tracked. Default (no predicate) offers all three —
+    # asserted by `cell` above.
     gated = plot_population_groups([:img1], names_for, load, plot_pop_types("live", "cell");
-                                   root_derived_ok = (_v, _pt, dpath) -> dpath != "/_tracked")
+                                   derived_ok = (_v, _pt, parent, _d) -> parent == "/qc/sub")
     gpaths = [p.path for p in gated[1].populations]
-    @test !("/_tracked" in gpaths)                              # root hidden
-    @test "/qc/_tracked" in gpaths && "/qc/sub/_tracked" in gpaths   # per-gate derived kept
+    @test !("/_tracked" in gpaths) && !("/qc/_tracked" in gpaths)   # root + ancestor copies hidden
+    @test "/qc/sub/_tracked" in gpaths                              # the population that was tracked
+    @test "/qc" in gpaths && "/qc/sub" in gpaths                    # the stored gates are untouched
 
     # cross-image UNION + dedup: two images both expose "C" → each (pop_type, path) appears once
     dedup = plot_population_groups([:img1, :img2], names_for, load, ["live"])
@@ -8333,7 +8335,7 @@ end
 
     # TRACKS, gated tracking → root /_tracked hidden (redundant with /qc/_tracked); children kept
     trk_g = population_scope_groups([:img1], names_for, load, "tracks";
-                                    root_derived_ok=(_v, _pt, d) -> d != "/_tracked")
+                                    derived_ok=(_v, _pt, parent, _d) -> parent != "")
     gpaths = Set(p.path for p in trk_g[1].populations)
     @test !("/_tracked" in gpaths) && "/qc/_tracked" in gpaths
 
@@ -8604,6 +8606,61 @@ end
         @test nrow(trkd) == expected_tracked                  # tracked cells now resolve
         @test resolve_pop_type(img, "B", "/pos/_tracked") == "live"
         @test pop_namespace(img, ["/pos/_tracked"]; value_name="B") == "live"
+        rm(td; recursive=true)
+    end
+end
+
+# ── Which populations get a derived `_tracked` row (the picker's rule, on real tracked data) ──
+# A `_tracked` under EVERY population that exists is what the picker used to offer: gating a
+# segmentation into qc → B → subsets listed five identical "all tracks" rows plus the real subsets.
+# The rule is now "only where it says something new", and this checks it against cells that really
+# carry `track_id`.
+@testset "tracked_pop_parents — no _tracked row that copies a deeper one (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "tracked_pop_parents (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+
+        full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
+        thr  = sort(full.mean_intensity_0)[cld(nrow(full), 2)]
+        tid  = label_props(img; value_name="B") |> v -> select_cols(v, ["track_id"]) |> as_df
+        trk_of = Dict(Int(l) => Int(t) for (l, t) in zip(tid.label, tid.track_id)
+                      if t isa Real && isfinite(t) && t > 0)
+        # /all takes every cell, /pos half of them — so /all's tracks ARE the segmentation's tracks
+        # and /pos's are (verified below) fewer.
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
+        add_pop!(m, "pos"; parent="/all",
+                 gate=RectangleGate("mean_intensity_0", "mean_intensity_1", thr, 1e12, -1e12, 1e12))
+        save_pop_map!(m, img)
+        pos_tracks = Set(trk_of[Int(l)] for l in pop_df(img, "flow", ["/all/pos"]; value_name="B").label
+                         if haskey(trk_of, Int(l)))
+        @test 0 < length(pos_tracks) < length(Set(values(trk_of)))   # a genuine subset of the tracks
+
+        parents = tracked_pop_parents(img; value_name="B")
+        @test !("" in parents)          # root: /all holds the same tracks → the root row is a copy
+        @test "/all" in parents         # the population tracking effectively ran on
+        @test "/all/pos" in parents     # its own, smaller track set
+
+        # an UNTRACKED segmentation offers nothing at all — no `_tracked` under the gates it has,
+        # which is what a freshly gated, not-yet-tracked segmentation used to show. (`is_tracked` is
+        # the first exit; a registered value_name with nothing written yet is untracked.)
+        img.label_props["C"] = "C.h5ad"
+        @test !is_tracked(img; value_name="C")
+        @test isempty(tracked_pop_parents(img; value_name="C"))
+
+        # The picker asks this on every load, so the answer is cached on the gating + h5ad mtimes —
+        # and a SAVED GATE EDIT has to invalidate it, or the rail keeps answering for the old tree.
+        # Deleting /all/pos leaves /all as the deepest pop holding the tracks, so the set changes.
+        t0 = @elapsed tracked_pop_parents(img; value_name="B")
+        t1 = @elapsed tracked_pop_parents(img; value_name="B")
+        @test t1 <= max(t0, 0.001)                      # second ask is not a second gate evaluation
+        del_pop!(m, "/all/pos"); sleep(0.01); save_pop_map!(m, img)
+        @test tracked_pop_parents(img; value_name="B") == Set(["/all"])
         rm(td; recursive=true)
     end
 end

@@ -219,15 +219,25 @@ const activeGranularity = computed<'cell' | 'track'>(() => {
 
 // the populations available, grouped by segmentation — the picker's rows. ONE reader
 // (`plots/populations.ts`), shared with every summary canvas.
+//
+// Asked for the SEGMENTATION THIS CANVAS IS ON (`g.valueName`, the toolbar select). Without it the
+// reader answers for the whole image — right for the summary canvas, which overlays segmentations on
+// purpose, wrong here: the tree, the plots and the copy dialog are all scoped to the one selected
+// value_name, so an unscoped rail contradicted the toolbar (working on flowTom listed memTom's tracks
+// and the mask-less imported track sets). Those still live in the segmentation select, which lists
+// every labelProps registry entry — one place, reachable, not in front of every canvas. Sent as a
+// query param rather than filtered here, because the server evaluates each tracked segmentation's
+// gates to build the list and there is no reason to buy eight answers to throw away.
 const segPops = ref<SegmentationPops[]>([])
 async function loadSegPops() {
   if (!activeIsPopsView.value) { segPops.value = []; return }
   segPops.value = await fetchSegmentationPops({
     projectUid: projectUid.value, imageUids: props.imageUid ? [props.imageUid] : [],
-    setUid: null, popType: activeFamily.value, granularity: activeGranularity.value })
+    setUid: null, valueName: g.valueName || null,
+    popType: activeFamily.value, granularity: activeGranularity.value })
 }
-watch([() => props.imageUid, projectUid, activeIsPopsView, activeFamily, activeGranularity], loadSegPops,
-      { immediate: true })
+watch([() => props.imageUid, projectUid, activeIsPopsView, activeFamily, activeGranularity,
+       () => g.valueName], loadSegPops, { immediate: true })
 // gating, tracking and correction all change which populations EXIST — the one refresh chokepoint, so
 // the global autoRefreshOnTask setting governs this list like every plot on the page.
 useDataRefresh(() => (props.imageUid ? [props.imageUid] : []), loadSegPops)

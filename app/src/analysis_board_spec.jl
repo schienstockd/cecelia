@@ -106,15 +106,21 @@ function board_spec_populations(proj::CciaProject;
     isempty(imgs) && return Dict{String,String}()
     names_for = img -> versioned_keys(img.label_props)
     load_map  = (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt)
-    # Root `/_tracked` only where tracking was UNGATED — the same rule the picker applies, so we never
-    # accept a population the user cannot select (plotting_api.jl `root_ok`).
-    root_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
-        any(im -> (vn in String.(versioned_keys(im.label_props))) &&
-                  has_ungated_tracks(im; value_name = vn), imgs)
+    # A derived `/_tracked` only where it is informative (the pop holds tracks no sub-population
+    # already holds) — the same rule the picker applies, so we never accept a population the user
+    # cannot select (plotting_api.jl `tracked_ok`). Cached per (image, value_name): the answer covers
+    # a whole segmentation, and this walks every image in the project.
+    tp_cache = Dict{Tuple{String,String},Set{String}}()
+    tracked_parents = (im, vn) -> get!(tp_cache, (String(im.uid), String(vn))) do
+        (vn in String.(versioned_keys(im.label_props))) ?
+            tracked_pop_parents(im; value_name = vn) : Set{String}()
+    end
+    tracked_ok = (vn, _pt, parent, dpath) -> dpath != "/_tracked" ? true :
+        any(im -> parent in tracked_parents(im, vn), imgs)
     pops = Dict{String,String}()
     for pt in pop_types
         groups = try
-            plot_population_groups(imgs, names_for, load_map, String[pt]; root_derived_ok = root_ok)
+            plot_population_groups(imgs, names_for, load_map, String[pt]; derived_ok = tracked_ok)
         catch e
             @warn "Could not enumerate populations for a board spec" pop_type = pt exception = e
             continue

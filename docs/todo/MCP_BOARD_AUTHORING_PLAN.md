@@ -213,7 +213,8 @@ The first implementation walked the gating sidecars and would have rejected `B/q
 population `4kS67f`'s own boards plot — because DERIVED pops (`/_tracked`) are injected by the picker
 at query time and are never stored (`docs/POPULATION.md`). Validating against the same enumerator that
 fills the board's series picker means the validator accepts exactly what the GUI offers, including the
-`root_derived_ok` rule that hides root `/_tracked` when tracking was gated.
+`derived_ok` rule that offers a `/_tracked` only where it is not a copy of a deeper one
+(`tracked_pop_parents`; it replaced the root-only `root_derived_ok`/`has_ungated_tracks` rule).
 
 **Checkpoint:** a spec round-trips to a board the GUI renders identically to a hand-built one.
 *Verified against `4kS67f` in the REPL* — a two-plot `2x2` spec expands to `sel:
