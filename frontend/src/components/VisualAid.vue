@@ -1,37 +1,43 @@
 <script setup lang="ts">
 /**
- * One column per entry of a repeatable group, each parameter drawn to scale — the picture beside
- * coastal's model group.
+ * A figure that draws NUMBERS as shapes, in a labelled grid — one row per quantity, one column per
+ * thing being compared.
  *
- * Ten numbers per pass in microns do not answer the question that decides whether a two-pass
- * segmentation works: are these two passes looking for different objects? They have to be, because
- * entries are applied in order and each labels only what an earlier one left. Two circles of visibly
- * different size and two markers at opposite ends of a track answer it at a glance — and two
- * identical columns answer it just as clearly, which is the case worth catching before a 500-second
- * run rather than after.
+ * Deliberately not about segmentation, or about task params. It takes a computed `VisColumns` and
+ * draws it; whatever produced that is the caller's business (`tasks/paramVis.ts` builds one from a
+ * repeatable param group, but a plot legend, a QC summary or a model manifest could build one too).
+ * The reason to have it at all: a column of ten numbers does not answer "are these two things
+ * different", and two shapes of visibly different size do.
  *
- * All geometry is in `paramVis.ts` so it can be tested without mounting anything. This file is shapes.
+ * Five shapes, because five kinds of quantity read differently:
+ *   diameter - a circle of that size          (something's extent)
+ *   blur     - a soft ring                    (a fuzziness, not an outline)
+ *   distance - a span with end caps           (a reach, not an object)
+ *   area     - a disc whose AREA is the value (so the radius carries the square root)
+ *   fraction - a marker on a 0-1 track        (a setting, not a size)
+ *
+ * Shapes only. Every number, scale and comparison decision is in the producer, so it can be tested
+ * without mounting anything.
  */
 import { computed } from 'vue'
-import type { ParamDef, ParamValues } from '../tasks/types'
-import { paramVisColumns, uniformWarning, MAX_R, TRACK } from '../tasks/paramVis'
+import { type VisColumns, MAX_R, TRACK } from '../tasks/paramVis'
 import InlineNote from './InlineNote.vue'
+import type { Severity } from '../lib/severity'
 
 const props = defineProps<{
-  param: ParamDef
-  values: Record<string, ParamValues>
-  /** entry keys in RUN order */
-  order: string[]
-  /** µm per pixel of the image this will run on, when known */
-  pxSize?: number | null
-  /** entry heading text, one per column — the form's own numbering or model names */
+  /** the figure, already computed — see `tasks/paramVis.ts` for one producer */
+  vis: VisColumns
+  /** column headings; falls back to 1-based numbering */
   headings?: string[]
+  /** a line under the figure, when the caller has something to say about it */
+  note?: string
+  /** severity of that line — the canonical union, not a second spelling of it */
+  noteSeverity?: Severity
 }>()
 
-const vis = computed(() => paramVisColumns(props.param, props.values, props.order, props.pxSize))
-const warn = computed(() => uniformWarning(vis.value))
+const vis = computed(() => props.vis)
 
-/** Column width and the row height, in the SVG's units. */
+/** Column width and row height, in the SVG's own units. */
 const COL = 78
 const ROW = MAX_R * 2 + 4
 
@@ -39,7 +45,7 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 </script>
 
 <template>
-  <div v-if="vis.rows.length" class="param-vis">
+  <div v-if="vis.rows.length" class="visual-aid">
     <div class="vis-grid" :style="{ gridTemplateColumns: `7.5rem repeat(${vis.columns.length}, 1fr)` }">
       <!-- corner -->
       <div class="vis-corner cc-eyebrow cc-fs-2xs">
@@ -96,19 +102,15 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
       </template>
     </div>
 
-    <!-- The one state this picture exists to catch, said in words as well as shape. `InlineNote` is
-         the canonical short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md) — an icon and a
-         span with a tooltip by hand is the variant it exists to delete. -->
-    <InlineNote v-if="warn" class="vis-warn cc-fs-2xs" severity="warn" placement="bottom"
-      :short="warn"
-      detail="Entries are applied in order and each labels only what an earlier one left, so a pass
-              configured like the one before it grows to the same regions and is then clipped along
-              their boundaries." />
+    <!-- Whatever the caller wants said about the figure. `InlineNote` is the canonical
+         short-line-plus-reasoning primitive (docs/ui/PRIMITIVES.md). -->
+    <InlineNote v-if="props.note" class="vis-warn cc-fs-2xs" :severity="props.noteSeverity"
+      placement="bottom" :short="props.note" />
   </div>
 </template>
 
 <style scoped>
-.param-vis { margin: 0.25rem 0 0.6rem; }
+.visual-aid { margin: 0.25rem 0 0.6rem; }
 
 .vis-grid {
   display: grid;

@@ -98,6 +98,20 @@ function magnitude(role: VisRole, value: number): number {
 }
 
 /**
+ * What a role can be COMPARED with. Everything in microns shares one scale; an area in µm² is a
+ * different quantity and gets its own; a threshold has no scale at all, it has a track.
+ *
+ * THE bug this fixes: scaling each row against only its own columns means a single-column group draws
+ * every shape at full radius, because each row's one value is trivially its own maximum. A 4 µm seed
+ * window and a 2 µm² size floor then render as identical circles, which is not a small imprecision —
+ * it is the picture answering "these are the same" about two unrelated numbers. Sharing the scale
+ * across every row of the same dimension makes one column as readable as two.
+ */
+function dimension(role: VisRole): 'length' | 'area' | 'none' {
+  return role === 'area' ? 'area' : role === 'fraction' ? 'none' : 'length'
+}
+
+/**
  * Build the strip. `order` is the entry keys in RUN order (from `groupOrderKeys`) — not the object's
  * own key order, because which pass is "first" is the whole meaning of the picture.
  *
@@ -110,18 +124,27 @@ export function paramVisColumns(param: ParamDef, values: Record<string, ParamVal
   const rows: VisRow[] = []
   const px = pxSize && pxSize > 0 ? pxSize : null
 
+  // First pass: what each row holds, and the peak magnitude per DIMENSION across every row and
+  // column. The scale cannot be decided row by row — see `dimension`.
+  const found: Array<{ p: ParamDef; role: VisRole; raw: Array<number | null>; mags: number[] }> = []
+  const peaks: Record<string, number> = { length: 0, area: 0, none: 0 }
   for (const p of leaves(param)) {
     const role = roleOf(p)
     if (!role) continue
     const raw = columns.map(k => numeric(values[k]?.[p.key]))
     if (!raw.some(v => v !== null)) continue
-
     const mags = raw.map(v => (v === null ? 0 : magnitude(role, v)))
-    const peak = Math.max(...mags)
+    const dim = dimension(role)
+    peaks[dim] = Math.max(peaks[dim], ...mags)
+    found.push({ p, role, raw, mags })
+  }
+
+  for (const { p, role, raw, mags } of found) {
+    const peak = peaks[dimension(role)]
     const cells: VisCell[] = raw.map((v, i) => {
       const value = v ?? 0
-      // A whole row of zeros is a real state — "blur off on both passes" — and must not divide by
-      // zero into NaN radii. It draws as the minimum mark, not as nothing.
+      // Every shape of one dimension being zero is a real state — "blur off on both passes" — and
+      // must not divide by zero into NaN radii. A non-zero value never draws as nothing.
       const r = SPATIAL.includes(role)
         ? (peak > 0 ? Math.max(value > 0 ? 2 : 0, (mags[i] / peak) * MAX_R) : 0)
         : 0

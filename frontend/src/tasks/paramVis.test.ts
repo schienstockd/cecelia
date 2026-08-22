@@ -60,6 +60,34 @@ describe('paramVisColumns', () => {
     expect(paramVisColumns(GROUP, TWO_PASS, ['0', '9']).columns).toEqual(['0'])
   })
 
+  it('one column is still readable — the scale is shared across rows of a dimension', () => {
+    // THE bug the first version shipped with: scaling each row against only its own columns makes a
+    // single-column group draw EVERY shape at full radius, because each row's one value is trivially
+    // its own maximum. A 10.61 µm seed window and a 1.1 µm² size floor rendered as identical circles.
+    const one = paramVisColumns(GROUP, { '0': TWO_PASS['0'] }, ['0'])
+    const seed = row(one, 'seedSize').cells[0].r
+    const blur = row(one, 'seedBlurSigma').cells[0].r      // 0 -> off
+    const dist = row(one, 'mergeMaxDistance').cells[0].r   // 0.5 µm against a 10.61 µm seed
+    expect(seed).toBe(MAX_R)
+    expect(dist).toBeLessThan(seed)
+    // 0.5/10.61 of the full radius is ~1 unit, under the 2-unit floor that keeps a small value
+    // VISIBLE. Clamped, not vanished — and still plainly smaller than the seed window.
+    expect(dist).toBe(2)
+    expect(blur).toBe(0)
+  })
+
+  it('proportion is exact wherever it clears the visibility floor', () => {
+    const one = paramVisColumns(GROUP, { '0': { seedSize: 10, mergeMaxDistance: 4 } }, ['0'])
+    const seed = row(one, 'seedSize').cells[0].r
+    expect(row(one, 'mergeMaxDistance').cells[0].r / seed).toBeCloseTo(0.4, 5)
+  })
+
+  it('an area keeps its OWN scale — µm² is not comparable with µm', () => {
+    const one = paramVisColumns(GROUP, { '0': TWO_PASS['0'] }, ['0'])
+    // the only area row, so it is its own peak and draws full — not scaled against the seed window
+    expect(row(one, 'minComponentSize').cells[0].r).toBe(MAX_R)
+  })
+
   it('the larger value gets the larger radius, at full scale', () => {
     const seeds = row(paramVisColumns(GROUP, TWO_PASS, ['0', '1']), 'seedSize')
     expect(seeds.cells[0].r).toBe(MAX_R)

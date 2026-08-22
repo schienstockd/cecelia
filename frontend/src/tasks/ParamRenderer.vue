@@ -20,7 +20,9 @@ import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popG
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
-import GroupParamVis from '../components/GroupParamVis.vue'
+import VisualAid from '../components/VisualAid.vue'
+import FloatingPanel from '../components/FloatingPanel.vue'
+import { paramVisColumns, uniformWarning } from './paramVis'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 
@@ -416,6 +418,15 @@ const groupPxSize = computed<number | null>(() => {
   return sizes.every(v => v === sizes[0]) ? sizes[0] : null
 })
 
+// The figure is FLOATING, not inline. Eleven rows above the entry list pushed the whole form down
+// and was the first thing Dominik said about it — a reference you consult while tuning wants to sit
+// beside the controls, not between them. `FloatingPanel` remembers where you put it.
+const figureOpen = ref(false)
+const groupVis = computed(() =>
+  paramVisColumns(props.param, (val.value as GroupValues) ?? {}, groupOrderValue.value,
+                  groupPxSize.value))
+const groupVisNote = computed(() => uniformWarning(groupVis.value))
+
 const groupVisHeadings = computed<string[]>(() =>
   groupOrderValue.value.map(k => {
     const raw = props.param.labelKey ? (val.value as GroupValues)?.[k]?.[props.param.labelKey] : undefined
@@ -776,6 +787,11 @@ const pct = computed(() => {
         v-tooltip.right="'Add another entry'">
         <i class="pi pi-plus" />
       </button>
+      <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
+        type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
+        v-tooltip.right="'Show these settings as a figure'">
+        <i class="pi pi-chart-bar" />
+      </button>
     </div>
 
     <!-- Which entries run, and in what order. Every `repeatable` group gets this — it is not a
@@ -820,13 +836,16 @@ const pct = computed(() => {
       detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
               fill only what it left. Two entries configured alike therefore do the same work twice." />
 
-    <!-- One column per entry, every drawn parameter to scale. Ten numbers per pass in microns do not
-         answer the question that decides whether a multi-pass run works — are these passes looking
-         for different objects — and two circles of visibly different size do. Rows come from the
-         spec's `vis` roles, so a task with none shows nothing. -->
-    <GroupParamVis v-if="param.repeatable && groupEntries.length"
-      :param="param" :values="(val as GroupValues) ?? {}" :order="groupOrderValue"
-      :px-size="groupPxSize" :headings="groupVisHeadings" />
+    <!-- A floating figure of what these numbers MEAN, one column per entry. Off by default and
+         remembered per user: it is a reference you consult while tuning, so it belongs beside the
+         controls rather than wedged between them. Only offered when the spec gives some param a
+         `vis` role, so a task with none shows no button. -->
+    <FloatingPanel v-if="figureOpen" :title="`${param.label} — at a glance`"
+      storage-key="param-figure" icon="pi-chart-bar" :default-w="330" :default-h="420"
+      @close="figureOpen = false">
+      <VisualAid :vis="groupVis" :headings="groupVisHeadings"
+        :note="groupVisNote" note-severity="warn" />
+    </FloatingPanel>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
