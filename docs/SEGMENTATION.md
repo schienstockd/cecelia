@@ -166,6 +166,14 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 ### `SegmentationUtils` responsibilities
 - XY tiling with overlap (`blockSize`, `overlap`)
 - Global normalisation params from lowest-res zarr level (`normaliseToWhole`)
+  - **Cached per image** (`norm_cache`), because the range is a property of the image and the
+    percentile, not of the run — it was recomputed from scratch every time, and two model groups over
+    the same channel paid for it twice inside ONE run. Measured on `zolIMa/fXgbTl` (single level, so
+    the streaming path): 4.65 s per channel, of a 608 s `segment.coastalMeasure` run — and gone on
+    every rerun that changes a threshold. The key records WHICH derivation produced it (`pyr` for the
+    lowest-res proxy, `stream` for the full-resolution histogram, `stream<N>` for the preview's
+    subsampled read): those are different answers to the same question, and which one runs depends on
+    how many levels the caller opened, so nothing about the store can distinguish them.
 - Global label ID tracking — `max_labels[match_as]` incremented per tile so IDs are unique across tiles and timepoints
 - Tile merge via `np.maximum`
 - Tile seam stitching (`labelOverlap > 0`): after tiling, labels split at tile boundaries are matched by IoU and remapped to a single ID
@@ -516,6 +524,13 @@ makes several Z planes affordable at all. What it costs is field of view per seq
   before the arithmetic, which is bit-identical and 50x less of it (~3.9 s to clip a 181-frame plane
   against ~0.07 s for the block that survives). The crop position depends only on the plane's shape
   and the run's seed, which is what lets it be known that early.
+- **The percentile itself is taken on the raw integers, and that IS a small correction.**
+  `np.percentile` interpolates at a virtual index of `(n-1)·q` in the input's own dtype, and at the
+  ~5.7 M samples of one plane sequence float32's spacing is 0.5 — so a float32 copy quantised the
+  interpolation weight to halves. Over ten planes × two channels of `zolIMa/fXgbTl` at 99.99,
+  nineteen pairs agree exactly (equal neighbours, so no weight matters) and one does not: `hi` 150.818
+  against 150.5, moving 3.8% of that plane's output by at most 0.53 of 255. Small, in the direction of
+  correct, and not nothing — a model trained before differs slightly from one trained after.
 - The window is a **copy**, not a slice view: a view keeps the whole uncropped stack alive, which is
   the allocation the parameter exists to avoid.
 

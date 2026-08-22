@@ -88,14 +88,21 @@ def fingerprint(im_path, shape, dtype):
     return f'{dims}/{np.dtype(dtype).str}/{stamp}'
 
 
-def key(channel, plane, percentile, zeros=ZEROS_INCLUDED):
+def key(channel, plane, percentile, zeros=ZEROS_INCLUDED, variant=None):
     """The key for one cached `(lo, hi)` pair.
 
-    `plane` may be `None` for a 2D movie, which is a distinct case from plane 0 and must not collide
-    with it.
+    `plane` may be `None` for a whole-image statistic or a 2D movie, which is a distinct case from
+    plane 0 and must not collide with it.
+
+    `variant` is for anything ELSE about how the number was derived that changes it. Segmentation
+    needs it: `_compute_norm_params` reads a pyramided store's lowest-res level but streams a
+    histogram over a single-level one, and those are two different answers to the same question — so
+    a range derived one way must never be served to a call that would have taken the other. Nothing
+    in the fingerprint can catch that, because it depends on how many levels the CALLER opened.
     """
     z = 'flat' if plane is None else f'z{int(plane)}'
-    return f'c{int(channel)}/{z}/p{float(percentile):g}/{zeros}'
+    tail = '' if variant is None else f'/{variant}'
+    return f'c{int(channel)}/{z}/p{float(percentile):g}/{zeros}{tail}'
 
 
 def read(im_path, fp):

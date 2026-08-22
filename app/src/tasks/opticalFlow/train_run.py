@@ -339,12 +339,18 @@ def _training_sequence(im_dat, dim_utils, params, z, window=None, crop=None, sta
     costs ~3.9 s against ~0.07 s for the [60, 256, 256] block the run keeps.
 
     The percentiles run on the RAW integer dtype rather than on a float32 copy: 4.9 s against 6.4 s,
-    and it drops a 1.1 s cast of an array about to be discarded. That one is not bit-neutral in
-    general — it interpolates in float64 where the old path interpolated in float32 — but it IS on
-    real data, where a few hundred distinct values over 200 M samples put both percentile neighbours
-    on the same integer and there is nothing to interpolate (measured: lo 0.0, hi 351.0 either way on
-    ch2/z20 of `zolIMa/VJy1Nx`, and the two arrays compared equal). Elsewhere it differs by about one
-    ulp of float32; `test_flow_train_normalisation` bounds both cases.
+    and it drops a 1.1 s cast of an array about to be discarded. **This one changes the number, and
+    for a reason worth knowing.** `np.percentile` interpolates between two order statistics at a
+    virtual index of `(n-1) * q`, and it does that arithmetic in the INPUT's dtype. On a plane
+    sequence of ~5.7 M samples that index is ~5.7e6, where float32's spacing is 0.5 — so the old path
+    quantised the interpolation weight to halves, and `hi` landed up to half an intensity unit away
+    from the true percentile. Reading the raw integers promotes to float64 and gets it right.
+
+    Measured over the ten planes x two channels of `zolIMa/fXgbTl` at 99.99: nineteen pairs agree
+    exactly (both neighbours are the same integer, so no weight can matter) and one does not —
+    z11/ch1, `hi` 150.818 against float32's 150.5. That plane's output moves on 3.8% of its pixels,
+    by at most 0.53 of 255. So this is not cosmetic: it is a small correction, in the direction of
+    correct, and a model trained before this differs slightly from one trained after.
 
     `stats` is the `norm_cache` dict for this image, read and WRITTEN THROUGH: a hit skips the full
     read as well as the percentiles, because the range is the only thing the rest of the movie was

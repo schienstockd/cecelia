@@ -11,11 +11,14 @@ and commute with slicing exactly — so the tests assert EQUALITY against a refe
 everything and cuts last, not approximate agreement. Same for the cache: a hit must produce the
 identical array a cold run does, or the first run of a campaign and every rerun of it disagree.
 
-One thing genuinely did change: the percentiles now come from the raw integers rather than a float32
-copy. That is bit-identical on data whose percentile lands on a repeated value — which real 16-bit
-microscopy is, and which the measurement on `zolIMa/VJy1Nx` confirmed — and differs by about one ulp
-of float32 where it has two distinct neighbours to interpolate between. Both cases have their own
-test, so the difference is bounded rather than assumed harmless.
+One thing genuinely did change, and it is a CORRECTION rather than a rounding difference. The
+percentiles now come from the raw integers instead of a float32 copy, and `np.percentile` does its
+interpolation arithmetic in the input's dtype. At a virtual index of `(n-1) * q` — ~5.7e6 for one
+plane sequence of real data — float32's spacing is 0.5, so the old path quantised the interpolation
+weight to halves and could land half an intensity unit off. Measured over ten planes x two channels
+of `zolIMa/fXgbTl`: nineteen pairs agree exactly (equal neighbours, so the weight cannot matter), one
+does not (`hi` 150.818 against 150.5), and that plane's output moves on 3.8% of pixels by at most
+0.53 of 255. Tests pin both the agreement and the mechanism.
 
 Skipped when `app/` is absent — an external `pip install cecelia` consumer gets the IO library only.
 """
@@ -195,17 +198,15 @@ class TrainingSequenceTest(unittest.TestCase):
     def test_the_percentile_is_taken_at_full_precision_not_float32(self):
         """The ONE numeric difference from the pre-crop-early version, pinned deliberately.
 
-        The old code percentiled a float32 copy; this one percentiles the raw integers, which is
-        strictly more accurate (float64 interpolation) and saves the cast of an array about to be
-        discarded. Where the percentile falls BETWEEN two distinct sample values the two answers
-        differ in the last bits — about one ulp of float32, ~1e-7 relative on the output. Asserted as
-        a bound rather than waved away, so a real divergence cannot hide behind "floating point".
+        The old code percentiled a float32 copy; this one percentiles the raw integers. The gap is
+        bounded but NOT negligible — see `Float32PercentileIndexTest` below for why — so this asserts
+        a bound on the whole array rather than waving it away as floating point.
         """
         level, dims = _fixture()
         args = (level, dims, self.PARAMS['trainChannels'], self.PARAMS['normalise'],
                 1, self.WINDOW, self.CROP)
         old = _reference(*args, as_float32=True)
-        np.testing.assert_allclose(self._call(level, dims), old, rtol=2e-7, atol=1e-4)
+        np.testing.assert_allclose(self._call(level, dims), old, rtol=1e-2, atol=1.0)
 
     def test_it_is_bit_identical_where_the_percentile_lands_on_a_repeated_value(self):
         """Which is the case for real 16-bit microscopy, and the case that matters: 200 M samples over
@@ -220,6 +221,46 @@ class TrainingSequenceTest(unittest.TestCase):
         args = (level, dims, self.PARAMS['trainChannels'], self.PARAMS['normalise'],
                 1, self.WINDOW, self.CROP)
         np.testing.assert_array_equal(self._call(level, dims), _reference(*args, as_float32=True))
+
+
+class Float32PercentileIndexTest(unittest.TestCase):
+    """WHY percentiling a float32 copy was worth changing — the mechanism, not a tolerance.
+
+    `np.percentile` interpolates between two order statistics at a virtual index of `(n - 1) * q`,
+    and does that arithmetic in the INPUT array's dtype. Past ~2^23 elements a float32 cannot hold
+    that index to better than half a step, so the interpolation WEIGHT is quantised and the answer
+    can miss the true percentile by up to half the gap between the two neighbouring values.
+
+    Real data hits this: over ten planes x two channels of `zolIMa/fXgbTl` at 99.99, one pair came
+    out `hi` 150.818 from the integers and 150.5 from a float32 copy. Nineteen agreed exactly,
+    because their neighbours were the same integer and then no weight can matter — which is why this
+    was invisible on the first movie measured and needs a test rather than a spot check.
+    """
+
+    def test_a_float32_copy_quantises_the_interpolation_weight(self):
+        n = 4_000_000                      # (n-1)*q ~ 4e6, where float32 spacing is 0.5
+        pct = 99.99
+        rng = np.random.default_rng(5)
+        raw = rng.integers(0, 40, size=n).astype(np.uint16)
+        # Force the two neighbours at the cut to DIFFER, which is the only case that shows it.
+        k = int(np.floor((n - 1) * pct / 100.0))
+        raw.sort()
+        raw[k], raw[k + 1:] = 150, 151
+        from_int = float(np.percentile(raw, pct))
+        from_f32 = float(np.percentile(raw.astype(np.float32), pct))
+        self.assertNotEqual(from_int, from_f32,
+                            'if these agree the mechanism is gone and the change is pointless')
+        self.assertLess(abs(from_int - from_f32), 1.0,
+                        'and it must stay bounded by the gap between the two neighbours')
+
+    def test_equal_neighbours_make_the_two_agree_exactly(self):
+        """The nineteen-of-twenty case, and the reason the first movie measured showed no difference
+        at all: interpolating between two equal values gives that value for any weight."""
+        n = 4_000_000
+        raw = np.full(n, 7, dtype=np.uint16)
+        raw[: n // 100] = 3
+        self.assertEqual(float(np.percentile(raw, 99.99)),
+                         float(np.percentile(raw.astype(np.float32), 99.99)))
 
 
 if __name__ == '__main__':
