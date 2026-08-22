@@ -11,6 +11,7 @@ import App from './App.vue'
 import { useAppControlStore } from './stores/appControl'
 import { useLogStore } from './stores/log'
 import { installRoLoopTrace } from './utils/roLoopTrace'
+import { popoutRouteOfWindow } from './lib/popout'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -71,6 +72,17 @@ router.beforeEach(async (to) => {
   }
   if (appCtl.setupRequired === true && to.path !== '/setup') return '/setup'
   if (appCtl.setupRequired === false && to.path === '/setup') return '/'
+  // A popout window stays the view it was opened as. Its NAME says which one (lib/popout.ts) and the
+  // name survives what the hash does not — a reload, a restored session, a stale bundle whose router
+  // had no such route yet. A window that ends up somewhere else is not a page you can use: the Task
+  // Manager popup on `/tasks` is `TasksModule` with `standalone` false, so nothing tells it which
+  // project to show and nothing follows the main window's switches — an empty list in a window with
+  // no way to fix itself. Send it home instead. (Skipped while setup is required, so this and the
+  // /setup redirect above cannot bounce a window between them.)
+  if (appCtl.setupRequired !== true) {
+    const own = popoutRouteOfWindow()
+    if (own && to.path !== own) return own
+  }
   return true
 })
 

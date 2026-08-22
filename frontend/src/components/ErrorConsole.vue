@@ -83,7 +83,7 @@ const groupOptions = computed<ChipOption[]>(() =>
 // The URL, the window name and the re-focus live in `lib/popout.ts` — the Task Manager's ↗ needs the
 // same three, and a hand-rolled second copy is how one of them ends up behaving differently.
 function openConsoleWindow() {
-  openPopoutWindow('/console', 'cecelia-console', 980, 600)
+  openPopoutWindow('/console', 980, 600)
 }
 
 const filterCounts = computed(() => ({
