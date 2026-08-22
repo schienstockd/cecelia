@@ -4,7 +4,7 @@ import {
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
-  missingRequired, newEntryDefaults } from './paramValues'
+  missingRequired, groupOrderKeysFor, newEntryDefaults } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -577,6 +577,95 @@ describe('showIfSatisfied — suffix operators', () => {
   it('an operator nobody implements does not silently pass', () => {
     // Better a control that is missing and reported than one that renders on a rule that was ignored.
     expect(showIfSatisfied({ csvPath: { matches: '.*' } } as never, { csvPath: 'a.csv' })).toBe(false)
+  })
+})
+
+// ── the order chips have to REACH the run ────────────────────────────────────
+// THE bug: `<groupKey>Order` is a sibling key, not a spec param, so everything that walks `def.params`
+// was blind to it. `flattenParams` dropped it from the payload on every run and `_apply_group_order`
+// then read "no order" as "every entry, in entry order" — which is also the correct behaviour for a
+// group nobody reordered, so the chips did nothing and said nothing. Confirmed on a real run: the
+// banked params for a two-entry `segment.coastalMeasure` contain no `modelsOrder`.
+const ORDER_DEF = {
+  fun_name: 'segment.coastal', task: 'coastal', label: 'Coastal', category: 'segment', env: [],
+  params: [
+    { key: 'valueName', label: 'Image', type: 'select', default: '' },
+    { key: 'models', label: 'Models', type: 'group', repeatable: true,
+      default: { '0': { seedSize: 4 } },
+      params: [{ key: 'seedSize', label: 'Seed', type: 'float', default: 4 }] },
+    { key: 'plain', label: 'Not repeatable', type: 'group',
+      params: [{ key: 'x', label: 'X', type: 'float', default: 1 }] },
+  ],
+} as unknown as TaskDef
+
+describe('groupOrderKeysFor', () => {
+  it('names the sibling key of every repeatable group', () => {
+    expect(groupOrderKeysFor(ORDER_DEF)).toEqual(['modelsOrder'])
+  })
+
+  it('ignores a group that is not repeatable — it has no chips', () => {
+    expect(groupOrderKeysFor(ORDER_DEF)).not.toContain('plainOrder')
+  })
+})
+
+describe('flattenParams and the order chips', () => {
+  it('carries the order into the run payload', () => {
+    const out = flattenParams(ORDER_DEF, { models: { '0': {}, '1': {} }, modelsOrder: ['1', '0'] })
+    expect(out.modelsOrder).toEqual(['1', '0'])
+  })
+
+  it('leaves it absent when nobody has reordered', () => {
+    // Absent means "every entry, in entry order" server-side. Inventing one here would give a group
+    // nobody touched a stored order.
+    expect('modelsOrder' in flattenParams(ORDER_DEF, { models: { '0': {} } })).toBe(false)
+  })
+
+  it('forwards an EMPTY order rather than silently meaning "all"', () => {
+    // Unticking every entry and getting every entry is the same class of silent divergence the key
+    // exists to prevent. Forwarded as the truth; whether the form should allow zero is a separate
+    // question.
+    const out = flattenParams(ORDER_DEF, { models: { '0': {} }, modelsOrder: [] })
+    expect(out.modelsOrder).toEqual([])
+  })
+
+  it('still emits every spec param alongside it', () => {
+    const out = flattenParams(ORDER_DEF, { models: { '0': {} }, modelsOrder: ['0'] })
+    expect(missingParamKeys(ORDER_DEF, out)).toEqual([])
+  })
+})
+
+describe('buildParamValues and the order chips', () => {
+  it('keeps a saved order through a re-init', () => {
+    // Otherwise every reload of the form reset the chips, whatever the run had used.
+    const v = buildParamValues(ORDER_DEF, { models: { '0': {}, '1': {} }, modelsOrder: ['1'] })
+    expect(v.modelsOrder).toEqual(['1'])
+  })
+
+  it('does not invent one that was never saved', () => {
+    expect('modelsOrder' in buildParamValues(ORDER_DEF, { models: { '0': {} } })).toBe(false)
+  })
+
+  it('survives a round trip — build then flatten', () => {
+    // The two halves have to agree, or the form shows one order and the run uses another.
+    const built = buildParamValues(ORDER_DEF, { models: { '0': {}, '1': {} }, modelsOrder: ['1', '0'] })
+    expect(flattenParams(ORDER_DEF, built).modelsOrder).toEqual(['1', '0'])
+  })
+})
+
+describe('unticking every chip is blocked at the button', () => {
+  it('is a reason not to run', () => {
+    // Only reachable now that the order reaches the run. Before, the payload dropped it and the server
+    // ran every entry regardless, so the state existed in the form and never in a run.
+    expect(missingRequired(ORDER_DEF, { models: { '0': {} }, modelsOrder: [] }))
+      .toEqual(['Models: select at least one entry to run'])
+  })
+
+  it('a normal selection is not', () => {
+    expect(missingRequired(ORDER_DEF, { models: { '0': {} }, modelsOrder: ['0'] })).toEqual([])
+  })
+
+  it('nor is an unset order — that means every entry', () => {
+    expect(missingRequired(ORDER_DEF, { models: { '0': {} } })).toEqual([])
   })
 })
 
