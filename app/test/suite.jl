@@ -7751,6 +7751,44 @@ end
     @test isempty(pop_paths(m))
 end
 
+# ── Gate shape swap: rectangle ⇄ polygon on an EXISTING population ────────────
+# The UI (PopulationManager's convert button, frontend plots/gateGeometry.ts) changes a gate's shape
+# by pushing a new spec of the OTHER kind through pop/set-gate. `set_gate!` must therefore accept a
+# gate of a different concrete type on a live pop — the population, its children and its identity
+# survive; only the geometry and the derived membership change. Without this the only way to redraw
+# a rectangle as a polygon is delete + redraw, which takes the children with it.
+@testset "set_gate! swaps the gate KIND in place" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
+    add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0), colour="#0f0")
+
+    # the four corners of the rectangle, as a polygon → the SAME region (what rect → poly does)
+    corners = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    set_gate!(m, "/cd4", PolygonGate("x", "y", corners))
+    @test pop_at(m, "/cd4").gate isa PolygonGate
+    @test pop_at(m, "/cd4").colour == "#f00"                 # identity untouched
+    @test pop_paths(m) == ["/cd4", "/cd4/cd8"]               # child still hanging off it
+    @test pop_at(m, "/cd4/cd8").gate isa RectangleGate       # and its own gate untouched
+
+    # membership is re-derived, and the corner polygon selects what the rectangle did
+    df = DataFrame("label" => [1, 2, 3, 4],
+                   "x" => [1.0, 7.0, 20.0, 3.0], "y" => [1.0, 7.0, 20.0, 3.0])
+    recompute!(m, _ -> df)
+    @test Set(cells_in_pop(m, "/cd4")) == Set([1, 2, 4])     # 3 is outside
+    @test Set(cells_in_pop(m, "/cd4/cd8")) == Set([1, 4])    # child gate still applies under it
+
+    # and back the other way (poly → its bounding box): a WIDENING swap, still in place
+    set_gate!(m, "/cd4", RectangleGate("x", "y", 0.0, 25.0, 0.0, 25.0))
+    recompute!(m, _ -> df)
+    @test pop_at(m, "/cd4").gate isa RectangleGate
+    @test Set(cells_in_pop(m, "/cd4")) == Set([1, 2, 3, 4])  # bbox picked up the outlier
+
+    # the swap survives a save/load round-trip (the sidecar carries "kind")
+    td = mktempdir()
+    set_gate!(m, "/cd4", PolygonGate("x", "y", corners)); save_pop_map!(m, td)
+    @test pop_at(load_pop_map(td, "B"), "/cd4").gate isa PolygonGate
+end
+
 # ── clust / trackclust pop types (cluster-membership populations) ─────────────
 # A cluster pop is a filter on the `clusters.{suffix}` column (clustPops/clustTracks output):
 # filter_fun="in", filter_values=[ticked cluster ids]. Stored in its own sidecar so it never
