@@ -188,6 +188,16 @@ image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` va
 dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
 detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
 
+**Colour by a third measure = the same dot pass, a different `t`.** The dots' colour is a 0..1 lookup
+into the blue-heat ramp; local density is only the DEFAULT source of that number. Given a third measure
+(`plotdata?z=…`, `plots/valueColour.ts` `normValues` over the served whole-dataset range), the same
+bucketed pass paints the same dots — so there is ONE dot renderer, not a second "heatmap dot plot" mode
+(FlowJo's colour-by-parameter). It applies in `points` mode only: a contour ring describes a
+distribution, not a per-cell value. A **colour bar** (top-right, inside the plot area — the gating chrome
+is a fixed asymmetric padding for the axis names, with no third gutter, and widening it would shrink the
+dots in every montage tile) labels the ramp with server-inverted RAW values, and is emitted as true
+vector on SVG export. Cells with no value are drawn in the themed dim ink, never at the ramp's floor.
+
 **A population overlay is always DOTS, whatever the base mode is.** The render mode says how to draw a
 *distribution* — a highlighted population (or the napari cell selection) is the different question "where
 are THESE cells", which is per-cell. Contouring an overlay put rings around individual points: a 3-cell

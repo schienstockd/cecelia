@@ -694,6 +694,23 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   (`plots/flowColors.ts` `BLUE_HEAT_ANCHORS`, from R `.flowColorRampBlueHeat`, `flowHelpers.R:775`) is
   interpolated to 256 stops so the gradient is smooth, with the low end lifted off pure black
   (`#0b1a4d`) so sparse points stay visible on the dark theme. No server density call.
+- **Colour by a third measure ("z"), FlowJo-style.** The `colour` row on a gating plot picks a THIRD
+  measure, painted onto the dots as colour instead of the local density (points mode only — a contour
+  ring describes a distribution, so there is no per-cell value to colour). `plotdata?z=<col>` then
+  answers **triples** `[x,y,z,…]`, read in ONE pass with x/y so `z[i]` is the same cell as
+  `(x[i],y[i])`; `plotmeta` adds `zExtent`/`zTicks`/`zUnit`/`usedZ`. Decisions worth knowing:
+  - **The ramp's range is the WHOLE dataset (root), not the displayed population** — selecting a child
+    must not re-map the colours, or the same cell changes colour as you walk the tree and two plots of
+    the same measure can't be compared. (Same reason the axis ticks are root-derived.)
+  - **`z` is an axis in everything but geometry**: same measure list, same per-measure transform default
+    (logicle for a marker, linear for a centroid), same auto-linearisation + amber override marker. The
+    labels on the colour bar are RAW values inverted server-side — the client has no transform math.
+  - **Same ramp as the density pseudocolour** (`flowColors.ts` `heatCss`, one lookup for dots and bar),
+    so the two modes look alike; the **colour bar is what distinguishes them**, and it is drawn on the
+    plot canvas (top-right, inside the plot area — the gating chrome has no third gutter) so the PNG
+    export gets it for free and the SVG export emits it as vector.
+  - A cell with **no value** for the measure is drawn in the dim ink, NOT at the ramp's floor (which
+    would read as a real low measurement).
 - **Contours are client-side too, on their own grid.** `plots/contour.ts` runs **d3-contour** over a
   separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
   (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier
