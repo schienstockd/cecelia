@@ -501,6 +501,39 @@ cells are read **and** where any output/annotation is written.
   before it fires. Both keep the channels and per-axis transforms, since the stored coords are
   already in transformed space.
 
+## Undo / redo
+
+**Only for the hand-drawn pop types** — `flow` (cells) and `track` (tracks), i.e. `is_gating_pop_type`.
+A `clust`/`trackclust`/`region` population's edit is a cluster ID you ticked and can un-tick, and it
+mirrors set-wide through the client's `mirrorUids` (one user action, N image sidecars), so stepping
+one image back is not a coherent operation. A dragged gate or a deleted population *with its
+children* is work you cannot get back any other way, which is what this is for.
+
+The mechanism is small because the document is: every mutation here is load → mutate →
+`save_pop_map!` of the WHOLE tree, so "the state before this edit" is just `to_tree` of what is still
+on disk when the handler is about to save. History is therefore a ring of snapshots, not a set of
+hand-written inverse operations — there is nothing to invert and nothing to keep in sync when a new
+mutation is added.
+
+- Recorded in **`_persist_and_broadcast!`** (`api/src/gating_api.jl`) — the one choke point every
+  mutating handler already goes through, so a new mutation cannot forget to be undoable. It runs
+  under `_POPMAP_LOCK`, which the handler holds across load→save, so what is on disk at that moment
+  is exactly what the edit is about to replace.
+- Snapshots use `to_tree(…; include_transient=false)`: the napari selection is ephemeral server state
+  re-injected on every read, and restoring a stale one would resurrect a selection the user cleared.
+- Keyed per `(project, image, value_name, pop_type)`, capped at 50 steps, **in process** — session
+  scoped on purpose, rather than growing `gating/{vn}.json` with an edit log nobody asked to keep.
+- A step writes back through the same save+broadcast path an edit uses, so every open client
+  converges the same way; it deliberately does **not** go through `_persist_and_broadcast!`, or
+  stepping through history would record itself as a new edit. A fresh edit clears the redo branch.
+- An entry is a *list* of (image, tree). Today every entry holds exactly one image;
+  `api_gating_copy` — which replaces N targets' sidecars — is the case that would not, and is
+  currently **not** undoable.
+- `canUndo`/`canRedo` ride on every mutation response, the popmap GET and the broadcast, so the
+  buttons settle in the same frame the edit lands in. Frontend: `useGatingStore().undo/redo`, the two
+  buttons in `PopulationManager`, and Ctrl/⌘+Z · Ctrl/⌘+Shift+Z (window-level, guarded by
+  `isTypingTarget` so it doesn't fire while you're renaming a population).
+
 ## Gate↔track composition (replaces the old GatingSet-then-track hack)
 
 In the old system, "live" gating was hacked by building a flow `GatingSet` and tracking

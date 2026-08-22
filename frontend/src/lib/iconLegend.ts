@@ -88,7 +88,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-forward', means: 'Playback speed' },
       { icon: 'pi-pause', means: 'Side by side' },
       { icon: 'pi-replay', means: 'Run it again, or restore a snapshot' },
-      { icon: 'pi-undo', means: 'Undo — leave things as they were' },
+      { icon: 'pi-undo', means: 'Undo — leave things as they were; mirrored, redo' },
       { icon: 'pi-refresh', means: 'Reload, or restart a service' },
       { icon: 'pi-sync', means: 'Re-read from the file, or the optical-flow page' },
       { icon: 'pi-trash', means: 'Delete' },

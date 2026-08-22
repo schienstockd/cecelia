@@ -4530,6 +4530,7 @@ end
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
+        "/api/gating/redo", "/api/gating/undo",
         "/api/images/attr/create", "/api/images/attr/delete",
         "/api/images/analysis/reset", "/api/images/attr/set",
         "/api/images/channelnames",
@@ -4620,7 +4621,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 114
+    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 116
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -4843,6 +4844,109 @@ end
     finally
         Main._current_image_uid[] = prev
     end
+end
+
+# ── Undo / redo for hand-drawn gating ────────────────────────────────────────────────────────
+# The whole population tree is one serialisable document, so history is a ring of snapshots taken at
+# the one choke point every mutation already goes through (`_persist_and_broadcast!`). What this
+# pins is the contract that makes that safe: a step must not record ITSELF as an edit (or undo would
+# only ever toggle the last change), a fresh edit must drop the redo branch, and the pop types whose
+# edit is a re-tickable filter must not get history at all.
+@testset "API: gating undo/redo steps through the population tree" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        # `_resolve_vn` falls back to the image's ACTIVE segmentation when the requested value_name
+        # is not one of its label_props — so use the real one, or every write lands under a different
+        # name than the one read back here.
+        vn = "B"
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        names(body) = [String(p.name) for p in JSON3.read(body).tree.populations]
+
+        # nothing done yet → nothing to undo, and saying so is a 409, not a crash
+        st, _ = post(api_gating_undo, Dict{String,Any}())
+        @test st == 409
+
+        st, b1 = post(api_gating_pop_add, Dict{String,Any}("name" => "cd4", "gate" => gate(1.0)))
+        @test st == 200 && names(b1) == ["cd4"]
+        @test JSON3.read(b1).canUndo && !JSON3.read(b1).canRedo   # the edit's own response says so
+        st, b2 = post(api_gating_pop_add, Dict{String,Any}("name" => "cd8", "gate" => gate(2.0)))
+        @test st == 200 && Set(names(b2)) == Set(["cd4", "cd8"])
+
+        # one step back = the state before the LAST edit, not a toggle: undo twice reaches empty
+        st, b3 = post(api_gating_undo, Dict{String,Any}())
+        @test st == 200 && names(b3) == ["cd4"]
+        @test JSON3.read(b3).canRedo
+        st, b4 = post(api_gating_undo, Dict{String,Any}())
+        @test st == 200 && isempty(names(b4))
+        @test !JSON3.read(b4).canUndo
+        st, _ = post(api_gating_undo, Dict{String,Any}())
+        @test st == 409                                            # exhausted, not wrapped around
+
+        # forward again, and it is the same tree — history restores, it does not re-run the edit
+        st, b5 = post(api_gating_redo, Dict{String,Any}())
+        @test st == 200 && names(b5) == ["cd4"]
+        st, b6 = post(api_gating_redo, Dict{String,Any}())
+        @test st == 200 && Set(names(b6)) == Set(["cd4", "cd8"])
+        @test !JSON3.read(b6).canRedo
+
+        # it is the ON-DISK document that moved, not just the response
+        m = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test Set(pop_name.(pop_paths(m))) == Set(["cd4", "cd8"])
+
+        # a NEW edit after an undo drops the redo branch — the future you did not take is gone
+        st, _  = post(api_gating_undo, Dict{String,Any}())
+        st, b7 = post(api_gating_pop_add, Dict{String,Any}("name" => "cd19", "gate" => gate(3.0)))
+        @test st == 200 && Set(names(b7)) == Set(["cd4", "cd19"])
+        @test !JSON3.read(b7).canRedo
+        st, _ = post(api_gating_redo, Dict{String,Any}())
+        @test st == 409
+
+        # a gate EDIT is undoable the same way a structural one is (the case this feature exists for)
+        st, _  = post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/cd4", "gate" => gate(9.0)))
+        m2 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test pop_at(m2, "/cd4").gate.x_max == 9.0
+        st, _  = post(api_gating_undo, Dict{String,Any}())
+        m3 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test st == 200 && pop_at(m3, "/cd4").gate.x_max == 1.0
+
+        # …including a change of gate KIND, which is what the panel's rectangle ⇄ polygon convert
+        # does (same `pop/set-gate` route). Worth its own step: undoing it has to bring back a
+        # RectangleGate through the snapshot, not just different numbers in the same struct.
+        st, _  = post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/cd4",
+            "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "c1", "y_channel" => "c2",
+                                       "vertices" => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])))
+        m4 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test st == 200 && pop_at(m4, "/cd4").gate isa PolygonGate
+        st, _  = post(api_gating_undo, Dict{String,Any}())
+        m5 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        @test st == 200 && pop_at(m5, "/cd4").gate isa RectangleGate
+        @test pop_at(m5, "/cd4").gate.x_max == 1.0
+
+        # filter pops (cluster / region) are OUT of scope: their edit is a tick you can un-tick, and
+        # they mirror set-wide, so there is nothing coherent to step back on one image
+        st, body = post(api_gating_undo, Dict{String,Any}("popType" => "clust"))
+        @test st == 400 && occursin("flow/track", String(body))
+        # …and a cluster edit records no history it could later claim to undo
+        st, bc = post(api_gating_pop_add, Dict{String,Any}("popType" => "clust", "name" => "c1",
+            "filter" => Dict{String,Any}("measure" => "clusters.default", "fun" => "in", "values" => [0])))
+        @test st == 200 && !JSON3.read(bc).canUndo
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
 end
 
 @testset "API: a napari selection resolves to TRACKS" begin

@@ -220,7 +220,12 @@ end
 function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMap)
     broadcast_ws(Dict{String,Any}(
         "type" => "gating:popmap", "projectUid" => project_uid, "imageUid" => image_uid,
-        "valueName" => vn, "popType" => pop_type, "tree" => to_tree(m)))
+        "valueName" => vn, "popType" => pop_type, "tree" => to_tree(m),
+        # ride along with the tree so the undo/redo buttons settle in the same frame the edit lands
+        # in — for THIS document, so a copy's target images report their own history, not the
+        # source's (see the undo/redo block below)
+        "canUndo" => _can_undo(project_uid, image_uid, vn, pop_type),
+        "canRedo" => _can_redo(project_uid, image_uid, vn, pop_type)))
 end
 
 # Serialise gating pop CRUD. Each handler does load_pop_map → mutate → save_pop_map!; under
@@ -231,14 +236,103 @@ end
 const _POPMAP_LOCK = ReentrantLock()
 _with_popmap_lock(f) = lock(f, _POPMAP_LOCK)
 
+# ── Undo / redo for HAND-DRAWN gating ─────────────────────────────────────────
+#
+# The whole document is one serialisable value: every mutation here is load → mutate →
+# `save_pop_map!` of the ENTIRE tree, so "the state before this edit" is just `to_tree` of what is
+# still on disk when the handler is about to save. That is what makes an undo stack a ring of
+# snapshots rather than a set of hand-written inverse operations — there is no diff protocol to
+# invert, and nothing to keep in sync as new mutations are added.
+#
+# Scope is `flow` + `track` (`is_gating_pop_type`): the hand-drawn pop types, where a wrong drag
+# destroys work you cannot get back by re-ticking a box. `clust`/`trackclust`/`region` are filter
+# pops whose edit IS the tick, and they mirror set-wide through the client's `mirrorUids` — one
+# user action, N image sidecars — so undoing them is a different problem and deliberately not this
+# one.
+#
+# In-process and session-scoped on purpose: history dies with the backend rather than growing a
+# user-facing sidecar with an edit log nobody asked to keep.
+const _GATING_HISTORY_LIMIT = 50
+# One entry = the state to restore, as (image uid → tree). A vector because an entry may span
+# images; today every entry holds exactly one, and `api_gating_copy` is the case that would not.
+const _GatingSnapshot = Vector{Tuple{String,Dict{String,Any}}}
+const _GATING_HISTORY = Dict{String,NamedTuple{(:undo, :redo),Tuple{Vector{_GatingSnapshot},Vector{_GatingSnapshot}}}}()
+
+_history_key(proj, image_uid, vn, pop_type) = join((proj, image_uid, vn, pop_type), '\u0000')
+_history_for(key) = get!(() -> (undo = _GatingSnapshot[], redo = _GatingSnapshot[]), _GATING_HISTORY, key)
+
+# The tree as it would be READ BACK from disk. `include_transient=false` keeps the napari selection
+# out of history — it is ephemeral server state that is re-injected on every read, and restoring a
+# stale one would resurrect a selection the user has since cleared.
+_gating_snapshot(img::CciaImage, vn, pop_type)::Dict{String,Any} =
+    to_tree(load_pop_map(img; value_name = vn, pop_type = pop_type); include_transient = false)
+
+# Record the PRE-edit state. Called from `_persist_and_broadcast!` — the one choke point every
+# mutating handler already goes through, so a new mutation cannot forget to be undoable. Runs under
+# `_POPMAP_LOCK` (the handler holds it across load→save), so what is on disk here is exactly what
+# this edit is about to replace. A new edit invalidates the redo branch, as everywhere else.
+function _history_record!(proj, image_uid, vn, pop_type, img::CciaImage)
+    is_gating_pop_type(pop_type) || return
+    h = _history_for(_history_key(proj, image_uid, vn, pop_type))
+    push!(h.undo, [(String(image_uid), _gating_snapshot(img, vn, pop_type))])
+    length(h.undo) > _GATING_HISTORY_LIMIT && popfirst!(h.undo)
+    empty!(h.redo)
+    nothing
+end
+
+_can_undo(proj, image_uid, vn, pop_type) = is_gating_pop_type(pop_type) &&
+    !isempty(_history_for(_history_key(proj, image_uid, vn, pop_type)).undo)
+_can_redo(proj, image_uid, vn, pop_type) = is_gating_pop_type(pop_type) &&
+    !isempty(_history_for(_history_key(proj, image_uid, vn, pop_type)).redo)
+
 # persist a mutated map then broadcast — re-injecting the transient napari pop AFTER save
-# (so it never hits disk) but BEFORE broadcast (so the client keeps showing it). Returns the
-# tree (incl. the transient pop) for the HTTP response.
+# (so it never hits disk) but BEFORE broadcast (so the client keeps showing it). Returns the whole
+# HTTP response body: the tree (incl. the transient pop) plus the undo/redo flags, so the POST that
+# made the edit is self-sufficient. The broadcast carries them too, but a client must not need its
+# WS to be up to know whether it can undo what it just did.
 function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop_type)
+    proj, image_uid = String(body["projectUid"]), String(body["imageUid"])
+    _history_record!(proj, image_uid, vn, pop_type, img)
     save_pop_map!(m, img)
     _inject_napari_pop!(m, img)
-    _broadcast_popmap(String(body["projectUid"]), String(body["imageUid"]), vn, pop_type, m)
-    to_tree(m)
+    _broadcast_popmap(proj, image_uid, vn, pop_type, m)
+    (; tree = to_tree(m),
+       canUndo = _can_undo(proj, image_uid, vn, pop_type),
+       canRedo = _can_redo(proj, image_uid, vn, pop_type))
+end
+
+# POST /api/gating/undo · /api/gating/redo — pop one snapshot off the stack, put the CURRENT state
+# on the other one, write it back through the same save+broadcast path a normal edit uses (so every
+# open client converges the same way). Deliberately does NOT go through `_persist_and_broadcast!`:
+# stepping through history must not record itself as a new edit.
+api_gating_undo(body_bytes::Vector{UInt8}) = _history_step(body_bytes, :undo)
+api_gating_redo(body_bytes::Vector{UInt8}) = _history_step(body_bytes, :redo)
+
+function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
+    img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    is_gating_pop_type(pt) || return _gerr(400, "Undo is for hand-drawn gating only (flow/track), not $pt")
+    proj, image_uid = String(body["projectUid"]), String(body["imageUid"])
+    _with_popmap_lock() do
+        h = _history_for(_history_key(proj, image_uid, vn, pt))
+        from, to = dir === :undo ? (h.undo, h.redo) : (h.redo, h.undo)
+        isempty(from) && return _gerr(409, dir === :undo ? "Nothing to undo" : "Nothing to redo")
+        entry = pop!(from)
+        counter = _GatingSnapshot()
+        for (uid, tree) in entry
+            timg, _ = _gating_image(proj, uid)
+            timg === nothing && continue                      # image gone — skip, don't fail the step
+            push!(counter, (uid, _gating_snapshot(timg, vn, pt)))
+            save_pop_map!(from_tree(tree), timg)
+            m = load_pop_map(timg; value_name = vn, pop_type = pt)
+            _inject_napari_pop!(m, timg)
+            _broadcast_popmap(proj, uid, vn, pt, m)
+        end
+        push!(to, counter)
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        _inject_napari_pop!(m, img)
+        200, JSON3.write((; tree = to_tree(m),
+                            canUndo = !isempty(h.undo), canRedo = !isempty(h.redo)))
+    end
 end
 
 # Run suffixes available in a table's obs, for the pop_type's own column FAMILY: `clusters.{suffix}`
@@ -437,9 +531,13 @@ function api_gating_popmap(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
-    m = load_pop_map(img; value_name = vn, pop_type = get(q, "popType", "flow"))
+    pt = get(q, "popType", "flow")
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_napari_pop!(m, img)
-    200, JSON3.write((; tree = to_tree(m)))
+    proj, image_uid = get(q, "projectUid", ""), get(q, "imageUid", "")
+    200, JSON3.write((; tree = to_tree(m),
+                        canUndo = _can_undo(proj, image_uid, vn, pt),
+                        canRedo = _can_redo(proj, image_uid, vn, pt)))
 end
 
 # ── GET /api/gating/stats?...&pop=/cd4 ────────────────────────────────────────
@@ -777,7 +875,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         catch e
             return _gerr(400, sprint(showerror, e))
         end
-        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
 
@@ -792,7 +890,7 @@ function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
         catch e
             return _gerr(400, sprint(showerror, e))
         end
-        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
 
@@ -803,7 +901,7 @@ function api_gating_pop_delete(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
         del_pop!(m, String(body["path"]))
-        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
 
@@ -834,7 +932,7 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
                                       p.filter_fun = conds[1].fun; p.filter_values = conds[1].values)
             end
         end
-        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
 
@@ -856,8 +954,8 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
         catch e
             return _gerr(400, sprint(showerror, e))
         end
-        tree = _persist_and_broadcast!(m, img, body, vn, pt)
-        200, JSON3.write((; tree = tree, path = newpath))
+        r = _persist_and_broadcast!(m, img, body, vn, pt)
+        200, JSON3.write((; r..., path = newpath))
     end
 end
 
