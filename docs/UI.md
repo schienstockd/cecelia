@@ -1583,7 +1583,9 @@ already the source of truth for the image table's run tag and its per-image hist
 (`utils/runLog.ts`). **`utils/taskHistoryRows.ts`** turns those entries into the same `TaskEntry` rows
 the live half produces, so there is one list, one row mapper and one log pane — and clicking a run from
 three weeks ago fetches its real output from `{img}/logs/{fun}.log` through the backfill that already
-existed for adopted rows. Toggle: **History** in the toolbar (`settings.tasksShowHistory`, ON).
+existed for adopted rows. Toggle: **History** in the toolbar (`settings.tasksShowHistory`), **off by default** — the two are
+different questions (*what is happening* vs *what has been done*) and the session view is the one
+you want while you are running things, so the manager keeps the meaning it has always had.
 
 They are kept distinguishable by `TaskEntry.history`, and that flag is doing real work in four places:
 

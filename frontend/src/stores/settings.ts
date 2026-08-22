@@ -21,13 +21,13 @@ export const useSettingsStore = defineStore('settings', () => {
   )
 
   // Whether the Task Manager also lists the project's DURABLE run history (each image's run log), not
-  // just the runs this browser session watched. ON by default, because off is what the manager used to
-  // be and it was reported as the list looking empty: a window opened after the work finished — a
-  // reload, or the pop-out task window — had nothing to show for a project with hundreds of runs in it.
-  // A toggle rather than a rule because the two questions are different ("what is happening" vs "what
-  // has been done"), and the session view is the one you want while you are running things.
+  // just the runs this browser session watched. The two are different questions — "what is happening"
+  // vs "what has been done" — and the session view is the one you want while you are running things,
+  // so this is OFF by default and the manager keeps the meaning it has always had. Turn it on when the
+  // list looks empty for a reason it shouldn't: a window opened after the work finished (a reload, or
+  // the pop-out task window) has no session to show for a project with hundreds of runs in it.
   const tasksShowHistory = ref(
-    localStorage.getItem('cc.tasksShowHistory') !== 'false'  // default true
+    localStorage.getItem('cc.tasksShowHistory') === 'true'   // default false
   )
 
   // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
