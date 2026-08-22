@@ -894,13 +894,17 @@ function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
     end
 end
 
+# `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population itself — the
+# "prune what I gated off this" action in the manager's row menu. One request (so one undo step),
+# not one delete per child.
 function api_gating_pop_delete(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "path") || return _gerr(400, "path required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-        del_pop!(m, String(body["path"]))
+        Bool(get(body, "childrenOnly", false)) ? del_children!(m, String(body["path"])) :
+                                                 del_pop!(m, String(body["path"]))
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
@@ -951,6 +955,35 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
         newpath = try
             rename_pop!(m, String(body["path"]), String(body["newName"]))
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
+        r = _persist_and_broadcast!(m, img, body, vn, pt)
+        200, JSON3.write((; r..., path = newpath))
+    end
+end
+
+# POST /api/gating/pop/move  { …, path, parent }  → re-parent a population, subtree and all.
+# The gate is unchanged; its MEMBERSHIP is not — a pop is its own gate ∩ its parent's, so this is how
+# a population gated under a QC gate is lifted out to all cells (or tucked under another gate) without
+# redrawing it and its children. `parent` is "root" for top level.
+function api_gating_pop_move(body_bytes::Vector{UInt8})
+    img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    (haskey(body, "path") && haskey(body, "parent")) || return _gerr(400, "path and parent required")
+    _path   = String(body["path"])
+    _parent = String(body["parent"])
+    # the move changes the pop's PATH, so it needs the same cross-pop-type uniqueness guard a rename
+    # does (the mixed-type module picker resolves a population by path alone).
+    _newpath = pop_path(is_root(_parent) ? ROOT : _parent, pop_name(_path))
+    _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
+    _conflict === nothing || return _gerr(400,
+        "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
+        "unique across population types so a population can be selected unambiguously. Rename it first.")
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        has_pop(m, _path) || return _gerr(404, "Population not found: $_path")
+        newpath = try
+            move_pop!(m, _path, _parent)
         catch e
             return _gerr(400, sprint(showerror, e))
         end

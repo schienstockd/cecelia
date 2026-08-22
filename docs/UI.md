@@ -2765,6 +2765,22 @@ Edit a gate by dragging its handles → `pop/set-gate` on release. The manager (
 clamped on-screen, collapsible) does recolour (`pop/update`), inline rename (`pop/rename`),
 delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
 
+**A population row keeps only what you toggle while reading it** — colour, highlight, napari
+visibility — and everything episodic is one **⋯ menu** (`.cc-actions-menu`, the same list the image
+table's row menu renders): *Show the gate's plot*, rectangle ⇄ polygon, **Move under…**, *Delete N
+below it* (`pop/delete` + `childrenOnly`, so the pop survives and it is ONE undo step) and *Delete
+population*. The panel is ~250px, so every icon parked beside a row came out of the name and the
+count — five of them was already one row's worth of controls per population. Destructive items arm in
+place (`ConfirmButton`), they don't open a dialog.
+
+**Move under…** re-parents the population and its whole subtree (`pop/move`). It reuses the SAME
+popover rather than opening a second one — the choice is a list of populations, which is what a menu
+already renders — and offers root plus every pop except the moved one's own subtree (a cycle) and its
+current parent. This is a MEMBERSHIP edit, not a cosmetic one: a pop's cells are its gate ∩ its
+parent's, so lifting `/qc/B` out to `/B` re-derives it against all cells. The same select is now live
+while editing a filter population (it used to read "delete & recreate to move"). Gates, children and
+colours survive — the alternative was deleting the branch and redrawing every gate in it.
+
 ### Gating plot — rendering & UX hacks
 
 Moved to **`docs/POPULATION.md`** → *Gating plot — rendering & UX hacks*: the client-side density and

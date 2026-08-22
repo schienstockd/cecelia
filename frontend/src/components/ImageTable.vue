@@ -776,27 +776,27 @@ const unselectableUids = computed(() =>
 
   <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
   <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end" flush>
-    <div v-if="actionsImg" class="actions-menu">
-      <button v-if="pageIconFor()" class="actions-item"
+    <div v-if="actionsImg" class="cc-actions-menu">
+      <button v-if="pageIconFor()" class="cc-actions-item"
         @click.stop="runAction(() => physSizeDialogUid = actionsImg!.uid)">
         <i class="pi pi-pencil" /> {{ pageIconFor()!.tip }}
       </button>
-      <button class="actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
+      <button class="cc-actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
         <i class="pi pi-info-circle" /> Metadata
       </button>
       <!-- crop CREATES an image → Import page only, like copy/move/remove in the action bar -->
-      <button v-if="module === 'manageImages'" class="actions-item" :disabled="!isImported(actionsImg)"
+      <button v-if="module === 'manageImages'" class="cc-actions-item" :disabled="!isImported(actionsImg)"
         @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
         <i class="pi pi-image" /> Crop to new image…
       </button>
-      <button class="actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
+      <button class="cc-actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID
       </button>
-      <button class="actions-item" @click.stop="runAction(() => setIncluded(actionsImg!, isExcluded(actionsImg!)))">
+      <button class="cc-actions-item" @click.stop="runAction(() => setIncluded(actionsImg!, isExcluded(actionsImg!)))">
         <i :class="isExcluded(actionsImg) ? 'pi pi-check-circle' : 'pi pi-ban'" />
         {{ isExcluded(actionsImg) ? 'Include in processing' : 'Exclude from processing' }}
       </button>
-      <button class="actions-item" @click.stop="openRunLogFromMenu(actionsImg.uid)">
+      <button class="cc-actions-item" @click.stop="openRunLogFromMenu(actionsImg.uid)">
         <i class="pi pi-history" /> Run history
       </button>
     </div>
@@ -1021,14 +1021,6 @@ const unselectableUids = computed(() =>
 .sel-row:hover .actions-btn,
 .actions-btn.on { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 
-/* ⋯ dropdown menu (inside TeleportPopover, which provides the surface/border/shadow) */
-.actions-menu { display: flex; flex-direction: column; min-width: 200px; }   /* padding: TeleportPopover (flush) */
-.actions-item {
-  display: flex; align-items: center; gap: 0.55rem;
-  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);
-  background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
-}
-.actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
-.actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.actions-item .pi { width: 1rem; text-align: center; color: var(--cc-text-dim); flex-shrink: 0; }
+/* the ⋯ menu itself is the shared `.cc-actions-menu` / `.cc-actions-item` (style.css) — the
+   population manager renders the same list. Only the trigger's rest-state visibility is local. */
 </style>

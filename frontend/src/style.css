@@ -734,3 +734,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    itself, so the plot never silently disagrees with its own options; the WHY is the control's tooltip,
    built by `overrideTooltip` — a marker without an explanation is what this replaces. */
 .cc-auto-override { border-color: var(--cc-sev-warn) !important; color: var(--cc-sev-warn) !important; }
+
+/* ── Row overflow menu (⋯) ─────────────────────────────────────────────────────
+   The item list inside a TeleportPopover (which provides the surface/border/shadow/padding — pass
+   `flush` so a row's hover highlight reaches the edges). THE shape for "this row has more actions
+   than fit beside it": the image table's per-image menu and the population manager's per-population
+   menu render the same list, so it lives here rather than twice in scoped blocks. The ⋯ TRIGGER stays
+   with its host — how visible a button is at rest is a per-table decision. */
+.cc-actions-menu { display: flex; flex-direction: column; min-width: 200px; }
+.cc-actions-item {
+  display: flex; align-items: center; gap: 0.55rem;
+  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);
+  background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
+}
+.cc-actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
+.cc-actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.cc-actions-item .pi { width: 1rem; text-align: center; color: var(--cc-text-dim); flex-shrink: 0; }
+/* destructive item (delete): the icon carries the colour at rest, the whole row once armed */
+.cc-actions-item.danger .pi { color: var(--cc-sev-fail); }
+.cc-actions-item.armed, .cc-actions-item.armed .pi { color: var(--cc-sev-warn); }
+/* a heading inside the menu (e.g. "Move under…") — not clickable */
+.cc-actions-head {
+  padding: 0.35rem 0.6rem 0.2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-2xs);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
