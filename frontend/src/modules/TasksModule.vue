@@ -234,7 +234,12 @@ const FILTERS: ChipOption[] = [
 
     <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
     <div class="tm-toolbar">
-      <span class="tm-title">Task Manager</span>
+      <!-- The pop-out window has no header and no sidebar, so nothing else in it names the project —
+           and it FOLLOWS switches made in the main window, silently rebuilding the list. Naming the
+           project here is what makes that legible (and is how you can see the follow working at all).
+           On /tasks the sidebar already says it, so it would be a second copy. -->
+      <span class="tm-title">Task Manager<template v-if="props.standalone && projectMeta.current">
+        <span class="tm-title-proj cc-muted"> · {{ projectMeta.current.name }}</span></template></span>
 
       <ChipSelect
         class="filter-chips" :options="FILTERS" :model-value="statusFilter"
@@ -430,6 +435,7 @@ const FILTERS: ChipOption[] = [
   flex-shrink: 0;
   background: var(--cc-surface-1);
 }
+.tm-title-proj { font-weight: 400; }
 .tm-title {
   font-size: var(--cc-fs-md);
   font-weight: 600;

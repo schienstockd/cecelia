@@ -28,7 +28,7 @@
   arrives during a run instead of racing it. Last requested wins.
 -->
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TasksModule from './TasksModule.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -59,8 +59,15 @@ const show = debouncedLatest<string>(async (uid) => {
 
 let stop: (() => void) | undefined
 
+// The window's own title names the project, and re-titles when the window follows a switch. It is the
+// only always-on signal that following happened at all: this is a bare route, so the docked console
+// that would otherwise carry a log line is not mounted here, and the OS window title is visible without
+// opening anything.
+watch(() => projectMeta.current?.name, name => {
+  document.title = `Cecelia — Task Manager${name ? ` — ${name}` : ''}`
+}, { immediate: true })
+
 onMounted(() => {
-  document.title = 'Cecelia — Task Manager'
   // Subscribed BEFORE the first load, so a switch made while this window is still opening its project
   // is not missed — the scheduler queues it behind that load rather than racing it.
   stop = onOpenProjectChange(e => {

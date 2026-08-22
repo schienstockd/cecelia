@@ -1560,6 +1560,13 @@ Two things are NOT the same as the console's, and both are load-bearing:
   window is most exposed at mount, with its first load already in flight. The shared scheduler queues a
   request that arrives during a run instead of racing it; don't replace it with a bare `await`.
 
+  **The window names its project, in the toolbar and in `document.title`, and re-titles when it
+  follows.** On `/tasks` the sidebar already says which project is open; the pop-out has no header and
+  no sidebar, so without this the list silently rebuilds itself around a different project with nothing
+  on screen to say why. It is also the only always-on evidence that following works at all — a bare
+  route does not mount the docked console, so a log line would go nowhere visible, whereas the OS
+  window title is readable without opening anything.
+
   The channel is `localStorage` + the `storage` event rather than a `BroadcastChannel`, for the one
   reason that decides it: the event carries state that PERSISTS, so a window that reloads or opens late
   reads the current answer from the same key it would have received an event about. Two things in there
