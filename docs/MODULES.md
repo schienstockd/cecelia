@@ -418,8 +418,9 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 | `io` | 8 | local disk IO — OME-ZARR import/convert, crop |
 | `network` | 1 | remote/SMB reads — reserved for HPC/remote tasks (unused today) |
 
-Limits are starting defaults only — each is adjustable live in Settings, so throttle whenever you
-need (e.g. drop `io` to 1 when importing over a slow network share).
+Limits are starting defaults only — each is adjustable live in the `PoolThrottle` popover (Task
+Manager, any module page, the Chain page), so throttle whenever you need (e.g. drop `io` to 1 when
+importing over a slow network share).
 
 ### `hidden` — a registered task with no module-page entry
 

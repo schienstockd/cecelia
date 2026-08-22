@@ -1292,7 +1292,7 @@ onActivated(async () => {
           class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
           :class="{ 'qc-on': throttleOpen }"
           @click="throttleOpen = !throttleOpen"
-          v-tooltip.bottom="'Throttle — how many tasks of each kind run at once'"
+          v-tooltip.bottom="'Throttle — how many tasks run at once, and how wide each may go'"
         >
           <i class="pi pi-sliders-h" />
         </button>
