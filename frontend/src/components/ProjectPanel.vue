@@ -277,7 +277,7 @@ function formatDate(iso: string | null): string {
 
         <div class="form-row">
           <label class="form-label"
-            v-tooltip.right="'Name for this project; need not match the folder name'">
+            v-tooltip.top="'Name for this project; need not match the folder name'">
             Project name
           </label>
           <input
@@ -286,7 +286,7 @@ function formatDate(iso: string | null): string {
             v-model="newName"
             placeholder="e.g. Tumour microenvironment 2025"
             @keyup.enter="createProject"
-            v-tooltip.right="'Give the project a unique, descriptive name'"
+            v-tooltip.bottom="'Give the project a unique, descriptive name'"
           />
           <span class="field-error" v-if="nameError">{{ nameError }}</span>
         </div>

@@ -44,7 +44,7 @@ const { widthStyle, onResizeStart } = usePanelResize({
        :style="settings.rightPanelCollapsed ? undefined : widthStyle">
     <!-- drag the left edge to resize (persisted per panel) -->
     <div v-if="!settings.rightPanelCollapsed" class="cc-panel-resizer" @mousedown="onResizeStart"
-         v-tooltip.left="'Drag to resize'" />
+         v-tooltip.top="'Drag to resize'" />
     <button class="cc-panel-handle" data-guide="layout.rightPanelHandle"
             @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
             v-tooltip.left="`${settings.rightPanelCollapsed ? 'Show' : 'Hide'} ${label}`"

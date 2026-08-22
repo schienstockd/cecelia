@@ -97,6 +97,11 @@ be *read* and judged by a person, not to break CI.
 
 ### Tooltip coverage — the presence half
 
+> **Coverage is not placement.** This section says a control must *have* hover help; which side it
+> goes on is decided by the target's width, not by what reads best — see
+> [`docs/UI.md`](../UI.md) → *Tooltip placement*. The presence rule alone is what put a second tip on
+> every bool param's switch, so the two are enforced together or fixing one re-breaks the other.
+
 Everything above polices the copy that *exists*. This polices the copy that **doesn't**: an input a
 user can change with no hover help anywhere on it. Length had a ratchet from the start; presence
 didn't, and presence is the half that drifted — a panel picks up tooltips on six of its ten rows and

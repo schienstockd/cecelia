@@ -517,15 +517,15 @@ defineExpose({ capturePage, collectCsvs })
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
-                <label class="lc-pop-row cc-muted" v-tooltip.left="'Number of plot columns on the board'"><span>cols</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.top="'Number of plot columns on the board'"><span>cols</span>
                   <input type="range" min="1" max="6" :value="entry.cols"
                          @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
                   <span class="lc-val">{{ entry.cols }}</span></label>
-                <label class="lc-pop-row cc-muted" v-tooltip.left="'Number of plot rows on the board'"><span>rows</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.top="'Number of plot rows on the board'"><span>rows</span>
                   <input type="range" min="1" max="6" :value="entry.rows"
                          @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
                   <span class="lc-val">{{ entry.rows }}</span></label>
-                <label class="lc-pop-row cc-muted" v-tooltip.left="'Height of each plot slot in pixels'"><span>height</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.top="'Height of each plot slot in pixels'"><span>height</span>
                   <input type="range" min="160" max="720" step="10" :value="rowHeight"
                          @input="rowHeight = +($event.target as HTMLInputElement).value" />
                   <span class="lc-val">{{ rowHeight }}</span></label>

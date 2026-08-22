@@ -759,7 +759,7 @@ onUnmounted(() => {
           class="viewer-select"
           :value="selectedValueName"
           @change="onValueNameChange"
-          v-tooltip.right="`Which image version to show in Napari`"
+          v-tooltip.bottom="`Which image version to show in Napari`"
         >
           <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
         </select>
@@ -842,7 +842,7 @@ onUnmounted(() => {
       <div v-if="obsCols.length" class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Colour by</div>
         <select class="opt-colourby" :value="colourByCol" @change="onColourBy"
-                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state)'">
+                v-tooltip.bottom="'Colour tracks + labels by a cell property (e.g. HMM state)'">
           <option value="">default</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>

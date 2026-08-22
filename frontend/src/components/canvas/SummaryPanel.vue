@@ -732,7 +732,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
         <div class="sp-pop" @click.stop>
           <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
           <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'Split the measure by a categorical column (e.g. HMM state)'">
+                 v-tooltip.top="'Split the measure by a categorical column (e.g. HMM state)'">
             <span>Split by</span>
             <select v-model="groupBy">
               <option value="">none</option>
@@ -741,7 +741,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
           </label>
           <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
           <label v-if="canStatUnit" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'Individual cells/tracks, or one point per image (n = images)'">
+                 v-tooltip.top="'Individual cells/tracks, or one point per image (n = images)'">
             <span>Datapoint</span>
             <select v-model="statUnit">
               <option value="individual">individual</option>
@@ -749,7 +749,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
             </select>
           </label>
           <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'How to collapse each image to one point'">
+                 v-tooltip.top="'How to collapse each image to one point'">
             <span>Per image</span>
             <select v-model="imageAgg">
               <option value="mean">mean</option>
@@ -761,7 +761,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
                (state signature = profile, transition matrix = crosstab) pin their mode, so the two
                plots stay distinct rather than each being able to become the other. -->
           <template v-if="chartType === 'heatmap'">
-            <label v-if="hmCtl.mode && !specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
+            <label v-if="hmCtl.mode && !specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.top="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
               <span>Mode</span>
               <select v-model="matrixMode">
                 <option value="profile">profile</option>
@@ -769,18 +769,18 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
               </select>
             </label>
             <label v-if="hmCtl.category && groupByOpts.length" class="sp-pop-row cc-muted"
-                   v-tooltip.left="'Categorical column: profile columns / crosstab from_to pairs'">
+                   v-tooltip.top="'Categorical column: profile columns / crosstab from_to pairs'">
               <span>Category</span>
               <select v-model="categorySel">
                 <option v-for="g in groupByOpts" :key="g" :value="g">{{ centroidLabel(g) }}</option>
               </select>
             </label>
             <div v-if="hmCtl.zscore" class="sp-pop-row cc-muted"
-                   v-tooltip.left="'Off = 0–1 per feature; on = z-score rows'">
+                   v-tooltip.top="'Off = 0–1 per feature; on = z-score rows'">
               <span>Z-score rows</span>
               <CcToggle aria-label="Z-score rows" v-model="zscore" />
             </div>
-            <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.left="'Normalise the transition matrix'">
+            <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.top="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
                 <option value="row">row · P(to|from)</option>
@@ -789,16 +789,16 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
                 <option value="none">counts</option>
               </select>
             </label>
-            <div v-if="hmCtl.cellValues" class="sp-pop-row cc-muted" v-tooltip.left="'Print the value in each cell'">
+            <div v-if="hmCtl.cellValues" class="sp-pop-row cc-muted" v-tooltip.top="'Print the value in each cell'">
               <span>Cell values</span>
               <CcToggle aria-label="Cell values" v-model="heatmapValues" />
             </div>
           </template>
-          <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted" v-tooltip.left="'Number of histogram bins'">
+          <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted" v-tooltip.top="'Number of histogram bins'">
             <span>Bins</span>
             <input type="number" min="5" max="100" step="5" v-model.number="bins" />
           </label>
-          <label v-else-if="chartType === 'bar'" class="sp-pop-row cc-muted" v-tooltip.left="'Spread the error bars show'">
+          <label v-else-if="chartType === 'bar'" class="sp-pop-row cc-muted" v-tooltip.top="'Spread the error bars show'">
             <span>Error</span>
             <select v-model="errorMetric">
               <option value="ci95">95% CI</option>
@@ -807,16 +807,16 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
             </select>
           </label>
           <div v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row cc-muted"
-                 v-tooltip.left="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
+                 v-tooltip.top="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
             <span>Proportion</span>
             <CcToggle aria-label="Proportion" v-model="normalize" />
           </div>
           <template v-if="timeSeries">
-            <label class="sp-pop-row cc-muted" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
+            <label class="sp-pop-row cc-muted" v-tooltip.top="'LOESS span — % of points in each local fit (geom_smooth span)'">
               <span>Smooth span</span>
               <input type="number" min="5" max="100" step="5" v-model.number="smooth" />
             </label>
-            <div class="sp-pop-row cc-muted" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
+            <div class="sp-pop-row cc-muted" v-tooltip.top="'Show the ±95% confidence ribbon of the fit'">
               <span>Interval</span>
               <CcToggle aria-label="Interval" v-model="interval" />
             </div>
@@ -841,7 +841,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
         </button>
         <div v-if="showExplode" class="sp-explode-pop" @click.stop>
           <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
-          <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.left="'Tick to give this measure its own plot'">
+          <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.top="'Tick to give this measure its own plot'">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ measureLabel(m) }}
           </label>
           <PlotNotice v-if="explodeHeavy" class="sp-explode-warn" :text="`${explodeSel.length} new plots`"

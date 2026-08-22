@@ -322,6 +322,46 @@ export interface DuplicateTooltip extends UncoveredControl {
   why: 'heading' | 'per-option'
 }
 
+export interface MisplacedTooltip extends UncoveredControl {
+  /** The placement as written — `left`, `right`, or `none` for a bare `v-tooltip`. */
+  side: 'left' | 'right' | 'none'
+}
+
+/**
+ * Hosts that fill the column they sit in, so a sideways tooltip leaves the panel.
+ *
+ * Block-level by definition (`div`/`tr`/`td`/`table`), form controls that this app lays out at row
+ * width, and the wrapper components that render a whole row (`ChipSelect` and friends — the same set
+ * `HEADING_COVERED` names, for the same reason: they are a row of hit targets, not one).
+ *
+ * `span`, `i`, `a`, `button` and `RouterLink` are NOT here. They are inline, usually an icon or a
+ * word, and sideways is the correct placement for them — flagging those would turn a real signal
+ * into a style sweep, the same trap `duplicateTooltips` avoids by staying scoped.
+ */
+const WIDE_HOST =
+  /^(?:label|input|select|textarea|div|tr|td|table|ChipSelect|SwatchSelect|CcToggle|SelectionTable)$/
+
+// A radio or a checkbox is ~13px — narrower than any tooltip, and never laid out at row width, so
+// beside it is the only sensible placement and `.bottom` would drop the tip onto the next row. The
+// exemption is by TYPE rather than by allow-list because it is a class of control, not a site:
+// `SelectionTable`'s select-all box and `FileBrowser`'s row box are the same widget twice.
+// `type="range"` is deliberately NOT here — a slider is laid out at row width in these panels.
+const NARROW_INPUT = /type\s*=\s*"(?:radio|checkbox)"/
+
+/** The placement modifier as written: `v-tooltip.left` → `left`, bare `v-tooltip` → `none`. */
+const TOOLTIP_SIDE = /v-tooltip(\.[A-Za-z]+)*\s*=/
+const sideOf = (attrs: string): 'left' | 'right' | 'none' | null => {
+  const m = TOOLTIP_SIDE.exec(attrs)
+  if (!m) return null
+  const mods = m[0].slice('v-tooltip'.length).replace(/\s*=$/, '')
+  if (/\.left\b/.test(mods)) return 'left'
+  if (/\.right\b/.test(mods)) return 'right'
+  // Only `.top`/`.bottom` are safe on a wide host; anything else here (`.focus` alone, no modifier
+  // at all) leaves PrimeVue on its unchecked `alignRight` default.
+  if (/\.(?:top|bottom)\b/.test(mods)) return null
+  return 'none'
+}
+
 /**
  * The settable controls — and icon-only buttons — in an SFC with no hover help reachable from them.
  *
@@ -427,9 +467,44 @@ export const duplicateTooltips = (src: string, path = ''): DuplicateTooltip[] =>
 export const nestedTooltips = (src: string, path = ''): DuplicateTooltip[] =>
   scanTooltips(src, path).nested
 
-function scanTooltips(src: string, path = ''):
-    { uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[]; nested: DuplicateTooltip[] } {
-  const none = { uncovered: [], duplicates: [], nested: [] }
+/**
+ * Tooltips placed SIDEWAYS off a target that fills its column — the third way a tooltip ends up on
+ * top of the UI, and the one neither check above can see, because it is not about text or nesting.
+ *
+ * PrimeVue's only safety net is the VIEWPORT, never the panel. `isOutOfBounds` (tooltip/index.mjs)
+ * tests screen edges alone, and `alignLeft` sets `left = hostLeft - tooltipWidth`. So on a target
+ * that spans its panel, `.left` puts the tooltip *definitionally* outside that panel — over the
+ * neighbouring column — and the library is satisfied, because it is still on screen. `.right` does
+ * the same in the other direction. That is what put a param tip over the task list (Dominik,
+ * 2026-08-22) and what made 26 of PlotOptions' row tips land on the plot they describe.
+ *
+ * `.top`/`.bottom` are the ONLY two placements PrimeVue clamps horizontally (`if (left < 0) left = 0;
+ * else if (left + tooltipWidth > viewportWidth) …`). On a wide target that clamp is what guarantees
+ * the tooltip stays inside the target's own horizontal span — i.e. inside the panel. They also never
+ * overlap the target itself: `top` sits at `hostTop - tooltipHeight`, `bottom` at `hostTop + hostH`.
+ * The sideways pair instead CENTRES vertically on the target, so a two-line tip on a one-line row
+ * spills over the rows above and below it.
+ *
+ * A BARE `v-tooltip` is reported too. With no modifier `align()` falls through to `alignRight`, whose
+ * flip chain ends by re-applying `alignRight` with no bounds test at all — the one placement that can
+ * land anywhere.
+ *
+ * Scoped to hosts that fill their column. A narrow target — an icon button, a chip, a dot — has room
+ * beside it and no row above or below worth covering, so `.left`/`.right` are right there and are
+ * deliberately left alone. Being tag-based this cannot measure a genuinely narrow `<input>`; that is
+ * what the allow-list in the test is for, on the same "state the argument" terms as the others.
+ *
+ * The fix is never a nudge to the other side — it is `.top` on a label or heading (away from the
+ * control it names) and `.bottom` on the control (away from its own label). See `docs/UI.md`.
+ */
+export const misplacedTooltips = (src: string, path = ''): MisplacedTooltip[] =>
+  scanTooltips(src, path).misplaced
+
+function scanTooltips(src: string, path = ''): {
+      uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[]
+      nested: DuplicateTooltip[]; misplaced: MisplacedTooltip[]
+    } {
+  const none = { uncovered: [], duplicates: [], nested: [], misplaced: [] }
   if (PRIMITIVE_SFC.test(path)) return none
   const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
   if (!tpl) return none
@@ -449,6 +524,7 @@ function scanTooltips(src: string, path = ''):
   const out: UncoveredControl[] = []
   const dupes: DuplicateTooltip[] = []
   const nested: DuplicateTooltip[] = []
+  const misplaced: MisplacedTooltip[] = []
   // `tippedSibling` is per-DEPTH: a tipped <label> marks the row it opens, and the chip select that
   // follows it inside the same parent is covered by it. Reset on entering/leaving a parent so a
   // heading cannot leak coverage into an unrelated block. `siblingExpr` carries that heading's
@@ -496,6 +572,12 @@ function scanTooltips(src: string, path = ''):
     // opposite verdict. Only a real ANCESTOR counts; `tippedSibling` is deliberately not consulted.
     if (tipped && open.some((e) => e.tipped))
       nested.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr ?? '', why: 'heading' })
+    // Placement — read off the same walk, but it depends only on this tag and its attributes, not on
+    // the ancestor stack, so it is deliberately independent of every verdict above.
+    if (tipped && WIDE_HOST.test(tag!) && !NARROW_INPUT.test(attrs!)) {
+      const side = sideOf(attrs!)
+      if (side) misplaced.push({ tag: tag!, line: lineAt(m.index!), side })
+    }
     if (tipped) { tippedSibling = true; siblingExpr = expr }
     if (!selfClosing && !VOID.test(tag!)) {
       // INHERITED into the child scope, not reset: the heading is the param row's label and the
@@ -504,7 +586,7 @@ function scanTooltips(src: string, path = ''):
       open.push({ tag: tag!, tipped, tippedSibling, siblingExpr })
     }
   }
-  return { uncovered: out, duplicates: dupes, nested }
+  return { uncovered: out, duplicates: dupes, nested, misplaced }
 }
 
 // Task-JSON `tip` fields carry the same budget, but they are backend files (`app/src/tasks/**`) and

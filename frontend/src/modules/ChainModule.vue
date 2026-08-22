@@ -1352,7 +1352,7 @@ onActivated(async () => {
             class="chain-select"
             :value="activeChain"
             @change="switchChain(($event.target as HTMLSelectElement).value)"
-            v-tooltip.right="'Select a chain to edit'"
+            v-tooltip.bottom="'Select a chain to edit'"
           >
             <option v-for="name in chainNames" :key="name" :value="name">{{ name }}</option>
           </select>
@@ -1436,7 +1436,7 @@ onActivated(async () => {
         <input
           v-model="newChainName"
           class="new-chain-input"
-          v-tooltip.right="nameMode === 'rename' ? 'New name for this chain' : 'Name for the new chain'"
+          v-tooltip.bottom="nameMode === 'rename' ? 'New name for this chain' : 'Name for the new chain'"
           :placeholder="nameMode === 'rename' ? 'new name…' : 'chain name…'"
           @keydown.enter="submitName"
           @keydown.esc="closeNameInput"
@@ -1470,7 +1470,7 @@ onActivated(async () => {
                 class="palette-item"
                 draggable="true"
                 @dragstart="onPaletteDragStart($event, def)"
-                v-tooltip.right="paletteTooltip(def)"
+                v-tooltip.top="paletteTooltip(def)"
               >
                 <i class="pi pi-ellipsis-v drag-grip" />
                 <span class="palette-item-label">{{ def.label }}</span>
@@ -1507,7 +1507,7 @@ onActivated(async () => {
             v-if="project.sets.length"
             class="chain-select run-set-select"
             v-model="runSetUid"
-            v-tooltip.right="'Select which set to run the chain on'"
+            v-tooltip.bottom="'Select which set to run the chain on'"
           >
             <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
           </select>
@@ -1519,7 +1519,7 @@ onActivated(async () => {
             <div
               class="run-row run-row-all"
               @click.stop="toggleRunAll"
-              v-tooltip.right="runAllSelected ? 'Deselect all' : 'Select all images'"
+              v-tooltip.top="runAllSelected ? 'Deselect all' : 'Select all images'"
             >
               <span class="run-check-icon">
                 <i :class="[
@@ -1539,7 +1539,7 @@ onActivated(async () => {
               class="run-row"
               :class="{ active: runSelectedUids.includes(img.uid), excluded: isExcluded(img) }"
               @click.stop="toggleRunImage(img.uid)"
-              v-tooltip.right="isExcluded(img) ? (img.note ? `Excluded: ${img.note}` : 'Excluded from processing') : img.uid"
+              v-tooltip.top="isExcluded(img) ? (img.note ? `Excluded: ${img.note}` : 'Excluded from processing') : img.uid"
             >
               <span class="run-check-icon">
                 <i :class="['pi', isExcluded(img) ? 'pi-ban' : runSelectedUids.includes(img.uid) ? 'pi-check-square' : 'pi-stop']" />
@@ -1630,7 +1630,7 @@ onActivated(async () => {
             class="config-select"
             :value="selectedNode.data.scope"
             @change="updateSelectedNodeData({ scope: ($event.target as HTMLSelectElement).value })"
-            v-tooltip.left="'image = per image, set = synchronised, incremental = event-driven'"
+            v-tooltip.bottom="'image = per image, set = synchronised, incremental = event-driven'"
           >
             <option value="image">image</option>
             <option value="set">set (picnic)</option>
@@ -1643,7 +1643,7 @@ onActivated(async () => {
               class="config-select"
               :value="selectedNode.data.barrier_policy"
               @change="updateSelectedNodeData({ barrier_policy: ($event.target as HTMLSelectElement).value })"
-              v-tooltip.left="'all = ignore failures, require_all = abort, successful_only = skip'"
+              v-tooltip.bottom="'all = ignore failures, require_all = abort, successful_only = skip'"
             >
               <option value="all">all</option>
               <option value="require_all">require_all</option>
@@ -1656,7 +1656,7 @@ onActivated(async () => {
             class="config-select"
             :value="selectedNode.data.resource_pool"
             @change="updateSelectedNodeData({ resource_pool: ($event.target as HTMLSelectElement).value })"
-            v-tooltip.left="pools.length
+            v-tooltip.bottom="pools.length
               ? 'How many nodes share a concurrency slot; GPU tasks use the gpu pool'
               : 'Pools unavailable — reopen this page to retry'"
           >

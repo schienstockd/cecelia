@@ -829,7 +829,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                         storage-key="tsv:sensitivity" :default-open="false">
       <div class="cc-row tsv-knobs">
         <label v-for="f in THRESHOLD_FIELDS" :key="f.key" class="cc-row-group cc-fs-xs"
-               v-tooltip="f.tip">
+               v-tooltip.top="f.tip">
           <span class="cc-muted">{{ f.label }}</span>
           <input type="number" :step="f.step" v-model="knobDrafts[f.key].value"
                  @change="setKnob(f.key, knobDrafts[f.key].value)" />

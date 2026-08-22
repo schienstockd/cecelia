@@ -163,7 +163,7 @@ function endGesture() {
     </div>
     <div v-show="!st.collapsed" class="fp-body"><slot /></div>
     <div v-show="!st.collapsed && !st.maximised" class="fp-resize" @pointerdown="onResizeDown"
-         v-tooltip.left="'Drag to resize'" />
+         v-tooltip.top="'Drag to resize'" />
   </div>
 </template>
 

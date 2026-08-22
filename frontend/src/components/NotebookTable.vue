@@ -236,7 +236,7 @@ defineExpose({ refresh })
   <div class="nbt">
     <div class="nbt-add" data-guide="notebooks.addRow">
       <input v-model="newName" type="text" placeholder="New notebook name…"
-             v-tooltip.right="'Name for the new notebook'" @keyup.enter="createNotebook" :disabled="busy" />
+             v-tooltip.bottom="'Name for the new notebook'" @keyup.enter="createNotebook" :disabled="busy" />
       <button class="cc-btn cc-btn-primary" :disabled="busy || !newName.trim()" @click="createNotebook">
         <i class="pi pi-plus" /> Add notebook
       </button>
@@ -266,7 +266,7 @@ defineExpose({ refresh })
       <!-- Description: inline-editable for project notebooks -->
       <template #cell-description="{ row: nb }">
         <span class="nbt-desc">
-          <input v-if="isEditing(nb.file)" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
+          <input v-if="isEditing(nb.file)" :ref="focusEditInput" v-model="editValue" v-tooltip.bottom="'Enter to save, Esc to cancel'"
                  type="text" @blur="commitEdit(nb)" @keyup.enter="commitEdit(nb)" @keyup.esc="cancelEdit" />
           <span v-else :class="{ 'nbt-editable': nb.scope === 'project', 'nbt-muted': !nb.description }"
                 @click="startEdit(nb)">

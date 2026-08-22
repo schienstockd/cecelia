@@ -322,7 +322,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
         </div>
         <CcToggle class="ap-sync" label="Sync napari"
                   :model-value="settings.animationSyncNapari" @update:model-value="onToggleSync($event)"
-                  v-tooltip.left="'Show the selected keyframe in napari when you click it'" />
+                  v-tooltip.bottom="'Show the selected keyframe in napari when you click it'" />
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the batch page -->

@@ -668,7 +668,7 @@ const unselectableUids = computed(() =>
       <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
            exclusion reason (shown in the badge tooltip + CSV) -->
       <span class="note-row" @click.stop>
-        <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.right="'Enter to save, Esc to cancel'"
+        <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.bottom="'Enter to save, Esc to cancel'"
           class="attr-edit" v-model="editValue" :ref="focusEditInput"
           :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
           @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
@@ -686,7 +686,7 @@ const unselectableUids = computed(() =>
     <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
     <template v-for="idx in channelIndices" :key="'ch-' + idx" #[`cell-ch:${idx}`]="{ row: img }">
       <template v-if="editableMeta && channelEditable(img, idx)">
-        <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.right="'Enter to save, Esc to cancel'"
+        <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.bottom="'Enter to save, Esc to cancel'"
           class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
           @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
           @keyup.esc="cancelEdit"
@@ -705,7 +705,7 @@ const unselectableUids = computed(() =>
     <!-- attributes: editable only on the Metadata page (editableMeta); read-only elsewhere -->
     <template v-for="key in attrKeys" :key="'attr-' + key" #[`cell-attr:${key}`]="{ row: img }">
       <template v-if="editableMeta">
-        <input v-if="isEditing(img.uid, 'attr:' + key)" v-tooltip.right="'Enter to save, Esc to cancel'"
+        <input v-if="isEditing(img.uid, 'attr:' + key)" v-tooltip.bottom="'Enter to save, Esc to cancel'"
           class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
           @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
           @keyup.esc="cancelEdit"

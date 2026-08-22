@@ -607,7 +607,7 @@ async function switchWt(path: string) {
             <div class="field-row">
               <input
                 class="field-input"
-                v-tooltip.right="'Project name shown in the header and picker'"
+                v-tooltip.bottom="'Project name shown in the header and picker'"
                 v-model="editName"
                 @keydown.enter="saveName"
                 placeholder="Project name"
@@ -647,12 +647,12 @@ async function switchWt(path: string) {
 
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.taskListAutoFollow" label="Auto-follow running tasks in task manager"
-          v-tooltip.right="'When a task starts running, automatically select it in the task manager log panel'" />
+          v-tooltip.bottom="'When a task starts running, automatically select it in the task manager log panel'" />
       </div>
 
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
-          v-tooltip.right="'Reload plots automatically when a task finishes'" />
+          v-tooltip.bottom="'Reload plots automatically when a task finishes'" />
       </div>
 
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
@@ -668,7 +668,7 @@ async function switchWt(path: string) {
           </button>
           <ChipSelect :options="profileOptions" :model-value="settings.viewProfile"
                       aria-label="Active view profile"
-                      v-tooltip.right="'Show only the pages this profile lists'"
+                      v-tooltip.bottom="'Show only the pages this profile lists'"
                       @update:model-value="viewProfiles.select($event as string)" />
         </div>
         <span class="field-hint cc-muted cc-fs-xs">
@@ -688,7 +688,7 @@ async function switchWt(path: string) {
         <label class="field-label">Version</label>
         <div class="field-row">
           <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly
-                 v-tooltip.right="'Cecelia version currently running'" />
+                 v-tooltip.bottom="'Cecelia version currently running'" />
           <button
             class="save-btn"
             :disabled="appCtl.updateChecking"
@@ -850,7 +850,7 @@ async function switchWt(path: string) {
         <label class="field-label">Modules directory</label>
         <div class="field-row">
           <input class="field-input mono" :value="customModules.dir || '—'" readonly
-                 v-tooltip.right="'Where drop-in task modules are loaded from'" />
+                 v-tooltip.bottom="'Where drop-in task modules are loaded from'" />
           <button
             class="save-btn"
             :disabled="customModules.loading"
@@ -902,10 +902,10 @@ async function switchWt(path: string) {
         <div class="field-row">
           <input class="field-input mono" v-model="pluginUrl" :disabled="pluginBusy"
                  placeholder="https://github.com/owner/repo"
-                 v-tooltip.right="'A git repo or a tarball URL'" />
+                 v-tooltip.bottom="'A git repo or a tarball URL'" />
           <input class="field-input mono" v-model="pluginRef" :disabled="pluginBusy"
                  placeholder="tag or commit"
-                 v-tooltip.right="'Pin a tag or commit; blank takes the default branch'" />
+                 v-tooltip.bottom="'Pin a tag or commit; blank takes the default branch'" />
           <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
                     v-tooltip.top="'Fetch and install — this code is not sandboxed'">
@@ -1091,7 +1091,7 @@ async function switchWt(path: string) {
         <CcToggle class="toggle-row" :disabled="!gpuSupported || gpuBusy"
                :model-value="settings.napariDiscreteGpu"
                @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
-               v-tooltip.right="'Render napari on the discrete GPU; restarts napari (Linux only)'">
+               v-tooltip.bottom="'Render napari on the discrete GPU; restarts napari (Linux only)'">
           Use discrete GPU for napari
           <i v-if="gpuBusy" class="pi pi-spin pi-spinner" style="font-size:var(--cc-fs-xs);" />
         </CcToggle>
@@ -1167,7 +1167,7 @@ async function switchWt(path: string) {
         <CcToggle class="toggle-row" :disabled="svcBusy === 'runner' || runnerRaw?.settable === false"
                :model-value="!!runnerRaw?.enabled"
                @update:model-value="runnerToggle($event)"
-               v-tooltip.right="'Run tasks in a separate process so a backend restart does not stop them'">
+               v-tooltip.bottom="'Run tasks in a separate process so a backend restart does not stop them'">
           Run tasks in a separate process
         </CcToggle>
         <span v-if="runnerRaw?.settable === false" class="field-hint cc-muted cc-fs-xs">
@@ -1283,7 +1283,7 @@ async function switchWt(path: string) {
       <div class="field">
         <CcToggle class="toggle-row" label="Enable debug console"
           :model-value="replToggle" @update:model-value="replToggle = $event; toggleRepl()"
-          v-tooltip.right="'Julia console in the running server; loopback-bound only'" />
+          v-tooltip.bottom="'Julia console in the running server; loopback-bound only'" />
       </div>
 
       <!-- toggle is on but the server is network-bound → eval is refused server-side (loopback required) -->

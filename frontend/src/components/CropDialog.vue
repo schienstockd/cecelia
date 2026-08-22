@@ -38,7 +38,7 @@ function defaultValueName(): string {
     </template>
     <div v-if="valueNames.length > 1" class="crop-version-row">
       <span class="crop-version-lbl cc-muted cc-fs-xs" v-tooltip.right="'Which image version/iteration to crop'">Version</span>
-      <select v-model="selectedValueName" class="crop-version-select" v-tooltip.right="'Which image version to crop'">
+      <select v-model="selectedValueName" class="crop-version-select" v-tooltip.bottom="'Which image version to crop'">
         <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
       </select>
     </div>

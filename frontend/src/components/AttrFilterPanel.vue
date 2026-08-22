@@ -47,7 +47,7 @@ const setDraft = (key: string, next: string[]) =>
       <div v-for="key in attrKeys" :key="key" class="cc-filter-row">
         <span class="cc-filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
         <ChipSelect class="cc-filter-chips" multiple :options="attrChipOptions(key, valueMap[key] ?? [])"
-          v-tooltip.right="`Show only ${noun} with these ${key} values`"
+          v-tooltip.bottom="`Show only ${noun} with these ${key} values`"
           :model-value="modelValue.draft[key] ?? []"
           @update:model-value="v => setDraft(key, v as string[])" />
       </div>

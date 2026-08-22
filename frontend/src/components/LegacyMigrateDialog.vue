@@ -140,7 +140,7 @@ async function confirmImport() {
         <input
           v-model="path"
           class="lm-input"
-          v-tooltip.right="'Folder of the old R project to migrate'"
+          v-tooltip.bottom="'Folder of the old R project to migrate'"
           placeholder="/path/to/old/cecelia/projects/&lt;PROJECT&gt;"
           @keyup.enter="scan"
         />
@@ -151,7 +151,7 @@ async function confirmImport() {
       <input
         v-model="rscript"
         class="lm-input"
-        v-tooltip.right="'Rscript binary to read the old project with'"
+        v-tooltip.bottom="'Rscript binary to read the old project with'"
         placeholder="Rscript path (optional — only if R isn't found)"
       />
 

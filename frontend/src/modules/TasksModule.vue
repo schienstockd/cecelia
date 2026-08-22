@@ -254,7 +254,7 @@ const FILTERS: ChipOption[] = [
         v-tooltip.bottom="'Hide tasks from other projects'" />
 
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
-        v-tooltip.left="'Automatically select the newest running task'" />
+        v-tooltip.bottom="'Automatically select the newest running task'" />
 
       <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon"
         :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
@@ -287,7 +287,7 @@ const FILTERS: ChipOption[] = [
              `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
              scrolls away with the rows. -->
         <div class="tm-divider" @mousedown="onListResizeStart"
-          v-tooltip.right="'Drag to resize the list'" />
+          v-tooltip.top="'Drag to resize the list'" />
         <div class="tm-list-scroll">
         <SelectionTable
           class="tm-table" selection-mode="single" density="compact"

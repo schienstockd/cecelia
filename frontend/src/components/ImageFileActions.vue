@@ -289,7 +289,7 @@ async function runPlan(plan: DeletePlan) {
     <div class="move-row">
       <span class="move-lbl cc-muted"
         v-tooltip.right="'Destination set — only set membership changes, no data is copied'">To set</span>
-      <select v-model="moveTargetUid" class="move-select" v-tooltip.right="'Set the images are moved to'">
+      <select v-model="moveTargetUid" class="move-select" v-tooltip.bottom="'Set the images are moved to'">
         <option v-for="s in otherSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
         <option value="">＋ New set…</option>
       </select>
@@ -297,7 +297,7 @@ async function runPlan(plan: DeletePlan) {
     <div v-if="!moveTargetUid" class="move-row">
       <span class="move-lbl cc-muted" />
       <input class="move-name-input" v-model="moveNewName" placeholder="New set name…"
-        v-tooltip.right="'Name for the new set'" @keydown.enter="doMove" autofocus />
+        v-tooltip.bottom="'Name for the new set'" @keydown.enter="doMove" autofocus />
     </div>
 
     <template #footer>
