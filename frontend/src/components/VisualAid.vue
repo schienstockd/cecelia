@@ -49,7 +49,7 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
     <div class="vis-grid" :style="{ gridTemplateColumns: `7.5rem repeat(${vis.columns.length}, 1fr)` }">
       <!-- corner -->
       <div class="vis-corner cc-eyebrow cc-fs-2xs">
-        {{ vis.pxSize ? 'in image pixels' : 'in form units' }}
+        {{ vis.pxSize ? `${Number(vis.pxSize.toFixed(3))} µm/px` : '' }}
       </div>
       <div v-for="(c, i) in vis.columns" :key="`h-${c}`" class="vis-head cc-eyebrow cc-fs-2xs">
         {{ heading(i) }}
@@ -90,18 +90,24 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
             <circle v-else-if="row.role === 'area'"
               :cx="COL / 2" :cy="MAX_R + 2" :r="cell.r" class="sh-area" />
 
-            <!-- a threshold on its own 0–1 track, so two passes at opposite ends look opposite -->
+            <!-- A threshold as a FILLED GAUGE on its own 0-1 rail, so two passes at opposite ends
+                 look opposite. Deliberately not a rail plus a round handle: that is exactly what the
+                 real sliders in the form look like, and a control you cannot move is worse than a
+                 picture — you try to drag it. A filled bar reads as a reading. -->
             <template v-else>
-              <line :x1="(COL - TRACK) / 2" :y1="MAX_R + 2" :x2="(COL + TRACK) / 2" :y2="MAX_R + 2"
-                class="sh-track" />
-              <circle :cx="(COL - TRACK) / 2 + cell.at * TRACK" :cy="MAX_R + 2" r="4"
-                class="sh-marker" />
+              <rect :x="(COL - TRACK) / 2" :y="MAX_R" :width="TRACK" height="4" rx="2"
+                class="sh-rail" />
+              <rect :x="(COL - TRACK) / 2" :y="MAX_R" :width="Math.max(1, cell.at * TRACK)"
+                height="4" rx="2" class="sh-fill" />
             </template>
 
           </svg>
           <!-- The number as TEXT, not an SVG <text>: it reflows, respects the user's font size, and
-               needs no hardcoded px inside a viewBox. -->
+               needs no hardcoded px inside a viewBox. In the FORM's units, matching the row label and
+               the control being edited; pixels are the dimmer second line, because that is what the
+               engine receives and what a pixel-tuned reference is checked against. -->
           <div class="vis-cap cc-muted cc-fs-2xs">{{ cell.text }}</div>
+          <div v-if="cell.pxText" class="vis-cap-px cc-fs-2xs">{{ cell.pxText }}</div>
         </div>
       </template>
     </div>
@@ -129,15 +135,16 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 /* One rule per row, so eleven rows read as a list rather than as floating shapes. On the CELLS as
    well as the label, because a grid row is not an element and a single border would stop at the
    label's edge. `row-gap: 0` so the rule sits between rows instead of inside a gap. */
-.vis-label, .vis-cell { border-bottom: 1px solid var(--cc-border); padding-bottom: 0.3rem; }
+.vis-label, .vis-cell { border-bottom: 1px solid var(--cc-border); padding: 0.3rem 0; }
 .vis-label.is-last, .vis-cell.is-last { border-bottom: 0; }
 .vis-label { text-align: right; padding-right: 0.4rem; line-height: 1.2; }
 /* A row that is identical across passes is the thing to notice, so it is the thing that is marked. */
 .vis-label.is-uniform { color: var(--cc-warn); }
 
-.vis-cell { display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
-            padding-top: 0.3rem; }
+.vis-cell { display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
 .vis-cap { text-align: center; }
+/* The engine-facing number, subordinate to the one that matches the label. */
+.vis-cap-px { text-align: center; color: var(--cc-text-dim); opacity: 0.75; }
 .vis-svg { width: 100%; max-width: 5rem; height: auto; overflow: visible; }
 
 /* Shapes read as "the object" (filled), "the reach" (a line), "the setting" (a marker). */
@@ -147,8 +154,8 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 .sh-distance { stroke: var(--cc-accent); stroke-width: 1.5; }
 .sh-cap      { fill: var(--cc-accent); }
 .sh-off      { stroke: var(--cc-text-dim); stroke-width: 1; stroke-dasharray: 2 2; }
-.sh-track    { stroke: var(--cc-border); stroke-width: 1.5; stroke-linecap: round; }
-.sh-marker   { fill: var(--cc-accent); }
+.sh-rail     { fill: var(--cc-border); }
+.sh-fill     { fill: var(--cc-accent); }
 
 .vis-warn { margin-top: 0.35rem; }
 </style>

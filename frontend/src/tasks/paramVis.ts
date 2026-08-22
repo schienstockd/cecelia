@@ -42,8 +42,10 @@ export interface VisCell {
   r: number
   /** marker position along the track, 0–1, for `fraction`; 0 otherwise */
   at: number
-  /** what to print under the shape */
+  /** what to print under the shape, in the form's own units — the same as the row label */
   text: string
+  /** the same value in image pixels, or '' — the engine-facing number, shown small underneath */
+  pxText: string
 }
 
 export interface VisRow {
@@ -150,7 +152,7 @@ export function paramVisColumns(param: ParamDef, values: Record<string, ParamVal
         : 0
       const at = role === 'fraction' ? Math.min(1, Math.max(0, value)) : 0
       return { value, px: px && role !== 'fraction' ? pxOf(role, value, px) : null, r, at,
-               text: caption(role, value, px) }
+               text: caption(role, value), pxText: pxCaption(role, value, px) }
     })
     const uniform = columns.length > 1 && raw.every(v => v === raw[0])
     rows.push({ key: p.key, label: p.label ?? p.key, role, cells, uniform })
@@ -174,10 +176,19 @@ function pxOf(role: VisRole, value: number, pxSize: number): number | null {
  * The caption. Pixels are what the engine receives, so they lead when known — a reference tuned in
  * pixels (coastal's own is) can only be checked against this number.
  */
-export function caption(role: VisRole, value: number, pxSize: number | null): string {
+export function caption(role: VisRole, value: number): string {
   if (role === 'fraction') return trim(value)
-  if (value <= 0) return 'off'
-  if (!pxSize) return trim(value)
+  return value <= 0 ? 'off' : trim(value)
+}
+
+/**
+ * The SECOND line — the same quantity in image pixels, or ''. Secondary, not primary: the row label
+ * says "Seed window (µm)" and the control the user is dragging is in µm, so a caption reading "32 px"
+ * contradicts both. But pixels are what the engine receives and the only thing a reference tuned in
+ * pixels can be checked against, so they belong here rather than nowhere.
+ */
+export function pxCaption(role: VisRole, value: number, pxSize: number | null): string {
+  if (role === 'fraction' || !pxSize || value <= 0) return ''
   const p = pxOf(role, value, pxSize) ?? 0
   return role === 'area' ? `${Math.round(p)} px²` : `${Math.round(p)} px`
 }

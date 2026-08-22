@@ -7,7 +7,7 @@
  * is a 500-second run that produces slivers.
  */
 import { describe, it, expect } from 'vitest'
-import { paramVisColumns, uniformWarning, caption, MAX_R } from './paramVis'
+import { paramVisColumns, uniformWarning, caption, pxCaption, MAX_R } from './paramVis'
 import type { ParamDef, ParamValues } from './types'
 
 const GROUP: ParamDef = {
@@ -165,27 +165,43 @@ describe('paramVisColumns', () => {
 })
 
 describe('caption', () => {
-  it('prefers pixels, because pixels are what the engine receives', () => {
-    expect(caption('diameter', 10.61, PX)).toBe('32 px')
-    expect(caption('diameter', 2.65, PX)).toBe('8 px')
+  it('is in the FORM\'s units, matching the row label and the control being edited', () => {
+    // A row labelled "Seed window (µm)" whose caption reads "32 px" contradicts both the label and
+    // the slider the user is dragging. That was the first thing Dominik said about it.
+    expect(caption('diameter', 10.61)).toBe('10.61')
+    expect(caption('area', 1.1)).toBe('1.1')
+  })
+
+  it('zero reads as off, not as 0', () => {
+    expect(caption('blur', 0)).toBe('off')
+  })
+
+  it('a threshold is unitless', () => {
+    expect(caption('fraction', 0.2)).toBe('0.2')
+  })
+})
+
+describe('pxCaption', () => {
+  it('is the engine-facing number, as a second line', () => {
+    expect(pxCaption('diameter', 10.61, PX)).toBe('32 px')
+    expect(pxCaption('diameter', 2.65, PX)).toBe('8 px')
   })
 
   it('an area converts with BOTH axes', () => {
     // Assuming a length conversion here would be quietly off by the pixel size — 3x on this data.
-    expect(caption('area', 1.1, PX)).toBe('10 px²')
+    expect(pxCaption('area', 1.1, PX)).toBe('10 px²')
   })
 
-  it('falls back to form units when the pixel size is unknown', () => {
-    expect(caption('diameter', 10.61, null)).toBe('10.61')
+  it('is absent when there is no pixel size to convert with', () => {
+    expect(pxCaption('diameter', 10.61, null)).toBe('')
   })
 
-  it('zero reads as off, not as 0 px', () => {
-    expect(caption('blur', 0, PX)).toBe('off')
+  it('is absent for a threshold, which has no length', () => {
+    expect(pxCaption('fraction', 0.2, PX)).toBe('')
   })
 
-  it('a threshold is unitless in both cases', () => {
-    expect(caption('fraction', 0.2, PX)).toBe('0.2')
-    expect(caption('fraction', 0.2, null)).toBe('0.2')
+  it('is absent for a value that is off — "0 px" is not a fact about it', () => {
+    expect(pxCaption('blur', 0, PX)).toBe('')
   })
 })
 
