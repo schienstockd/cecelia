@@ -58,7 +58,9 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<ClusterPanelState>(zoomRef, () => ({ kind: 'umap', labels: true, hl: [] }), ckey)
+  useCanvasPanels<ClusterPanelState>(zoomRef, () => ({ kind: 'umap', labels: true, hl: [] }), ckey,
+    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
+    { tileBox: () => workspaceBase.value })
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
 
 // migrate persisted panel kinds to the CLUSTER_PANELS registry keys (legacy hyphenated → camelCase),
@@ -80,7 +82,10 @@ const { suffix, highlighted, scope, vis: gVis, showManager } = useViewState(shar
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
+const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
+  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
+  // a getter, so it may name `contentBounds` from the line above
+  () => contentBounds.value)
 
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
@@ -239,7 +244,11 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
         </button>
       </div>
 
-      <div ref="canvasRef" class="cp-canvas">
+      <div class="cp-canvas">
+        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
+             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
+             box, so it stays put instead of scrolling away with them. -->
+        <div ref="canvasRef" class="cp-scroll">
         <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
                            :line-width="1" :gate-labels="false" :axis-from-zero="false"
                            :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
@@ -263,6 +272,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                             v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
+        </div>
         </div>
       </div>
     </template>
@@ -288,5 +298,8 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 /* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
    min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
    lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
+/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
+   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
+.cp-scroll { position: absolute; inset: 0; overflow: auto; }
 .cp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>
