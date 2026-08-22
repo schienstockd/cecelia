@@ -306,13 +306,18 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `_`-leaf (→ 400), and the frontend hints against it while typing. This makes a derived name
   unambiguous and impossible to shadow with a real gate. (Deserialisation via `from_tree` bypasses
   the guard, and the derived injection itself passes `reserved_ok=true`.)
-- **Root `/_tracked` is offered only for *ungated* tracking.** The picker
-  (`plot_population_groups`) injects `/_tracked` under every stored pop (`/qc/_tracked` = qc's tracked
-  subset) but at ROOT only when `has_ungated_tracks(img; value_name)` — i.e. there are tracked cells
-  outside every gate. When tracking was gated (all `track_id>0` cells sit within gates) a root
-  `/_tracked` would just duplicate the per-gate ones and imply whole-segmentation tracking that never
-  happened, so it's suppressed. `is_tracked(img; value_name)` (cheap obs-column check) gates
-  track-grained plots too — an untracked segmentation shows "track first", not an error/empty plot.
+- **`_tracked` is offered only where it says something new.** The picker
+  (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
+  (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths
+  `tracked_pop_parents(img; value_name)` returns: a population that holds tracks AND no
+  sub-population of which holds *exactly the same* tracks. Membership is counted in TRACKS (a track
+  is in a pop if any of its cells are), the unit the row plots. So tracking gated to `/qc/B` offers
+  `/qc/B/_tracked` and the smaller subsets below it, not the identical copies at `/qc/_tracked` and
+  the root; ungated tracking still offers the root; and an untracked segmentation offers none —
+  gating a segmentation before tracking no longer lists a `_tracked` under every gate. This
+  generalises the older root-only rule (`has_ungated_tracks`), which is gone. `is_tracked(img;
+  value_name)` (cheap obs-column check) is the first exit, and gates track-grained plots too — an
+  untracked segmentation shows "track first", not an error/empty plot.
 
 ## Gating pop types & copy across images
 

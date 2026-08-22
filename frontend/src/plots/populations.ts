@@ -11,6 +11,12 @@
  * Deliberately a plain function, not a composable: the two callers own their own refresh (`loadPops`
  * is inside `useSummaryData`'s reload chain; the Track canvas hangs it off `useDataRefresh`), and a
  * composable would have to invent a lifecycle neither of them wants.
+ *
+ * `valueName` is the third part of the grammar and is OPTIONAL: absent = every segmentation on the
+ * image (the summary canvas overlays them on purpose), present = that one. It exists because the
+ * answer is not free — the server evaluates each tracked segmentation's gates to decide which
+ * `_tracked` rows are real — so a caller pinned to one segmentation should not pay for the rest and
+ * then filter them out.
  */
 import type { SegmentationPops } from './types'
 
@@ -19,6 +25,8 @@ export interface PopsQuery {
   /** the selected images; the first is used when there is no set */
   imageUids: string[]
   setUid?: string | null
+  /** one segmentation, or every segmentation on the image when omitted */
+  valueName?: string | null
   popType: string
   granularity: 'cell' | 'track'
 }
@@ -27,6 +35,7 @@ export interface PopsQuery {
 export function popsUrl(q: PopsQuery): string {
   const p = new URLSearchParams({ projectUid: q.projectUid, popType: q.popType,
                                   granularity: q.granularity })
+  if (q.valueName) p.set('valueName', q.valueName)
   if (q.setUid) {
     p.set('setUid', q.setUid)
     if (q.imageUids.length) p.set('imageUids', q.imageUids.join(','))

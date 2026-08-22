@@ -80,6 +80,44 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     end
 end
 
+# The picker's third selector. The gating/track canvas is pinned to ONE segmentation (its toolbar
+# select) and the summary canvas overlays them all; both ask the same route, so the route has to be
+# askable either way. Narrowing matters beyond tidiness: building the answer evaluates every tracked
+# segmentation's gates, so an unnarrowed ask for one segmentation buys the rest to throw away.
+@testset "API: /api/plots/populations narrows to one valueName" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-pops-vn")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        mkpath(joinpath(img._dir, "labelProps"))
+        img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad")
+        save!(img)
+        for vn in ("A", "B")                                     # one gate each, so both have a row
+            m = PopulationMap(pop_type = "flow", value_name = vn)
+            add_pop!(m, "qc"; gate = RectangleGate("mean_intensity_0", "mean_intensity_1",
+                                                   0.0, 1e12, -1e12, 1e12))
+            save_pop_map!(m, img)
+        end
+        ask(extra) = JSON3.read(api_plot_populations(HTTP.Request("GET",
+            "/api/plots/populations?projectUid=$(proj.uid)&imageUid=$(img.uid)&popType=live" * extra))[2])
+
+        @test Set(g.valueName for g in ask("")) == Set(["A", "B"])          # absent → every segmentation
+        one = ask("&valueName=A")
+        @test [g.valueName for g in one] == ["A"]                            # present → that one
+        @test [p.path for p in one[1].populations] == ["/qc"]                # …with its populations
+        # a name this image does not have is an empty answer, not a 400: a segmentation can be absent
+        # from some images of a set, and "no populations" is the honest reply for those
+        @test isempty(ask("&valueName=nope"))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: diagnostics" begin
     st, body = api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))
     @test st == 200

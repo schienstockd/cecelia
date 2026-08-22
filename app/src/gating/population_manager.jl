@@ -963,34 +963,58 @@ derived_pop_paths(pop_type::AbstractString)::Vector{String} =
     ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == String(pop_type)]
 
 """
-    has_ungated_tracks(img; value_name) -> Bool
+    tracked_pop_parents(img; value_name, pop_type = "flow") -> Set{String}
 
-True when the segmentation has tracked cells (`track_id > 0`) that fall OUTSIDE every stored (flow)
-gate — i.e. tracking was run ungated on the whole segmentation, so a root-level `/_tracked` pop is
-real. False when every tracked cell sits within a gate (tracking was gated, e.g. to `/qc`), which
-makes a root `/_tracked` a redundant duplicate of the per-gate `/<gate>/_tracked`; false too when the
-segmentation isn't tracked. The pop picker uses this to decide whether to offer the root `/_tracked`.
+The populations whose derived `_tracked` child SAYS SOMETHING the tree does not already say —
+`""` standing for the segmentation root (`/_tracked`). A population qualifies when it holds tracks
+at all AND no sub-population of it holds exactly the same tracks: where a child's track set is
+identical, the child is the population that was tracked and the ancestor's `_tracked` is the same
+row a level up.
+
+Generalises the old root-only rule (`has_ungated_tracks`) to every level, because the duplicate it
+was written for is not special to the root: tracking gated to `/qc/B` makes `/_tracked` *and*
+`/qc/_tracked` copies of `/qc/B/_tracked`. An untracked segmentation qualifies nowhere, so gating a
+segmentation no longer offers a `_tracked` under every gate before tracking has run.
+
+Membership is counted in TRACKS (a track belongs to a population if any of its cells do — `pop_df`'s
+track rule), because that is the unit the `_tracked` row plots. Cheap exit first: `is_tracked` reads
+only the obs column list, so an untracked segmentation costs no gate evaluation.
 """
-function has_ungated_tracks(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing)::Bool
-    is_tracked(img; value_name=value_name) || return false
+function tracked_pop_parents(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing,
+                             pop_type::AbstractString="flow")::Set{String}
+    out = Set{String}()
+    is_tracked(img; value_name=value_name) || return out
     vn = resolve_value_name(img, value_name)
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
-    "track_id" in names(cell) || return false
-    tracked = Set{Any}()
+    "track_id" in names(cell) || return out
+    tid = Dict{Int,Int}()                              # cell label → track_id, tracked cells only
     for i in eachindex(cell[!, "label"])
         t = cell[i, "track_id"]
-        (t isa Real && isfinite(t) && t > 0) && push!(tracked, cell[i, "label"])
+        (t isa Real && isfinite(t) && t > 0) && (tid[Int(cell[i, "label"])] = Int(t))
     end
-    isempty(tracked) && return false
-    # cells covered by any stored flow gate (empty/absent map → tracks can't be gated → ungated)
-    fm = try; load_pop_map(img; value_name=vn, pop_type="flow"); catch; nothing; end
-    (fm === nothing || isempty(fm.order)) && return true
-    covered = try
-        Set(pop_df(img, "flow", collect(fm.order); value_name=vn)[!, "label"])
+    isempty(tid) && return out
+    # No stored gates (or an unreadable map) → the root is the only population there is.
+    m = try; load_pop_map(img; value_name=vn, pop_type=pop_type); catch; nothing; end
+    (m === nothing || isempty(pop_paths(m))) && (push!(out, ""); return out)
+    try
+        recompute!(m, cols -> (label_props(img; value_name=vn) |>
+                               lp -> select_cols(lp, cols) |> as_df))
     catch
-        return true                                    # can't evaluate gates → don't hide the pop
+        push!(out, ""); return out                     # can't evaluate the gates → hide nothing else
     end
-    any(t -> !(t in covered), tracked)
+    tracks = Dict{String,Set{Int}}("" => Set(values(tid)))
+    for p in pop_paths(m)
+        tracks[p] = Set(tid[l] for l in cells_in_pop(m, p) if haskey(tid, l))
+    end
+    for (p, ts) in tracks
+        isempty(ts) && continue
+        # A child's set can only be a subset of its parent's, so comparing DIRECT children is enough:
+        # an equal grandchild forces the child to be equal too.
+        kids = p == "" ? [c for c in pop_paths(m) if m.pops[c].parent == ROOT] : direct_children(m, p)
+        any(c -> get(tracks, c, Set{Int}()) == ts, kids) && continue
+        push!(out, p)
+    end
+    out
 end
 
 # ── Summary-canvas population picker (logic lives here, NOT in the API — api/plotting_api.jl is a
@@ -1038,7 +1062,7 @@ skipped.
 """
 function plot_population_groups(imgs, value_names_for::Function, load_map::Function,
                                 pop_types::Vector{String};
-                                root_derived_ok::Function = (_v, _pt, _dpath) -> true)
+                                derived_ok::Function = (_v, _pt, _parent, _dpath) -> true)
     # Gateless pop_type (`labels` = ungated all-cells, R parity): there is no gating map to flatten —
     # each segmentation IS its own population, named by its value_name. One selectable entry per vn, so
     # the user overlays whole segmentations (B, T, …) side by side. The path is the fixed "/labels" tag
@@ -1072,15 +1096,16 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
             end
         end
     end
-    # Derived pops (e.g. `_tracked` = track_id>0) are injected at query time, not stored. Offer each
-    # BOTH at root (`/_tracked` = all tracked cells) AND as a child of every stored pop
-    # (`/qc/_tracked` = qc's tracked subset) — so the tracked subset of any population is selectable
-    # and the picker shows the hierarchy. Rebuild the order so a derived child directly follows its
-    # parent (root-level derived first).
+    # Derived pops (e.g. `_tracked` = track_id>0) are injected at query time, not stored. Offered at
+    # root (`/_tracked` = all tracked cells) and under a stored pop (`/qc/_tracked` = qc's tracked
+    # subset) — but only where `derived_ok` says the set is real and not a copy of a deeper one, so
+    # the picker shows tracking where it happened instead of a `_tracked` per population that exists
+    # (`tracked_pop_parents`). Rebuild the order so a derived child directly follows its parent
+    # (root-level derived first).
     for v in vn_order
         rebuilt = Tuple{String,String}[]
         for pt in pop_types, dpath in derived_pop_paths(pt)              # root-level derived, at the top
-            root_derived_ok(v, pt, dpath) || continue                   # e.g. hide root /_tracked when gated
+            derived_ok(v, pt, "", dpath) || continue                     # e.g. hide root /_tracked when gated
             key = (pt, dpath)
             haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt))
             key in rebuilt || push!(rebuilt, key)
@@ -1089,6 +1114,7 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
             push!(rebuilt, (pt, path))
             parent_colour = meta[v][(pt, path)][2]                       # inherit the stored pop's colour…
             for dpath in derived_pop_paths(pt)
+                derived_ok(v, pt, path, dpath) || continue
                 cpath = path * dpath                                     # dpath starts with "/" → "/qc" * "/_tracked"
                 key = (pt, cpath); haskey(meta[v], key) && continue
                 # …so a derived child (e.g. /qc/_tracked) shows in its parent's colour rather than a
@@ -1267,7 +1293,7 @@ pop_types a function's popSelection declares it `accepts`, with every surviving 
 `"aggregated"`) so the frontend groups it under a *"<granularity> · <category>"* header. When cell
 gates are accepted (`live`/`flow`) an all-cells root (`/`, always real — the segmentation has label
 props) is prepended per segmentation. The all-TRACKS root is the derived `/_tracked` root
-`plot_population_groups` already produces, guarded by `root_derived_ok` so a bogus "all tracks" never
+`plot_population_groups` already produces, guarded by `derived_ok` so a bogus "all tracks" never
 appears with no tracking. Same injected closures as `plot_population_groups`. Unknown token → throws
 (a spec typo should fail loudly, not silently empty the picker).
 
@@ -1275,14 +1301,14 @@ Returns `[(value_name, populations=[(path, name, colour, pop_type, granularity, 
 """
 function population_accept_groups(imgs, value_names_for::Function, load_map::Function,
                                   accepts::AbstractVector; include_all_cells::Bool = true,
-                                  root_derived_ok::Function = (_v, _pt, _dpath) -> true)
+                                  derived_ok::Function = (_v, _pt, _parent, _dpath) -> true)
     acc = _normalise_accepts(accepts)
     isempty(acc) && error("accepts is empty — a popSelection must declare at least one pop_type")
     bad = setdiff(acc, ("live", "clust", "trackclust", "region", "track", "branch"))
     isempty(bad) || error("unknown accepts token(s): $(join(bad, ", ")) " *
                           "(expected any of live/flow, clust, trackclust, region, track, branch)")
     groups = plot_population_groups(imgs, value_names_for, load_map, _accept_pop_types(acc);
-                                    root_derived_ok = root_derived_ok)
+                                    derived_ok = derived_ok)
     want_all_cells = include_all_cells && ("live" in acc)
     [(value_name = g.value_name,
       populations = begin
@@ -1327,11 +1353,11 @@ sets). `include_clusters=false` drops the cluster token. Output carries the same
 """
 function population_scope_groups(imgs, value_names_for::Function, load_map::Function,
                                  scope::AbstractString; include_clusters::Bool = true,
-                                 root_derived_ok::Function = (_v, _pt, _dpath) -> true)
+                                 derived_ok::Function = (_v, _pt, _parent, _dpath) -> true)
     population_accept_groups(imgs, value_names_for, load_map,
                              _scope_accepts(scope, include_clusters);
                              include_all_cells = (String(scope) == "cells"),
-                             root_derived_ok = root_derived_ok)
+                             derived_ok = derived_ok)
 end
 
 # Inject the derived pop(s) for the requested paths into a (flow) map, transiently. A path whose
