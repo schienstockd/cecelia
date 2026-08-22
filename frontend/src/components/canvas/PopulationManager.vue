@@ -276,9 +276,9 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   v-tooltip.bottom="'Undo (Ctrl+Z)'" @click="g.undo()">
             <i class="pi pi-undo" />
           </button>
-          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canRedo"
+          <button class="pm-icon pm-redo cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canRedo"
                   v-tooltip.bottom="'Redo (Ctrl+Shift+Z)'" @click="g.redo()">
-            <i class="pi pi-replay" />
+            <i class="pi pi-undo" />
           </button>
         </template>
       </div>
@@ -496,6 +496,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
   display: flex; align-items: center; gap: 4px; }
 .pm-add-spacer { flex: 1; }
+/* Redo is `pi-undo` MIRRORED, the way every icon set draws the pair — PrimeIcons has no redo glyph,
+   and the two nearest candidates are both wrong: `pi-replay` is pixel-identical to `pi-undo` (same
+   counter-clockwise arrow, so the two buttons looked the same), and `pi-refresh` already means
+   "reload / restart a service". Mirroring keeps ONE glyph for stepping through history and lets the
+   direction carry the difference. See docs/UI.md → Icons. */
+.pm-redo i { transform: scaleX(-1); }
 .pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cc-fs-xs); padding: 4px 9px;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2);
   color: var(--cc-text); cursor: pointer; }
