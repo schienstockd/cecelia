@@ -19,6 +19,7 @@ import zarr
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.intensity_utils as intensity_utils
+import cecelia.utils.norm_cache as norm_cache
 
 from skimage import morphology, segmentation
 from scipy import ndimage
@@ -701,37 +702,67 @@ class SegmentationUtils:
             full-res level, so materialising it OOMs on large movies. Instead stream a per-value
             histogram (exact for integer data, ~256 KB/channel regardless of size) and read the
             percentile off its CDF. Same statistic, bounded memory. See ZARR_STREAMING_PLAN.md.
-        Excludes background zeros in both paths (matches the historical `data[data > 0]`)."""
+        Excludes background zeros in both paths (matches the historical `data[data > 0]`).
+
+        **Cached per image** (`norm_cache`), because nothing about this depends on the run: it is a
+        property of the image and the percentile, recomputed from scratch every time. Two model groups
+        over the same channels used to pay for it twice in ONE run. The key records which of the two
+        paths above produced the number — they are different answers to the same question, and which
+        one runs depends on how many levels the caller opened, so no fingerprint can catch it.
+        """
         c_idx = self.dim_utils.dim_idx('C')
         normalise_perc = float(model_params.get('normalise', 99.9))
         channels = script_utils.channel_indices(
             list(model_params.get('cellChannels', [])) + list(model_params.get('nucChannels', [])),
             'cellChannels/nucChannels', 'cellpose_models_for_python (cellpose.jl)')
-        result = {}
 
-        if len(im_dat) == 1:
+        streaming = len(im_dat) == 1
+        # `max_frames` belongs in the variant too: a strided read is a different statistic, and the
+        # preview passes one where the run does not — so a preview must not leave its approximation
+        # behind for the run to pick up.
+        variant = (f'stream{int(max_frames)}' if streaming and max_frames
+                   else 'stream' if streaming else 'pyr')
+        im_path = self.params.get('imPath')
+        fp = (norm_cache.fingerprint(im_path, im_dat[0].shape, im_dat[0].dtype)
+              if im_path else None)
+        cache = norm_cache.read(im_path, fp) if fp else {}
+        keys = {ch: norm_cache.key(ch, None, normalise_perc,
+                                   norm_cache.ZEROS_EXCLUDED, variant) for ch in channels}
+        result = {ch: cache[keys[ch]] for ch in channels if keys[ch] in cache}
+        todo = [ch for ch in channels if ch not in result]
+        if not todo:
+            return result
+
+        fresh = {}
+        if streaming:
             # bounded streaming histogram over the (single, full-res) level
             level = im_dat[0]
             darr = level if isinstance(level, da.Array) else da.from_array(level)
             darr = self._subsample_time(darr, max_frames)
-            hists = intensity_utils.channel_histograms(darr, c_idx, channels=channels)
-            for ch, hist in zip(channels, hists):
+            hists = intensity_utils.channel_histograms(darr, c_idx, channels=todo)
+            for ch, hist in zip(todo, hists):
                 hist = hist.copy()
                 hist[0] = 0                       # drop background zeros
                 if int(hist.sum()) > 100:
-                    result[ch] = (float(intensity_utils.hist_percentile(hist, 100 - normalise_perc)),
-                                  float(intensity_utils.hist_percentile(hist, normalise_perc)))
-            return result
+                    fresh[ch] = (float(intensity_utils.hist_percentile(hist, 100 - normalise_perc)),
+                                 float(intensity_utils.hist_percentile(hist, normalise_perc)))
+        else:
+            low_res = np.asarray(im_dat[-1])
+            for ch in todo:
+                idx = [slice(None)] * low_res.ndim
+                idx[c_idx] = ch
+                ch_data = low_res[tuple(idx)].ravel()
+                valid = ch_data[ch_data > 0]
+                if len(valid) > 100:
+                    fresh[ch] = (float(np.percentile(valid, 100 - normalise_perc)),
+                                 float(np.percentile(valid, normalise_perc)))
 
-        low_res = np.asarray(im_dat[-1])
-        for ch in channels:
-            idx = [slice(None)] * low_res.ndim
-            idx[c_idx] = ch
-            ch_data = low_res[tuple(idx)].ravel()
-            valid = ch_data[ch_data > 0]
-            if len(valid) > 100:
-                result[ch] = (float(np.percentile(valid, 100 - normalise_perc)),
-                              float(np.percentile(valid, normalise_perc)))
+        result.update(fresh)
+        # Only what was actually derived. A channel too empty to have a range (the `> 100` guards)
+        # gets no entry rather than a cached absence, so it is retried rather than remembered wrong.
+        if fp and fresh:
+            cache.update({keys[ch]: v for ch, v in fresh.items()})
+            norm_cache.write(im_path, fp, cache)
         return result
 
     # ── Post-processing ───────────────────────────────────────────────────────

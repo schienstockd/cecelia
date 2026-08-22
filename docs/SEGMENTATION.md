@@ -166,6 +166,14 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 ### `SegmentationUtils` responsibilities
 - XY tiling with overlap (`blockSize`, `overlap`)
 - Global normalisation params from lowest-res zarr level (`normaliseToWhole`)
+  - **Cached per image** (`norm_cache`), because the range is a property of the image and the
+    percentile, not of the run — it was recomputed from scratch every time, and two model groups over
+    the same channel paid for it twice inside ONE run. Measured on `zolIMa/fXgbTl` (single level, so
+    the streaming path): 4.65 s per channel, of a 608 s `segment.coastalMeasure` run — and gone on
+    every rerun that changes a threshold. The key records WHICH derivation produced it (`pyr` for the
+    lowest-res proxy, `stream` for the full-resolution histogram, `stream<N>` for the preview's
+    subsampled read): those are different answers to the same question, and which one runs depends on
+    how many levels the caller opened, so nothing about the store can distinguish them.
 - Global label ID tracking — `max_labels[match_as]` incremented per tile so IDs are unique across tiles and timepoints
 - Tile merge via `np.maximum`
 - Tile seam stitching (`labelOverlap > 0`): after tiling, labels split at tile boundaries are matched by IoU and remapped to a single ID
@@ -509,9 +517,20 @@ makes several Z planes affordable at all. What it costs is field of view per seq
   is routinely outside the specimen, and Farneback has nothing beyond the boundary to match, so the
   outermost pixels carry the least reliable flow in the movie. The margin shrinks rather than fails
   when the window nearly fills the axis.
-- **Cropped after the projection, never before**, so `normaliseToWhole`'s percentiles are still the
+- **Normalised by the whole plane, cropped before the arithmetic.** The percentiles are still the
   whole plane's — otherwise the same structure would be scaled differently depending on where the
-  window landed, and inference normalises over the whole frame.
+  window landed, and inference normalises over the whole frame. But the scale and the clip are
+  elementwise, so they commute with slicing exactly: the crop is decided before the read and applied
+  before the arithmetic, which is bit-identical and 50x less of it (~3.9 s to clip a 181-frame plane
+  against ~0.07 s for the block that survives). The crop position depends only on the plane's shape
+  and the run's seed, which is what lets it be known that early.
+- **The percentile itself is taken on the raw integers, and that IS a small correction.**
+  `np.percentile` interpolates at a virtual index of `(n-1)·q` in the input's own dtype, and at the
+  ~5.7 M samples of one plane sequence float32's spacing is 0.5 — so a float32 copy quantised the
+  interpolation weight to halves. Over ten planes × two channels of `zolIMa/fXgbTl` at 99.99,
+  nineteen pairs agree exactly (equal neighbours, so no weight matters) and one does not: `hi` 150.818
+  against 150.5, moving 3.8% of that plane's output by at most 0.53 of 255. Small, in the direction of
+  correct, and not nothing — a model trained before differs slightly from one trained after.
 - The window is a **copy**, not a slice view: a view keeps the whole uncropped stack alive, which is
   the allocation the parameter exists to avoid.
 
@@ -565,12 +584,29 @@ Two ordering constraints, both silent when broken:
 - **Normalise over the whole movie, then cut.** The percentiles are the global statistic
   `normaliseToWhole` reproduces at inference. Cutting first would scale a 50-frame window by its own
   percentiles while inference scales the 200-frame movie by the movie's — the same structure at a
-  different brightness.
+  different brightness. (Cutting before the *arithmetic* is fine and is what the code does; cutting
+  before the *percentile* is the mistake.)
 - **Check `max(scales) + 1` against the CAPPED length.** A 200-frame movie capped to 5 produces no
   `mag_8` plane, which corrupts the pooled channel layout exactly as a genuinely short movie would.
 
 The manifest records `maxFrames` and `frameWindows` (uID → `[start, stop)`, only for the movies
 actually cut).
+
+**The percentiles are cached per image, because they are the only part that needs the whole movie.**
+Preparation was ~30 minutes of a run on six 181-frame movies at ten planes and two channels, and
+nearly all of it was this: reading a full plane sequence and taking two percentiles over it, 120
+times, to keep a [60, 256, 256] block each time. The range does not depend on the frame window or the
+crop — that is the point of taking it over everything — so it also does not depend on the epoch count
+or a loss weight, which is what most reruns change. `norm_cache` keeps it in a `.normstats` sidecar
+beside the store: measured on `zolIMa/VJy1Nx`, 10.8 s per plane-channel becomes 3.4 s on the first run
+and 0.03 s on every one after.
+
+**Staleness is handled by the key, not by a warning.** Everything that changes the number is in the
+key (channel, plane, percentile, zero-handling) or the fingerprint (the store's shape, dtype and
+level-0 metadata mtime), so changing a setting is a MISS and a recompute — there is no state in which
+a user has to be told their cache is out of date, and none in which a stale range can reach a model.
+Re-running the smoothing that produced the source rewrites the store staged-then-renamed, giving its
+metadata a new mtime, which is the case a path-only key would get silently wrong.
 
 **`trainRatio` holds part of every sequence back, and without it the loss curve cannot be read.** A
 training loss is measured on the frames the weights were just fitted to, so it goes down whether the

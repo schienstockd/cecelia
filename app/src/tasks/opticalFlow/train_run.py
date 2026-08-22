@@ -52,6 +52,7 @@ from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.gpu_utils import torch_device
 from cecelia.utils.atomic_io import write_json_atomic
 from cecelia.utils import coastal_utils
+from cecelia.utils import norm_cache
 import cecelia.utils.cpu_utils as cpu_utils
 
 
@@ -319,51 +320,97 @@ def _physical_scale(dim_utils, planes):
     return out or None
 
 
-def _training_sequence(im_dat, dim_utils, params, z, window=None):
+def _training_sequence(im_dat, dim_utils, params, z, window=None, crop=None, stats=None):
     """`[T, H, W]` float32 in 0–255 for ONE Z plane — the same projection inference builds per tile.
 
     Percentiles are taken over the WHOLE plane sequence — every timepoint, including those outside
-    `window` — which is what makes this the global statistic `normaliseToWhole` reproduces at
-    inference from the image pyramid. If the two ever diverge, the model sees a different photometric
-    range than it was trained on.
+    `window`, and every pixel, including those outside `crop` — which is what makes this the global
+    statistic `normaliseToWhole` reproduces at inference from the image pyramid. If the two ever
+    diverge, the model sees a different photometric range than it was trained on.
 
     That ordering is the whole subtlety of the frame cap: normalise over the movie, THEN cut. Cutting
     first would scale a 50-frame window by its own percentiles while inference scales the 200-frame
     movie by the movie's, and the mismatch is silent — the same structure at a different brightness.
 
-    Per plane, deliberately: each plane is normalised on its own statistics, the way inference
-    normalises the plane it is given. Sharing one range across planes would push the dim deep planes
-    toward zero and make them contribute nothing.
+    **Which is why `window` and `crop` arrive here rather than being applied by the caller.** The
+    scale and the clip are elementwise, so they commute with slicing exactly: taking the percentiles
+    over everything and then cutting gives bit-identical numbers to cutting first and clipping the
+    remainder, at 2% of the arithmetic. Measured on `zolIMa/VJy1Nx`, clipping a whole 181-frame plane
+    costs ~3.9 s against ~0.07 s for the [60, 256, 256] block the run keeps.
+
+    The percentiles run on the RAW integer dtype rather than on a float32 copy: 4.9 s against 6.4 s,
+    and it drops a 1.1 s cast of an array about to be discarded. **This one changes the number, and
+    for a reason worth knowing.** `np.percentile` interpolates between two order statistics at a
+    virtual index of `(n-1) * q`, and it does that arithmetic in the INPUT's dtype. On a plane
+    sequence of ~5.7 M samples that index is ~5.7e6, where float32's spacing is 0.5 — so the old path
+    quantised the interpolation weight to halves, and `hi` landed up to half an intensity unit away
+    from the true percentile. Reading the raw integers promotes to float64 and gets it right.
+
+    Measured over the ten planes x two channels of `zolIMa/fXgbTl` at 99.99: nineteen pairs agree
+    exactly (both neighbours are the same integer, so no weight can matter) and one does not —
+    z11/ch1, `hi` 150.818 against float32's 150.5. That plane's output moves on 3.8% of its pixels,
+    by at most 0.53 of 255. So this is not cosmetic: it is a small correction, in the direction of
+    correct, and a model trained before this differs slightly from one trained after.
+
+    `stats` is the `norm_cache` dict for this image, read and WRITTEN THROUGH: a hit skips the full
+    read as well as the percentiles, because the range is the only thing the rest of the movie was
+    needed for. Pass `None` to compute every time.
+
+    Per plane, deliberately: each plane is normalised on its own statistics. Note that inference does
+    NOT do this — `norm_params` is one range per image channel, applied to every plane — so the two
+    diverge on the deep planes of a dim channel. That is a known open question, not something this
+    function should paper over; see `docs/todo/SEGMENTATION_OPEN_PROBLEM.md`.
     """
     channels = list(params['trainChannels'])
     percentile_hi = float(params.get('normalise', 99.99))
 
     level = im_dat[0]
     ia = {ax: i for i, ax in enumerate(dim_utils.im_dim_order)}
-    n_t = dim_utils.dim_val('T')
+    n_t = int(dim_utils.dim_val('T'))
+    # Axes left after C (and Z, when a plane was picked) are T + Y + X in the image's own order.
+    remaining = [ax for ax in dim_utils.im_dim_order
+                 if ax != 'C' and not (z is not None and ax == 'Z')]
+    t_pos = remaining.index('T')
+
+    t0, t1 = window if window is not None else (0, n_t)
+    y0, x0, hh, ww = crop if crop is not None else (0, 0, None, None)
+    ys = slice(y0, None if hh is None else y0 + hh)
+    xs = slice(x0, None if ww is None else x0 + ww)
 
     projected = None
     for ch in channels:
+        ck = norm_cache.key(ch, z, percentile_hi)
+        lo_hi = stats.get(ck) if stats is not None else None
+
         idx = [slice(None)] * level.ndim
         idx[ia['C']] = ch
         if z is not None:
             idx[ia['Z']] = z
-        arr = np.asarray(level[tuple(idx)], dtype=np.float32)
 
-        # Axes left are T + Y + X in the image's own order; move T to the front.
-        remaining = [ax for ax in dim_utils.im_dim_order
-                     if ax != 'C' and not (z is not None and ax == 'Z')]
-        arr = np.moveaxis(arr, remaining.index('T'), 0)
+        if lo_hi is not None:
+            # The range is already known, so the whole movie is no longer needed — read only the
+            # block that survives the cut. 0.13 s against 1.1 s for the full plane sequence.
+            idx[ia['T']] = slice(t0, t1)
+            idx[ia['Y']] = ys
+            idx[ia['X']] = xs
+            arr = np.moveaxis(np.asarray(level[tuple(idx)]), t_pos, 0).astype(np.float32)
+            assert arr.shape[0] == t1 - t0, f'expected {t1 - t0} frames, got {arr.shape[0]}'
+            lo, hi = lo_hi
+        else:
+            raw = np.moveaxis(np.asarray(level[tuple(idx)]), t_pos, 0)
+            assert raw.shape[0] == n_t, f'expected {n_t} frames, got {raw.shape[0]}'
+            lo = float(np.percentile(raw, 100 - percentile_hi))
+            hi = float(np.percentile(raw, percentile_hi))
+            if stats is not None:
+                stats[ck] = (lo, hi)
+            # `astype` copies, so the full-movie array is released here rather than kept alive by a
+            # view — the allocation `cropSize` exists to avoid.
+            arr = raw[t0:t1, ys, xs].astype(np.float32)
+            del raw
 
-        lo = float(np.percentile(arr, 100 - percentile_hi))
-        hi = float(np.percentile(arr, percentile_hi))
         arr = np.clip((arr - lo) / (hi - lo + 1e-8), 0.0, 1.0)
         projected = arr if projected is None else np.maximum(projected, arr)
 
-    assert projected.shape[0] == n_t, f'expected {n_t} frames, got {projected.shape[0]}'
-    # Cut only now — after every percentile has seen the whole movie (see the docstring).
-    if window is not None:
-        projected = projected[window[0]:window[1]]
     return (projected * coastal_utils.PROJECTION_MAX).astype(np.float32)
 
 
@@ -475,26 +522,44 @@ def run(params):
             phys_scales[uid] = scale
 
         n_y, n_x = int(dim_utils.dim_val('Y')), int(dim_utils.dim_val('X'))
+        # The percentiles are the one part of the preparation that has to see every pixel of the
+        # movie, and they do not depend on the frame window or the crop — so they survive a rerun
+        # that changes only the epoch count or a loss weight. Read once per image, written back
+        # below. A stale file cannot be read: the fingerprint covers the store's pixels and the key
+        # covers every setting that changes the number (see `norm_cache`).
+        fp = norm_cache.fingerprint(im_path, im_dat[0].shape, im_dat[0].dtype)
+        stats = norm_cache.read(im_path, fp)
+        # The keys THIS run needs, intersected — not `len(stats)`, which counts entries left by runs
+        # at other planes or another percentile and would report reuse that did not happen.
+        need = {norm_cache.key(ch, z, float(params.get('normalise', 99.99)))
+                for z in planes for ch in params['trainChannels']}
+        reused = len(need & set(stats))
+
         for zi, z in enumerate(planes):
-            seq = _training_sequence(im_dat, dim_utils, params, z, (start, stop))
-            # Cropped AFTER the projection, never before: the percentiles are taken over the whole
-            # plane and the whole movie (see `_training_sequence`), which is the statistic inference
-            # reproduces. Normalising a crop by its own percentiles would scale the same structure
-            # differently depending on where the window landed.
+            # Decided BEFORE the read, so `_training_sequence` can narrow what it loads — it needs
+            # the window and the crop to cut with, and both are known from the plane's shape and the
+            # run's seed. The percentiles are still taken over everything; see its docstring.
             #
             # Seeded per (movie, plane) so each window is independent — two planes of one stack are
             # two views of the tissue, and giving them the same XY window would make them more alike
             # than they need to be. Reproducible from the manifest's seed either way.
-            win = crop_window(seq.shape[1:], crop_size,
+            win = crop_window((n_y, n_x), crop_size,
                               np.random.default_rng([seed, i, zi]))
+            seq = _training_sequence(im_dat, dim_utils, params, z, (start, stop), win, stats)
             if win is not None:
-                y0, x0, hh, ww = win
-                # A COPY, not the slice's view: a view keeps the whole uncropped plane stack alive,
-                # which is the entire allocation this parameter exists to avoid.
-                seq = np.ascontiguousarray(seq[:, y0:y0 + hh, x0:x0 + ww])
-                crops.setdefault(uid, []).append([y0, x0, hh, ww])
+                crops.setdefault(uid, []).append([int(v) for v in win])
             sequences.append(seq)
             del seq
+
+        # AFTER the planes, not per plane: one write per image rather than one per (plane × channel),
+        # and a run killed mid-movie still leaves the previous file intact rather than a partial one.
+        if reused >= len(need):
+            log.log(f'>>   normalisation: all {len(need)} ranges reused from a previous run')
+        else:
+            norm_cache.write(im_path, fp, stats)
+            log.log(f'>>   normalisation: {len(need) - reused} of {len(need)} ranges computed'
+                    + (', cached for the next run' if fp else
+                       ' (not cacheable — the store has no readable metadata)'))
         used.append(uid)
         where = f'Z {planes}' if planes != [None] else '2D'
         span = f'{n_use} frames' if n_use == n_t else f'frames {start}–{stop - 1} of {n_t}'
