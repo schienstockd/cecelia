@@ -489,17 +489,23 @@ function moveTo(target: string) {
                  v-tooltip.top="'Name for the new population'" />
           <input v-model="bpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
         </div>
-        <label class="pm-ff-row cc-muted cc-fs-xs">Under
-          <select v-model="bpParent" v-tooltip.top="'Parent population — the cells this combination is drawn from'">
-            <option v-for="o in boolParentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
-          </select>
-        </label>
-        <label class="pm-ff-row cc-muted cc-fs-xs">Cells in
-          <select v-model="bpOp" v-tooltip.top="'How the included populations combine'">
-            <option value="or">any of</option>
-            <option value="and">all of</option>
-          </select>
-        </label>
+        <!-- parent + operator on ONE line: two short selects, and the sentence reads across them
+             ("Under (all cells), in any of"). `cc-row-group` keeps each label with its own select if
+             a long parent path pushes the pair onto a second line. -->
+        <div class="cc-row cc-row-tight cc-muted cc-fs-xs">
+          <label class="cc-row-group pm-ff-parent">Under
+            <select v-model="bpParent"
+                    v-tooltip.top="'Parent population — the cells this combination is drawn from'">
+              <option v-for="o in boolParentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
+            </select>
+          </label>
+          <label class="cc-row-group">, in
+            <select v-model="bpOp" v-tooltip.top="'How the included populations combine'">
+              <option value="or">any of</option>
+              <option value="and">all of</option>
+            </select>
+          </label>
+        </div>
         <div v-for="(t, i) in bpTerms" :key="i" class="pm-ff-cond cc-muted cc-fs-xs">
           <select v-model="t.negate" class="pm-ff-neg" v-tooltip.top="'Must be in it, or must not'">
             <option :value="false">is</option>
@@ -828,6 +834,9 @@ function moveTo(target: string) {
    is / is not select is wider than a comparison operator, and the badge takes its own hue so a
    combination is distinguishable from a filter at a glance. */
 .pm-ff-neg { width: 62px; }
+/* the parent pair shares its line with the operator, so IT takes the slack (and shrinks) rather than
+   sizing to its longest option — a deep path would otherwise push "in any of" off the row */
+.pm-ff-parent, .pm-ff-parent select { flex: 1; min-width: 0; }
 .pm-bool-badge { color: #38bdf8; }
 .pm-filter-badge { font-size: var(--cc-fs-2xs); color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
