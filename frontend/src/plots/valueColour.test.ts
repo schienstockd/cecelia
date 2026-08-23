@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitXYZ, normValues, barTicks, fitLabel } from './valueColour'
+import { splitXYZ, normValues, barTicks, fitLabel, barStops, colourBarSvg, BAR_STOPS } from './valueColour'
 
 describe('splitXYZ', () => {
   it('de-interleaves triples into xy pairs + values', () => {
@@ -52,5 +52,46 @@ describe('fitLabel', () => {
   })
   it('gives up rather than drawing a lone ellipsis in no space', () => {
     expect(fitLabel('CD169', 1, measure)).toBe('')
+  })
+})
+
+describe('barStops', () => {
+  it('runs a vertical bar high→low, so the max sits at the top like an axis', () => {
+    const v = barStops('v', 3)
+    expect(v).toEqual([1, 0.5, 0])
+  })
+  it('runs a horizontal bar low→high (left→right)', () => {
+    expect(barStops('h', 3)).toEqual([0, 0.5, 1])
+  })
+})
+
+describe('colourBarSvg', () => {
+  const ticks = [{ pos: 0, label: '0' }, { pos: 10, label: '10k' }]
+  const box = { x: 10, y: 20, w: 8, h: 40 }
+  const opts = { extent: [0, 10] as [number, number], ticks, ink: '#333', fontSize: 9 }
+  it('emits one band per stop plus a frame, and every served label', () => {
+    const svg = colourBarSvg(box, opts)
+    expect((svg.match(/<rect/g) ?? []).length).toBe(BAR_STOPS + 1)
+    expect(svg).toContain('>0<')
+    expect(svg).toContain('>10k<')
+  })
+  it('puts the low end at the BOTTOM of a vertical bar', () => {
+    const at = (svg: string, label: string) => {
+      for (const m of svg.matchAll(/<text[^>]*y="([-\d.]+)"[^>]*>([^<]*)</g)) if (m[2] === label) return Number(m[1])
+      return NaN
+    }
+    const svg = colourBarSvg(box, opts)
+    expect(at(svg, '0')).toBeGreaterThan(at(svg, '10k'))
+    // ...and left→right on a horizontal one
+    const h = colourBarSvg(box, { ...opts, orient: 'h' })
+    const x = (label: string) => {
+      for (const m of h.matchAll(/<text x="([-\d.]+)"[^>]*>([^<]*)</g)) if (m[2] === label) return Number(m[1])
+      return NaN
+    }
+    expect(x('10k')).toBeGreaterThan(x('0'))
+  })
+  it('captions the bar with the measure and nothing when unnamed', () => {
+    expect(colourBarSvg(box, { ...opts, label: 'CD169' })).toContain('>CD169<')
+    expect(colourBarSvg(box, opts)).not.toContain('CD169')
   })
 })

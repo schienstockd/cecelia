@@ -2598,8 +2598,10 @@ real segmentation). API: `docs/API.md` gating routes.
 colour-by-parameter — a third measure painted onto the dots (default `density`, the local-density
 pseudocolour), with its own scale select and the shared amber auto-override marker, and a colour bar on
 the plot. It is a `points`-mode encoding, so its scale select disables in contour/outlier modes. Every
-row is persisted in the panel's `ui` bag like the axes. Model + decisions: `docs/POPULATION.md` →
-*Colour by a third measure*.
+row is persisted in the panel's `ui` bag like the axes. The **channel-pairs matrix** has the same
+`colour` row (one measure for the whole matrix, one colour bar above the grid), and the board's read-only
+**gating-strategy** view has it in its ⚙ options — so a colour-by figure can be built where figures are
+built, not only on the Gate page. Model + decisions: `docs/POPULATION.md` → *Colour by a third measure*.
 
 **Track-property gating reuses the SAME canvas (`popType` prop) — no clone.** `GatingPlots` takes a
 `popType` prop (`'flow'` default | `'track'`); `TrackingModule.vue` (route `/track`) renders it in

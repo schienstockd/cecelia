@@ -27,8 +27,14 @@ export interface MontageId { projectUid: string; imageUid: string; valueName: st
 export interface Ext { xMin: number; xMax: number; yMin: number; yMax: number }
 export interface Tick { pos: number; label: string }
 
-// axis-transform → query params (mirrors GatePlotPanel.axisQ; logicle carries its shape)
-export function axisQ(p: 'x' | 'y', ts: TransformSpec): string {
+// A montage's colour-by ("z"): the third measure painted onto every tile's dots, and the scale its ramp
+// uses. One setting for the whole grid — the tiles differ in their axes, not in what the colour means —
+// so it travels beside the tile defs rather than inside them.
+export interface ColourBy { col: string; t: TransformSpec }
+
+// axis-transform → query params (mirrors GatePlotPanel.axisQ; logicle carries its shape). `z` is the
+// colour ramp, which takes a transform exactly like an axis.
+export function axisQ(p: 'x' | 'y' | 'z', ts: TransformSpec): string {
   let q = `&${p}t=${ts.kind}`
   if (ts.kind === 'logicle') q += `&${p}T=${ts.T ?? 262144}&${p}W=${ts.W ?? 0.5}&${p}M=${ts.M ?? 4.5}&${p}A=${ts.A ?? 0}`
   return q
@@ -42,9 +48,10 @@ export function idQ(id: MontageId): string {
 // (y-channel, pop) — never on the OTHER axis — so a matrix column (shared x) and row (shared y) still
 // line up when autoscaled. Mirrors GatePlotPanel's axisFromZero → x0/y0 flag.
 export function plotQ(id: MontageId, pop: string, xc: string, yc: string, xt: TransformSpec, yt: TransformSpec,
-                      fromZero = true, autoLinear = false): string {
+                      fromZero = true, autoLinear = false, colour: ColourBy | null = null): string {
   const z = fromZero ? 1 : 0
-  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=${z}&y0=${z}${autoLinear ? '&autoLinear=1' : ''}`
+  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=${z}&y0=${z}${autoLinear ? '&autoLinear=1' : ''}` +
+    (colour ? `&z=${encodeURIComponent(colour.col)}${axisQ('z', colour.t)}` : '')
 }
 
 // ── Auto-linearise + server-projected gates (montage side) ──────────────────────────────────────────

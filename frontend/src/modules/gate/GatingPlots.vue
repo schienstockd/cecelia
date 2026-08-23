@@ -81,7 +81,7 @@ const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled works
 const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
 // Axis transforms (xt/yt) are intentionally LEFT UNSET here so the panels' own per-axis default
 // fires: GatePlotPanel/GatePairsPanel resolve `ui.xt ?? axisDefaultTransform(col)` (linear for
-// spatial/centroid axes via the store's isLinearAxis, logicle for flow intensities). That fallback
+// spatial/centroid axes via the store's defaultTransformFor, logicle for flow intensities). That fallback
 // only runs while ui.xt is undefined — pre-seeding a concrete transform here would pin logicle and
 // silently defeat it. Channels (x/y) start empty; the panel picks index-based defaults once columns
 // load (see ensureChannels).

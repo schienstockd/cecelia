@@ -56,11 +56,9 @@ const log = useLogStore()
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
-// track properties (motility, per-track aggregates) are plain continuous values → linear by
-// default; flow intensities default to logicle (FlowJo). User can switch either per axis.
-const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-// spatial/temporal + centroid axes are raw coordinates → linear by default (never logicle).
-const axisDefaultTransform = (col: string): Kind => g.isLinearAxis(col) ? 'linear' : defaultTransform
+// the ONE default-scale rule, shared with the pairs matrix and both colour-by rows (store:
+// `defaultTransformFor` — logicle for a flow intensity, linear for a track property or a raw coordinate)
+const axisDefaultTransform = (col: string): Kind => g.defaultTransformFor(col)
 // axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
 // Picking a NEW axis re-derives its transform (linear for spatial/centroid, logicle for flow) — the
 // transform follows the parameter, FlowJo-style. Without this a once-set transform sticks across axis

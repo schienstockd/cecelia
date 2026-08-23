@@ -711,6 +711,15 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
     export gets it for free and the SVG export emits it as vector.
   - A cell with **no value** for the measure is drawn in the dim ink, NOT at the ramp's floor (which
     would read as a real low measurement).
+  - **Available on every gate scatter, read-only ones included**: the single plot (`colour` row), the
+    channel-pairs matrix (`colour` row — one measure for the whole matrix) and the board's read-only
+    gating-strategy view (⚙ → colour), each persisting the measure + scale in its own view state. A
+    MONTAGE draws **one** legend for the grid, not a bar per tile (`ColourBarLegend`): every tile shares
+    the ramp, and a bar inside a 200px pairs tile would cost more of the tile than it explains. A
+    single-tile montage keeps the bar inside the plot, like the gating page.
+  - The montage fetches the colour column **whatever the render mode is** (the mode only decides whether
+    the dots use it), because refetching every tile on a points↔contour toggle is a worse trade than
+    carrying one extra column. The single plot, which refetches on far less, leaves it off the wire.
 - **Contours are client-side too, on their own grid.** `plots/contour.ts` runs **d3-contour** over a
   separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
   (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier

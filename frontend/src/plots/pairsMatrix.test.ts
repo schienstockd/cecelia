@@ -142,3 +142,21 @@ describe('plotQ axis origin (from-zero toggle)', () => {
     expect(plotQ(id, 'root', 'A', 'B', t, t, false)).toContain('&x0=0&y0=0')
   })
 })
+
+describe('plotQ colour-by (the montage ramp)', () => {
+  const id = { projectUid: 'p', imageUid: 'i', valueName: 'v', popType: 'flow' }
+  const t = { kind: 'linear' as const }
+  it('asks for no third column when there is no colour measure', () => {
+    expect(plotQ(id, 'root', 'A', 'B', t, t)).not.toContain('&z=')
+  })
+  it('adds the measure and its scale, so the ramp is requested like an axis', () => {
+    const q = plotQ(id, 'root', 'A', 'B', t, t, true, false,
+                    { col: 'mean_intensity_2', t: { kind: 'logicle', T: 262144, W: 0.5, M: 4.5, A: 0 } })
+    expect(q).toContain('&z=mean_intensity_2')
+    expect(q).toContain('&zt=logicle&zT=262144&zW=0.5&zM=4.5&zA=0')
+  })
+  it('escapes a measure name (obs columns carry dots and hashes)', () => {
+    const q = plotQ(id, 'root', 'A', 'B', t, t, true, false, { col: 'live.cell.contact#/T', t })
+    expect(q).toContain('&z=live.cell.contact%23%2FT')
+  })
+})

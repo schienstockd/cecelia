@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isCentroidAxis, axisLabelWithUnit, centroidLabel, isImageYAxis } from './gatingAxes'
+import { isCentroidAxis, axisLabelWithUnit, centroidLabel, isImageYAxis, defaultTransformForCol } from './gatingAxes'
 
 describe('isCentroidAxis', () => {
   it('matches every centroid coordinate column', () => {
@@ -81,5 +81,18 @@ describe('isImageYAxis', () => {
   it('does not match a column that merely contains the name', () => {
     expect(isImageYAxis('live.cell.centroid_y')).toBe(false)
     expect(isImageYAxis('centroid_y_mean')).toBe(false)
+  })
+})
+
+describe('defaultTransformForCol', () => {
+  it('sends a flow intensity to logicle (FlowJo)', () => {
+    expect(defaultTransformForCol('mean_intensity_2')).toBe('logicle')
+  })
+  it('sends a raw coordinate to linear — a position is never logicle', () => {
+    expect(defaultTransformForCol('centroid_x')).toBe('linear')
+    expect(defaultTransformForCol('pos_um_1', { spatialAxes: ['pos_um_1'] })).toBe('linear')
+  })
+  it('sends every track property to linear (continuous aggregates)', () => {
+    expect(defaultTransformForCol('live.track.speed', { popType: 'track' })).toBe('linear')
   })
 })

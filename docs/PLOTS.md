@@ -198,6 +198,12 @@ is a fixed asymmetric padding for the axis names, with no third gutter, and wide
 dots in every montage tile) labels the ramp with server-inverted RAW values, and is emitted as true
 vector on SVG export. Cells with no value are drawn in the themed dim ink, never at the ramp's floor.
 
+**One colour-bar builder, four surfaces.** `plots/valueColour.ts` `colourBarSvg` + `barStops` build every
+colour-by legend: the gating plot's canvas bar (the canvas painter reads the same stops), its SVG export,
+and — via `components/plots/ColourBarLegend.vue`, which renders that SVG body inline with
+`ink='currentColor'` so the theme (and the export's light flip) applies for free — the montage's on-screen
+strip and its vector export. A montage gets **one** legend for the grid rather than a bar per tile.
+
 **A population overlay is always DOTS, whatever the base mode is.** The render mode says how to draw a
 *distribution* — a highlighted population (or the napari cell selection) is the different question "where
 are THESE cells", which is per-cell. Contouring an overlay put rings around individual points: a 3-cell

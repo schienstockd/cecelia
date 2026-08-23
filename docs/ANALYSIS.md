@@ -253,7 +253,13 @@ those tiles is the shared **`components/plots/GateMontage.vue`** (a grid of read
 tiles, `mode="off"`). The channel-pairs matrix on the gating page (`GatePairsPanel`, see
 [`docs/POPULATION.md`](POPULATION.md)) feeds the SAME `GateMontage` with channel-product tiles — one
 montage renderer, two tile producers (`feedback_use_existing_framework`). `GateMontage` also carries
-the transpose reuse (mirror tiles share one fetch) and the optional coloured population overlays.
+the transpose reuse (mirror tiles share one fetch), the optional coloured population overlays, and
+**colour-by** (a third measure painted onto every tile's dots — picked in this view's ⚙ and persisted in
+the panel state, so a saved board reopens with the same figure). The montage draws **ONE** colour bar for
+the grid (`ColourBarLegend`), never a bar per tile — a bar inside a 200px tile would cost more of it than
+it explains. The exception is a SINGLE-tile montage (a board slot showing one plot), which keeps the bar
+inside the plot like the gating page does. Both export paths carry the legend. Model + decisions:
+[`docs/POPULATION.md`](POPULATION.md) → *Colour by a third measure*.
 
 ### Image / napari-screenshot slot
 `ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Napari-screenshot

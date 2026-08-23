@@ -19,8 +19,8 @@ import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVEL
 import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
-import { normValues, barTicks, fitLabel } from '../../plots/valueColour'
-import { svgImage, svgCircles, svgPath, svgRect, svgText } from '../../plots/export'
+import { normValues, barTicks, fitLabel, barStops, colourBarSvg } from '../../plots/valueColour'
+import { svgImage, svgCircles, svgPath } from '../../plots/export'
 import { paintDimmed } from '../../plots/dimLayer'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
@@ -41,6 +41,9 @@ const props = defineProps<{
   valueExtent?: [number, number] | null      // [lo, hi] in TRANSFORMED value space
   valueTicks?: { pos: number; label: string }[]   // raw-value labels at transformed positions
   valueLabel?: string                        // the measure's name, captioning the colour bar
+  // false → colour the dots but draw NO bar: a montage host draws ONE bar for the whole grid, because
+  // every tile shares the ramp and a per-tile bar would eat a 200px tile (GateMontage).
+  valueLegend?: boolean
 }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
@@ -86,6 +89,7 @@ const colourBy = () => {
   const v = props.baseValues, ext = props.valueExtent, pts = props.basePoints
   return !!(v && ext && pts && v.length === pts.length / 2 && props.renderMode === 'points')
 }
+const showBar = () => colourBy() && props.valueLegend !== false
 function paintDensityDots(points: Float32Array) {
   const c = ctx!
   const t = dotRamp(points)
@@ -171,16 +175,14 @@ function barBox() {
   return { x: w - BAR_PAD - BAR_W, y: BAR_PAD + BAR_FS + 4, w: BAR_W,
            h: Math.max(36, Math.min(110, Math.round(h * 0.32))) }
 }
-// ramp stops (hi at the top) — the same lookup the dots use, so the bar can't describe a colour the
-// dots don't paint
-const BAR_STOPS = 24
-function barStop(i: number) { return 1 - i / (BAR_STOPS - 1) }
 function paintColourBar() {
   const c = ctx!, ext = props.valueExtent
   if (!ext) return
   const b = barBox(), { w } = size()
+  // the SAME bands the SVG bar emits (plots/valueColour `barStops`), as gradient stops
+  const stops = barStops('v')
   const grad = c.createLinearGradient(0, b.y, 0, b.y + b.h)
-  for (let i = 0; i < BAR_STOPS; i++) grad.addColorStop(i / (BAR_STOPS - 1), heatCss(barStop(i)))
+  stops.forEach((t, i) => grad.addColorStop(i / (stops.length - 1), heatCss(t)))
   c.fillStyle = grad; c.fillRect(b.x, b.y, b.w, b.h)
   c.strokeStyle = ink(); c.lineWidth = 0.6; c.strokeRect(b.x, b.y, b.w, b.h)
   c.fillStyle = ink(); c.font = `${BAR_FS}px system-ui, sans-serif`
@@ -194,29 +196,12 @@ function paintColourBar() {
                b.x + b.w, b.y - 4)
   }
 }
-// the same bar as TRUE VECTOR for the SVG export (stacked rects rather than a gradient <def>, so it
-// needs nothing from svgDoc and stays editable per band)
-function colourBarSvg(): string {
+// the same bar as TRUE VECTOR for the SVG export — the shared builder, so the figure's legend cannot
+// describe the ramp differently from the canvas one above
+const barSvg = (): string => {
   const ext = props.valueExtent
-  if (!ext) return ''
-  const b = barBox(), { w } = size(), pen = ink()
-  let out = ''
-  const bandH = b.h / BAR_STOPS
-  for (let i = 0; i < BAR_STOPS; i++) {
-    out += svgRect(b.x, b.y + i * bandH, b.w, bandH + 0.3, { fill: heatCss(barStop(i)) })
-  }
-  out += svgRect(b.x, b.y, b.w, b.h, { stroke: pen, width: 0.6 })
-  for (const t of barTicks(props.valueTicks ?? [], ext)) {
-    out += svgText(b.x - 3, b.y + (1 - t.frac) * b.h + BAR_FS * 0.35, t.label,
-                   { fill: pen, size: BAR_FS, anchor: 'end' })
-  }
-  if (props.valueLabel) {
-    // no ctx here — estimate the width the way plots/plot.ts does outside a browser (0.55em/char)
-    out += svgText(b.x + b.w, b.y - 4,
-                   fitLabel(props.valueLabel, Math.max(30, w * 0.45), t => t.length * BAR_FS * 0.55),
-                   { fill: pen, size: BAR_FS, anchor: 'end' })
-  }
-  return out
+  return ext ? colourBarSvg(barBox(), { extent: ext, ticks: props.valueTicks ?? [],
+                                        label: props.valueLabel, ink: ink(), fontSize: BAR_FS }) : ''
 }
 
 function paintContent() {
@@ -240,7 +225,7 @@ function paintContent() {
   if (props.showPops) for (const pop of props.popLayers) {
     if (pop.points?.length) drawDots(pop.points, pop.colour)
   }
-  if (colourBy()) paintColourBar()          // last: the legend is never dimmed by the base wash
+  if (showBar()) paintColourBar()          // last: the legend is never dimmed by the base wash
 }
 
 function draw() {
@@ -330,13 +315,13 @@ function exportSvgContent(): string {
       body += dotsSvg(pop.points, pop.colour, 1.5)      // categorical → vector, and dots in EVERY mode (paintContent)
     }
   }
-  if (colourBy()) body += colourBarSvg()                // same order as paintContent
+  if (showBar()) body += barSvg()                       // same order as paintContent
   return body
 }
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick,
-             props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel],
+             props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel, props.valueLegend],
       draw, { deep: true })
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')
