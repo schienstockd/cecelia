@@ -7878,6 +7878,102 @@ end
     @test Set(cells_in_pop(m, "/qc")) == Set([1])
 end
 
+# ── Boolean populations (Decision 16): a pop defined by combining OTHER pops ──
+# The ask: "gate cells positive for nuc-GFP or mem-TOM", and "mem-TOM+ AND nuc-GFP+ but NOT
+# CD169-Kat+" — combinations no single 2D gate can express. One form covers all of it: included
+# terms combined with AND or OR, minus every excluded term, still ∩ the parent like any other pop.
+@testset "boolean populations combine other populations" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    # three gates on the same axes, each admitting a different slice of the four cells below
+    add_pop!(m, "gfp+"; parent=ROOT, gate=RectangleGate("g", "t", 1.0, 100.0, -100.0, 100.0))
+    add_pop!(m, "tom+"; parent=ROOT, gate=RectangleGate("g", "t", -100.0, 100.0, 1.0, 100.0))
+    add_pop!(m, "kat+"; parent=ROOT, gate=RectangleGate("k", "k", 1.0, 100.0, 1.0, 100.0))
+    #                    label:      1        2        3        4
+    df = DataFrame("label" => [1, 2, 3, 4],
+                   "g" => [5.0, 0.0, 5.0, 0.0],      # gfp+: 1, 3
+                   "t" => [0.0, 5.0, 5.0, 0.0],      # tom+: 2, 3
+                   "k" => [0.0, 0.0, 5.0, 0.0])      # kat+: 3
+    fetch = _ -> df
+
+    # OR — the "positive for either marker" ask
+    add_pop!(m, "gfp+ or tom+"; parent=ROOT, boolean_op="or", boolean_pops=["/gfp+", "/tom+"])
+    # AND minus an exclusion — the "double positive but not CD169" ask
+    add_pop!(m, "dp not kat"; parent=ROOT, boolean_op="and",
+             boolean_pops=["/gfp+", "/tom+"], boolean_not=["/kat+"])
+    # a plain NOT gate: no included terms ⇒ everything in the parent except the excluded one
+    add_pop!(m, "not kat"; parent=ROOT, boolean_op="not", boolean_pops=["/kat+"])
+
+    recompute!(m, fetch)
+    @test Set(cells_in_pop(m, "/gfp+ or tom+")) == Set([1, 2, 3])
+    @test Set(cells_in_pop(m, "/dp not kat")) == Set{Int}()      # only cell 3 is double+, and it is kat+
+    @test Set(cells_in_pop(m, "/not kat")) == Set([1, 2, 4])
+    # "not" is stored as an exclusion, not a third operator
+    @test pop_at(m, "/not kat").boolean_op == "and"
+    @test pop_at(m, "/not kat").boolean_pops == String[]
+    @test pop_at(m, "/not kat").boolean_not == ["/kat+"]
+
+    # ∩ parent still applies: the same combination under a gate is capped by that gate
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("g", "t", -100.0, 100.0, 1.0, 100.0))  # = tom+
+    add_pop!(m, "either"; parent="/qc", boolean_op="or", boolean_pops=["/gfp+", "/tom+"])
+    recompute!(m, fetch)
+    @test Set(cells_in_pop(m, "/qc/either")) == Set([2, 3])
+
+    # a boolean pop can combine boolean pops — and evaluation order is a DEPENDENCY, not depth: this
+    # one sits at depth 1 and references "/qc/either" at depth 2, so plain depth order would derive
+    # it before the thing it needs.
+    add_pop!(m, "chained"; parent=ROOT, boolean_op="and", boolean_pops=["/qc/either", "/not kat"])
+    recompute!(m, fetch)
+    @test Set(cells_in_pop(m, "/chained")) == Set([2])
+
+    # round-trips through the sidecar, references and all
+    td = mktempdir(); save_pop_map!(m, td)
+    m2 = load_pop_map(td, "B")
+    @test pop_at(m2, "/dp not kat").boolean_op == "and"
+    @test pop_at(m2, "/dp not kat").boolean_pops == ["/gfp+", "/tom+"]
+    @test pop_at(m2, "/dp not kat").boolean_not == ["/kat+"]
+    recompute!(m2, fetch)
+    @test Set(cells_in_pop(m2, "/gfp+ or tom+")) == Set([1, 2, 3])
+end
+
+@testset "boolean references follow rename/move, and refuse to loop" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "gfp+"; parent="/qc", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "tom+"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "either"; parent=ROOT, boolean_op="or", boolean_pops=["/qc/gfp+", "/tom+"])
+
+    # a reference is a PATH, so renaming or re-parenting a combined pop must rewrite it — otherwise
+    # the combination silently loses a term the moment either gate is renamed.
+    rename_pop!(m, "/qc/gfp+", "GFP+")
+    @test pop_at(m, "/either").boolean_pops == ["/qc/GFP+", "/tom+"]
+    move_pop!(m, "/qc/GFP+", ROOT)
+    @test pop_at(m, "/either").boolean_pops == ["/GFP+", "/tom+"]
+
+    # self-reference and loops are rejected, at creation and at edit
+    @test_throws ErrorException add_pop!(m, "self"; parent=ROOT, boolean_op="not", boolean_pops=["/self"])
+    @test_throws ErrorException set_boolean!(m, "/either"; op="or", pops=["/either"])
+    add_pop!(m, "second"; parent=ROOT, boolean_op="and", boolean_pops=["/either"])
+    @test_throws ErrorException set_boolean!(m, "/either"; op="or", pops=["/second"])   # A→B→A
+    # …as are an unknown reference, an unknown operator and an empty term list
+    @test_throws ErrorException add_pop!(m, "x"; parent=ROOT, boolean_op="or", boolean_pops=["/nope"])
+    @test_throws ErrorException add_pop!(m, "x"; parent=ROOT, boolean_op="xor", boolean_pops=["/tom+"])
+    @test_throws ErrorException add_pop!(m, "x"; parent=ROOT, boolean_op="or", boolean_pops=String[])
+    # a pop cannot combine its own descendant either (that descendant already depends on it)
+    add_pop!(m, "child"; parent="/either", gate=RectangleGate("x", "y", 0.0, 1.0, 0.0, 1.0))
+    @test_throws ErrorException set_boolean!(m, "/either"; op="or", pops=["/either/child"])
+    @test Set(pop_paths(m)) == Set(["/qc", "/GFP+", "/tom+", "/either", "/second", "/either/child"])
+
+    # who would be left dangling by a delete — what the API refuses on (rename/move can't orphan)
+    @test boolean_dependents(m, ["/tom+"]) == ["/either" => ["/tom+"]]
+    @test isempty(boolean_dependents(m, ["/qc"]))
+    # a dangling reference (only reachable by hand-editing a sidecar) degrades to an empty pop,
+    # never a crash — the same rule as a missing column
+    m.pops["/either"].boolean_pops = ["/gone"]
+    df = DataFrame("label" => [1], "x" => [1.0], "y" => [1.0])
+    recompute!(m, _ -> df)
+    @test isempty(cells_in_pop(m, "/either"))
+end
+
 # ── Gate shape swap: rectangle ⇄ polygon on an EXISTING population ────────────
 # The UI (PopulationManager's convert button, frontend plots/gateGeometry.ts) changes a gate's shape
 # by pushing a new spec of the OTHER kind through pop/set-gate. `set_gate!` must therefore accept a

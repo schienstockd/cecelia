@@ -2833,7 +2833,13 @@ so they stay aligned (`xMin`→left, `xMax`→right, `yMax`→top). There is no 
   vertices, double-click an edge to insert a vertex, right-click a vertex to delete. Live local
   redraw while dragging; persists (`pop/set-gate`) only on release. Emits `draw`/`edit` only on
   explicit user completion — programmatic repaint never emits, so no re-entrancy loop (the old
-  Plotly `flowNumGateUpdates` guard is unneeded).
+  Plotly `flowNumGateUpdates` guard is unneeded). **A click is not a gate**: mousedown seeds the drag
+  end at the drag start, so a release that never moved used to emit a ZERO-AREA rectangle — a
+  population with no cells and an outline too thin to see ("I drew a gate and it fell to zero;
+  redrawing is fine"). The draw tool stays armed after each gate, so any stray click on the plot did
+  it. Under `MIN_DRAG_PX` (3px, `plots/gateGeometry.ts`) the release is swallowed — not cancelled, so
+  a mis-click doesn't disarm the tool either — and a polygon closed on the spot or drawn in a straight
+  line is rejected the same way (`isDegeneratePolygon`).
 
 **Render modes** (mirror old `cciaConf fcs.gating.plotTypes`): `points` = FlowJo *pseudocolour*
 (density-coloured points); `contour` = density contours over faint points. Highlighting
@@ -2861,6 +2867,18 @@ current parent. This is a MEMBERSHIP edit, not a cosmetic one: a pop's cells are
 parent's, so lifting `/qc/B` out to `/B` re-derives it against all cells. The same select is now live
 while editing a filter population (it used to read "delete & recreate to move"). Gates, children and
 colours survive — the alternative was deleting the branch and redrawing every gate in it.
+
+**Combine populations** — the two questions no single 2D gate can draw: *"cells positive for nuc-GFP
+**or** mem-TOM"* and *"mem-TOM+ **and** nuc-GFP+ **but not** CD169+"*. The manager's second
+pop-defining form (beside *New filter population*, and reachable per-row as ⋯ → *Combine with…*, which
+seeds the form with that population): name + colour + parent, an *any of* / *all of* selector, and one
+row per term — `is` / `is not` and the population. It creates an ordinary `Population` whose membership
+is a set operation over the others (`pop/add` with `boolean`; `docs/POPULATION.md` → *Boolean
+(combined) populations*), so it shows counts, highlights, and gets gated under like any other. Combined
+pops are **badged** (`pi-link`, as filter pops are badged `pi-filter`), and the badge is the edit
+affordance with the combination itself as its tooltip — the only way to read a definition from a list
+of names. Deleting a population a combination uses is refused with both names, since a reference is a
+path; renaming or moving one rewrites the reference instead.
 
 ### Gating plot — rendering & UX hacks
 

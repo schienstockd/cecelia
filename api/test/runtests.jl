@@ -4967,6 +4967,81 @@ end
   end
 end
 
+# ── boolean populations over the API (Decision 16) ───────────────────────────────────────────────
+# "positive for nuc-GFP OR mem-TOM", "double positive but NOT CD169" — a population defined by
+# combining others, created through pop/add and rewritten through pop/update like any other. The one
+# thing only the API can enforce: a delete that would leave a combination pointing at nothing.
+@testset "API: boolean populations combine, update and block an orphaning delete" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        vn = "B"
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        loaded() = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+
+        post(api_gating_pop_add, Dict{String,Any}("name" => "gfp+", "gate" => gate(1.0)))
+        post(api_gating_pop_add, Dict{String,Any}("name" => "tom+", "gate" => gate(2.0)))
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "either", "colour" => "#abc",
+                                      "boolean" => Dict{String,Any}("op" => "or",
+                                                                    "pops" => ["/gfp+", "/tom+"])))
+        @test st == 200
+        p = pop_at(loaded(), "/either")
+        @test p.boolean_op == "or" && p.boolean_pops == ["/gfp+", "/tom+"] && p.gate === nothing
+
+        # rewritten wholesale by pop/update — including an exclusion ("but not …")
+        st, _ = post(api_gating_pop_update,
+                     Dict{String,Any}("path" => "/either",
+                                      "boolean" => Dict{String,Any}("op" => "and", "pops" => ["/gfp+"],
+                                                                    "not" => ["/tom+"])))
+        @test st == 200
+        p = pop_at(loaded(), "/either")
+        @test p.boolean_op == "and" && p.boolean_pops == ["/gfp+"] && p.boolean_not == ["/tom+"]
+
+        # a reference that isn't a population, a loop, and an empty term list are all 400s
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "bad",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => ["/nope"])))
+        @test st == 400
+        st, _ = post(api_gating_pop_update,
+                     Dict{String,Any}("path" => "/either",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => ["/either"])))
+        @test st == 400
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "bad2",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => [])))
+        @test st == 400
+
+        # deleting a combined population would leave "either" pointing at nothing → refused, by name
+        st, b = post(api_gating_pop_delete, Dict{String,Any}("path" => "/tom+"))
+        @test st == 400 && occursin("either", String(b))
+        @test has_pop(loaded(), "/tom+")
+        # …but renaming it is fine: the reference is rewritten with the path
+        st, _ = post(api_gating_pop_rename, Dict{String,Any}("path" => "/tom+", "newName" => "TOM+"))
+        @test st == 200 && pop_at(loaded(), "/either").boolean_not == ["/TOM+"]
+        # clearing the combination releases the hold, and then the delete goes through
+        st, _ = post(api_gating_pop_update, Dict{String,Any}("path" => "/either", "boolean" => nothing))
+        @test st == 200 && pop_at(loaded(), "/either").boolean_op === nothing
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("path" => "/TOM+"))
+        @test st == 200 && !has_pop(loaded(), "/TOM+")
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
 @testset "API: gating undo/redo steps through the population tree" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"

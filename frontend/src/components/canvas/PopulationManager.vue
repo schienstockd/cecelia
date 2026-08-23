@@ -23,6 +23,8 @@ import CanvasSidePanel from './CanvasSidePanel.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
+import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
+         type BooleanTerm } from '../../utils/booleanPopForm'
 import { popNameError, popPath, isInSubtree } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
@@ -228,11 +230,13 @@ const filterGroups = computed(() => measureGroups({
   columns: [...g.columns].sort(), channels: g.channels,
   obsColumns: [...g.obsColumns].sort(), popType: g.popType }))
 const filterMeasures = computed(() => groupedCols(filterGroups.value))
-// Parent choices for the filter-pop form. When EDITING, the pop's own subtree is excluded — moving a
-// population under its own descendant is a cycle (Julia `move_pop!` rejects it; this never offers it).
-const parentOptions = computed(() => ['root', ...visiblePops.value
-  .filter(p => !fpEditPath.value || !isInSubtree(p.path, fpEditPath.value))
-  .map(p => p.path)])
+// Parent choices for the pop-defining forms (filter + combination). When EDITING, the pop's own
+// subtree is excluded — moving a population under its own descendant is a cycle (Julia `move_pop!`
+// rejects it; this never offers it). One helper, because both forms need exactly this list.
+const parentChoices = (exclude: string | null) => ['root', ...visiblePops.value
+  .filter(p => !p.transient && (!exclude || !isInSubtree(p.path, exclude)))
+  .map(p => p.path)]
+const parentOptions = computed(() => parentChoices(fpEditPath.value))
 
 function addFpCond() { fpConds.value.push({ measure: filterMeasures.value[0] ?? '', fun: 'gt', values: '' }) }
 function removeFpCond(i: number) { fpConds.value.splice(i, 1) }
@@ -280,6 +284,75 @@ async function submitFilterPop() {
 // a hand-drawn gate vs a declarative filter pop (badge in the list)
 const isFilterPop = (p: FlatPop) => !!p.filter && !p.gate
 const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
+
+// ── Combined (boolean) populations (Decision 16) ──────────────────────────────────────────────
+// A population defined by COMBINING others rather than by a shape on a plot: "positive for nuc-GFP
+// or mem-TOM", "double positive but not CD169". No single 2D gate can express either — before this
+// the answer was to draw one gate and re-gate its children by hand. Same form creates and edits, as
+// the filter form does; each term carries its own is / is not.
+const showBoolForm = ref(false)
+const bpEditPath = ref<string | null>(null)     // null → creating; a path → editing that pop
+const bpName = ref('')
+const bpParent = ref('root')
+const bpColour = ref(POP_PALETTE[0])
+const bpOp = ref<'and' | 'or'>('or')
+const bpTerms = ref<BooleanTerm[]>([{ path: '', negate: false }])
+// What can be combined: any real population except the one being edited and its own subtree (which
+// depends on it, so combining it would be a loop the server rejects) and the transient napari pop.
+const boolTermOptions = computed(() => visiblePops.value
+  .filter(p => !p.transient && (!bpEditPath.value || !isInSubtree(p.path, bpEditPath.value)))
+  .map(p => p.path))
+const boolParentOptions = computed(() => parentChoices(bpEditPath.value))
+// a path → the population's own name, for the summary line (paths get long and the leaf is the name)
+const popLabel = (path: string) => g.flat.find(x => x.path === path)?.name ?? path
+
+function addBoolTerm() { bpTerms.value.push({ path: '', negate: false }) }
+function removeBoolTerm(i: number) { bpTerms.value.splice(i, 1) }
+function resetBoolForm() {
+  bpEditPath.value = null; bpName.value = ''; bpParent.value = 'root'
+  bpColour.value = POP_PALETTE[0]; bpOp.value = 'or'; bpTerms.value = [{ path: '', negate: false }]
+}
+// `seed` = the ⋯ → "Combine with…" entry: the row you opened the menu on becomes the first term and
+// its parent the new pop's parent, so the common case is two clicks and a second population.
+function openCreateBool(seed?: FlatPop) {
+  resetBoolForm()
+  if (seed) {
+    bpTerms.value = [{ path: seed.path, negate: false }, { path: '', negate: false }]
+    bpParent.value = seed.parent
+  }
+  showBoolForm.value = true
+}
+function beginEditBool(p: FlatPop) {
+  bpEditPath.value = p.path; bpName.value = p.name; bpParent.value = p.parent; bpColour.value = p.colour
+  bpOp.value = p.boolean?.op === 'and' ? 'and' : 'or'
+  const terms = specToTerms(p.boolean)
+  bpTerms.value = terms.length ? terms : [{ path: '', negate: false }]
+  showBoolForm.value = true
+}
+
+async function submitBoolPop() {
+  const name = bpName.value.trim()
+  const spec = termsToSpec(bpOp.value, bpTerms.value)
+  if (!booleanSpecValid(spec)) return
+  const cur = bpEditPath.value ? visiblePops.value.find(p => p.path === bpEditPath.value) : undefined
+  const nameErr = popNameError(name, g.flat.map(x => x.name), { currentName: cur?.name })
+  if (nameErr) { log.error(nameErr, { source: 'gating' }); return }
+  if (bpEditPath.value) {
+    let path = bpEditPath.value
+    await g.updateBooleanPop(path, spec)
+    if (cur && cur.colour !== bpColour.value) await g.updatePop(path, { colour: bpColour.value })
+    // rename and move BOTH change the path, so they go last and each re-derives it for the next —
+    // and the server rewrites every reference to this pop along with it.
+    if (cur && name !== cur.name) { await g.renamePop(path, name); path = popPath(cur.parent, name) }
+    if (cur && bpParent.value !== cur.parent) await g.movePop(path, bpParent.value)
+  } else {
+    await g.addBooleanPop(name, bpParent.value, bpColour.value, spec)
+  }
+  resetBoolForm(); showBoolForm.value = false
+}
+
+const isBoolPop = (p: FlatPop) => !!p.boolean
+const popBoolSummary = (p: FlatPop) => booleanSummary(p.boolean, popLabel)
 
 // ── Row actions overflow menu (⋯) ────────────────────────────────────────────────────────────
 // Same shape as the image table's per-image menu (TeleportPopover + the shared `.cc-actions-*`
@@ -335,7 +408,7 @@ function moveTo(target: string) {
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
-      <div v-if="clusterMode && !readonly" class="pm-add">
+      <div v-if="clusterMode && !readonly" class="pm-add cc-row cc-row-tight">
         <button class="pm-add-btn" data-guide="popmanager.addClusterPop" @click="addClusterPopulation"
                 v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
           <i class="pi pi-plus" /> Add population
@@ -344,10 +417,17 @@ function moveTo(target: string) {
 
       <!-- filter-population form (Decision 15): a pop defined by an AND-ed filter on any obs measure.
            Same form creates AND edits (fpEditPath) — editing is not a special path. -->
-      <div v-if="!readonly && !clusterMode" class="pm-add">
+      <div v-if="!readonly && !clusterMode" class="pm-add cc-row cc-row-tight">
         <button class="pm-add-btn" @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
                 v-tooltip.bottom="'Define a population by filtering on obs measures'">
           <i class="pi pi-filter" /> New filter population
+        </button>
+        <!-- combined population (Decision 16): the answer to "cells positive for nuc-GFP OR mem-TOM",
+             which no single 2D gate can draw. Sits next to the filter form — both define a population
+             by a rule rather than a shape. -->
+        <button class="pm-add-btn" @click="showBoolForm ? (showBoolForm = false) : openCreateBool()"
+                v-tooltip.bottom="'Define a population by combining existing ones'">
+          <i class="pi pi-link" /> Combine populations
         </button>
         <!-- Undo/redo for hand-drawn gating. In this bar rather than a bar of their own: the panel is
              the document these act on, and a third stacked row costs more than two icons do. -->
@@ -400,6 +480,49 @@ function moveTo(target: string) {
         </div>
       </div>
 
+      <!-- combined-population form (Decision 16): pick the populations, say how they combine, and
+           mark any that must NOT be in it. Same form creates and edits (bpEditPath). -->
+      <div v-if="showBoolForm && !readonly && !clusterMode" class="pm-ff">
+        <div class="pm-ff-title">{{ bpEditPath ? 'Edit combined population' : 'New combined population' }}</div>
+        <div class="pm-ff-head">
+          <input v-model="bpName" class="pm-ff-name" placeholder="Population name"
+                 v-tooltip.top="'Name for the new population'" />
+          <input v-model="bpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
+        </div>
+        <label class="pm-ff-row cc-muted cc-fs-xs">Under
+          <select v-model="bpParent" v-tooltip.top="'Parent population — the cells this combination is drawn from'">
+            <option v-for="o in boolParentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
+          </select>
+        </label>
+        <label class="pm-ff-row cc-muted cc-fs-xs">Cells in
+          <select v-model="bpOp" v-tooltip.top="'How the included populations combine'">
+            <option value="or">any of</option>
+            <option value="and">all of</option>
+          </select>
+        </label>
+        <div v-for="(t, i) in bpTerms" :key="i" class="pm-ff-cond cc-muted cc-fs-xs">
+          <select v-model="t.negate" class="pm-ff-neg" v-tooltip.top="'Must be in it, or must not'">
+            <option :value="false">is</option>
+            <option :value="true">is not</option>
+          </select>
+          <select v-model="t.path" class="pm-ff-measure" v-tooltip.top="'Population to combine'">
+            <option value="" disabled>population…</option>
+            <option v-for="o in boolTermOptions" :key="o" :value="o">{{ o }}</option>
+          </select>
+          <button v-if="bpTerms.length > 1" class="pm-icon cc-btn cc-btn-bare cc-btn-icon"
+                  @click="removeBoolTerm(i)" v-tooltip.left="'Remove'">
+            <i class="pi pi-times" />
+          </button>
+        </div>
+        <div class="pm-ff-actions">
+          <button class="pm-ff-cond-add" @click="addBoolTerm"><i class="pi pi-plus" /> population</button>
+          <span class="pm-ff-spacer" />
+          <button class="pm-ff-cancel" @click="showBoolForm = false; resetBoolForm()">Cancel</button>
+          <button class="pm-add-btn" :disabled="!bpName.trim() || !bpTerms.some(t => t.path)"
+                  @click="submitBoolPop">{{ bpEditPath ? 'Save' : 'Create' }}</button>
+        </div>
+      </div>
+
       <div v-if="!visiblePops.length" class="pm-empty cc-muted">
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
       </div>
@@ -433,6 +556,15 @@ function moveTo(target: string) {
                   @click.stop="beginEditFilter(p)"><i class="pi pi-filter" /></button>
           <i v-else-if="isFilterPop(p)" class="pi pi-filter pm-filter-badge"
              v-tooltip.top="popFilterSummary(p)" />
+
+          <!-- combined pops carry the same kind of badge, and it is likewise the EDIT affordance —
+               the tooltip is the combination itself, which is the only way to read it from the list. -->
+          <button v-if="isBoolPop(p) && !readonly && !p.transient" type="button"
+                  class="pm-icon cc-btn cc-btn-bare cc-btn-icon pm-filter-badge pm-bool-badge"
+                  v-tooltip.top="`Edit: ${popBoolSummary(p)}`"
+                  @click.stop="beginEditBool(p)"><i class="pi pi-link" /></button>
+          <i v-else-if="isBoolPop(p)" class="pi pi-link pm-filter-badge pm-bool-badge"
+             v-tooltip.top="popBoolSummary(p)" />
 
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
@@ -503,6 +635,12 @@ function moveTo(target: string) {
             <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
                     @click.stop="moveMode = true">
               <i class="pi pi-arrows-h" /> Move under…
+            </button>
+            <!-- combine THIS one with another: opens the form with this population already in it, so
+                 the "…or the other marker too" case is two clicks rather than a form from scratch. -->
+            <button v-if="!readonly && !actionsPop.transient && !clusterMode" class="cc-actions-item"
+                    @click.stop="runAction(() => openCreateBool(actionsPop!))">
+              <i class="pi pi-link" /> Combine with…
             </button>
             <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
                            @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"
@@ -650,8 +788,10 @@ function moveTo(target: string) {
 .pm-move-target { padding-left: 2.15rem; }
 
 /* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
-.pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
-  display: flex; align-items: center; gap: 4px; }
+/* layout is `.cc-row` (it WRAPS: at ~250px the two pop-defining buttons — filter, combine — don't
+   fit on one line beside undo/redo, and a squashed row hides one behind an overflow nobody looks
+   for). Only the bar's own chrome stays here. */
+.pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border); }
 .pm-add-spacer { flex: 1; }
 /* Redo is `pi-undo` MIRRORED, the way every icon set draws the pair — PrimeIcons has no redo glyph,
    and the two nearest candidates are both wrong: `pi-replay` is pixel-identical to `pi-undo` (same
@@ -684,6 +824,11 @@ function moveTo(target: string) {
 .pm-ff-spacer { flex: 1; }
 .pm-ff-cancel { background: none; border: none; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); cursor: pointer; padding: 4px 6px; }
 .pm-ff-cancel:hover { color: var(--cc-text); }
+/* combined-population form (Decision 16): the term row reuses the filter form's layout — only the
+   is / is not select is wider than a comparison operator, and the badge takes its own hue so a
+   combination is distinguishable from a filter at a glance. */
+.pm-ff-neg { width: 62px; }
+.pm-bool-badge { color: #38bdf8; }
 .pm-filter-badge { font-size: var(--cc-fs-2xs); color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }

@@ -60,6 +60,16 @@ mutable struct Population
     # only look at one. Lets a user-defined filter pop combine e.g. CD4>0.5 AND speed>5 in ONE pop.
     filter_conditions::Union{Vector,Nothing}
     is_track::Bool
+    # boolean membership (Decision 16): this pop's cells are a set operation over OTHER populations
+    # in the same map, not a gate or a column — it LINKS existing gates. One form covers all three
+    # cases the manager offers: included terms combined with AND or OR, minus every excluded term.
+    #   nuc-GFP+ OR mem-TOM+                → op="or",  pops=[GFP,TOM]
+    #   mem-TOM+ AND nuc-GFP+ BUT NOT CD169 → op="and", pops=[TOM,GFP], not=[CD169]
+    #   NOT CD169 (a plain "not gate")      → op="and", pops=[],        not=[CD169]
+    # Still ∩ parent like every other population, so an empty include list means "the parent's cells".
+    boolean_op::Union{String,Nothing}                   # how `boolean_pops` combine: "and" | "or"
+    boolean_pops::Union{Vector{String},Nothing}         # included terms (empty ⇒ all of the parent)
+    boolean_not::Union{Vector{String},Nothing}          # excluded terms, always subtracted
     # explicit-label membership: when set, this pop's cells ARE these label IDs (∩ parent),
     # bypassing gate/filter. Used by the transient napari selection (docs/POPULATION.md) so a
     # spatial selection in napari lights up the same cells on the flow plots. Not persisted.
@@ -141,8 +151,108 @@ direct_children(m::PopulationMap, parent::AbstractString) =
 descendants(m::PopulationMap, path::AbstractString) =
     [p for p in m.order if startswith(p, String(path) * "/")]
 
-"""Paths in parent-before-child order (stable by depth)."""
-topo_order(m::PopulationMap) = sort(m.order; by = p -> count(==('/'), p), alg = MergeSort)
+# ── Boolean populations (Decision 16) ────────────────────────────────────────────
+# A pop whose membership is a set operation over OTHER pops in the same map, rather than a gate or a
+# filter: "nuc-GFP+ OR mem-TOM+". The tree is still the tree (∩ parent as always) — these add a
+# second kind of edge on top of it, which is why dependency order below is no longer just depth.
+const BOOLEAN_OPS = ("and", "or")
+
+"""
+    _normalise_boolean(op, pops, nots; self) -> (op, pops, nots) | (nothing, nothing, nothing)
+
+Validate + canonicalise a boolean spec. Empty/`nothing` op ⇒ not a boolean pop. `"not"` is accepted
+as an operator and normalised into the exclusion list (`op="not", pops=[A]` ≡ `op="and", not=[A]`),
+so a hand-written sidecar — and the one-click "everything except this" — say the obvious thing. At
+least one term is required, and `self` (the path the spec is attached to) may not be one of them.
+"""
+function _normalise_boolean(op, pops, nots; self::Union{AbstractString,Nothing}=nothing)
+    (op === nothing || (op isa AbstractString && isempty(op))) && return (nothing, nothing, nothing)
+    o = lowercase(String(op))
+    lst(x) = unique(String[String(v) for v in (x === nothing ? () : x)])
+    ps, ns = lst(pops), lst(nots)
+    if o == "not"                     # alias: everything of the parent except these
+        o = "and"; ns = unique([ns; ps]); ps = String[]
+    end
+    o in BOOLEAN_OPS ||
+        error("boolean pop: unknown operator \"$op\" — one of $(join(BOOLEAN_OPS, ", ")) or \"not\"")
+    (isempty(ps) && isempty(ns)) &&
+        error("boolean pop: pick at least one population to combine")
+    (self !== nothing && (String(self) in ps || String(self) in ns)) &&
+        error("boolean pop: a population cannot reference itself")
+    (o, ps, ns)
+end
+
+"""Populations `path` needs before its own membership can be derived: its parent, plus (boolean) the
+populations it combines. The edge set `topo_order` sorts over."""
+function _pop_deps(m::PopulationMap, path::AbstractString)::Vector{String}
+    p = m.pops[String(path)]
+    deps = String[]
+    is_root(p.parent) || push!(deps, p.parent)
+    p.boolean_pops === nothing || append!(deps, p.boolean_pops)
+    p.boolean_not  === nothing || append!(deps, p.boolean_not)
+    deps
+end
+
+"""Would referencing `refs` from `path` close a dependency loop (`A = not B`, `B = not A`, or a
+reference to one of `path`'s own descendants, which depend on it through their parent)?"""
+function boolean_cycle(m::PopulationMap, path::AbstractString, refs)::Bool
+    target = String(path)
+    seen = Set{String}()
+    stack = String[String(r) for r in refs]
+    while !isempty(stack)
+        cur = pop!(stack)
+        cur == target && return true
+        (cur in seen || !has_pop(m, cur)) && continue
+        push!(seen, cur)
+        append!(stack, _pop_deps(m, cur))
+    end
+    false
+end
+
+"""Populations OUTSIDE `targets` whose boolean definition references something inside it — i.e. what
+would be left dangling by deleting `targets`. Returns `dependent path => referenced paths`."""
+function boolean_dependents(m::PopulationMap, targets)::Vector{Pair{String,Vector{String}}}
+    tset = Set(String[String(t) for t in targets])
+    out = Pair{String,Vector{String}}[]
+    for path in m.order
+        path in tset && continue
+        pop = m.pops[path]
+        pop.boolean_op === nothing && continue
+        refs = [something(pop.boolean_pops, String[]); something(pop.boolean_not, String[])]
+        hit = [r for r in refs if r in tset]
+        isempty(hit) || push!(out, path => hit)
+    end
+    out
+end
+
+"""
+Paths in dependency order: every population after the ones its membership needs (its parent, and for
+a boolean pop the populations it combines). Depth alone is enough for a pure tree — a boolean pop can
+reference a DEEPER pop than itself, so the graph needs a real topological sort. Anything left in a
+cycle (only reachable by hand-editing a sidecar) is appended as-is rather than raising: `recompute!`
+degrades a pop with an unresolved reference to empty + a warning, and a broken file must not take the
+whole map down.
+"""
+function topo_order(m::PopulationMap)::Vector{String}
+    base = sort(m.order; by = p -> count(==('/'), p), alg = MergeSort)
+    any(m.pops[p].boolean_op !== nothing for p in base) || return base
+    done = Set{String}()
+    out = String[]
+    remaining = base
+    while !isempty(remaining)
+        keep = String[]
+        for p in remaining
+            if all(d -> !has_pop(m, d) || d in done, _pop_deps(m, p))
+                push!(out, p); push!(done, p)
+            else
+                push!(keep, p)
+            end
+        end
+        length(keep) == length(remaining) && (append!(out, keep); break)   # no progress ⇒ cycle
+        remaining = keep
+    end
+    out
+end
 
 # Normalise a compound-filter spec (Decision 15): `nothing` | a list of `{measure, fun, values}`
 # (dicts, from JSON, or NamedTuples) → `Vector{NamedTuple}` of `(; measure, fun, values)`, dropping
@@ -165,8 +275,9 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                   colour::AbstractString="#ffffff", show::Bool=true,
                   filter_measure=nothing, filter_fun=nothing, filter_values=nothing,
                   filter_default_all::Bool=false, filter_conditions=nothing, is_track::Bool=false,
+                  boolean_op=nothing, boolean_pops=nothing, boolean_not=nothing,
                   explicit_labels=nothing, transient::Bool=false,
-                  reserved_ok::Bool=false)::String
+                  reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
     (reserved_ok || !is_reserved_pop_name(name)) ||
@@ -176,6 +287,17 @@ function add_pop!(m::PopulationMap, name::AbstractString;
     (parent == ROOT || has_pop(m, parent)) || error("add_pop!: parent not found: $parent")
     path = pop_path(parent, name)
     has_pop(m, path) && error("add_pop!: population already exists: $path")
+    # `validate_refs=false` for deserialisation: `from_tree` walks the tree depth-first, so a boolean
+    # pop is often built BEFORE the siblings it references. A file's references are checked where it
+    # matters instead — `recompute!` degrades an unresolvable one to empty + a warning.
+    bop, bpops, bnot = _normalise_boolean(boolean_op, boolean_pops, boolean_not; self = path)
+    if bop !== nothing && validate_refs
+        for r in [bpops; bnot]
+            has_pop(m, r) || error("add_pop!: population to combine not found: $r")
+        end
+        boolean_cycle(m, path, [bpops; bnot]) &&
+            error("add_pop!: that combination would depend on itself")
+    end
     conds = _normalise_conditions(filter_conditions)
     # when compound, mirror the single fields onto conditions[1] so single-field readers still work.
     if conds !== nothing
@@ -185,7 +307,7 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               m.pop_type, m.value_name, gate,
                               filter_measure === nothing ? nothing : String(filter_measure),
                               filter_fun === nothing ? nothing : String(filter_fun),
-                              filter_values, filter_default_all, conds, is_track,
+                              filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : collect(explicit_labels), transient)
     push!(m.order, path)
     _invalidate!(m)
@@ -195,6 +317,31 @@ end
 function set_gate!(m::PopulationMap, path::AbstractString, gate::Gate)
     has_pop(m, path) || error("set_gate!: not found: $path")
     m.pops[String(path)].gate = gate
+    _invalidate!(m)
+    m
+end
+
+"""
+    set_boolean!(m, path; op, pops, nots)
+
+Rewrite (or, with `op=nothing`, clear) a population's boolean definition — the edit counterpart of
+`set_gate!`. Same guards as `add_pop!`: known references, no self-reference, no dependency loop.
+"""
+function set_boolean!(m::PopulationMap, path::AbstractString; op=nothing, pops=nothing, nots=nothing)
+    has_pop(m, path) || error("set_boolean!: not found: $path")
+    path = String(path)
+    bop, bpops, bnot = _normalise_boolean(op, pops, nots; self = path)
+    if bop !== nothing
+        for r in [bpops; bnot]
+            has_pop(m, r) || error("set_boolean!: population to combine not found: $r")
+        end
+        boolean_cycle(m, path, [bpops; bnot]) &&
+            error("set_boolean!: that combination would depend on itself")
+    end
+    p = m.pops[path]
+    p.boolean_op = bop
+    p.boolean_pops = bpops
+    p.boolean_not = bnot
     _invalidate!(m)
     m
 end
@@ -262,6 +409,13 @@ function _repath!(m::PopulationMap, path::AbstractString, newpath::AbstractStrin
         end
     end
     m.order = [_replace_prefix(o, path, newpath) for o in m.order]
+    # boolean references are PATHS, so a rename/move of a referenced pop has to rewrite them too —
+    # otherwise "GFP+ or TOM+" silently loses a term the moment either gate is renamed or re-parented.
+    rewrite(rs) = rs === nothing ? nothing : [_replace_prefix(r, path, newpath) for r in rs]
+    for pop in values(m.pops)
+        pop.boolean_pops = rewrite(pop.boolean_pops)
+        pop.boolean_not  = rewrite(pop.boolean_not)
+    end
     _invalidate!(m)
     newpath
 end
@@ -311,6 +465,9 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
             (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => c.fun,
                                                            "values" => c.values) for c in p.filter_conditions])
     end
+    p.boolean_op === nothing ||
+        (d["boolean"] = Dict{String,Any}("op" => p.boolean_op, "pops" => p.boolean_pops,
+                                         "not" => p.boolean_not))
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)
     # explicit-label pops (the napari selection) have no gate/filter, so the client can't tell
@@ -343,6 +500,7 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
     g(k, default=nothing) = get(node, k, get(node, Symbol(k), default))
     gate = g("gate") === nothing ? nothing : gate_from_spec(g("gate"))
     flt = g("filter")
+    bl = g("boolean")
     path = add_pop!(m, String(g("name")); parent=parent, gate=gate, reserved_ok=true,
                     colour=String(g("colour", "#ffffff")), show=Bool(g("show", true)),
                     filter_measure = flt === nothing ? nothing : get(flt, "measure", get(flt, :measure, nothing)),
@@ -350,7 +508,10 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
                     filter_values  = flt === nothing ? nothing : get(flt, "values", get(flt, :values, nothing)),
                     filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", get(flt, :default_all, false))),
                     filter_conditions = flt === nothing ? nothing : get(flt, "conditions", get(flt, :conditions, nothing)),
-                    is_track = Bool(g("is_track", false)))
+                    is_track = Bool(g("is_track", false)), validate_refs = false,
+                    boolean_op   = bl === nothing ? nothing : get(bl, "op", get(bl, :op, nothing)),
+                    boolean_pops = bl === nothing ? nothing : get(bl, "pops", get(bl, :pops, nothing)),
+                    boolean_not  = bl === nothing ? nothing : get(bl, "not", get(bl, :not, nothing)))
     for child in g("children", [])
         _add_node!(m, child, path)
     end

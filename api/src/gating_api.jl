@@ -956,6 +956,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(body["gate"]) : nothing
         flt = get(body, "filter", nothing)
+        bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
         try
             add_pop!(m, String(body["name"]); parent = String(get(body, "parent", ROOT)),
                      gate = gate, colour = String(get(body, "colour", "#ffffff")),
@@ -965,7 +966,10 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
                      filter_values  = flt === nothing ? nothing : get(flt, "values", nothing),
                      filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", false)),
                      filter_conditions = flt === nothing ? nothing : get(flt, "conditions", nothing),
-                     is_track = Bool(get(body, "is_track", false)))
+                     is_track = Bool(get(body, "is_track", false)),
+                     boolean_op   = bl === nothing ? nothing : get(bl, "op", nothing),
+                     boolean_pops = bl === nothing ? nothing : get(bl, "pops", nothing),
+                     boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing))
         catch e
             return _gerr(400, sprint(showerror, e))
         end
@@ -997,8 +1001,18 @@ function api_gating_pop_delete(body_bytes::Vector{UInt8})
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-        Bool(get(body, "childrenOnly", false)) ? del_children!(m, String(body["path"])) :
-                                                 del_pop!(m, String(body["path"]))
+        _path = String(body["path"])
+        _children_only = Bool(get(body, "childrenOnly", false))
+        # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
+        # it silently pointing at nothing (empty membership + a server warning nobody reads). Refuse
+        # and name the dependants instead — rename/move rewrite references, only delete can orphan them.
+        _going = _children_only ? descendants(m, _path) : [_path; descendants(m, _path)]
+        _deps = boolean_dependents(m, _going)
+        isempty(_deps) || return _gerr(400,
+            "Can't delete: " * join(["\"$(pop_name(d))\" combines $(join([pop_name(r) for r in rs], ", "))"
+                                    for (d, rs) in _deps], "; ") *
+            ". Edit or delete the combined population$(length(_deps) > 1 ? "s" : "") first.")
+        _children_only ? del_children!(m, _path) : del_pop!(m, _path)
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
@@ -1028,6 +1042,20 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
                 p.filter_conditions = conds
                 conds === nothing || (p.filter_measure = conds[1].measure;
                                       p.filter_fun = conds[1].fun; p.filter_values = conds[1].values)
+            end
+        end
+        # boolean update (Decision 16): the whole definition is replaced, not patched key-by-key — a
+        # boolean pop IS its term list, and a partial patch has no meaning ("keep the old excludes but
+        # take the new includes" is not something the form can express). `boolean: null` clears it.
+        if haskey(body, "boolean")
+            bl = body["boolean"]
+            try
+                set_boolean!(m, String(body["path"]);
+                             op   = bl === nothing ? nothing : get(bl, "op", nothing),
+                             pops = bl === nothing ? nothing : get(bl, "pops", nothing),
+                             nots = bl === nothing ? nothing : get(bl, "not", nothing))
+            catch e
+                return _gerr(400, sprint(showerror, e))
             end
         end
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))

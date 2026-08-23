@@ -72,6 +72,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-star', means: 'Not starred' },
       { icon: 'pi-star-fill', means: 'Starred' },
       { icon: 'pi-filter', means: 'Filter what is listed' },
+      { icon: 'pi-link', means: 'Combine populations — one defined by others' },
       { icon: 'pi-filter-slash', means: 'Clear the filter' },
       { icon: 'pi-search', means: 'Search' },
       { icon: 'pi-sort-alt', means: 'Sortable, not sorted yet' },

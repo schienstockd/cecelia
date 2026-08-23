@@ -31,6 +31,42 @@ function _missing_col_mask(n::Int, path::AbstractString, col::AbstractString)::B
     falses(n)
 end
 
+# A boolean pop references a population that isn't in this map (deleted behind its back, or a
+# hand-edited sidecar) → empty membership + a warning, the same degrade as a missing column. Never a
+# 500: one broken reference must not take down every other population on the map.
+function _missing_ref_mask(n::Int, path::AbstractString, ref::AbstractString)::BitVector
+    @warn "gating: population '$path' combines '$ref', which no longer exists — treating as empty \
+           (no members). Edit it to point at a population that is still there."
+    falses(n)
+end
+
+# ── Boolean membership (Decision 16) ──────────────────────────────────────────────
+# Included terms combined with AND or OR, then every excluded term subtracted:
+#   op="or",  pops=[GFP,TOM]              → GFP ∪ TOM
+#   op="and", pops=[TOM,GFP], not=[CD169] → (TOM ∩ GFP) ∖ CD169
+#   op="and", pops=[],        not=[CD169] → ∖ CD169 alone, i.e. "everything here except CD169"
+# The referenced masks are each pop's OWN membership, which already includes its ancestors — so a
+# combination of two gates in different branches means what it reads as. `∩ parent` is applied by the
+# caller, as for every other population.
+function _boolean_mask(p, memb::Dict{String,BitVector}, n::Int, path::AbstractString)::BitVector
+    inc = p.boolean_pops === nothing ? String[] : p.boolean_pops
+    exc = p.boolean_not  === nothing ? String[] : p.boolean_not
+    orop = p.boolean_op == "or"
+    mask = trues(n)                        # no included term ⇒ start from the parent's cells
+    if !isempty(inc)
+        mask = orop ? falses(n) : trues(n)
+        for r in inc
+            haskey(memb, r) || return _missing_ref_mask(n, path, r)
+            mask = orop ? (mask .| memb[r]) : (mask .& memb[r])
+        end
+    end
+    for r in exc
+        haskey(memb, r) || return _missing_ref_mask(n, path, r)
+        mask = mask .& .!memb[r]
+    end
+    mask
+end
+
 # columns the gates + filters in this map need from the H5AD
 function _needed_columns(m::PopulationMap)::Vector{String}
     cols = String[]
@@ -82,6 +118,9 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
             # membership IS this label set (∩ parent) — the napari selection (docs/POPULATION.md)
             sel = Set(p.explicit_labels)
             parent_mask .& BitVector(l in sel for l in labels)
+        elseif p.boolean_op !== nothing
+            # a set operation over other populations — no data column of its own (Decision 16)
+            parent_mask .& _boolean_mask(p, memb, n, path)
         elseif p.gate !== nothing
             # a gate whose axis column is absent from the fetched frame → no members, not a crash. See
             # the filter case below for the rationale (missing column ≠ hard 500).
