@@ -363,7 +363,21 @@ labelProps key (a SEGMENTATION, e.g. `memTom`). Same parameter name, different n
 therefore sends no `valueName` to the overlay route at all and reports the segmentation the server
 chose — sending the image version resolves to the active segmentation by luck, not by intent.
 
-### P4 — labels / segmentation masks
+### P4 — labels / segmentation masks — **SERVER HALF BUILT**
+`/api/viewer/slab?labels=<value_name>` serves a segmentation's mask through the SAME reader, headers and
+shape guard as the image: a mask is another zarr of the same geometry, which is what makes this phase
+cheap. Real stores are `UInt32` (`X-Slab-Bpv` reports it), so the client wants `r32uint`. Paths come
+from `img_labels_path`, the image-owned accessor the tasks write through — never a filename built in the
+api. `/api/viewer/meta` lists the segmentations that have a mask ON DISK in `labelNames`, because
+`labels` and `label_props` are independent registries (an imported track set has a table and no mask)
+and a store can be registered before it is written.
+
+**Still to do:** the client half — a second 3D texture plus a palette lookup in the shader, and the
+decision of what to do in 3D. napari cannot project a Labels layer at all (`projection_mode` accepts
+only `'none'`), so there is no behaviour to match and a choice to make: a MIP of label ids is
+meaningless (the maximum id is not a visible feature), so either draw labels only in the 2D view, or
+give the 3D view a nearest-surface pass rather than a maximum. The 2D view is the one people gate on.
+
 An extra `r32uint` texture plus a palette lookup. Cheap, and **better than napari**, which cannot
 project a Labels layer at all (`projection_mode` accepts only `'none'`) — so 3D masks stop needing
 the volumetric workaround. Covers branch labels and colour-by-column, which are the same texture with

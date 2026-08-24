@@ -5156,6 +5156,41 @@ end
     end
 end
 
+@testset "API: viewer label stores (P4 — masks through the same reader)" begin
+    # A mask is another zarr of the same geometry, which is what makes P4 cheap: the same `read_slab`,
+    # the same headers, the same shape guard. What must NOT be re-derived is where a store lives —
+    # `img_labels_path` is the image-owned accessor the tasks write through, so resolving a path by hand
+    # here would drift the day a filename convention changes.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-labels")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        mkpath(joinpath(img._dir, "labels"))
+        img.labels = Dict("seg" => ["seg.zarr"], "ghost" => ["ghost.zarr"])
+        save!(img)
+
+        # registered AND on disk → resolves
+        mkpath(joinpath(img._dir, "labels", "seg.zarr"))
+        p, e = label_store_path(proj.uid, img.uid, "seg")
+        @test e === nothing
+        @test p == joinpath(img._dir, "labels", "seg.zarr")
+
+        # registered but NOT on disk → a message, not a path. `labels` and `label_props` are
+        # independent registries and a store can be registered before it is written.
+        p2, e2 = label_store_path(proj.uid, img.uid, "ghost")
+        @test p2 === nothing && occursin("not on disk", e2)
+
+        # never registered, and no image at all — both normal states, both a message
+        @test label_store_path(proj.uid, img.uid, "nope")[2] == "no label store named 'nope'"
+        @test label_store_path(proj.uid, img.uid, "")[2] == "no label store named ''"
+        @test label_store_path(proj.uid, "NOSUCH", "seg")[2] == "image not found"
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
 @testset "API: viewer overlays on an image with no cell table" begin
     # An unsegmented image is the FIRST thing the viewer opens for most users. It must answer an empty
     # overlay, not a 500 — the panel asks unconditionally.

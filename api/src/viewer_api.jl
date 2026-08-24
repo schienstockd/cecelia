@@ -206,7 +206,17 @@ function api_viewer_meta(req::HTTP.Request)
                        lut = [[l[1], l[2], l[3]] for l in s.lut])
                     for (c, s) in enumerate(specs)]
 
-        200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny,
+        # Which segmentations have a MASK on disk, so the client can offer them without a probe per
+        # name. `labels` and `label_props` are independent registries — an imported track set has a
+        # measurement table and no mask — so this is not derivable from the overlay payload.
+        label_names = try
+            img = init_object(pu, iu)
+            String[v for v in versioned_keys(img.labels)
+                   if !is_reserved_value_name(v) && isdir(img_labels_path(img, v))]
+        catch
+            String[]
+        end
+        200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny, labelNames = label_names,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
                             contrastSource = src, voxelUm = vox, spaceUnit = unit,
                             frameIntervalMin = tmin, calibrated = cal, channels))
@@ -238,8 +248,17 @@ end
 function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     q  = HTTP.queryparams(HTTP.URI(target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
-    err === nothing || return false
+    # `labels=<value_name>` serves the MASK for that segmentation instead of the image. Same reader,
+    # same headers, same shape guard — a mask is just another zarr of the same geometry, which is what
+    # makes P4 cheap. The dtype differs (label ids, not intensities), and `X-Slab-Bpv` already says so.
+    lbl = get(q, "labels", "")
+    if !isempty(lbl)
+        zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+        lerr === nothing || return false
+    else
+        zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+        err === nothing || return false
+    end
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     c = something(tryparse(Int, get(q, "c", "0")), 0)
     z0 = haskey(q, "z") ? tryparse(Int, q["z"]) : nothing
@@ -297,6 +316,29 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     HTTP.startwrite(stream)
     write(stream, body)
     true
+end
+
+# ── Label (segmentation mask) stores ──────────────────────────────────────────────
+"""
+    label_store_path(project_uid, image_uid, value_name) -> (path, err)
+
+The finished label store for one segmentation, through `img_labels_path` — the image-owned accessor —
+so this cannot drift from where the tasks write. `err` is a message when the image, the segmentation or
+the store on disk is missing; all three are normal states (an unsegmented image has none).
+
+A `labels` value_name can carry SEVERAL files (a base mask and a nuclear one). `img_labels_path` answers
+the FIRST, which is the base mask — the one napari shows as "(vn) Labels". Serving the others needs the
+file to be named, which is a decision for when the client offers them.
+"""
+function label_store_path(project_uid::AbstractString, image_uid::AbstractString,
+                          value_name::AbstractString)
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return (nothing, "image not found")
+    vn = isempty(value_name) ? "" : String(value_name)
+    haskey(img.labels, vn) || return (nothing, "no label store named '$vn'")
+    zp = img_labels_path(img, vn)
+    isdir(zp) || return (nothing, "label store not on disk: $(basename(zp))")
+    (zp, nothing)
 end
 
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
