@@ -1,0 +1,38 @@
+<!doctype html><meta charset=utf-8><title>webgpu adapter probe</title>
+<style>body{font:13px monospace;background:#111;color:#eee;margin:0;padding:12px;white-space:pre-wrap}</style>
+<body><div id=o>probing…</div><script>
+// gate the load event until the probe finishes (see probe_runner.py)
+
+const post = o => {
+  document.getElementById('o').textContent = JSON.stringify(o, null, 1);
+  if (new URLSearchParams(location.search).get('post'))
+    location.href = '/result?data=' + encodeURIComponent(JSON.stringify(o));
+};
+(async () => {
+  const r = {gpu_present: 'gpu' in navigator, secure: isSecureContext, ua: navigator.userAgent,
+             adapters: {}};
+  if (!r.gpu_present) return post(r);
+  try {
+    r.preferredCanvasFormat = navigator.gpu.getPreferredCanvasFormat();
+    for (const pref of ['high-performance', 'low-power', 'default']) {
+      const a = await navigator.gpu.requestAdapter(
+        pref === 'default' ? {} : {powerPreference: pref});
+      if (!a) { r.adapters[pref] = null; continue; }
+      const lim = {};
+      for (const k in a.limits) lim[k] = a.limits[k];
+      let dev = null;
+      try { dev = await a.requestDevice(); } catch (e) { r.adapters[pref + '_deviceError'] = '' + e; }
+      r.adapters[pref] = {
+        info: a.info ? {vendor: a.info.vendor, architecture: a.info.architecture,
+                        device: a.info.device, description: a.info.description,
+                        subgroupMinSize: a.info.subgroupMinSize,
+                        subgroupMaxSize: a.info.subgroupMaxSize} : null,
+        features: [...a.features].sort(),
+        limits: lim,
+        device: !!dev,
+      };
+    }
+  } catch (e) { r.error = '' + e; r.stack = e && e.stack; }
+  post(r);
+})();
+</script>

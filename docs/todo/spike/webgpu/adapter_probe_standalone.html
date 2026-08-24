@@ -1,0 +1,82 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — WebGPU adapter probe (G0)</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:16px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 14px}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:12px;overflow:auto;
+     max-height:60vh;margin:0 0 12px}
+ button{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;border-radius:5px;
+        padding:8px 14px;cursor:pointer}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}
+ code{background:#171a20;padding:1px 5px;border-radius:3px}
+</style></head><body>
+<h1>WebGPU adapter probe — gate G0</h1>
+<p class="sub">Does this browser expose WebGPU, and does it land on the RTX 2000 Ada rather than
+software? Nothing is uploaded; the button saves a JSON file to your Downloads folder.</p>
+<div id=hint></div>
+<pre id=o>probing…</pre>
+<button id=save disabled>Save result to Downloads</button>
+<script>
+const el = id => document.getElementById(id);
+let payload = null;
+
+function hint(html, cls) { el('hint').innerHTML = '<p class="sub ' + (cls||'') + '">' + html + '</p>'; }
+
+(async () => {
+  const r = {when: new Date().toISOString(), gpu_present: 'gpu' in navigator,
+             secure: isSecureContext, ua: navigator.userAgent, adapters: {}};
+  if (!r.gpu_present) {
+    hint('<span class="bad">navigator.gpu is ABSENT.</span> Open <code>about:config</code>, set ' +
+         '<code>dom.webgpu.enabled</code> to <b>true</b>, then reload this page. If it is already ' +
+         'true, also try <code>gfx.webgpu.force-enabled</code> = true.', 'bad');
+  } else {
+    try {
+      r.preferredCanvasFormat = navigator.gpu.getPreferredCanvasFormat();
+      for (const pref of ['high-performance', 'low-power', 'default']) {
+        const a = await navigator.gpu.requestAdapter(pref === 'default' ? {} : {powerPreference: pref});
+        if (!a) { r.adapters[pref] = null; continue; }
+        const lim = {}; for (const k in a.limits) lim[k] = a.limits[k];
+        let dev = null, devErr = null;
+        try { dev = await a.requestDevice(); } catch (e) { devErr = '' + e; }
+        r.adapters[pref] = {
+          info: a.info ? {vendor: a.info.vendor, architecture: a.info.architecture,
+                          device: a.info.device, description: a.info.description} : null,
+          features: [...a.features].sort(), limits: lim,
+          device: !!dev, deviceError: devErr,
+        };
+      }
+      // Does a trivial draw actually work, or does the adapter exist on paper only?
+      const hp = r.adapters['high-performance'] || r.adapters['default'];
+      if (hp && hp.device) {
+        const a = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+        const d = await a.requestDevice();
+        const tex = d.createTexture({size: [64, 64, 64], format: 'r16uint',
+                                     dimension: '3d', usage: GPUTextureUsage.TEXTURE_BINDING |
+                                     GPUTextureUsage.COPY_DST});
+        r.r16uint_3d_texture = !!tex;
+        tex.destroy();
+      }
+      const names = Object.values(r.adapters).filter(Boolean)
+        .map(x => (x.info && (x.info.description || x.info.device)) || '?');
+      const soft = names.join(' ').toLowerCase();
+      if (/llvmpipe|lavapipe|software|swiftshader|warp/.test(soft))
+        hint('<span class="bad">Adapter looks like SOFTWARE (' + names.join(', ') + ').</span> ' +
+             'The benchmark would measure the CPU, not the GPU.', 'bad');
+      else
+        hint('<span class="good">Hardware adapter: ' + names.join(', ') + '</span>', 'good');
+    } catch (e) { r.error = '' + e; r.stack = e && e.stack; }
+  }
+  payload = r;
+  el('o').textContent = JSON.stringify(r, null, 1);
+  el('save').disabled = false;
+})();
+
+el('save').onclick = () => {
+  const b = new Blob([JSON.stringify(payload, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'webgpu_probe.json';
+  a.click();
+};
+</script></body></html>

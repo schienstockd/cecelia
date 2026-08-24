@@ -1,0 +1,61 @@
+{
+ "zarr": "/home/dominik/cecelia-feijoa/projects/zolIMa/0/VJy1Nx/ccidSmoothed.ome.zarr",
+ "shape": [
+  181,
+  4,
+  38,
+  1046,
+  1104
+ ],
+ "channels_used": 4,
+ "chunks": [
+  1,
+  1,
+  1,
+  512,
+  512
+ ],
+ "compressor": {
+  "id": "blosc",
+  "cname": "zstd",
+  "clevel": 3,
+  "shuffle": 1,
+  "blocksize": 0
+ },
+ "chunks_per_timepoint": 1368,
+ "uncompressed_MB_per_timepoint": 351.1,
+ "stage1_raw_bytes": {
+  "n": 4,
+  "median_ms": 225.82,
+  "min_ms": 219.4,
+  "max_ms": 243.97
+ },
+ "compressed_MB_per_timepoint": 38.21,
+ "n_chunk_files_found": 1116,
+ "us_per_chunk_raw": 202.3,
+ "stage2_decode_only": {
+  "n": 4,
+  "median_ms": 196.16,
+  "min_ms": 193.56,
+  "max_ms": 198.0
+ },
+ "us_per_chunk_decode": 175.8,
+ "stage3_zarr_timepoint": {
+  "n": 4,
+  "median_ms": 1126.59,
+  "min_ms": 882.82,
+  "max_ms": 1142.69
+ },
+ "stage4_uint16_to_f16": {
+  "n": 4,
+  "median_ms": 973.0,
+  "min_ms": 886.92,
+  "max_ms": 975.49
+ },
+ "stage5_manual_assembly": {
+  "n": 4,
+  "median_ms": 651.0,
+  "min_ms": 588.03,
+  "max_ms": 665.62
+ }
+}

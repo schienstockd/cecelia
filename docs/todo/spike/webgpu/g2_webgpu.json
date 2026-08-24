@@ -1,0 +1,333 @@
+{
+ "version": 3,
+ "geometry": {
+  "NZ": 38,
+  "NY": 1046,
+  "NX": 1104,
+  "NCH": 4,
+  "voxel_um": [
+   2,
+   0.3315,
+   0.3315
+  ],
+  "extent_um": [
+   365.976,
+   346.749,
+   76
+  ],
+  "bytes_all_channels": 351054336
+ },
+ "diagnostics": {
+  "wgsl_errors": [],
+  "timing": "gpu timestamp-query, batched"
+ },
+ "runs": [
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 128,
+   "gpu_ms": 1.405,
+   "gpu_ms_min": 1.386,
+   "wall_ms": 5.05,
+   "readback_max": 255,
+   "readback_mean": 246.4,
+   "samples_per_frame": 201049344,
+   "ms": 1.405,
+   "fps": 711.7,
+   "gsamples_per_s": 143.1
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 256,
+   "gpu_ms": 4.151,
+   "gpu_ms_min": 3.915,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 247,
+   "samples_per_frame": 402098688,
+   "ms": 4.151,
+   "fps": 240.9,
+   "gsamples_per_s": 96.9
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 512,
+   "gpu_ms": 4.876,
+   "gpu_ms_min": 4.531,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 247.3,
+   "samples_per_frame": 804197376,
+   "ms": 4.876,
+   "fps": 205.1,
+   "gsamples_per_s": 164.9
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 1024,
+   "gpu_ms": 9.602,
+   "gpu_ms_min": 8.897,
+   "wall_ms": 10.55,
+   "readback_max": 255,
+   "readback_mean": 247.4,
+   "samples_per_frame": 1608394752,
+   "ms": 9.602,
+   "fps": 104.1,
+   "gsamples_per_s": 167.5
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 128,
+   "gpu_ms": 3.18,
+   "gpu_ms_min": 3.052,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 804197376,
+   "ms": 3.18,
+   "fps": 314.5,
+   "gsamples_per_s": 252.9
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 256,
+   "gpu_ms": 5.835,
+   "gpu_ms_min": 5.521,
+   "wall_ms": 10,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 1608394752,
+   "ms": 5.835,
+   "fps": 171.4,
+   "gsamples_per_s": 275.6
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 512,
+   "gpu_ms": 10.934,
+   "gpu_ms_min": 10.282,
+   "wall_ms": 15.05,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 3216789504,
+   "ms": 10.934,
+   "fps": 91.5,
+   "gsamples_per_s": 294.2
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 1024,
+   "gpu_ms": 20.682,
+   "gpu_ms_min": 20.345,
+   "wall_ms": 25.05,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 6433579008,
+   "ms": 20.682,
+   "fps": 48.4,
+   "gsamples_per_s": 311.1
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 128,
+   "gpu_ms": 1.513,
+   "gpu_ms_min": 1.481,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 245.8,
+   "samples_per_frame": 265420800,
+   "ms": 1.513,
+   "fps": 660.9,
+   "gsamples_per_s": 175.4
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 256,
+   "gpu_ms": 3.98,
+   "gpu_ms_min": 3.705,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 246.3,
+   "samples_per_frame": 530841600,
+   "ms": 3.98,
+   "fps": 251.3,
+   "gsamples_per_s": 133.4
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 512,
+   "gpu_ms": 6.053,
+   "gpu_ms_min": 5.686,
+   "wall_ms": 10.05,
+   "readback_max": 255,
+   "readback_mean": 246.6,
+   "samples_per_frame": 1061683200,
+   "ms": 6.053,
+   "fps": 165.2,
+   "gsamples_per_s": 175.4
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 1024,
+   "gpu_ms": 11.542,
+   "gpu_ms_min": 10.934,
+   "wall_ms": 15,
+   "readback_max": 255,
+   "readback_mean": 246.7,
+   "samples_per_frame": 2123366400,
+   "ms": 11.542,
+   "fps": 86.6,
+   "gsamples_per_s": 184
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 128,
+   "gpu_ms": 3.9,
+   "gpu_ms_min": 3.844,
+   "wall_ms": 5,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 1061683200,
+   "ms": 3.9,
+   "fps": 256.4,
+   "gsamples_per_s": 272.2
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 256,
+   "gpu_ms": 6.972,
+   "gpu_ms_min": 6.783,
+   "wall_ms": 10,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 2123366400,
+   "ms": 6.972,
+   "fps": 143.4,
+   "gsamples_per_s": 304.6
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 512,
+   "gpu_ms": 13.035,
+   "gpu_ms_min": 12.447,
+   "wall_ms": 15.05,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 4246732800,
+   "ms": 13.035,
+   "fps": 76.7,
+   "gsamples_per_s": 325.8
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 1024,
+   "gpu_ms": 24.855,
+   "gpu_ms_min": 23.809,
+   "wall_ms": 25.1,
+   "readback_max": 255,
+   "readback_mean": 255,
+   "samples_per_frame": 8493465600,
+   "ms": 24.855,
+   "fps": 40.2,
+   "gsamples_per_s": 341.7
+  }
+ ],
+ "gates": {
+  "monotonic_violations": [],
+  "viewport_advisory": [
+   "1ch/256: 1920x1080 (3.98) not faster-ordered vs 1566x1003 (4.151)"
+  ],
+  "blank_configs": 0,
+  "valid": true
+ },
+ "adapter": {
+  "maxTextureDimension3D": 16384,
+  "minUniformBufferOffsetAlignment": 64,
+  "looks_discrete": true,
+  "features": [
+   "bgra8unorm-storage",
+   "core-features-and-limits",
+   "depth-clip-control",
+   "depth32float-stencil8",
+   "float32-filterable",
+   "indirect-first-instance",
+   "rg11b10ufloat-renderable",
+   "shader-f16",
+   "texture-compression-bc",
+   "texture-compression-bc-sliced-3d",
+   "timestamp-query"
+  ]
+ },
+ "napari_g1": {
+  "canvas": [
+   1566,
+   1003
+  ],
+  "rotate_4ch_total_ms": 36,
+  "rotate_4ch_net_ms": 9.58,
+  "empty_canvas_ms": 26.41
+ }
+}

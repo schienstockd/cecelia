@@ -1,0 +1,91 @@
+{
+ "zarr": "/home/dominik/cecelia-feijoa/projects/zolIMa/0/VJy1Nx/ccidSmoothed.ome.zarr",
+ "shape": [
+  181,
+  4,
+  38,
+  1046,
+  1104
+ ],
+ "channels_used": 4,
+ "requested_size": [
+  1920,
+  1080
+ ],
+ "prime_env": true,
+ "resident_MB": 351.1,
+ "voxels_per_channel": 43881792,
+ "canvas_px": [
+  1566,
+  1003
+ ],
+ "rotate_3d": {
+  "n": 12,
+  "ms_median": 35.99,
+  "ms_min": 30.19,
+  "ms_max": 41.69,
+  "fps_median": 27.8,
+  "stds": [
+   43.13,
+   46.2,
+   49.27,
+   50.67,
+   49.33,
+   43.31,
+   49.15,
+   50.19,
+   48.58,
+   45.4,
+   42.58,
+   41.56
+  ],
+  "nonblank": true,
+  "varies": true,
+  "net_ms": 9.58,
+  "net_fps": 104.4
+ },
+ "baseline_hidden": {
+  "n": 12,
+  "ms_median": 26.41,
+  "ms_min": 25.63,
+  "ms_max": 26.85,
+  "fps_median": 37.9
+ },
+ "rotate_3d_1ch": {
+  "n": 12,
+  "ms_median": 29.43,
+  "ms_min": 26.54,
+  "ms_max": 32.03,
+  "fps_median": 34.0,
+  "net_ms": 3.02,
+  "net_fps": 331.1
+ },
+ "pan_2d": {
+  "n": 12,
+  "ms_median": 27.45,
+  "ms_min": 27.07,
+  "ms_max": 31.98,
+  "fps_median": 36.4,
+  "net_ms": 1.04,
+  "net_fps": 961.5
+ },
+ "scrub_3d_with_io": {
+  "n": 5,
+  "ms_median": 1241.35,
+  "ms_min": 1076.77,
+  "ms_max": 1375.78,
+  "fps_median": 0.8
+ },
+ "gl": {
+  "renderer": "NVIDIA RTX 2000 Ada Generation Laptop GPU/PCIe/SSE2",
+  "vendor": "NVIDIA Corporation",
+  "version": "4.6.0 NVIDIA 580.173.02"
+ },
+ "hardware_gl": true,
+ "valid_gates": {
+  "nonblank": true,
+  "varies": true,
+  "net_positive": true
+ },
+ "valid": true
+}
