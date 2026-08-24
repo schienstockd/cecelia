@@ -46,6 +46,25 @@ const VIEW_HALF_ANGLE = (() => {
   return Number(m[1])
 })()
 
+// The UNIFORM LAYOUT comes from the renderer, not from a number typed here. It changed the day the
+// overlay pass was added (four leading vec4s became five) and a stale copy shifts every channel's
+// contrast window by one slot — which renders as the WRONG CHANNEL being bright, not as an error.
+const VR = readFileSync(join(import.meta.dirname, '..', '..', '..', '..',
+                             'frontend', 'src', 'lib', 'webgpu', 'volumeRenderer.ts'), 'utf8')
+const LEADING_VEC4S = (() => {
+  const m = VR.match(/const UNIFORM_BYTES = (\d+) \* 16 \+ MAX_CHANNELS \* 16/)
+  if (!m) throw new Error('could not read UNIFORM_BYTES from volumeRenderer.ts')
+  return Number(m[1])
+})()
+const CH0 = (() => {
+  const m = VR.match(/const CH0 = (\d+)/)
+  if (!m) throw new Error('could not read CH0 from volumeRenderer.ts')
+  return Number(m[1])
+})()
+if (CH0 !== LEADING_VEC4S * 4) {
+  throw new Error(`CH0 (${CH0}) disagrees with UNIFORM_BYTES (${LEADING_VEC4S} vec4s)`)
+}
+
 // The WGSL is a template literal; take it verbatim and resolve only the two interpolations.
 const open = src.indexOf('export const MIP_WGSL = `')
 if (open < 0) throw new Error('MIP_WGSL not found — did the export shape change?')
@@ -58,6 +77,21 @@ wgsl = wgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
            .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
            .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (wgsl.includes('${')) throw new Error('unresolved interpolation left in the WGSL: ' + wgsl.match(/\$\{[^}]*\}/))
+
+// The overlay pass, extracted the same way. It shares the uniform buffer and therefore the camera, and
+// `project()` in it is meant to be the exact inverse of the raycast's ray construction — so the check
+// below re-derives the projection in JS and asserts the point lands where JS says it should. That is
+// the only way to catch a right/up swap or a y-flip: both still draw a point, in the wrong place.
+const pOpen = src.indexOf('export const POINTS_WGSL = `')
+if (pOpen < 0) throw new Error('POINTS_WGSL not found — did the export shape change?')
+const pBody = src.slice(pOpen + 'export const POINTS_WGSL = `'.length)
+const pClose = pBody.indexOf('`')
+if (pClose < 0) throw new Error('unterminated POINTS_WGSL template literal')
+let pwgsl = pBody.slice(0, pClose)
+pwgsl = pwgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
+             .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
+             .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
+if (pwgsl.includes('${')) throw new Error('unresolved interpolation in POINTS_WGSL: ' + pwgsl.match(/\$\{[^}]*\}/))
 
 const NCH = 3
 const page = `<!doctype html><html><head><meta charset=utf-8><title>Cecelia — MIP shader check</title>
@@ -83,6 +117,8 @@ const lines = []
 const say = (t, cls) => { lines.push(cls ? '<span class="'+cls+'">'+t+'</span>' : t); out.innerHTML = lines.join('\\n') }
 
 const WGSL = ${JSON.stringify(wgsl)}
+const PWGSL = ${JSON.stringify(pwgsl)}
+const HA = ${VIEW_HALF_ANGLE}
 const MAX_CHANNELS = ${MAX_CHANNELS}, LUT_STOPS = ${LUT_STOPS}, NCH = ${NCH}
 const N = 64                                     // phantom is N x N x N per channel
 
@@ -154,7 +190,10 @@ try {
   device.queue.writeTexture({texture: lut}, lutBytes,
     {bytesPerRow: LUT_STOPS * 4, rowsPerImage: MAX_CHANNELS}, [LUT_STOPS, MAX_CHANNELS])
 
-  const U = 4 * 16 + MAX_CHANNELS * 16
+  // Leading vec4s: cam, vp, ext, dims, ov. The count comes from the app (LEADING_VEC4S) rather than
+  // being typed here, because a mismatch shifts every channel's contrast window by one slot and
+  // renders as the wrong channel being bright, not as an error.
+  const U = LEADING_VEC4S * 16 + MAX_CHANNELS * 16
   const ubuf = device.createBuffer({size: U, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST})
   const bind = device.createBindGroup({layout: bgl, entries: [
     {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: vol.createView()},
@@ -167,7 +206,7 @@ try {
     u[8] = N; u[9] = N; u[10] = N                                 // physical extent (isotropic)
     u[12] = N; u[13] = N; u[14] = N; u[15] = N                    // nx, ny, nz, z per channel
     for (let c = 0; c < MAX_CHANNELS; c++) {
-      const o = 16 + c * 4
+      const o = CH0 + c * 4
       u[o] = 0; u[o+1] = 3000; u[o+2] = (chVisible[c] ?? 0)       // lo, hi, visible
     }
     device.queue.writeBuffer(ubuf, 0, u)
@@ -250,7 +289,7 @@ try {
       u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = ortho ? 1 : 0
       u[8] = N; u[9] = N; u[10] = 1
       u[12] = N; u[13] = N; u[14] = 1; u[15] = 1
-      for (let c = 0; c < MAX_CHANNELS; c++) { const o = 16 + c*4; u[o] = 0; u[o+1] = 3000; u[o+2] = c === 0 ? 1 : 0 }
+      for (let c = 0; c < MAX_CHANNELS; c++) { const o = CH0 + c*4; u[o] = 0; u[o+1] = 3000; u[o+2] = c === 0 ? 1 : 0 }
       device.queue.writeBuffer(ubuf, 0, u)
       const rb = device.createBuffer({size: BPR * ROWS,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ})
@@ -279,6 +318,111 @@ try {
           ' → brightest rgb(' + lit.join(',') + '), ' + dark + '/64 dark  ' +
           (okc ? 'OK' : anyLit ? 'ALL LIT — the plane sampled uniformly?' : 'BLACK — the single step missed the plane'),
           okc ? 'ok' : 'bad')
+    }
+  }
+
+  // ── the overlay pass: does a point land on the cell it marks? ────────────────────
+  // A projection error here is the worst kind of bug on this path: the marker still draws, just next to
+  // the thing it is marking, and at one camera angle it can even look right. So the expected pixel is
+  // computed in JS from the same camera, independently, and the readback has to agree.
+  {
+    const pmod = device.createShaderModule({code: PWGSL})
+    const perr = (await pmod.getCompilationInfo()).messages.filter(m => m.type === 'error')
+    if (perr.length) {
+      bad++
+      say('overlay shader FAILED to compile: ' + perr.map(m => m.lineNum + ':' + m.message).join(' | '), 'bad')
+    } else {
+      const ppipe = device.createRenderPipeline({
+        layout: device.createPipelineLayout({bindGroupLayouts: [bgl]}),
+        vertex: {module: pmod, entryPoint: 'vs', buffers: [{
+          arrayStride: 7 * 4, stepMode: 'instance', attributes: [
+            {shaderLocation: 0, offset: 0, format: 'float32x3'},
+            {shaderLocation: 1, offset: 12, format: 'float32x3'},
+            {shaderLocation: 2, offset: 24, format: 'float32'}]}]},
+        fragment: {module: pmod, entryPoint: 'fs', targets: [{format: 'rgba8unorm', blend: {
+          color: {srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add'},
+          alpha: {srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add'}}}]},
+        primitive: {topology: 'triangle-list'}})
+
+      // Re-derived here on purpose: copying the shader's own arithmetic would assert nothing.
+      const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+      const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+      const norm = v => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0]/l, v[1]/l, v[2]/l] }
+      function projectJS(world, yaw, pitch, dist, aspect, ortho) {
+        const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch)
+        const fwd = [cp*sy, sp, cp*cy]
+        const ro = [fwd[0]*dist, fwd[1]*dist, fwd[2]*dist]
+        const right = norm(cross([0,1,0], fwd))
+        const up = cross(fwd, right)
+        const d = [world[0]-ro[0], world[1]-ro[1], world[2]-ro[2]]
+        const sx = dot(d, right), sy2 = dot(d, up)
+        if (ortho) { const hh = dist * HA; return [sx/(hh*aspect), sy2/hh] }
+        const w = Math.max(dot(d, [-fwd[0], -fwd[1], -fwd[2]]), 1e-4)
+        return [sx/(w*HA*aspect), sy2/(w*HA)]
+      }
+
+      // One point, dead centre of the box, in a colour nothing else draws.
+      const inst = new Float32Array([N/2, N/2, N/2, 0, 1, 1, 0])
+      const ibuf = device.createBuffer({size: inst.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST})
+      device.queue.writeBuffer(ibuf, 0, inst)
+
+      async function pointAt(yaw, pitch, ortho, planeFilter) {
+        u[0] = yaw; u[1] = pitch; u[2] = N * 1.7; u[3] = 1
+        u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = ortho ? 1 : 0
+        u[8] = N; u[9] = N; u[10] = N; u[11] = 0
+        u[12] = N; u[13] = N; u[14] = N; u[15] = N
+        u[16] = 12; u[17] = planeFilter
+        for (let c = 0; c < MAX_CHANNELS; c++) { const o = CH0 + c*4; u[o+2] = 0 }  // volume off
+        device.queue.writeBuffer(ubuf, 0, u)
+        const enc = device.createCommandEncoder()
+        const pass = enc.beginRenderPass({colorAttachments: [{view: rt.createView(),
+          clearValue: {r:0,g:0,b:0,a:1}, loadOp: 'clear', storeOp: 'store'}]})
+        pass.setPipeline(ppipe); pass.setBindGroup(0, bind)
+        pass.setVertexBuffer(0, ibuf); pass.draw(6, 1, 0, 0); pass.end()
+        // the whole frame, so the point can be LOCATED rather than merely detected
+        const bpr = Math.ceil(cv.width * 4 / 256) * 256
+        const rb = device.createBuffer({size: bpr * cv.height,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ})
+        enc.copyTextureToBuffer({texture: rt}, {buffer: rb, bytesPerRow: bpr, rowsPerImage: cv.height},
+                                [cv.width, cv.height, 1])
+        device.queue.submit([enc.finish()])
+        await rb.mapAsync(GPUMapMode.READ)
+        const px = new Uint8Array(rb.getMappedRange().slice(0))
+        rb.unmap(); rb.destroy()
+        let best = -1, bx = -1, by = -1
+        for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+          const o = y*bpr + x*4
+          const sum = px[o] + px[o+1] + px[o+2]
+          if (sum > best) { best = sum; bx = x; by = y }
+        }
+        return {best: best, x: bx, y: by}
+      }
+
+      const aspect = cv.width / cv.height
+      for (const cse of [{yaw: 0, pitch: 0, ortho: true, name: '2D face-on, orthographic'},
+                         {yaw: 0.7, pitch: 0.35, ortho: false, name: '3D rotated, perspective'}]) {
+        const got = await pointAt(cse.yaw, cse.pitch, cse.ortho, -1)
+        const ndc = projectJS([0, 0, 0], cse.yaw, cse.pitch, N*1.7, aspect, cse.ortho)  // box centre
+        const ex = Math.round((ndc[0]*0.5 + 0.5) * cv.width)
+        const ey = Math.round((1 - (ndc[1]*0.5 + 0.5)) * cv.height)
+        const off = Math.hypot(got.x - ex, got.y - ey)
+        const okp = got.best > 100 && off <= 14        // within the marker itself
+        if (!okp) bad++
+        say('overlay ' + cse.name + ' → point at (' + got.x + ',' + got.y + '), JS says (' +
+            ex + ',' + ey + '), off by ' + off.toFixed(1) + 'px  ' +
+            (okp ? 'OK' : got.best > 100 ? 'WRONG PLACE — right/up swapped, or a y flip'
+                                         : 'NOTHING DREW'), okp ? 'ok' : 'bad')
+      }
+
+      // the plane filter must remove the point entirely, not merely dim it
+      const onPlane = await pointAt(0, 0, true, 0)
+      const offPlane = await pointAt(0, 0, true, 3)
+      const filtered = onPlane.best > 100 && offPlane.best < 20
+      if (!filtered) bad++
+      say('overlay plane filter → on-plane ' + onPlane.best + ', off-plane ' + offPlane.best + '  ' +
+          (filtered ? 'OK' : 'NOT FILTERED — the 2D view would show every plane at once'),
+          filtered ? 'ok' : 'bad')
     }
   }
 

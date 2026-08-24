@@ -36,8 +36,9 @@ export const MIP_WGSL = `
 struct P {
   cam:  vec4<f32>,                       // yaw, pitch, dist, steps
   vp:   vec4<f32>,                       // channel count, canvas w, canvas h, orthographic
-  ext:  vec4<f32>,                       // physical extent x, y, z
+  ext:  vec4<f32>,                       // physical extent x, y, z; w = z origin of the loaded slab (µm)
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
+  ov:   vec4<f32>,                       // overlays: point size (px), plane filter (-1 = none), 0, 0
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 
@@ -46,6 +47,43 @@ struct P {
 @group(0) @binding(2) var lut: texture_2d<f32>;
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+
+// ── The camera, written once and used by both passes ──────────────────────────────
+// The raycast builds rays from this basis; the overlay pass inverts it to place a point on screen. Two
+// derivations of one camera would drift the instant either changed, and the symptom would be an overlay
+// that sits next to the cell it is marking rather than on it.
+struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
+fn camera() -> Cam {
+  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
+  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
+  var c: Cam;
+  c.fwd = vec3(cp * sy, sp, cp * cy);
+  c.ro = c.fwd * p.cam.z;
+  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
+  c.up = cross(c.fwd, c.right);
+  return c;
+}
+
+// World µm → clip space, the exact inverse of the ray construction below. 'w' (the distance along the
+// view axis) is returned so the caller can size a point in perspective and reject what is behind.
+fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
+  let d = world - c.ro;
+  let sx = dot(d, c.right);
+  let sy = dot(d, c.up);
+  if (p.vp.w > 0.5) {                            // orthographic: constant half-height
+    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
+    return vec3(sx / (hh * aspect), sy / hh, 1.0);
+  }
+  let w = max(dot(d, -c.fwd), 1e-4);             // perspective: half-height grows with distance
+  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
+}
+
+// The centre of the LOADED box in absolute image µm. The volume is drawn centred on the origin, so an
+// overlay coordinate — which is absolute — has to be shifted by this. 'ext.w' carries the z origin
+// because a cropped 3D view starts partway up the stack.
+fn boxCentre() -> vec3<f32> {
+  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
+}
 
 // One oversized triangle covers the viewport with three vertices and no vertex buffer.
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -78,12 +116,8 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
 
 @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
   let h = p.ext.xyz * 0.5;
-  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
-  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
-  let fwd = vec3(cp * sy, sp, cp * cy);
-  let ro = fwd * p.cam.z;
-  let right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
-  let up = cross(fwd, right);
+  let c = camera();
+  let fwd = c.fwd; let ro = c.ro; let right = c.right; let up = c.up;
   let aspect = p.vp.y / max(p.vp.z, 1.0);
 
   // Orthographic moves the ray ORIGIN across the image plane and holds the direction constant;
@@ -129,5 +163,112 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     acc = acc + ramp(c, win);
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`
+
+/**
+ * The overlay pass: population points as camera-facing quads, drawn over the finished MIP.
+ *
+ * ONE INSTANCE PER POINT, six vertices generated in the shader — no vertex buffer for the quad, and no
+ * geometry uploaded per frame. The instance data is built once per (image, populations) and ordered by
+ * timepoint, so drawing a frame is `draw(6, count, 0, first)` over a contiguous range.
+ *
+ * IT SHARES THE RAYCAST'S UNIFORM BUFFER, and therefore its camera, deliberately: `project()` is the
+ * exact inverse of the ray construction, so a point lands on the voxel it was measured from at any yaw,
+ * pitch or zoom. A second camera copy for the overlays would be one number away from marking the wrong
+ * cell, and it would drift silently — the overlay would still look plausible.
+ *
+ * SIZE IS IN SCREEN PIXELS, not µm. A cell marker is annotation: it has to stay legible when you zoom
+ * out and must not swallow the cell when you zoom in — which is what napari's `points_size` does, and
+ * what a µm-sized quad would get backwards.
+ *
+ * The plane filter collapses the quad to zero area rather than being a CPU filter, because the 2D view
+ * changes plane from a slider: rebuilding and re-uploading the buffer per z step is exactly the cost
+ * the sorted-by-timepoint layout exists to avoid.
+ */
+export const POINTS_WGSL = `
+struct P {
+  cam:  vec4<f32>,
+  vp:   vec4<f32>,
+  ext:  vec4<f32>,
+  dims: vec4<f32>,
+  ov:   vec4<f32>,
+  ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
+};
+@group(0) @binding(0) var<uniform> p: P;
+
+struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
+fn camera() -> Cam {
+  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
+  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
+  var c: Cam;
+  c.fwd = vec3(cp * sy, sp, cp * cy);
+  c.ro = c.fwd * p.cam.z;
+  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
+  c.up = cross(c.fwd, c.right);
+  return c;
+}
+fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
+  let d = world - c.ro;
+  let sx = dot(d, c.right);
+  let sy = dot(d, c.up);
+  if (p.vp.w > 0.5) {
+    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
+    return vec3(sx / (hh * aspect), sy / hh, 1.0);
+  }
+  let w = max(dot(d, -c.fwd), 1e-4);
+  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
+}
+fn boxCentre() -> vec3<f32> {
+  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
+}
+
+struct POut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) rgb: vec3<f32>,
+  @location(1) local: vec2<f32>,          // -1..1 across the quad, for the round mask
+};
+
+@vertex fn vs(
+  @builtin(vertex_index) vi: u32,
+  @location(0) centre: vec3<f32>,         // absolute image µm
+  @location(1) rgb: vec3<f32>,
+  @location(2) plane: f32,
+) -> POut {
+  var o: POut;
+  o.rgb = rgb;
+  // Two triangles, corners in -1..1. Written out rather than computed from bit tricks: this is read
+  // far more often than it is executed.
+  var q = array<vec2<f32>, 6>(
+    vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0),
+    vec2(-1.0,  1.0), vec2(1.0, -1.0), vec2( 1.0, 1.0));
+  let corner = q[vi];
+  o.local = corner;
+
+  // Off the plane on screen → a degenerate quad. -1 means "no filter" (the 3D view sees every plane).
+  if (p.ov.y >= 0.0 && abs(plane - p.ov.y) > 0.5) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);     // behind the far plane: clipped, no fragments
+    return o;
+  }
+
+  let aspect = p.vp.y / max(p.vp.z, 1.0);
+  let c = camera();
+  let ndc = project(centre - boxCentre(), c, aspect);
+  // Pixels → NDC. The quad is square ON SCREEN, so the x offset divides by the canvas WIDTH and the y
+  // by the height; using one for both stretches the marker with the window's aspect.
+  let px = p.ov.x;
+  o.pos = vec4(ndc.x + corner.x * (2.0 * px / max(p.vp.y, 1.0)),
+               ndc.y + corner.y * (2.0 * px / max(p.vp.z, 1.0)),
+               0.0, 1.0);
+  return o;
+}
+
+@fragment fn fs(in: POut) -> @location(0) vec4<f32> {
+  // A round marker, and antialiased: a hard-edged square of colour over a noisy MIP reads as an
+  // artefact rather than as an annotation.
+  let r = length(in.local);
+  let a = 1.0 - smoothstep(0.75, 1.0, r);
+  if (a <= 0.001) { discard; }
+  return vec4(in.rgb, a);
 }
 `

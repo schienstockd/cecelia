@@ -266,13 +266,53 @@ silently bounded by the byte ceiling, so no setting can crash it and no VRAM con
 A device that is lost anyway now offers a **Reload** rather than a setting to go and adjust: the canvas
 context goes with the device, so it cannot be recovered in place.
 
-### P3 — h5ad-derived overlays: points, tracks, colour-by
+### P3 — h5ad-derived overlays: points, tracks, colour-by — **POINTS BUILT**
 **The second make-or-break.** A and C read h5ad server-side and ship identifiers only
 (`CLOUD_MIGRATION_ASSESSMENT.md` §3a); B must add routes. Do NOT reimplement `LabelPropsView` in the
 browser — serve centroids/tracks/columns as JSON or binary from Julia, through the canonical
 `label_props` view.
 **Fails if:** the payloads turn out large enough to need their own caching story. Measure first: h5ad
 is 139 MB total across 55 files, median 0.77 MB, so probably not.
+
+**It did not fail — measured before the route was written.** The largest cell table in the dev projects
+is 98,610 cells (`WIaUjL/p6t4mC/Tcell`) and the typical one 6,547. At five f32 columns that is 2.0 MB
+and 0.13 MB — comparable to a SINGLE 2D slab (8.8 MB). So `/api/viewer/overlays` answers the WHOLE
+MOVIE in one request and the client filters by `t` locally: no per-timepoint request path, no second
+cache to keep coherent. Warm server time is **196–208 ms for 51,846 cells / 3.27 MB** (`fXgbTl/flowTom`,
+three passes), which is a once-per-image cost.
+
+Built so far, and the decisions worth keeping:
+
+- **Membership comes from `resolve_pops`** — the same mtime-keyed cached resolver that feeds napari's
+  points layers. A viewer that computed its own membership would be a second answer to "which cells are
+  in /A" and could disagree with the plots.
+- **The instance buffer is ordered by TIMEPOINT.** Drawing a frame is then one instanced draw over a
+  contiguous range — no per-frame filtering, no per-frame allocation, no upload on a scrub step. The
+  z plane rides along per instance so the 2D view can hide off-plane points in the shader; a CPU filter
+  would mean a rebuild and an upload on every step of the z slider, which is a continuous control.
+- **A cell in several populations is drawn once per population**, as napari does. Collapsing would mean
+  silently picking a winner, and with a hierarchy the overlap is the normal case.
+- **The overlay pass shares the raycast's uniform buffer, and therefore its camera.** `project()` in the
+  WGSL is the exact inverse of the ray construction. A second camera copy would put a marker beside its
+  cell rather than on it — and would still look plausible, which is why `shader_check.mjs` now
+  re-derives the projection in JS and asserts the drawn pixel's POSITION, not just that something drew.
+- **`ext.w` carries the z origin of the loaded slab**, so a cropped 3D view still places absolute
+  overlay coordinates correctly.
+- **Point size is in screen px, not µm** — a marker is annotation: legible zoomed out, not swallowing
+  the cell zoomed in. Same choice as napari's `points_size`.
+- **Two payload traps, both caught by tests rather than in a browser.** JSON has no NaN literal (JSON3
+  refuses to write one) and `null` in a coordinate array becomes 0 through `Float32Array.from` — a cell
+  at the origin instead of no cell; so undrawable rows are dropped and counted. And `colourBy` echoed
+  back the name that was ASKED for, making a stale saved column look like a colour-by with no values.
+
+**Still to do in P3:** tracks (tails as line segments), and colour-by. Colour-by needs a decision —
+see *Open questions* below.
+
+**A namespace trap worth knowing.** `/api/viewer/meta` and `/api/viewer/slab` take an IMAGE VERSION as
+`valueName` (which zarr the pixels come from, e.g. `smoothed`); `/api/viewer/overlays` takes a
+labelProps key (a SEGMENTATION, e.g. `memTom`). Same parameter name, different namespaces. The viewer
+therefore sends no `valueName` to the overlay route at all and reports the segmentation the server
+chose — sending the image version resolves to the active segmentation by luck, not by intent.
 
 ### P4 — labels / segmentation masks
 An extra `r32uint` texture plus a palette lookup. Cheap, and **better than napari**, which cannot
@@ -375,3 +415,32 @@ copy itself is below a ~100 ms measurement floor. The remaining candidate is the
 staging copy: use a `MAP_WRITE` buffer, write the fetched slab straight into `getMappedRange()`,
 unmap, `copyBufferToTexture`. Untested. Also unmeasured: `onSubmittedWorkDone`'s ~100 ms quantum makes
 anything faster than that unmeasurable — batch N operations per submit to get under it, as G2 did.
+
+## Open questions for Dominik — none blocking
+
+Written down rather than guessed at (2026-08-24). Work continued past all of these under the stated
+assumption; each is a place where a different answer would change what gets built, not whether.
+
+1. **Colour-by needs a continuous colormap, and there is no table to reuse.** `track_state` and
+   `clusters.*` are categorical and can use the population palette. `live.cell.speed` is continuous, and
+   napari renders it through **viridis**. The repo has NO viridis/turbo RGB table anywhere:
+   `image_render.jl` says so explicitly and falls back to gray unless a props file carries the LUT, and
+   the plots get theirs from Observable Plot's own `scheme: 'turbo'`, which is not reachable from WGSL.
+   So one has to be added. *Assumption taken:* add ONE canonical stop table in TypeScript
+   (`utils/colourRamp.ts`), viridis + turbo, and have the server keep resolving CHANNEL colours as it
+   does now — the two are separate concerns (a channel LUT comes from napari's saved props; an overlay
+   ramp is a display choice made in the viewer). The alternative is to resolve overlay ramps server-side
+   too, which keeps one palette owner but means a round trip whenever the column changes.
+2. **Which segmentation the overlay shows.** The viewer takes the ACTIVE labelProps and reports which,
+   because its `valueName` is an image version and not a segmentation (see the namespace trap in P3).
+   napari shows EVERY segmentation's populations at once, each as its own layer. *Assumption taken:*
+   one segmentation at a time with a picker, because a viewer panel narrow enough for one population
+   list will not hold three. Say if the all-at-once behaviour is load-bearing for how you compare
+   segmentations.
+3. **Track tails: napari's `tail_length` is in frames and `tail_width` in pixels.** WebGPU line-list
+   draws 1px lines only, so a width control needs quads (six vertices per segment instead of two).
+   *Assumption taken:* build the quad version, since a 1px tail on a noisy MIP is close to invisible and
+   `tail_width` defaults to 4.
+4. **Point picking (P6) will want the label under the cursor.** The overlay pass already has the exact
+   projection, so picking a POINT is cheap now; picking a MASK pixel needs P4's label texture. *No
+   assumption taken* — P6 is deferred anyway, this is just a note that the cheap half exists.

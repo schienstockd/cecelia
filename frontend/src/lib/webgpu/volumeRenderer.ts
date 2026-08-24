@@ -25,15 +25,19 @@
 // This is the browser-side twin of the PRIME trap in `app/src/napari.jl:55-59` — the difference is a
 // 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3.
 
-import { MIP_WGSL } from './mipShader'
+import { MIP_WGSL, POINTS_WGSL } from './mipShader'
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
 } from '../../utils/volumeViewer'
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
+import { POINT_STRIDE } from '../../utils/viewerOverlays'
 
-/** Bytes in the uniform struct: 4 leading vec4s + one vec4 per channel slot. */
-const UNIFORM_BYTES = 4 * 16 + MAX_CHANNELS * 16
+/** Bytes in the uniform struct: 5 leading vec4s + one vec4 per channel slot. */
+const UNIFORM_BYTES = 5 * 16 + MAX_CHANNELS * 16
+/** Float index of channel slot 0 — five vec4s in. Written out because getting it wrong shifts every
+ *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
+const CH0 = 20
 
 export interface AdapterReport {
   maxTextureDimension3D: number
@@ -53,8 +57,12 @@ export interface VolumeRenderer {
    * why it is one argument rather than three settings that can disagree — at depth 1 a timepoint of
    * `Dml3RG` is 8.8 MB instead of 326 MB, so the same budget holds the whole movie instead of five
    * frames of it. Changing it necessarily drops the cache: the textures are a different shape.
+   *
+   * `zLo` is the first loaded plane (0-based). It exists for the OVERLAYS: their coordinates are
+   * absolute image µm, so a view showing planes 10-17 has to know where its box starts or every marker
+   * lands a slab's worth of z away from its cell.
    */
-  setImage(meta: ViewerMeta, budgetBytes: number, zDepth?: number): void
+  setImage(meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number): void
   /**
    * Upload one timepoint — one raw little-endian slab per channel, each exactly
    * `nX*nY*nZ*bytesPerVoxel` long — and hold it. Resolves once the bytes are actually on the GPU, so
@@ -94,6 +102,18 @@ export interface VolumeRenderer {
   /** Orthographic projection. Required for the 2D view — under perspective a flat plane foreshortens
    *  towards the edges, which is wrong for a view people measure on. */
   setOrthographic(on: boolean): void
+  /**
+   * Replace the overlay point instances (`POINT_STRIDE` floats each — see `utils/viewerOverlays.ts`).
+   * Uploaded once per (image, populations), not per frame: the data is ordered by timepoint so a frame
+   * is a range within it.
+   */
+  setOverlayPoints(data: Float32Array): void
+  /**
+   * Which slice of the instance buffer to draw, and how. `sizePx` is a SCREEN size — a cell marker is
+   * annotation, so it must stay legible zoomed out and not swallow the cell zoomed in. `planeFilter` is
+   * a z-plane index for the 2D view, or -1 to draw every plane (the 3D view).
+   */
+  setOverlayDraw(first: number, count: number, sizePx: number, planeFilter: number): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   draw(): void
@@ -147,6 +167,42 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     primitive: { topology: 'triangle-list' },
   })
 
+  // The overlay pipeline shares the MIP's bind group LAYOUT so it shares the uniform buffer, and
+  // therefore the camera. `project()` in the shader is the exact inverse of the ray construction; a
+  // second camera would put a marker next to its cell rather than on it, and would still look
+  // plausible. Alpha-blended over the finished MIP in the same pass — no second attachment, no clear.
+  const pointsModule = device.createShaderModule({ code: POINTS_WGSL })
+  const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (pointsErrs.length) {
+    throw new Error('Points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const pointsPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+    vertex: {
+      module: pointsModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: POINT_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre, absolute image µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
+          { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
+        ],
+      }],
+    },
+    fragment: {
+      module: pointsModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  })
+
   const uniforms = device.createBuffer({
     size: UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
@@ -175,6 +231,11 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
   let depth = 1
   let steps = 256
   let destroyed = false
+  /** Overlay instances, grown on demand. One buffer for the whole movie — see `setOverlayPoints`. */
+  let pointBuf: GPUBuffer | null = null
+  let pointCap = 0
+  let pointFirst = 0
+  let pointCount = 0
   /** The device is GONE (lost, or destroyed by us). Every entry point below is a no-op afterwards: a
    *  queue that no longer exists is not an error you can catch, it is a browser crash. */
   let dead = false
@@ -216,7 +277,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     )
     for (let c = 0; c < MAX_CHANNELS; c++) {
       const ch = channels[c]
-      const o = 16 + c * 4
+      const o = CH0 + c * 4
       u[o] = ch ? ch.lo : 0
       u[o + 1] = ch ? ch.hi : 1
       u[o + 2] = ch && ch.visible ? 1 : 0
@@ -227,7 +288,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     adapter: report,
     lost: device.lost,
 
-    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ) {
+    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0) {
       // NOT gated on the device being alive, deliberately. Nothing here touches the GPU except
       // `dropAll()` and `setChannels`, which guard themselves — while what it DOES set is the geometry
       // every later decision is derived from. A `!usable()` early return left the renderer describing a
@@ -245,6 +306,9 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       recap()
       const [ex, ey, ez] = extentUm(m, depth)
       u[8] = ex; u[9] = ey; u[10] = ez
+      // ext.w — where the loaded slab STARTS up the stack, in µm. Overlay coordinates are absolute, so
+      // without this a cropped 3D view would draw them against a box that no longer begins at zero.
+      u[11] = Math.max(0, zLo) * (m.voxelUm[2] || 1)
       // dims.z is ONE channel's own depth, not the stacked height: the ray marches one channel's box
       // and the shader offsets by `c * zpc` to reach the others. Using the stacked height here squashes
       // every channel into 1/nch of the volume — a render that looks like a thin slab of real data.
@@ -344,6 +408,28 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     setSteps(n: number) { steps = Math.max(1, Math.round(n)) },
     setOrthographic(on: boolean) { u[7] = on ? 1 : 0 },
 
+    setOverlayPoints(data: Float32Array) {
+      if (!usable()) return
+      if (data.length === 0) { pointCount = 0; return }
+      // Grown, never shrunk: a buffer is destroyed and reallocated only when it is too small, so
+      // toggling a population off and on again does not churn VRAM.
+      if (!pointBuf || data.length > pointCap) {
+        pointBuf?.destroy()
+        pointCap = data.length
+        pointBuf = device.createBuffer({
+          size: pointCap * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+      }
+      device.queue.writeBuffer(pointBuf, 0, data)
+    },
+
+    setOverlayDraw(first: number, count: number, sizePx: number, planeFilter: number) {
+      pointFirst = Math.max(0, Math.floor(first))
+      pointCount = Math.max(0, Math.floor(count))
+      u[16] = Math.max(1, sizePx)
+      u[17] = planeFilter
+    },
+
     resize(): boolean {
       const dpr = window.devicePixelRatio || 1
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
@@ -368,6 +454,14 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       pass.setPipeline(pipeline)
       pass.setBindGroup(0, bindGroup)
       pass.draw(3)
+      // Overlays go in the SAME pass, after the volume: `loadOp: 'clear'` has already run, so this
+      // blends over a finished MIP without a second attachment or a second clear.
+      if (pointBuf && pointCount > 0) {
+        pass.setPipeline(pointsPipeline)
+        pass.setBindGroup(0, bindGroup)
+        pass.setVertexBuffer(0, pointBuf)
+        pass.draw(6, pointCount, 0, pointFirst)
+      }
       pass.end()
       device.queue.submit([enc.finish()])
     },
@@ -375,6 +469,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     destroy() {
       destroyed = true
       dropAll()
+      pointBuf?.destroy(); pointBuf = null
       if (dead) return                     // the device took its resources with it
       lutTex.destroy(); uniforms.destroy()
       device.destroy()

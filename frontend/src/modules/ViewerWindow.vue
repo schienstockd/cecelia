@@ -45,6 +45,10 @@ import {
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import {
+  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
+  type OverlayPayload, type PointBuffer,
+} from '../utils/viewerOverlays'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -89,6 +93,22 @@ const chMax = computed(() =>
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
 const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
 const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | null>(null)
+
+/**
+ * The h5ad-derived overlays (P3): population points now, tracks next.
+ *
+ * ONE fetch for the whole movie, because it is small — measured at 2.0 MB for the largest cell table in
+ * the dev projects and 0.13 MB for the typical one, against 8.8 MB for a single 2D slab. So there is no
+ * request path here that a scrub can spam, and nothing to keep coherent with the timepoint cache.
+ */
+const overlays = ref<OverlayPayload | null>(null)
+const overlaysErr = ref('')
+/** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
+ *  pop hidden in the population manager stays hidden here without a second source of truth. */
+const hiddenPops = ref<Set<string>>(new Set())
+let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
+const pointCount = ref(0)
+const summary = computed(() => overlaySummary(overlays.value))
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1 })
 const fitDist = ref(1)
@@ -187,8 +207,58 @@ const frame = usePlotResize(canvas, () => {
   seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
   r.setCamera(cam.value)
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
+  // The overlay slice for the frame ACTUALLY on screen, not the one asked for — same rule as the
+  // timestamp. A range of `null` means nothing is drawn at this timepoint, which is not an error.
+  const range = shownT.value >= 0 ? timepointRange(points, shownT.value) : null
+  r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
+                   settings.viewerPointSize,
+                   // The 2D view shows one plane, so it must show only the points ON it; the 3D view
+                   // projects the whole loaded slab and shows all of them.
+                   mode.value === 'plane' ? zPlane.value : -1)
   r.draw()
 })
+
+/**
+ * Rebuild the instance buffer and hand it to the GPU. Called when the DATA or the visibility changes —
+ * never per frame, and never per timepoint: the buffer is ordered by timepoint, so a frame is a range
+ * inside it (see `buildPointBuffer`).
+ */
+function rebuildOverlays() {
+  const r = renderer.value
+  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value)
+  pointCount.value = points.count
+  r?.setOverlayPoints(points.data)
+  frame.redraw()
+}
+
+async function loadOverlays() {
+  if (!projectUid || !imageUid) return
+  overlaysErr.value = ''
+  try {
+    // NO `valueName` — deliberately. The window's `valueName` is an IMAGE VERSION (the zarr the pixels
+    // come from, e.g. "smoothed"); this route wants a labelProps key (a SEGMENTATION, e.g. "memTom").
+    // They are different namespaces that happen to share a parameter name, and sending one for the
+    // other resolves to the active segmentation by luck rather than by intent. The server picks the
+    // active one and says which in `valueName`, so the panel can report it. A segmentation PICKER is
+    // the next step — see the plan.
+    const res = await fetch(overlaysUrl({ projectUid, imageUid }), { cache: 'no-store' })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
+    overlays.value = body as OverlayPayload
+    rebuildOverlays()
+  } catch (e) {
+    // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
+    // cell table is a normal state for an unsegmented image.
+    overlaysErr.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+function togglePop(path: string) {
+  const next = new Set(hiddenPops.value)
+  next.has(path) ? next.delete(path) : next.add(path)
+  hiddenPops.value = next
+  rebuildOverlays()
+}
 
 function pushChannels() {
   if (meta.value) renderer.value?.setChannels(meta.value.channels)
@@ -479,7 +549,7 @@ function reallocate(refit = false) {
   hits.value = 0; misses.value = 0
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
-  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value)
+  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, mode.value === 'plane' ? zPlane.value : zRange.value[0])
   r.setCapacity(settings.viewerCacheFrames || m.nT)
   r.setOrthographic(mode.value === 'plane')
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
@@ -527,7 +597,7 @@ onMounted(async () => {
     mode.value = m.nZ > 1 ? 'plane' : 'volume'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
     zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value)
+    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value)
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
     const c = fitNow(m)
@@ -536,6 +606,9 @@ onMounted(async () => {
     r.resize()
     starting.value = ''
     gotoT(0)
+    // After the first frame is on its way: the overlays are a separate, small request and must not
+    // delay the pixels.
+    void loadOverlays()
   } catch (e) {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
@@ -691,6 +764,45 @@ onUnmounted(() => {
           Showing {{ MAX_CHANNELS }} of {{ meta.nC }} channels
         </div>
 
+        <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
+             no populations, and an empty group would read as a broken feature rather than as an image
+             that has not been through segmentation yet. -->
+        <template v-if="summary.cells > 0 || overlaysErr">
+          <div class="cc-eyebrow cc-fs-2xs">Overlays</div>
+          <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
+          <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
+               on the canvas — so the panel names which one it is. -->
+          <div v-else-if="summary.pops === 0" class="cc-muted cc-fs-2xs">
+            {{ summary.cells }} cells, no populations gated
+          </div>
+          <template v-else>
+            <div v-for="pop in overlays!.pops" :key="pop.path" class="cc-row cc-row-tight">
+              <span class="vw-swatch" :style="{ background: pop.colour }" />
+              <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+              <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
+              <CcToggle
+                :model-value="pop.show && !hiddenPops.has(pop.path)" :disabled="!pop.show"
+                :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
+              />
+            </div>
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
+              <input
+                type="range" class="vw-grow" :min="2" :max="24" :step="1"
+                v-model.number="settings.viewerPointSize" @input="frame.redraw()"
+                v-tooltip.bottom="'Marker size on screen, not in µm'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerPointSize }}</span>
+            </div>
+            <div class="cc-muted cc-fs-3xs">
+              <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
+              {{ pointCount }} drawn · {{ summary.cells }} cells
+              <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
+              <template v-if="mode === 'plane'">· this plane only</template>
+            </div>
+          </template>
+        </template>
+
         <div class="cc-eyebrow cc-fs-2xs">Render</div>
         <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
         <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
@@ -771,6 +883,11 @@ onUnmounted(() => {
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
 .vw-px { min-width: 3.5rem; }
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
+/* A population row: swatch, name that can shrink, count, toggle. The name is the only flexible part —
+   letting the count or the toggle shrink is what made the channel rows overlap. */
+.vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
+  border: 1px solid var(--cc-border); }
+.vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
