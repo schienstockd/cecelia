@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<{
   timeFontPx?: number
 }>(), {
   showScaleBar: true, showTimestamp: true, chrome: 'proportional',
-  barFontPx: 13, timeFontPx: 13,
+  barFontPx: 20, timeFontPx: 20,
 })
 
 const ex = computed(() => props.extentUm?.x ?? 0)
@@ -41,7 +41,8 @@ const ok = computed(() => ex.value > 0 && ey.value > 0)
 const bar = computed(() => niceScaleBar(ex.value, props.extentUm?.unit ?? 'µm'))
 
 // Margin in screen px for `chrome: 'fixed'`; the bar's thickness follows its label so a large label
-// does not sit on a hairline. napari's own overlays are 12 px, which is where the default came from.
+// does not sit on a hairline. The 20 px default is Dominik's call (2026-08-24) — napari's own overlays
+// are 12 px, which read as too small on a full window.
 const MARGIN_PX = 12
 const barPx = computed(() => Math.max(3, props.barFontPx * 0.3))
 

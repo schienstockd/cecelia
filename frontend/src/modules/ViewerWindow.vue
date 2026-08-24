@@ -441,7 +441,12 @@ const overlayExtent = computed(() => {
 const timeLabel = computed(() => {
   const m = meta.value
   if (!m || m.nT <= 1) return ''
-  return elapsedLabel(t.value, m.frameIntervalMin, 'min', 'clock')
+  // `shownT`, not `t`: anything drawn ON the image has to describe the PIXELS, and those two disagree
+  // for as long as a load takes — deliberately, since keeping the previous frame up beats blanking to
+  // black. Off `t` the clock jumped ahead of the picture the moment you scrubbed, which is a
+  // mislabelled frame rather than a lag (Dominik, 2026-08-24). The slider's own readout stays on `t`,
+  // where it describes the control instead.
+  return elapsedLabel(shownT.value, m.frameIntervalMin, 'min', 'clock')
 })
 
 const canvasAspect = () => {

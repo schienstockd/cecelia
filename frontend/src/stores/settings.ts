@@ -117,8 +117,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // Overlay text size, in screen px. Two numbers rather than one because they annotate different
   // things — and a setting rather than a constant because "readable" depends on the window size and on
   // whether the shot is going into a talk.
-  const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '13') || 13)
-  const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '13') || 13)
+  const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
+  const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
 
   // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted
