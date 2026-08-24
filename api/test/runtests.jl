@@ -4773,6 +4773,67 @@ end
     end
 end
 
+@testset "API: render_view_frame — renderer C's movie frame" begin
+    # The offline frame (WEB_VIEWER_PLAN.md → P5). Asserted on the committed real stores rather than a
+    # phantom, because the three things that break here are all store-shaped: axis order, byte order,
+    # and whether a z SELECTION means the same thing as it does on the browser's slab route.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = api_fixture("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(api_have_fixture(v2) && api_have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        lum(px) = Float64(ColorTypes.red(px)) + Float64(ColorTypes.green(px)) + Float64(ColorTypes.blue(px))
+
+        full = render_view_frame(v2, 1)
+        @test size(full) == (64, 64)                       # (y, x), native — no silent downsample
+        @test eltype(full) <: RGB
+        @test maximum(lum, full) > 0.05                    # real pixels, not a black read
+
+        # A MIP over the stack can only be BRIGHTER than any one plane of it, everywhere. That is the
+        # assertion that catches a z selection reading the wrong axis: a transposed read still produces
+        # a plausible picture, and still differs from the plane.
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        nch = 2
+        mip   = render_view_frame(v2, 1; channels = 0:(nch - 1), specs = specs)
+        plane = render_view_frame(v2, 1; z = 0, channels = 0:(nch - 1), specs = specs)
+        @test size(mip) == size(plane)
+        @test all(lum(mip[i]) >= lum(plane[i]) - 1e-6 for i in eachindex(mip))
+        @test mip != plane                                 # the fixture has structure across z
+
+        # A range that covers the whole stack IS the whole-stack projection — one vocabulary with the
+        # slab route, where `nothing` / Int / UnitRange are the same three answers.
+        @test render_view_frame(v2, 1; z = 0:2, channels = 0:(nch - 1), specs = specs) == mip
+        @test render_view_frame(v2, 1; z = 0:0, channels = 0:(nch - 1), specs = specs) == plane
+
+        # crop is 0-based inclusive, and clamps rather than producing a zero-size frame — an encoder
+        # reports that as a corrupt movie, not as a bad crop.
+        @test size(render_view_frame(v2, 1; crop = (x = 10:29, y = 4:13))) == (10, 20)
+        @test size(render_view_frame(v2, 1; crop = (x = 900:999, y = 900:999))) == (1, 1)
+        @test size(render_view_frame(v2, 1; crop = (y = 0:31,))) == (32, 64)
+
+        # max_px strides the long side down; 0 leaves it alone
+        @test size(render_view_frame(v2, 1; max_px = 32)) == (32, 32)
+        @test size(render_view_frame(v2, 1; max_px = 0)) == (64, 64)
+
+        # one channel through one LUT: nothing else may bleed in
+        red1 = render_view_frame(v2, 1; channels = [0], specs = [(0.0, 4000.0, "red", true)])
+        @test all(ColorTypes.green(px) == 0 && ColorTypes.blue(px) == 0 for px in red1)
+
+        # the two formats hold the same pixels, so they must render the same frame
+        @test render_view_frame(v3, 1; channels = 0:(nch - 1), specs = specs) == mip
+
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = Int[])
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = [99])
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = [0, 1], specs = specs[1:1])
+
+        # opening ONCE and reading many slabs must answer exactly what the path form does — that
+        # overload exists so a movie sweep is not nT*nC metadata round trips.
+        a2, ax2 = open_level0(v2)
+        @test render_view_frame(a2, ax2, 1; channels = 0:(nch - 1), specs = specs) == mip
+        @test read_slab(a2, ax2, 1, 0; z = 1) == read_slab(v2, 1, 0; z = 1)
+    end
+end
+
 @testset "API: store layout defaults" begin
     # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
     # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.

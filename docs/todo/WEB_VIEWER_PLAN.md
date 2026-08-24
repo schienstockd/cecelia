@@ -398,11 +398,31 @@ reproducible here and was never part of the parity bar.
 shows every segmentation at once as its own layer; a panel narrow enough for one population list will
 not hold three, and the 2D view is the one people gate on.
 
-### P5 — the offline capture path in C
+### P5 — the offline capture path in C — **THE FRAME IS BUILT**
 Camera in `image_render.jl` + the four capture commands + title cards, on `jobs.jl` with
-progress/cancel. Non-interactive, so 117 ms/frame is fine. Half of C's warm frame is currently PNG
-encoding (49.5 ms) — pick a better codec for movie frames. `capture_view_state`/`apply_view_state` are
+progress/cancel. Non-interactive, so 117 ms/frame is fine. `capture_view_state`/`apply_view_state` are
 the keyframe contract the animation page already speaks, so B must be able to answer them too.
+
+**Built: `render_view_frame`** — one movie-grade frame, and it differs from `render_preview_frame` in
+the three ways a movie differs from a thumbnail:
+
+  - **It returns pixels, not a PNG.** Half of C's warm frame was PNG encoding (49.5 ms of 117 ms), and
+    an encoder wants raw frames — paying for a PNG per frame only to decode it again is most of the
+    render. That is the plan's "pick a better codec" answered by not encoding at all until the end.
+  - **It takes the same z SELECTION as the browser's slab route**, off the same `read_slab`: `nothing`
+    projects the stack, an `Int` is one plane, a `UnitRange` projects that range. A movie of "plane 12"
+    and the 2D view of plane 12 have to be the same picture or one of them is lying.
+  - **It projects a plane at a time.** A full-depth timepoint of the real target is 326 MB per channel,
+    so a single ranged read holds 1.3 GB of transient at four channels to produce a 2.2 MB answer. z
+    chunks are one plane deep in every store here, so this reads exactly the same bytes — the whole
+    difference is the high-water mark.
+
+`read_slab` gained an `(arr, caxes)` form so a sweep opens the store once instead of `nT * nC` times.
+
+**Still to do:** the sweep itself on `jobs.jl` (progress/cancel), handing frames to
+`python/cecelia/utils/movie_io.py`'s writer through `run_py` — the encoder already exists and is not
+worth a second one in Julia; keyframe interpolation; title cards; and the overlays (points, tracks,
+masks) on the CPU frame, which are P3/P4's content drawn by renderer C rather than new capability.
 
 ### P6 — the selection round-trip
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

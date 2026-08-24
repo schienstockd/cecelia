@@ -196,6 +196,116 @@ function render_preview_frame(zarr_path::AbstractString, props_path::AbstractStr
     take!(io)
 end
 
+"""
+    render_view_frame(zarr_path, t; kwargs...)     -> Matrix{RGB{N0f8}}
+    render_view_frame(arr, caxes, t; kwargs...)    -> Matrix{RGB{N0f8}}
+
+ONE movie-grade frame of timepoint `t` (0-based), composited from the channels through their LUTs —
+renderer **C**'s frame, the offline half of the split in `docs/todo/WEB_VIEWER_PLAN.md` (P5).
+
+Different from `render_preview_frame` in the three ways a movie differs from a thumbnail, and it is
+worth naming them because "render a frame" sounds like one job:
+
+  - **It returns pixels, not a PNG.** Half of C's warm frame was PNG encoding (49.5 ms of 117 ms), and
+    a movie encoder wants raw frames — paying for a PNG per frame only to decode it again is most of
+    the render. A caller that wants a still encodes one.
+  - **It takes a z SELECTION rather than a fraction.** `nothing` projects the whole stack, an `Int` is
+    one plane, a `UnitRange` projects that range — the same three answers, spelled the same way, as the
+    browser's slab route, because they come from the same `read_slab`. A movie of "plane 12" and the
+    2D view of plane 12 must be the same picture or one of them is lying.
+  - **It does not subsample z, and only downsamples xy when asked.** A preview may drop planes for
+    speed; a movie frame is the output, and quietly projecting 12 of 41 planes would change what the
+    movie MEANS to make it faster.
+
+`specs` are resolved display specs (`resolved_display_specs`) — the movie config's colours where there
+is one, the saved napari props where there is not. Absent, each channel gets the percentile fallback,
+which is per-frame and therefore FLICKERS across a timecourse: pass specs for anything but a still.
+
+`crop` is `(x = x0:x1, y = y0:y1)` in 0-based pixels, clamped to the frame. `max_px` 0 keeps native
+resolution; anything else downsamples so the long side fits, by striding (a movie writer's own scaler
+is the better resampler when quality matters, and it has one).
+"""
+render_view_frame(zarr_path::AbstractString, t::Int; kwargs...) =
+    render_view_frame(open_level0(zarr_path)..., t; kwargs...)
+
+function render_view_frame(arr, caxes, t::Int;
+                           z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
+                           channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
+                           specs = nothing, crop = nothing, max_px::Int = 0)
+    nd   = ndims(arr)
+    dims = axis_dims(caxes, nd)
+    nc   = haskey(dims, "c") ? size(arr, dims["c"]) : 1
+    chans = channels === nothing ? collect(0:(nc - 1)) : collect(Int, channels)
+    isempty(chans) && throw(ArgumentError("render_view_frame: no channels selected"))
+    any(c -> c < 0 || c >= nc, chans) &&
+        throw(ArgumentError("render_view_frame: channel out of range (image has $nc)"))
+
+    # Which planes to project, as INDIVIDUAL reads. Not one `read_slab` over the range, deliberately:
+    # a full-depth timepoint of the real target is 326 MB per channel, so projecting it in one read
+    # holds 1.3 GB of transient at four channels for an answer that is 2.2 MB. z chunks are one plane
+    # deep in every store here, so plane-at-a-time reads exactly the same bytes off disk — the whole
+    # difference is the high-water mark.
+    zs = if !haskey(dims, "z")
+        nothing                                    # a 2D store: `z` has nothing to select
+    else
+        nz = size(arr, dims["z"])
+        r = z === nothing ? (0:(nz - 1)) : (z isa Int ? (z:z) : z)
+        clamp(first(r), 0, nz - 1):clamp(last(r), clamp(first(r), 0, nz - 1), nz - 1)
+    end
+
+    local chw
+    for (k, c) in enumerate(chans)
+        # `read_slab` answers (x, y) for a scalar z, and the max over the planes IS the projection.
+        local m
+        if zs === nothing
+            m, = read_slab(arr, caxes, t, c)
+            ndims(m) >= 3 && (m = dropdims(maximum(m; dims = 3); dims = 3))
+        else
+            for (i, zi) in enumerate(zs)
+                pl, = read_slab(arr, caxes, t, c; z = zi)
+                i == 1 ? (m = pl) : (m .= max.(m, pl))
+            end
+        end
+        # Transpose to (y, x) — image row order, which is what `composite_rgb` and every encoder
+        # downstream expects.
+        plane = permutedims(m, (2, 1))
+        if crop !== nothing
+            H, W = size(plane)
+            ys = _clamp_range(get(crop, :y, nothing), H)
+            xs = _clamp_range(get(crop, :x, nothing), W)
+            plane = plane[ys, xs]
+        end
+        if max_px > 0
+            H, W = size(plane)
+            step = max(1, cld(max(H, W), max_px))
+            step > 1 && (plane = plane[1:step:H, 1:step:W])
+        end
+        # Allocated on the FIRST channel, once its final shape is known — crop and stride both change
+        # it, and sizing this from the store would be a second derivation of the same number.
+        k == 1 && (chw = Array{Float32,3}(undef, length(chans), size(plane)...))
+        size(plane) == (size(chw, 2), size(chw, 3)) ||
+            throw(ArgumentError("render_view_frame: channel $c is $(size(plane)), expected $(size(chw)[2:3])"))
+        @inbounds chw[k, :, :] .= plane
+    end
+
+    sp = specs === nothing ?
+        [percentile_spec(view(chw, k, :, :), DEFAULT_CMAPS[mod1(k, 4)]) for k in 1:length(chans)] :
+        specs
+    length(sp) >= length(chans) ||
+        throw(ArgumentError("render_view_frame: $(length(sp)) specs for $(length(chans)) channels"))
+    composite_rgb(chw, sp)
+end
+
+# A 0-based inclusive pixel range → the 1-based Julia range it selects, clamped to `n`. `nothing` (or a
+# range entirely outside the frame) means the whole axis: a crop that selects nothing would render a
+# zero-size frame, which an encoder reports as a corrupt movie rather than as a bad crop.
+function _clamp_range(r, n::Int)
+    r === nothing && return 1:n
+    lo = clamp(first(r) + 1, 1, n)
+    hi = clamp(last(r) + 1, lo, n)
+    lo:hi
+end
+
 caxes_or_fallback(caxes, nd) = length(caxes) == nd ? caxes : ["t", "c", "z", "y", "x"][(end - nd + 1):end]
 
 # Fallback per-channel spec when there's no viewer JSON: 1st/99.9th percentile contrast + default colour.
