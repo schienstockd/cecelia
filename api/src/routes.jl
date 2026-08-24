@@ -1377,7 +1377,12 @@ function api_projects_delete(body_bytes::Vector{UInt8})
     try
         rm(proj_dir; recursive=true, force=true)
     catch e
-        return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
+        # Julia's recursive rm walks with readdir; on huge OME-ZARR trees (dimension_separator="/")
+        # a mid-walk readdir can hit ENOENT on a stale subpath and throw even though the top-level
+        # got torn down. If the target is gone the delete effectively succeeded — surface success
+        # so the UI refreshes instead of showing the raw error.
+        isdir(proj_dir) &&
+            return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
     end
     200, JSON3.write((; ok=true, uid))
 end
