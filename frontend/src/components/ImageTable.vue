@@ -85,20 +85,30 @@ function qcTip(img: CciaImage): string | Record<string, unknown> {
 }
 // The calibration as one short cell: XY pixel size, then the frame interval when there is one. Unit
 // verbatim from the file (`physicalSizeUnit`) rather than assumed µm — an image calibrated in nm is
-// rare and silently mislabelling it would be worse than the extra character.
+// rare and silently mislabelling it would be worse than the extra character. OME sometimes spells the
+// micron out ("micrometer"/"micrometre"/"microns"); normalise to µm so it fits the cell.
+function shortUnit(u: string | null | undefined): string {
+  if (!u) return 'µm'
+  return /^micro(meter|metre|n)s?$/i.test(u) ? 'µm' : u
+}
+function fmtNum(n: number): string {
+  return Number(n.toFixed(3)).toString()
+}
 function scaleText(img: CciaImage): string {
-  const u = img.physicalSizeUnit ?? 'µm'
+  const u = shortUnit(img.physicalSizeUnit)
   const parts: string[] = []
-  if (img.physicalSizeX != null) parts.push(`${img.physicalSizeX} ${u}`)
-  if (img.timeIncrement != null) parts.push(`${img.timeIncrement}${img.timeIncrementUnit ?? 's'}`)
+  if (img.physicalSizeX != null) parts.push(`${fmtNum(img.physicalSizeX)} ${u}`)
+  if (img.timeIncrement != null) parts.push(`${fmtNum(img.timeIncrement)}${img.timeIncrementUnit ?? 's'}`)
   return parts.join(' · ') || '—'
 }
 function scaleTip(img: CciaImage): string {
-  const u = img.physicalSizeUnit ?? 'µm'
-  const bits = [`XY ${img.physicalSizeX ?? '?'} × ${img.physicalSizeY ?? '?'} ${u}/px`]
-  if (img.physicalSizeZ != null) bits.push(`Z ${img.physicalSizeZ} ${u}`)
+  const u = shortUnit(img.physicalSizeUnit)
+  const x = img.physicalSizeX != null ? fmtNum(img.physicalSizeX) : '?'
+  const y = img.physicalSizeY != null ? fmtNum(img.physicalSizeY) : '?'
+  const bits = [`XY ${x} × ${y} ${u}/px`]
+  if (img.physicalSizeZ != null) bits.push(`Z ${fmtNum(img.physicalSizeZ)} ${u}`)
   if (img.timeIncrement != null)
-    bits.push(`${img.timeIncrement} ${img.timeIncrementUnit ?? 's'} per frame`)
+    bits.push(`${fmtNum(img.timeIncrement)} ${img.timeIncrementUnit ?? 's'} per frame`)
   return bits.join(' · ')
 }
 
