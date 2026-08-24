@@ -946,6 +946,8 @@ const pct = computed(() => {
   gap: 0.35rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--cc-border);
+  /* so the figure button can ride on the label's line — see `.param-fig-row` */
+  position: relative;
 }
 .param-row:last-child { border-bottom: none; }
 
@@ -1028,8 +1030,12 @@ const pct = computed(() => {
 .param-advisory { display: flex; }
 .param-advisory-flag { margin-left: 0.1rem; }
 
-/* The figure button sits at the row's right edge, where the group's own does. */
-.param-fig-row { display: flex; justify-content: flex-end; }
+/* Top-right of the row, where a repeatable group's own figure button sits — and OUT OF FLOW, so it
+   costs no height. In flow it took a full row of the form to hold one 20px icon, directly under the
+   control it belongs to. Absolute rather than moved up the template because the label cannot be
+   wrapped: nesting it one level deeper stops it covering the row's control, and every toggle and chip
+   row in the panel gets reported as having no hover help (`HEADING_COVERED`, utils/uiCopy.ts). */
+.param-fig-row { position: absolute; top: 0.4rem; right: 0; }
 
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }

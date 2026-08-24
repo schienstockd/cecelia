@@ -51,11 +51,11 @@
       "default": "median",
       "options": [
         { "label": "Median", "value": "median",
-          "help": "The measured choice for photon-limited data, with spatial smoothing on. Blurs cells that moved, more so at wider windows." },
+          "help": "Photon-limited data. Blurs cells that moved, more so at wider windows." },
         { "label": "Mean",   "value": "mean",
           "help": "Rarely. Averages the whole window regardless of motion, and inflates masks ~34%." },
         { "label": "Gated",  "value": "gated",
-          "help": "Averages only where frames agree and keeps the current frame where they do not, so cells that moved stay sharp. Minutes per channel." }
+          "help": "Averages only where frames agree, so moving cells stay sharp. Minutes per channel." }
       ],
       "tip": "Gated keeps per-frame sharpness; median blurs cells that moved, mean more so",
       "figure": "smoothMethod"
