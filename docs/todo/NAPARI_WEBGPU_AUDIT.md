@@ -607,7 +607,8 @@ means option B, since C cannot rotate and A is the incumbent.
 
 **Where B is strictly worse, stated plainly:** tracks-with-tails, h5ad-derived overlays, movie
 recording, 3D camera controls, and mask-correction-with-intensity. None is a rendering problem; all
-are "napari already wrote this" problems.
+are "napari already wrote this" problems — and under the full-replacement goal every one of them is
+**required work**, not a reason to keep napari. The recommendation below assigns each to B or C.
 
 ## The make-or-break, ranked
 
@@ -621,36 +622,77 @@ are "napari already wrote this" problems.
 
 ## Recommendation
 
-**Build the web renderer for display, and do the chunk geometry first.** Not because remoting cannot
-work, but because the thing that was supposed to kill this approach did not: a WebGPU raycast renders
-the real 4-channel volume in 5.84 ms against napari's 36.0 ms, on the same GPU, and it does so with
-none of the X-server, VirtualGL or VNC-encode dependencies that assessment §2 established as hard
-requirements for remoting. Option A's interactive latency remains **unmeasured for the third time**,
-and every measurement that *has* been taken points the other way.
+> **SCOPE CORRECTION (Dominik, 2026-08-24).** An earlier draft of this section recommended keeping
+> napari for the subset it is better at (movies, keyframes, mask correction). **That is not the
+> goal.** The aim is to *replace* napari and ship a sole browser app — the cloud mandate does not
+> tolerate a Qt process, so "napari does this well" is not an argument for keeping it, it is a
+> competing implementation to be beaten. Everything in the strictly-worse list below is therefore
+> **required work, not optional scope.** The measurements are unaffected; what changes is the shape
+> of the answer.
 
-Three qualifications, in the order they should be acted on:
+**Build it, and the replacement is B + C — not B + napari.**
 
-1. **Chunk geometry is the actual project.** Re-chunk to per-slab (or at least per-plane), and the
-   delivery number moves from parity to comfortable. It helps napari and the `.ccbundle` transport
-   too, so it is worth doing whichever renderer wins.
-2. **Keep napari for the subset it is strictly better at, rather than porting it.** Movie recording,
-   keyframe animation and — until it is designed — mask correction with intensity context. This is
-   the "something narrower than either" outcome the prompt allowed for, and the measurements support
-   it: B wins display, napari keeps authoring.
-3. **Option C is not a 3D contender, but it is already shipping 2D.** `image_render.jl` serves a
-   coloured z-MIP today at 117 ms warm. For image review that does not need rotation, that is the
-   cheapest path in the codebase and it needs no new renderer at all.
+The one thing that could have failed did not: a WebGPU raycast is 6.2x faster than napari's whole
+frame on the same GPU and data. Under a full-replacement goal the interesting question is no longer
+"which option wins" — **option A is excluded by definition, because it keeps napari** — but how the
+whole inventory gets covered. It splits cleanly, and the split is the useful output of this audit:
 
-What would change this recommendation: a measured remoted-napari interactive latency that beats
-5.84 ms + delivery, or a decision that mask correction must live in napari with a paintable Labels
-layer — which would make A's free intensity context decisive for that workflow.
+| | Renderer | Why it lands here |
+|---|---|---|
+| **Interactive** — image display, 2D/3D, contrast, camera, labels, points, tracks, scrubbing, selection, mask correction | **B**, WebGPU in the browser | Needs a frame in ~16 ms. B does it in 5.84 ms |
+| **Offline / batch** — `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, title cards | **C**, extended `api/src/image_render.jl` | Needs no interactivity at all. C's 117 ms/frame is irrelevant offline: a 181-frame movie is ~27 s |
+
+**This is why option C matters more than the 3D verdict suggested.** C was measured as a poor
+interactive renderer (117 ms, no camera) and that stands. But movie rendering is the one part of
+napari's job that is *inherently* non-interactive, and C is already the codebase's only server-side
+compositor, already reads the zarr, already applies napari's exported LUTs, and already has the
+infrastructure around it — `jobs.jl` background jobs with progress and `cancel_job!`, which is
+exactly what `record_timelapse`'s progress/cancel contract needs. Adding a camera to C for offline
+frames is cheap, because 117 ms/frame is a non-problem when nobody is waiting on a single frame.
+
+So the port list, with nothing deferred to napari:
+
+1. **Chunk geometry first** — per-slab (or per-plane) chunking. On today's 1116-chunks-per-timepoint
+   store, everything downstream is measured against the wrong baseline and will feel wrong for
+   reasons unrelated to the feature being built. It also speeds up napari while it still exists, and
+   the `.ccbundle` transport. Cecelia already owns the surface (`store_layout` / `store_compressor`).
+2. **h5ad-derived overlays** — pops, tracks, colour-by. Make-or-break #2: it is what makes a viewer
+   useful rather than pretty, and it is the thing napari currently does server-side for free
+   (`CLOUD_MIGRATION_ASSESSMENT.md` §3a). New routes, or a browser-side equivalent of
+   `LabelPropsView`.
+3. **3D camera controls** — rotate/pan/zoom/reset with sane inertia. More work than it looks, and the
+   feature people will judge "does this feel like napari" on.
+4. **Tracks with tails** — real geometry, nothing in the browser stack to borrow.
+5. **Labels/masks** — cheap: one more texture and a palette lookup.
+6. **The offline render path in C** — camera + the four capture commands + title cards, on `jobs.jl`.
+7. **Mask correction with intensity context** — the one item that needs a design before an
+   implementation (plan §5a). It is *why* the old R version put correction in napari, and the
+   replacement has to answer it rather than inherit it.
+
+### The risk that only exists under full replacement, and it has a deadline
+
+Replacing the renderer changes the *picture*, not just the frame rate. Published figures and movies
+were made with napari's MIP; a WGSL raycast and a Julia compositor will not be pixel-identical, and
+"is this the same cell I saw last year" is a real question for a lab.
+
+**The only way to answer it is to A/B against napari — which stops being possible the moment napari
+is removed.** So the comparison harness is not a nice-to-have and it is not something to build
+later: it is the instrument that has to exist *while the reference still does*. `capture_view_state`
+/ `apply_view_state` (`python/cecelia/utils/napari_utils.py:587`) already returns
+`{camera, dims, layers}` — angles, centre, zoom, T/Z position, per-layer colormap and contrast. It
+was built for animation keyframes, but it is exactly a viewer-state contract: feed the same snapshot
+to both renderers and the comparison is honest rather than eyeballed. Do this early, and keep the
+stills.
 
 ## Still not measured
 
 Stated so the recommendation is not read as more complete than it is.
 
 - **Remoted napari's interactive latency** (VNC/VirtualGL encode + WAN). Third time it has gone
-  unmeasured; it needs a real ARE/cloud desktop, not this laptop (assessment §3d).
+  unmeasured; it needs a real ARE/cloud desktop, not this laptop (assessment §3d). **Under the
+  full-replacement goal this stops being load-bearing** — option A is excluded because it keeps
+  napari — so the audit's main stated weakness closes, though the number would still be worth having
+  if the goal ever softens.
 - **Real-data texture-cache behaviour.** G2 used a smooth phantom; fine structure would lower hit
   rates. Sample counts are unaffected (MIP has no early termination).
 - **Serving blosc bytes at slab granularity with WASM decode** — the obvious optimisation from G3,
