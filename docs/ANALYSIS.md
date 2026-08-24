@@ -261,6 +261,12 @@ it explains. The exception is a SINGLE-tile montage (a board slot showing one pl
 inside the plot like the gating page does. Both export paths carry the legend. Model + decisions:
 [`docs/POPULATION.md`](POPULATION.md) → *Colour by a third measure*.
 
+**Dot size** on these tiles comes from the panel's existing **Point size** (`vis.pointSize`) via
+`plots/density.ts` `dotRadiusFor` — no new control, and byte-identical output at the slider's default. It
+is applied as a RATIO of that default rather than as a radius, because the same slider also drives plots
+whose natural dot is much larger (the UMAP's, beeswarm points): a gating scatter's default speckle is
+0.7px, so taking the slider literally would have quadrupled every existing board figure's dots.
+
 ### Image / napari-screenshot slot
 `ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Napari-screenshot
 slots capture the live viewer via `/api/napari/screenshot` (backend restart to activate). The per-frame

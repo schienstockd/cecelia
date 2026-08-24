@@ -33,7 +33,7 @@ const MAX_CHANNELS = 8            // N×N tiles grow fast — cap the selection 
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
-  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
+  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
   // persisted per-plot config (owned by GatingPlots' PlotState): the channel list, the one shared
   // transform, and the render mode. Read/written directly so they survive navigation.
   ui: { channels?: string[]; xt?: Kind; renderMode?: RenderMode
@@ -228,7 +228,7 @@ function exportAs(kind: string) {
     <GateMontage ref="montageRef" :project-uid="g.projectUid()" :image-uid="g.imageUid ?? ''"
                  :value-name="g.valueName" :pop-type="g.popType" :defs="defs" :col-label="g.colLabel"
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
-                 :highlight="highlightPops" :colour-by="colourBy"
+                 :highlight="highlightPops" :colour-by="colourBy" :dot-size="props.dotSize"
                  :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
                  :reload-key="reloadKey" @coerced="coerced = $event">
       <template #empty>Select channels above to compare them against each other.</template>

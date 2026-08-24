@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID } from './density'
+import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, DOT_R, VIS_POINT_DEFAULT, dotRadiusFor } from './density'
 
 const ext = { xMin: 0, xMax: 1, yMin: 0, yMax: 1 }
 
@@ -60,5 +60,20 @@ describe('outlierPoints', () => {
     // all points in one cell → that cell is the max (density 1), nothing below the level
     const out = outlierPoints(new Float32Array(cluster(200, 0.5, 0.5, 0)), ext)
     expect(out.length).toBe(0)
+  })
+})
+
+describe('dotRadiusFor (the board shares one point-size slider)', () => {
+  it('leaves the default look untouched, so an existing board figure does not change', () => {
+    expect(dotRadiusFor(VIS_POINT_DEFAULT)).toBe(DOT_R)
+    expect(dotRadiusFor(undefined)).toBe(DOT_R)
+    expect(dotRadiusFor(null)).toBe(DOT_R)
+  })
+  it('scales as a RATIO of that slider, so it means "bigger/smaller" on a plot whose natural dot is much smaller', () => {
+    expect(dotRadiusFor(4)).toBeCloseTo(DOT_R * 2)
+    expect(dotRadiusFor(1)).toBeCloseTo(DOT_R / 2)
+  })
+  it('never collapses to an invisible dot', () => {
+    expect(dotRadiusFor(0)).toBeGreaterThan(0)
   })
 })

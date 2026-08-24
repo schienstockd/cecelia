@@ -21,6 +21,7 @@ import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gat
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { orientGate } from '../../plots/gateGeometry'
 import { defaultTransformForCol } from '../../utils/gatingAxes'
+import { dotRadiusFor } from '../../plots/density'
 import { measureGroups } from '../../utils/measureGroups'
 import { pairTransform } from '../../plots/pairsMatrix'
 import type { ColourBy, PanelDef } from '../../plots/montage'
@@ -264,7 +265,8 @@ defineExpose({ exportImage, exportSvg })
 
     <GateMontage ref="montageRef" :project-uid="projectUid" :image-uid="imageUid" :value-name="valueName"
                  :pop-type="popType" :defs="panelDefs" :col-label="colLabel" :render-mode="renderMode"
-                 :colour-by="colourBy" :gate-labels="true" :font-size="vis?.fontSize ?? 11">
+                 :colour-by="colourBy" :gate-labels="true" :font-size="vis?.fontSize ?? 11"
+                 :dot-size="dotRadiusFor(vis?.pointSize)">
       <template #empty>
         No gate to show for “{{ rootPop }}”.
         {{ showHierarchy ? 'No gated populations beneath it — draw gates on the Gate page first.'

@@ -15,7 +15,7 @@
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
-import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
+import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, DOT_R, type Ext } from '../../plots/density'
 import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
@@ -44,6 +44,10 @@ const props = defineProps<{
   // false → colour the dots but draw NO bar: a montage host draws ONE bar for the whole grid, because
   // every tile shares the ramp and a per-tile bar would eat a 200px tile (GateMontage).
   valueLegend?: boolean
+  // dot radius in px (default `DOT_R`). It scales EVERY dot on the layer — the base speckle, the
+  // population overlays and the outlier tail — by the same factor, so their relative sizes (an overlay
+  // reads as bigger than the base it sits on) hold at any setting.
+  dotSize?: number
 }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
@@ -74,7 +78,10 @@ const ringToPx = (gx: number, gy: number) => gridToPx(props.viewExtents, box(), 
 // via the blue-heat ramp — point resolution, no blocky cells. Bucketed by colour so we set fillStyle
 // ~B times, not once per point (fast for 100k+ points).
 const DOT_BUCKETS = 64
-const DOT_R = 0.7
+// every radius on this layer scales with the knob, relative to the default look
+const dotK = () => Math.max(0.1, props.dotSize ?? DOT_R) / DOT_R
+const baseR = () => DOT_R * dotK()
+const POP_R = 1.5, OUTLIER_R = 1.3
 // The 0..1 the ramp is indexed by, per point: the COLOUR-BY measure when one is given (normalised over
 // the served whole-dataset range, so the colours don't re-map as you walk the population tree), else
 // the point's own local density. One source of `t` → one paint loop for both modes, on screen and in
@@ -93,16 +100,16 @@ const showBar = () => colourBy() && props.valueLegend !== false
 function paintDensityDots(points: Float32Array) {
   const c = ctx!
   const t = dotRamp(points)
-  const n = points.length / 2
+  const r = baseR(), n = points.length / 2
   const groups: number[][] = Array.from({ length: DOT_BUCKETS }, () => [])
   const missing: number[] = []                       // no value for this cell — NOT the ramp's floor
   for (let i = 0; i < n; i++) {
     isFinite(t[i]) ? groups[Math.min(DOT_BUCKETS - 1, Math.floor(t[i] * DOT_BUCKETS))].push(i)
                    : missing.push(i)
   }
-  const s = DOT_R * 2
+  const s = r * 2
   const stamp = (g: number[]) => {
-    for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+    for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - r, py - r, s, s) }
   }
   if (missing.length) { c.fillStyle = ink(); stamp(missing) }
   for (let b = 0; b < DOT_BUCKETS; b++) {
@@ -148,7 +155,7 @@ function drawContours(points: Float32Array, colour: string) {
   c.globalAlpha = 1
 }
 
-function drawDots(points: Float32Array, colour: string, r = 1.5) {
+function drawDots(points: Float32Array, colour: string, r = POP_R * dotK()) {
   const c = ctx!; c.fillStyle = colour
   const n = points.length / 2, s = r * 2
   for (let i = 0; i < n; i++) {
@@ -160,7 +167,7 @@ function drawDots(points: Float32Array, colour: string, r = 1.5) {
 // were barely visible before — bumped alpha + size so the tail reads like the old WebGL render did)
 function drawOutliers(points: Float32Array, colour: string) {
   ctx!.globalAlpha = 0.8
-  drawDots(outlierPoints(points, props.viewExtents, G), colour, 1.3)
+  drawDots(outlierPoints(points, props.viewExtents, G), colour, OUTLIER_R * dotK())
   ctx!.globalAlpha = 1
 }
 
@@ -306,13 +313,13 @@ function exportSvgContent(): string {
     if (mode === 'points') { const url = renderBaseRasterUrl(); if (url) body += svgImage(url, 0, 0, w, h) }
     else {
       body += contoursSvg(props.basePoints, ink())
-      if (mode === 'outliers') body += dotsSvg(outlierPoints(props.basePoints, props.viewExtents, G), ink(), 1.3, 0.8)
+      if (mode === 'outliers') body += dotsSvg(outlierPoints(props.basePoints, props.viewExtents, G), ink(), OUTLIER_R * dotK(), 0.8)
     }
   }
   if (props.showPops) {
     for (const pop of props.popLayers) {
       if (!pop.points?.length) continue
-      body += dotsSvg(pop.points, pop.colour, 1.5)      // categorical → vector, and dots in EVERY mode (paintContent)
+      body += dotsSvg(pop.points, pop.colour, POP_R * dotK())   // categorical → vector, dots in EVERY mode (paintContent)
     }
   }
   if (showBar()) body += barSvg()                       // same order as paintContent
@@ -321,7 +328,8 @@ function exportSvgContent(): string {
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick,
-             props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel, props.valueLegend],
+             props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel, props.valueLegend,
+             props.dotSize],
       draw, { deep: true })
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')

@@ -4,6 +4,17 @@
 // unit-tested (docs/DEV.md).
 export type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
+// The dot pass: the radius each plotted cell is stamped at, and the tuning knob for it. 0.7 (a 1.4px
+// square) is the FlowJo/OMIQ speckle that reads on a dense cloud; a sparse or colour-by plot wants
+// bigger dots, which is what the manager's "Dot size" slider (Gate page) and the board's "Point size"
+// (`vis.pointSize`) set. The board's slider is shared with plots whose natural radius is much larger
+// (UMAP dots, beeswarm points), so a gating plot takes it as a RATIO of that slider's default — the
+// slider still means "bigger/smaller", and an existing board figure is unchanged at the default.
+export const DOT_R = 0.7                   // default dot radius (px, CSS)
+export const VIS_POINT_DEFAULT = 2         // plots/plot.ts defaultVis().pointSize
+export const dotRadiusFor = (pointSize?: number | null): number =>
+  Math.max(0.1, DOT_R * ((pointSize ?? VIS_POINT_DEFAULT) / VIS_POINT_DEFAULT))
+
 // per-point density (dots) estimates on a moderate grid + blur; contours use a coarser, heavily-blurred
 // grid so the rings read as clean nested curves. A few box-blur passes ≈ a Gaussian.
 export const DOT_GRID = 160                // per-point density-colour grid (the dot plot)

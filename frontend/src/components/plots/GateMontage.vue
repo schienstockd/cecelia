@@ -25,6 +25,7 @@ import {
   idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate,
 } from '../../plots/montage'
 import { splitXYZ } from '../../plots/valueColour'
+import { DOT_R } from '../../plots/density'
 import ColourBarLegend from './ColourBarLegend.vue'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
@@ -52,9 +53,11 @@ const props = withDefaults(defineProps<{
   // napari selection) — the parent's point cloud can change without any def changing.
   reloadKey?: string | number
   fontSize?: number                              // axis font size (px) forwarded to each tile (vis slider)
+  dotSize?: number                               // dot radius (px) forwarded to each tile (see plots/density DOT_R)
 }>(), {
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
   highlight: () => [], colourBy: null, cols: null, axisFromZero: true, reloadKey: 0, fontSize: 11,
+  dotSize: DOT_R,
 })
 // true when ≥1 tile's preferred transform was auto-linearised (host shows an amber hint on its control)
 const emit = defineEmits<{ coerced: [boolean] }>()
@@ -356,7 +359,7 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
                            :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
                            :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
                            :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
-                           :hide-axis-labels="cols != null" :font-size="fontSize"
+                           :hide-axis-labels="cols != null" :font-size="fontSize" :dot-size="dotSize"
                            :base-values="panelData[d.key].values" :value-extent="valueRamp?.extent ?? null"
                            :value-ticks="valueRamp?.ticks" :value-label="legendLabel"
                            :value-legend="single"

@@ -185,8 +185,16 @@ child-pop overlays on one 2D canvas; `GateScatterCell.vue` composites it with th
 **Export re-renders the same 2D content at target scale** (crisp, cannot clip) — replaced the fragile
 WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change (autoscale, zero-extent,
 image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` var (so it flips
-dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
-detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
+dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*` (dot detail),
+`CONTOUR_LEVELS`, the outlier alpha.
+
+**Dot RADIUS is a user knob, not a constant.** `plots/density.ts` `DOT_R` (0.7 → a 1.4px square) is only
+the DEFAULT: the gating page's manager has a **Dot size** slider (scoped global/local like every other
+plot option) and the Analysis board reuses its existing **Point size** (`vis.pointSize`) through
+`dotRadiusFor` — a RATIO of that slider's default, because the board's one slider also drives plots whose
+natural radius is much larger (UMAP dots, beeswarm points), and because at the default it must leave every
+existing board figure byte-identical. One knob scales the base speckle, the population overlays and the
+outlier tail together, so an overlay still reads as bigger than the cloud it sits on.
 
 **Colour by a third measure = the same dot pass, a different `t`.** The dots' colour is a 0..1 lookup
 into the blue-heat ramp; local density is only the DEFAULT source of that number. Given a third measure

@@ -37,7 +37,7 @@ import { splitXYZ } from '../../plots/valueColour'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
-  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
+  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
   // persisted per-plot axis config (owned by GatingPlots' PlotState) — channels, transforms, render
   // mode. Read/written directly like the summary panels' `ui` bag so these survive navigation.
   ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
@@ -473,6 +473,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
                      :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
                      :value-label="axisLabelWithUnit(g.colLabel(zChan), zUnit)"
                      :pop-layers="popLayers" :render-mode="renderMode" :show-pops="showPops"
+                     :dot-size="props.dotSize"
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">

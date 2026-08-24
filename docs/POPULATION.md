@@ -763,7 +763,11 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
 - **Gate display options** live in `GatingPlots` (apply to all plots) and are edited in the
   manager's collapsible **Options** box (grouped into `plot` / `viewer` sub-headings): a **gate-labels** toggle (subtle
   population name centred above each gate — bold with a dark halo for legibility, drawn on
-  `GateOverlay`; **on by default**) and a **line-width** slider (gate stroke thickness). Passed to
+  `GateOverlay`; **on by default**), a **line-width** slider (gate stroke thickness) and a **dot-size**
+  slider — the PLOT twin of the manager's "Napari dots", scaling every dot on the scatter (base speckle,
+  population overlays and the outlier tail together, so their relative sizes hold). Its default is
+  `plots/density.ts` `DOT_R` = 0.7, the FlowJo speckle that reads on a dense cloud; a sparse cloud, or one
+  carrying a colour-by measure, wants more. Passed to
   `GateOverlay` as `showLabels` / `lineWidth`. An **Axis** toggle — **whole-dataset scale**
   (double-diagonal icon, default) vs **autoscale-to-pop** (single-diagonal) — adds `x0/y0=1` to
   the plot queries. With it on, `plotmeta` sets each axis to `[transformed(0), transformed(full-

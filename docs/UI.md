@@ -2594,6 +2594,11 @@ highlight) lives in `GatingPlots` keyed by id. State otherwise lives in `stores/
 columns, stats, CRUD, `applyBroadcast` for the `gating:popmap` WS push; `valueName` self-heals to a
 real segmentation). API: `docs/API.md` gating routes.
 
+**Dot size lives with the other plot options, not on the plot.** The manager's Options box gained a
+**Dot size** slider beside *Line width* — the plot twin of its *Napari dots* slider, scoped global/local
+like every option there. The board's gating tiles reuse the panel's existing *Point size* instead of
+growing a second control. See `docs/PLOTS.md` → *Dot RADIUS is a user knob*.
+
 **Each plot's controls are four rows: X, Y, `colour`, `pop`.** `colour` is the FlowJo-style
 colour-by-parameter — a third measure painted onto the dots (default `density`, the local-density
 pseudocolour), with its own scale select and the shared amber auto-override marker, and a colour bar on

@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   valueExtent?: [number, number] | null
   valueTicks?: { pos: number; label: string }[]
   valueLabel?: string
+  valueLegend?: boolean
+  dotSize?: number                               // dot radius (px) — scales every dot on the layer
   renderMode?: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = + tail dots
   showPops?: boolean
   mode?: 'off' | 'rectangle' | 'polygon'         // 'off' = read-only (no draw/edit)
@@ -255,7 +257,7 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :flip-y="flipY"
                   :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
-                  :value-label="valueLabel"
+                  :value-label="valueLabel" :value-legend="valueLegend" :dot-size="dotSize"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
                    :flip-y="flipY"
