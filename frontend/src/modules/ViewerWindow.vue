@@ -49,6 +49,7 @@ import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary, buildTrackBuffer, tailRange,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
+import { rampSwatches } from '../utils/colourRamp'
 import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
@@ -107,6 +108,9 @@ const overlaysErr = ref('')
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
+/** Which obs column shades the points, '' for the population colour. A REQUEST, not a display toggle:
+ *  the values come from the server, so changing it refetches. */
+const colourBy = ref('')
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
 let segments: SegmentBuffer = {
   data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
@@ -114,6 +118,11 @@ let segments: SegmentBuffer = {
 const pointCount = ref(0)
 const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
+/** The ramp as a CSS gradient, from the same table the points are shaded with — a legend built from a
+ *  different set of stops would be a second answer about the same scale. */
+const rampStyle = computed(() => ({
+  background: `linear-gradient(to right, ${rampSwatches('viridis', 12).join(', ')})`,
+}))
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1 })
 const fitDist = ref(1)
@@ -235,7 +244,7 @@ const frame = usePlotResize(canvas, () => {
  */
 function rebuildOverlays() {
   const r = renderer.value
-  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value)
+  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, 'viridis', PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
   // Tails are coloured per TRACK, not per population, so they do not depend on which pops are visible —
@@ -257,7 +266,8 @@ async function loadOverlays() {
     // other resolves to the active segmentation by luck rather than by intent. The server picks the
     // active one and says which in `valueName`, so the panel can report it. A segmentation PICKER is
     // the next step — see the plan.
-    const res = await fetch(overlaysUrl({ projectUid, imageUid }), { cache: 'no-store' })
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value }),
+                            { cache: 'no-store' })
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
     overlays.value = body as OverlayPayload
@@ -801,6 +811,30 @@ onUnmounted(() => {
                 :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
               />
             </div>
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
+              <select
+                class="cc-select cc-fs-2xs vw-grow" :value="colourBy"
+                v-tooltip.bottom="'Shade the points by a per-cell measure'"
+                @change="e => { colourBy = (e.target as HTMLSelectElement).value; void loadOverlays() }"
+              >
+                <option value="">population</option>
+                <option v-for="c in overlays!.colourColumns" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+            <!-- The legend says which SCALE is in use, because that is the server's decision (the same
+                 rule the plots use) and the two kinds look nothing alike. -->
+            <div v-if="overlays!.colourBy && overlays!.valueKind === 'numeric'"
+                 class="cc-row cc-row-tight cc-fs-3xs">
+              <span class="cc-muted">{{ (overlays!.valueRange?.[0] ?? 0).toPrecision(3) }}</span>
+              <span class="vw-ramp" :style="rampStyle" />
+              <span class="cc-muted">{{ (overlays!.valueRange?.[1] ?? 1).toPrecision(3) }}</span>
+            </div>
+            <div v-else-if="overlays!.colourBy && overlays!.valueKind === 'categorical'"
+                 class="cc-muted cc-fs-3xs">
+              {{ overlays!.valueLevels?.length ?? 0 }} levels
+            </div>
+
             <div v-if="segCount > 0" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
               <input
@@ -923,6 +957,7 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }

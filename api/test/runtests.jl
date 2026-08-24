@@ -5111,7 +5111,32 @@ end
                 got = ask("&colourBy=" * HTTP.escapeuri(c))
                 @test got.colourBy == c
                 @test got.values !== nothing && length(got.values) == got.nCells
+                # WHICH KIND of scale is the server's answer, through the same `_is_categorical_col`
+                # rule the plots use — so a column that plots as a code set shades as one in the
+                # viewer. Re-deriving it in TypeScript would be a second answer about one column.
+                @test String(got.valueKind) in ("categorical", "numeric")
+                if got.valueKind == "numeric"
+                    @test got.valueRange !== nothing && length(got.valueRange) == 2
+                    @test got.valueRange[1] <= got.valueRange[2]
+                    @test got.valueLevels === nothing
+                else
+                    @test got.valueLevels !== nothing && !isempty(got.valueLevels)
+                    @test got.valueRange === nothing
+                    # the levels must COVER the values, else the client greys a cell it can colour
+                    lv = Set(string.(got.valueLevels))
+                    @test all(v -> v === nothing || string(v) in lv, got.values)
+                end
+                # every column the route offers must answer both questions — a column that came back
+                # with no kind would silently fall through to the population colour
+                for col in got.colourColumns
+                    one = ask("&colourBy=" * HTTP.escapeuri(String(col)))
+                    @test String(one.valueKind) in ("categorical", "numeric")
+                end
             end
+            # no colour-by → no kind, no levels, no range: three fields that must not linger
+            @test get(d, :valueKind, nothing) === nothing
+            @test get(d, :valueLevels, nothing) === nothing
+            @test get(d, :valueRange, nothing) === nothing
             # an unknown column is ignored rather than fatal — a stale column name from a saved view
             # must not take the overlay down with it
             bad = ask("&colourBy=does_not_exist")

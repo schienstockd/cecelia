@@ -12,6 +12,7 @@
 // and an upload on every step of a scrub, which is exactly what the timepoint cache exists to avoid.
 
 import type { ViewerMeta } from './volumeViewer'
+import { sampleRamp, type RampName } from './colourRamp'
 
 /** One population as the gating engine resolved it — the same shape napari's points layers get. */
 export interface OverlayPop {
@@ -39,6 +40,13 @@ export interface OverlayPayload {
   pops: OverlayPop[]
   colourColumns: string[]
   colourBy: string | null
+  /** How to colour by it — the SERVER decides, through the same `_is_categorical_col` rule the plots
+   *  use, so the viewer and a plot of the same column never disagree about its type. */
+  valueKind?: 'categorical' | 'numeric' | null
+  /** Distinct values, for `categorical`. */
+  valueLevels?: (number | string)[] | null
+  /** `[lo, hi]`, for `numeric`. */
+  valueRange?: [number, number] | null
   values: (number | string | null)[] | null
   valueName?: string
   popType?: string
@@ -85,6 +93,7 @@ const EMPTY: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count
  */
 export function buildPointBuffer(
   payload: OverlayPayload | null, meta: ViewerMeta | null, hidden: ReadonlySet<string> = new Set(),
+  ramp: RampName = 'viridis', palette: readonly string[] = [],
 ): PointBuffer {
   if (!payload || !meta) return EMPTY
   const { label, t, x, y, z } = payload.cells
@@ -94,16 +103,21 @@ export function buildPointBuffer(
   const row = new Map<number, number>()
   for (let i = 0; i < label.length; i++) row.set(label[i], i)
 
+  const byValue = colourByValue(payload, ramp, palette)
+
   // Emit (row, colour) pairs first, so the sort has something small to work on.
   const rows: number[] = []
   const cols: number[] = []
   for (const pop of payload.pops) {
     if (!pop.show || hidden.has(pop.path)) continue
-    const rgb = hexToUnit(pop.colour)
+    const popRgb = hexToUnit(pop.colour)
     for (const l of pop.labels) {
       const r = row.get(l)
       if (r === undefined) continue          // membership can name a cell the table no longer holds
       rows.push(r)
+      // Colour-by wins over the population colour when it is on, which is what makes it useful: the
+      // populations are still what SELECTS the cells, the column is what shades them.
+      const rgb = byValue ? byValue(r) : popRgb
       cols.push(rgb[0], rgb[1], rgb[2])
     }
   }
@@ -295,4 +309,54 @@ export function tailRange(
   const first = buf.firstAt[clamp(lo)]
   const end = buf.endAt[clamp(hi)]
   return end > first ? [first, end - first] : null
+}
+
+// ── Colour-by ────────────────────────────────────────────────────────────────────
+
+/** Grey for a cell the column has no value for. Deliberately not invisible and not the ramp's low end:
+ *  "not measured" must not read as "measured, and lowest". */
+export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
+
+/**
+ * A row → colour function for the payload's `colourBy` column, or `null` when there is nothing to
+ * colour by.
+ *
+ * WHICH KIND OF SCALE is the server's answer, not this function's: `valueKind` comes from the same
+ * `_is_categorical_col` rule the plots use, so a column that plots as a code set shades as one here.
+ * Re-deriving it in TypeScript would be a second answer about the same data — the exact duplication
+ * this codebase keeps paying for — and the rule has carve-outs (`clusters.*` is always categorical
+ * however many levels; `min_distance#` is a quantity even stored as 0/1) that no local heuristic
+ * would reproduce.
+ *
+ * A numeric column with a zero-width range shades at the ramp's MIDDLE rather than at either end: with
+ * lo == hi every cell has the same value, and painting them all "lowest" or all "highest" both assert
+ * something the data does not say.
+ */
+export function colourByValue(
+  payload: OverlayPayload, ramp: RampName = 'viridis', palette: readonly string[] = [],
+): ((row: number) => [number, number, number]) | null {
+  const vals = payload.values
+  if (!payload.colourBy || !vals || vals.length === 0) return null
+
+  if (payload.valueKind === 'categorical') {
+    const levels = payload.valueLevels ?? []
+    const index = new Map<string, number>()
+    levels.forEach((v, i) => index.set(String(v), i))
+    const pal = palette.length ? palette : ['#ffffff']
+    const rgbs = pal.map(hexToUnit)
+    return (r: number) => {
+      const v = vals[r]
+      if (v === null || v === undefined) return NO_VALUE_RGB
+      const k = index.get(String(v))
+      return k === undefined ? NO_VALUE_RGB : rgbs[k % rgbs.length]
+    }
+  }
+
+  const [lo, hi] = payload.valueRange ?? [0, 1]
+  const span = hi - lo
+  return (r: number) => {
+    const v = vals[r]
+    if (v === null || v === undefined || typeof v !== 'number') return NO_VALUE_RGB
+    return sampleRamp(ramp, span > 0 ? (v - lo) / span : 0.5)
+  }
 }

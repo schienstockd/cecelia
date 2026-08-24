@@ -324,7 +324,38 @@ screen direction, so width is in pixels and stays constant under perspective.
   is telling adjacent tracks apart, not reading a value off them, and no continuous colormap exists in
   this repo yet — see open question 1.
 
-**Still to do in P3:** colour-by. It needs a decision — see *Open questions* below.
+**Colour-by is built, and open question 1 was answered by taking the stated assumption.**
+
+- **The SERVER decides categorical vs numeric**, through `Cecelia._is_categorical_col` — the same rule
+  the plots use. It is not a one-liner: strings are categorical, any fractional value makes a column
+  continuous, a small integer level set is a code set, and there are name carve-outs both ways
+  (`clusters.*` is always categorical however many levels; `min_distance#`/`contact#` are quantities
+  even stored as 0/1). A TypeScript re-derivation would be a second answer about the same column, and
+  the viewer and a plot of it would disagree. The payload carries `valueKind` plus `valueLevels` or
+  `valueRange`.
+- **`utils/colourRamp.ts` is GENERATED from matplotlib 3.11.0**, not typed by hand: viridis and turbo
+  sampled at 32 points, which is the same source napari's own maps come from, so a colour-by here
+  matches what napari showed. Regenerate rather than hand-editing a stop:
+
+  ```python
+  from matplotlib import colormaps
+  N = 32
+  [colormaps['viridis'](i / (N - 1))[:3] for i in range(N)]
+  ```
+
+  It exists because there was nothing to reuse — `image_render.jl` says outright that napari's
+  perceptual maps are not ramps from black and cannot be approximated from a name, and the plots get
+  theirs from Observable Plot's d3 scales, which WGSL cannot reach. CHANNEL colours are still resolved
+  server-side; the two are separate concerns and must stay that way.
+- **A cell with no value gets its own grey**, not the ramp's low end: "not measured" must not read as
+  "measured, and lowest". A zero-width range shades at the ramp's MIDDLE, because painting every cell
+  "lowest" or "highest" both assert something the data does not say.
+- **Colour-by is a REQUEST, not a display toggle** — the values come from the server, so changing the
+  column refetches. That is the honest shape: sending every obs column up front would be the payload
+  measurement all over again, for columns nobody asked for.
+
+**P3 is complete.** Points, tails and colour-by, all against real data. What is NOT done: showing more
+than one segmentation at once (open question 2) and a segmentation picker.
 
 **A namespace trap worth knowing.** `/api/viewer/meta` and `/api/viewer/slab` take an IMAGE VERSION as
 `valueName` (which zarr the pixels come from, e.g. `smoothed`); `/api/viewer/overlays` takes a
@@ -439,7 +470,10 @@ anything faster than that unmeasurable — batch N operations per submit to get 
 Written down rather than guessed at (2026-08-24). Work continued past all of these under the stated
 assumption; each is a place where a different answer would change what gets built, not whether.
 
-1. **Colour-by needs a continuous colormap, and there is no table to reuse.** `track_state` and
+1. **ANSWERED by taking the assumption — `utils/colourRamp.ts` now exists.** Left here because the
+   alternative is still open: resolving overlay ramps server-side would keep one palette owner at the
+   cost of a round trip whenever the column changes.
+   **Colour-by needs a continuous colormap, and there is no table to reuse.** `track_state` and
    `clusters.*` are categorical and can use the population palette. `live.cell.speed` is continuous, and
    napari renders it through **viridis**. The repo has NO viridis/turbo RGB table anywhere:
    `image_render.jl` says so explicitly and falls back to gray unless a props file carries the LUT, and

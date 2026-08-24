@@ -411,9 +411,28 @@ function api_viewer_overlays(req::HTTP.Request)
         vals = used === nothing ? nothing :
                Any[(v = df[i, used]; (ismissing(v) || (v isa Real && !isfinite(Float64(v)))) ?
                     nothing : v) for i in idx]
+
+        # WHICH KIND OF COLUMN decides how the client colours it — a palette per level, or a ramp over a
+        # range — and that question is already answered ONCE, by `_is_categorical_col`. It is not a
+        # one-liner: strings are categorical, any fractional value makes a column continuous, a small
+        # integer level set is a code set, and there are name carve-outs both ways (`clusters.*` is
+        # always categorical however many levels; `min_distance#`/`contact#` are quantities even when
+        # stored as 0/1). Re-deriving that in TypeScript would be a second answer that disagrees with
+        # the plots about the same column, which is the class of bug this codebase keeps paying for.
+        # Reaching for the underscore name is deliberate: same rule, one owner.
+        kind = used === nothing ? nothing :
+               (Cecelia._is_categorical_col(df[!, used], used) ? "categorical" : "numeric")
+        # The levels (categorical) or the range (numeric) the client maps onto — computed here for the
+        # same reason, so the legend agrees with what a plot of this column would show.
+        levels = kind == "categorical" ?
+                 sort(unique(Any[v for v in vals if v !== nothing]); by = string) : nothing
+        finite = kind == "numeric" ? Float64[Float64(v) for v in vals if v isa Real] : Float64[]
+        range_ = (kind == "numeric" && !isempty(finite)) ?
+                 [minimum(finite), maximum(finite)] : nothing
         200, JSON3.write((; nCells = length(idx), nDropped = n - length(idx),
                             axes, hasT = has("centroid_t"), cells, pops,
-                            colourColumns = obs, colourBy = used,
+                            colourColumns = obs, colourBy = used, valueKind = kind,
+                            valueLevels = levels, valueRange = range_,
                             values = vals, valueName = vn, popType = pt))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))

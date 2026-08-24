@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
-  buildTrackBuffer, tailRange, POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
+  buildTrackBuffer, tailRange, colourByValue, NO_VALUE_RGB,
+  POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
+import { sampleRamp, rampSwatches } from './colourRamp'
 import type { ViewerMeta } from './volumeViewer'
 
 const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
@@ -247,5 +249,106 @@ describe('buildTrackBuffer', () => {
       .toBe(0)
     expect(buildTrackBuffer(null, meta(), PAL).count).toBe(0)
     expect(buildTrackBuffer(tracked(), null, PAL).count).toBe(0)
+  })
+})
+
+describe('colourByValue', () => {
+  const num = (over: Partial<OverlayPayload> = {}): OverlayPayload => ({
+    ...payload(),
+    colourBy: 'live.cell.speed',
+    valueKind: 'numeric',
+    valueRange: [0, 10],
+    values: [0, 5, 10, null],
+    ...over,
+  })
+
+  it('is null when there is nothing to colour by, so the population colour stands', () => {
+    expect(colourByValue(payload())).toBeNull()
+    expect(colourByValue(num({ values: null }))).toBeNull()
+    expect(colourByValue(num({ colourBy: null }))).toBeNull()
+  })
+
+  it('spreads a numeric column across the ramp', () => {
+    const f = colourByValue(num(), 'viridis')!
+    const lo = f(0), mid = f(1), hi = f(2)
+    expect(lo).not.toEqual(hi)
+    // viridis runs dark blue → yellow, so the top of the scale is the brighter red channel
+    expect(hi[0]).toBeGreaterThan(lo[0])
+    expect(mid).not.toEqual(lo)
+  })
+
+  it('shades a zero-width range at the MIDDLE of the ramp, not at an end', () => {
+    // With lo == hi every cell has the same value; painting them all "lowest" or all "highest" both
+    // assert something the data does not say.
+    const f = colourByValue(num({ valueRange: [4, 4], values: [4, 4, 4, 4] }))!
+    const mid = colourByValue(num({ valueRange: [0, 10], values: [5, 5, 5, 5] }))!
+    expect(f(0).map(v => v.toFixed(3))).toEqual(mid(0).map(v => v.toFixed(3)))
+  })
+
+  it('gives a cell with NO value its own grey, not the ramp\'s low end', () => {
+    // "not measured" must not read as "measured, and lowest".
+    const f = colourByValue(num())!
+    expect(f(3)).toEqual(NO_VALUE_RGB)
+    expect(f(3)).not.toEqual(f(0))
+  })
+
+  it('maps a categorical column onto the palette by LEVEL, and cycles', () => {
+    const f = colourByValue({
+      ...payload(),
+      colourBy: 'track_state', valueKind: 'categorical',
+      valueLevels: [1, 2, 3], values: [1, 2, 3, 1],
+    }, 'viridis', ['#ff0000', '#00ff00'])!
+    expect(f(0)).toEqual([1, 0, 0])
+    expect(f(1)).toEqual([0, 1, 0])
+    expect(f(2)).toEqual([1, 0, 0])       // three levels, two colours → cycles
+    expect(f(3)).toEqual(f(0))            // the same level is always the same colour
+  })
+
+  it('greys a categorical value that is not in the level list', () => {
+    // The levels come from the same read as the values, so this should not happen — and if it does, a
+    // silent wrong colour is worse than a visible "unknown".
+    const f = colourByValue({
+      ...payload(),
+      colourBy: 'track_state', valueKind: 'categorical',
+      valueLevels: [1, 2], values: [1, 2, 9, null],
+    }, 'viridis', ['#ff0000', '#00ff00'])!
+    expect(f(2)).toEqual(NO_VALUE_RGB)
+    expect(f(3)).toEqual(NO_VALUE_RGB)
+  })
+
+  it('shades points by the column when one is chosen, over the population colour', () => {
+    // The populations still SELECT which cells are drawn; the column shades them.
+    const p = num()
+    const plain = buildPointBuffer(payload(), meta(), new Set(), 'viridis', ['#ff0000'])
+    const shaded = buildPointBuffer(p, meta(), new Set(), 'viridis', ['#ff0000'])
+    expect(shaded.count).toBe(plain.count)
+    const rgbOf = (b: { data: Float32Array }, i: number) =>
+      Array.from(b.data.slice(i * POINT_STRIDE + 3, i * POINT_STRIDE + 6))
+    expect(rgbOf(shaded, 0)).not.toEqual(rgbOf(plain, 0))
+  })
+})
+
+describe('colour ramps', () => {
+  it('runs dark to bright, and clamps rather than wrapping', () => {
+    // Wrapping would paint the brightest cells the colour of the dimmest.
+    const lo = sampleRamp('viridis', 0), hi = sampleRamp('viridis', 1)
+    expect(sampleRamp('viridis', -5)).toEqual(lo)
+    expect(sampleRamp('viridis', 5)).toEqual(hi)
+    expect(hi[0] + hi[1]).toBeGreaterThan(lo[0] + lo[1])
+  })
+  it('interpolates between stops rather than stepping', () => {
+    const a = sampleRamp('turbo', 0.5), b = sampleRamp('turbo', 0.51)
+    expect(a).not.toEqual(b)
+  })
+  it('survives a non-finite input, which is what an unmeasured cell would give it', () => {
+    expect(sampleRamp('viridis', NaN).every(Number.isFinite)).toBe(true)
+  })
+  it('makes legend swatches from the SAME stops the points use', () => {
+    const sw = rampSwatches('viridis', 5)
+    expect(sw).toHaveLength(5)
+    expect(sw.every(h => /^#[0-9a-f]{6}$/.test(h))).toBe(true)
+    const [r, g, b] = sampleRamp('viridis', 0)
+    const hex = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0')
+    expect(sw[0]).toBe('#' + hex(r) + hex(g) + hex(b))
   })
 })
