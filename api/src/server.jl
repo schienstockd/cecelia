@@ -228,6 +228,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
     "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
+    "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),

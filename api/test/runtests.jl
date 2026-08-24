@@ -4504,6 +4504,7 @@ end
         "/api/chains/run", "/api/chains/runs",
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/meta",
+        "/api/viewer/overlays",
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -4643,7 +4644,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 83 && length(POST_ROUTES) == 117
+    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 117
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5029,6 +5030,126 @@ end
         empty!(_GATING_HISTORY)
     end
   end
+end
+
+@testset "API: viewer overlays (one request for the whole movie, in µm)" begin
+    # P3's payload contract. What can go wrong here is silent: a coordinate in pixels instead of µm
+    # lands the overlay in the corner of the image at 1/3 scale and still LOOKS like data, and a
+    # `null` in a coordinate array becomes 0 through `Float32Array.from` — a cell drawn at the origin
+    # rather than not drawn.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            ask(qs) = JSON3.read(api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?projectUid=testpr&imageUid=KDIeEm&valueName=B" * qs))[2])
+            st, body = api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
+            @test st == 200
+            d = JSON3.read(body)
+
+            # ── the table ────────────────────────────────────────────────────────────
+            @test d.nCells > 0
+            # Every coordinate finite, always. JSON has no NaN literal (JSON3 refuses to write one) and
+            # `null` becomes 0 through `Float32Array.from`, so an undrawable cell is DROPPED rather than
+            # encoded — and `nDropped` says how many, since shipping fewer cells than the table holds
+            # would otherwise read as a segmentation problem.
+            @test d.nDropped >= 0
+            @test d.nCells + d.nDropped == length(JSON3.read(String(JSON3.write(d.cells.label))))  ||
+                  d.nDropped == 0
+            for a in ("x", "y", "z", "t")
+                @test all(isfinite, Float64.(getproperty(d.cells, Symbol(a))))
+            end
+            @test length(d.cells.label) == d.nCells
+            @test length(d.cells.x) == d.nCells && length(d.cells.y) == d.nCells
+            @test Set(String.(d.axes)) ⊆ Set(["x", "y", "z"])
+            @test "x" in d.axes && "y" in d.axes
+            # every declared axis actually carries values, and every absent one is empty — the client
+            # reads these arrays positionally, so a declared-but-missing axis is a wrong picture
+            for a in ("x", "y", "z")
+                col = getproperty(d.cells, Symbol(a))
+                @test (a in d.axes) == (length(col) == d.nCells)
+            end
+
+            # ── µm, not pixels ───────────────────────────────────────────────────────
+            # The route promises the same space as `extentUm`. Compare against the raw file: with a
+            # real calibration the two MUST differ, and by exactly the axis resolution.
+            img, _ = _gating_image("testpr", "KDIeEm")
+            sizes, _ = img_physical_sizes(img)              # [sz, sy, sx] µm/px
+            lp = label_props(joinpath(proj, "1", "KDIeEm", "labelProps", "B.h5ad"))
+            view_centroid_cols(lp; order = [:x, :y, :z])
+            raw = as_df(lp)
+            if sizes[3] != 1.0                             # x resolution is a real measurement
+                @test !(Float64(raw[1, :centroid_x]) ≈ Float64(d.cells.x[1]))
+            end
+            @test Float64(raw[1, :centroid_x]) * sizes[3] ≈ Float64(d.cells.x[1])
+            @test Float64(raw[1, :centroid_y]) * sizes[2] ≈ Float64(d.cells.y[1])
+            # t stays a FRAME index — scaling it would silently redefine every frame-counted
+            # parameter, the same choice `scale_centroids!` makes on disk.
+            if d.hasT
+                @test Float64(raw[1, :centroid_t]) ≈ Float64(d.cells.t[1])
+            end
+
+            # ── tracks ───────────────────────────────────────────────────────────────
+            # -1 for "not tracked", never 0 and never null: one sentinel the client tests against.
+            if !isempty(d.cells.track)
+                @test length(d.cells.track) == d.nCells
+                @test all(t -> t == -1 || t > 0, d.cells.track)
+                @test any(t -> t > 0, d.cells.track)        # the fixture IS tracked
+            end
+
+            # ── colour-by ────────────────────────────────────────────────────────────
+            @test d.colourBy === nothing && d.values === nothing
+            if !isempty(d.colourColumns)
+                c = String(first(d.colourColumns))
+                got = ask("&colourBy=" * HTTP.escapeuri(c))
+                @test got.colourBy == c
+                @test got.values !== nothing && length(got.values) == got.nCells
+            end
+            # an unknown column is ignored rather than fatal — a stale column name from a saved view
+            # must not take the overlay down with it
+            bad = ask("&colourBy=does_not_exist")
+            @test bad.colourBy === nothing && bad.values === nothing && bad.nCells == d.nCells
+
+            # ── populations ──────────────────────────────────────────────────────────
+            # Membership comes from `resolve_pops`, so an ungated image answers an empty list. Never an
+            # error: unsegmented and ungated are normal states for an image, not failures.
+            @test d.pops isa JSON3.Array
+            for p in d.pops
+                @test !isempty(String(p.path)) && !isempty(String(p.colour))
+                @test all(l -> l isa Integer, p.labels)
+            end
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: viewer overlays on an image with no cell table" begin
+    # An unsegmented image is the FIRST thing the viewer opens for most users. It must answer an empty
+    # overlay, not a 500 — the panel asks unconditionally.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-overlay-empty")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        save!(img)
+        st, body = api_viewer_overlays(HTTP.Request("GET",
+            "/api/viewer/overlays?projectUid=$(proj.uid)&imageUid=$(img.uid)"))
+        d = JSON3.read(body)
+        @test st == 200
+        @test d.nCells == 0 && isempty(d.pops) && d.values === nothing
+        @test d.note == "not segmented"        # the reason, so the panel can say so rather than guess
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
 end
 
 @testset "API: a napari selection resolves to TRACKS" begin

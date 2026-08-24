@@ -298,3 +298,124 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     write(stream, body)
     true
 end
+
+# ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
+# ?projectUid=&imageUid=&valueName=&popType=flow&colourBy= →
+#   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
+#    colourColumns: [...], colourBy, values}
+#
+# Everything the browser viewer needs to draw the h5ad-derived overlays napari draws: per-cell
+# centroids, population membership, track ids, and one optional per-cell column to colour by
+# (WEB_VIEWER_PLAN.md → P3).
+#
+# ONE REQUEST FOR THE WHOLE MOVIE, not one per timepoint, and the measurement is why. The largest cell
+# table in the dev projects is 98,610 cells (`WIaUjL/p6t4mC/Tcell`); the typical one is 6,547. At five
+# f32 columns that is 2.0 MB and 0.13 MB — comparable to a SINGLE 2D slab (8.8 MB), so the client
+# fetches once per (image, value_name) and filters by t locally. That is the whole reason P3 needed no
+# caching story of its own, and it was measured before the route was written rather than after.
+#
+# COLUMNAR, NOT PER-CELL OBJECTS. `{label: [...], x: [...]}` is ~5x smaller as JSON than
+# `[{label:…, x:…}, …]` and lands in a `Float32Array` with one pass; a per-cell object array would also
+# be ~40% of the parse time on the 98k case. If a dataset ever arrives that makes even this too big, the
+# shape is already the one a binary body would have — see the note in the plan.
+#
+# MEMBERSHIP COMES FROM `resolve_pops`, the same cached resolver that feeds napari's points layers
+# (`api_napari_show_populations`). Not a second membership path: pop membership is gating-engine
+# business, it is cached against the gating-map and h5ad mtimes, and a viewer that computed its own
+# would be a second answer to "which cells are in /A" that could disagree with the plots.
+#
+# Coordinates are in **µm**, through `scale_centroids!` — the one pixel→µm conversion for centroids, so
+# the overlay lands in the same space as `extentUm` and nothing has to rescale it. `t` is deliberately
+# NOT scaled: it stays a frame index, which is what the client filters on and what the column means on
+# disk.
+const OVERLAY_MAX_CELLS = 300_000
+
+function api_viewer_overlays(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    pu = get(q, "projectUid", ""); iu = get(q, "imageUid", "")
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    _has_label_props(img) ||
+        return 200, JSON3.write((; nCells = 0, axes = String[], hasT = false,
+                                   cells = (;), pops = [], colourColumns = String[],
+                                   colourBy = nothing, values = nothing,
+                                   note = "not segmented"))
+    vn  = _resolve_vn(img, get(q, "valueName", ""))
+    pt  = get(q, "popType", "flow")
+    cby = get(q, "colourBy", "")
+
+    try
+        lp   = label_props(img; value_name = vn)
+        obs  = col_names(lp; data_type = :obs)
+        # Ask for centroids, the track id and the colour column in ONE read. `select_cols` pushes the
+        # selection into the file, so an unwanted 300-column feature matrix is never materialised.
+        extra = String[c for c in (("track_id" in obs) ? ["track_id"] : String[])]
+        (!isempty(cby) && cby in obs) && push!(extra, String(cby))
+        view_centroid_cols(lp; order = [:x, :y, :z])
+        isempty(extra) || select_cols(lp, extra)
+        df = as_df(lp)
+        # `size(df, 1)` and `hasproperty`, never `nrow`/`names` — `api/` does not import DataFrames, and
+        # a test enforces it (those two would dispatch to Base and fail at runtime, not at load).
+        n  = size(df, 1)
+        has(c) = hasproperty(df, Symbol(c))
+        n > OVERLAY_MAX_CELLS && return 413, JSON3.write((;
+            error = "$n cells is past the overlay limit of $OVERLAY_MAX_CELLS — " *
+                    "the JSON payload would be too large to parse in the browser"))
+        scale_centroids!(df, img)                  # pixels → µm, per axis; `centroid_t` untouched
+
+        axes = String[a for a in ("x", "y", "z") if has("centroid_$a")]
+        # EVERY COORDINATE ARRAY IS FINITE, and the rows that cannot be are dropped here rather than
+        # encoded. There is no sentinel available: JSON has no NaN literal (JSON3 refuses to write one
+        # at all), and `null` is worse than useless in a coordinate array because `Float32Array.from`
+        # turns it into 0 — a cell drawn at the origin instead of not drawn. A cell with no centroid is
+        # not drawable, so it is not sent; `nDropped` says how many, because silently shipping fewer
+        # cells than the table holds is the kind of thing that reads as a segmentation problem.
+        fin(v) = !ismissing(v) && isfinite(Float64(v))
+        need = vcat(String["centroid_$a" for a in axes], has("centroid_t") ? ["centroid_t"] : String[])
+        keep = trues(n)
+        for c in need
+            v = df[!, c]
+            for i in 1:n
+                keep[i] = keep[i] && fin(v[i])
+            end
+        end
+        idx = findall(keep)
+        col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
+        cells = (; label = Int[Int(df[i, :label]) for i in idx],
+                   t     = col("centroid_t"),
+                   x     = col("centroid_x"), y = col("centroid_y"), z = col("centroid_z"),
+                   # -1 rather than 0/NaN for "not tracked": one sentinel the client tests, and it stays
+                   # an integer, so it survives JSON without a float's rounding question.
+                   track = has("track_id") ?
+                           Int[(!fin(df[i, :track_id]) || Float64(df[i, :track_id]) <= 0) ?
+                               -1 : Int(df[i, :track_id]) for i in idx] : Int[])
+
+        # Populations, from the cached resolver. An image with no gating map answers an empty list
+        # rather than an error — an unsegmented or ungated image is a normal state, not a failure.
+        pops = try
+            [(; path = p.path, name = p.name, colour = p.colour, show = p.show,
+                isTrack = p.is_track, labels = p.labels)
+             for p in resolve_pops(img, pt; value_name = vn)]
+        catch e
+            @warn "viewer overlays: populations unavailable" value_name = vn exception = e
+            []
+        end
+
+        # A missing colour value IS meaningful — a cell that was not measured — so it is sent as
+        # `null` rather than dropped. NaN has to become null too: it is what a float column actually
+        # carries for "no value" (`live.cell.speed` on a cell's first frame), and JSON3 throws on it.
+        # `colourBy` echoes back only when it was HONOURED, never the name that was asked for. A saved
+        # view naming a column that has since gone must come back as "no colour-by" rather than as a
+        # colour-by with no values — the client cannot tell those apart from the request.
+        used = (!isempty(cby) && has(cby)) ? String(cby) : nothing
+        vals = used === nothing ? nothing :
+               Any[(v = df[i, used]; (ismissing(v) || (v isa Real && !isfinite(Float64(v)))) ?
+                    nothing : v) for i in idx]
+        200, JSON3.write((; nCells = length(idx), nDropped = n - length(idx),
+                            axes, hasT = has("centroid_t"), cells, pops,
+                            colourColumns = obs, colourBy = used,
+                            values = vals, valueName = vn, popType = pt))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
