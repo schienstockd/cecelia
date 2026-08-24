@@ -182,9 +182,11 @@ describe('gatedCost', () => {
     expect(gatedCost(31 * 32, 4)).toBe('~8 min')
   })
 
-  it('says something honest when there is no image to size it from', () => {
-    expect(gatedCost(null, 2)).toBe('minutes')
-    expect(gatedCost(0, 2)).toBe('minutes')
+  it('falls back to the RATE, not to a shrug, when no image is selected yet', () => {
+    // The ordinary state of opening the figure to decide before ticking anything. "minutes" was the
+    // shape of an answer without being one.
+    expect(gatedCost(null, 2)).toBe('0.12 s / plane')
+    expect(gatedCost(0, 2)).toBe('0.12 s / plane')
   })
 
   it('does not print "~0 min" for a small stack', () => {

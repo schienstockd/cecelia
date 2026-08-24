@@ -273,7 +273,11 @@ export interface SmoothVisInput {
  * user's own.
  */
 export function gatedCost(planes: number | null, channels: number): string {
-  if (!planes || planes <= 0 || channels <= 0) return 'minutes'
+  // No image selected yet — `TaskRunner` builds the context from the ticked rows, so this is the
+  // ordinary state of someone opening the figure to decide BEFORE picking anything. The rate is
+  // known regardless, and a rate is a number you can act on; the previous fallback said "minutes",
+  // which is the shape of an answer without being one.
+  if (!planes || planes <= 0 || channels <= 0) return `${GATED_SEC_PER_PLANE} s / plane`
   const sec = planes * channels * GATED_SEC_PER_PLANE
   if (sec < 90) return `~${Math.max(1, Math.round(sec))} s`
   return `~${Math.round(sec / 60)} min`
