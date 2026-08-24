@@ -305,8 +305,26 @@ Built so far, and the decisions worth keeping:
   at the origin instead of no cell; so undrawable rows are dropped and counted. And `colourBy` echoed
   back the name that was ASKED for, making a stale saved column look like a colour-by with no values.
 
-**Still to do in P3:** tracks (tails as line segments), and colour-by. Colour-by needs a decision —
-see *Open questions* below.
+**Tracks are built too.** One screen-space QUAD per segment rather than `line-list`, because WebGPU
+draws 1px lines only and a 1px tail over a noisy MIP is close to invisible (napari's `tail_width`
+defaults to 4). Each endpoint is projected independently and the quad widened perpendicular to the
+screen direction, so width is in pixels and stays constant under perspective.
+
+- **Segments are ordered by their END timepoint, which is what makes a TAIL one draw.** A tail of L
+  frames ending at `t` is every segment ending in `[t-L+1, t]`, and in that order it is a contiguous
+  slice — two monotonic prefix indexes give it in O(1). Rebuilding a buffer per frame would be an
+  allocation and an upload on every playback tick.
+- **`tail_length` is a count of FRAMES** (napari's meaning), so L gives L segments per track. The other
+  reading (`[t-L, t]`) draws two hops at L=1 and reads as the slider ignoring you — the test pins it.
+- **No segment is drawn across a gap the tracker bridged.** btrack links over a missed detection; a
+  straight line there would assert a path the tracker never claimed.
+- **The plane test uses the segment's END**, so a tail arriving on the plane you are looking at is kept.
+  Judging by the start drops exactly the hop you most want to see.
+- **Colour cycles the population palette by track id** rather than running napari's turbo ramp. The job
+  is telling adjacent tracks apart, not reading a value off them, and no continuous colormap exists in
+  this repo yet — see open question 1.
+
+**Still to do in P3:** colour-by. It needs a decision — see *Open questions* below.
 
 **A namespace trap worth knowing.** `/api/viewer/meta` and `/api/viewer/slab` take an IMAGE VERSION as
 `valueName` (which zarr the pixels come from, e.g. `smoothed`); `/api/viewer/overlays` takes a

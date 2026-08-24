@@ -176,3 +176,123 @@ export function overlaySummary(p: OverlayPayload | null): {
     dropped: p.nDropped ?? 0,
   }
 }
+
+// ── Track tails ──────────────────────────────────────────────────────────────────
+
+/** Floats per segment instance: ax, ay, az, bx, by, bz, r, g, b, plane. */
+export const SEG_STRIDE = 10
+
+export interface SegmentBuffer {
+  /** Segment instances, `SEG_STRIDE` floats each, ordered by the segment's END timepoint. */
+  data: Float32Array
+  /** First instance whose end timepoint is `>= t`, for t in `0..nT`. Monotonic, so a tail is O(1). */
+  firstAt: Int32Array
+  /** One past the last instance whose end timepoint is `<= t`. */
+  endAt: Int32Array
+  count: number
+}
+
+const EMPTY_SEG: SegmentBuffer = {
+  data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
+}
+
+/**
+ * One instance per track SEGMENT — a line from a cell's position at one timepoint to the same track's
+ * position at the next — ordered by the segment's end timepoint.
+ *
+ * That order is what makes a TAIL one draw. A tail of L frames ending at `t` is every segment whose end
+ * timepoint falls in `[t - L, t]`, and in this order that is a contiguous slice; `firstAt`/`endAt` are
+ * monotonic prefix indexes, so finding it is two array reads rather than a scan over L timepoints. The
+ * alternative — rebuilding a buffer per frame — is an allocation and an upload on every playback tick.
+ *
+ * Colour cycles the population palette by track id rather than running napari's turbo ramp, because the
+ * job here is telling ADJACENT tracks apart, not reading a value off them: no continuous colormap exists
+ * in this repo yet (see the plan's open questions), and a categorical cycle does that job exactly.
+ *
+ * Segments are only made between CONSECUTIVE timepoints of the same track. A track with a gap gets no
+ * segment across it — btrack can link across a missed detection, and drawing a straight line over the
+ * gap would assert a path the tracker never claimed.
+ */
+export function buildTrackBuffer(
+  payload: OverlayPayload | null, meta: ViewerMeta | null, palette: readonly string[],
+): SegmentBuffer {
+  if (!payload || !meta) return EMPTY_SEG
+  const { t, x, y, z, track } = payload.cells
+  if (!t || !x || !y || !track || track.length === 0) return EMPTY_SEG
+
+  const vz = meta.voxelUm[2] || 1
+  const nT = Math.max(1, meta.nT)
+
+  // Group row indices by track, then order each track in time. Sorting the whole table once by
+  // (track, t) would do the same; grouping first keeps the comparisons inside a track.
+  const byTrack = new Map<number, number[]>()
+  for (let i = 0; i < track.length; i++) {
+    const id = track[i]
+    if (id <= 0) continue
+    const g = byTrack.get(id)
+    g ? g.push(i) : byTrack.set(id, [i])
+  }
+  if (byTrack.size === 0) return EMPTY_SEG
+
+  const segs: { a: number; b: number; end: number; rgb: [number, number, number] }[] = []
+  for (const [id, rows] of byTrack) {
+    if (rows.length < 2) continue                     // a single detection is a point, not a path
+    rows.sort((p, q) => t[p] - t[q])
+    const rgb = hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
+    for (let k = 1; k < rows.length; k++) {
+      const a = rows[k - 1], b = rows[k]
+      if (Math.round(t[b]) - Math.round(t[a]) !== 1) continue    // a gap the tracker bridged
+      segs.push({ a, b, end: Math.round(t[b]), rgb })
+    }
+  }
+  if (segs.length === 0) return EMPTY_SEG
+
+  segs.sort((p, q) => p.end - q.end)
+  const data = new Float32Array(segs.length * SEG_STRIDE)
+  for (let n = 0; n < segs.length; n++) {
+    const { a, b, rgb } = segs[n]
+    const o = n * SEG_STRIDE
+    data[o] = x[a]; data[o + 1] = y[a]; data[o + 2] = z && z.length ? z[a] : 0
+    data[o + 3] = x[b]; data[o + 4] = y[b]; data[o + 5] = z && z.length ? z[b] : 0
+    data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
+    // The plane of the segment's END, so the 2D view keeps a tail that arrives on the plane you are
+    // looking at. Judging by the start instead would drop the segment that brought the cell here.
+    data[o + 9] = z && z.length ? Math.floor(z[b] / vz) : 0
+  }
+
+  // Prefix indexes over timepoints. Built once; two reads per frame afterwards.
+  const firstAt = new Int32Array(nT + 2)
+  const endAt = new Int32Array(nT + 2)
+  let s = 0
+  for (let k = 0; k <= nT + 1; k++) {
+    while (s < segs.length && segs[s].end < k) s++
+    firstAt[k] = s
+  }
+  let e = 0
+  for (let k = 0; k <= nT + 1; k++) {
+    while (e < segs.length && segs[e].end <= k) e++
+    endAt[k] = e
+  }
+  return { data, firstAt, endAt, count: segs.length }
+}
+
+/**
+ * `[first, count]` for a tail of `tailFrames` ending at `t`, or `null` when it is empty.
+ *
+ * `tailFrames` is a count of FRAMES, as napari's `tail_length` is, so L gives L segments per track —
+ * the ends fall in `[t - L + 1, t]`, not `[t - L, t]`. The off-by-one matters at the small end, which
+ * is where it is visible: at L = 1 the second form draws two hops and looks like the control is
+ * ignoring you. `0` means no tail at all, which is what the slider's low end offers.
+ */
+export function tailRange(
+  buf: SegmentBuffer, t: number, tailFrames: number,
+): [number, number] | null {
+  const L = Math.max(0, Math.round(tailFrames))
+  if (buf.count === 0 || L === 0) return null
+  const hi = Math.max(0, Math.round(t))
+  const lo = Math.max(0, hi - L + 1)
+  const clamp = (k: number) => Math.min(Math.max(k, 0), buf.firstAt.length - 1)
+  const first = buf.firstAt[clamp(lo)]
+  const end = buf.endAt[clamp(hi)]
+  return end > first ? [first, end - first] : null
+}

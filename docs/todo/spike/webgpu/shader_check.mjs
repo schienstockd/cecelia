@@ -93,6 +93,20 @@ pwgsl = pwgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
              .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (pwgsl.includes('${')) throw new Error('unresolved interpolation in POINTS_WGSL: ' + pwgsl.match(/\$\{[^}]*\}/))
 
+// The track-tail pass, extracted the same way. It is checked below for COMPILATION only: a segment
+// quad's correctness is a screen-space width, and asserting that needs a known camera plus a readback
+// wide enough to measure a 4px band — worth adding when the tails are being tuned rather than now.
+const sOpen = src.indexOf('export const SEGMENTS_WGSL = `')
+if (sOpen < 0) throw new Error('SEGMENTS_WGSL not found — did the export shape change?')
+const sBody = src.slice(sOpen + 'export const SEGMENTS_WGSL = `'.length)
+const sClose = sBody.indexOf('`')
+if (sClose < 0) throw new Error('unterminated SEGMENTS_WGSL template literal')
+let swgsl = sBody.slice(0, sClose)
+swgsl = swgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
+             .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
+             .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
+if (swgsl.includes('${')) throw new Error('unresolved interpolation in SEGMENTS_WGSL: ' + swgsl.match(/\$\{[^}]*\}/))
+
 const NCH = 3
 const page = `<!doctype html><html><head><meta charset=utf-8><title>Cecelia — MIP shader check</title>
 <style>
@@ -118,6 +132,7 @@ const say = (t, cls) => { lines.push(cls ? '<span class="'+cls+'">'+t+'</span>' 
 
 const WGSL = ${JSON.stringify(wgsl)}
 const PWGSL = ${JSON.stringify(pwgsl)}
+const SWGSL = ${JSON.stringify(swgsl)}
 const HA = ${VIEW_HALF_ANGLE}
 const MAX_CHANNELS = ${MAX_CHANNELS}, LUT_STOPS = ${LUT_STOPS}, NCH = ${NCH}
 const N = 64                                     // phantom is N x N x N per channel
@@ -424,6 +439,16 @@ try {
           (filtered ? 'OK' : 'NOT FILTERED — the 2D view would show every plane at once'),
           filtered ? 'ok' : 'bad')
     }
+  }
+
+  // the tail pass: compilation only, for now
+  {
+    const smod = device.createShaderModule({code: SWGSL})
+    const serr = (await smod.getCompilationInfo()).messages.filter(m => m.type === 'error')
+    if (serr.length) bad++
+    say('tail shader ' + (serr.length ? 'FAILED to compile: ' +
+        serr.map(m => m.lineNum + ':' + m.message).join(' | ') : 'compiles OK'),
+        serr.length ? 'bad' : 'ok')
   }
 
   // and leave something on screen

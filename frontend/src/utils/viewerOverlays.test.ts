@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
-  POINT_STRIDE, type OverlayPayload,
+  buildTrackBuffer, tailRange, POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
 
@@ -160,5 +160,92 @@ describe('overlaySummary', () => {
     // 0 would be a legitimate track id if the server used it; it does not, and -1 is the one sentinel.
     const p = payload({ cells: { ...payload().cells, track: [-1, -1, 5, 6] } })
     expect(overlaySummary(p).tracked).toBe(2)
+  })
+})
+
+describe('buildTrackBuffer', () => {
+  const PAL = ['#ff0000', '#00ff00', '#0000ff']
+  /** Two tracks over four timepoints, plus one untracked cell and one single-detection track. */
+  const tracked = (): OverlayPayload => ({
+    ...payload(),
+    nCells: 10,
+    cells: {
+      label: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      t: [0, 1, 2, 3, 0, 1, 2, 3, 0, 0],
+      x: [0, 1, 2, 3, 10, 11, 12, 13, 50, 60],
+      y: [0, 0, 0, 0, 5, 5, 5, 5, 9, 9],
+      z: [0, 0, 0, 0, 4, 4, 4, 4, 0, 0],
+      track: [7, 7, 7, 7, 8, 8, 8, 8, -1, 9],
+    },
+    pops: [],
+  })
+
+  it('makes one segment per consecutive PAIR, so N detections give N-1 segments', () => {
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    expect(buf.count).toBe(6)                     // two tracks x 3 gaps
+  })
+
+  it('ignores untracked cells and single-detection tracks', () => {
+    // -1 is the server's sentinel, and one detection is a point rather than a path.
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    const xs = Array.from({ length: buf.count }, (_, i) => buf.data[i * SEG_STRIDE])
+    expect(xs.some(v => v === 50 || v === 60)).toBe(false)
+  })
+
+  it('does NOT draw across a gap the tracker bridged', () => {
+    // btrack can link over a missed detection. A straight line across it would assert a path the
+    // tracker never claimed — so the segment is simply absent.
+    const p = tracked()
+    p.cells.t = [0, 1, 3, 4, 0, 1, 2, 3, 0, 0]    // track 7 skips t=2
+    const buf = buildTrackBuffer(p, meta({ nT: 5 }), PAL)
+    expect(buf.count).toBe(5)                     // 2 for track 7 (0->1, 3->4), 3 for track 8
+  })
+
+  it('orders segments by their END timepoint, which is what makes a TAIL contiguous', () => {
+    // The property the whole design rests on: a tail of L frames is one instanced draw, so there is no
+    // per-frame filter and no per-frame upload.
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    const full = tailRange(buf, 3, 60)!
+    expect(full).toEqual([0, 6])                  // every segment, in one range
+    // L frames means L segments per track — the ends fall in [t-L+1, t]. At L=1 the other convention
+    // draws two hops, which reads as the slider ignoring you.
+    const short = tailRange(buf, 3, 1)!
+    expect(short[1]).toBe(2)                      // only the segments arriving at t=3 (two tracks)
+    const two = tailRange(buf, 3, 2)!
+    expect(two[1]).toBe(4)                        // arriving at t=2 and t=3
+    // and the ranges nest rather than overlap, which is what "contiguous" has to mean here
+    expect(short[0]).toBeGreaterThanOrEqual(two[0])
+  })
+
+  it('gives no tail before anything has happened, and none for a zero-length request', () => {
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    expect(tailRange(buf, 0, 30)).toBeNull()      // nothing has ARRIVED at t=0 yet
+    expect(tailRange(buf, 3, 0)).toBeNull()       // 0 = hidden, which is what the slider's low end says
+    expect(tailRange({ ...buf, count: 0 }, 3, 30)).toBeNull()
+  })
+
+  it('takes the plane of the segment END, so a tail arriving on your plane is kept', () => {
+    // Judging by the START would drop the very segment that brought the cell to the plane you are
+    // looking at — the one you most want to see.
+    const p = tracked()
+    p.cells.z = [0, 0, 0, 4, 4, 4, 4, 4, 0, 0]    // track 7's last hop climbs to plane 2
+    const buf = buildTrackBuffer(p, meta({ nT: 4 }), PAL)
+    const planes = Array.from({ length: buf.count }, (_, i) => buf.data[i * SEG_STRIDE + 9])
+    expect(planes).toContain(2)
+  })
+
+  it('colours by track so adjacent tracks differ, and cycles rather than running out', () => {
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    const rgb = (i: number) => Array.from(buf.data.slice(i * SEG_STRIDE + 6, i * SEG_STRIDE + 9))
+    const seen = new Set([0, 1, 2, 3, 4, 5].map(i => rgb(i).join(',')))
+    expect(seen.size).toBe(2)                     // two tracks, two colours
+    expect(buildTrackBuffer(tracked(), meta({ nT: 4 }), []).count).toBe(6)   // no palette → still drawn
+  })
+
+  it('answers empty for a table with no tracking at all', () => {
+    expect(buildTrackBuffer(payload({ cells: { ...payload().cells, track: [] } }), meta(), PAL).count)
+      .toBe(0)
+    expect(buildTrackBuffer(null, meta(), PAL).count).toBe(0)
+    expect(buildTrackBuffer(tracked(), null, PAL).count).toBe(0)
   })
 })

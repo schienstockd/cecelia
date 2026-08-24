@@ -46,9 +46,10 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
 import {
-  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
-  type OverlayPayload, type PointBuffer,
+  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary, buildTrackBuffer, tailRange,
+  type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
+import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -107,7 +108,11 @@ const overlaysErr = ref('')
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
+let segments: SegmentBuffer = {
+  data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
+}
 const pointCount = ref(0)
+const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1 })
@@ -215,6 +220,11 @@ const frame = usePlotResize(canvas, () => {
                    // The 2D view shows one plane, so it must show only the points ON it; the 3D view
                    // projects the whole loaded slab and shows all of them.
                    mode.value === 'plane' ? zPlane.value : -1)
+  // A tail of N frames ENDING at the frame on screen. Contiguous in the segment buffer by construction,
+  // so this is two array reads rather than a per-frame filter.
+  const tail = shownT.value >= 0 && settings.viewerTailLength > 0
+    ? tailRange(segments, shownT.value, settings.viewerTailLength) : null
+  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth)
   r.draw()
 })
 
@@ -228,6 +238,12 @@ function rebuildOverlays() {
   points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
+  // Tails are coloured per TRACK, not per population, so they do not depend on which pops are visible —
+  // but they are rebuilt together because both come from one payload and one rebuild is cheaper to
+  // reason about than two lifetimes.
+  segments = buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
+  segCount.value = segments.count
+  r?.setOverlaySegments(segments.data)
   frame.redraw()
 }
 
@@ -785,6 +801,24 @@ onUnmounted(() => {
                 :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
               />
             </div>
+            <div v-if="segCount > 0" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="60" :step="1"
+                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
+                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
+            </div>
+            <div v-if="segCount > 0 && settings.viewerTailLength > 0" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
+              <input
+                type="range" class="vw-grow" :min="1" :max="12" :step="1"
+                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
+                v-tooltip.bottom="'Tail thickness on screen, not in µm'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
+            </div>
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
               <input
@@ -797,6 +831,7 @@ onUnmounted(() => {
             <div class="cc-muted cc-fs-3xs">
               <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
               {{ pointCount }} drawn · {{ summary.cells }} cells
+              <template v-if="summary.tracked">· {{ summary.tracked }} tracked</template>
               <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
               <template v-if="mode === 'plane'">· this plane only</template>
             </div>

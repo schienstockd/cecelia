@@ -272,3 +272,95 @@ struct POut {
   return vec4(in.rgb, a);
 }
 `
+
+/**
+ * Track tails: one screen-space quad per segment, drawn over the MIP with the points.
+ *
+ * QUADS RATHER THAN `line-list`, because WebGPU draws 1px lines only and a 1px tail over a noisy MIP is
+ * close to invisible — napari's `tail_width` defaults to 4. Each endpoint is projected independently
+ * and the quad is widened perpendicular to the SCREEN-space direction, so the width is in pixels and
+ * stays constant under perspective while the geometry stays correct.
+ *
+ * Shares the same uniform buffer, and therefore the same camera, as the raycast and the points — see
+ * `POINTS_WGSL` for why that matters more than it looks.
+ */
+export const SEGMENTS_WGSL = `
+struct P {
+  cam:  vec4<f32>,
+  vp:   vec4<f32>,
+  ext:  vec4<f32>,
+  dims: vec4<f32>,
+  ov:   vec4<f32>,
+  ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
+};
+@group(0) @binding(0) var<uniform> p: P;
+
+struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
+fn camera() -> Cam {
+  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
+  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
+  var c: Cam;
+  c.fwd = vec3(cp * sy, sp, cp * cy);
+  c.ro = c.fwd * p.cam.z;
+  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
+  c.up = cross(c.fwd, c.right);
+  return c;
+}
+fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
+  let d = world - c.ro;
+  let sx = dot(d, c.right);
+  let sy = dot(d, c.up);
+  if (p.vp.w > 0.5) {
+    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
+    return vec3(sx / (hh * aspect), sy / hh, 1.0);
+  }
+  let w = max(dot(d, -c.fwd), 1e-4);
+  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
+}
+fn boxCentre() -> vec3<f32> {
+  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
+}
+
+struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
+
+@vertex fn vs(
+  @builtin(vertex_index) vi: u32,
+  @location(0) a: vec3<f32>,
+  @location(1) b: vec3<f32>,
+  @location(2) rgb: vec3<f32>,
+  @location(3) plane: f32,
+) -> SOut {
+  var o: SOut;
+  o.rgb = rgb;
+  if (p.ov.y >= 0.0 && abs(plane - p.ov.y) > 0.5) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // off-plane in the 2D view: clipped away
+    return o;
+  }
+  let aspect = p.vp.y / max(p.vp.z, 1.0);
+  let c = camera();
+  let pa = project(a - boxCentre(), c, aspect).xy;
+  let pb = project(b - boxCentre(), c, aspect).xy;
+
+  // In PIXELS, so the perpendicular is square on screen rather than stretched by the viewport aspect.
+  let sa = vec2(pa.x * p.vp.y, pa.y * p.vp.z) * 0.5;
+  let sb = vec2(pb.x * p.vp.y, pb.y * p.vp.z) * 0.5;
+  var dir = sb - sa;
+  let len = length(dir);
+  // A zero-length segment has no direction to be perpendicular to; pick one rather than emit NaN,
+  // which propagates to the whole quad and shows up as a stray triangle across the frame.
+  dir = select(vec2(1.0, 0.0), dir / max(len, 1e-6), len > 1e-6);
+  let nrm = vec2(-dir.y, dir.x) * (p.ov.z * 0.5);
+
+  var corner = array<vec2<f32>, 6>(
+    vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(0.0, 1.0),
+    vec2(0.0,  1.0), vec2(1.0, -1.0), vec2(1.0, 1.0));
+  let k = corner[vi];
+  let sp2 = mix(sa, sb, k.x) + nrm * k.y;
+  o.pos = vec4(sp2.x * 2.0 / max(p.vp.y, 1.0), sp2.y * 2.0 / max(p.vp.z, 1.0), 0.0, 1.0);
+  return o;
+}
+
+@fragment fn fs(in: SOut) -> @location(0) vec4<f32> {
+  return vec4(in.rgb, 0.85);
+}
+`

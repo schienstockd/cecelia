@@ -25,13 +25,13 @@
 // This is the browser-side twin of the PRIME trap in `app/src/napari.jl:55-59` — the difference is a
 // 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3.
 
-import { MIP_WGSL, POINTS_WGSL } from './mipShader'
+import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from './mipShader'
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
 } from '../../utils/volumeViewer'
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
-import { POINT_STRIDE } from '../../utils/viewerOverlays'
+import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 
 /** Bytes in the uniform struct: 5 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = 5 * 16 + MAX_CHANNELS * 16
@@ -114,6 +114,12 @@ export interface VolumeRenderer {
    * a z-plane index for the 2D view, or -1 to draw every plane (the 3D view).
    */
   setOverlayDraw(first: number, count: number, sizePx: number, planeFilter: number): void
+  /** Replace the track-tail segment instances (`SEG_STRIDE` floats each). Same lifetime as the points:
+   *  once per (image, populations), never per frame. */
+  setOverlaySegments(data: Float32Array): void
+  /** Which slice of the segment buffer to draw, and how wide in screen px. A tail is contiguous in that
+   *  buffer by construction — see `buildTrackBuffer`. */
+  setOverlaySegmentDraw(first: number, count: number, widthPx: number): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   draw(): void
@@ -203,6 +209,41 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     primitive: { topology: 'triangle-list' },
   })
 
+  // Track tails. A third pipeline rather than a second topology: WebGPU draws 1px lines only, and a
+  // 1px tail over a noisy MIP is close to invisible (napari's tail_width defaults to 4).
+  const segModule = device.createShaderModule({ code: SEGMENTS_WGSL })
+  const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (segErrs.length) {
+    throw new Error('Segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const segPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+    vertex: {
+      module: segModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: SEG_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from, absolute image µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
+          { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
+          { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane of the segment's END
+        ],
+      }],
+    },
+    fragment: {
+      module: segModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  })
+
   const uniforms = device.createBuffer({
     size: UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
@@ -236,6 +277,10 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
   let pointCap = 0
   let pointFirst = 0
   let pointCount = 0
+  let segBuf: GPUBuffer | null = null
+  let segCap = 0
+  let segFirst = 0
+  let segCount = 0
   /** The device is GONE (lost, or destroyed by us). Every entry point below is a no-op afterwards: a
    *  queue that no longer exists is not an error you can catch, it is a browser crash. */
   let dead = false
@@ -430,6 +475,25 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       u[17] = planeFilter
     },
 
+    setOverlaySegments(data: Float32Array) {
+      if (!usable()) return
+      if (data.length === 0) { segCount = 0; return }
+      if (!segBuf || data.length > segCap) {
+        segBuf?.destroy()
+        segCap = data.length
+        segBuf = device.createBuffer({
+          size: segCap * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+      }
+      device.queue.writeBuffer(segBuf, 0, data)
+    },
+
+    setOverlaySegmentDraw(first: number, count: number, widthPx: number) {
+      segFirst = Math.max(0, Math.floor(first))
+      segCount = Math.max(0, Math.floor(count))
+      u[18] = Math.max(1, widthPx)
+    },
+
     resize(): boolean {
       const dpr = window.devicePixelRatio || 1
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
@@ -455,7 +519,14 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       pass.setBindGroup(0, bindGroup)
       pass.draw(3)
       // Overlays go in the SAME pass, after the volume: `loadOp: 'clear'` has already run, so this
-      // blends over a finished MIP without a second attachment or a second clear.
+      // blends over a finished MIP without a second attachment or a second clear. Tails first, then
+      // points: a marker has to sit ON TOP of the path that leads to it, not under it.
+      if (segBuf && segCount > 0) {
+        pass.setPipeline(segPipeline)
+        pass.setBindGroup(0, bindGroup)
+        pass.setVertexBuffer(0, segBuf)
+        pass.draw(6, segCount, 0, segFirst)
+      }
       if (pointBuf && pointCount > 0) {
         pass.setPipeline(pointsPipeline)
         pass.setBindGroup(0, bindGroup)
@@ -470,6 +541,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       destroyed = true
       dropAll()
       pointBuf?.destroy(); pointBuf = null
+      segBuf?.destroy(); segBuf = null
       if (dead) return                     // the device took its resources with it
       lutTex.destroy(); uniforms.destroy()
       device.destroy()
