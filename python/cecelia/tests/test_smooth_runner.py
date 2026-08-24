@@ -208,6 +208,22 @@ class SmoothRunnerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._run(temporalStat='gate')
 
+    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
+    def test_gated_refuses_a_gate_with_no_noise_scale(self):
+        """A zero noise scale makes every weight collapse, so the run would spend minutes writing a
+        copy of its input and report success. Refused instead — the failure this guards is silent.
+
+        Driven through the real degenerate case rather than by stubbing the estimate: a constant
+        image has no temporal difference at all, which is what `spatialSigma=0` on photon-limited
+        data amounts to (a majority of exact zeros, MAD exactly 0)."""
+        flat = os.path.join(self.dir, 'flat.ome.zarr')
+        _, level0, _ = zarr_utils.open_multiscales_for_writing(
+            flat, tuple(self.shape), np.uint16, self.du, nscales=1)
+        level0[:] = np.full(self.shape, 100, dtype=np.uint16)
+        ome_xml_utils.save_meta_in_zarr(flat, omexml=ome_xml_utils.parse_meta(self.in_path))
+        with self.assertRaises(SystemExit):
+            self._run(imPath=flat, temporalStat='gated', spatialSigma=0.0)
+
 
 if __name__ == '__main__':
     unittest.main()

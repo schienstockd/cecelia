@@ -897,6 +897,16 @@ A role, not a key match. Matching on `seedSize` inside the renderer would make t
 description of the form, free to diverge from it — the same class of bug as the preview that ignored
 the order chips.
 
+**`figure`** — a figure offered beside ONE param, by name: `"figure": "smoothMethod"`, built by that
+name's entry in `tasks/paramFigures.ts`. For a choice whose options differ in what they DO rather than
+in any number on the form, where `vis` has nothing to draw — smoothing's `temporalStat` is three words
+sharing the same window, the same sigma and the same channels, and what separates them is only visible
+as a spot moving through a window (a `grid` row with frames; see `VisRole`). The builder is handed the
+selected images and the CURRENT form values, so the figure redraws as the form changes and can size
+its own cost row to the user's movie. Named in the spec for the same reason `vis` is a role: a picture
+keyed off `temporalStat` inside `ParamRenderer` is a second description of the form, and the next task
+that wants one would have to edit a Vue file to get it. An unknown name draws nothing.
+
 Why it exists: coastal's model group carries eleven numbers per pass, and columns of digits do not
 answer the question that decides whether a multi-pass run works — *are these passes looking for
 different objects?* Two circles of visibly different size do, and two identical columns answer it just

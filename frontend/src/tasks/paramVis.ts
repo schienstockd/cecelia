@@ -22,8 +22,19 @@
  */
 import type { ParamDef, ParamValues } from './types'
 
-/** How a parameter is drawn. Anything else in the spec's `vis` is ignored rather than guessed at. */
-export type VisRole = 'text' | 'diameter' | 'blur' | 'distance' | 'area' | 'fraction'
+/**
+ * How a quantity is drawn. Anything else in the spec's `vis` is ignored rather than guessed at.
+ *
+ * `grid` is the odd one and deliberately NOT spec-declarable (`roleOf` rejects it): every other role
+ * turns ONE NUMBER into a shape, and a param has one number. A grid is a small field of values — the
+ * thing you need when what distinguishes two options is not their size but what they DO to an image,
+ * which no circle can show. Only a hand-written producer can supply that, so only a hand-written
+ * producer may ask for it.
+ */
+export type VisRole = 'text' | 'diameter' | 'blur' | 'distance' | 'area' | 'fraction' | 'grid'
+
+/** One frame of a `grid` row: rows of values in 0..1, drawn as cell opacity. Square is not assumed. */
+export type VisFrame = number[][]
 
 const SPATIAL: VisRole[] = ['diameter', 'blur', 'distance', 'area']
 
@@ -54,6 +65,12 @@ export interface VisCell {
   text: string
   /** the same value in image pixels, or '' — the engine-facing number, shown small underneath */
   pxText: string
+  /**
+   * `grid` only: the frames to cycle. One entry is a still; several animate. Frames are a PAYLOAD,
+   * not a sixth kind of size — the row's shape is still decided by its role, and `VisualAid` only
+   * owns which index is showing.
+   */
+  frames?: VisFrame[]
 }
 
 export interface VisRow {
@@ -64,6 +81,12 @@ export interface VisRow {
   cells: VisCell[]
   /** true when every column holds the same value — the state a two-pass config must not be in */
   uniform: boolean
+  /**
+   * Draw ONE cell across every column instead of one per column. For a row that is the shared INPUT
+   * to what the columns show: duplicating it per column would say the two columns were given
+   * different data, which is the opposite of the claim the figure exists to make.
+   */
+  span?: boolean
 }
 
 export interface VisColumns {
@@ -79,6 +102,8 @@ export interface VisColumns {
 /** The spec's declared role, or null. Unknown strings are ignored — a typo must not draw a guess. */
 function roleOf(p: ParamDef): VisRole | null {
   const v = (p as { vis?: string }).vis
+  // `grid` is absent on purpose — see `VisRole`. A spec that asks for one has no frames to give it,
+  // and an empty grid draws as a blank box, which reads as "this setting does nothing".
   return v === 'text' || v === 'diameter' || v === 'blur' || v === 'distance'
     || v === 'area' || v === 'fraction' ? v : null
 }
@@ -119,7 +144,7 @@ function magnitude(role: VisRole, value: number): number {
  */
 function dimension(role: VisRole): 'length' | 'area' | 'none' {
   if (role === 'area') return 'area'
-  return role === 'fraction' || role === 'text' ? 'none' : 'length'
+  return role === 'fraction' || role === 'text' || role === 'grid' ? 'none' : 'length'
 }
 
 /**
@@ -129,7 +154,8 @@ function dimension(role: VisRole): 'length' | 'area' | 'none' {
  * segments something nobody picked.
  */
 const RANK: Record<VisRole, number> = {
-  text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2,
+  // `grid` cannot reach here (`roleOf` rejects it) — a producer that builds one orders its own rows.
+  grid: 0, text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2,
 }
 
 /**
@@ -222,7 +248,7 @@ function pxOf(role: VisRole, value: number, pxSize: number): number | null {
  */
 export function caption(role: VisRole, value: number): string {
   if (role === 'fraction') return trim(value)
-  if (role === 'text') return ''
+  if (role === 'text' || role === 'grid') return ''
   return value <= 0 ? 'off' : trim(value)
 }
 
@@ -233,7 +259,7 @@ export function caption(role: VisRole, value: number): string {
  * pixels can be checked against, so they belong here rather than nowhere.
  */
 export function pxCaption(role: VisRole, value: number, pxSize: number | null): string {
-  if (role === 'fraction' || role === 'text' || !pxSize || value <= 0) return ''
+  if (role === 'fraction' || role === 'text' || role === 'grid' || !pxSize || value <= 0) return ''
   const p = pxOf(role, value, pxSize) ?? 0
   return role === 'area' ? `${Math.round(p)} px²` : `${Math.round(p)} px`
 }

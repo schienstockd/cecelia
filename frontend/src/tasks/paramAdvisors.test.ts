@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
+  paramAdvisor, spatialSigmaAdvisory, ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES,
+  ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
 
@@ -325,6 +326,36 @@ describe('formatBytes', () => {
 const SFC = import.meta.glob('/src/tasks/ParamRenderer.vue', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>
+
+describe('spatialSigmaAdvisory', () => {
+  it('says nothing while the Gaussian is on — the invariant holds', () => {
+    expect(spatialSigmaAdvisory(1.0, 'gated')).toBeNull()
+    expect(spatialSigmaAdvisory(0.5, 'median')).toBeNull()
+  })
+
+  it('warns at 0 for the median: a temporal statistic over raw counts keeps LESS than none', () => {
+    const a = spatialSigmaAdvisory(0, 'median')!
+    expect(a.severity).toBe('warn')
+    expect(a.tip).toContain('removes signal rather than noise')
+    // AF is ONE consumer of a smoothed image, not the reason smoothing is on the form — a user who
+    // smooths for segmentation would be reading a number about a task they never run.
+    expect(`${a.message} ${a.tip}`).not.toMatch(/\bAF\b|autofluor|background subtraction/i)
+  })
+
+  it('fails at 0 for gated, which is the case that produces a copy of the input', () => {
+    expect(spatialSigmaAdvisory(0, 'gated')!.severity).toBe('fail')
+  })
+
+  it('reads a string value — a form field is not always a number', () => {
+    expect(spatialSigmaAdvisory('0', 'gated')!.severity).toBe('fail')
+    expect(spatialSigmaAdvisory('nonsense', 'gated')).toBeNull()
+  })
+
+  it('is registered on the KEY, so it does not fire on every float in the app', () => {
+    expect(paramAdvisor({ key: 'spatialSigma', type: 'float' })).toBeTruthy()
+    expect(paramAdvisor({ key: 'someOtherSlider', type: 'float' })).toBeUndefined()
+  })
+})
 
 describe('ParamRenderer advisory placement', () => {
   const src = Object.values(SFC)[0] ?? ''
