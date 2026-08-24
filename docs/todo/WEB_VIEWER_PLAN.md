@@ -89,6 +89,7 @@ them is the argument for deriving the list instead of writing it from memory.
 |---|---|
 | `open_image`, `set_z_view`, `set_3d_level`, `centre`, `clear`, `show_layer`/`hide_layer`/`remove_layer` | **P1** display + camera |
 | `load_layer_props` (contrast, colormap, T/Z) | **P1** reads it; who WRITES it is P8's call |
+| — (`scale_bar`, the elapsed-time `text_overlay`; napari's own, not commands) | **P2** — BUILT |
 | — (t-scrubbing; napari's own dims slider) | **P2** |
 | `show_populations`, `show_tracks` | **P3** |
 | `show_labels`, `refresh_labels`, `colour_labels`, `show_branch_labels`, `colour_branch_labels` | **P4** |
@@ -154,15 +155,58 @@ Four things settled while building it, each of which reads as tidiness and is no
   inverted it below capacity 6 — at capacity 3 every slot went behind the playhead, so playing forward
   missed on every frame while the cache held frames already watched. Capacity 2–3 is a big image on a
   modest budget, i.e. the case that matters most.
-- **The prefetch walk FOLLOWS the target; it is never restarted, and it cannot be superseded by the
-  scheduler.** `debouncedLatest`'s `isCurrent()` goes false only when a successor RUN starts, and a
-  successor cannot start while this one is in flight — so a queued request does not stop a walk, and a
-  walk over a 170-frame window ran to completion wherever the user went. Two bugs, one cause (Dominik,
-  2026-08-24): jumping to timepoint 90 waited for every frame before it, and **playback stopped
-  outright** — each tick queued a request that could not start while the walk filled frames nobody was
-  waiting for. The walk now re-reads a `pumpTarget` after every fetch, so a jump costs one in-flight
-  fetch and the frames already loaded stay loaded. `schedulePump` — not the walk — abandons an in-flight
-  fetch the new window has no use for, because the walk is awaiting that very fetch.
+- **The prefetch walk found a hole in `debouncedLatest`, and the fix belonged there.** Its
+  `isCurrent()` compared a token that only moved when a successor RUN started — and a successor cannot
+  start while its predecessor is in flight, because runs are serialised. So a queued request did not
+  supersede anything, and a walk over a 170-frame window ran to completion wherever the user went. Two
+  bugs, one cause (Dominik, 2026-08-24): jumping to timepoint 90 waited for every frame before it, and
+  **playback stopped outright** — each tick queued a request that could not start, while the walk filled
+  frames nobody was waiting for. `isCurrent()` now also requires that nothing is pending, which is what
+  rule 2 of that util always claimed; the viewer's walk is back to a plain loop with a checkpoint
+  between fetches. **All 16 consumers had the same hole** — it merely looked like an occasional stale
+  paint rather than a stall, because their work is one await and not a walk. `schedulePump` additionally
+  abandons an in-flight fetch the new window has no use for, since the walk is awaiting that very fetch
+  and aborting is what makes its checkpoint arrive early.
+- **The on-image overlays are the stills' component, not a fourth scale bar.** `StillOverlay` +
+  `niceScaleBar` + `elapsedLabel` already served the captured stills and the animation timeline, and the
+  movie compositor draws the same two things; a viewer-local implementation would have been the fourth.
+  Three things had to change for a live canvas rather than a thumbnail, and each was a bug in the shared
+  code rather than a special case:
+  - **Chrome sized in screen px, not as a fraction of the frame** (`chrome: 'fixed'`). Proportional
+    sizing is right for a strip card and renders a 35 px label on a 700 px canvas that also changes size
+    as you zoom — "massive scale bar, tiny timestamp".
+  - **`micrometer` is a micron.** OME's `PhysicalSizeUnit` is literally that word, which the helper's
+    `micron` test did not match, so the bar read "100 micrometer" and never rolled up to mm.
+  - **H:MM:SS**, matching napari's `datetime.timedelta` overlay down to its `t = N` fallback, as a
+    second style on the one formatter rather than a second formatter.
+
+  The bar is drawn against what the CAMERA sees, not the image, so it tracks the zoom — and it needs no
+  orientation gate. An earlier version hid it unless the camera was face-on, reasoning that a rotated
+  horizontal axis mixes x and z; that is true of the voxel grid but not of the space actually rendered,
+  which is scaled to µm on all three axes and therefore metrically uniform.
+- **The 3D view needed a DEPTH control, not a faster fetch** (Dominik's suggestion, 2026-08-24 — "would
+  it help if we were to crop the z stack with a double edged slider?"). Yes, decisively: every cost on
+  this path is linear in the plane count, so 8 planes of 41 is a ~0.6 s fetch instead of ~5.8 s, and
+  five times as many timepoints fit the same VRAM budget. `z=N&zTo=M` on the slab route, a `RangeSlider`
+  in the panel, committing on **release** (`@change`, added to that component for this — the range
+  refetches every cached texture, so per-pointer-move would be ruinous). It defaults to the full stack:
+  a MIP over part of a stack is a different picture, and narrowing it silently would change what the
+  view MEANS in order to make it fast.
+- **A renderer's own numbers are not reactive, and a computed over them is a lie.**
+  `computed(() => renderer.value?.cache.capacity)` never re-evaluates: the renderer is a `shallowRef`
+  and its capacity is a closure variable, so Vue has nothing to invalidate on. The panel reported
+  `cache 3 / 169` for a cache that held four — and that reading is worse than a missing one, because it
+  looked exactly like a real geometry bug and was diagnosed as one twice. The numbers are now snapshot
+  into a ref in `syncCacheState`, which already ran at every moment they change.
+- **A read-ahead is only worth pre-paying for while a frame is cheap.** Entering the 3D view took ~6 s
+  ("now it doesn't load anything, or needs like 5 s" — Dominik, 2026-08-24) because the walk filled the
+  whole four-timepoint window before it ended. Measured on the real target, from the client: one 3D
+  timepoint is **~1 s to fetch 326 MB** (server read 0.51–0.60 s; all four channels in parallel answer in
+  0.68 s wall, so the server is not the constraint) plus ~0.5 s to upload. The read-ahead buys exactly
+  one thing — playback — and the 3D view is far too slow to play, so `prefetchDepth` spends nothing on it
+  unless playback is actually running. The plane view is unaffected: at 8.8 MB a timepoint it still fills
+  the whole movie. Not a setting; the cost is knowable from the data, which is the same reason the VRAM
+  slider was wrong.
 - **The contrast slider's RANGE follows the data even though its auto WINDOW does not.** They look like
   the same question and are not: a window recomputed per timepoint makes playback flicker (decision 5),
   but a ceiling taken from the first timepoint and held is simply *wrong* on a movie that brightens —

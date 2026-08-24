@@ -37,17 +37,27 @@ Voxels of timepoint `t`, channel `c` (both 0-based) as an `(x, y, z)` column-maj
 whose linear memory is x-fastest, which is what a WebGPU 3D texture takes. Missing axes count as 1, so
 a 2D single-channel still answers the same shape of question as a 5D movie.
 
-`z` (0-based) reads ONE PLANE instead of the whole stack, and it is the difference between a timecourse
-you can watch and one you wait on. Measured on `Dml3RG` (37 z, 4 ch, 181 t): a whole timepoint is
-326 MB and ~400 ms of server read, one plane is 8.8 MB and ~13-22 ms. More to the point, the whole
-181-timepoint movie is 1.59 GB at one plane against 59 GB at full depth — so it FITS in a VRAM budget,
-and the second pass through it is entirely cache hits. This is the view Dominik actually uses for a
-timecourse (2026-08-24); the volume MIP is for looking at structure, not for playing.
+`z` (0-based) selects the depth, and it is the difference between a timecourse you can watch and one
+you wait on. It takes either kind of index, and WHICH KIND decides the rank of the answer:
+
+  - an `Int` reads ONE PLANE and drops the z dim, exactly as `t` and `c` do → `nz == 1`;
+  - a `UnitRange` reads a SLAB of that many planes and keeps it → a shorter volume.
+
+Measured on `Dml3RG` (37 z, 4 ch, 181 t): a whole timepoint is 326 MB and ~400 ms of server read, one
+plane is 8.8 MB and ~13-22 ms. More to the point, the whole 181-timepoint movie is 1.59 GB at one plane
+against 59 GB at full depth — so it FITS in a VRAM budget, and the second pass through it is entirely
+cache hits. This is the view Dominik actually uses for a timecourse (2026-08-24).
+
+The RANGE is what makes the volume view usable, and it is Dominik's suggestion (2026-08-24): every cost
+here is linear in the number of planes, so 8 of 37 is 70 MB rather than 326 MB — a ~0.25 s fetch instead
+of ~1 s — and four times as many timepoints fit the same VRAM budget. Structure is usually in a few
+planes, so a full-depth MIP is mostly paying for empty stack.
 
 Pixels go through `read_native`, never `arr[...]`: a raw `bioformats2raw` store is big-endian and
 Zarr.jl does not swap it (see `image_geometry.jl`).
 """
-function read_slab(zarr_path::AbstractString, t::Int, c::Int; z::Union{Int,Nothing} = nothing)
+function read_slab(zarr_path::AbstractString, t::Int, c::Int;
+                   z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing)
     arr, caxes = open_level0(zarr_path)
     nd    = ndims(arr)
     dims  = axis_dims(caxes, nd)
@@ -57,10 +67,23 @@ function read_slab(zarr_path::AbstractString, t::Int, c::Int; z::Union{Int,Nothi
     haskey(dims, "t") && (idx[dims["t"]] = t + 1)      # 0-based → 1-based; scalar, so the dim drops
     haskey(dims, "c") && (idx[dims["c"]] = c + 1)
     # A scalar z drops the z dim exactly as t and c do, so `kept` below excludes it and `nz` answers 1
-    # — one code path serves a plane and a volume rather than two that can disagree.
+    # — one code path serves a plane, a sub-slab and a whole volume rather than three that can disagree.
+    # Both forms are clamped to the store rather than trusted: these come off a query string, and an
+    # out-of-range index is a 500 from deep inside Zarr.jl instead of an answer.
     if z !== nothing && haskey(dims, "z")
         nz_all = size(arr, dims["z"])
-        idx[dims["z"]] = clamp(z, 0, nz_all - 1) + 1
+        cl(v) = clamp(v, 0, nz_all - 1) + 1
+        # An EMPTY range reads as the single plane at its start rather than as nothing. It cannot be a
+        # caller asking for zero planes — `2:0` never survives `UnitRange`'s constructor, which
+        # normalises it to `2:1` — so it is always a lo/hi pair that arrived the wrong way round, and
+        # the ordering has to be fixed where the two numbers are still separate (`try_serve_slab`).
+        # A zero-thickness slab would render BLACK: the ray's entry and exit distances coincide.
+        idx[dims["z"]] = if z isa Int
+            cl(z)
+        else
+            lo = cl(first(z))
+            lo:max(cl(isempty(z) ? first(z) : last(z)), lo)
+        end
     end
     sub = read_native(arr, idx...)
 
@@ -124,13 +147,21 @@ end
 # ── GET /api/viewer/meta ──────────────────────────────────────────────────────────
 # ?projectUid=&imageUid=&valueName= →
 #   {nT, nC, nZ, nX, nY, bytesPerVoxel, slabBytes, contrastSource,
-#    voxelUm: [x, y, z], calibrated: {xy, z},
+#    voxelUm: [x, y, z], spaceUnit, frameIntervalMin, calibrated: {xy, z, t},
 #    channels: [{name, lo, hi, visible, lut: [[r,g,b], ...]}]}
 #
 # Everything the renderer needs BEFORE it asks for a single voxel: how many slabs exist, how big one
 # is (the client sizes its VRAM cache from `slabBytes`), and how to colour each channel. `lut` is a
 # black→colour (or white→colour) ramp the client uploads as a small 1D lookup texture; resolving it
 # here rather than in TypeScript is what keeps napari's ~30 colormaps from being re-guessed by name.
+#
+# `frameIntervalMin` and `spaceUnit` are for the on-image overlays (scale bar + elapsed time), which
+# are the napari ones the browser has to match. Both are NULLABLE and that is the point: the interval
+# is minutes/frame from `img_physical_sizes`, which defaults a missing value to 1.0 — a real 1 min/frame
+# and "no idea" are indistinguishable in the number, so the flag decides and the client falls back to a
+# frame index rather than inventing a duration. `calibrated.t` comes from `img_scale_axes`, the same
+# image-owned accessor the task gating uses, so the viewer cannot disagree with the rest of the app
+# about whether this image has a real timecourse.
 #
 # `voxelUm` is load-bearing for a 3D view, not a nicety: z spacing is typically 3-10x the xy pitch, so
 # a raycast through an unscaled voxel grid renders the stack squashed by that factor. It comes from
@@ -155,16 +186,20 @@ function api_viewer_meta(req::HTTP.Request)
         src   = specs === nothing ? "sampled" : "viewer"
         specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
 
-        # One `init_object` for both facts it can answer: the display names and the calibration.
-        names, vox, cal = try
+        # One `init_object` for everything it can answer: the display names, the calibration, the
+        # frame interval and the unit the scale bar is labelled in.
+        names, vox, cal, unit, tmin = try
             img = init_object(pu, iu)
-            sizes, _ = img_physical_sizes(img)         # [sz, sy, sx] um/px
+            sizes, ts = img_physical_sizes(img)        # [sz, sy, sx] um/px, minutes/frame
             ax = img_scale_axes(img)
+            has_t = :T in ax
             (something(channel_names(img; value_name = vnn), String[]),
              [sizes[3], sizes[2], sizes[1]],           # → [x, y, z], the renderer's axis order
-             (; xy = :XY in ax, z = :Z in ax))
+             (; xy = :XY in ax, z = :Z in ax, t = has_t),
+             _meta_str(img.meta, "PhysicalSizeUnit"),
+             has_t ? ts : nothing)
         catch
-            (String[], [1.0, 1.0, 1.0], (; xy = false, z = false))
+            (String[], [1.0, 1.0, 1.0], (; xy = false, z = false, t = false), nothing, nothing)
         end
         channels = [(; name = get(names, c, "Channel $(c - 1)"),
                        lo = s.lo, hi = s.hi, visible = s.visible,
@@ -173,7 +208,8 @@ function api_viewer_meta(req::HTTP.Request)
 
         200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
-                            contrastSource = src, voxelUm = vox, calibrated = cal, channels))
+                            contrastSource = src, voxelUm = vox, spaceUnit = unit,
+                            frameIntervalMin = tmin, calibrated = cal, channels))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end
@@ -184,10 +220,15 @@ end
 # `Content-Encoding` and the shape guard. Same idiom as `try_serve_movie`. Returns false when this is
 # not a slab request or the image cannot be resolved, and the caller falls through to the 404 path.
 #
-# ?projectUid=&imageUid=&valueName=&t=&c=&z=&enc=identity|zstd → raw little-endian voxels.
+# ?projectUid=&imageUid=&valueName=&t=&c=&z=&zTo=&enc=identity|zstd → raw little-endian voxels.
 #
-# `z` omitted → the whole stack (the 3D MIP view). `z=N` → that one plane (the 2D view), which is what
-# makes a timecourse playable: 8.8 MB and ~13 ms against 326 MB and ~400 ms on `Dml3RG`.
+# `z` omitted → the whole stack. `z=N` → that ONE plane (the 2D view), which is what makes a timecourse
+# playable: 8.8 MB and ~13 ms against 326 MB and ~400 ms on `Dml3RG`. `z=N&zTo=M` → the planes N..M
+# inclusive, which is what makes the 3D view usable — every cost is linear in the count.
+#
+# `zTo` is a separate parameter rather than a `z=lo:hi` string on purpose: the client already had a
+# scalar `z`, the two cases mean different RANKS of answer, and parsing a range out of one field is a
+# place for `z=5` and `z=5:5` to quietly diverge.
 #
 # `enc` is the CLIENT's choice and defaults to identity, deliberately — it is not `Accept-Encoding`
 # negotiation. A browser always advertises zstd, so negotiating would compress unconditionally, and
@@ -201,7 +242,14 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     err === nothing || return false
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     c = something(tryparse(Int, get(q, "c", "0")), 0)
-    z = haskey(q, "z") ? tryparse(Int, q["z"]) : nothing
+    z0 = haskey(q, "z") ? tryparse(Int, q["z"]) : nothing
+    z1 = haskey(q, "zTo") ? tryparse(Int, q["zTo"]) : nothing
+    # `zTo` present promotes the scalar to a range, which is what keeps the z dim (see `read_slab`).
+    # Ordered HERE, while the two are still separate integers: `hi:lo` cannot be represented — Julia
+    # normalises a backwards `UnitRange` to an empty one — so a swapped pair has to be caught before it
+    # becomes a range at all.
+    z = z0 === nothing ? nothing :
+        (z1 === nothing ? z0 : min(z0, z1):max(z0, z1))
     enc = get(q, "enc", "identity")
 
     # A read failure has to arrive as a STATUS, not as an exception. This runs before `startwrite`, so

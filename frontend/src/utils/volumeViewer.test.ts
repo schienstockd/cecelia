@@ -2,13 +2,15 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, contrastCeiling,
+  slabZ, visibleExtentUm,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE,
   type ViewerMeta,
 } from './volumeViewer'
 
 const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
   nT: 10, nC: 2, nZ: 4, nX: 5, nY: 3, bytesPerVoxel: 2, slabBytes: 5 * 3 * 4 * 2,
-  contrastSource: 'sampled', voxelUm: [0.5, 0.5, 2], calibrated: { xy: true, z: true },
+  contrastSource: 'sampled', voxelUm: [0.5, 0.5, 2],
+  calibrated: { xy: true, z: true, t: true }, spaceUnit: null, frameIntervalMin: 2,
   channels: [
     { name: 'a', lo: 0, hi: 10, visible: true, lut: [[0, 0, 0], [1, 0, 0]] },
     { name: 'b', lo: 1, hi: 20, visible: false, lut: [[0, 0, 0], [0, 1, 0]] },
@@ -280,5 +282,46 @@ describe('the contrast slider follows the data, not the first frame', () => {
     expect(contrastCeiling(60000)).toBe(65535)
     expect(contrastCeiling(200, 1)).toBe(255)
     expect(contrastCeiling(0)).toBe(1)              // an all-black first frame must still be draggable
+  })
+})
+
+describe('the request is sized by the TEXTURE, not the view mode', () => {
+  // The two came apart and the client fetched 326 MB volumes into textures shaped for 8.8 MB planes,
+  // which the read-ahead then treated as cheap and queued dozens of.
+  it('asks for one plane when the texture holds one plane of a stack', () => {
+    expect(slabZ(1, 37, 13)).toEqual({ z: 13 })         // a scalar z drops the dim server-side
+  })
+  it('asks for the whole stack when the texture holds it', () => {
+    expect(slabZ(37, 37, 13)).toEqual({})               // no z at all
+  })
+  it('asks for the whole stack on a genuinely 2D image, which has no plane to choose', () => {
+    expect(slabZ(1, 1, 0)).toEqual({})
+  })
+  it('asks for a RANGE when the texture is shallower than the stack but deeper than a plane', () => {
+    // The cropped 3D view. `zTo` is inclusive, and the count is what has to match the texture.
+    expect(slabZ(8, 41, 0, 10)).toEqual({ z: 10, zTo: 17 })
+    expect(slabZ(2, 41, 0, 0)).toEqual({ z: 0, zTo: 1 })
+  })
+  it('slides the range back rather than reading past the end of the stack', () => {
+    // The slider's bound and the store's depth disagree for a moment after a version switch, and a
+    // range that runs off the end would come back SHORT — a shape the texture is not holding.
+    expect(slabZ(8, 41, 0, 40)).toEqual({ z: 33, zTo: 40 })
+    expect(slabZ(8, 41, 0, -5)).toEqual({ z: 0, zTo: 7 })
+  })
+})
+
+describe('the scale bar is drawn against what is on screen', () => {
+  it('is the inverse of the fit, so a reset bar spans the image', () => {
+    const extent: [number, number, number] = [400, 300, 10]
+    const cam = fitCamera(extent, 4 / 3)
+    const [vx, vy] = visibleExtentUm(cam.dist, 4 / 3)
+    // 2% of breathing room, on whichever axis is limiting — here the height.
+    expect(vy).toBeCloseTo(300 * 1.02)
+    expect(vx).toBeCloseTo(300 * 1.02 * (4 / 3))
+  })
+  it('halves when the camera comes twice as close, so the bar tracks the zoom', () => {
+    const [wide] = visibleExtentUm(1000, 1)
+    const [close] = visibleExtentUm(500, 1)
+    expect(close).toBeCloseTo(wide / 2)
   })
 })

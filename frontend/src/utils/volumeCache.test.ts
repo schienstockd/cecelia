@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  cacheCapacity, prefetchWindow, lruEvictions, stripCells, playbackAdvance, playbackIntervalMs,
+  cacheCapacity, prefetchWindow, prefetchDepth, lruEvictions, stripCells, playbackAdvance,
+  playbackIntervalMs,
 } from './volumeCache'
 
 describe('cacheCapacity', () => {
@@ -175,5 +176,24 @@ describe('playbackIntervalMs', () => {
     expect(playbackIntervalMs(-5)).toBe(1000)
     expect(playbackIntervalMs(NaN)).toBe(1000)
     expect(playbackIntervalMs(100000)).toBeCloseTo(1000 / 60)
+  })
+})
+
+describe('prefetchDepth', () => {
+  const PLANE = 8.8e6, VOLUME = 326e6            // one timepoint of Dml3RG, measured
+  it('reads the whole window ahead while a timepoint is cheap', () => {
+    expect(prefetchDepth(170, PLANE, false)).toBe(170)
+    expect(prefetchDepth(170, PLANE, true)).toBe(170)
+  })
+  it('reads NOTHING ahead when a timepoint costs 1.5 s and cannot be played anyway', () => {
+    // The window held four volumes, so entering the 3D view spent ~6 s pre-paying for a read-ahead the
+    // view can never use. The frame asked for still arrives at its own cost.
+    expect(prefetchDepth(4, VOLUME, false)).toBe(1)
+  })
+  it('buffers ahead regardless once playback is running — that is what lets it advance', () => {
+    expect(prefetchDepth(4, VOLUME, true)).toBe(4)
+  })
+  it('does not depend on a measurement it has not got', () => {
+    expect(prefetchDepth(4, 0, false)).toBe(4)   // before the first slab, behave as before
   })
 })

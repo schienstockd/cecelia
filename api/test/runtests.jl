@@ -5303,6 +5303,34 @@ end
         # store's depth can disagree for a moment after a version switch.
         @test read_slab(p, 0, 0; z = 999)[1][2, 3] == val(2, 3, nz, 1, 1)
         @test read_slab(p, 0, 0; z = -5)[1][2, 3] == val(2, 3, 1, 1, 1)
+
+        # ── A RANGE of planes (the usable 3D view) ─────────────────────────────────────
+        # Every cost here is linear in the plane count, so a few planes out of a deep stack is what
+        # makes the volume view interactive: 8 of 37 is 70 MB rather than 326 MB. A range KEEPS the z
+        # dim where a scalar drops it — that difference in rank is the whole contract, because the
+        # client sizes its texture from it.
+        rv, rx, ry, rz = read_slab(p, 0, 1; z = 1:2)    # 0-based → planes 2 and 3
+        @test (rx, ry, rz) == (nx, ny, 2)
+        @test ndims(rv) == 3
+        @test rv[2, 3, 1] == val(2, 3, 2, 2, 1)         # ← starts at the range's low end
+        @test rv[2, 3, 2] == val(2, 3, 3, 2, 1)
+        @test vec(rv)[1:nx] == [val(x, 1, 2, 2, 1) for x in 1:nx]   # still x-fastest on the wire
+        # A one-plane RANGE is not a scalar: same bytes, different rank, and the client's shape guard
+        # rejects a slab whose depth disagrees with what it allocated.
+        @test ndims(read_slab(p, 0, 1; z = 2:2)[1]) == 3
+        @test read_slab(p, 0, 1; z = 2:2)[4] == 1
+        @test read_slab(p, 0, 1; z = 2:2)[1][2, 3, 1] == val(2, 3, 3, 2, 1)
+        # Clamped at both ends, and a reversed range is read the way round it was meant — these come
+        # off a query string, where an out-of-range index is a 500 from inside Zarr.jl.
+        @test read_slab(p, 0, 0; z = 0:999)[4] == nz
+        @test read_slab(p, 0, 0; z = -5:1)[4] == 2
+        # A backwards pair cannot even reach here as a range — `2:0` is normalised to the EMPTY `2:1` by
+        # UnitRange's own constructor, which is why the route orders the two integers before building
+        # one. An empty range that does arrive reads as the single plane at its start, never as zero
+        # planes: a zero-thickness slab renders black (entry and exit distances coincide).
+        @test read_slab(p, 0, 0; z = 2:0)[4] == 1
+        @test read_slab(p, 0, 0; z = 2:0)[1][2, 3, 1] == val(2, 3, 3, 1, 1)
+        @test ndims(read_slab(p, 0, 0; z = 2:0)[1]) == 3     # still a volume, not a plane
     end
 
     # A store whose axes are NOT (t,c,z,y,x) must be PERMUTED to (x,y,z), not passed through. This is

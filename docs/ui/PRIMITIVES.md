@@ -40,6 +40,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
+| ↳ | `v-model:lo` / `v-model:hi` fire per pointer move; **`@change` fires once on release** — use it when the effect is expensive (the volume viewer's z range refetches every cached timepoint) | committing an expensive effect from `update:*` |
 | Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
 | Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
 | **Determinate progress** (a 0–1 fraction — a task, a patch, an export) | `components/CcProgressBar.vue` — `:value` (0–1, clamped, NaN-safe), `size` `thin` (3px, flush in a row/card) \| `bar` (4px, rounded, standalone). Width maths in `utils/progress.ts`. Caller keeps its own geometry (`flex`, `margin`) | a per-file track+fill pair — four of those existed on two heights, two radii, two transitions and three different fraction→width sums |

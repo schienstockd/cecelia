@@ -36,14 +36,17 @@ import { debouncedLatest } from '../utils/debouncedLatest'
 import { createVolumeRenderer, WebGpuUnavailable, type VolumeRenderer } from '../lib/webgpu/volumeRenderer'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, lutFromHex, MAX_CHANNELS, SAFE_CACHE_BYTES,
+  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
+  MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, stripCells, playbackAdvance, playbackIntervalMs,
+  prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import StillOverlay from '../components/StillOverlay.vue'
+import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import ColourPicker from '../components/ColourPicker.vue'
@@ -110,7 +113,17 @@ const lostDevice = ref(false)
 const nChannels = computed(() => Math.min(meta.value?.nC ?? 0, MAX_CHANNELS))
 const clipped = computed(() => (meta.value?.nC ?? 0) > MAX_CHANNELS)
 const nT = computed(() => meta.value?.nT ?? 0)
-const zDepth = computed(() => (mode.value === 'plane' ? 1 : (meta.value?.nZ ?? 1)))
+/**
+ * Planes the 3D view actually loads, `[lo, hi]` inclusive — Dominik's suggestion (2026-08-24) and the
+ * thing that makes the volume view usable at all. Every cost is linear in the count, so 8 of 41 planes
+ * is a ~0.6 s fetch rather than ~5.8 s, and five times as many timepoints fit the VRAM budget.
+ *
+ * Defaults to the full stack: a MIP over part of a stack is a different picture, and silently
+ * narrowing it would change what the view MEANS to make it fast.
+ */
+const zRange = ref<[number, number]>([0, 0])
+const zDepth = computed(() =>
+  mode.value === 'plane' ? 1 : Math.max(1, zRange.value[1] - zRange.value[0] + 1))
 /**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
@@ -140,7 +153,24 @@ const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
 ]
-const capacity = computed(() => renderer.value?.cache.capacity ?? 0)
+/**
+ * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
+ *
+ * `computed(() => renderer.value?.cache.capacity)` looks equivalent and is not: the renderer is a
+ * `shallowRef` and its capacity is a closure variable, so Vue has nothing to invalidate on when it
+ * changes. The computed cached the boot value and the panel then reported `cache 3 / 169` for a cache
+ * that actually held four — which is exactly the reading that made a stale READOUT look like a stale
+ * geometry (2026-08-24). Updated in `syncCacheState`, which already runs at every moment these change.
+ */
+const gpu = ref({ capacity: 0, bytesPerTimepoint: 0, zDepth: 1, capped: false })
+/**
+ * Something is being fetched right now — the dot's whole job.
+ *
+ * It used to light up only while PLAYBACK was stalled, so a manual scrub or the 2D/3D switch showed
+ * nothing at all, and those are the slow ones: "I'm left hanging, did it load? is it loading? I have no
+ * idea" (Dominik, 2026-08-24). A timepoint in flight is the honest signal, whoever asked for it.
+ */
+const busy = computed(() => loadingT.value.length > 0 || waitingFor.value >= 0)
 const cells = computed(() => stripCells(
   nT.value, new Set(resident.value), new Set(loadingT.value), shownT.value))
 
@@ -152,6 +182,9 @@ const frame = usePlotResize(canvas, () => {
   const r = renderer.value
   if (!r) return
   r.resize()
+  // The scale bar is a function of the camera, so it is recomputed exactly where the frame is — not in
+  // a watcher that could disagree with what is on screen.
+  seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
   r.setCamera(cam.value)
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
   r.draw()
@@ -169,8 +202,10 @@ function pushChannels() {
 const inflight = new Map<number, Promise<boolean>>()
 const aborts = new Map<number, AbortController>()
 const syncCacheState = () => {
-  resident.value = renderer.value?.residentTimepoints() ?? []
+  const r = renderer.value
+  resident.value = r?.residentTimepoints() ?? []
   loadingT.value = [...inflight.keys()]
+  if (r) gpu.value = { ...r.cache, capped: r.vramCapped() }
 }
 
 function fetchTimepoint(tp: number): Promise<boolean> {
@@ -190,14 +225,18 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // The channels go in parallel — independent reads on the server's thread pool, and serially they
     // would cost the sum rather than the max (~250 ms per channel on the real target). Timepoints go
     // one at a time (see `pump`), so the server is never asked for more than one volume at once.
+    // Sized from the depth the texture ACTUALLY has, so a request can never be a shape the cache is
+    // not holding — see `slabZ`. The view mode authors that depth (via `reallocate`); it does not get a
+    // second say in what is fetched.
+    const zd = r.cache.zDepth
+    const zq = slabZ(zd, m.nZ, zPlane.value, zRange.value[0])
     const bufs = await Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-      const z = mode.value === 'plane' ? zPlane.value : undefined
-      const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, z, enc }),
+      const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc }),
                               { cache: 'no-store', signal: ac.signal })
       if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
       const buf = await res.arrayBuffer()
       // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing.
-      const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zDepth.value)
+      const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd)
       if (bad) throw new Error(bad)
       serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
       return buf
@@ -259,71 +298,56 @@ function showT(tp: number): boolean {
  * across 100 timepoints then puts 100 concurrent volume fetches in flight (400 requests), which is
  * exactly the spam the rule exists to stop. The scheduler collapses a burst, runs one at a time, and
  * hands `isCurrent()` so a superseded walk stops at its next checkpoint instead of filling a cache
- * around a timepoint the user has left.
+ * around a timepoint the user has left. That last part only became true when `debouncedLatest` was
+ * fixed to treat a QUEUED request as superseding — before that a 170-frame walk ran to completion
+ * wherever the user went, which is what made a jump wait for every frame before it and stopped
+ * playback dead. This walk is why the hole was found; every other consumer had it too.
  *
  * `wait: 0` on purpose: there is nothing to tune. A burst inside one macrotask collapses to its last
  * position, and anything arriving during a run queues as the single latest — which is the whole
  * requirement, for a drag and for playback alike.
  */
 let lastT = 0
-/**
- * Where the walk should be centred RIGHT NOW — read on every iteration, not captured at entry.
- *
- * This is the load-bearing half, and it exists because `isCurrent()` does NOT go false while a newer
- * request merely SITS PENDING: the scheduler runs one call at a time, and the token it compares only
- * moves when a successor actually starts, which cannot happen until this one returns (pinned by
- * `debouncedLatest.test.ts` → "lets a superseded run discard its result"). A walk over a 170-frame
- * window therefore ran to completion no matter where the user went, which produced both of the bugs
- * Dominik reported: jumping to timepoint 90 waited for every frame before it, and playback simply
- * stopped — every tick queued a request that could not start, while the walk filled frames nobody was
- * waiting for.
- */
-let pumpTarget = 0
-const pump = debouncedLatest<number>(async (_tp, isCurrent) => {
+/** How many timepoints ahead are worth pre-paying for — the whole window for a plane, only the frame
+ *  asked for while a volume costs 1.5 s, unless playback needs the buffer. */
+const depth = () => {
+  const r = renderer.value
+  return r ? prefetchDepth(r.cache.capacity, r.cache.bytesPerTimepoint, playing.value) : 1
+}
+const pump = debouncedLatest<number>(async (tp, isCurrent) => {
   const r = renderer.value, m = meta.value
   if (!r || !m) return
-  /** Attempted this walk. Without it a timepoint that fetches but fails to UPLOAD (an OOM texture) is
-   *  chosen forever — the window still wants it and the cache still lacks it. */
-  const tried = new Set<number>()
-  let target = -1
-  let dir = 1
+  const dir = Math.sign(tp - lastT) || 1
+  lastT = tp
 
-  while (isCurrent()) {
-    if (target !== pumpTarget) {
-      // Follow, do not restart: the frames already fetched stay fetched, and the very next request is
-      // the one the user is waiting for.
-      target = pumpTarget
-      dir = Math.sign(target - lastT) || dir
-      lastT = target
-    }
-    const want = prefetchWindow(target, dir, m.nT, r.cache.capacity)
-    // Everything resident in the window is worth keeping, whether or not this walk fetched it.
-    for (const v of want) if (r.hasTimepoint(v)) r.touch(v)
-
-    const u = want.find(v => !r.hasTimepoint(v) && !tried.has(v))
-    if (u === undefined) return                  // the window is full — nothing left to do
-    tried.add(u)
-    const ok = await fetchTimepoint(u)
+  const want = prefetchWindow(tp, dir, m.nT, depth())
+  for (const u of want) {
+    // The checkpoint. It is between fetches rather than inside one, so abandoning a window costs at
+    // most the request already in flight — which is why `schedulePump` cuts that one short as well.
     if (!isCurrent()) return
+    if (r.hasTimepoint(u)) { r.touch(u); continue }
+    const ok = await fetchTimepoint(u)
     syncCacheState()
-    if (!ok) return                              // aborted or failed; the next schedule restarts us
+    if (!ok || !isCurrent()) return
+    // Only paints when the walk is still the current one, so a frame the user has already left cannot
+    // land on the canvas; playback's own tick paints whatever became resident meanwhile.
     if (u === t.value && shownT.value !== u) showT(u)
   }
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
 /**
- * Every request goes through here, so `pumpTarget` can never disagree with what was scheduled.
+ * Every request goes through here, because scheduling is not the only thing a new target has to do: it
+ * also abandons an in-flight fetch the new window has no use for.
  *
- * It also abandons an in-flight fetch the new window has no use for. That has to happen HERE and not
- * inside the walk: the walk is awaiting that very fetch, so by the time it looks again the request has
- * already been paid for. It matters most where a request is dear — a 3D timepoint is ~400 ms and the
+ * That has to happen HERE and not inside the walk. The walk is *awaiting* that fetch, so by the time it
+ * reaches its next checkpoint the request has already been paid for — aborting is what makes the
+ * checkpoint arrive early. It matters most where a request is dear: a 3D timepoint is ~400 ms and the
  * cache holds four of them, so a jump genuinely lands outside the window.
  */
 function schedulePump(tp: number) {
-  pumpTarget = tp
-  const r = renderer.value, m = meta.value
-  if (r && m) {
-    const keep = new Set(prefetchWindow(tp, Math.sign(tp - lastT) || 1, m.nT, r.cache.capacity))
+  const m = meta.value
+  if (m) {
+    const keep = new Set(prefetchWindow(tp, Math.sign(tp - lastT) || 1, m.nT, depth()))
     for (const [k, ac] of [...aborts]) if (!keep.has(k)) ac.abort()
   }
   pump.schedule(tp)
@@ -394,6 +418,32 @@ function onWheel(e: WheelEvent) {
   cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value)
   frame.redraw()
 }
+/**
+ * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
+ * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — napari draws both, and a fourth
+ * implementation of a scale bar is how three of them end up disagreeing.
+ *
+ * The extent passed is what the camera can SEE, not the image, so the bar shrinks as you zoom in. The
+ * component's SVG letterboxes its viewBox exactly as an `object-fit: contain` image would, which is a
+ * no-op here because the visible extent has the canvas's own aspect — the bar lands where it is drawn.
+ */
+const seen = ref<[number, number]>([0, 0])
+const overlayExtent = computed(() => {
+  const m = meta.value
+  if (!m || !m.calibrated.xy) return null          // uncalibrated: voxels, so there is no bar to draw
+  return { x: seen.value[0], y: seen.value[1], unit: m.spaceUnit || 'µm' }
+})
+/**
+ * In BOTH views and at any orientation — the rendered space is uniform in µm, so the bar is correct
+ * wherever the camera is (see `visibleExtentUm`). `'clock'` because this overlay is replacing napari's,
+ * which shows H:MM:SS.
+ */
+const timeLabel = computed(() => {
+  const m = meta.value
+  if (!m || m.nT <= 1) return ''
+  return elapsedLabel(t.value, m.frameIntervalMin, 'min', 'clock')
+})
+
 const canvasAspect = () => {
   const el = canvas.value
   return el && el.clientHeight > 0 ? el.clientWidth / el.clientHeight : 1
@@ -471,6 +521,7 @@ onMounted(async () => {
     meta.value = m
     mode.value = m.nZ > 1 ? 'plane' : 'volume'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
+    zRange.value = [0, Math.max(m.nZ - 1, 0)]
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value)
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
@@ -504,6 +555,13 @@ onUnmounted(() => {
         @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
         @wheel="onWheel"
       />
+      <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
+           35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
+      <StillOverlay
+        v-if="meta && shownT >= 0" :extent-um="overlayExtent" :time-label="timeLabel" chrome="fixed"
+        :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
+        :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
+      />
       <div v-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
       <div v-else-if="error" class="cc-empty cc-empty-overlay cc-muted-error">
         {{ error }}
@@ -531,6 +589,19 @@ onUnmounted(() => {
           :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
           @update:model-value="v => { mode = v as 'plane' | 'volume'; reallocate(true) }"
         />
+        <!-- The 3D view's own depth control. `@change`, not `@update:*`: the range reallocates every
+             cached texture, so it commits on release rather than per pointer move. -->
+        <div v-if="mode === 'volume' && meta.nZ > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Depth</span>
+          <RangeSlider
+            v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
+            :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
+            @update:lo="v => (zRange = [v, zRange[1]])"
+            @update:hi="v => (zRange = [zRange[0], v])"
+            @change="reallocate()"
+          />
+          <span class="cc-readout cc-fs-2xs vw-num">{{ zRange[0] }}–{{ zRange[1] }}</span>
+        </div>
         <div v-if="mode === 'plane' && meta.nZ > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
           <input
@@ -562,8 +633,8 @@ onUnmounted(() => {
              uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
              but a line that appears and disappears above the strip shoves it up and down every tick,
              which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
-        <div class="vw-striprow" v-tooltip.bottom="'Timepoints held in VRAM'">
-          <span class="vw-dot" :class="{ 'is-waiting': waitingFor >= 0 }" />
+        <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
+          <span class="vw-dot" :class="{ 'is-waiting': busy }" />
           <div class="vw-strip">
             <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
           </div>
@@ -642,6 +713,30 @@ onUnmounted(() => {
                 v-tooltip.right="'Compress slabs on the wire — a win remotely, a cost locally'">Compress</span>
           <CcToggle v-model="settings.viewerCompress" aria-label="Compress slabs on the wire" />
         </div>
+        <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
+             in front of you, and a separate row for each would double the group's height. -->
+        <div class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
+          <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
+          <input
+            type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+            :disabled="!settings.viewerScaleBar" v-model.number="settings.viewerScaleBarPx"
+            v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+          >
+          <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+        </div>
+        <div class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
+          <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
+          <input
+            type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+            :disabled="!settings.viewerTimestamp" v-model.number="settings.viewerTimestampPx"
+            v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+          >
+          <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+        </div>
         <div class="cc-row cc-row-tight">
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
@@ -650,11 +745,11 @@ onUnmounted(() => {
         <div class="cc-eyebrow cc-fs-2xs">Image</div>
         <div class="cc-muted cc-fs-3xs">
           {{ meta.nX }} × {{ meta.nY }} × {{ meta.nZ }} · {{ meta.nT }} t · {{ meta.nC }} ch<br>
-          {{ (meta.slabBytes / 1e6 / (mode === 'plane' ? meta.nZ : 1)).toFixed(1) }} MB / channel ·
+          {{ (meta.slabBytes / 1e6 / (meta.nZ / gpu.zDepth)).toFixed(1) }} MB / channel ·
           contrast {{ meta.contrastSource }}<br>
-          cache {{ resident.length }} / {{ capacity }}
-          <template v-if="renderer?.vramCapped()">(GPU limit)</template>
-          <template v-else-if="capacity >= nT && nT > 0">(whole movie fits)</template><br>
+          cache {{ resident.length }} / {{ gpu.capacity }}
+          <template v-if="gpu.capped">(GPU limit)</template>
+          <template v-else-if="gpu.capacity >= nT && nT > 0">(whole movie fits)</template><br>
           {{ hits }} hit / {{ misses }} miss<template v-if="lastMissMs"> · last miss {{ lastMissMs }} ms</template><br>
           <template v-if="timing">
             fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
@@ -667,6 +762,10 @@ onUnmounted(() => {
 
 <style scoped>
 .vw { display: flex; height: 100vh; background: var(--cc-surface-1); }
+/* The size slider shares its row with a toggle and a readout, so it needs a floor it cannot be
+   squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
+.vw-px { min-width: 3.5rem; }
+.vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }

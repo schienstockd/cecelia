@@ -1,13 +1,31 @@
 // Pure helpers for still overlays (Phase E2): the elapsed-time timestamp and the vector scale bar drawn
 // on a clean-captured strip frame. Kept out of the SFC so they're unit-testable.
 
-/** Elapsed time for timepoint index `t` as "{h}h {m}m" (or "{m}m" under an hour). `inc` = the frame
- *  interval, `unit` its unit ('second'/'min…'). Returns '' when there's no timepoint; falls back to
- *  "t{N}" when the interval is unknown. Shared with the animation timeline (one time formatter). */
-export function elapsedLabel(t: number | null | undefined, inc: number | null | undefined, unit?: string | null): string {
+/**
+ * Elapsed time for timepoint index `t`. `inc` = the frame interval, `unit` its unit
+ * ('second'/'min…'). Returns '' when there's no timepoint. The ONE time formatter — shared by the
+ * captured stills, the animation timeline and the volume viewer.
+ *
+ * Two styles, because two surfaces already had a house format and neither is wrong:
+ *  - `'compact'` (default) — "3h 18m", or "18m" under an hour. What the stills and the timeline show,
+ *    where the label is decoration on a thumbnail and a seconds field would be noise.
+ *  - `'clock'` — "3:18:00", zero-padded, exactly what napari's text overlay shows
+ *    (`str(datetime.timedelta(...))` in napari_bridge.py) down to the `t = N` fallback. The volume
+ *    viewer uses it because it is replacing that overlay and people read the two side by side.
+ */
+export function elapsedLabel(
+  t: number | null | undefined, inc: number | null | undefined, unit?: string | null,
+  style: 'compact' | 'clock' = 'compact',
+): string {
   if (t === undefined || t === null) return ''
-  if (!inc) return `t${t}`
-  const secs = /^min/i.test(unit ?? 'second') ? t * inc * 60 : t * inc
+  if (!inc) return style === 'clock' ? `t = ${t}` : `t${t}`
+  const secs = Math.round(/^min/i.test(unit ?? 'second') ? t * inc * 60 : t * inc)
+  if (style === 'clock') {
+    const h = Math.floor(secs / 3600)
+    const m = Math.floor((secs % 3600) / 60)
+    const sec = secs % 60
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
   const h = Math.floor(secs / 3600)
   const m = Math.round((secs % 3600) / 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
@@ -29,7 +47,11 @@ export function niceScaleBar(
   if (!pick) return null
   const u = unit || 'µm'
   // roll µm up to mm for tidy labels (a 1000 µm bar reads "1 mm")
-  const isMicron = /^(µm|um|micron)/i.test(u)
+  //
+  // The pattern has to cover what OME actually writes. `PhysicalSizeUnit` is the literal string
+  // **"micrometer"**, which `micron` does not match — so the bar read "100 micrometer" and never rolled
+  // up to mm (Dominik, 2026-08-24). `micro` covers micron / micrometer / micrometre alike.
+  const isMicron = /^(µm|um|micro)/i.test(u)
   const label = isMicron && pick >= 1000 ? `${pick / 1000} mm` : `${pick} ${isMicron ? 'µm' : u}`
   return { um: pick, label }
 }

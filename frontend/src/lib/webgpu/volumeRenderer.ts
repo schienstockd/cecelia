@@ -80,8 +80,14 @@ export interface VolumeRenderer {
   residentTimepoints(): number[]
   /** Mark a timepoint as recently used without binding it. */
   touch(t: number): void
-  /** How many timepoints fit in the current budget, and what one costs. */
-  readonly cache: { capacity: number; bytesPerTimepoint: number }
+  /**
+   * How many timepoints fit in the current budget, what one costs, and how many z planes one holds.
+   *
+   * `zDepth` is published because the CALLER has to size its requests to match, and a second copy of
+   * that fact on the client is exactly how the two came apart. Ask the renderer what shape it is in;
+   * do not re-derive it from the view mode.
+   */
+  readonly cache: { capacity: number; bytesPerTimepoint: number; zDepth: number }
   setCamera(cam: OrbitCamera): void
   setChannels(channels: ViewerChannel[]): void
   setSteps(steps: number): void
@@ -222,7 +228,12 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     lost: device.lost,
 
     setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ) {
-      if (!usable()) return
+      // NOT gated on the device being alive, deliberately. Nothing here touches the GPU except
+      // `dropAll()` and `setChannels`, which guard themselves — while what it DOES set is the geometry
+      // every later decision is derived from. A `!usable()` early return left the renderer describing a
+      // 2D plane while the client fetched whole volumes: the cache reported capacity 170 for a 4-volume
+      // budget, so the read-ahead thought a frame was cheap and queued dozens of 326 MB requests, and
+      // the server's read time went from 0.5 s to 3.7 s under its own contention.
       dropAll()
       bindGroup = null
       meta = m
@@ -320,7 +331,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     hasTimepoint(t: number) { return slots.has(t) },
     residentTimepoints() { return [...order] },
     touch,
-    get cache() { return { capacity, bytesPerTimepoint } },
+    get cache() { return { capacity, bytesPerTimepoint, zDepth: depth } },
 
     setCamera(cam: OrbitCamera) {
       u[0] = cam.yaw; u[1] = cam.pitch; u[2] = cam.dist

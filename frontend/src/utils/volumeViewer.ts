@@ -30,7 +30,14 @@ export interface ViewerMeta {
   contrastSource: 'viewer' | 'sampled'
   /** µm per voxel, [x, y, z]. 1.0 for an axis the image was never calibrated on. */
   voxelUm: number[]
-  calibrated: { xy: boolean; z: boolean }
+  /** Whether each axis carries a REAL measurement. `voxelUm`/`frameIntervalMin` default a missing
+   *  axis to 1.0, which is indistinguishable from a genuine 1 — so an overlay that shows a scale must
+   *  consult this rather than the number. */
+  calibrated: { xy: boolean; z: boolean; t: boolean }
+  /** Unit `voxelUm` is really in, from the image's OME metadata. Null → µm, the accessor's contract. */
+  spaceUnit: string | null
+  /** Minutes per frame, or null when the image has no real timecourse. */
+  frameIntervalMin: number | null
   channels: ViewerChannel[]
 }
 
@@ -54,6 +61,13 @@ export interface SlabQuery {
    * against 59 GB at full depth, so it fits in VRAM and the second pass is all cache hits.
    */
   z?: number
+  /**
+   * Last plane of a RANGE starting at `z`, inclusive — a cropped 3D view. Every cost here is linear in
+   * the plane count, so 8 planes of 37 is 70 MB rather than 326 MB and four times as many timepoints
+   * fit the same VRAM budget. Structure usually lives in a few planes, so a full-depth MIP is mostly
+   * paying for empty stack.
+   */
+  zTo?: number
   /** `zstd` costs ~60 ms of server CPU and saves ~97% of the wire on real data — worth it over a
    *  network, a loss on loopback. The client picks because only the client knows which it is. */
   enc?: 'identity' | 'zstd'
@@ -67,6 +81,9 @@ export function slabUrl(q: SlabQuery): string {
   if (q.valueName) p.set('valueName', q.valueName)
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
+  // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
+  // server keeps the z dim). Never sent without `z`.
+  if (q.z !== undefined && q.zTo !== undefined) p.set('zTo', String(q.zTo))
   return '/api/viewer/slab?' + p.toString()
 }
 
@@ -103,6 +120,31 @@ export function slabShapeError(
   const want = nx * ny * nz * meta.bytesPerVoxel
   if (byteLength !== want) return `Slab is ${byteLength} bytes, expected ${want}`
   return null
+}
+
+/**
+ * Which planes to ask the slab route for, from the depth the TEXTURE actually has.
+ *
+ * Three answers, and the DEPTH picks between them — derived from the renderer rather than from the view
+ * mode on purpose. Those were two copies of one fact, and when they disagreed the client fetched 326 MB
+ * volumes into textures shaped for 8.8 MB planes (see `setImage`). The renderer is the one that knows.
+ *
+ *  - `{}` — the whole stack. The texture is as deep as the image, so there is nothing to select; also
+ *    the answer for a genuinely 2D image, which has one plane and no plane to choose.
+ *  - `{ z }` — ONE plane, which DROPS the z dim server-side (the 2D view).
+ *  - `{ z, zTo }` — a range, which keeps it (a cropped 3D view).
+ *
+ * `lo` is the only thing here the renderer cannot supply: it knows how deep it is, not where the slab
+ * starts. Getting it wrong shows the wrong planes at the right size, so the shape guard cannot catch
+ * it — which is why it comes straight from the slider and nothing else derives it.
+ */
+export function slabZ(
+  textureDepth: number, nZ: number, zPlane: number, lo = 0,
+): { z?: number; zTo?: number } {
+  if (textureDepth >= nZ) return {}
+  if (textureDepth === 1) return nZ > 1 ? { z: zPlane } : {}
+  const start = Math.max(0, Math.min(lo, nZ - textureDepth))
+  return { z: start, zTo: start + textureDepth - 1 }
 }
 
 /**
@@ -243,6 +285,27 @@ export function fitCamera(
   const toNearFace = perspective ? Math.max(ez, 0) / 2 : 0
   //                            2% of breathing room ↓
   return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace }
+}
+
+/**
+ * Physical extent the camera can currently SEE, `[x, y]` in the same unit as `extentUm`.
+ *
+ * The inverse of `fitCamera`, and it exists for the scale bar: the bar has to shrink as you zoom in, so
+ * it is drawn against what is on screen rather than against the image. Exact under the orthographic
+ * projection the plane view uses — `VIEW_HALF_ANGLE` is the half-height at unit distance, so the
+ * visible height is `2 · dist · VIEW_HALF_ANGLE` at every depth. Under perspective the same expression
+ * is exact at the depth of the box CENTRE, which is the plane the camera distance is measured to.
+ *
+ * ORIENTATION DOES NOT MATTER, which is worth stating because it looks as though it should. The
+ * raycast marches a box whose sides are the physical extent in µm on all three axes, so anisotropic
+ * voxels are already baked into the geometry and the rendered space is metrically uniform: a screen
+ * distance converts to µm identically along any direction, at any yaw or pitch. (An earlier version of
+ * this hid the bar unless the camera was face-on, reasoning that a rotated horizontal axis would mix x
+ * and z — true of the VOXEL grid, not of the space actually rendered.)
+ */
+export function visibleExtentUm(dist: number, aspect: number): [number, number] {
+  const h = 2 * Math.max(dist, 0) * VIEW_HALF_ANGLE
+  return [h * Math.max(aspect, 1e-6), h]
 }
 
 /** Drag in canvas px → a new camera. `width` normalises so the same drag turns the same amount

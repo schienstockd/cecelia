@@ -75,9 +75,31 @@ describe('debouncedLatest', () => {
     await vi.advanceTimersByTimeAsync(100)         // ...and 2 starts
     await r.finish()
     expect(r.ran).toEqual([1, 2])
-    // 1's isCurrent() was still true when it settled (2 had not yet started), so both applied here.
-    // The discard case is asserted below via cancel(), which supersedes without starting a successor.
-    expect(r.applied).toEqual([1, 2])
+    // 1 is discarded even though 2 had not STARTED when it settled — it could not have, runs are
+    // serialised. Requiring a started successor made this guard true in every case rule 2 is about.
+    expect(r.applied).toEqual([2])
+  })
+
+  it('stops long work at its next checkpoint, without waiting for the successor to start', async () => {
+    // The viewer's prefetch walk: many awaits in one run, not one. It has to be able to give up on a
+    // window the user has left, and the only signal it gets is `isCurrent()`.
+    const steps: number[] = []
+    const gate: { release: (() => void) | null } = { release: null }
+    const s = debouncedLatest<number>(async (arg, isCurrent) => {
+      for (let i = 0; i < 5; i++) {
+        if (!isCurrent()) return
+        steps.push(arg * 10 + i)
+        await new Promise<void>(r => { gate.release = r })
+      }
+    }, { wait: 0 })
+    s.schedule(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps).toEqual([10])                    // first step of the walk for 1
+    s.schedule(2)                                  // the user moves on, mid-walk
+    gate.release?.()
+    await vi.advanceTimersByTimeAsync(0)
+    // 1 abandoned its remaining four steps and 2 took over, rather than 1 running to completion.
+    expect(steps).toEqual([10, 20])
   })
 
   it('cancel() supersedes an in-flight run so its result is not applied', async () => {

@@ -58,6 +58,37 @@ export function prefetchWindow(
 }
 
 /**
+ * A read-ahead is only worth PRE-PAYING for while a timepoint is cheap. Above this it is fetched on
+ * demand instead — the frame the user asked for arrives at its own cost and nothing else is queued
+ * behind it.
+ *
+ * 150 MB sits between the two real cases by an order of magnitude, so it is not a tuned number: one
+ * plane of `Dml3RG` is 8.8 MB and the whole volume is 326 MB.
+ */
+export const PREFETCH_MAX_BYTES = 150e6
+
+/**
+ * How far the walk should read ahead, in timepoints.
+ *
+ * The full window when a timepoint is cheap, and NOTHING when it is not — which is the difference
+ * between entering the 3D view in ~1.5 s and in ~6 s (Dominik, 2026-08-24: "now it doesn't load
+ * anything, or needs like 5 s"). Measured on the real target: one 3D timepoint is ~1 s to fetch 326 MB
+ * plus ~0.5 s to upload, and the window holds four, so the walk spent 6 s on a read-ahead that the 3D
+ * view can never use — it is far too slow to play, which is the only thing a read-ahead buys.
+ *
+ * `playing` overrides it, because then the read-ahead is the whole point: playback WAITS for an
+ * uncached frame, so buffering ahead is what lets it advance at all. Deliberately not a setting — the
+ * cost is knowable from the data, and it is the kind of number nobody can be asked to pick (the same
+ * mistake the VRAM slider made).
+ */
+export function prefetchDepth(
+  capacity: number, bytesPerTimepoint: number, playing: boolean,
+): number {
+  if (playing || !(bytesPerTimepoint > PREFETCH_MAX_BYTES)) return capacity
+  return 1
+}
+
+/**
  * Which resident timepoints to drop, least-recently-used first, to get down to `capacity`.
  *
  * `keep` is never evicted whatever its position in the LRU order, and it is PLURAL for a reason that
