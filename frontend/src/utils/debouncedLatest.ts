@@ -15,6 +15,16 @@
 //     and the running call is handed `isCurrent()` — false once superseded, so it can skip applying a
 //     mask the user has already scrolled away from. Dropping the request instead would leave the view
 //     showing the wrong region; awaiting it without the guard would apply a stale mask over a newer one.
+//
+//     **A QUEUED request supersedes, not just a started one** — and that distinction is the whole rule
+//     rather than a detail of it. Runs are serialised, so a successor cannot START until its
+//     predecessor returns; comparing against a token that only moves when a run starts therefore made
+//     `isCurrent()` true for every run that was not explicitly `cancel()`ed, i.e. dead code in all of
+//     rule 2's actual cases. It was found through the volume viewer, where the work is a long walk
+//     rather than one await: a prefetch of 170 timepoints ran to completion wherever the user went, so
+//     jumping to a timepoint waited for every frame before it and playback stopped outright (each tick
+//     queued a request that could not start). Every other consumer had the same hole and it merely
+//     looked like a stale paint.
 //  3. State is observable (`idle` | `pending` | `running`), because fire-and-forget reads as broken:
 //     the user needs to see that a preview is coming.
 //
@@ -41,7 +51,9 @@ export interface DebouncedLatest<A> {
   schedule(arg: A): void
   /** Run the pending request immediately, skipping the remaining debounce. No-op when nothing pending. */
   flush(): void
-  /** Drop the pending request and mark any in-flight run superseded (its `isCurrent()` goes false). */
+  /** Drop the pending request and mark any in-flight run superseded (its `isCurrent()` goes false).
+   *  Note the asymmetry with `dropPending()`: dropping the queued request RESTORES `isCurrent()` for
+   *  the run in flight, because nothing newer is waiting any more. */
   cancel(): void
   /**
    * Drop the queued request but let an in-flight run finish AND apply its result.
@@ -57,7 +69,8 @@ export interface DebouncedLatest<A> {
 
 /**
  * `work` receives the argument and an `isCurrent()` predicate — check it before applying a result, and
- * after every await inside long work.
+ * after every await inside long work. It goes false as soon as a newer request EXISTS, whether or not
+ * that request has been able to start (see rule 2), so long work stops at its next checkpoint.
  */
 export function debouncedLatest<A>(
   work: (arg: A, isCurrent: () => boolean) => Promise<void>,
@@ -91,7 +104,9 @@ export function debouncedLatest<A>(
     running = true
     setState('running')
     try {
-      await work(next.arg, () => mine === token)
+      // `pending === null` is the "nothing newer is waiting" half. Read at CALL time, not captured:
+      // the whole point is that the answer changes under a run in flight.
+      await work(next.arg, () => mine === token && pending === null)
     } catch (e) {
       // never rethrow: `fire` is invoked from a timer, so a rejection here would be unhandled
       onError?.(e)

@@ -1387,6 +1387,13 @@ end
     @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
 end
 
+# Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for
+# `arr.metadata.dtype`, which is exactly enough to assert the no-copy path by object identity.
+struct FakeZMeta; dtype::String; end
+struct FakeZArray; block::Vector{UInt16}; metadata::FakeZMeta; end
+FakeZArray(b, dt) = FakeZArray(b, FakeZMeta(dt))
+Base.getindex(a::FakeZArray, ::Colon) = a.block
+
 @testset "API: zarr byte order" begin
     # `read_native` must apply the STORED byte order. bioformats2raw writes big-endian (`>u2`) and
     # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
@@ -1427,6 +1434,20 @@ end
         end
         # `|u1` (not-applicable, 1-byte) is passed through untouched — swapping a byte is a no-op, but
         # the descriptor must not be misread as an order either.
+        # A matching order must return the block ITSELF, not a copy of it. `ltoh`/`ntoh` are no-ops
+        # element-wise, so the old guard was correct — and it still broadcast over the whole block to
+        # compute nothing, +65% on an 81.5 MB channel read (68 -> 112 ms) for every little-endian store,
+        # which is every corrected/cropped version the writers produce. Identity is the only way to
+        # assert "no copy" without measuring, so this uses a stand-in whose getindex returns a KNOWN
+        # object; on a big-endian host the same test holds with the orders swapped.
+        let block = UInt16[1, 2, 3]
+            same_order = HOST_IS_LITTLE_ENDIAN ? "<u2" : ">u2"
+            other_order = HOST_IS_LITTLE_ENDIAN ? ">u2" : "<u2"
+            @test read_native(FakeZArray(block, same_order), :) === block    # ← the no-copy contract
+            @test read_native(FakeZArray(block, other_order), :) !== block   # a real swap still copies
+            @test read_native(FakeZArray(block, "|u1"), :) === block
+        end
+
         p8 = joinpath(d, "store8")
         b = UInt8[0x00, 0x3f, 0xff]
         a8 = zcreate(UInt8, Zarr.DirectoryStore(p8), length(b); chunks = (length(b),))
@@ -4482,6 +4503,8 @@ end
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs",
         "/api/crop/frame", "/api/crop/info",
+        "/api/viewer/meta",
+        "/api/viewer/overlays",
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -4595,7 +4618,7 @@ end
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
-    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file"]
+    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab"]
 
     # Would genuinely restart/shut down/spawn a worker if called with an empty body. Their PRESENCE is
     # still pinned by the inventory half; only the live call is skipped.
@@ -4621,7 +4644,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 117
+    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 117
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5139,6 +5162,186 @@ end
   end
 end
 
+@testset "API: viewer overlays (one request for the whole movie, in µm)" begin
+    # P3's payload contract. What can go wrong here is silent: a coordinate in pixels instead of µm
+    # lands the overlay in the corner of the image at 1/3 scale and still LOOKS like data, and a
+    # `null` in a coordinate array becomes 0 through `Float32Array.from` — a cell drawn at the origin
+    # rather than not drawn.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            ask(qs) = JSON3.read(api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?projectUid=testpr&imageUid=KDIeEm&valueName=B" * qs))[2])
+            st, body = api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
+            @test st == 200
+            d = JSON3.read(body)
+
+            # ── the table ────────────────────────────────────────────────────────────
+            @test d.nCells > 0
+            # Every coordinate finite, always. JSON has no NaN literal (JSON3 refuses to write one) and
+            # `null` becomes 0 through `Float32Array.from`, so an undrawable cell is DROPPED rather than
+            # encoded — and `nDropped` says how many, since shipping fewer cells than the table holds
+            # would otherwise read as a segmentation problem.
+            @test d.nDropped >= 0
+            @test d.nCells + d.nDropped == length(JSON3.read(String(JSON3.write(d.cells.label))))  ||
+                  d.nDropped == 0
+            for a in ("x", "y", "z", "t")
+                @test all(isfinite, Float64.(getproperty(d.cells, Symbol(a))))
+            end
+            @test length(d.cells.label) == d.nCells
+            @test length(d.cells.x) == d.nCells && length(d.cells.y) == d.nCells
+            @test Set(String.(d.axes)) ⊆ Set(["x", "y", "z"])
+            @test "x" in d.axes && "y" in d.axes
+            # every declared axis actually carries values, and every absent one is empty — the client
+            # reads these arrays positionally, so a declared-but-missing axis is a wrong picture
+            for a in ("x", "y", "z")
+                col = getproperty(d.cells, Symbol(a))
+                @test (a in d.axes) == (length(col) == d.nCells)
+            end
+
+            # ── µm, not pixels ───────────────────────────────────────────────────────
+            # The route promises the same space as `extentUm`. Compare against the raw file: with a
+            # real calibration the two MUST differ, and by exactly the axis resolution.
+            img, _ = _gating_image("testpr", "KDIeEm")
+            sizes, _ = img_physical_sizes(img)              # [sz, sy, sx] µm/px
+            lp = label_props(joinpath(proj, "1", "KDIeEm", "labelProps", "B.h5ad"))
+            view_centroid_cols(lp; order = [:x, :y, :z])
+            raw = as_df(lp)
+            if sizes[3] != 1.0                             # x resolution is a real measurement
+                @test !(Float64(raw[1, :centroid_x]) ≈ Float64(d.cells.x[1]))
+            end
+            @test Float64(raw[1, :centroid_x]) * sizes[3] ≈ Float64(d.cells.x[1])
+            @test Float64(raw[1, :centroid_y]) * sizes[2] ≈ Float64(d.cells.y[1])
+            # t stays a FRAME index — scaling it would silently redefine every frame-counted
+            # parameter, the same choice `scale_centroids!` makes on disk.
+            if d.hasT
+                @test Float64(raw[1, :centroid_t]) ≈ Float64(d.cells.t[1])
+            end
+
+            # ── tracks ───────────────────────────────────────────────────────────────
+            # -1 for "not tracked", never 0 and never null: one sentinel the client tests against.
+            if !isempty(d.cells.track)
+                @test length(d.cells.track) == d.nCells
+                @test all(t -> t == -1 || t > 0, d.cells.track)
+                @test any(t -> t > 0, d.cells.track)        # the fixture IS tracked
+            end
+
+            # ── colour-by ────────────────────────────────────────────────────────────
+            @test d.colourBy === nothing && d.values === nothing
+            if !isempty(d.colourColumns)
+                c = String(first(d.colourColumns))
+                got = ask("&colourBy=" * HTTP.escapeuri(c))
+                @test got.colourBy == c
+                @test got.values !== nothing && length(got.values) == got.nCells
+                # WHICH KIND of scale is the server's answer, through the same `_is_categorical_col`
+                # rule the plots use — so a column that plots as a code set shades as one in the
+                # viewer. Re-deriving it in TypeScript would be a second answer about one column.
+                @test String(got.valueKind) in ("categorical", "numeric")
+                if got.valueKind == "numeric"
+                    @test got.valueRange !== nothing && length(got.valueRange) == 2
+                    @test got.valueRange[1] <= got.valueRange[2]
+                    @test got.valueLevels === nothing
+                else
+                    @test got.valueLevels !== nothing && !isempty(got.valueLevels)
+                    @test got.valueRange === nothing
+                    # the levels must COVER the values, else the client greys a cell it can colour
+                    lv = Set(string.(got.valueLevels))
+                    @test all(v -> v === nothing || string(v) in lv, got.values)
+                end
+                # every column the route offers must answer both questions — a column that came back
+                # with no kind would silently fall through to the population colour
+                for col in got.colourColumns
+                    one = ask("&colourBy=" * HTTP.escapeuri(String(col)))
+                    @test String(one.valueKind) in ("categorical", "numeric")
+                end
+            end
+            # no colour-by → no kind, no levels, no range: three fields that must not linger
+            @test get(d, :valueKind, nothing) === nothing
+            @test get(d, :valueLevels, nothing) === nothing
+            @test get(d, :valueRange, nothing) === nothing
+            # an unknown column is ignored rather than fatal — a stale column name from a saved view
+            # must not take the overlay down with it
+            bad = ask("&colourBy=does_not_exist")
+            @test bad.colourBy === nothing && bad.values === nothing && bad.nCells == d.nCells
+
+            # ── populations ──────────────────────────────────────────────────────────
+            # Membership comes from `resolve_pops`, so an ungated image answers an empty list. Never an
+            # error: unsegmented and ungated are normal states for an image, not failures.
+            @test d.pops isa JSON3.Array
+            for p in d.pops
+                @test !isempty(String(p.path)) && !isempty(String(p.colour))
+                @test all(l -> l isa Integer, p.labels)
+            end
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: viewer label stores (P4 — masks through the same reader)" begin
+    # A mask is another zarr of the same geometry, which is what makes P4 cheap: the same `read_slab`,
+    # the same headers, the same shape guard. What must NOT be re-derived is where a store lives —
+    # `img_labels_path` is the image-owned accessor the tasks write through, so resolving a path by hand
+    # here would drift the day a filename convention changes.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-labels")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        mkpath(joinpath(img._dir, "labels"))
+        img.labels = Dict("seg" => ["seg.zarr"], "ghost" => ["ghost.zarr"])
+        save!(img)
+
+        # registered AND on disk → resolves
+        mkpath(joinpath(img._dir, "labels", "seg.zarr"))
+        p, e = label_store_path(proj.uid, img.uid, "seg")
+        @test e === nothing
+        @test p == joinpath(img._dir, "labels", "seg.zarr")
+
+        # registered but NOT on disk → a message, not a path. `labels` and `label_props` are
+        # independent registries and a store can be registered before it is written.
+        p2, e2 = label_store_path(proj.uid, img.uid, "ghost")
+        @test p2 === nothing && occursin("not on disk", e2)
+
+        # never registered, and no image at all — both normal states, both a message
+        @test label_store_path(proj.uid, img.uid, "nope")[2] == "no label store named 'nope'"
+        @test label_store_path(proj.uid, img.uid, "")[2] == "no label store named ''"
+        @test label_store_path(proj.uid, "NOSUCH", "seg")[2] == "image not found"
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer overlays on an image with no cell table" begin
+    # An unsegmented image is the FIRST thing the viewer opens for most users. It must answer an empty
+    # overlay, not a 500 — the panel asks unconditionally.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-overlay-empty")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        save!(img)
+        st, body = api_viewer_overlays(HTTP.Request("GET",
+            "/api/viewer/overlays?projectUid=$(proj.uid)&imageUid=$(img.uid)"))
+        d = JSON3.read(body)
+        @test st == 200
+        @test d.nCells == 0 && isempty(d.pops) && d.values === nothing
+        @test d.note == "not segmented"        # the reason, so the panel can say so rather than guess
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
 @testset "API: a napari selection resolves to TRACKS" begin
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
@@ -5340,5 +5543,186 @@ end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: viewer slab (voxels the GPU can upload without a transform)" begin
+    # `read_slab` feeds a WebGPU 3D texture directly: the response body is copied to VRAM with no
+    # reshape, so its linear order MUST be x-fastest, then y, then z. Every assertion here is about a
+    # failure that is SILENT — a transposed or byte-swapped volume renders a plausible-looking image of
+    # the wrong thing, and neither the route nor the browser can tell. See docs/todo/WEB_VIEWER_PLAN.md.
+    #
+    # The pattern is `x + 10y + 100z + 1000c + 10000t`, so every axis has its own decimal digit and any
+    # swap between two of them is visible in a single voxel.
+    val(x, y, z, c, t) = UInt16(x + 10y + 100z + 1000c + 10000t)
+    axes_attr(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names])])
+
+    # Store declared (t,c,z,y,x) in C-order → Zarr.jl presents it REVERSED, so Julia dims are x,y,z,c,t.
+    function make_store(dir, c_axes, jdims, fill!)
+        g = zgroup(Zarr.DirectoryStore(dir); attrs = axes_attr(c_axes))
+        a = zcreate(UInt16, g, "0", jdims...; chunks = jdims)
+        buf = zeros(UInt16, jdims...)
+        fill!(buf)
+        a[fill(Colon(), length(jdims))...] = buf
+        dir
+    end
+
+    nt, nc, nz, ny, nx = 2, 2, 3, 4, 5
+    mktempdir() do d
+        p = make_store(joinpath(d, "std.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+
+        vol, sx, sy, sz = read_slab(p, 0, 1)          # t=0, c=1 (both 0-based)
+        @test (sx, sy, sz) == (nx, ny, nz)
+        @test vol[1, 1, 1] == val(1, 1, 1, 2, 1)
+        @test vol[nx, ny, nz] == val(nx, ny, nz, 2, 1)
+        # x and y are DIFFERENT lengths here on purpose — a square frame hides a transpose.
+        @test vol[2, 3, 1] == val(2, 3, 1, 2, 1)
+
+        # THE upload contract: the first `nx` elements of the flat body must walk x, not y or z.
+        @test vec(vol)[1:nx] == [val(x, 1, 1, 2, 1) for x in 1:nx]
+        @test vec(vol)[nx + 1] == val(1, 2, 1, 2, 1)              # then y
+        @test vec(vol)[nx * ny + 1] == val(1, 1, 2, 2, 1)         # then z
+
+        # …and the wire bytes are little-endian pairs of exactly that, nothing padded or reordered.
+        bytes = slab_bytes(vol)
+        @test length(bytes) == nx * ny * nz * 2
+        @test bytes[1] == UInt8(val(1, 1, 1, 2, 1) % 256)
+        @test bytes[2] == UInt8(val(1, 1, 1, 2, 1) ÷ 256)
+
+        # t is honoured (0-based → 1-based) rather than silently always frame 1
+        @test read_slab(p, 1, 0)[1][1, 1, 1] == val(1, 1, 1, 1, 2)
+
+        # ── One z plane (the 2D view) ───────────────────────────────────────────────────
+        # This is the view a timecourse is actually watched in, and the ONLY one that plays: on Dml3RG a
+        # plane timepoint is 8.8 MB against 326 MB, so the whole 181-frame movie is 1.59 GB and fits in
+        # VRAM. It shares `read_slab` with the volume deliberately — a scalar z drops the dim exactly as
+        # t and c do — so there is no second reader to disagree about axis order.
+        pv, px, py, pz = read_slab(p, 0, 1; z = 2)      # 0-based z → the THIRD plane
+        @test (px, py, pz) == (nx, ny, 1)               # reports depth 1, not the stack's depth
+        @test ndims(pv) == 2
+        @test pv[2, 3] == val(2, 3, 3, 2, 1)            # ← the requested plane, not plane 1
+        @test vec(pv)[1:nx] == [val(x, 1, 3, 2, 1) for x in 1:nx]   # still x-fastest on the wire
+        # z=0 is a real plane, not "no plane" — an absent z means the whole stack and the two must not
+        # collapse into each other.
+        @test read_slab(p, 0, 0; z = 0)[1][2, 3] == val(2, 3, 1, 1, 1)
+        @test size(read_slab(p, 0, 0)[1], 3) == nz      # z omitted → the whole stack
+        # Out of range is clamped to a real plane rather than throwing: the slider's bound and the
+        # store's depth can disagree for a moment after a version switch.
+        @test read_slab(p, 0, 0; z = 999)[1][2, 3] == val(2, 3, nz, 1, 1)
+        @test read_slab(p, 0, 0; z = -5)[1][2, 3] == val(2, 3, 1, 1, 1)
+
+        # ── A RANGE of planes (the usable 3D view) ─────────────────────────────────────
+        # Every cost here is linear in the plane count, so a few planes out of a deep stack is what
+        # makes the volume view interactive: 8 of 37 is 70 MB rather than 326 MB. A range KEEPS the z
+        # dim where a scalar drops it — that difference in rank is the whole contract, because the
+        # client sizes its texture from it.
+        rv, rx, ry, rz = read_slab(p, 0, 1; z = 1:2)    # 0-based → planes 2 and 3
+        @test (rx, ry, rz) == (nx, ny, 2)
+        @test ndims(rv) == 3
+        @test rv[2, 3, 1] == val(2, 3, 2, 2, 1)         # ← starts at the range's low end
+        @test rv[2, 3, 2] == val(2, 3, 3, 2, 1)
+        @test vec(rv)[1:nx] == [val(x, 1, 2, 2, 1) for x in 1:nx]   # still x-fastest on the wire
+        # A one-plane RANGE is not a scalar: same bytes, different rank, and the client's shape guard
+        # rejects a slab whose depth disagrees with what it allocated.
+        @test ndims(read_slab(p, 0, 1; z = 2:2)[1]) == 3
+        @test read_slab(p, 0, 1; z = 2:2)[4] == 1
+        @test read_slab(p, 0, 1; z = 2:2)[1][2, 3, 1] == val(2, 3, 3, 2, 1)
+        # Clamped at both ends, and a reversed range is read the way round it was meant — these come
+        # off a query string, where an out-of-range index is a 500 from inside Zarr.jl.
+        @test read_slab(p, 0, 0; z = 0:999)[4] == nz
+        @test read_slab(p, 0, 0; z = -5:1)[4] == 2
+        # A backwards pair cannot even reach here as a range — `2:0` is normalised to the EMPTY `2:1` by
+        # UnitRange's own constructor, which is why the route orders the two integers before building
+        # one. An empty range that does arrive reads as the single plane at its start, never as zero
+        # planes: a zero-thickness slab renders black (entry and exit distances coincide).
+        @test read_slab(p, 0, 0; z = 2:0)[4] == 1
+        @test read_slab(p, 0, 0; z = 2:0)[1][2, 3, 1] == val(2, 3, 3, 1, 1)
+        @test ndims(read_slab(p, 0, 0; z = 2:0)[1]) == 3     # still a volume, not a plane
+    end
+
+    # A store whose axes are NOT (t,c,z,y,x) must be PERMUTED to (x,y,z), not passed through. This is
+    # the whole reason the permute is written out instead of relying on the usual layout: pass-through
+    # would put z where x belongs and still render.
+    mktempdir() do d
+        # C-order (t,c,y,x,z) → Julia dims are z,x,y,c,t
+        p = make_store(joinpath(d, "odd.ome.zarr"), ["t", "c", "y", "x", "z"],
+                       (nz, nx, ny, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, y in 1:ny, x in 1:nx, z in 1:nz
+                           b[z, x, y, c, t] = val(x, y, z, c, t)
+                       end)
+        vol, sx, sy, sz = read_slab(p, 0, 0)
+        @test (sx, sy, sz) == (nx, ny, nz)             # reported as x,y,z whatever the store's order
+        @test vol[2, 3, 1] == val(2, 3, 1, 1, 1)       # …and the voxels actually moved
+        @test vec(vol)[1:nx] == [val(x, 1, 1, 1, 1) for x in 1:nx]
+    end
+
+    # Degenerate ranks: a 2D still and a single-channel stack answer the same shape of question, with
+    # the missing axes counting as 1 — not an error, and not a silently dropped dimension.
+    mktempdir() do d
+        p2 = make_store(joinpath(d, "flat2d.ome.zarr"), ["y", "x"], (nx, ny),
+                        b -> for y in 1:ny, x in 1:nx; b[x, y] = val(x, y, 1, 1, 1) end)
+        vol, sx, sy, sz = read_slab(p2, 0, 0)
+        @test (sx, sy, sz) == (nx, ny, 1)
+        @test vol[2, 3] == val(2, 3, 1, 1, 1)
+        # an image with no z axis: asking for a plane is a no-op, not an error
+        @test read_slab(p2, 0, 0; z = 3)[1][2, 3] == val(2, 3, 1, 1, 1)
+
+        p3 = make_store(joinpath(d, "zyx.ome.zarr"), ["z", "y", "x"], (nx, ny, nz),
+                        b -> for z in 1:nz, y in 1:ny, x in 1:nx; b[x, y, z] = val(x, y, z, 1, 1) end)
+        @test read_slab(p3, 0, 0)[2:4] == (nx, ny, nz)
+    end
+
+    # Big-endian: a raw bioformats2raw store is `>u2` and Zarr.jl hands the bytes back UNSWAPPED, so a
+    # slab read with plain `arr[...]` is garbage that renders as saturated noise. `read_slab` must go
+    # through `read_native`. Same stamp trick as the byte-order testset above.
+    mktempdir() do d
+        p = make_store(joinpath(d, "be.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+        za = JSON3.read(read(joinpath(p, "0", ".zarray"), String), Dict{String,Any})
+        za["dtype"] = ">u2"
+        write(joinpath(p, "0", ".zarray"), JSON3.write(za))
+        got = read_slab(p, 0, 0)[1]
+        @test got[1, 1, 1] == ntoh(val(1, 1, 1, 1, 1))
+        @test got[1, 1, 1] != val(1, 1, 1, 1, 1)       # ← fails if read_native was bypassed
+    end
+
+    # Cold-start contrast: one spec per channel, sampled from a FIXED (t, z) so playback cannot flicker
+    # as the window chases each frame's own distribution (WEB_VIEWER_PLAN.md decision 5).
+    mktempdir() do d
+        p = make_store(joinpath(d, "c.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+        specs = _sampled_specs(p, nc)
+        @test length(specs) == nc
+        @test all(s -> s[2] >= s[1], specs)
+        @test _sampled_specs(p, nc) == specs           # same (t, z) every time, so stable
+    end
+
+    # `resolved_display_specs` is the ONE place a colormap name becomes RGB — the browser must not
+    # re-derive napari's palette (a name table missing `bop blue` rendered a channel WHITE).
+    mktempdir() do d
+        pj = joinpath(d, "props.json")
+        write(pj, JSON3.write((; Image = [
+            (; contrast_limits = [0.0, 10.0], colormap = "bop blue", visible = true),
+            (; contrast_limits = [1.0, 5.0], colormap = "green", visible = false),
+        ])))
+        r = resolved_display_specs(pj, 2)
+        @test length(r) == 2
+        @test r[1].lo == 0.0 && r[1].hi == 10.0 && r[1].visible
+        @test r[1].lut[end] == (0.12549f0, 0.678431f0, 0.972549f0)   # resolved, not the string
+        @test r[2].lut[end] == (0f0, 1f0, 0f0) && r[2].visible == false
+        # Props describing FEWER channels than the store has → `nothing`, so the route falls back to
+        # sampling instead of indexing off the end or shifting every channel's colour by one.
+        @test resolved_display_specs(pj, 3) === nothing
+        @test resolved_display_specs(joinpath(d, "absent.json"), 1) === nothing
     end
 end

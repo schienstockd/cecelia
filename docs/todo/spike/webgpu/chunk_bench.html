@@ -1,0 +1,180 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — G3 chunk delivery benchmark</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:14px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 10px;max-width:86ch}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:10px;overflow:auto;
+     max-height:52vh;margin:0;font-size:12px}
+ button{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;border-radius:5px;
+        padding:8px 14px;cursor:pointer;margin:8px 6px 0 0}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}.warn{color:#ffd479}
+ #diag{font:12px ui-monospace,monospace;color:#9aa0a8;white-space:pre-wrap;margin:8px 0}
+ table{border-collapse:collapse;font:12px ui-monospace,monospace;margin-top:8px}
+ td,th{border:1px solid #262b33;padding:3px 8px;text-align:right}th{color:#9aa0a8}
+ td:first-child,th:first-child{text-align:left}
+</style></head><body>
+<h1>G3 — chunk delivery to the browser, option B</h1>
+<p class="sub">Two delivery designs against the real store, one timepoint, 4 channels. <b>A:</b> the
+store as it is — one HTTP request per blosc chunk, 1116 of them. <b>B:</b> four requests, one per
+channel, server assembles and HTTP <code>Content-Encoding</code> does the compression so the browser
+decodes nothing itself. The yardstick is the measured incumbent: napari pays <b>~1.2 s</b> per
+4-channel timepoint step today, of which only ~6–20% is disk IO.</p>
+<div id=status class=sub>starting…</div>
+<div id=diag></div>
+<pre id=out>—</pre>
+<button id=run disabled>Run</button>
+<button id=save disabled>Save results to Downloads</button>
+<script type="module">
+const el = id => document.getElementById(id);
+const say = (h, c) => el('status').innerHTML = '<span class="' + (c || '') + '">' + h + '</span>';
+const diag = m => { el('diag').textContent += m + '\n'; };
+const R = {version: 1, runs: {}, diagnostics: {}};
+
+const now = () => performance.now();
+
+async function getMeta() {
+  const r = await fetch('/meta', {cache: 'no-store'});
+  return await r.json();
+}
+
+// ── design A: one request per blosc chunk. Concurrency is the whole question here, so it is swept.
+async function fetchChunks(M, t, conc) {
+  const keys = [];
+  for (let c = 0; c < M.nc; c++)
+    for (let z = 0; z < M.nz; z++)
+      for (let iy = 0; iy < M.cy; iy++)
+        for (let ix = 0; ix < M.cx; ix++)
+          keys.push(`${t}.${c}.${z}.${iy}.${ix}`);
+  let bytes = 0, present = 0, i = 0;
+  const t0 = now();
+  async function worker() {
+    while (true) {
+      const k = i++;
+      if (k >= keys.length) return;
+      const r = await fetch('/raw/' + keys[k], {cache: 'no-store'});
+      if (r.status === 204) continue;
+      const b = await r.arrayBuffer();
+      bytes += b.byteLength; present++;
+    }
+  }
+  await Promise.all(Array.from({length: conc}, worker));
+  return {ms: now() - t0, requests: keys.length, present, bytes,
+          ms_per_chunk: +((now() - t0) / keys.length).toFixed(3)};
+}
+
+// ── design B: one request per channel, server-assembled, transport-compressed
+async function fetchSlabs(M, t) {
+  const t0 = now();
+  let bytes = 0, srvMs = 0, srvRead = 0, srvComp = 0, encs = [];
+  const bufs = await Promise.all(Array.from({length: M.nc}, async (_, c) => {
+    const r = await fetch(`/slab?t=${t}&c=${c}`, {cache: 'no-store'});
+    const b = await r.arrayBuffer();
+    srvMs = Math.max(srvMs, +r.headers.get('X-Server-Ms'));
+    srvRead = Math.max(srvRead, +r.headers.get('X-Server-Read-Ms'));
+    srvComp = Math.max(srvComp, +r.headers.get('X-Server-Compress-Ms'));
+    encs.push(r.headers.get('Content-Encoding') || 'identity');
+    bytes += b.byteLength;
+    return b;
+  }));
+  return {ms: now() - t0, requests: M.nc, bytes, server_ms_max: srvMs,
+          server_read_ms_max: srvRead, server_compress_ms_max: srvComp,
+          content_encoding: [...new Set(encs)], bufs};
+}
+
+async function main() {
+  const M = await getMeta();
+  R.meta = M;
+  diag('store: ' + JSON.stringify(M.shape) + ' chunks=' + JSON.stringify(M.chunks));
+  diag('chunks/timepoint: ' + M.chunks_per_timepoint_present + ' present of ' +
+       M.chunks_per_timepoint_nominal + ' nominal (sparse store)');
+  diag('uncompressed per channel: ' + (M.bytes_per_channel_uncompressed / 1e6).toFixed(1) + ' MB');
+
+  let device = null;
+  if ('gpu' in navigator) {
+    const ad = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+    if (ad) {
+      device = await ad.requestDevice();
+      R.diagnostics.adapter_discrete = ad.limits.maxTextureDimension3D > 2048;
+      diag('adapter: ' + (R.diagnostics.adapter_discrete ? 'discrete' : 'INTEGRATED'));
+    }
+  }
+  if (!device) diag('no WebGPU device — upload stage will be skipped');
+
+  el('run').disabled = false;
+  say('ready — click Run (takes ~1 min; it fetches ~150 MB in total)');
+
+  el('run').onclick = async () => {
+    el('run').disabled = true;
+
+    // design B first: it is 4 requests and warms the OS page cache for both designs equally
+    say('design B: 4 server-assembled slabs…');
+    const b1 = await fetchSlabs(M, 1);
+    const {bufs, ...b1r} = b1;
+    R.runs.slabs_cold = b1r;
+    diag('B cold: ' + b1r.ms.toFixed(0) + ' ms, ' + (b1r.bytes / 1e6).toFixed(1) +
+         ' MB over the wire, encoding=' + b1r.content_encoding.join(',') +
+         ', server read ' + b1r.server_read_ms_max + ' ms');
+
+    const b2 = await fetchSlabs(M, 2);
+    const {bufs: bufs2, ...b2r} = b2;
+    R.runs.slabs_second_timepoint = b2r;
+    diag('B t=2:  ' + b2r.ms.toFixed(0) + ' ms');
+
+    // design A: sweep concurrency, since 1116 small requests are latency-bound not bandwidth-bound
+    for (const conc of [1, 8, 32, 64, 128]) {
+      say('design A: 1116 chunk requests at concurrency ' + conc + '…');
+      const r = await fetchChunks(M, 3, conc);
+      R.runs['chunks_conc_' + conc] = r;
+      diag('A conc=' + String(conc).padStart(3) + ': ' + r.ms.toFixed(0) + ' ms  (' +
+           r.ms_per_chunk + ' ms/chunk, ' + (r.bytes / 1e6).toFixed(1) + ' MB, ' +
+           r.present + ' present)');
+      el('out').textContent = JSON.stringify(R.runs, null, 1);
+    }
+
+    // upload: the slab buffers are already the exact r16uint texture payload
+    if (device) {
+      say('uploading 4 channels to an r16uint 3D texture…');
+      const tex = device.createTexture({size: [M.nx, M.ny, M.nz * M.nc], dimension: '3d',
+        format: 'r16uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST});
+      const t0 = now();
+      for (let c = 0; c < M.nc; c++) {
+        device.queue.writeTexture({texture: tex, origin: [0, 0, c * M.nz]},
+          new Uint8Array(bufs[c]), {bytesPerRow: M.nx * 2, rowsPerImage: M.ny},
+          [M.nx, M.ny, M.nz]);
+      }
+      await device.queue.onSubmittedWorkDone();
+      R.runs.upload = {ms: +(now() - t0).toFixed(1),
+                       bytes: M.nc * M.bytes_per_channel_uncompressed};
+      diag('upload: ' + R.runs.upload.ms.toFixed(0) + ' ms for ' +
+           (R.runs.upload.bytes / 1e6).toFixed(0) + ' MB');
+      tex.destroy();
+    }
+
+    const NAPARI = 1241;           // G1, measured: napari's t-slider step, 4 channels
+    const bestA = Math.min(...[1, 8, 32, 64, 128].map(c => R.runs['chunks_conc_' + c].ms));
+    const totalB = R.runs.slabs_second_timepoint.ms + (R.runs.upload ? R.runs.upload.ms : 0);
+    R.comparison = {napari_scrub_ms: NAPARI, design_A_best_fetch_ms: +bestA.toFixed(0),
+                    design_B_fetch_plus_upload_ms: +totalB.toFixed(0),
+                    design_B_vs_napari: +(NAPARI / totalB).toFixed(2)};
+    const tbl = '<table><tr><th>one 4-channel timepoint</th><th>ms</th></tr>' +
+      '<tr><td>napari today (G1, measured)</td><td>' + NAPARI + '</td></tr>' +
+      '<tr><td>design A — 1116 chunk requests, best concurrency</td><td>' + bestA.toFixed(0) + '</td></tr>' +
+      '<tr><td>design B — 4 slabs + GPU upload</td><td>' + totalB.toFixed(0) + '</td></tr></table>';
+    el('out').textContent = JSON.stringify(R, (k, v) => k === 'bufs' ? undefined : v, 1);
+    say('done. ' + (totalB < NAPARI ? 'Design B beats the incumbent.' : 'Design B is slower than the incumbent.') +
+        ' Click save.' + tbl, totalB < NAPARI ? 'good' : 'warn');
+    el('save').disabled = false;
+  };
+}
+
+el('save').onclick = () => {
+  const b = new Blob([JSON.stringify(R, (k, v) => k === 'bufs' ? undefined : v, 1)],
+                     {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = 'webgpu_chunk_bench.json'; a.click();
+};
+
+main().catch(e => { say('FAILED: ' + e, 'bad'); diag('stack: ' + (e && e.stack)); });
+</script></body></html>

@@ -1,0 +1,466 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — timecourse slider prototype</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:14px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 10px;max-width:88ch}
+ #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+ canvas#cv{background:#000;border:1px solid #262b33;border-radius:6px;cursor:grab}
+ canvas#cv:active{cursor:grabbing}
+ canvas#cache{display:block;margin-top:6px;border:1px solid #262b33;border-radius:3px;width:100%}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:10px;overflow:auto;
+     max-height:58vh;min-width:28ch;margin:0;font-size:12px}
+ button,select{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;
+   border-radius:5px;padding:7px 12px;cursor:pointer;margin:0 6px 0 0}
+ select{background:#222831}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}.warn{color:#ffd479}
+ #diag{font:12px ui-monospace,monospace;color:#9aa0a8;white-space:pre-wrap;margin:8px 0}
+ label{font:12px system-ui,sans-serif;color:#9aa0a8;margin-right:10px}
+ input[type=range]{width:100%}
+ .row{display:flex;align-items:center;gap:10px;margin:8px 0}
+ .tag{font:11px system-ui,sans-serif;padding:1px 6px;border-radius:9px;background:#222831;color:#9aa0a8}
+</style></head><body>
+<h1>Timecourse slider — the one place the browser has no headroom</h1>
+<p class="sub">Rendering a frame is 5.3 ms; fetching a timepoint is ~1.2 s. So a naive slider is
+unusable and the interesting question is what makes it usable: a VRAM texture cache with a byte
+budget, LRU eviction, directional prefetch, and coalescing so a dragged slider does not queue a
+request per pixel. The strip under the slider is the cache — green is resident, amber in flight.</p>
+<div class="row">
+  <label>image <select id=img></select></label>
+  <label>channels <select id=nch><option>4</option><option>1</option></select></label>
+  <label>VRAM budget <select id=budget>
+    <option value="2">2 GB</option><option value="3" selected>3 GB</option>
+    <option value="5">5 GB</option></select></label>
+  <button id=open>Open</button>
+  <button id=play disabled>Play</button>
+  <button id=fillall disabled>Cache whole movie</button>
+  <button id=save disabled>Save results</button>
+</div>
+<div id=status class=sub>starting…</div>
+<div id=wrap>
+  <div style="flex:1 1 820px;min-width:520px">
+    <canvas id=cv width=820 height=540></canvas>
+    <div class="row"><span class=tag id=tlabel>t 0</span>
+      <input id=slider type=range min=0 max=0 value=0></div>
+    <canvas id=cache height=14></canvas>
+    <div id=diag></div>
+  </div>
+  <pre id=out>—</pre>
+</div>
+<script type="module">
+const el = id => document.getElementById(id);
+const say = (h, c) => el('status').innerHTML = '<span class="' + (c || '') + '">' + h + '</span>';
+const diag = m => { el('diag').textContent += m + '\n'; };
+const R = {version: 1, events: [], summary: {}};
+
+const BATCH = 20, STRIDE = 256;
+
+const WGSL = `
+struct P {
+  yaw: f32, pitch: f32, dist: f32, steps: f32,
+  nch: f32, resx: f32, resy: f32, pad0: f32,
+  ext: vec4<f32>, dims: vec4<f32>, lo: vec4<f32>, hi: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var vol: texture_3d<u32>;
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
+  var xy = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+  var o: VOut; o.pos = vec4(xy[i], 0.0, 1.0); o.uv = xy[i]; return o;
+}
+fn hitBox(ro: vec3<f32>, rd: vec3<f32>, h: vec3<f32>) -> vec2<f32> {
+  let inv = 1.0 / rd;
+  let a = min((-h - ro) * inv, (h - ro) * inv);
+  let b = max((-h - ro) * inv, (h - ro) * inv);
+  return vec2(max(max(a.x, a.y), a.z), min(min(b.x, b.y), b.z));
+}
+fn chCol(c: i32) -> vec3<f32> {
+  if (c == 0) { return vec3(1.0, 0.30, 0.30); }
+  if (c == 1) { return vec3(0.30, 1.0, 0.35); }
+  if (c == 2) { return vec3(0.35, 0.55, 1.0); }
+  return vec3(1.0, 0.40, 1.0);
+}
+fn win(c: i32, v: f32) -> f32 {
+  var lo = p.lo.x; var hi = p.hi.x;
+  if (c == 1) { lo = p.lo.y; hi = p.hi.y; }
+  if (c == 2) { lo = p.lo.z; hi = p.hi.z; }
+  if (c == 3) { lo = p.lo.w; hi = p.hi.w; }
+  return clamp((v - lo) / max(hi - lo, 1.0), 0.0, 1.0);
+}
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let h = p.ext.xyz * 0.5;
+  let cy = cos(p.yaw); let sy = sin(p.yaw);
+  let cp = cos(p.pitch); let sp = sin(p.pitch);
+  let fwd = vec3(cp * sy, sp, cp * cy);
+  let ro = fwd * p.dist;
+  let right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
+  let up = cross(fwd, right);
+  let rd = normalize(-fwd + right * (in.uv.x * 0.45 * (p.resx / p.resy)) + up * (in.uv.y * 0.45));
+  let t = hitBox(ro, rd, h);
+  let t0 = max(t.x, 0.0);
+  if (t.y <= t0) { return vec4(0.02, 0.02, 0.03, 1.0); }
+  let n = i32(p.steps);
+  let dt = (t.y - t0) / f32(n);
+  let zpc = i32(p.dims.w);
+  let nch = i32(p.nch);
+  var mx = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  for (var s = 0; s < n; s = s + 1) {
+    let wp = ro + rd * (t0 + (f32(s) + 0.5) * dt);
+    let uvw = (wp + h) / p.ext.xyz;
+    let vi = vec3<i32>(uvw * p.dims.xyz);
+    if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
+        vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
+    for (var c = 0; c < nch; c = c + 1) {
+      let v = f32(textureLoad(vol, vec3<i32>(vi.x, vi.y, vi.z + c * zpc), 0).r);
+      mx[c] = max(mx[c], v);
+    }
+  }
+  var acc = vec3(0.0);
+  for (var c = 0; c < nch; c = c + 1) { acc = acc + chCol(c) * win(c, mx[c]); }
+  return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`;
+
+let G = null;
+
+// ── VRAM texture cache: one 3D texture per timepoint, LRU under a byte budget ───────────────────
+class VolumeCache {
+  constructor(device, M, nch, budgetBytes) {
+    this.device = device; this.M = M; this.nch = nch;
+    this.bytesPer = M.nz * M.ny * M.nx * 2 * nch;
+    this.capacity = Math.max(2, Math.floor(budgetBytes / this.bytesPer));
+    this.map = new Map();          // t -> {tex, bind}
+    this.order = [];               // LRU, most recent last
+    this.inflight = new Map();     // t -> Promise
+    this.aborts = new Map();       // t -> AbortController
+  }
+  has(t) { return this.map.has(t); }
+  touch(t) {
+    const i = this.order.indexOf(t);
+    if (i >= 0) this.order.splice(i, 1);
+    this.order.push(t);
+  }
+  get(t) { if (this.map.has(t)) { this.touch(t); return this.map.get(t); } return null; }
+  evictIfNeeded(keepNear) {
+    while (this.order.length > this.capacity) {
+      // evict the LRU entry that is not the one being displayed
+      const t = this.order.find(x => x !== keepNear);
+      if (t === undefined) return;
+      this.order.splice(this.order.indexOf(t), 1);
+      this.map.get(t).tex.destroy();
+      this.map.delete(t);
+    }
+  }
+  cancel(keep) {
+    for (const [t, ac] of this.aborts) if (!keep.has(t)) { ac.abort(); this.aborts.delete(t); }
+  }
+  async load(uid, t, onContrast) {
+    if (this.map.has(t)) return this.map.get(t);
+    if (this.inflight.has(t)) return this.inflight.get(t);
+    const M = this.M, nch = this.nch;
+    const ac = new AbortController();
+    this.aborts.set(t, ac);
+    const p = (async () => {
+      const t0 = performance.now();
+      const bufs = [];
+      let srvRead = 0;
+      await Promise.all(Array.from({length: nch}, async (_, c) => {
+        const r = await fetch(`/slab?uid=${uid}&t=${t}&c=${c}`,
+                              {cache: 'no-store', signal: ac.signal});
+        bufs[c] = await r.arrayBuffer();
+        srvRead = Math.max(srvRead, +r.headers.get('X-Server-Read-Ms') || 0);
+      }));
+      const fetchMs = performance.now() - t0;
+      if (onContrast) onContrast(bufs, M, nch);
+      const t1 = performance.now();
+      const tex = this.device.createTexture({size: [M.nx, M.ny, M.nz * nch], dimension: '3d',
+        format: 'r16uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST});
+      for (let c = 0; c < nch; c++) {
+        this.device.queue.writeTexture({texture: tex, origin: [0, 0, c * M.nz]},
+          new Uint8Array(bufs[c]), {bytesPerRow: M.nx * 2, rowsPerImage: M.ny},
+          [M.nx, M.ny, M.nz]);
+      }
+      await this.device.queue.onSubmittedWorkDone();
+      const upMs = performance.now() - t1;
+      const bind = this.device.createBindGroup({layout: G.bgl, entries: [
+        {binding: 0, resource: {buffer: G.ubuf, offset: 0, size: 96}},
+        {binding: 1, resource: tex.createView()}]});
+      const e = {tex, bind, fetch_ms: +fetchMs.toFixed(1), upload_ms: +upMs.toFixed(1),
+                 server_read_ms: srvRead};
+      this.map.set(t, e); this.touch(t);
+      this.inflight.delete(t); this.aborts.delete(t);
+      R.events.push({t, fetch_ms: e.fetch_ms, upload_ms: e.upload_ms, server_read_ms: srvRead});
+      return e;
+    })().catch(err => {
+      this.inflight.delete(t); this.aborts.delete(t);
+      if (err.name !== 'AbortError') diag('t=' + t + ' load failed: ' + err);
+      return null;
+    });
+    this.inflight.set(t, p);
+    return p;
+  }
+}
+
+function extentOf(M) {
+  const s = M.scale_um || [1, 1, 1, 1, 1];
+  return [M.nx * s[4], M.ny * s[3], M.nz * s[2]];
+}
+
+const slots = new Float32Array(STRIDE * BATCH / 4);
+function writeUniform(M, nch, steps, rx, ry) {
+  const E = extentOf(M), o = 0;
+  slots[o + 0] = G.view.yaw; slots[o + 1] = G.view.pitch;
+  slots[o + 2] = Math.max(...E) * 1.7; slots[o + 3] = steps;
+  slots[o + 4] = nch; slots[o + 5] = rx; slots[o + 6] = ry; slots[o + 7] = 0;
+  slots[o + 8] = E[0]; slots[o + 9] = E[1]; slots[o + 10] = E[2]; slots[o + 11] = 0;
+  slots[o + 12] = M.nx; slots[o + 13] = M.ny; slots[o + 14] = M.nz; slots[o + 15] = M.nz;
+  for (let k = 0; k < 4; k++) { slots[o + 16 + k] = G.lo[k]; slots[o + 20 + k] = G.hi[k]; }
+  G.device.queue.writeBuffer(G.ubuf, 0, slots, 0, 24);
+}
+
+// Contrast is computed ONCE, from the first timepoint, and held. Recomputing per frame makes the
+// movie flicker as the window tracks each timepoint's own percentiles — napari fixes it per layer
+// too (set_contrast_from_sample).
+function percentiles(u16, n) {
+  const stride = Math.max(1, Math.floor(n / 150000));
+  const v = [];
+  for (let i = 0; i < n; i += stride) v.push(u16[i]);
+  v.sort((a, b) => a - b);
+  const at = f => v[Math.min(v.length - 1, Math.max(0, Math.floor(f * v.length)))];
+  return [at(0.01), Math.max(at(0.999), at(0.01) + 1)];
+}
+
+let renderPending = false;
+function requestRender() {
+  // rafCoalesce: a dragged slider fires an event per pixel; paint once per frame.
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => { renderPending = false; drawCurrent(); });
+}
+
+let lastDrawMs = 0;
+function drawCurrent() {
+  const S = G.state;
+  if (!S) return;
+  const e = S.cache.get(S.shownT);
+  if (!e) return;
+  const cv = el('cv');
+  writeUniform(S.M, S.nch, S.steps, cv.width, cv.height);
+  const t0 = performance.now();
+  const enc = G.device.createCommandEncoder();
+  const pass = enc.beginRenderPass({colorAttachments: [{
+    view: G.ctx.getCurrentTexture().createView(),
+    clearValue: {r: 0, g: 0, b: 0, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+  pass.setPipeline(G.pipeCanvas); pass.setBindGroup(0, e.bind, [0]); pass.draw(3); pass.end();
+  G.device.queue.submit([enc.finish()]);
+  lastDrawMs = performance.now() - t0;
+  drawCacheStrip();
+}
+
+function drawCacheStrip() {
+  const S = G.state, c = el('cache'), ctx = c.getContext('2d');
+  c.width = c.clientWidth || 800;
+  const n = S.M.nt, w = c.width / n;
+  ctx.clearRect(0, 0, c.width, c.height);
+  for (let t = 0; t < n; t++) {
+    ctx.fillStyle = S.cache.has(t) ? '#2f9e44'
+                  : S.cache.inflight.has(t) ? '#e8a33d' : '#232830';
+    ctx.fillRect(t * w, 0, Math.max(1, w - 0.5), c.height);
+  }
+  ctx.fillStyle = '#e6e6e6';
+  ctx.fillRect(S.t * w, 0, Math.max(2, w - 0.5), c.height);
+}
+
+// ── the scrub controller: coalesce to the latest requested t, prefetch in the drag direction
+async function gotoT(t, why) {
+  const S = G.state;
+  S.t = t;
+  el('tlabel').textContent = 't ' + t;
+  el('slider').value = t;
+  if (S.cache.has(t)) {
+    S.shownT = t;
+    S.hits++;
+    requestRender();
+  } else {
+    S.misses++;
+    drawCacheStrip();
+  }
+  S.seq++;
+  const mySeq = S.seq;
+  // keep the window we care about; cancel fetches outside it
+  const dir = Math.sign(t - S.lastT) || 1;
+  S.lastT = t;
+  const want = [t];
+  for (let k = 1; k <= S.prefetch; k++) {
+    const a = t + dir * k, b = t - dir * k;
+    if (a >= 0 && a < S.M.nt) want.push(a);
+    if (k <= 2 && b >= 0 && b < S.M.nt) want.push(b);
+  }
+  S.cache.cancel(new Set(want));
+  for (const u of want) {
+    if (S.cache.has(u)) continue;
+    const first = S.cache.map.size === 0;
+    const e = await S.cache.load(S.uid, u, first ? (bufs, M, nch) => {
+      const nvox = M.nz * M.ny * M.nx;
+      for (let c = 0; c < nch; c++) {
+        const [lo, hi] = percentiles(new Uint16Array(bufs[c]), nvox);
+        G.lo[c] = lo; G.hi[c] = hi;
+      }
+      diag('contrast lo=' + JSON.stringify(G.lo.slice(0, nch)) +
+           ' hi=' + JSON.stringify(G.hi.slice(0, nch)));
+    } : null);
+    if (!e) continue;
+    S.cache.evictIfNeeded(S.t);
+    if (u === S.t && mySeq === S.seq) { S.shownT = u; requestRender(); }
+    drawCacheStrip();
+    if (mySeq !== S.seq && why === 'drag') break;   // the user moved on
+  }
+}
+
+async function initGpu() {
+  const adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+  const discrete = adapter.limits.maxTextureDimension3D > 2048;
+  diag('adapter: maxTextureDimension3D=' + adapter.limits.maxTextureDimension3D +
+       (discrete ? ' (discrete)' : ' (INTEGRATED — wrong GPU)'));
+  R.adapter = {looks_discrete: discrete};
+  const device = await adapter.requestDevice();
+  device.addEventListener('uncapturederror', e => diag('!! ' + e.error.message));
+  device.lost.then(i => say('DEVICE LOST: ' + i.message + ' — lower the VRAM budget', 'bad'));
+  const cv = el('cv');
+  const ctx = cv.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({device, format: fmt, alphaMode: 'opaque'});
+  const mod = device.createShaderModule({code: WGSL});
+  const errs = (await mod.getCompilationInfo()).messages.filter(m => m.type === 'error');
+  if (errs.length) throw new Error('WGSL: ' + errs.map(m => m.lineNum + ':' + m.message).join(' | '));
+  const bgl = device.createBindGroupLayout({entries: [
+    {binding: 0, visibility: GPUShaderStage.FRAGMENT,
+     buffer: {type: 'uniform', hasDynamicOffset: true, minBindingSize: 96}},
+    {binding: 1, visibility: GPUShaderStage.FRAGMENT,
+     texture: {sampleType: 'uint', viewDimension: '3d'}}]});
+  const layout = device.createPipelineLayout({bindGroupLayouts: [bgl]});
+  const ubuf = device.createBuffer({size: STRIDE * BATCH,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  G = {device, ctx, fmt, bgl, ubuf, layout,
+       pipeCanvas: device.createRenderPipeline({layout,
+         vertex: {module: mod, entryPoint: 'vs'},
+         fragment: {module: mod, entryPoint: 'fs', targets: [{format: fmt}]},
+         primitive: {topology: 'triangle-list'}}),
+       view: {yaw: 0.7, pitch: 0.35}, lo: [0, 0, 0, 0], hi: [1, 1, 1, 1], state: null};
+  diag('shader compiled OK');
+}
+
+(function drag() {
+  const cv = el('cv');
+  let on = false, px = 0, py = 0;
+  cv.addEventListener('pointerdown', e => { on = true; px = e.clientX; py = e.clientY;
+                                            cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointerup', e => { on = false; cv.releasePointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    if (!on || !G || !G.state) return;
+    G.view.yaw += (e.clientX - px) * 0.008;
+    G.view.pitch = Math.max(-1.4, Math.min(1.4, G.view.pitch + (e.clientY - py) * 0.008));
+    px = e.clientX; py = e.clientY;
+    requestRender();
+  });
+})();
+
+async function main() {
+  if (!('gpu' in navigator)) { say('navigator.gpu absent', 'bad'); return; }
+  await initGpu();
+  const uids = await (await fetch('/images')).json();
+  el('img').innerHTML = uids.map(u => '<option>' + u + '</option>').join('');
+  say('ready — Open an image');
+
+  el('open').onclick = async () => {
+    el('open').disabled = true;
+    const uid = el('img').value, nch = +el('nch').value;
+    const budget = +el('budget').value * 1e9;
+    const M = await (await fetch('/meta?uid=' + uid)).json();
+    const cache = new VolumeCache(G.device, M, nch, budget);
+    G.state = {uid, M, nch, cache, t: 0, shownT: -1, lastT: 0, seq: 0, steps: 256,
+               prefetch: 4, hits: 0, misses: 0};
+    R.image = {uid, shape: M.shape, channels: nch,
+               bytes_per_timepoint: cache.bytesPer, cache_capacity: cache.capacity,
+               budget_gb: +el('budget').value};
+    diag(uid + ' ' + JSON.stringify(M.shape) + '  ' +
+         (cache.bytesPer / 1e6).toFixed(0) + ' MB/timepoint  → cache holds ' +
+         cache.capacity + ' of ' + M.nt + ' timepoints');
+    el('slider').max = M.nt - 1;
+    el('slider').value = 0;
+    say('loading t=0…');
+    await gotoT(0, 'open');
+    el('play').disabled = false;
+    el('fillall').disabled = cache.capacity < M.nt;
+    el('save').disabled = false;
+    el('open').disabled = false;
+    say('scrub the slider · drag the canvas to rotate · green = cached', 'good');
+  };
+
+  // @input WRITES the value and paints; the fetch/prefetch is coalesced by seq inside gotoT
+  el('slider').oninput = e => { if (G.state) gotoT(+e.target.value, 'drag'); };
+
+  el('play').onclick = async () => {
+    const S = G.state;
+    if (!S) return;
+    if (S.playing) { S.playing = false; el('play').textContent = 'Play'; return; }
+    S.playing = true; el('play').textContent = 'Stop';
+    const frames = [];
+    let t = S.t;
+    while (S.playing) {
+      const t0 = performance.now();
+      t = (t + 1) % S.M.nt;
+      await gotoT(t, 'play');
+      frames.push(performance.now() - t0);
+      if (frames.length >= S.M.nt) break;
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    S.playing = false; el('play').textContent = 'Play';
+    const s = [...frames].sort((a, b) => a - b);
+    R.summary.playback = {frames: frames.length,
+      ms_median: +s[s.length >> 1].toFixed(1), ms_min: +s[0].toFixed(1), ms_max: +s[s.length-1].toFixed(1),
+      fps_median: +(1000 / s[s.length >> 1]).toFixed(2),
+      cache_hits: S.hits, cache_misses: S.misses};
+    el('out').textContent = JSON.stringify(R, null, 1);
+    say('playback: median ' + R.summary.playback.ms_median + ' ms/frame (' +
+        R.summary.playback.fps_median + ' fps), ' + S.hits + ' hits / ' + S.misses + ' misses',
+        'good');
+  };
+
+  el('fillall').onclick = async () => {
+    const S = G.state;
+    el('fillall').disabled = true;
+    const t0 = performance.now();
+    for (let t = 0; t < S.M.nt; t++) {
+      await S.cache.load(S.uid, t, null);
+      drawCacheStrip();
+      say('caching whole movie… ' + (t + 1) + '/' + S.M.nt);
+    }
+    R.summary.cache_whole_movie_ms = +(performance.now() - t0).toFixed(0);
+    R.summary.cache_whole_movie_gb = +(S.cache.bytesPer * S.M.nt / 1e9).toFixed(2);
+    say('whole movie in VRAM: ' + (R.summary.cache_whole_movie_ms / 1000).toFixed(1) + ' s for ' +
+        R.summary.cache_whole_movie_gb + ' GB — now scrub, every step is a cache hit', 'good');
+    el('out').textContent = JSON.stringify(R, null, 1);
+  };
+}
+
+el('save').onclick = () => {
+  const S = G.state;
+  if (S) {
+    const ev = R.events;
+    const f = ev.map(e => e.fetch_ms).sort((a, b) => a - b);
+    const u = ev.map(e => e.upload_ms).sort((a, b) => a - b);
+    R.summary.loads = ev.length;
+    if (f.length) R.summary.fetch_ms_median = f[f.length >> 1];
+    if (u.length) R.summary.upload_ms_median = u[u.length >> 1];
+    R.summary.render_ms_last = +lastDrawMs.toFixed(2);
+    R.summary.hits = S.hits; R.summary.misses = S.misses;
+  }
+  const b = new Blob([JSON.stringify(R, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = 'webgpu_timecourse.json'; a.click();
+};
+
+main().catch(e => { say('FAILED: ' + e, 'bad'); diag('stack: ' + (e && e.stack)); });
+</script></body></html>

@@ -79,6 +79,8 @@ const DECLARED_SINKS: Record<string, string> = {
     'patches the local title-card config object; the card is only rendered at record time',
   'modules/MoviesModule.vue':
     'sets the CSS zoom of the <video> element + the persisted preference; no request, no re-decode',
+  'modules/ViewerWindow.vue':
+    'the timepoint scrubber: paints through usePlotResize (rafCoalesce) and prefetches through debouncedLatest — the two canonical schedulers, one per half',
 }
 
 const RAW = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
@@ -131,8 +133,22 @@ describe('driftingTextFields', () => {
   it('a select cannot drift — its value only changes when the user picks, which fires change', () => {
     expect(driftingTextFields('<select :value="v" @change="set($event)"><option/></select>')).toEqual([])
   })
-  it('a range input is a different rule (see above), not this one', () => {
-    expect(driftingTextFields('<input type="range" :value="n" @change="apply(n)" />')).toEqual([])
+  // REVISED (2026-08-24). This used to assert a range was NOT this rule's business — it was the
+  // continuous-controls rule's. That drew the line in the wrong place, and a `:value` + `@change` range
+  // fell through BOTH: `undeclaredControls` only looks at `@input` handlers, so a slider that commits on
+  // release is invisible to it, and this rule excluded the type. The viewer's z slider then drifted
+  // exactly as a text field does, and worse — a drag is far longer than a keystroke, so every re-render
+  // in between patched the thumb back out from under the pointer.
+  it('flags a range committed on @change with nothing writing the value mid-drag', () => {
+    expect(driftingTextFields('<input type="range" :value="n" @change="apply(n)" />')).toHaveLength(1)
+  })
+  it('the canonical range shape — @input writes, @change commits — cannot drift', () => {
+    // This is the pattern docs/UI.md prescribes and PoolThrottle/PopulationManager use. It is controlled
+    // on every event, so widening the type list without this exemption over-reports it as a bug.
+    expect(driftingTextFields(
+      '<input type="range" :value="n" @input="n = +$event.target.value" @change="apply(n)" />')).toEqual([])
+    expect(driftingTextFields('<input type="range" :value="n" @input="apply(n)" />')).toEqual([])
+    expect(driftingTextFields('<input type="range" v-model="n" @change="apply(n)" />')).toEqual([])
   })
 })
 
@@ -168,6 +184,8 @@ const DECLARED_TIMERS: Record<string, string> = {
   'stores/taskPreview.ts':            'a POLL loop while the preview worker warms up — each tick arms the next',
   'stores/guide.ts':
     'two, both deliberate: a POLL that re-reads DOM-derived gate state while a guide is open (Vue cannot track a <select>\'s value), and a one-shot delay before advancing a satisfied step so the user sees it acknowledged',
+  'modules/ViewerWindow.vue':
+    'the playback clock — a chosen frame rate, so a timer and not rAF; each tick arms the next, and a tick that finds the frame uncached holds instead of advancing',
 }
 
 describe('nobody hand-rolls a fourth debounce', () => {

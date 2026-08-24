@@ -1,8 +1,8 @@
 // Opening one of the app's views in its OWN browser window — the single place that builds the URL,
 // names the window and knows which routes are popouts.
 //
-// Two surfaces do this (the console's ↗ and the Task Manager's ↗) and both need the same three
-// things, none of which is obvious:
+// Three surfaces do this (the console's ↗, the Task Manager's ↗ and the viewer panel's ↗) and they all
+// need the same three things, none of which is obvious:
 //
 //  - a HASH url (`origin + pathname + '#/console'`), because the popup boots the same SPA from the
 //    same document and the hash is what tells it which view to render bare;
@@ -13,6 +13,11 @@
 //    A popup is a full second app instance with its own WS: whatever App.vue starts, it starts again
 //    (see App.vue — the napari overlay restore and the lab-log auto-capture both act on the BACKEND,
 //    so two windows meant two of every request).
+//
+// Not every popout follows the main window. The Task Manager does (a list scoped to the project you
+// just left, still labelled as current, is worse than an empty one); the volume viewer deliberately
+// does NOT — it is a comparison surface, and a view being measured against napari must not move
+// because someone clicked another row.
 //
 // **The name is the window's identity, and it is the durable half of it.** The hash says which view
 // this window is showing *right now*; the name says which view the window IS. They come apart — a
@@ -29,8 +34,9 @@
 /** The popout routes and the window name each one owns. One map, so a route can never be opened into
  *  the wrong window (or into an unnamed one, which is how you get two copies stacked on top). */
 export const POPOUT_WINDOW_NAMES = {
-  '/console':      'cecelia-console',
-  '/tasks-window': 'cecelia-tasks',
+  '/console':       'cecelia-console',
+  '/tasks-window':  'cecelia-tasks',
+  '/viewer-window': 'cecelia-viewer',
 } as const
 
 export type PopoutRoute = keyof typeof POPOUT_WINDOW_NAMES

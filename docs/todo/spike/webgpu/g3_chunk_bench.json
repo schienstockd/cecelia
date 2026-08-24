@@ -1,0 +1,108 @@
+{
+ "version": 1,
+ "runs": {
+  "slabs_cold": {
+   "ms": 1948,
+   "requests": 4,
+   "bytes": 351054336,
+   "server_ms_max": 1762.8,
+   "server_read_ms_max": 1665.2,
+   "server_compress_ms_max": 195.3,
+   "content_encoding": [
+    "zstd"
+   ]
+  },
+  "slabs_second_timepoint": {
+   "ms": 737,
+   "requests": 4,
+   "bytes": 351054336,
+   "server_ms_max": 488.5,
+   "server_read_ms_max": 330.3,
+   "server_compress_ms_max": 208.2,
+   "content_encoding": [
+    "zstd"
+   ]
+  },
+  "chunks_conc_1": {
+   "ms": 39026,
+   "requests": 1368,
+   "present": 1116,
+   "bytes": 38199481,
+   "ms_per_chunk": 28.528
+  },
+  "chunks_conc_8": {
+   "ms": 5683,
+   "requests": 1368,
+   "present": 1116,
+   "bytes": 38199481,
+   "ms_per_chunk": 4.154
+  },
+  "chunks_conc_32": {
+   "ms": 5322,
+   "requests": 1368,
+   "present": 1116,
+   "bytes": 38199481,
+   "ms_per_chunk": 3.89
+  },
+  "chunks_conc_64": {
+   "ms": 5313,
+   "requests": 1368,
+   "present": 1116,
+   "bytes": 38199481,
+   "ms_per_chunk": 3.884
+  },
+  "chunks_conc_128": {
+   "ms": 5270,
+   "requests": 1368,
+   "present": 1116,
+   "bytes": 38199481,
+   "ms_per_chunk": 3.852
+  },
+  "upload": {
+   "ms": 386,
+   "bytes": 351054336
+  }
+ },
+ "diagnostics": {
+  "adapter_discrete": true
+ },
+ "meta": {
+  "shape": [
+   181,
+   4,
+   38,
+   1046,
+   1104
+  ],
+  "chunks": [
+   1,
+   1,
+   1,
+   512,
+   512
+  ],
+  "compressor": {
+   "id": "blosc",
+   "cname": "zstd",
+   "clevel": 3,
+   "shuffle": 1,
+   "blocksize": 0
+  },
+  "nz": 38,
+  "ny": 1046,
+  "nx": 1104,
+  "nc": 4,
+  "nt": 181,
+  "cy": 3,
+  "cx": 3,
+  "chunks_per_timepoint_nominal": 1368,
+  "chunks_per_timepoint_present": 1116,
+  "bytes_per_channel_uncompressed": 87763584
+ },
+ "comparison": {
+  "napari_scrub_ms": 1241,
+  "design_A_best_fetch_ms": 5270,
+  "design_B_fetch_plus_upload_ms": 1123,
+  "design_B_vs_napari": 1.11
+ }
+}

@@ -1,0 +1,180 @@
+{
+ "version": 1,
+ "runs": [
+  {
+   "config": "441x1046x38",
+   "nx": 441,
+   "ny": 1046,
+   "nz": 38,
+   "note": "fXgbTl width (882 B/row, unaligned)",
+   "bytes_per_row": 882,
+   "padded_bytes_per_row": 1024,
+   "row_aligned_256": false,
+   "rows": 39748,
+   "bytes": 35057736,
+   "methods": {
+    "writeTexture_tight": {
+     "ms": 99,
+     "mb_per_s": 354,
+     "us_per_row": 2.491
+    },
+    "writeTexture_padded": {
+     "ms": 100,
+     "mb_per_s": 351,
+     "us_per_row": 2.516
+    },
+    "buffer_copy": {
+     "ms": 100,
+     "mb_per_s": 351,
+     "us_per_row": 2.516
+    },
+    "buffer_copy_resident": {
+     "ms": 100,
+     "mb_per_s": 351,
+     "us_per_row": 2.516
+    }
+   }
+  },
+  {
+   "config": "1104x1046x38",
+   "nx": 1104,
+   "ny": 1046,
+   "nz": 38,
+   "note": "VJy1Nx width (2208 B/row, unaligned)",
+   "bytes_per_row": 2208,
+   "padded_bytes_per_row": 2304,
+   "row_aligned_256": false,
+   "rows": 39748,
+   "bytes": 87763584,
+   "methods": {
+    "writeTexture_tight": {
+     "ms": 209,
+     "mb_per_s": 420,
+     "us_per_row": 5.258
+    },
+    "writeTexture_padded": {
+     "ms": 212,
+     "mb_per_s": 414,
+     "us_per_row": 5.334
+    },
+    "buffer_copy": {
+     "ms": 219,
+     "mb_per_s": 401,
+     "us_per_row": 5.51
+    },
+    "buffer_copy_resident": {
+     "ms": 100,
+     "mb_per_s": 878,
+     "us_per_row": 2.516
+    }
+   }
+  },
+  {
+   "config": "1152x1046x38",
+   "nx": 1152,
+   "ny": 1046,
+   "nz": 38,
+   "note": "2304 B/row = 256x9, ALIGNED",
+   "bytes_per_row": 2304,
+   "padded_bytes_per_row": 2304,
+   "row_aligned_256": true,
+   "rows": 39748,
+   "bytes": 91579392,
+   "methods": {
+    "writeTexture_tight": {
+     "ms": 214,
+     "mb_per_s": 428,
+     "us_per_row": 5.384
+    },
+    "writeTexture_padded": {
+     "ms": 214,
+     "mb_per_s": 428,
+     "us_per_row": 5.384
+    },
+    "buffer_copy": {
+     "ms": 213,
+     "mb_per_s": 430,
+     "us_per_row": 5.359
+    },
+    "buffer_copy_resident": {
+     "ms": 100,
+     "mb_per_s": 916,
+     "us_per_row": 2.516
+    }
+   }
+  },
+  {
+   "config": "2048x1046x38",
+   "nx": 2048,
+   "ny": 1046,
+   "nz": 38,
+   "note": "4096 B/row, ALIGNED",
+   "bytes_per_row": 4096,
+   "padded_bytes_per_row": 4096,
+   "row_aligned_256": true,
+   "rows": 39748,
+   "bytes": 162807808,
+   "methods": {
+    "writeTexture_tight": {
+     "ms": 301,
+     "mb_per_s": 541,
+     "us_per_row": 7.573
+    },
+    "writeTexture_padded": {
+     "ms": 299,
+     "mb_per_s": 545,
+     "us_per_row": 7.522
+    },
+    "buffer_copy": {
+     "ms": 301,
+     "mb_per_s": 541,
+     "us_per_row": 7.573
+    },
+    "buffer_copy_resident": {
+     "ms": 100,
+     "mb_per_s": 1628,
+     "us_per_row": 2.516
+    }
+   }
+  },
+  {
+   "config": "1152x1046x36",
+   "nx": 1152,
+   "ny": 1046,
+   "nz": 36,
+   "note": "aligned, bytes ~= the 1104x38 case",
+   "bytes_per_row": 2304,
+   "padded_bytes_per_row": 2304,
+   "row_aligned_256": true,
+   "rows": 37656,
+   "bytes": 86759424,
+   "methods": {
+    "writeTexture_tight": {
+     "ms": 208,
+     "mb_per_s": 417,
+     "us_per_row": 5.524
+    },
+    "writeTexture_padded": {
+     "ms": 208,
+     "mb_per_s": 417,
+     "us_per_row": 5.524
+    },
+    "buffer_copy": {
+     "ms": 206,
+     "mb_per_s": 421,
+     "us_per_row": 5.471
+    },
+    "buffer_copy_resident": {
+     "ms": 100,
+     "mb_per_s": 868,
+     "us_per_row": 2.656
+    }
+   }
+  }
+ ],
+ "adapter": {
+  "looks_discrete": true,
+  "maxTextureDimension3D": 16384,
+  "maxBufferSize": 1073741824
+ }
+}

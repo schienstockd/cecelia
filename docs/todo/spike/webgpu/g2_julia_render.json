@@ -1,0 +1,67 @@
+{
+    "full_z_1566px": {
+        "ms_median": 1166.98,
+        "ms_min": 1166.62,
+        "ms_max": 1169.97,
+        "n": 3
+    },
+    "frame_px": [
+        1104,
+        1046
+    ],
+    "zarr": "/home/dominik/cecelia-feijoa/projects/zolIMa/0/VJy1Nx/ccidSmoothed.ome.zarr",
+    "axes": [
+    ],
+    "mip_over_z": {
+        "ms_median": 32.27,
+        "ms_min": 31.71,
+        "ms_max": 33.99,
+        "n": 5
+    },
+    "shape": [
+        1104,
+        1046,
+        38,
+        4,
+        181
+    ],
+    "shipped_10z_512px": {
+        "ms_median": 382.04,
+        "ms_min": 278.95,
+        "ms_max": 453.79,
+        "n": 5
+    },
+    "read_one_timepoint": {
+        "ms": 533.29
+    },
+    "composite_rgb_full_res": {
+        "ms_median": 35.55,
+        "ms_min": 34.97,
+        "ms_max": 85.09,
+        "n": 5
+    },
+    "png_encode_full_res": {
+        "ms_median": 49.51,
+        "ms_min": 49.19,
+        "ms_max": 50.46,
+        "n": 5
+    },
+    "z1_512px": {
+        "ms_median": 32.17,
+        "ms_min": 29.54,
+        "ms_max": 218.92,
+        "n": 5
+    },
+    "full_z_512px": {
+        "ms_median": 949.09,
+        "ms_min": 946.98,
+        "ms_max": 966.33,
+        "n": 3
+    },
+    "full_z_full_res": {
+        "ms_median": 1157.57,
+        "ms_min": 1152.33,
+        "ms_max": 1158.02,
+        "n": 3
+    }
+}

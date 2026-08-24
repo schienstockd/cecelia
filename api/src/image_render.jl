@@ -93,6 +93,29 @@ function layer_display_specs(props_path::AbstractString)
     end
 end
 
+"""
+    resolved_display_specs(props_path, n_channels) -> Vector{NamedTuple} | Nothing
+    resolved_display_specs(specs)                  -> Vector{NamedTuple}
+
+The same per-channel display specs as `layer_display_specs`, but with the colour **already resolved to
+LUT stops** — `(lo, hi, lut, visible)` where `lut` is a vector of `(r, g, b)`. `nothing` when the props
+file is missing or describes fewer channels than the store has.
+
+This exists for consumers that must SHIP the colours somewhere else rather than composite here — the
+browser renderer serves them as JSON (`viewer_api.jl`) and uploads them as a lookup texture. They must
+not resolve a colormap name themselves: that is a second copy of napari's palette, and the first copy
+being incomplete is what rendered the SHG channel WHITE (see `CMAP_RGB` above). One resolver, two
+consumers.
+"""
+function resolved_display_specs(props_path::AbstractString, n_channels::Int)
+    specs = layer_display_specs(props_path)
+    (specs === nothing || length(specs) < n_channels) && return nothing
+    resolved_display_specs(specs[1:n_channels])
+end
+
+resolved_display_specs(specs::AbstractVector) =
+    [(; lo = s[1], hi = s[2], lut = _as_lut(s[3]), visible = s[4]) for s in specs]
+
 # Pure: composite a (C, H, W) float array + per-channel (lo, hi, colour, visible) specs → H×W RGB{N0f8}
 # via clip-to-contrast, colourise through the channel's LUT, additive blend. `colour` is a colormap
 # name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.

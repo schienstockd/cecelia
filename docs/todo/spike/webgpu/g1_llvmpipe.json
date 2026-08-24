@@ -1,0 +1,82 @@
+{
+ "zarr": "/home/dominik/cecelia-feijoa/projects/zolIMa/0/VJy1Nx/ccidSmoothed.ome.zarr",
+ "shape": [
+  181,
+  4,
+  38,
+  1046,
+  1104
+ ],
+ "channels_used": 4,
+ "requested_size": [
+  1920,
+  1080
+ ],
+ "prime_env": false,
+ "resident_MB": 351.1,
+ "voxels_per_channel": 43881792,
+ "canvas_px": [
+  1566,
+  1003
+ ],
+ "rotate_3d": {
+  "n": 3,
+  "ms_median": 272.88,
+  "ms_min": 0.01,
+  "ms_max": 376.02,
+  "fps_median": 3.7,
+  "stds": [
+   43.18,
+   46.24,
+   49.35
+  ],
+  "nonblank": true,
+  "varies": true,
+  "net_ms": 272.87,
+  "net_fps": 3.7
+ },
+ "baseline_hidden": {
+  "n": 3,
+  "ms_median": 0.01,
+  "ms_min": 0.01,
+  "ms_max": 0.01,
+  "fps_median": 146412.3
+ },
+ "rotate_3d_1ch": {
+  "n": 3,
+  "ms_median": 0.01,
+  "ms_min": 0.0,
+  "ms_max": 0.01,
+  "fps_median": 174734.2,
+  "net_ms": 0.0,
+  "net_fps": null
+ },
+ "pan_2d": {
+  "n": 3,
+  "ms_median": 0.0,
+  "ms_min": 0.0,
+  "ms_max": 0.01,
+  "fps_median": 203170.2,
+  "net_ms": -0.01,
+  "net_fps": null
+ },
+ "scrub_3d_with_io": {
+  "n": 5,
+  "ms_median": 1379.87,
+  "ms_min": 1257.68,
+  "ms_max": 1464.52,
+  "fps_median": 0.7
+ },
+ "gl": {
+  "renderer": "llvmpipe (LLVM 20.1.2, 256 bits)",
+  "vendor": "Mesa",
+  "version": "4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.2"
+ },
+ "hardware_gl": false,
+ "valid_gates": {
+  "nonblank": true,
+  "varies": true,
+  "net_positive": true
+ },
+ "valid": true
+}

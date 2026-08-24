@@ -1,0 +1,404 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — G2 WebGPU raycast benchmark v3</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:14px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 10px;max-width:84ch}
+ #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+ canvas{background:#000;border:1px solid #262b33;border-radius:6px}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:10px;overflow:auto;
+     max-height:66vh;min-width:30ch;margin:0;font-size:12px}
+ button{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;border-radius:5px;
+        padding:8px 14px;cursor:pointer;margin:8px 6px 0 0}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}.warn{color:#ffd479}
+ #diag{font:12px ui-monospace,monospace;color:#9aa0a8;white-space:pre-wrap;margin-top:8px}
+ table{border-collapse:collapse;font:12px ui-monospace,monospace;margin-top:8px}
+ td,th{border:1px solid #262b33;padding:3px 8px;text-align:right}th{color:#9aa0a8}
+ td:first-child,th:first-child{text-align:left}
+</style></head><body>
+<h1>G2 — WebGPU volumetric raycast, option B <span style="color:#9aa0a8;font-size:12px">(v3)</span></h1>
+<p class="sub">v1 produced impossible numbers — 4 channels cheaper than 1, 512 steps cheaper than 256,
+a bigger viewport faster than a smaller one — because each frame was one submit followed by a
+<code>mapAsync</code> round trip (wall time pinned at exactly 100 ms for all 12 configs), and nothing
+ever read the render target, so the driver was free to discard the work. v3 fixes both: N frames in
+ONE submit with timestamps around the whole batch, and a pixel readback after the last pass so the
+result is provably consumed. Monotonicity gates below decide whether the numbers may be quoted.</p>
+<div id=status class=sub>starting…</div>
+<div id=wrap>
+  <div>
+    <canvas id=cv width=760 height=487></canvas>
+    <div id=diag></div>
+  </div>
+  <pre id=out>—</pre>
+</div>
+<button id=save disabled>Save results to Downloads</button>
+<script type="module">
+const el = id => document.getElementById(id);
+const say = (h, c) => el('status').innerHTML = '<span class="' + (c || '') + '">' + h + '</span>';
+const diag = m => { el('diag').textContent += m + '\n'; };
+
+const NZ = 38, NY = 1046, NX = 1104;          // VJy1Nx/ccidSmoothed: t,c,z,y,x = 181,4,38,1046,1104
+const VZ = 2.0, VY = 0.3315, VX = 0.3315;     // um/voxel from .zattrs coordinateTransformations
+const NCH = 4;
+const EXT = [NX * VX, NY * VY, NZ * VZ];       // 366 x 347 x 76 um - a 4.8:1 slab, not a cube
+const results = {version: 3, geometry: {NZ, NY, NX, NCH, voxel_um: [VZ, VY, VX], extent_um: EXT,
+                                        bytes_all_channels: NCH * NZ * NY * NX * 2},
+                 diagnostics: {}, runs: [], gates: {}};
+
+const VIEWPORTS = [[1566, 1003], [1920, 1080]];  // napari's measured canvas (G1) first
+const STEPS = [128, 256, 512, 1024];             // 1024 included purely to test that time SCALES
+const CHANNELS = [1, 4];
+const BATCH = 20;                                // frames per submit
+const STRIDE = 256;                              // uniform slot stride (minUniformBufferOffsetAlignment=64)
+
+const WGSL = `
+struct P {
+  yaw: f32, pitch: f32, dist: f32, steps: f32,
+  nch: f32, resx: f32, resy: f32, pad0: f32,
+  ext: vec4<f32>,
+  dims: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var vol: texture_3d<u32>;
+
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
+  var xy = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+  var o: VOut;
+  o.pos = vec4(xy[i], 0.0, 1.0);
+  o.uv = xy[i];
+  return o;
+}
+
+fn hitBox(ro: vec3<f32>, rd: vec3<f32>, h: vec3<f32>) -> vec2<f32> {
+  let inv = 1.0 / rd;
+  let a = min((-h - ro) * inv, (h - ro) * inv);
+  let b = max((-h - ro) * inv, (h - ro) * inv);
+  return vec2(max(max(a.x, a.y), a.z), min(min(b.x, b.y), b.z));
+}
+
+fn chCol(c: i32) -> vec3<f32> {
+  if (c == 0) { return vec3(1.0, 0.25, 0.25); }
+  if (c == 1) { return vec3(0.25, 1.0, 0.25); }
+  if (c == 2) { return vec3(0.3, 0.5, 1.0); }
+  return vec3(1.0, 0.35, 1.0);
+}
+
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let h = p.ext.xyz * 0.5;
+  let cy = cos(p.yaw); let sy = sin(p.yaw);
+  let cp = cos(p.pitch); let sp = sin(p.pitch);
+  let fwd = vec3(cp * sy, sp, cp * cy);
+  let ro = fwd * p.dist;
+  let right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
+  let up = cross(fwd, right);
+  let rd = normalize(-fwd + right * (in.uv.x * 0.45 * (p.resx / p.resy)) + up * (in.uv.y * 0.45));
+
+  let t = hitBox(ro, rd, h);
+  let t0 = max(t.x, 0.0);
+  if (t.y <= t0) { return vec4(0.03, 0.03, 0.05, 1.0); }
+
+  let n = i32(p.steps);
+  let dt = (t.y - t0) / f32(n);
+  let zpc = i32(p.dims.w);
+  let nch = i32(p.nch);
+
+  var mx = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  for (var s = 0; s < n; s = s + 1) {
+    let wp = ro + rd * (t0 + (f32(s) + 0.5) * dt);
+    let uvw = (wp + h) / p.ext.xyz;
+    let vi = vec3<i32>(uvw * p.dims.xyz);
+    if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
+        vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
+    for (var c = 0; c < nch; c = c + 1) {
+      let v = textureLoad(vol, vec3<i32>(vi.x, vi.y, vi.z + c * zpc), 0).r;
+      mx[c] = max(mx[c], f32(v) / 65535.0);
+    }
+  }
+  var acc = vec3(0.0);
+  for (var c = 0; c < nch; c = c + 1) {
+    acc = acc + chCol(c) * clamp((mx[c] - 0.02) / 0.30, 0.0, 1.0);
+  }
+  return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`;
+
+const med = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+async function main() {
+  if (!('gpu' in navigator)) { say('navigator.gpu ABSENT — set dom.webgpu.enabled in about:config', 'bad'); return; }
+
+  // G0: requestAdapter({}) returns the INTEGRATED GPU here, and Firefox blanks adapter.info, so the
+  // device is identified from its limits.
+  const adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+  if (!adapter) { say('no adapter', 'bad'); return; }
+  const discrete = adapter.limits.maxTextureDimension3D > 2048;
+  results.adapter = {maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+                     minUniformBufferOffsetAlignment: adapter.limits.minUniformBufferOffsetAlignment,
+                     looks_discrete: discrete, features: [...adapter.features].sort()};
+  diag('adapter: maxTextureDimension3D=' + adapter.limits.maxTextureDimension3D +
+       (discrete ? ' (discrete)' : ' (INTEGRATED — wrong GPU)'));
+
+  const wantTS = adapter.features.has('timestamp-query');
+  const device = await adapter.requestDevice({requiredFeatures: wantTS ? ['timestamp-query'] : []});
+  device.addEventListener('uncapturederror', e => diag('!! uncaptured: ' + e.error.message));
+  device.lost.then(i => say('DEVICE LOST: ' + i.reason + ' ' + i.message, 'bad'));
+
+  const cv = el('cv');
+  const ctx = cv.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({device, format: fmt, alphaMode: 'opaque'});
+
+  const mod = device.createShaderModule({code: WGSL});
+  const ci = await mod.getCompilationInfo();
+  const errs = ci.messages.filter(m => m.type === 'error');
+  results.diagnostics.wgsl_errors = errs.map(m => m.lineNum + ':' + m.message);
+  if (errs.length) { say('WGSL compile error: ' + results.diagnostics.wgsl_errors.join(' | '), 'bad'); return; }
+  diag('shader compiled OK');
+
+  // Explicit layout: 'auto' cannot express hasDynamicOffset, and dynamic offsets are how N frames
+  // with N DIFFERENT cameras fit in one submit (queue.writeBuffer is ordered before the whole
+  // submit, so writing between passes would give every pass the last value).
+  const bgl = device.createBindGroupLayout({entries: [
+    {binding: 0, visibility: GPUShaderStage.FRAGMENT,
+     buffer: {type: 'uniform', hasDynamicOffset: true, minBindingSize: 64}},
+    {binding: 1, visibility: GPUShaderStage.FRAGMENT,
+     texture: {sampleType: 'uint', viewDimension: '3d'}},
+  ]});
+  const player = device.createPipelineLayout({bindGroupLayouts: [bgl]});
+
+  const ZTOT = NZ * NCH;
+  say('allocating ' + (results.geometry.bytes_all_channels / 1e6).toFixed(0) + ' MB 3D texture…');
+  let tex;
+  try {
+    tex = device.createTexture({size: [NX, NY, ZTOT], dimension: '3d', format: 'r16uint',
+                                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST});
+  } catch (e) { say('3D texture allocation FAILED: ' + e, 'bad'); return; }
+  diag('texture allocated: ' + NX + 'x' + NY + 'x' + ZTOT + ' r16uint');
+
+  const ubuf = device.createBuffer({size: STRIDE * BATCH,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  const bind = device.createBindGroup({layout: bgl, entries: [
+    {binding: 0, resource: {buffer: ubuf, offset: 0, size: 64}},
+    {binding: 1, resource: tex.createView()}]});
+
+  function pipeFor(target) {
+    return device.createRenderPipeline({layout: player,
+      vertex: {module: mod, entryPoint: 'vs'},
+      fragment: {module: mod, entryPoint: 'fs', targets: [{format: target}]},
+      primitive: {topology: 'triangle-list'}});
+  }
+  const pipeCanvas = pipeFor(fmt);
+
+  // fill all BATCH uniform slots, one camera angle each
+  const slots = new Float32Array(STRIDE * BATCH / 4);
+  function fillSlots(steps, nch, rx, ry, baseYaw) {
+    for (let i = 0; i < BATCH; i++) {
+      const o = i * STRIDE / 4;
+      slots[o + 0] = baseYaw + i * 0.09; slots[o + 1] = 0.35;
+      slots[o + 2] = EXT[0] * 1.6;       slots[o + 3] = steps;
+      slots[o + 4] = nch; slots[o + 5] = rx; slots[o + 6] = ry; slots[o + 7] = 0;
+      slots[o + 8] = EXT[0]; slots[o + 9] = EXT[1]; slots[o + 10] = EXT[2]; slots[o + 11] = 0;
+      slots[o + 12] = NX; slots[o + 13] = NY; slots[o + 14] = NZ; slots[o + 15] = NZ;
+    }
+    device.queue.writeBuffer(ubuf, 0, slots);
+  }
+
+  // ── draw to the canvas FIRST so blank-vs-crashed is never ambiguous
+  fillSlots(256, NCH, cv.width, cv.height, 0.7);
+  {
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({colorAttachments: [{view: ctx.getCurrentTexture().createView(),
+      clearValue: {r: 0, g: 0, b: 0, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+    pass.setPipeline(pipeCanvas); pass.setBindGroup(0, bind, [0]); pass.draw(3); pass.end();
+    device.queue.submit([enc.finish()]);
+    await device.queue.onSubmittedWorkDone();
+    diag('first canvas draw OK (volume still empty — background only)');
+  }
+
+  // ── procedural phantom. NOTE the volume is a 4.8:1 SLAB (366x347x76 um), so a smooth ellipsoid
+  // renders as a glowing disc on a plate - that is correct geometry, not a bug. Per-channel radii
+  // differ so a 4-channel composite is visibly multi-coloured rather than one blob.
+  const slice = new Uint16Array(NX * NY);
+  for (let c = 0; c < NCH; c++) {
+    for (let z = 0; z < NZ; z++) {
+      const zc = (z / NZ - 0.5) * 2;
+      for (let y = 0; y < NY; y++) {
+        const yc = (y / NY - 0.5) * 2, row = y * NX;
+        for (let x = 0; x < NX; x++) {
+          const xc = (x / NX - 0.5) * 2;
+          const r = Math.sqrt(xc * xc + yc * yc + zc * zc);
+          const shell = Math.exp(-40 * Math.abs(r - 0.30 - 0.18 * c));
+          const speck = Math.exp(-60 * Math.abs(r - 0.80)) * (0.5 + 0.5 * Math.sin(20 * xc + 13 * yc));
+          slice[row + x] = Math.max(0, Math.min(65535,
+            Math.round(65535 * (0.6 * shell + 0.25 * speck + 0.01))));
+        }
+      }
+      device.queue.writeTexture({texture: tex, origin: [0, 0, c * NZ + z]},
+        slice, {bytesPerRow: NX * 2, rowsPerImage: NY}, [NX, NY, 1]);
+    }
+    say('filling volume… channel ' + (c + 1) + '/' + NCH);
+    await new Promise(r => setTimeout(r, 0));
+  }
+  await device.queue.onSubmittedWorkDone();
+
+  async function drawCanvas() {
+    fillSlots(256, NCH, cv.width, cv.height, 0.7);
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({colorAttachments: [{view: ctx.getCurrentTexture().createView(),
+      clearValue: {r: 0, g: 0, b: 0, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+    pass.setPipeline(pipeCanvas); pass.setBindGroup(0, bind, [0]); pass.draw(3); pass.end();
+    device.queue.submit([enc.finish()]);
+    await device.queue.onSubmittedWorkDone();
+  }
+  await drawCanvas();
+  diag('canvas draw with volume OK');
+
+  const ts = wantTS ? {
+    qs: device.createQuerySet({type: 'timestamp', count: 2}),
+    q: device.createBuffer({size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC}),
+    r: device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ}),
+  } : null;
+  results.diagnostics.timing = ts ? 'gpu timestamp-query, batched' : 'wall clock, batched';
+
+  // ── ONE submit, BATCH passes, timestamps around the whole batch, then a readback of the final
+  // target so the work is provably consumed and cannot be discarded.
+  const RB_W = 64, RB_H = 64, RB_BPR = 256;
+  async function runBatch(pipe, view, rt, cw, chh) {
+    const rb = device.createBuffer({size: RB_BPR * RB_H,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    const enc = device.createCommandEncoder();
+    for (let i = 0; i < BATCH; i++) {
+      const d = {colorAttachments: [{view, clearValue: {r: 0, g: 0, b: 0, a: 1},
+                                     loadOp: 'clear', storeOp: 'store'}]};
+      if (ts && i === 0) d.timestampWrites = {querySet: ts.qs, beginningOfPassWriteIndex: 0};
+      if (ts && i === BATCH - 1) {
+        d.timestampWrites = Object.assign(d.timestampWrites || {querySet: ts.qs},
+                                          {endOfPassWriteIndex: 1});
+      }
+      const pass = enc.beginRenderPass(d);
+      pass.setPipeline(pipe); pass.setBindGroup(0, bind, [i * STRIDE]); pass.draw(3); pass.end();
+    }
+    // CENTRE, not origin: the top-left corner is background by construction (the box does not
+    // reach it), so reading there reported every correct render as "blank".
+    enc.copyTextureToBuffer(
+      {texture: rt, origin: [(cw >> 1) - (RB_W >> 1), (chh >> 1) - (RB_H >> 1), 0]},
+      {buffer: rb, bytesPerRow: RB_BPR, rowsPerImage: RB_H}, [RB_W, RB_H, 1]);
+    if (ts) { enc.resolveQuerySet(ts.qs, 0, 2, ts.q, 0); enc.copyBufferToBuffer(ts.q, 0, ts.r, 0, 16); }
+    const t0 = performance.now();
+    device.queue.submit([enc.finish()]);
+    await device.queue.onSubmittedWorkDone();
+    const wallTotal = performance.now() - t0;
+
+    await rb.mapAsync(GPUMapMode.READ);
+    const px = new Uint8Array(rb.getMappedRange().slice(0));
+    rb.unmap(); rb.destroy();
+    let mx = 0, sum = 0;
+    for (let y = 0; y < RB_H; y++) for (let x = 0; x < RB_W; x++) {
+      const o = y * RB_BPR + x * 4;
+      const l = Math.max(px[o], px[o + 1], px[o + 2]);
+      mx = Math.max(mx, l); sum += l;
+    }
+    let gpuTotal = null;
+    if (ts) {
+      await ts.r.mapAsync(GPUMapMode.READ);
+      const v = new BigUint64Array(ts.r.getMappedRange().slice(0));
+      ts.r.unmap();
+      gpuTotal = Number(v[1] - v[0]) / 1e6;
+    }
+    return {gpu_ms_per_frame: gpuTotal === null ? null : gpuTotal / BATCH,
+            wall_ms_per_frame: wallTotal / BATCH,
+            readback_max: mx, readback_mean: +(sum / (RB_W * RB_H)).toFixed(1)};
+  }
+
+  for (const [vw, vh] of VIEWPORTS) {
+    let rt;
+    try {
+      rt = device.createTexture({size: [vw, vh], format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC});
+    } catch (e) { diag('target ' + vw + 'x' + vh + ' failed: ' + e); continue; }
+    const view = rt.createView();
+    const pipe = pipeFor('rgba8unorm');
+    for (const nch of CHANNELS) {
+      for (const steps of STEPS) {
+        try {
+          fillSlots(steps, nch, vw, vh, 0.7);
+          await runBatch(pipe, view, rt, vw, vh);                 // warm
+          const reps = [];
+          for (let k = 0; k < 5; k++) {
+            fillSlots(steps, nch, vw, vh, 0.7 + k * 0.31);
+            reps.push(await runBatch(pipe, view, rt, vw, vh));
+          }
+          const gm = reps.map(r => r.gpu_ms_per_frame).filter(x => x !== null);
+          const row = {viewport: [vw, vh], channels: nch, steps,
+                       gpu_ms: gm.length ? +med(gm).toFixed(3) : null,
+                       gpu_ms_min: gm.length ? +Math.min(...gm).toFixed(3) : null,
+                       wall_ms: +med(reps.map(r => r.wall_ms_per_frame)).toFixed(3),
+                       readback_max: Math.max(...reps.map(r => r.readback_max)),
+                       readback_mean: reps[0].readback_mean,
+                       samples_per_frame: vw * vh * steps * nch};
+          row.ms = row.gpu_ms ?? row.wall_ms;
+          row.fps = +(1000 / row.ms).toFixed(1);
+          row.gsamples_per_s = +(row.samples_per_frame / 1e9 / (row.ms / 1000)).toFixed(1);
+          results.runs.push(row);
+          el('out').textContent = JSON.stringify(results.runs, null, 1);
+          say('sweep ' + vw + 'x' + vh + ' ' + nch + 'ch ' + steps + ' steps → ' +
+              row.ms.toFixed(2) + ' ms (' + row.fps + ' fps)');
+        } catch (e) { diag('config ' + vw + '/' + nch + 'ch/' + steps + ' FAILED: ' + e); }
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+    rt.destroy();
+  }
+
+  // ── monotonicity gates. A raycast MUST get slower with more steps, more channels, more pixels.
+  // Any violation means the harness is not measuring rendering and the numbers must not be quoted.
+  const get = (vp, ch, st) => results.runs.find(
+    r => r.viewport[0] === vp && r.channels === ch && r.steps === st);
+  const viol = [];
+  for (const vp of [1566, 1920]) for (const ch of CHANNELS) {
+    for (let i = 1; i < STEPS.length; i++) {
+      const a = get(vp, ch, STEPS[i - 1]), b = get(vp, ch, STEPS[i]);
+      if (a && b && b.ms <= a.ms) viol.push(`${vp}/${ch}ch: ${STEPS[i]} steps (${b.ms}) not slower than ${STEPS[i - 1]} (${a.ms})`);
+    }
+  }
+  for (const vp of [1566, 1920]) for (const st of STEPS) {
+    const a = get(vp, 1, st), b = get(vp, 4, st);
+    if (a && b && b.ms <= a.ms) viol.push(`${vp}/${st}: 4ch (${b.ms}) not slower than 1ch (${a.ms})`);
+  }
+  const advisory = [];
+  for (const ch of CHANNELS) for (const st of STEPS) {
+    const a = get(1566, ch, st), b = get(1920, ch, st);
+    if (a && b && b.ms <= a.ms) advisory.push(`${ch}ch/${st}: 1920x1080 (${b.ms}) not faster-ordered vs 1566x1003 (${a.ms})`);
+  }
+  const blank = results.runs.filter(r => r.readback_max < 20).length;
+  results.gates = {monotonic_violations: viol, viewport_advisory: advisory,
+                   blank_configs: blank, valid: viol.length === 0 && blank === 0};
+  diag('gates: ' + viol.length + ' violations (steps/channels), ' + blank + ' blank, ' +
+       advisory.length + ' viewport advisories');
+  viol.slice(0, 6).forEach(v => diag('  ! ' + v));
+
+  await drawCanvas();
+  results.napari_g1 = {canvas: [1566, 1003], rotate_4ch_total_ms: 36.0, rotate_4ch_net_ms: 9.58,
+                       empty_canvas_ms: 26.41};
+  const b = get(1566, 4, 256);
+  const tbl = '<table><tr><th>1566x1003, 4 channels</th><th>ms/frame</th><th>fps</th></tr>' +
+    '<tr><td>napari MIP, net of its UI (G1)</td><td>9.58</td><td>104</td></tr>' +
+    '<tr><td>napari MIP, whole frame (G1)</td><td>36.0</td><td>27.8</td></tr>' +
+    (b ? '<tr><td>WebGPU raycast, 256 steps</td><td>' + b.ms.toFixed(2) + '</td><td>' + b.fps + '</td></tr>' : '') +
+    '</table>';
+  say((results.gates.valid ? 'done, gates PASS — ' : 'done, gates FAILED (numbers not usable) — ') +
+      results.runs.length + ' configs. Click save.' + tbl,
+      results.gates.valid ? 'good' : 'warn');
+  el('save').disabled = false;
+}
+
+el('save').onclick = () => {
+  const b = new Blob([JSON.stringify(results, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = 'webgpu_raycast_bench.json'; a.click();
+};
+
+main().catch(e => { say('FAILED: ' + e, 'bad'); diag('stack: ' + (e && e.stack)); el('save').disabled = false; });
+</script></body></html>

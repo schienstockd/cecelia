@@ -12,7 +12,15 @@ const props = withDefaults(defineProps<{
   step?: number
 }>(), { min: 0, max: 100, step: 1 })
 
-const emit = defineEmits<{ (e: 'update:lo', v: number): void; (e: 'update:hi', v: number): void }>()
+// `change` fires ONCE, when the drag ends — the canonical shape for a control whose effect is
+// expensive (docs/UI.md → Continuous controls). `update:lo`/`update:hi` fire per pointer move, which is
+// right for a cheap effect (a contrast window) and ruinous for one that refetches every cached
+// timepoint: the volume viewer's z range reallocates the whole cache, so it commits on release.
+const emit = defineEmits<{
+  (e: 'update:lo', v: number): void
+  (e: 'update:hi', v: number): void
+  (e: 'change'): void
+}>()
 
 const track = ref<HTMLElement | null>(null)
 let active: 'lo' | 'hi' | null = null
@@ -40,6 +48,7 @@ function onUp() {
   active = null
   window.removeEventListener('pointermove', onMove)
   window.removeEventListener('pointerup', onUp)
+  emit('change')
 }
 function grab(which: 'lo' | 'hi', e: PointerEvent) {
   active = which

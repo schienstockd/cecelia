@@ -318,7 +318,7 @@ napari command, a full chart rebuild — must be one of:
 
 | | Use | When |
 |---|---|---|
-| **Coalesced — a request** | `utils/debouncedLatest.ts` | Someone is waiting for the answer (a preview, a plot fetch, a live napari push). One run per burst, never two in flight, and the running call gets `isCurrent()` so a superseded reply can't land. Keep the wait SHORT (~80 ms) for something judged by watching — this is coalescing, not deferral. |
+| **Coalesced — a request** | `utils/debouncedLatest.ts` | Someone is waiting for the answer (a preview, a plot fetch, a live napari push). One run per burst, never two in flight, and the running call gets `isCurrent()` so a superseded reply can't land — false as soon as a newer request is QUEUED, not only once one has started, so work with several awaits in it can give up partway. Keep the wait SHORT (~80 ms) for something judged by watching — this is coalescing, not deferral. |
 | **Coalesced — a paint** | `utils/rafCoalesce.ts` | The effect is pure drawing (`PlotChart`, `useCanvasZoom`). The frame is the right unit: the last value before the browser paints is the only one worth drawing, and there is no result to keep. `peek()` exposes the pending value so steps within one frame compound instead of cancelling. |
 | **Coalesced — a write** | `utils/debouncedSave.ts` | Write-behind autosave (boards, canvases, animations). Nothing waits on it, but a RESTORE writes the same state a user edit does — `duringRestore()` suppresses the echo for a window derived from the debounce, so the two can't drift apart. |
 | **On release** | `@change` instead of `@input` | The effect is expensive and there is nothing to see mid-drag. `@input` still writes the value so the readout tracks the thumb; `@change` fires once, on release. See `PoolThrottle` and the napari-dots slider in `PopulationManager`. |
@@ -1642,11 +1642,11 @@ Two things are NOT the same as the console's, and both are load-bearing:
   `napari:opened`), the lab-log auto-capture (two captures per finished task) and the tip of the day
   (stamped as shown by a window whose bare route never renders the dialog). `lib/popout.ts`
   `isPopoutWindow()` gates all three. It answers synchronously — App.vue's setup runs before the first
-  navigation resolves, so it reads the window, never the router — and it covers `/console` and
-  `/tasks-window` only: `/setup` is bare too, but it *becomes* the main window when the wizard finishes.
+  navigation resolves, so it reads the window, never the router — and it covers the three popout routes
+  only: `/setup` is bare too, but it *becomes* the main window when the wizard finishes.
 - **The window NAME is the popout's identity; the hash is only where it happens to be.**
   `POPOUT_WINDOW_NAMES` maps each popout route to the name the opener gives its window
-  (`cecelia-console`, `cecelia-tasks`), and `openPopoutWindow` takes the ROUTE and looks the name up —
+  (`cecelia-console`, `cecelia-tasks`, `cecelia-viewer`), and `openPopoutWindow` takes the ROUTE and looks the name up —
   a popout route can't be opened into the wrong window, or an unnamed one, from a call site. Two things
   read the name back:
   - `App.vue`'s `bare` is `popout || route.meta.bare`, and the first half is the load-bearing one.
@@ -1662,6 +1662,87 @@ Two things are NOT the same as the console's, and both are load-bearing:
     the main window's switches — an empty list, permanently. The name survives what the hash does not
     (a reload, a restored session, a stale dev bundle whose router had no such route yet). Skipped
     while `setupRequired`, so it and the `/setup` redirect can't bounce a window between them.
+
+### The volume viewer in its own window
+
+**A third popout, and the only one with no docked twin.** `modules/ViewerWindow.vue` is a `bare` route
+(`/viewer-window`, window `cecelia-viewer`) opened from the ViewerPanel's ↗ — an in-browser WebGPU MIP
+raycast of the image napari is showing, so the two can be looked at side by side while the browser side
+catches up. It has no docked half because napari occupies that slot until it is removed; the plan and
+the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md) and
+[`NAPARI_WEBGPU_AUDIT.md`](todo/NAPARI_WEBGPU_AUDIT.md).
+
+Three things differ from the other two popouts, each for a stated reason:
+
+- **It does not follow the main window.** The Task Manager follows because a list scoped to the project
+  you just left is worse than an empty one. This window is a *comparison* surface: a view being measured
+  against napari must not move because someone clicked another image row. So the image travels in the
+  URL (`?project=&image=&valueName=&name=`) and stays there; clicking ↗ again re-seeds the same window.
+- **Contrast is not persisted locally, which is the opposite of the usual rule.** Every user-settable
+  option on a module page must live in persisted view state, because a bare `ref()` silently RESETS and
+  the option vanishes. Here the server answers contrast — napari's own saved props file when the image
+  has one, otherwise a percentile of one mid-stack plane — so the reset *is* the correct value, and a
+  local copy would be a second source of truth for a window napari also writes. The two options that
+  genuinely belong to this window (raycast `steps`, wire `compress`) are in the settings store and do
+  persist. Who owns contrast after napari is gone is a decision, not an implementation detail.
+- **The GPU it got is asserted, not assumed.** `requestAdapter({})` returns the INTEGRATED GPU, and
+  Firefox blanks every `adapter.info` field, so there is no name to read. `powerPreference:
+  'high-performance'` plus a `maxTextureDimension3D > 2048` check is the usable tell (discrete reports
+  16384), and the panel says *Integrated GPU* when it fails. This is the browser-side twin of the PRIME
+  trap in `app/src/napari.jl:55-59` — the cost of getting it wrong is ~6× the frame time, silently.
+
+**2D is the default, and it is what makes a timecourse work.** The window opens on a single z plane for
+anything with a z axis, with a 2D/3D switch and a plane slider; 3D is the max projection through the
+whole stack. This is not a lesser mode — on `Dml3RG` (37 z, 4 ch, 181 t) a plane timepoint is 8.8 MB and
+~13 ms of server read against 326 MB and ~400 ms, and the whole movie is **1.59 GB at one plane against
+59 GB at full depth**, so it fits in the VRAM budget and the second pass through it is all cache hits.
+Both views come out of ONE shader: a plane is a volume one deep seen face-on with `steps = 1`, which
+samples the box midpoint — exactly that plane. What 2D does need is **orthographic** projection, because
+under perspective a flat plane foreshortens towards the edges, which is wrong for a view people measure
+on; the two share a framing convention so the toggle does not jump. Changing the plane or the mode drops
+every cached texture (different shape, different pixels) and refetches — ~4 s for a plane movie, ~90 s
+for the volume, which is why 2D is the default rather than something you opt into.
+
+**The timecourse is a VRAM cache, and the scheduling split is the design.** One `r16uint` texture per
+cached timepoint under a budget (a visible setting, because the right number is the user's card:
+a timepoint of the real target is 351 MB), evicted least-recently-used, never evicting the frame on
+screen — dropping that destroys the texture the next draw binds, which reads as an intermittent black
+frame under memory pressure. Two canonical schedulers, one per half: the **paint** goes through
+`usePlotResize` (`redraw()` for a camera/contrast/timepoint change, `schedule()` for a resize, where the
+size guard breaks the observe-render-observe loop), the **prefetch** through `debouncedLatest`. The
+second is not tidiness — a scrubber fires per pixel of travel and *each position wants a different
+prefetch window*, so a hand-rolled version starts a fetch before it can notice it was superseded, and
+dragging across 100 timepoints puts 100 concurrent volume fetches (400 requests) in flight.
+
+Two more shapes that look like polish and are not. Showing and fetching are **separate calls** —
+awaiting the window fill before painting makes playback advance once per fill (seconds) instead of once
+per frame. And playback **waits** for an uncached frame rather than skipping to whatever is resident:
+skipping holds the frame rate by silently dropping timepoints, and nothing on screen would say data went
+past unseen.
+
+The pure half — URL building, the slab shape guard, LUT resampling, orbit maths, percentile contrast
+(`utils/volumeViewer.ts`) and the cache's decisions (`utils/volumeCache.ts`: capacity, prefetch window,
+eviction, strip bucketing, playback advance) — is unit-tested; see `docs/inventory/FRONTEND.md`.
+
+**There is no VRAM setting, and that is the fix rather than an omission.** It used to be a megabytes
+slider; setting it too high lost the GPU device. The question had no answerable form — WebGPU exposes no
+free-VRAM figure, so neither the user nor the app can compute a safe budget. Instead every timepoint
+texture is allocated inside a `pushErrorScope('out-of-memory')`, so a failed allocation is a scoped error
+rather than a lost device: the cache holds at whatever fitted and reports *(GPU limit)*. The control that
+remains asks how many **timepoints** stay instant, which is the outcome, and defaults to all of them.
+
+**The channel colour picker is `SwatchSelect` + `CHANNEL_COLORMAP_OPTIONS`** — the same control the
+batch-movie panel uses for channel colormaps, not the population manager's arbitrary-hex popover. Both
+are "pick a colour"; this is the one whose domain matches, because a channel renders in a napari
+COLORMAP and that round-trips to a name the server and napari both understand where a free hex would not.
+A two-stop black→colour LUT is exact for these (every channel colormap is a verified linear ramp from
+black), which is why the perceptual and `I *` maps are deliberately not offered.
+
+**The window reports its own cache numbers**, and that is deliberate. The audit's headline "sub-millisecond
+scrubbing" was measured on a 31-timepoint movie at capacity 63 — eviction was structurally impossible, so
+it describes a fully-resident movie and not a bounded cache. The panel shows resident/capacity, hits,
+misses and the last miss's wall time so the shipped cache is characterised from real use instead of
+inheriting a number from a different configuration. See `docs/todo/WEB_VIEWER_PLAN.md` → P2.
 
 ### The Task Manager shows the project's history, not just the session's
 

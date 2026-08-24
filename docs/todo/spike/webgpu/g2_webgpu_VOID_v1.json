@@ -1,0 +1,214 @@
+{
+ "geometry": {
+  "NZ": 38,
+  "NY": 1046,
+  "NX": 1104,
+  "NCH": 4,
+  "voxel_um": [
+   2,
+   0.3315,
+   0.3315
+  ],
+  "extent_um": [
+   365.976,
+   346.749,
+   76
+  ],
+  "bytes_all_channels": 351054336
+ },
+ "diagnostics": {
+  "wgsl_errors": [],
+  "readback": {
+   "max_luma": 255,
+   "mean_luma": 47.4,
+   "bright_fraction": 0.172
+  },
+  "timing": "gpu timestamp-query"
+ },
+ "runs": [
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 128,
+   "gpu_ms_median": 11.516,
+   "wall_ms_median": 100,
+   "samples_per_frame": 201049344,
+   "ms": 11.516,
+   "fps": 86.8
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 256,
+   "gpu_ms_median": 24.542,
+   "wall_ms_median": 100,
+   "samples_per_frame": 402098688,
+   "ms": 24.542,
+   "fps": 40.7
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 1,
+   "steps": 512,
+   "gpu_ms_median": 34.723,
+   "wall_ms_median": 100,
+   "samples_per_frame": 804197376,
+   "ms": 34.723,
+   "fps": 28.8
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 128,
+   "gpu_ms_median": 20.284,
+   "wall_ms_median": 100,
+   "samples_per_frame": 804197376,
+   "ms": 20.284,
+   "fps": 49.3
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 256,
+   "gpu_ms_median": 24.088,
+   "wall_ms_median": 100,
+   "samples_per_frame": 1608394752,
+   "ms": 24.088,
+   "fps": 41.5
+  },
+  {
+   "viewport": [
+    1566,
+    1003
+   ],
+   "channels": 4,
+   "steps": 512,
+   "gpu_ms_median": 25.262,
+   "wall_ms_median": 100,
+   "samples_per_frame": 3216789504,
+   "ms": 25.262,
+   "fps": 39.6
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 128,
+   "gpu_ms_median": 8.324,
+   "wall_ms_median": 100,
+   "samples_per_frame": 265420800,
+   "ms": 8.324,
+   "fps": 120.1
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 256,
+   "gpu_ms_median": 15.064,
+   "wall_ms_median": 100,
+   "samples_per_frame": 530841600,
+   "ms": 15.064,
+   "fps": 66.4
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 1,
+   "steps": 512,
+   "gpu_ms_median": 24.355,
+   "wall_ms_median": 100,
+   "samples_per_frame": 1061683200,
+   "ms": 24.355,
+   "fps": 41.1
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 128,
+   "gpu_ms_median": 21.512,
+   "wall_ms_median": 100,
+   "samples_per_frame": 1061683200,
+   "ms": 21.512,
+   "fps": 46.5
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 256,
+   "gpu_ms_median": 28.374,
+   "wall_ms_median": 100,
+   "samples_per_frame": 2123366400,
+   "ms": 28.374,
+   "fps": 35.2
+  },
+  {
+   "viewport": [
+    1920,
+    1080
+   ],
+   "channels": 4,
+   "steps": 512,
+   "gpu_ms_median": 27.955,
+   "wall_ms_median": 100,
+   "samples_per_frame": 4246732800,
+   "ms": 27.955,
+   "fps": 35.8
+  }
+ ],
+ "adapter": {
+  "maxTextureDimension3D": 16384,
+  "maxBufferSize": 1073741824,
+  "looks_discrete": true,
+  "features": [
+   "bgra8unorm-storage",
+   "core-features-and-limits",
+   "depth-clip-control",
+   "depth32float-stencil8",
+   "float32-filterable",
+   "indirect-first-instance",
+   "rg11b10ufloat-renderable",
+   "shader-f16",
+   "texture-compression-bc",
+   "texture-compression-bc-sliced-3d",
+   "timestamp-query"
+  ]
+ },
+ "napari_g1": {
+  "canvas": [
+   1566,
+   1003
+  ],
+  "rotate_4ch_total_ms": 36,
+  "rotate_4ch_net_ms": 9.58,
+  "empty_canvas_ms": 26.41,
+  "rotate_1ch_net_ms": 3.02
+ }
+}
