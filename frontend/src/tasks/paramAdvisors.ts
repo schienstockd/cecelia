@@ -363,6 +363,48 @@ export function imageVersionAdvisory(
 // widget-type advisor under the type, and a one-off advisor for a specific param under its key,
 // picking a key distinctive enough not to collide (`anisotropyBoxUm`, not `box`).
 
+/**
+ * Spatial smoothing at zero, when a temporal statistic is about to run over it.
+ *
+ * **Spatial before temporal is load-bearing, and measured.** A temporal statistic alone keeps 8.5% of
+ * the reference channel's signal past background subtraction — worse than doing nothing (15.4%) —
+ * because at single-digit photon counts a median over three mostly-zero samples is zero. The Gaussian
+ * has to fill the counts first (`docs/todo/SMOOTHING_PLAN.md`). The task cannot repair this for the
+ * user: a sigma silently raised from what they set is a worse surprise than the run being wrong, and
+ * 0 is a legitimate setting for the two other statistics on well-exposed data.
+ *
+ * **The wording states the effect, not the downstream task.** That 8.5%/15.4% pair was measured as
+ * signal surviving AF's background subtraction, and the first draft of this tip said so — but AF is
+ * one consumer of a smoothed image, not the reason smoothing is on the form. A user who smooths for
+ * segmentation, or to watch a movie, would be reading a number about a task they never run. The fact
+ * survives; the pipeline it was measured through stays here, where it is provenance rather than copy.
+ *
+ * **`gated` fails rather than warns**, because there it is not merely weaker — on the data this task
+ * exists for it is nothing at all. The gate's scale is `2*(k*sigma)^2` with sigma the MAD of the
+ * temporal difference, and on sparse data that difference is a majority of exact zeros, so the MAD is
+ * exactly 0, the scale clamps to 1e-12 and every weight collapses: measured on `zolIMa/fXgbTl` at
+ * sigma 0, amplitude kept 1.00 and background noise kept 1.00 on all four channels — the output IS
+ * the input. Well-exposed data at sigma 0 still has noise to measure, so this is a warning about a
+ * regime rather than an arithmetic certainty; `smooth_run.py` makes the actual call, refusing the run
+ * when the estimate really does come back at zero rather than spending minutes producing a copy.
+ */
+export function spatialSigmaAdvisory(value: unknown, stat: unknown): ParamAdvisory | null {
+  const sigma = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(sigma) || sigma > 0) return null
+  return stat === 'gated'
+    ? { severity: 'fail',
+        message: 'gated needs spatial smoothing first',
+        tip: 'The gate scales its weights by the noise it measures between frames. With no Gaussian '
+           + 'to fill the counts first, photon-limited data measures zero noise, every weight '
+           + 'collapses and each frame is returned as it was. The run stops rather than spending '
+           + 'minutes a channel copying the input.' }
+    : { severity: 'warn',
+        message: 'temporal smoothing alone keeps less signal than none',
+        tip: 'On photon-limited data a median over three mostly-zero frames is zero, so the temporal '
+           + 'term removes signal rather than noise — measured worse than not smoothing at all. The '
+           + 'Gaussian has to fill the counts before a statistic across frames means anything.' }
+}
+
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // ASYNC, not pure: the frame extent belongs to the ACTIVE image version, and only its store knows
   // it. `/api/images/geometry` reads it off that version (omit `valueName` ⇒ the ACTIVE one, which
@@ -385,6 +427,14 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
     reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.activeValueName ?? ''}`).join(',')],
     advise: async (value, ctx, param) =>
       isImageVersionField(param?.field) ? imageVersionAdvisory(value, ctx.images) : null,
+  },
+
+  // Smoothing's Gaussian. Registered under the KEY: `float` is the widget type and would match every
+  // slider in every task, and the judgement here is about what the SMOOTHING pipeline does with it.
+  spatialSigma: {
+    // the verdict depends on the statistic beside it, so it has to re-run when that changes
+    reloadOn: ctx => [ctx.values?.temporalStat],
+    advise: async (value, ctx) => spatialSigmaAdvisory(value, ctx.values?.temporalStat),
   },
 
   motionDimsSelection: {

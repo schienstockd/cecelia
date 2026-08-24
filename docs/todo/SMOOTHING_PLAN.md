@@ -6,6 +6,63 @@ composite. Measurements are real (2026-08-04) on `zolIMa/fXgbTl` (16-bit, the op
 `zolIMa/Dml3RG` movie (drift-corrected, 181×4×35×1036×1055, ~30 min). See *What was built* below for
 where the implementation diverged from this design — read that before trusting the sections above it.
 
+## 2026-08-24 — what `gated` does on photon-limited data, measured
+
+The 2026-08-14 entry left `gated` **untested** on the regime this task was built for, and the option
+help in the form had turned that into `"Not for photon-limited data"` — a prohibition where the
+evidence was an absence. Probed directly, one mid z-plane per store, 8 timepoints, window 5, sigma
+1.0, both drift-corrected (`zolIMa/fXgbTl`, 99.5% zeros on ch0, against `WIaUjL/p6t4mC`, the movie
+`gated` was validated on). Amplitude kept and background noise kept are relative to a
+**spatial-only** baseline, so what is measured is the temporal term alone:
+
+| | | amp kept: median / gated | bg noise kept: median / gated |
+|---|---|---|---|
+| `fXgbTl` sigma 1.0 | ch0 (99.5% zeros) | **0.17** / **0.99** | 0.13 / 0.53 |
+| | ch1-3 (86-95%) | 0.81-0.83 / **1.00** | 0.68-0.94 / 0.72-0.86 |
+| `fXgbTl` sigma 0 | all channels | 0.00-0.41 / **1.00** | 0.00-0.79 / **1.00** |
+| `p6t4mC` sigma 1.0 | all channels | 0.83-0.97 / 1.00 | 0.98-1.07 / 0.99-1.00 |
+
+**The gate does not degenerate on sparse data — it pools MORE than on the movie it was validated on.**
+Effective window (`1 + sum of neighbour weights`, max 5): 3.19 on `fXgbTl` against 2.50 on `p6t4mC`,
+i.e. 54.8% of the available neighbour weight against 37.4%. The fear that block matching has no
+texture to work with is answered by the pipeline order: the gate matches on the summed **spatially
+smoothed** channels, and the Gaussian is what puts texture there.
+
+**Over the signal it is an identity, in BOTH regimes.** Median effective window over the top 1% of the
+guide: 1.01 on `fXgbTl`, 1.00 on `p6t4mC`. "Keeps moving cells sharp" is precisely "does no temporal
+averaging where the signal is" — the denoising all happens in the background. That is the honest
+one-line description of the method, and neither option help said it.
+
+**On sparse data the median is the destructive one.** ch0 keeps **17%** of its punctum amplitude under
+a 5-frame median — the documented "a median over three mostly-zero samples is zero" failure, visible
+in situ rather than inferred. The gate cannot do this: its worst case is the identity.
+
+**`spatialSigma = 0` makes `gated` a no-op, exactly.** The MAD of the temporal difference of raw
+sparse counts is **0**, so `_scale_from` clamps to 1e-12 and every weight collapses: amplitude kept
+1.00 and background noise kept 1.00 on all four channels — minutes a channel to write a copy of the
+input, reported as a successful run. `smooth_run.py` now refuses when the estimate comes back at zero
+(the estimate already runs up front, so nothing is wasted), and a param advisory says so in the form
+before the run. Not repaired by raising sigma silently: the value the user set is the one they read
+back off the QC.
+
+**Still not established:** the AF outcome. Amplitude and noise are not what this task exists for — the
+question is whether `gated` gives the triangle threshold the background population that
+`median + spatial` gives it (8.6% -> 80% signal surviving, below). The gate denoises the background
+*less*, and the background is where that population comes from, so this does not follow from the
+numbers above. One `gated` run on `fXgbTl` plus an AF run settles it; ~2 min/channel at 31t x 32z.
+
+**What changed in the UI meanwhile.** `"Not for photon-limited data"` is gone — it was wrong in a
+direction the measurement contradicts. Both option helps now describe what the statistic does, and the
+choice has a figure beside it (`tasks/smoothVis.ts`, `docs/MODULES.md` -> *`figure`*).
+
+**The figure states the verdict, and the window is what decides it.** `gated` is not "better than
+median" — it is what makes a WIDE window usable. The crossing above is the whole shape of the choice:
+at window 3 the median removes more noise (32% against 25%) and keeps 92% of the punctum, so it is
+both the better pick and the free one; from 5 up the two match on noise while the median's amplitude
+falls to 85% and then 69%. So the figure's line reads *Median is enough at this window* at 3 and
+*Gated keeps what the median smears at this window* from 5, and a user who never leaves the default
+window is told, correctly, not to spend the minutes.
+
 ## 2026-08-14 — a third statistic: `gated`
 
 The design below is unchanged and still describes why this task exists (AF's background derivation on
