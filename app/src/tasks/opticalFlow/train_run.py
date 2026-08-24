@@ -275,39 +275,86 @@ def _coastal_build():
     return out or None
 
 
-def pooled_offsets(mode, scales, cumulative, declared, cum_seconds, movie_dt):
-    """`(offsets, cumulative, reference_interval)` — the canonical channel names for the pool.
+def reference_interval(movies, scales, max_frames, seed, log):
+    """The COARSEST s/frame among the movies that could ANCHOR the spans — or None if none can.
 
-    In `frames` mode the offsets are already canonical and every movie was read at them, so this is
-    the identity and there is no reference interval to state.
+    `seconds` mode declares motion spans, but the form declares frame LAGS: one chip row, whose
+    labels read as durations. So the spans are `lag x this interval`, and this is the interval.
 
-    In `seconds` mode the pooled sequences were read at DIFFERENT offsets — `mag_2` on a 15 s/frame
-    movie and `mag_6` on a 5 s/frame one are both "30 s" — and coastal stacks the metric dict by
-    `sorted(keys)`, so pooling them as-is either trips the `key_sets` guard in `run` or, downstream,
-    feeds two different spans to one channel. So every sequence is renamed onto ONE set of offsets:
-    the spans resolved at the FINEST interval among the movies actually used.
+    **Coarsest, and this is the one decision here that is not arbitrary.** The spans have to be
+    representable on EVERY movie in the set, and a span is representable on a movie only if it is at
+    least one of its frames. Anchor on the coarsest and that is guaranteed for all of them: for any
+    movie with `dt <= dt_ref` the ratio `r = dt_ref / dt` is >= 1, so every lag scales UP
+    (`round(lag x r) >= lag >= 1`) and consecutive lags stay distinct (their gap also scales by `r`).
+    Anchor on the FINEST instead and the spans are as short as that one movie allows, so every coarser
+    movie is refused for a span below one of its frames — measured on lags [1,2,4] across 5/10/15
+    s/frame, the finest anchor resolves 1 of 3 movies and the coarsest resolves 3 of 3.
 
-    Finest, for three reasons: that movie then needs no rename at all, no canonical offset can round
-    below one of its frames, and it is a real acquisition rather than a number nobody recorded.
+    The anchor still needs no rename of its own either way: at its own rate its lags ARE `scales`.
 
-    The payoff is that the model stays an ordinary frame-offset model. `temporalScales` means what it
-    always meant; `temporalReferenceInterval` says which frame rate those offsets belong to, and
-    inference re-resolves from `temporalScaleSeconds`. Nothing downstream needs a second shape.
+    A movie is a candidate only if it could actually be read at the declared lags — it has a T axis, a
+    frame interval in SECONDS, and enough timepoints for the largest lag. That last check is exact
+    here and nowhere else: at its own rate a candidate's lags ARE `scales`, so `max(scales) + 1` is
+    precisely what it needs. Checking it now is what stops the reference being set by a movie the main
+    loop then skips, which would record a `temporalReferenceInterval` nothing trained at.
 
-    A separate function, and not inlined, for the reason `RunnerLocalsAreNotShadowedTest` states:
-    `scales` and `cumulative` feed the manifest, so rebinding them here would make what gets written
-    depend on a branch fifty lines up. The pooled values get their own names, bound once.
+    Reads metadata only — `_open` is the zarr/OME header, no pixels — so paying for a second pass over
+    the movie list costs a few hundred milliseconds and buys the spans being knowable before the first
+    frame is read.
+    """
+    best = None
+    for i, m in enumerate(movies):
+        uid = m.get('uID', '')
+        try:
+            im_dat, dim_utils = _open(m['imPath'])
+        except Exception as e:                                   # noqa: BLE001 - reported, not raised
+            log.log(f'>> [WARN] {uid}: cannot read to find the frame rate — {e}')
+            continue
+        if not dim_utils.is_timeseries():
+            continue
+        dt = dim_utils.im_time_increment(default=None)
+        unit = str(dim_utils.im_time_increment_unit())
+        if dt is None or float(dt) <= 0 or unit != 's':
+            continue
+        n_t = int(dim_utils.dim_val('T'))
+        start, stop = frame_window(n_t, max_frames, seed, i)
+        if stop - start < max(scales) + 1:
+            continue
+        dt = float(dt)
+        if best is None or dt > best[1]:
+            best = (uid, dt)
+    return best
+
+
+def seconds_config(mode, movies, scales, cumulative, max_frames, seed, log):
+    """`(reference_interval, spans, cumulative_seconds)` — what `seconds` mode is actually declaring.
+
+    `(None, [], 0.0)` in `frames` mode, where the lags are the setting and mean nothing in seconds.
+
+    The spans come OUT of the lags rather than being typed in beside them, which is the whole point of
+    the one-chip-row form: a span that is not a whole number of the reference movie's frames cannot be
+    declared, because it could never be honoured — `20 s` on a 15 s/frame movie resolves to one frame
+    and silently becomes 15 s. Deriving them makes that unrepresentable instead of documented.
+
+    It also means the pooled channel names need no reconciling: `round(lag x ref / ref) == lag`, so the
+    canonical offsets are always the form's own chips and `temporalScales` means the same thing in
+    both modes. That is why there is no `pooled_offsets` any more.
     """
     if mode != 'seconds':
-        return list(scales), cumulative, None
-    ref = min(movie_dt.values())
-    offsets, cum, problem = coastal_utils.scales_from_seconds(declared, cum_seconds, ref)
-    if problem:
-        # Unreachable through the per-movie guard (the finest movie resolved, or it was skipped) and
-        # left in anyway: this is the one place the canonical names are chosen, and a bad set here
-        # mislabels every channel of the model.
-        raise ValueError(f'cannot name the pooled channels: {problem}')
-    return offsets, cum or cumulative, ref
+        return None, [], 0.0
+    best = reference_interval(movies, scales, max_frames, seed, log)
+    if best is None:
+        raise ValueError(
+            'no movie can anchor the spans: temporal scale is set to seconds, which needs at least '
+            'one movie with a frame interval recorded in seconds and enough timepoints for the '
+            f'largest lag ({max(scales)}). Set "Read other rates as" back to "Same lags", or fix '
+            'the metadata.')
+    uid, dt = best
+    spans = [s * dt for s in scales]
+    log.log(f'>> spans anchored on {uid} at {dt:g} s/frame (the coarsest usable): lags {scales} = '
+            + ', '.join(f'{v:g}s' for v in spans)
+            + f' | cumulative window {cumulative} = {cumulative * dt:g}s')
+    return dt, spans, cumulative * dt
 
 
 def _physical_scale(dim_utils, planes):
@@ -480,10 +527,6 @@ def run(params):
     mode = str(params.get('temporalScaleMode', 'frames'))
     if mode not in ('frames', 'seconds'):
         raise ValueError(f"temporalScaleMode must be 'frames' or 'seconds', got {mode!r}")
-    declared = sorted({float(x) for x in (params.get('temporalScaleSeconds') or ())})
-    cum_seconds = float(params.get('cumulativeWindowSeconds') or 0.0)
-    if mode == 'seconds' and not declared:
-        raise ValueError('temporalScaleMode is "seconds" but no temporal spans were given')
 
     use_gpu, gpu_device = torch_device()
     log.log(f'>> GPU: {gpu_device if use_gpu else "none (CPU)"}')
@@ -513,6 +556,11 @@ def run(params):
     # view per sequence, which is why the position is random rather than fixed — see `crop_window`.
     crop_size = int(params.get('cropSize', 0))
     z_spacing = int(params.get('zSpacing', 0))
+    # The spans, before a single frame is read — see `seconds_config`. Bound once, together, so
+    # `RunnerLocalsAreNotShadowedTest` still holds over the names the manifest depends on.
+    ref_interval, declared, cum_seconds = seconds_config(
+        mode, movies, scales, cumulative, max_frames, seed, log)
+
     sequences, used, planes_used, windows, crops = [], [], {}, {}, {}
     # Parallel to `sequences`, because in `seconds` mode the offsets are a property of the MOVIE and
     # every sequence of a movie shares them. A dict keyed by uID would not do: `_one` works by
@@ -683,22 +731,17 @@ def run(params):
     at = f'{mpx[0]:.2f} MP' if len(mpx) == 1 else f'{mpx[0]:.2f}–{mpx[-1]:.2f} MP'
     log.log(f'>> pooling {n_frames_pooled} frames from {len(sequences)} sequence(s) at {at}')
 
-    # The channel names the pooled sequences share — see `pooled_offsets`. Bound once, under their own
-    # names, so `scales` and `cumulative` still say what the FORM asked for when the manifest is
-    # written and these say what the pool was actually keyed on.
-    pool_scales, pool_cumulative, ref_interval = pooled_offsets(
-        mode, scales, cumulative, declared, cum_seconds, movie_dt)
+    # No reconciling step: the spans are `lag x ref_interval`, so they resolve back to `scales` at
+    # the reference rate exactly and the canonical channel names are the form's own chips in BOTH
+    # modes. Every other movie's planes are renamed onto them in `_one`.
     if mode == 'seconds':
-        spans = ', '.join(f'{d:g}s' for d in declared)
-        log.log(f'>> temporal spans {spans} -> offsets {pool_scales} at the finest interval used '
-                f'({ref_interval:g} s/frame), cumulative window {pool_cumulative}')
         for uid in sorted(movie_scales):
-            if movie_scales[uid] != pool_scales:
+            if movie_scales[uid] != scales:
                 log.log(f'>>   {uid} at {movie_dt[uid]:g} s/frame read at {movie_scales[uid]} '
-                        f'-> renamed onto {pool_scales}')
+                        f'-> renamed onto {scales}')
 
     log.log(f'>> computing flow metrics for {len(sequences)} sequence(s) '
-            f'(scales {pool_scales}, cumulative {pool_cumulative})')
+            f'(scales {scales}, cumulative {cumulative})')
     # Sequences are INDEPENDENT — `prepare_data_for_unet_batch` is a per-movie loop with no
     # cross-movie state — so the only thing that ever forced one at a time was memory: the full
     # float32 metric stack of a sequence is live while it is computed, and six whole 1046x1104 movies
@@ -733,7 +776,7 @@ def run(params):
         # Onto the canonical offsets — see *The reference interval*. `{}` for every sequence in
         # `frames` mode and for the finest movie in `seconds` mode, where `apply_mag_rename` is a
         # no-op rather than a rebuilt dict.
-        rename = coastal_utils.mag_rename(pool_scales, i_scales)
+        rename = coastal_utils.mag_rename(scales, i_scales)
         t_seq = time.perf_counter()
         # `prepare_data_for_unet` rather than the `_batch` wrapper around it, for `verbose=False`. The
         # wrapper is a per-movie loop that calls exactly this and prints a banner the loop cannot turn
@@ -921,11 +964,11 @@ def run(params):
     losses = curves.get('total', [])
 
     manifest = {
-        # The POOLED offsets, which in `frames` mode are the form's own and in `seconds` mode are the
-        # declared spans at `temporalReferenceInterval`. Either way this is what the channels are
-        # named after, which is the only thing inference can configure itself from.
-        'temporalScales': pool_scales,
-        'cumulativeWindow': pool_cumulative,
+        # The form's own lags, in both modes: in `seconds` the spans are `lag x
+        # temporalReferenceInterval`, so they resolve back to exactly these. This is what the channels
+        # are named after, which is the only thing inference can configure itself from.
+        'temporalScales': scales,
+        'cumulativeWindow': cumulative,
         # ── What the offsets above MEAN ──────────────────────────────────────────────────────────
         # `frames` (or absent, for every model trained before this) = the offsets are the setting and
         # nothing says which frame rate they belong to beyond `physicalScales`. `s` = the spans were

@@ -43,85 +43,6 @@ function parse_temporal_scales(s)::Vector{Int}
     sort!(unique!(out))
 end
 
-"""
-    parse_temporal_seconds(s) -> Vector{Float64}
-
-`"5,10,20,40"` → `[5.0, 10.0, 20.0, 40.0]`, deduped and sorted. Raises on anything that is not a list
-of positive numbers.
-
-The `seconds` half of `temporalScaleMode`: the SPANS a model is fitted on, resolved per movie to that
-movie's own frame offsets. Parsed here for exactly the reason the frames form is — the failure is
-silent and the form is the only cheap place to catch a typo — with one addition: fractional spans are
-legitimate here (a 2.5 s lag on a 0.5 s/frame movie), so this is not `parse_temporal_scales` with a
-different message.
-"""
-function parse_temporal_seconds(v::AbstractVector)::Vector{Float64}
-    isempty(v) && throw(ParamValidationError(
-        "'temporalScaleSeconds' is empty; give spans in seconds like 5,10,20,40"))
-    parse_temporal_seconds(join(v, ","))
-end
-
-function parse_temporal_seconds(s)::Vector{Float64}
-    parts = filter(!isempty, strip.(split(string(s), r"[,\s]+")))
-    isempty(parts) && throw(ParamValidationError(
-        "'temporalScaleSeconds' is empty; give spans in seconds like 5,10,20,40"))
-    out = Float64[]
-    for p in parts
-        v = tryparse(Float64, p)
-        (isnothing(v) || !isfinite(v) || v <= 0) && throw(ParamValidationError(
-            "'temporalScaleSeconds' must be positive numbers of seconds, got \"$p\""))
-        push!(out, v)
-    end
-    sort!(unique!(out))
-end
-
-# Grid the ceiling is searched on, in seconds. Mirrors `coastal_utils.FRAME_INTERVAL_STEP`.
-const FRAME_INTERVAL_STEP = 0.01
-
-"""
-    flow_temporal_offsets(seconds, dt) -> Union{Vector{Int},Nothing}
-
-These spans as frame offsets at `dt` s/frame, or `nothing` when they cannot be: one rounds below a
-frame, or two land on the same offset. Mirrors `coastal_utils.scales_from_seconds` — the offsets, not
-its cumulative window, which is all the ceiling below needs.
-"""
-function flow_temporal_offsets(seconds::AbstractVector{<:Real}, dt::Real)
-    dt <= 0 && return nothing
-    out = Int[]
-    for d in sort(unique(Float64.(seconds)))
-        n = Int(round(d / dt))
-        n < 1 && return nothing
-        push!(out, n)
-    end
-    length(unique(out)) == length(out) ? out : nothing
-end
-
-"""
-    flow_max_frame_interval(seconds) -> Float64
-
-The coarsest acquisition, in s/frame, at which these spans and everything FINER resolve. Past it two
-spans round to the same frame offset and the model's per-scale planes stop being distinct features.
-
-Found by scanning upward to the first failure, exactly as `coastal_utils.max_frame_interval` does and
-for its reasons: the predicate is not monotone in `dt` (spans 10 and 15 collide at 6 s/frame and
-separate again at 7), so there is no closed form that is both correct and tight. Stated here so the
-form can say the ceiling BEFORE a run rather than the runner discovering it one movie at a time — and
-the two spellings must agree, or the log promises a rate inference then refuses.
-"""
-function flow_max_frame_interval(seconds::AbstractVector{<:Real})::Float64
-    v = sort(unique(Float64.(seconds)))
-    isempty(v) && return 0.0
-    dt, last_ok = FRAME_INTERVAL_STEP, 0.0
-    # `2 * v[1]` is a hard stop: past it the shortest span rounds below one frame and nothing coarser
-    # can ever resolve.
-    while dt <= 2 * v[1] + FRAME_INTERVAL_STEP
-        isnothing(flow_temporal_offsets(v, dt)) && break
-        last_ok = dt
-        dt = round(dt + FRAME_INTERVAL_STEP; digits = 6)
-    end
-    last_ok
-end
-
 # Every fixed metric plane coastal computes. The per-scale `mag_{n}` planes are deliberately NOT
 # here: they follow `temporalScales`, so offering them as separate ticks would let the two disagree.
 const FIXED_FLOW_METRICS = ("acceleration", "cell_boundary_likelihood", "cumulative_mag",
@@ -250,19 +171,17 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
     # geometry. Default `frames`, because it is what every existing model and chain means.
     mode = string(get(params, "temporalScaleMode", "frames"))
 
-    local channels, scales, seconds, model_path
+    local channels, scales, model_path
     try
         channels = channel_indices(get(params, "trainChannels", []), ch_names;
                                    what = "trainChannels")
         isempty(channels) && error("Select at least one channel to train on.")
         mode in ("frames", "seconds") || throw(ParamValidationError(
             "'temporalScaleMode' must be \"frames\" or \"seconds\", got \"$mode\""))
-        # BOTH parsed whichever mode is set: `temporalScales` still names the pooled channels (the
-        # runner rewrites it to the spans' offsets at the reference rate) and a chain that sets one
-        # and not the other must not fall through to a default nobody chose.
-        scales  = parse_temporal_scales(get(params, "temporalScales", "1,2,4,8"))
-        seconds = mode == "seconds" ?
-            parse_temporal_seconds(get(params, "temporalScaleSeconds", "5,10,20,40")) : Float64[]
+        # ONE list, both modes. The lags are the setting; in `seconds` mode the runner multiplies them
+        # by the finest usable frame interval to get the SPANS, so a span that is not a whole number of
+        # that movie's frames is unrepresentable rather than silently rounded (see `seconds_config`).
+        scales = parse_temporal_scales(get(params, "temporalScales", "1,2,4,8"))
         model_path = flow_model_target(get(params, "modelName", "");
                                        overwrite = Bool(get(params, "overwrite", false)))
     catch e
@@ -299,22 +218,12 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
 
     on_log("[INFO] Training on $(length(movies)) image(s) of $(length(imgs)) selected")
     on_log("[INFO] Model:  $model_path")
-    if mode == "seconds"
-        # A whole number of seconds prints as one — `5s`, not `5.0s`. The spans are Float64 because
-        # fractional ones are real, and every log line reading `5.0s, 10.0s` for the ordinary case
-        # would be noise for the sake of the rare one.
-        secs(x) = (v = Float64(x); v == round(v) ? string(Int(round(v))) : string(v))
-        # The ceiling up front, not at the movie that trips it: it is fixed by the spans alone, so
-        # the run can say which acquisitions it will drop before it opens a single file.
-        on_log("[INFO] Spans:  $(join(("$(secs(s))s" for s in seconds), ", ")) | cumulative window " *
-               "$(secs(get(params, "cumulativeWindowSeconds", 30.0)))s | needs " *
-               "$(secs(flow_max_frame_interval(seconds))) s/frame or finer" *
-               (isempty(dropped) ? "" : " | dropping $(join(dropped, ", "))"))
-    else
-        on_log("[INFO] Scales: $(join(scales, ", ")) | cumulative window " *
-               "$(Int(get(params, "cumulativeWindow", 5)))" *
-               (isempty(dropped) ? "" : " | dropping $(join(dropped, ", "))"))
-    end
+    # One line, both modes. What the lags MEAN in seconds depends on the movies, which only the runner
+    # has opened at this point — it logs the spans and the interval it anchored them on.
+    on_log("[INFO] Scales: $(join(scales, ", ")) | cumulative window " *
+           "$(Int(get(params, "cumulativeWindow", 5)))" *
+           (mode == "seconds" ? " | other rates read at the same DURATIONS" : "") *
+           (isempty(dropped) ? "" : " | dropping $(join(dropped, ", "))"))
     let crop = Int(get(params, "cropSize", 0)), zsp = Int(get(params, "zSpacing", 0))
         # Said once, up front: both change what the run is fitted to rather than how it is fitted,
         # and both are easy to leave set from a previous run without noticing.
@@ -349,9 +258,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            trainRatio       = Float64(get(params, "trainRatio", 0.8)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
-           temporalScaleMode     = mode,
-           temporalScaleSeconds  = seconds,
-           cumulativeWindowSeconds = Float64(get(params, "cumulativeWindowSeconds", 30.0)),
+           temporalScaleMode = mode,
            droppedMetrics   = dropped,
            epochs           = Int(get(params, "epochs", 30)),
            foregroundWeight = Float64(get(params, "foregroundWeight", 1.0)),

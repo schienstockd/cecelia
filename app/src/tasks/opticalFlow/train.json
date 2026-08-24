@@ -86,58 +86,34 @@
     },
     {
       "key": "temporalScaleMode",
-      "label": "Temporal scale",
+      "label": "Read other rates as",
       "type": "select",
+      "variant": "chips",
       "default": "frames",
-      "tip": "Frames pools every movie at the same lags; seconds resolves spans per movie",
+      "tip": "What a movie at a different frame rate is read at",
       "options": [
         {
-          "label": "Frame lags",
+          "label": "Same lags",
           "value": "frames"
         },
         {
-          "label": "Spans in seconds",
+          "label": "Same durations",
           "value": "seconds"
         }
       ]
     },
     {
-      "key": "temporalScaleSeconds",
-      "label": "Temporal spans (s)",
-      "type": "text",
-      "default": "5,10,20,40",
-      "showIf": {
-        "temporalScaleMode": "seconds"
-      },
-      "tip": "Motion spans each movie is read at, converted to its own frame lags"
-    },
-    {
-      "key": "cumulativeWindowSeconds",
-      "label": "Cumulative window (s)",
-      "type": "float",
-      "min": 0.0,
-      "max": 600.0,
-      "step": 5.0,
-      "default": 30.0,
-      "showIf": {
-        "temporalScaleMode": "seconds"
-      },
-      "tip": "Span summed for total displacement"
-    },
-    {
       "key": "temporalScales",
       "label": "Temporal scales",
       "type": "chipSelect",
-      "showIf": {
-        "temporalScaleMode": "frames"
-      },
+      "labelUnit": "frameDuration",
       "default": [
         "1",
         "2",
         "4",
         "8"
       ],
-      "tip": "Frame lags; inference must reuse these",
+      "tip": "Frame lags the flow is measured over; inference must reuse these",
       "options": [
         {
           "label": "1",
@@ -181,9 +157,6 @@
       "max": 51,
       "step": 1,
       "default": 5,
-      "showIf": {
-        "temporalScaleMode": "frames"
-      },
       "tip": "Frames summed for total displacement"
     },
     {
@@ -277,8 +250,8 @@
           "label": "Foreground loss",
           "type": "float",
           "min": 0.0,
-          "max": 10.0,
-          "step": 0.5,
+          "max": 4.0,
+          "step": 0.05,
           "default": 1.0,
           "tip": "Supervises the probability head at cell scale"
         },
@@ -287,8 +260,8 @@
           "label": "Intensity loss",
           "type": "float",
           "min": 0.0,
-          "max": 10.0,
-          "step": 0.25,
+          "max": 4.0,
+          "step": 0.05,
           "default": 0.25,
           "tip": "Merge/coverage dial: raise to claim more signal, lower for tighter objects"
         },
@@ -297,8 +270,8 @@
           "label": "Flow boundary",
           "type": "float",
           "min": 0.0,
-          "max": 2.0,
-          "step": 0.25,
+          "max": 4.0,
+          "step": 0.05,
           "default": 0.0,
           "tip": "Pinch the mask where the flow tears; needs strain, vorticity and divergence"
         },
@@ -307,8 +280,8 @@
           "label": "Temporal loss",
           "type": "float",
           "min": 0.0,
-          "max": 10.0,
-          "step": 0.5,
+          "max": 4.0,
+          "step": 0.05,
           "default": 2.0,
           "tip": "Pulls the embedding together along the flow"
         },

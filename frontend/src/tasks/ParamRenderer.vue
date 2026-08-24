@@ -14,6 +14,7 @@ import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
+import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          scopeValueName, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
@@ -492,6 +493,18 @@ function updateGroupEntry(entryKey: string, paramKey: string, newVal: unknown) {
 
 // channelSelection toggle helpers
 const channelOptions = computed<ChipOption[]>(() => availableChannels.value.map(ch => ({ value: ch, label: ch })))
+
+// `labelUnit` — a chipSelect's options relabelled with a physical quantity read off the selected
+// images. Declarative rather than a branch on the param KEY, so the next param that wants it says so
+// in its spec instead of editing this file. The VALUES are untouched, which is what keeps the
+// submitted params and `validate_params`' option check unaffected.
+const frameRate = computed(() => spanAnchorRate(props.context?.images))
+const chipOptions = computed<ChipOption[]>(() => {
+  const opts = (props.param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))
+  return props.param.labelUnit === 'frameDuration'
+    ? withDurationLabels(opts, frameRate.value)
+    : opts
+})
 // Per-option guidance for a `select` — see `utils/optionHelp.ts` for why this is not a `tip` and not
 // an advisory.
 const optionHelp = computed(() =>
@@ -627,7 +640,7 @@ const pct = computed(() => {
          parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
          for "pick from a set" (docs/UI.md). -->
     <ChipSelect v-else-if="param.type === 'chipSelect'"
-      :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
+      :options="chipOptions"
       :model-value="(Array.isArray(val) ? val : []).map(String)"
       multiple select-all
       :aria-label="param.label"

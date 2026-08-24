@@ -74,6 +74,20 @@ export interface FlowManifest {
   /** Cell-scale blur on the foreground target, in px. Decides the target's SHAPE, not its weight. */
   foregroundBlurSigma?: number
   /**
+   * How hard the foreground target is pinched where the flow tears. The OTHER thing that decides the
+   * target's shape, and the reason it is declared beside the blur rather than with `lossWeights`: it
+   * is not a loss term. Coastal passes it into `ForegroundLoss` as `boundary_weight`, so it never
+   * gets a `history` entry and can never appear on the convergence plot — its effect lands in
+   * `foreground` and, far more visibly, in that term's floor. Measured on fXgbTl at blur 1.0:
+   * `floor_foreground` 0.317 at weight 0 against 0.015 at weight 1.0, a 21x drop, because pinching
+   * the target lowers its entropy. Two runs at different weights therefore have NON-comparable
+   * `foreground` curves unless the floor is subtracted.
+   *
+   * Not to be confused with `lossWeights.boundary`, which is coastal's `ConfettiBoundaryLoss` and is
+   * a real term with a real curve. This task pins that one at 0.
+   */
+  foregroundBoundaryWeight?: number
+  /**
    * uID → what one pixel and one frame of that movie physically are, as OME recorded them:
    * `{x, xUnit, y?, yUnit?, z?, zUnit?, t?, tUnit?}`. `z` is the gap between the planes TRAINED ON,
    * not the stack's own step. Values are unconverted — a movie in nm keeps its unit.
@@ -107,7 +121,7 @@ const KNOWN = new Set([
   'maxFrames', 'frameWindows', 'trainRatio', 'zSpacing', 'cropSize', 'cropWindows', 'metricDtype',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves', 'lossFloors',
-  'foregroundBlurSigma',
+  'foregroundBlurSigma', 'foregroundBoundaryWeight',
   'physicalScales', 'physicalScaleSource', 'coastalBuild',
 ])
 
@@ -271,6 +285,9 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
     // curves are not comparable — a wider blur softens the target and raises its entropy floor.
     field('Foreground blur', m.foregroundBlurSigma === undefined ? undefined
       : `${m.foregroundBlurSigma} px`),
+    // Beside the blur, because the two together ARE the target. Silent at 0 — the default, and the
+    // state every model in a vault today is in — so the row appears only when it changed something.
+    field('Flow boundary', m.foregroundBoundaryWeight ? `${m.foregroundBoundaryWeight}` : undefined),
   ]
 
   // Which frames, not just how many. The window is seed-derived, so without it "frames 40–89 of

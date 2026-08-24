@@ -217,4 +217,28 @@ describe('modelDetailGroups', () => {
     })
   })
 
+  // ── the knob that is on and has no loss curve ────────────────────────────────────────────────
+  // `foregroundBoundaryWeight` is not a loss term — coastal passes it into `ForegroundLoss` as
+  // `boundary_weight`, reshaping the foreground TARGET. So it never reaches the convergence plot,
+  // and this row is the only place a model says it was trained with it. It used to fall through to
+  // "Other", next to keys nobody chose.
+  describe('flow boundary', () => {
+    it('sits beside the blur, because the two together are the target', () => {
+      const f = fieldsOf({ foregroundBlurSigma: 1, foregroundBoundaryWeight: 1 }, 'Training')
+      expect(f['Foreground blur']).toBe('1 px')
+      expect(f['Flow boundary']).toBe('1')
+    })
+
+    it('says nothing at 0 — the default, and every model in a vault today', () => {
+      expect(fieldsOf({ foregroundBlurSigma: 1, foregroundBoundaryWeight: 0 }, 'Training')
+        ['Flow boundary']).toBeUndefined()
+      expect(fieldsOf({ foregroundBlurSigma: 1 }, 'Training')['Flow boundary']).toBeUndefined()
+    })
+
+    // It is a KNOWN key now, so it must not also appear in the catch-all.
+    it('is no longer dumped into Other', () => {
+      expect(groupNames({ epochs: 30, foregroundBoundaryWeight: 1 })).not.toContain('Other')
+    })
+  })
+
 })

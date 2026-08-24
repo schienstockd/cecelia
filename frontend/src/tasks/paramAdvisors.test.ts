@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES,
-  ANISO_MIN_BOX_PX,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, ANISO_BYTES_PER_BOX_PER_FRAME,
+  ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
 
@@ -378,5 +378,68 @@ describe('ParamRenderer advisory placement', () => {
     // the empty-state inside channelSelection). A `v-if` at the chain's own indent level is the bug.
     const siblingIf = chain.split('\n').filter(l => /^ {4}<\w[^>]*\sv-if=/.test(l))
     expect(siblingIf).toEqual([])
+  })
+})
+
+// ── what a frame lag means in seconds ───────────────────────────────────────────────────────────
+describe('temporalSpanAdvisory', () => {
+  const LAGS = ['1', '2', '4', '8']
+
+  // fXgbTl's ACTUAL stored metadata. `ccid.json` keeps Bioformats' word `second`, while the store's
+  // OME-XML — what the Python side reads — says `s`. The first cut of `spanAnchorRate` compared to
+  // `'s'` and told Dominik "no frame interval in seconds" about a movie that records 15 of them.
+  const fXgbTl = { uid: 'fXgbTl', timeIncrement: 15, timeIncrementUnit: 'second' }
+
+  it('reads the unit Bioformats actually wrote', () => {
+    const a = temporalSpanAdvisory(LAGS, [fXgbTl], 'seconds')
+    expect(a?.message).toBe('15s, 30s, 60s, 120s at 15s/frame (fXgbTl)')
+    expect(a?.flag).toBeUndefined()
+  })
+
+  it('anchors on the coarsest rate, and says it is one of several', () => {
+    const a = temporalSpanAdvisory(LAGS, [fXgbTl, { uid: 'fast', timeIncrement: 5,
+                                                    timeIncrementUnit: 's' }], 'seconds')
+    // Still fXgbTl's 15 s/frame: the coarsest is the only anchor every movie can carry.
+    expect(a?.message).toBe('15s, 30s, 60s, 120s at 15s/frame (coarsest of 2)')
+  })
+
+  // Pooling two rates is legitimate; reading one set of LAGS across them as one timescale is not.
+  it('flags mixed rates only in lag mode, which is where it is wrong', () => {
+    const imgs = [fXgbTl, { uid: 'fast', timeIncrement: 5, timeIncrementUnit: 's' }]
+    expect(temporalSpanAdvisory(LAGS, imgs, 'frames')?.flag?.severity).toBe('warn')
+    expect(temporalSpanAdvisory(LAGS, imgs, 'seconds')?.flag).toBeUndefined()
+  })
+
+  it('counts the images that cannot be read at durations at all', () => {
+    const a = temporalSpanAdvisory(LAGS, [fXgbTl, { uid: 'none', timeIncrement: null }], 'seconds')
+    expect(a?.message).toContain('1 without one')
+  })
+
+  // The runner SKIPS a movie whose interval is not in seconds rather than converting it, so a
+  // converted rate is one the form can print and the run will refuse. Flagged, not silently shown.
+  it('flags a converted unit, because the runner will not use it', () => {
+    const a = temporalSpanAdvisory(LAGS, [{ uid: 'ms', timeIncrement: 250,
+                                            timeIncrementUnit: 'ms' }], 'seconds')
+    expect(a?.message).toContain('0.25s/frame')
+    expect(a?.flag?.severity).toBe('fail')
+  })
+
+  it('says the run cannot start when nothing records an interval, but only in seconds mode', () => {
+    const none = [{ uid: 'a', timeIncrement: null }]
+    expect(temporalSpanAdvisory(LAGS, none, 'seconds')?.severity).toBe('warn')
+    expect(temporalSpanAdvisory(LAGS, none, 'seconds')?.message).toContain('cannot be resolved')
+    // In lag mode there is nothing to resolve, so there is nothing to say.
+    expect(temporalSpanAdvisory(LAGS, none, 'frames')).toBeNull()
+  })
+
+  it('says nothing with no lags picked', () => {
+    expect(temporalSpanAdvisory([], [fXgbTl], 'seconds')).toBeNull()
+    expect(temporalSpanAdvisory(undefined, [fXgbTl], 'seconds')).toBeNull()
+  })
+
+  it('is registered under the key, not the widget type', () => {
+    expect(paramAdvisor({ key: 'temporalScales', type: 'chipSelect' })).toBeDefined()
+    // Otherwise every chipSelect in every task would get a frame-rate readout.
+    expect(paramAdvisor({ key: 'flowMetrics', type: 'chipSelect' })).toBeUndefined()
   })
 })

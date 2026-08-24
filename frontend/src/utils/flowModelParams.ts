@@ -41,18 +41,12 @@ export function paramsFromManifest(
   // `chipSelect` holds STRINGS and validates each against its options; the manifest holds ints.
   if (Array.isArray(m.temporalScales)) put('temporalScales', m.temporalScales.map(String))
 
-  // The scale MODE, and the spans when it is `seconds`. Restored together on purpose: handing back
-  // the spans without the mode leaves a form that shows frame lags and trains on them, which is a
-  // materially different model under the same "use this model's settings" — the `intensityWeight`
-  // mistake above, one field along. Absent on every model trained before the mode existed, and
-  // `put` skips undefined, so those still come back as the frame-lag form they were.
-  if (m.temporalScaleUnit === 's' && m.temporalScaleSeconds?.length) {
-    put('temporalScaleMode', 'seconds')
-    // A `text` control, and the parser takes a comma list — the same spelling `train.jl` accepts.
-    put('temporalScaleSeconds', m.temporalScaleSeconds.map(String).join(','))
-    put('cumulativeWindowSeconds', m.cumulativeWindowSeconds)
-  } else if (m.temporalScaleUnit === 'frames') {
-    put('temporalScaleMode', 'frames')
+  // The scale MODE only. The spans are NOT a form field: they are `temporalScales x the reference
+  // interval`, so restoring `temporalScales` above has already restored them — and restoring a
+  // second, independently-stored copy is how the two would come to disagree. Absent on every model
+  // trained before the mode existed, and `put` skips undefined, so those come back as they were.
+  if (m.temporalScaleUnit === 's' || m.temporalScaleUnit === 'frames') {
+    put('temporalScaleMode', m.temporalScaleUnit === 's' ? 'seconds' : 'frames')
   }
 
   // The metric set is stored as what was USED (`metricKeys`, which includes the derived `mag_<scale>`
