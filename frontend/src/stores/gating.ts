@@ -5,7 +5,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
 import { clusterMeasure } from '../utils/clusterMeasure'
-import { isCentroidAxis, centroidLabel } from '../utils/gatingAxes'
+import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { popPath } from '../utils/popName'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
@@ -32,10 +32,15 @@ export interface FilterCondition { measure: string; fun: string; values: unknown
 // a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`
 export interface FilterSpec { measure: string; fun: string; values: unknown; default_all: boolean; conditions?: FilterCondition[] }
 
+// a boolean spec (Decision 16): the included terms combined with `op`, minus every excluded term.
+// `pops: []` + `not: [x]` is the plain "everything here except x" case.
+export interface BooleanSpec { op: 'and' | 'or'; pops: string[]; not: string[] }
+
 export interface PopNode {
   name: string; colour: string; show: boolean
   gate?: GateSpec
   filter?: FilterSpec
+  boolean?: BooleanSpec
   is_track?: boolean
   transient?: boolean              // ephemeral (napari cell selection) — not persisted
   membership_sig?: string          // explicit-label pops (napari selection): hash of label set
@@ -48,6 +53,7 @@ export interface FlatPop {
   path: string; name: string; parent: string; colour: string; show: boolean
   depth: number; gate?: GateSpec; transient?: boolean
   filter?: FilterSpec  // cluster / region / user-defined filter pops
+  boolean?: BooleanSpec  // a combination of OTHER populations (Decision 16)
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -56,7 +62,7 @@ function flatten(tree: PopTree): FlatPop[] {
     for (const n of nodes) {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, parent, colour: n.colour, show: n.show, depth,
-                 gate: n.gate, transient: n.transient, filter: n.filter })
+                 gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -73,7 +79,7 @@ function gateSignatures(tree: PopTree): Map<string, string> {
       // include membership_sig so explicit-label pops (the napari selection) bump their version
       // when their cell set changes — they have no gate/filter to diff on.
       m.set(path, JSON.stringify(n.gate ?? null) + '|' + JSON.stringify(n.filter ?? null)
-                  + '|' + (n.membership_sig ?? ''))
+                  + '|' + JSON.stringify(n.boolean ?? null) + '|' + (n.membership_sig ?? ''))
       walk(n.children ?? [], path)
     }
   }
@@ -123,10 +129,14 @@ export const useGatingStore = defineStore('gating', () => {
   // spatial + temporal centroid axes, offered together as a "Spatial / Time" group in the axis pickers
   const spatialAxes = computed(() => [...spatialColumns.value, ...temporalColumns.value])
   const isSpatialAxis = (col: string) => spatialAxes.value.includes(col)
-  // columns that should default to a LINEAR transform in the gate axis pickers: raw coordinates
-  // (spatial/temporal axes + any centroid column, matched by name via isCentroidAxis so it holds even
-  // for data that doesn't list centroids in spatial_cols) are positions, never logicle.
-  const isLinearAxis = (col: string) => isSpatialAxis(col) || isCentroidAxis(col)
+  // THE default scale for a measure, wherever one is picked: raw coordinates (spatial/temporal axes +
+  // any centroid column, matched by name so it holds even for data that doesn't list centroids in
+  // spatial_cols) are positions and never logicle; a flow intensity is logicle. The rule itself is the
+  // pure `utils/gatingAxes` `defaultTransformForCol` — the board's read-only gating view shares it
+  // without a store — and this binds it to THIS segmentation's spatial axes and pop type. (It replaced
+  // an `isLinearAxis` predicate that every picker then turned into the same transform by hand.)
+  const defaultTransformFor = (col: string): 'linear' | 'logicle' =>
+    defaultTransformForCol(col, { spatialAxes: spatialAxes.value, popType: popType.value })
 
   const flat = computed(() => flatten(tree.value))
   // transient pops (e.g. the napari cell selection) — auto-highlighted on the plots
@@ -295,6 +305,13 @@ export const useGatingStore = defineStore('gating', () => {
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
       filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun, values: conditions[0]?.values } })
+  // boolean population (Decision 16): membership is a set operation over OTHER pops in this map —
+  // "nuc-GFP+ OR mem-TOM+", or "both, but NOT CD169+". No gate and no column of its own; it links
+  // gates that already exist. Sent whole on both add and edit (a term list has no partial patch).
+  const addBooleanPop = (name: string, parent: string, colour: string, spec: BooleanSpec) =>
+    _post('/api/gating/pop/add', { name, parent, colour, boolean: spec })
+  const updateBooleanPop = (path: string, spec: BooleanSpec) =>
+    _post('/api/gating/pop/update', { path, boolean: spec })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
   // Step through the server's history. `_post` handles the response tree + flags like any other
   // mutation, so an undo lands on screen exactly the way the edit it reverses did. `mirrorUids` is
@@ -375,11 +392,11 @@ export const useGatingStore = defineStore('gating', () => {
 
   return {
     imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
-    spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, isLinearAxis,
+    spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,

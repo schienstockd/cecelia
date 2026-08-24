@@ -49,7 +49,8 @@ import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary, buildTrackBuffer, tailRange,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
-import { rampSwatches } from '../utils/colourRamp'
+import { heatUnit } from '../utils/viewerOverlays'
+import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
@@ -118,11 +119,13 @@ let segments: SegmentBuffer = {
 const pointCount = ref(0)
 const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
-/** The ramp as a CSS gradient, from the same table the points are shaded with — a legend built from a
- *  different set of stops would be a second answer about the same scale. */
-const rampStyle = computed(() => ({
-  background: `linear-gradient(to right, ${rampSwatches('viridis', 12).join(', ')})`,
-}))
+/** The ramp as a CSS gradient, from the same 256-entry lookup the points are shaded with — a legend
+ *  built from a different set of stops would be a second answer about the same scale. */
+const rampStyle = computed(() => {
+  const stops = Array.from({ length: 12 }, (_, i) =>
+    rgbHex(heatUnit(i / 11).map(v => v * 255)))
+  return { background: `linear-gradient(to right, ${stops.join(', ')})` }
+})
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1 })
 const fitDist = ref(1)
@@ -246,7 +249,7 @@ const frame = usePlotResize(canvas, () => {
  */
 function rebuildOverlays() {
   const r = renderer.value
-  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, 'viridis', PALETTES.cecelia)
+  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
   // Tails are coloured per TRACK, not per population, so they do not depend on which pops are visible —

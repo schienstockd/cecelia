@@ -333,20 +333,18 @@ screen direction, so width is in pixels and stays constant under perspective.
   even stored as 0/1). A TypeScript re-derivation would be a second answer about the same column, and
   the viewer and a plot of it would disagree. The payload carries `valueKind` plus `valueLevels` or
   `valueRange`.
-- **`utils/colourRamp.ts` is GENERATED from matplotlib 3.11.0**, not typed by hand: viridis and turbo
-  sampled at 32 points, which is the same source napari's own maps come from, so a colour-by here
-  matches what napari showed. Regenerate rather than hand-editing a stop:
-
-  ```python
-  from matplotlib import colormaps
-  N = 32
-  [colormaps['viridis'](i / (N - 1))[:3] for i in range(N)]
-  ```
-
-  It exists because there was nothing to reuse — `image_render.jl` says outright that napari's
-  perceptual maps are not ramps from black and cannot be approximated from a name, and the plots get
-  theirs from Observable Plot's d3 scales, which WGSL cannot reach. CHANNEL colours are still resolved
-  server-side; the two are separate concerns and must stay that way.
+- **The ramp is the HOUSE one, and this is a reversal worth recording.** Colour-by was first built on a
+  viridis/turbo table generated from matplotlib, reasoning that no ramp existed to reuse:
+  `image_render.jl` says outright that napari's perceptual maps are not ramps from black and cannot be
+  approximated from a name, and the plots got theirs from Observable Plot's d3 scales, which WGSL cannot
+  reach. **That stopped being true mid-build** — the gating colour-by (PR #646) landed
+  `plots/flowColors.ts` → `BLUE_HEAT_RGB` on `main`, a 256-entry value→RGB lookup for exactly this job.
+  So the generated table was deleted and the overlays now shade through the same lookup the gating dots
+  do: one cell is one colour on a plot and in the image. Colour CHOICE was never part of the parity bar,
+  and `plots/valueColour.ts` → `normValues` independently makes the same three calls this does (clamp,
+  NaN for unmeasured, zero-width → middle), which is what confirmed the sharing was right.
+  CHANNEL colours are still resolved server-side; those are a stored napari property, not a display
+  choice, and must stay separate.
 - **A cell with no value gets its own grey**, not the ramp's low end: "not measured" must not read as
   "measured, and lowest". A zero-width range shades at the ramp's MIDDLE, because painting every cell
   "lowest" or "highest" both assert something the data does not say.
@@ -502,9 +500,10 @@ either way, which is also why the bug could not be seen by comparing them.
 Written down rather than guessed at (2026-08-24). Work continued past all of these under the stated
 assumption; each is a place where a different answer would change what gets built, not whether.
 
-1. **ANSWERED by taking the assumption — `utils/colourRamp.ts` now exists.** Left here because the
-   alternative is still open: resolving overlay ramps server-side would keep one palette owner at the
-   cost of a round trip whenever the column changes.
+1. **ANSWERED, and then answered differently.** A generated viridis table was added, then deleted when
+   `main` gained `BLUE_HEAT_RGB` (the gating colour-by, PR #646) — one ramp for "colour by a measure"
+   across both surfaces beats matching napari's palette. Nothing is open here any more; kept because the
+   reasoning is the interesting part.
    **Colour-by needs a continuous colormap, and there is no table to reuse.** `track_state` and
    `clusters.*` are categorical and can use the population palette. `live.cell.speed` is continuous, and
    napari renders it through **viridis**. The repo has NO viridis/turbo RGB table anywhere:

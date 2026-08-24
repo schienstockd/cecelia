@@ -166,6 +166,22 @@ def run(params):
         gate_sigma = float(np.median(samples))
         log.log(f'   gate sigma {gate_sigma:.2f} (median of {len(samples)} z-planes)')
 
+        # A gate with no noise scale is not a weak gate, it is NO gate: `_scale_from` clamps to 1e-12,
+        # so every weight becomes exp(-d/1e-12) = 0 for any mismatch at all and the output is the
+        # input. It happens for one reason — `spatialSigma=0` on photon-limited data, where the
+        # temporal difference is a majority of exact zeros and its MAD is exactly 0. Measured on
+        # `zolIMa/fXgbTl` at sigma 0: amplitude kept 1.00, background noise kept 1.00, all four
+        # channels. Refused rather than run, because the alternative is minutes a channel spent
+        # writing a copy of the input that LOOKS like a successful smoothing run — and the AF task
+        # downstream would then be handed the same untouched counts it could not threshold before.
+        # Not repaired by raising sigma here: the value the user set is the one they will read back
+        # off the QC, and a run that silently used a different one is the worse surprise.
+        if gate_sigma <= 0:
+            log.log('[ERROR] the gate has no noise scale to work with, so every frame would be '
+                    'returned unchanged. Set a spatial sigma above 0 (the Gaussian has to fill the '
+                    'counts before a gate can match on them), or use the median statistic')
+            raise SystemExit(1)
+
     # Counted whether or not it ran, so the scale means the same thing with restoreGain off.
     done = 1
     log.progress(done, total)

@@ -95,6 +95,12 @@ export interface ParamDef {
   //   area     - a disc whose AREA is the value (a size floor, in um^2)
   //   fraction - a marker on a 0-1 track (a threshold, a weight)
   vis?: 'diameter' | 'blur' | 'distance' | 'area' | 'fraction'
+  // A figure offered BESIDE this param, by name — `tasks/paramFigures.ts` owns what each name builds.
+  // For a choice whose options differ in what they DO rather than in any number on the form, where
+  // `vis` has nothing to draw. Named in the spec rather than matched on the key in the renderer, for
+  // the same reason `vis` is a role: a picture keyed off `temporalStat` inside a Vue file is a second
+  // description of the form, and the next task that wants one would have to edit the renderer.
+  figure?: string
 }
 
 export interface TaskDef {

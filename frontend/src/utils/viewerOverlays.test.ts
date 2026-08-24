@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
-  buildTrackBuffer, tailRange, colourByValue, NO_VALUE_RGB,
+  buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
-import { sampleRamp, rampSwatches } from './colourRamp'
 import type { ViewerMeta } from './volumeViewer'
 
 const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
@@ -269,7 +268,7 @@ describe('colourByValue', () => {
   })
 
   it('spreads a numeric column across the ramp', () => {
-    const f = colourByValue(num(), 'viridis')!
+    const f = colourByValue(num())!
     const lo = f(0), mid = f(1), hi = f(2)
     expect(lo).not.toEqual(hi)
     // viridis runs dark blue → yellow, so the top of the scale is the brighter red channel
@@ -297,7 +296,7 @@ describe('colourByValue', () => {
       ...payload(),
       colourBy: 'track_state', valueKind: 'categorical',
       valueLevels: [1, 2, 3], values: [1, 2, 3, 1],
-    }, 'viridis', ['#ff0000', '#00ff00'])!
+    }, ['#ff0000', '#00ff00'])!
     expect(f(0)).toEqual([1, 0, 0])
     expect(f(1)).toEqual([0, 1, 0])
     expect(f(2)).toEqual([1, 0, 0])       // three levels, two colours → cycles
@@ -311,7 +310,7 @@ describe('colourByValue', () => {
       ...payload(),
       colourBy: 'track_state', valueKind: 'categorical',
       valueLevels: [1, 2], values: [1, 2, 9, null],
-    }, 'viridis', ['#ff0000', '#00ff00'])!
+    }, ['#ff0000', '#00ff00'])!
     expect(f(2)).toEqual(NO_VALUE_RGB)
     expect(f(3)).toEqual(NO_VALUE_RGB)
   })
@@ -319,8 +318,8 @@ describe('colourByValue', () => {
   it('shades points by the column when one is chosen, over the population colour', () => {
     // The populations still SELECT which cells are drawn; the column shades them.
     const p = num()
-    const plain = buildPointBuffer(payload(), meta(), new Set(), 'viridis', ['#ff0000'])
-    const shaded = buildPointBuffer(p, meta(), new Set(), 'viridis', ['#ff0000'])
+    const plain = buildPointBuffer(payload(), meta(), new Set(), ['#ff0000'])
+    const shaded = buildPointBuffer(p, meta(), new Set(), ['#ff0000'])
     expect(shaded.count).toBe(plain.count)
     const rgbOf = (b: { data: Float32Array }, i: number) =>
       Array.from(b.data.slice(i * POINT_STRIDE + 3, i * POINT_STRIDE + 6))
@@ -328,27 +327,19 @@ describe('colourByValue', () => {
   })
 })
 
-describe('colour ramps', () => {
-  it('runs dark to bright, and clamps rather than wrapping', () => {
-    // Wrapping would paint the brightest cells the colour of the dimmest.
-    const lo = sampleRamp('viridis', 0), hi = sampleRamp('viridis', 1)
-    expect(sampleRamp('viridis', -5)).toEqual(lo)
-    expect(sampleRamp('viridis', 5)).toEqual(hi)
-    expect(hi[0] + hi[1]).toBeGreaterThan(lo[0] + lo[1])
+describe('the house ramp', () => {
+  it('is the SAME lookup the gating plots use, so a dot and a marker agree', () => {
+    // Reversal worth recording: this started with a generated viridis table, on the reasoning that no
+    // ramp existed to reuse. One landed on main while it was being built.
+    const mid = heatUnit(0.5)
+    expect(mid.every(v => v >= 0 && v <= 1)).toBe(true)
+    expect(heatUnit(0)).not.toEqual(heatUnit(1))
   })
-  it('interpolates between stops rather than stepping', () => {
-    const a = sampleRamp('turbo', 0.5), b = sampleRamp('turbo', 0.51)
-    expect(a).not.toEqual(b)
+  it('clamps rather than wrapping, so the brightest cells are not painted the dimmest colour', () => {
+    expect(heatUnit(-5)).toEqual(heatUnit(0))
+    expect(heatUnit(5)).toEqual(heatUnit(1))
   })
   it('survives a non-finite input, which is what an unmeasured cell would give it', () => {
-    expect(sampleRamp('viridis', NaN).every(Number.isFinite)).toBe(true)
-  })
-  it('makes legend swatches from the SAME stops the points use', () => {
-    const sw = rampSwatches('viridis', 5)
-    expect(sw).toHaveLength(5)
-    expect(sw.every(h => /^#[0-9a-f]{6}$/.test(h))).toBe(true)
-    const [r, g, b] = sampleRamp('viridis', 0)
-    const hex = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0')
-    expect(sw[0]).toBe('#' + hex(r) + hex(g) + hex(b))
+    expect(heatUnit(NaN).every(Number.isFinite)).toBe(true)
   })
 })

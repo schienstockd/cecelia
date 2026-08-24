@@ -20,9 +20,9 @@ import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popG
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
-import VisualAid from '../components/VisualAid.vue'
-import FloatingPanel from '../components/FloatingPanel.vue'
+import ParamFigure from '../components/ParamFigure.vue'
 import { paramVisColumns, uniformWarning } from './paramVis'
+import { paramFigure } from './paramFigures'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 
@@ -418,10 +418,14 @@ const groupPxSize = computed<number | null>(() => {
   return sizes.every(v => v === sizes[0]) ? sizes[0] : null
 })
 
-// The figure is FLOATING, not inline. Eleven rows above the entry list pushed the whole form down
-// and was the first thing Dominik said about it — a reference you consult while tuning wants to sit
-// beside the controls, not between them. `FloatingPanel` remembers where you put it.
-const figureOpen = ref(false)
+// A figure this PARAM asks for by name (`paramFigures.ts`), as opposed to the strip a repeatable
+// group gets for free below. Rebuilt whenever the form changes, because that is the point: the window
+// row and the cost row are the user's current settings, not defaults.
+const figureBuilder = computed(() => paramFigure(props.param))
+const paramFig = computed(() => figureBuilder.value?.(advisoryCtx.value) ?? null)
+
+// WHAT the group figure holds. Whether it is on screen belongs to `ParamFigure`, which owns the button
+// and the float; this side only has to produce a `VisColumns`, which is testable without mounting.
 const groupVis = computed(() =>
   paramVisColumns(props.param, (val.value as GroupValues) ?? {}, groupOrderValue.value,
                   groupPxSize.value))
@@ -734,6 +738,16 @@ const pct = computed(() => {
       {{ param.type }}
     </div>
 
+    <!-- The figure this param offers, if the spec named one. Below the control rather than beside the
+         label, for a reason the layout does not show: a wrapper around the label moves it a level
+         deeper, and a heading only covers the controls that are its SIBLINGS — every toggle and chip
+         row in the panel would have been reported as having no hover help (`HEADING_COVERED` in
+         utils/uiCopy.ts). It also reads well here, next to the per-option line that says what the
+         choice means. Same `v-if`-after-the-chain rule as the advisory below. -->
+    <div v-if="paramFig" class="param-fig-row">
+      <ParamFigure v-bind="paramFig" />
+    </div>
+
     <!-- ONE advisory block for every param that registers an advisor (paramAdvisors.ts). A note
          under the control, whatever the control is.
          MUST sit AFTER the widget chain closes, never inside it: a `v-if` placed mid-chain starts a
@@ -786,11 +800,13 @@ const pct = computed(() => {
            children a second button parked the first in the middle of the row — reading as a label
            with a stray control after it. `+` stays rightmost, where it was when it was alone. -->
       <span class="group-actions cc-row cc-row-tight">
-        <button v-if="groupVis.rows.length" class="group-fig-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro"
-          type="button" :class="{ 'cc-btn-on': figureOpen }" @click="figureOpen = !figureOpen"
-          v-tooltip.left="'Show these settings as a figure'">
-          <i class="pi pi-chart-bar" />
-        </button>
+        <!-- A floating figure of what these numbers MEAN, one column per entry. Off by default:
+             it is a reference you consult while tuning, so it belongs beside the controls rather
+             than wedged between them. `ParamFigure` shows no button when the spec gives no param a
+             `vis` role, so a task with none is unaffected. -->
+        <ParamFigure :vis="groupVis" :title="`${param.label} — at a glance`"
+          :headings="groupVisHeadings" :note="groupVisNote" note-severity="warn"
+          storage-key="param-figure" />
         <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
           @click="addGroupEntry()"
           v-tooltip.left="'Add another entry'">
@@ -840,17 +856,6 @@ const pct = computed(() => {
       :short="param.entriesTip"
       detail="Entries are applied in turn, so the first has first claim on every pixel and later ones
               fill only what it left. Two entries configured alike therefore do the same work twice." />
-
-    <!-- A floating figure of what these numbers MEAN, one column per entry. Off by default and
-         remembered per user: it is a reference you consult while tuning, so it belongs beside the
-         controls rather than wedged between them. Only offered when the spec gives some param a
-         `vis` role, so a task with none shows no button. -->
-    <FloatingPanel v-if="figureOpen" :title="`${param.label} — at a glance`"
-      storage-key="param-figure" icon="pi-chart-bar" :default-w="330" :default-h="420"
-      @close="figureOpen = false">
-      <VisualAid :vis="groupVis" :headings="groupVisHeadings"
-        :note="groupVisNote" note-severity="warn" />
-    </FloatingPanel>
 
     <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
@@ -941,6 +946,8 @@ const pct = computed(() => {
   gap: 0.35rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--cc-border);
+  /* so the figure button can ride on the label's line — see `.param-fig-row` */
+  position: relative;
 }
 .param-row:last-child { border-bottom: none; }
 
@@ -1022,6 +1029,13 @@ const pct = computed(() => {
 /* layout only — `InlineNote` owns the icon/text/gap and the severity colour */
 .param-advisory { display: flex; }
 .param-advisory-flag { margin-left: 0.1rem; }
+
+/* Top-right of the row, where a repeatable group's own figure button sits — and OUT OF FLOW, so it
+   costs no height. In flow it took a full row of the form to hold one 20px icon, directly under the
+   control it belongs to. Absolute rather than moved up the template because the label cannot be
+   wrapped: nesting it one level deeper stops it covering the row's control, and every toggle and chip
+   row in the panel gets reported as having no hover help (`HEADING_COVERED`, utils/uiCopy.ts). */
+.param-fig-row { position: absolute; top: 0.4rem; right: 0; }
 
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }

@@ -9,11 +9,25 @@
  * The reason to have it at all: a column of ten numbers does not answer "are these two things
  * different", and two shapes of visibly different size do.
  *
- * Four shapes, because four kinds of SIZE read differently:
+ * Five shapes. Four are kinds of SIZE, which read differently:
  *   diameter - a circle of that size          (something's extent)
  *   blur     - a soft ring                    (a fuzziness, not an outline)
  *   distance - a span with end caps           (a reach, not an object)
  *   area     - a disc whose AREA is the value (so the radius carries the square root)
+ *
+ * …and `grid` is not a size at all: a small field of values, optionally several frames of one, cycled
+ * on a timer. It exists because some choices are not distinguishable by magnitude — median vs gated
+ * smoothing have the SAME window, the same everything a circle could draw, and differ only in what
+ * they do to a moving spot. A still picture of that comparison is a picture of nothing.
+ *
+ * The grid is the ONE row that breaks *one line per row* below, and the exception is the whole reason
+ * the rule holds elsewhere: every other row is a shape ALONGSIDE the number it duplicates, so it can
+ * afford to be 16px. A grid IS the content — there is no number beside it saying the same thing — so
+ * it gets a band.
+ *
+ * ONE index for every grid row in the figure, not one timer each. Two independently-scheduled rows
+ * drift apart within seconds, and a comparison of two methods at two different timepoints is a
+ * comparison of nothing.
  *
  * A `text` row (which model, matched as what, on which channels) gets no shape either — the value IS
  * the content, and it comes first, because it is what you check before any number. An empty channel
@@ -32,8 +46,8 @@
  * Shapes only. Every number, scale and comparison decision is in the producer, so it can be tested
  * without mounting anything.
  */
-import { computed } from 'vue'
-import { type VisColumns, MAX_R } from '../tasks/paramVis'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { type VisColumns, type VisFrame, MAX_R } from '../tasks/paramVis'
 import InlineNote from './InlineNote.vue'
 import type { Severity } from '../lib/severity'
 
@@ -53,7 +67,55 @@ const vis = computed(() => props.vis)
 /** The inline shape's box, in CSS px. `MAX_R` is its radius, so the box is a shade wider. */
 const SZ = MAX_R * 2 + 2
 
+/** The `grid` band, in CSS px — see the header on why this one row is not 16px like the rest. */
+const GRID_SZ = 48
+
 const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
+
+/**
+ * ── the sequence ──────────────────────────────────────────────────────────────────────────────
+ * How fast is a judgement about legibility, not physics: the frames are a schematic of motion, not
+ * the movie's own rate, and below ~120ms the eye reads a flicker rather than a direction.
+ */
+const FRAME_MS = 220
+
+const frame = ref(0)
+let timer: number | undefined
+
+const hasSequence = computed(() =>
+  vis.value.rows.some(r => r.role === 'grid' && r.cells.some(c => (c.frames?.length ?? 0) > 1)))
+
+/**
+ * Everything else in this float is a still image, so this is the first thing in it that moves on its
+ * own — and something that moves without being asked is exactly what `prefers-reduced-motion` is for.
+ * Reduced motion still gets the FIRST frame of every sequence: the comparison is legible standing
+ * still, just less vivid, which is better than an empty row.
+ *
+ * Nothing else is needed to stop the timer when the panel closes: `ParamFigure` renders the float
+ * with `v-if`, so closing it unmounts this component and `onBeforeUnmount` fires. A `v-show` there
+ * would leave the interval running for a panel nobody has open — which is why it must stay `v-if`.
+ */
+onMounted(() => {
+  if (!hasSequence.value) return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  timer = window.setInterval(() => { frame.value++ }, FRAME_MS)
+})
+onBeforeUnmount(() => { if (timer !== undefined) window.clearInterval(timer) })
+
+/**
+ * The frame to show for one cell. Modulo per cell rather than a shared counter reset: two sequences of
+ * different length still both loop, and the shared `frame` keeps them phase-locked at index 0.
+ */
+function frameOf(frames: VisFrame[] | undefined): VisFrame | null {
+  if (!frames?.length) return null
+  return frames[frame.value % frames.length]
+}
+
+/** Cell geometry for a grid frame — square cells, sized to fit the band. */
+function cellSize(f: VisFrame): number {
+  const cols = Math.max(1, ...f.map(r => r.length))
+  return GRID_SZ / Math.max(cols, f.length)
+}
 </script>
 
 <template>
@@ -74,7 +136,30 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
           :class="{ 'is-uniform': row.uniform, 'is-last': ri === vis.rows.length - 1 }">
           {{ row.label }}
         </div>
-        <div v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell cc-fs-2xs"
+        <!-- A `grid` row draws its FRAMES, one per column, like every other role. It briefly had a
+             `span` mode for a row that was the shared INPUT to the columns beside it; that figure now
+             gives the input a COLUMN instead, which compares better, and a spanning row with no
+             consumer is machinery waiting to grow a second way of doing this. -->
+        <template v-if="row.role === 'grid'">
+          <div v-for="(cell, i) in row.cells"
+            :key="`${row.key}-${i}`" class="vis-cell vis-cell-grid cc-fs-2xs"
+            :class="{ 'is-last': ri === vis.rows.length - 1 }">
+            <svg class="vis-grid-svg" :width="GRID_SZ" :height="GRID_SZ"
+              :viewBox="`0 0 ${GRID_SZ} ${GRID_SZ}`" role="img"
+              :aria-label="`${row.label}${cell.text ? `: ${cell.text}` : ''}`">
+              <template v-if="frameOf(cell.frames)">
+                <rect v-for="(v, k) in frameOf(cell.frames)!.flat()" :key="k"
+                  :x="(k % frameOf(cell.frames)![0].length) * cellSize(frameOf(cell.frames)!)"
+                  :y="Math.floor(k / frameOf(cell.frames)![0].length) * cellSize(frameOf(cell.frames)!)"
+                  :width="cellSize(frameOf(cell.frames)!)" :height="cellSize(frameOf(cell.frames)!)"
+                  class="sh-grid" :fill-opacity="v" />
+              </template>
+            </svg>
+            <span v-if="cell.text" class="vis-num">{{ cell.text }}</span>
+          </div>
+        </template>
+
+        <div v-else v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell cc-fs-2xs"
           :class="{ 'is-last': ri === vis.rows.length - 1 }">
           <!-- The shape INLINE with its number, so a row is one line of text tall. A `fraction` has
                no shape at all — see the header. -->
@@ -143,6 +228,10 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 .vis-label.is-uniform { color: var(--cc-warn); }
 
 .vis-cell { gap: 0.3rem; }
+/* The one row that is a band rather than a line — see the header. Centred, because a grid has no
+   baseline to sit on the way an inline shape does. */
+.vis-cell-grid { justify-content: center; gap: 0.35rem; padding: 0.3rem 0; }
+.vis-grid-svg { flex: 0 0 auto; }
 .vis-svg { flex: 0 0 auto; overflow: visible; }
 .vis-num { font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 /* The engine-facing number, subordinate to the one that matches the label. */
@@ -154,6 +243,9 @@ const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 .sh-area     { fill: var(--cc-accent); opacity: 0.55; }
 .sh-distance { stroke: var(--cc-accent); stroke-width: 1.5; }
 .sh-off      { fill: var(--cc-text-dim); opacity: 0.5; }
+/* Value as OPACITY over the panel's own background, so a grid is legible in both themes without a
+   second colour scale to keep in step with the tokens. */
+.sh-grid     { fill: var(--cc-accent); shape-rendering: crispEdges; }
 
 .vis-warn { margin-top: 0.3rem; }
 </style>

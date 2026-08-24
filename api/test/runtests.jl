@@ -4935,6 +4935,136 @@ end
   end
 end
 
+# ── COLOUR BY a third measure ────────────────────────────────────────────────────
+# The dots keep their positions and gain a value: `plotdata?z=…` answers TRIPLES instead of pairs,
+# read in one pass so `z[i]` is the same cell as `(x[i], y[i])`. A stride slip here mis-colours every
+# dot with a plausible-looking picture, so pin the pair half against the no-z response, and pin every
+# value inside the ramp `plotmeta` hands the legend.
+@testset "API: gating plotdata carries a colour-by measure" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir(); cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        common = "projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"
+        st, chb = api_gating_channels(HTTP.Request("GET", "/api/gating/channels?" * common))
+        @test st == 200
+        cols = String.(JSON3.read(chb).columns)
+        @test length(cols) >= 3
+        x, y, z = cols[1], cols[2], cols[3]
+        base = "$common&x=$(HTTP.escapeuri(x))&y=$(HTTP.escapeuri(y))"
+        data(t) = (r = api_gating_plotdata(HTTP.Request("GET", "/api/gating/plotdata?" * t));
+                   (r[1], reinterpret(Float32, UInt8.(r[2]))))
+        st1, xy = data(base)
+        st2, xyz = data("$base&z=$(HTTP.escapeuri(z))")
+        n = length(xy) ÷ 2
+        @test st1 == 200 && st2 == 200 && n > 0
+        @test length(xyz) == 3n                                  # triples, not pairs
+        # asking for a colour does not move a single dot
+        @test all(i -> xyz[3i-2] == xy[2i-1] && xyz[3i-1] == xy[2i], 1:n)
+        meta = JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$base&z=$(HTTP.escapeuri(z))"))[2])
+        @test meta.zExtent !== nothing && length(meta.zTicks) == 3 && meta.usedZ == "linear"
+        lo, hi = Float32(meta.zExtent[1]), Float32(meta.zExtent[2])
+        # The ramp is a CONTRAST setting, not an axis: a 2–98 percentile clip, so it sits INSIDE the
+        # data range and holds the bulk of it. (Full min…max spent ~70% of the colour scale on outliers
+        # on real data — see `_ramp_range`.) Outliers are not dropped; they clamp to the ramp's ends.
+        zs = Float32[xyz[3i] for i in 1:n]
+        @test minimum(zs) <= lo && hi <= maximum(zs)
+        @test count(v -> lo <= v <= hi, zs) >= 0.9 * n
+        @test hi > lo
+        # no colour measure asked for → the response says nothing about a ramp (the client falls back
+        # to the density pseudocolour rather than inventing a range)
+        @test JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?" * base))[2]).zExtent === nothing
+        # An UNREADABLE colour measure (a stale panel naming a column this table doesn't have) tints
+        # nothing — it must not blank the cloud it was only supposed to colour. Triples still (the client
+        # chose the stride), values NaN, and no ramp to describe.
+        st3, bogus = data("$base&z=live.track.nope")
+        @test st3 == 200 && length(bogus) == 3n
+        @test all(i -> bogus[3i-2] == xy[2i-1] && bogus[3i-1] == xy[2i] && isnan(bogus[3i]), 1:n)
+        @test JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$base&z=live.track.nope"))[2]).zExtent === nothing
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# ── boolean populations over the API (Decision 16) ───────────────────────────────────────────────
+# "positive for nuc-GFP OR mem-TOM", "double positive but NOT CD169" — a population defined by
+# combining others, created through pop/add and rewritten through pop/update like any other. The one
+# thing only the API can enforce: a delete that would leave a combination pointing at nothing.
+@testset "API: boolean populations combine, update and block an orphaning delete" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        vn = "B"
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        loaded() = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+
+        post(api_gating_pop_add, Dict{String,Any}("name" => "gfp+", "gate" => gate(1.0)))
+        post(api_gating_pop_add, Dict{String,Any}("name" => "tom+", "gate" => gate(2.0)))
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "either", "colour" => "#abc",
+                                      "boolean" => Dict{String,Any}("op" => "or",
+                                                                    "pops" => ["/gfp+", "/tom+"])))
+        @test st == 200
+        p = pop_at(loaded(), "/either")
+        @test p.boolean_op == "or" && p.boolean_pops == ["/gfp+", "/tom+"] && p.gate === nothing
+
+        # rewritten wholesale by pop/update — including an exclusion ("but not …")
+        st, _ = post(api_gating_pop_update,
+                     Dict{String,Any}("path" => "/either",
+                                      "boolean" => Dict{String,Any}("op" => "and", "pops" => ["/gfp+"],
+                                                                    "not" => ["/tom+"])))
+        @test st == 200
+        p = pop_at(loaded(), "/either")
+        @test p.boolean_op == "and" && p.boolean_pops == ["/gfp+"] && p.boolean_not == ["/tom+"]
+
+        # a reference that isn't a population, a loop, and an empty term list are all 400s
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "bad",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => ["/nope"])))
+        @test st == 400
+        st, _ = post(api_gating_pop_update,
+                     Dict{String,Any}("path" => "/either",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => ["/either"])))
+        @test st == 400
+        st, _ = post(api_gating_pop_add,
+                     Dict{String,Any}("name" => "bad2",
+                                      "boolean" => Dict{String,Any}("op" => "or", "pops" => [])))
+        @test st == 400
+
+        # deleting a combined population would leave "either" pointing at nothing → refused, by name
+        st, b = post(api_gating_pop_delete, Dict{String,Any}("path" => "/tom+"))
+        @test st == 400 && occursin("either", String(b))
+        @test has_pop(loaded(), "/tom+")
+        # …but renaming it is fine: the reference is rewritten with the path
+        st, _ = post(api_gating_pop_rename, Dict{String,Any}("path" => "/tom+", "newName" => "TOM+"))
+        @test st == 200 && pop_at(loaded(), "/either").boolean_not == ["/TOM+"]
+        # clearing the combination releases the hold, and then the delete goes through
+        st, _ = post(api_gating_pop_update, Dict{String,Any}("path" => "/either", "boolean" => nothing))
+        @test st == 200 && pop_at(loaded(), "/either").boolean_op === nothing
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("path" => "/TOM+"))
+        @test st == 200 && !has_pop(loaded(), "/TOM+")
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
 @testset "API: gating undo/redo steps through the population tree" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"

@@ -742,8 +742,19 @@ Comparison is on the **string** form: a spec is JSON and a control's value is wh
 emits, so `"1"` in a spec matches the number `1` a slider produced. Without that the same condition
 would work behind a `select` and silently fail behind an `int`.
 
-An **absent** value satisfies nothing — a param gated on `mode` stays hidden until `mode` has a value.
-The alternative would flash every conditional param on first render, before defaults are applied.
+An **absent** value falls back to the referenced param's **spec default**, and only then satisfies
+nothing. In the form that changes nothing — `buildParamValues` seeds the bag from the defaults before
+anything renders, so the key is always present.
+
+It matters for the two callers that validate RAW params: chain-node validation and a composite's
+sub-step validation. Without the fallback `validate_params` saw `nothing` for the mode key, ruled the
+conditional param out, and skipped its validation **entirely** — not the required-check, all of it. A
+run was still safe (`run_task` applies `_apply_spec_defaults` first), so what was lost is the
+pre-flight check — the one that exists to reject a typo before a long job rather than after it
+(`_spec_defaults`, `app/src/tasks/task.jl`).
+
+The suite's per-param sweep SATISFIES a `showIf` before probing the param it guards, for the same
+reason: otherwise a conditional param is never reached and reads as one with no constraints.
 
 A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
 with no error. The suite rejects that (`showIf conditions name a param that exists`).
@@ -896,6 +907,16 @@ it.
 A role, not a key match. Matching on `seedSize` inside the renderer would make the picture a second
 description of the form, free to diverge from it — the same class of bug as the preview that ignored
 the order chips.
+
+**`figure`** — a figure offered beside ONE param, by name: `"figure": "smoothMethod"`, built by that
+name's entry in `tasks/paramFigures.ts`. For a choice whose options differ in what they DO rather than
+in any number on the form, where `vis` has nothing to draw — smoothing's `temporalStat` is three words
+sharing the same window, the same sigma and the same channels, and what separates them is only visible
+as a spot moving through a window (a `grid` row with frames; see `VisRole`). The builder is handed the
+selected images and the CURRENT form values, so the figure redraws as the form changes and can size
+its own cost row to the user's movie. Named in the spec for the same reason `vis` is a role: a picture
+keyed off `temporalStat` inside `ParamRenderer` is a second description of the form, and the next task
+that wants one would have to edit a Vue file to get it. An unknown name draws nothing.
 
 Why it exists: coastal's model group carries eleven numbers per pass, and columns of digits do not
 answer the question that decides whether a multi-pass run works — *are these passes looking for

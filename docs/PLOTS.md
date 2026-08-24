@@ -178,15 +178,63 @@ regl-scatterplot is a leftover dep, not imported) — see below.
 canvas instead of a GPU point cloud. **FlowJo/OMIQ look = each point drawn coloured by its LOCAL
 density** (`plots/density.ts` `pointDensities` → blue-heat ramp `plots/flowColors.ts`), NOT a binned
 image — a binned raster showed "weird rectangles"; the dot plot reads at point resolution. Points are
-bucketed by colour so `fillStyle` is set ~64×, not per point. Contours are clean connected rings from
+bucketed by colour so `fillStyle` is set ~64×, not per point, and each bucket is **one path of circles**
+(`moveTo` + `arc` per dot, a single `fill()` per bucket). They were `fillRect` squares, which was cheaper
+and invisible at the old fixed 1.4px — but the dot-size knob makes a square read as a pixel block as soon
+as you enlarge it, and the SVG export always emitted `<circle>`, so the screen was the odd one out. A
+circle of radius r covers ~21% less than the square it replaces, so the default cloud reads very slightly
+lighter than it did. Contours are clean connected rings from
 **d3-contour** (`plots/contour.ts`) on a separate, heavily-blurred grid (`DENSITY_GRID`/`CONTOUR_BLUR_*`;
 the dots use `DOT_GRID`/`DOT_BLUR_*`). `components/plots/PlotLayers.vue` draws base (dots or contours) +
 child-pop overlays on one 2D canvas; `GateScatterCell.vue` composites it with the gate overlay.
 **Export re-renders the same 2D content at target scale** (crisp, cannot clip) — replaced the fragile
 WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change (autoscale, zero-extent,
 image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` var (so it flips
-dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
-detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
+dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*` (dot detail),
+`CONTOUR_LEVELS`, the outlier alpha.
+
+**Dot RADIUS is a user knob, not a constant.** `plots/density.ts` `DOT_R` (0.7 → a 1.4px square) is only
+the DEFAULT: the gating page's manager has a **Dot size** slider (scoped global/local like every other
+plot option) and the Analysis board reuses its existing **Point size** (`vis.pointSize`) through
+`dotRadiusFor` — a RATIO of that slider's default, because the board's one slider also drives plots whose
+natural radius is much larger (UMAP dots, beeswarm points), and because at the default it must leave every
+existing board figure byte-identical. One knob scales the base speckle, the population overlays and the
+outlier tail together, so an overlay still reads as bigger than the cloud it sits on.
+
+**Colour by a third measure = the same dot pass, a different `t`.** The dots' colour is a 0..1 lookup
+into the blue-heat ramp; local density is only the DEFAULT source of that number. Given a third measure
+(`plotdata?z=…`, `plots/valueColour.ts` `normValues` over the served whole-dataset range), the same
+bucketed pass paints the same dots — so there is ONE dot renderer, not a second "heatmap dot plot" mode
+(FlowJo's colour-by-parameter). It applies in `points` mode only: a contour ring describes a
+distribution, not a per-cell value. A **colour bar** (top-right, inside the plot area — the gating chrome
+is a fixed asymmetric padding for the axis names, with no third gutter, and widening it would shrink the
+dots in every montage tile) labels the ramp with server-inverted RAW values, and is emitted as true
+vector on SVG export. Cells with no value are drawn in the themed dim ink, never at the ramp's floor.
+
+**`binned` — the same measure as a FIELD, and the answer to "the dots are speckle".** A colour-by dot
+plot has a real limit: dots overlap, the last one painted wins, and at a realistic panel size you read
+noise rather than a gradient. The `binned` render mode averages instead — `plots/density.ts` `valueGrid`
+bins the events on a coarse grid (`VALUE_GRID` = 64, deliberately coarser than the dot grid: a cell must
+hold enough events for its mean to mean anything) and each cell is filled with the mean of the colour
+measure there. Decisions:
+- **Count-WEIGHTED smoothing.** The sum and the count are blurred with the same kernel and divided, so
+  the result is a weighted mean. Blurring the per-cell means directly would give a 3-event cell the same
+  say as a 3000-event one.
+- **Only cells that hold events are painted**, using the smoothed value — so the cloud keeps its shape
+  and empty space stays empty, instead of becoming a full-bleed raster.
+- **A missing value is skipped, not counted as zero** — otherwise a cell's mean gets dragged to the
+  ramp's floor by cells the measure doesn't cover.
+- **True vector on export**: one `<rect>` per painted cell (≤4096). A heat cell is a real mark, unlike
+  the 100k-dot speckle the `points` base has to embed as a raster.
+- **Offered only when a colour measure is set** (`RenderModeToggle :colour-by`). Without one it would be
+  the binned DENSITY raster, which this renderer deliberately does not draw ("weird rectangles", above).
+  A persisted state naming it with no measure falls back to the dot plot rather than going blank.
+
+**One colour-bar builder, four surfaces.** `plots/valueColour.ts` `colourBarSvg` + `barStops` build every
+colour-by legend: the gating plot's canvas bar (the canvas painter reads the same stops), its SVG export,
+and — via `components/plots/ColourBarLegend.vue`, which renders that SVG body inline with
+`ink='currentColor'` so the theme (and the export's light flip) applies for free — the montage's on-screen
+strip and its vector export. A montage gets **one** legend for the grid rather than a bar per tile.
 
 **A population overlay is always DOTS, whatever the base mode is.** The render mode says how to draw a
 *distribution* — a highlighted population (or the napari cell selection) is the different question "where

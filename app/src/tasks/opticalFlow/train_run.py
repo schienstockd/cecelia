@@ -275,6 +275,41 @@ def _coastal_build():
     return out or None
 
 
+def pooled_offsets(mode, scales, cumulative, declared, cum_seconds, movie_dt):
+    """`(offsets, cumulative, reference_interval)` — the canonical channel names for the pool.
+
+    In `frames` mode the offsets are already canonical and every movie was read at them, so this is
+    the identity and there is no reference interval to state.
+
+    In `seconds` mode the pooled sequences were read at DIFFERENT offsets — `mag_2` on a 15 s/frame
+    movie and `mag_6` on a 5 s/frame one are both "30 s" — and coastal stacks the metric dict by
+    `sorted(keys)`, so pooling them as-is either trips the `key_sets` guard in `run` or, downstream,
+    feeds two different spans to one channel. So every sequence is renamed onto ONE set of offsets:
+    the spans resolved at the FINEST interval among the movies actually used.
+
+    Finest, for three reasons: that movie then needs no rename at all, no canonical offset can round
+    below one of its frames, and it is a real acquisition rather than a number nobody recorded.
+
+    The payoff is that the model stays an ordinary frame-offset model. `temporalScales` means what it
+    always meant; `temporalReferenceInterval` says which frame rate those offsets belong to, and
+    inference re-resolves from `temporalScaleSeconds`. Nothing downstream needs a second shape.
+
+    A separate function, and not inlined, for the reason `RunnerLocalsAreNotShadowedTest` states:
+    `scales` and `cumulative` feed the manifest, so rebinding them here would make what gets written
+    depend on a branch fifty lines up. The pooled values get their own names, bound once.
+    """
+    if mode != 'seconds':
+        return list(scales), cumulative, None
+    ref = min(movie_dt.values())
+    offsets, cum, problem = coastal_utils.scales_from_seconds(declared, cum_seconds, ref)
+    if problem:
+        # Unreachable through the per-movie guard (the finest movie resolved, or it was skipped) and
+        # left in anyway: this is the one place the canonical names are chosen, and a bad set here
+        # mislabels every channel of the model.
+        raise ValueError(f'cannot name the pooled channels: {problem}')
+    return offsets, cum or cumulative, ref
+
+
 def _physical_scale(dim_utils, planes):
     """What one pixel and one frame of THIS movie are, physically — or `None` where the file is silent.
 
@@ -432,6 +467,24 @@ def run(params):
     dropped = tuple(params.get('droppedMetrics') or ())
     epochs = int(params.get('epochs', 30))
 
+    # ── Temporal scale mode ─────────────────────────────────────────────────────────────────────
+    # `frames` (default) pools every movie at the SAME frame offsets, which is the same physical
+    # displacement only if every movie was acquired at the same rate. `seconds` declares the spans
+    # instead and resolves them per movie, so a set that mixes 5 s/frame and 15 s/frame contributes
+    # one feature geometry rather than three-fold-different ones under identical channel names.
+    #
+    # See docs/todo/MODEL_VAULT_PLAN.md -> *Would you train in physical units instead?* for why this
+    # is the half of "physical units" that buys anything: coastal normalises every metric plane, so
+    # converting px/frame to um/s would be a no-op, while WHICH time spans the stack covers is not
+    # normalised out by anything.
+    mode = str(params.get('temporalScaleMode', 'frames'))
+    if mode not in ('frames', 'seconds'):
+        raise ValueError(f"temporalScaleMode must be 'frames' or 'seconds', got {mode!r}")
+    declared = sorted({float(x) for x in (params.get('temporalScaleSeconds') or ())})
+    cum_seconds = float(params.get('cumulativeWindowSeconds') or 0.0)
+    if mode == 'seconds' and not declared:
+        raise ValueError('temporalScaleMode is "seconds" but no temporal spans were given')
+
     use_gpu, gpu_device = torch_device()
     log.log(f'>> GPU: {gpu_device if use_gpu else "none (CPU)"}')
     log.log(f'>> reading {len(movies)} movie(s) — project, normalise, crop (no flow yet)')
@@ -461,6 +514,13 @@ def run(params):
     crop_size = int(params.get('cropSize', 0))
     z_spacing = int(params.get('zSpacing', 0))
     sequences, used, planes_used, windows, crops = [], [], {}, {}, {}
+    # Parallel to `sequences`, because in `seconds` mode the offsets are a property of the MOVIE and
+    # every sequence of a movie shares them. A dict keyed by uID would not do: `_one` works by
+    # sequence index and the movie is not recoverable from it.
+    seq_scales = []
+    # uID -> (s/frame, resolved offsets), for the reference interval and for the manifest. Only the
+    # movies that were actually USED, so a skipped one cannot set the reference nobody trained at.
+    movie_dt, movie_scales = {}, {}
     # NOT `scales` — that name is the temporal scale LIST, six lines up, and shadowing it turned
     # `max(scales)` into a crash and would have written this dict into the manifest as
     # `temporalScales`.
@@ -474,19 +534,47 @@ def run(params):
         if not dim_utils.is_timeseries():
             log.log(f'>> [WARN] {uid} has no T axis — skipped')
             continue
+        # In `seconds` mode the offsets are this movie's own — the whole point — so they are
+        # resolved before the length guard, which has to see the scales THIS movie will be read at.
+        m_scales, m_cum = scales, cumulative
+        dt_movie = None
+        if mode == 'seconds':
+            dt_movie = dim_utils.im_time_increment(default=None)
+            unit = str(dim_utils.im_time_increment_unit())
+            if dt_movie is None or float(dt_movie) <= 0 or unit != 's':
+                # Skipped, not guessed. A movie whose frame interval is unknown (or recorded in some
+                # other unit — there is no unit converter here, deliberately; see `_physical_scale`)
+                # cannot be resolved onto a duration, and pooling it at somebody else's frame offsets
+                # is exactly the mix this mode exists to stop.
+                said = 'no frame interval' if dt_movie is None else f'its interval in {unit!r}'
+                log.log(f'>> [WARN] {uid} records {said} — cannot resolve spans in seconds, skipped')
+                continue
+            dt_movie = float(dt_movie)
+            m_scales, m_cum, problem = coastal_utils.scales_from_seconds(
+                declared, cum_seconds, dt_movie)
+            if problem:
+                # His call, 2026-08-24: drop it and say so, rather than clamping onto the closest
+                # frames it has. A clamped movie contributes different spans than the rest under the
+                # same channel names — the quiet version of the corruption the metric-set contract
+                # exists to prevent.
+                log.log(f'>> [WARN] {uid} at {dt_movie:g} s/frame is too coarse for this model — '
+                        f'{problem}; skipped')
+                continue
+
         n_t = int(dim_utils.dim_val('T'))
         start, stop = frame_window(n_t, max_frames, seed, i)
         n_use = stop - start
         # Checked against the CAPPED length, not the movie's. A 200-frame movie capped to 5 produces
         # no `mag_8` plane, which is the same silent corruption as a genuinely short movie — the
         # guard has to see what the run will actually feed coastal.
-        if n_use < max(scales) + 1:
+        if n_use < max(m_scales) + 1:
             # The same guard CoastalUtils applies. Below this the largest scale produces no plane,
             # so this movie would contribute a DIFFERENT channel layout than the rest — which is a
             # silent corruption of the pooled training set, not just a short movie.
             of = f'{n_use} of {n_t}' if n_use < n_t else f'{n_t}'
+            span = (f' ({max(declared):g} s at {dt_movie:g} s/frame)' if mode == 'seconds' else '')
             log.log(f'>> [WARN] {uid} has {of} timepoints, needs '
-                    f'{max(scales) + 1} for scale {max(scales)} — skipped')
+                    f'{max(m_scales) + 1} for scale {max(m_scales)}{span} — skipped')
             continue
         if n_use < n_t:
             windows[uid] = [start, stop]
@@ -550,6 +638,7 @@ def run(params):
             if win is not None:
                 crops.setdefault(uid, []).append([int(v) for v in win])
             sequences.append(seq)
+            seq_scales.append((m_scales, m_cum))
             del seq
 
         # AFTER the planes, not per plane: one write per image rather than one per (plane × channel),
@@ -562,6 +651,8 @@ def run(params):
                     + (', cached for the next run' if fp else
                        ' (not cacheable — the store has no readable metadata)'))
         used.append(uid)
+        if mode == 'seconds':
+            movie_dt[uid], movie_scales[uid] = dt_movie, list(m_scales)
         where = f'Z {planes}' if planes != [None] else '2D'
         span = f'{n_use} frames' if n_use == n_t else f'frames {start}–{stop - 1} of {n_t}'
         # The positions themselves go to the manifest, not the log — one line per plane would bury
@@ -592,8 +683,22 @@ def run(params):
     at = f'{mpx[0]:.2f} MP' if len(mpx) == 1 else f'{mpx[0]:.2f}–{mpx[-1]:.2f} MP'
     log.log(f'>> pooling {n_frames_pooled} frames from {len(sequences)} sequence(s) at {at}')
 
+    # The channel names the pooled sequences share — see `pooled_offsets`. Bound once, under their own
+    # names, so `scales` and `cumulative` still say what the FORM asked for when the manifest is
+    # written and these say what the pool was actually keyed on.
+    pool_scales, pool_cumulative, ref_interval = pooled_offsets(
+        mode, scales, cumulative, declared, cum_seconds, movie_dt)
+    if mode == 'seconds':
+        spans = ', '.join(f'{d:g}s' for d in declared)
+        log.log(f'>> temporal spans {spans} -> offsets {pool_scales} at the finest interval used '
+                f'({ref_interval:g} s/frame), cumulative window {pool_cumulative}')
+        for uid in sorted(movie_scales):
+            if movie_scales[uid] != pool_scales:
+                log.log(f'>>   {uid} at {movie_dt[uid]:g} s/frame read at {movie_scales[uid]} '
+                        f'-> renamed onto {pool_scales}')
+
     log.log(f'>> computing flow metrics for {len(sequences)} sequence(s) '
-            f'(scales {scales}, cumulative {cumulative})')
+            f'(scales {pool_scales}, cumulative {pool_cumulative})')
     # Sequences are INDEPENDENT — `prepare_data_for_unet_batch` is a per-movie loop with no
     # cross-movie state — so the only thing that ever forced one at a time was memory: the full
     # float32 metric stack of a sequence is live while it is computed, and six whole 1046x1104 movies
@@ -624,6 +729,11 @@ def run(params):
 
     def _one(i):
         seq = sequences[i]
+        i_scales, i_cum = seq_scales[i]
+        # Onto the canonical offsets — see *The reference interval*. `{}` for every sequence in
+        # `frames` mode and for the finest movie in `seconds` mode, where `apply_mag_rename` is a
+        # no-op rather than a rebuilt dict.
+        rename = coastal_utils.mag_rename(pool_scales, i_scales)
         t_seq = time.perf_counter()
         # `prepare_data_for_unet` rather than the `_batch` wrapper around it, for `verbose=False`. The
         # wrapper is a per-movie loop that calls exactly this and prints a banner the loop cannot turn
@@ -631,9 +741,10 @@ def run(params):
         # first attempt and is WRONG here: that swaps `sys.stdout` process-wide, so with several
         # sequences in flight the threads swallow each other's output and race to restore it.
         seq_frames, flows, cum, seq_metrics = prepare_data_for_unet(
-            seq, temporal_scales=scales, cumulative_window=cumulative, verbose=False)
+            seq, temporal_scales=i_scales, cumulative_window=i_cum, verbose=False)
         all_frames[i] = seq_frames
-        all_metrics[i] = reduce_metrics(list(seq_metrics), dropped)
+        all_metrics[i] = reduce_metrics(
+            [coastal_utils.apply_mag_rename(mm, rename) for mm in seq_metrics], dropped)
         del flows, cum
         # The source plane sequence is a normalised copy inside `seq_frames` now; holding the original
         # as well costs a frame stack per sequence for nothing.
@@ -810,8 +921,18 @@ def run(params):
     losses = curves.get('total', [])
 
     manifest = {
-        'temporalScales': scales,
-        'cumulativeWindow': cumulative,
+        # The POOLED offsets, which in `frames` mode are the form's own and in `seconds` mode are the
+        # declared spans at `temporalReferenceInterval`. Either way this is what the channels are
+        # named after, which is the only thing inference can configure itself from.
+        'temporalScales': pool_scales,
+        'cumulativeWindow': pool_cumulative,
+        # ── What the offsets above MEAN ──────────────────────────────────────────────────────────
+        # `frames` (or absent, for every model trained before this) = the offsets are the setting and
+        # nothing says which frame rate they belong to beyond `physicalScales`. `s` = the spans were
+        # declared and the offsets are their resolution at `temporalReferenceInterval`; inference
+        # re-resolves from the SPANS, so a recipient's movie adapts itself instead of the recipient
+        # matching a frame count. See MODEL_VAULT_PLAN -> *Would you train in physical units*.
+        'temporalScaleUnit': 's' if mode == 'seconds' else 'frames',
         'droppedMetrics': list(dropped),
         'metricKeys': metric_keys,
         'metricDtype': np.dtype(METRIC_DTYPE).name,
@@ -880,6 +1001,30 @@ def run(params):
         'trainedAt': _now_iso(),
     }
 
+    if mode == 'seconds':
+        # Only on a seconds model, rather than as nulls on every one. A key that is absent means "this
+        # model does not work that way"; a key that is present and null reads as a measurement that
+        # went missing, which is the distinction `_physical_scale` already makes for the same reason.
+        manifest.update({
+            'temporalScaleSeconds': declared,
+            'cumulativeWindowSeconds': cum_seconds or None,
+            # The frame rate `temporalScales` belongs to — the finest among the movies used. Read by
+            # `manifest_frame_interval` in preference to `physicalScales`, which cannot answer for a
+            # model pooled across rates and correctly returns None there.
+            'temporalReferenceInterval': ref_interval,
+            # The coarsest acquisition this model can be applied to. Past it two declared spans round
+            # to the same frame offset and the mag planes stop being distinct features, which
+            # inference refuses rather than clamps — so the ceiling is stated up front instead of at
+            # the point of failure.
+            'maxFrameInterval': coastal_utils.max_frame_interval(declared),
+            # Per movie, because here they legitimately differ — the record of what each one was
+            # actually read at, before its planes were renamed onto `temporalScales`.
+            'temporalScalesPerMovie': movie_scales,
+        })
+
+    # BOTH records, from one dict and before either is written: `save_model` embeds it in the
+    # checkpoint and the sidecar is written from the same object. Updating between the two would give
+    # a model two manifests that disagree about what it is.
     save_model(model, model_path, metadata=manifest)
     # Sidecar as well as the checkpoint's own metadata: the picker, the vault manager and
     # `list_coastal_models` all need this without importing torch.

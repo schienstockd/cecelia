@@ -47,3 +47,32 @@ export function convertGateKind(gate: GateSpec, to: GateSpec['kind'] = otherGate
            x_min: Math.min(...xs), x_max: Math.max(...xs),
            y_min: Math.min(...ys), y_max: Math.max(...ys) }
 }
+
+// ── A CLICK IS NOT A GATE ──────────────────────────────────────────────────────
+// Rectangle drawing seeds the drag end at the drag start on mousedown, so releasing without moving
+// produced a ZERO-AREA gate: a population with no cells and an outline too thin to see — "I drew a
+// gate, it fell to zero and there's no gate; redrawing is fine". The draw tool deliberately stays
+// armed after a gate, so any stray click on the plot could do it.
+//
+// Both checks are in PIXELS, deliberately: the user's intent is a gesture, and a data-space threshold
+// would mean something different on a logicle axis than on a linear one, and different again after a
+// zoom. 3px is below the smallest deliberate drag and above the jitter of a click on a trackpad.
+export const MIN_DRAG_PX = 3
+
+export const isClickNotDrag = (a: [number, number], b: [number, number]) =>
+  Math.abs(a[0] - b[0]) < MIN_DRAG_PX && Math.abs(a[1] - b[1]) < MIN_DRAG_PX
+
+// Shoelace area of a polygon in pixels — a polygon closed on the spot (repeated double-click, or three
+// clicks in a line) is the polygon tool's version of the same mistake.
+export function polygonAreaPx(pts: [number, number][]): number {
+  if (pts.length < 3) return 0
+  let a = 0
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1])
+  }
+  return Math.abs(a / 2)
+}
+
+// …and the threshold that goes with it: smaller than the square of the minimum drag is a mis-click.
+export const isDegeneratePolygon = (pts: [number, number][]) =>
+  polygonAreaPx(pts) < MIN_DRAG_PX * MIN_DRAG_PX

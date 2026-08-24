@@ -19,3 +19,11 @@ export const BLUE_HEAT_RGB: Uint8ClampedArray = (() => {
   }
   return out
 })()
+
+// The ramp's ONE lookup: a 0..1 position → its CSS colour. Both users index it here rather than doing
+// their own arithmetic on BLUE_HEAT_RGB — the density buckets and the colour-by ramp (dots + the
+// colour bar that labels them) have to agree, or the legend describes a colour the dots don't use.
+export function heatCss(t: number): string {
+  const i = Math.min(255, Math.max(0, Math.round((isFinite(t) ? t : 0) * 255))) * 3
+  return `rgb(${BLUE_HEAT_RGB[i]},${BLUE_HEAT_RGB[i + 1]},${BLUE_HEAT_RGB[i + 2]})`
+}

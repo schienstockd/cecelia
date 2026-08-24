@@ -143,7 +143,11 @@ class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
     """
 
     #: accumulators built once before the movie loop and read again when the manifest is written
-    SINGLE_BINDING = ('scales', 'phys_scales', 'used', 'planes_used', 'windows', 'crops')
+    SINGLE_BINDING = ('scales', 'phys_scales', 'used', 'planes_used', 'windows', 'crops',
+                      # The POOLED offsets, which is what `temporalScales` records and therefore what
+                      # every channel of the model is named after. Rebinding it is why
+                      # `pooled_offsets` is a function rather than an `if` in the middle of `run`.
+                      'pool_scales', 'pool_cumulative', 'ref_interval')
 
     @classmethod
     def setUpClass(cls):
@@ -187,6 +191,60 @@ class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
         self.assertNotEqual(pairs['temporalScales'], pairs['physicalScales'],
                             f'both read `{pairs["temporalScales"]}` — this is the shadowing bug')
 
+
+
+class PooledOffsetsTest(unittest.TestCase):
+    """The canonical channel names a pooled training set shares.
+
+    The failure this prevents is not a crash. Coastal names its per-scale planes `mag_{offset}` and
+    stacks the metric dict by `sorted(keys)`, so a set pooled across frame rates in `seconds` mode
+    has sequences whose channels mean different spans under different names — which `run`'s
+    `key_sets` guard catches, and which renaming onto one set of offsets is what actually fixes.
+    """
+
+    @staticmethod
+    def _p(mode, scales, cumulative, declared, cum_seconds, movie_dt):
+        return _load_runner().pooled_offsets(
+            mode, scales, cumulative, declared, cum_seconds, movie_dt)
+
+    def test_frames_mode_is_the_identity_and_states_no_reference(self):
+        """Every movie was read at the form's offsets, so there is nothing to reconcile — and no
+        interval to claim, which is a different thing from claiming one and being wrong."""
+        self.assertEqual(self._p('frames', [1, 2, 4, 8], 5, [], 0.0, {}),
+                         ([1, 2, 4, 8], 5, None))
+
+    def test_the_finest_movie_sets_the_canonical_offsets(self):
+        offsets, cum, ref = self._p('seconds', [1, 2, 4, 8], 5, [5.0, 10.0, 20.0, 40.0], 25.0,
+                                    {'fast': 5.0, 'slow': 15.0})
+        self.assertEqual((offsets, cum, ref), ([1, 2, 4, 8], 5, 5.0))
+
+    def test_the_finest_movie_needs_no_rename_of_its_own(self):
+        """Why finest rather than mean or first: the reference is a real acquisition, so at least one
+        pooled sequence is already on the canonical names and no offset rounds below one frame."""
+        from cecelia.utils import coastal_utils
+        movie_dt = {'fast': 2.5, 'mid': 5.0, 'slow': 15.0}
+        spans = [5.0, 10.0, 20.0, 40.0]
+        offsets, _, ref = self._p('seconds', [1, 2, 4, 8], 5, spans, 25.0, movie_dt)
+        own, _, problem = coastal_utils.scales_from_seconds(spans, 25.0, ref)
+        self.assertEqual(problem, '')
+        self.assertEqual(coastal_utils.mag_rename(offsets, own), {})
+
+    def test_every_pooled_movie_renames_onto_the_same_channel_count(self):
+        """The property that makes the pool trainable at all: one channel layout across sequences."""
+        from cecelia.utils import coastal_utils
+        movie_dt = {'a': 2.0, 'b': 5.0, 'c': 6.0}
+        spans = [10.0, 20.0, 40.0]
+        offsets, _, _ = self._p('seconds', [1, 2, 4], 5, spans, 20.0, movie_dt)
+        for uid, dt in movie_dt.items():
+            own, _, problem = coastal_utils.scales_from_seconds(spans, 20.0, dt)
+            self.assertEqual(problem, '', uid)
+            renamed = coastal_utils.apply_mag_rename(
+                {f'mag_{o}': o for o in own}, coastal_utils.mag_rename(offsets, own))
+            self.assertEqual(sorted(renamed), sorted(f'mag_{o}' for o in offsets), uid)
+
+    def test_a_reference_that_cannot_carry_the_spans_raises(self):
+        with self.assertRaises(ValueError):
+            self._p('seconds', [1, 2], 5, [10.0, 12.0], 20.0, {'a': 10.0})
 
 if __name__ == '__main__':
     unittest.main()

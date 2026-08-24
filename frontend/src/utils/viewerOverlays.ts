@@ -12,7 +12,7 @@
 // and an upload on every step of a scrub, which is exactly what the timepoint cache exists to avoid.
 
 import type { ViewerMeta } from './volumeViewer'
-import { sampleRamp, type RampName } from './colourRamp'
+import { BLUE_HEAT_RGB } from '../plots/flowColors'
 
 /** One population as the gating engine resolved it — the same shape napari's points layers get. */
 export interface OverlayPop {
@@ -93,7 +93,7 @@ const EMPTY: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count
  */
 export function buildPointBuffer(
   payload: OverlayPayload | null, meta: ViewerMeta | null, hidden: ReadonlySet<string> = new Set(),
-  ramp: RampName = 'viridis', palette: readonly string[] = [],
+  palette: readonly string[] = [],
 ): PointBuffer {
   if (!payload || !meta) return EMPTY
   const { label, t, x, y, z } = payload.cells
@@ -103,7 +103,7 @@ export function buildPointBuffer(
   const row = new Map<number, number>()
   for (let i = 0; i < label.length; i++) row.set(label[i], i)
 
-  const byValue = colourByValue(payload, ramp, palette)
+  const byValue = colourByValue(payload, palette)
 
   // Emit (row, colour) pairs first, so the sort has something small to work on.
   const rows: number[] = []
@@ -321,6 +321,13 @@ export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
  * A row → colour function for the payload's `colourBy` column, or `null` when there is nothing to
  * colour by.
  *
+ * THE RAMP IS THE HOUSE ONE — `BLUE_HEAT_RGB`, the same lookup the gating plots colour their dots by
+ * (`plots/flowColors.ts`). Not napari's viridis, and that is a deliberate reversal: this started with a
+ * generated viridis/turbo table, on the reasoning that no ramp existed to reuse. One landed on `main`
+ * while this was being built (the gating colour-by, PR #646), so it does now — and one ramp for "colour
+ * by a measure" means the same cell is the same colour on a plot and in the image, which is worth more
+ * than matching napari's palette. Colour CHOICE was never part of the parity bar.
+ *
  * WHICH KIND OF SCALE is the server's answer, not this function's: `valueKind` comes from the same
  * `_is_categorical_col` rule the plots use, so a column that plots as a code set shades as one here.
  * Re-deriving it in TypeScript would be a second answer about the same data — the exact duplication
@@ -330,10 +337,11 @@ export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
  *
  * A numeric column with a zero-width range shades at the ramp's MIDDLE rather than at either end: with
  * lo == hi every cell has the same value, and painting them all "lowest" or all "highest" both assert
- * something the data does not say.
+ * something the data does not say. (`plots/valueColour.ts` → `normValues` makes the same three calls
+ * for the same reasons; that convergence is why sharing the ramp is right.)
  */
 export function colourByValue(
-  payload: OverlayPayload, ramp: RampName = 'viridis', palette: readonly string[] = [],
+  payload: OverlayPayload, palette: readonly string[] = [],
 ): ((row: number) => [number, number, number]) | null {
   const vals = payload.values
   if (!payload.colourBy || !vals || vals.length === 0) return null
@@ -357,6 +365,13 @@ export function colourByValue(
   return (r: number) => {
     const v = vals[r]
     if (v === null || v === undefined || typeof v !== 'number') return NO_VALUE_RGB
-    return sampleRamp(ramp, span > 0 ? (v - lo) / span : 0.5)
+    return heatUnit(span > 0 ? (v - lo) / span : 0.5)
   }
+}
+
+/** The house ramp at `t` in 0..1, as three floats — the GPU wants 0..1, `heatCss` returns a CSS string
+ *  for canvas. Same 256-entry lookup, so a dot on a plot and a marker on the image cannot disagree. */
+export function heatUnit(t: number): [number, number, number] {
+  const i = Math.min(255, Math.max(0, Math.round((Number.isFinite(t) ? t : 0) * 255))) * 3
+  return [BLUE_HEAT_RGB[i] / 255, BLUE_HEAT_RGB[i + 1] / 255, BLUE_HEAT_RGB[i + 2] / 255]
 }
