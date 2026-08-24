@@ -80,11 +80,15 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       // draws the conclusion rather than leaving it to be inferred. No severity: it is a
       // recommendation, not a finding about the user's data.
       note,
-      title: 'Temporal statistic — at a glance',
+      // `<param> — at a glance` is the group figure's pattern, but it truncated to
+    // `TEMPORAL STATISTIC — AT A G…` in the header and the half that survived was the informative
+    // half. (Re-applied from the reverted compaction commit: the row removals there were not wanted,
+    // this was a defect on screen.)
+    title: 'Temporal statistic',
       tip: 'Show what each statistic does to a moving spot',
-      headings: ['Median', 'Gated'],
+      headings: ['Input', 'Median', 'Gated'],
       storageKey: 'smooth-method-figure',
-      defaultW: 300, defaultH: 320,
+      defaultW: 340, defaultH: 300,
     }
   },
 }

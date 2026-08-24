@@ -136,14 +136,14 @@ function cellSize(f: VisFrame): number {
           :class="{ 'is-uniform': row.uniform, 'is-last': ri === vis.rows.length - 1 }">
           {{ row.label }}
         </div>
-        <!-- A `grid` row draws its FRAMES; a spanning one draws the first cell across every column,
-             because the row is the shared input to what the columns show rather than a value each
-             column has its own of. -->
+        <!-- A `grid` row draws its FRAMES, one per column, like every other role. It briefly had a
+             `span` mode for a row that was the shared INPUT to the columns beside it; that figure now
+             gives the input a COLUMN instead, which compares better, and a spanning row with no
+             consumer is machinery waiting to grow a second way of doing this. -->
         <template v-if="row.role === 'grid'">
-          <div v-for="(cell, i) in (row.span ? row.cells.slice(0, 1) : row.cells)"
+          <div v-for="(cell, i) in row.cells"
             :key="`${row.key}-${i}`" class="vis-cell vis-cell-grid cc-fs-2xs"
-            :class="{ 'is-last': ri === vis.rows.length - 1 }"
-            :style="row.span ? { gridColumn: `2 / -1` } : undefined">
+            :class="{ 'is-last': ri === vis.rows.length - 1 }">
             <svg class="vis-grid-svg" :width="GRID_SZ" :height="GRID_SZ"
               :viewBox="`0 0 ${GRID_SZ} ${GRID_SZ}`" role="img"
               :aria-label="`${row.label}${cell.text ? `: ${cell.text}` : ''}`">

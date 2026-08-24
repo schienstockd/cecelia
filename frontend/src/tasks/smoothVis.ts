@@ -16,8 +16,9 @@
  * and falls back to the current frame when it cannot — and that is exactly what a schematic can
  * carry honestly. The row is labelled `Simulated` so it cannot be read as a preview.
  *
- * **Both columns get the SAME input.** One sequence, computed once, drawn once as a spanning row
- * above them. Two noise realisations would make the comparison a comparison of two datasets.
+ * **Both methods get the SAME input.** One sequence, computed once, and drawn as its own COLUMN
+ * beside them: two noise realisations would make the comparison a comparison of two datasets, and a
+ * picture the eye has to travel up to and back from is not a comparison either.
  *
  * **The gate is the real algorithm, not an impression of it.** Block-match a +-1 px window, weight
  * each neighbour by `exp(-d2/scale)` with `scale = 2*(k*sigma)^2` and sigma from the MAD of the
@@ -339,12 +340,24 @@ export function smoothVerdict(gap: number): string {
     : 'Gated keeps what the median smears at this window'
 }
 
+/**
+ * The frames one COLUMN is showing, found by name.
+ *
+ * By name and not by index, because the index moved once already: adding the input as a third column
+ * silently repointed the verdict at input-vs-median, and the figure then said "median is enough" over
+ * a picture of the median smearing. A verdict that can be aimed at the wrong pair by an unrelated
+ * layout change is worse than no verdict.
+ */
+function framesOf(vis: VisColumns, rowKey: string, column: string): VisFrame[] {
+  const i = vis.columns.indexOf(column)
+  return (i >= 0 ? vis.rows.find(r => r.key === rowKey)?.cells[i]?.frames : undefined) ?? []
+}
+
 /** The figure and the line under it — what a consumer mounts. */
 export function smoothFigure(inp: SmoothVisInput): { vis: VisColumns; note: string } {
   const vis = smoothVisColumns(inp)
-  const result = vis.rows.find(r => r.key === 'result')
-  const [med, gat] = [result?.cells[0].frames ?? [], result?.cells[1].frames ?? []]
-  return { vis, note: smoothVerdict(amplitudeGap(med, gat)) }
+  const gap = amplitudeGap(framesOf(vis, 'result', 'median'), framesOf(vis, 'result', 'gated'))
+  return { vis, note: smoothVerdict(gap) }
 }
 
 /**
@@ -359,28 +372,31 @@ export function smoothVisColumns(inp: SmoothVisInput): VisColumns {
   const [input, med, gat] = normalise(spatial, medianSequence(spatial, frames),
                                       gatedSequence(spatial, frames))
 
+  // The input is a COLUMN, not a row of its own. Spanning it above the two outputs was true — one
+  // sequence, shared — but it read as a third thing floating over them rather than as the frame they
+  // are both made from, and the eye cannot compare two pictures it has to travel between. Side by
+  // side, all three playing off the same index, the comparison is one glance along a row: this went
+  // in, these came out. It is still one sequence; it is now drawn where the comparison happens.
+  //
   // `uniform` stays false throughout. In `paramVis` it marks the failure state — two segmentation
   // passes configured alike — and colours the label as a warning. Here an identical window across the
   // columns is the POINT, not a mistake, so the flag would be a red mark on the one row that must be
   // the same.
   const rows: VisRow[] = [
-    { key: 'motion', label: 'Simulated', role: 'grid', span: true, uniform: false,
-      cells: [cell('', input)] },
-    { key: 'method', label: 'Statistic', role: 'text', uniform: false,
-      cells: [cell('Median'), cell('Gated')] },
-    { key: 'result', label: 'Output', role: 'grid', uniform: false,
-      cells: [cell('', med), cell('', gat)] },
+    { key: 'result', label: 'Simulated', role: 'grid', uniform: false,
+      cells: [cell('', input), cell('', med), cell('', gat)] },
     { key: 'window', label: 'Window', role: 'distance', uniform: false,
       cells: [
-        // Both at full radius: `paramVis` scales a row relative to its own columns, and these two
-        // are equal by construction, so "full" is what that rule yields — spelled out rather than
-        // recomputed, since there is no peak to divide by.
+        // Nothing to say for the input — it is what the window is applied TO. The two that carry a
+        // value are equal by construction, and `paramVis` scales a row against its own columns, so
+        // "full radius" is what that rule yields; spelled out because there is no peak to divide by.
+        { value: 0, px: null, r: 0, at: 0, text: '', pxText: '' },
         { value: frames, px: null, r: MAX_R, at: 0, text: `${frames} frames`, pxText: '' },
         { value: frames, px: null, r: MAX_R, at: 0, text: `${frames} frames`, pxText: '' },
       ] },
     { key: 'cost', label: 'Extra time', role: 'text', uniform: false,
-      cells: [cell('~free'), cell(gatedCost(inp.planes, inp.channels))] },
+      cells: [cell(''), cell('~free'), cell(gatedCost(inp.planes, inp.channels))] },
   ]
 
-  return { columns: [...SMOOTH_VIS_METHODS], rows, pxSize: null, uniformKeys: [] }
+  return { columns: ['input', ...SMOOTH_VIS_METHODS], rows, pxSize: null, uniformKeys: [] }
 }

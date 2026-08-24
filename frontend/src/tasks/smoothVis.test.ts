@@ -86,19 +86,25 @@ describe('median vs gated', () => {
 describe('smoothVisColumns', () => {
   const vis = smoothVisColumns({ frames: 5, sigma: 1, planes: 600, channels: 2 })
 
-  it('compares the two methods that are actually a choice', () => {
-    expect(vis.columns).toEqual(['median', 'gated'])
+  it('shows the input BESIDE the two methods, not stranded above them', () => {
+    // Spanning it over the pair was true — one sequence, shared — but it read as a third thing
+    // floating over them, and the eye cannot compare two pictures it has to travel between.
+    expect(vis.columns).toEqual(['input', 'median', 'gated'])
+    expect(vis.rows.find(r => r.key === 'motion')).toBeUndefined()
+    expect(vis.rows.find(r => r.key === 'result')!.cells).toHaveLength(3)
   })
 
-  it('shows ONE input, spanning both columns', () => {
-    const motion = vis.rows.find(r => r.key === 'motion')!
-    expect(motion.span).toBe(true)
-    expect(motion.cells).toHaveLength(1)
+  it('still shows ONE input — the same sequence, drawn where the comparison happens', () => {
+    const [input, med] = vis.rows.find(r => r.key === 'result')!.cells
+    expect(input.frames).toHaveLength(med.frames!.length)
+    // it is the INPUT, so it is what the other two were made from, not a fourth thing
+    expect(input.frames![MID]).not.toEqual(med.frames![MID])
   })
 
-  it('gives both columns the same window, and does not flag it as a problem', () => {
+  it('gives both methods the same window, and does not flag it as a problem', () => {
     const w = vis.rows.find(r => r.key === 'window')!
-    expect(w.cells[0].text).toBe(w.cells[1].text)
+    expect(w.cells[0].text).toBe('')                 // the input is what the window is applied TO
+    expect(w.cells[1].text).toBe(w.cells[2].text)
     // `uniform` colours a label as a warning. Identical windows are the POINT here, not the failure
     // it marks in the segmentation strip.
     expect(vis.rows.every(r => !r.uniform)).toBe(true)
@@ -107,14 +113,14 @@ describe('smoothVisColumns', () => {
 
   it('animates both outputs off the same clock', () => {
     const result = vis.rows.find(r => r.key === 'result')!
-    expect(result.cells[0].frames!.length).toBe(result.cells[1].frames!.length)
+    expect(new Set(result.cells.map(c => c.frames!.length)).size).toBe(1)
     expect(result.cells[0].frames!.length).toBeGreaterThan(1)
   })
 
   it('normalises every grid against ONE peak, so the dimming survives the drawing', () => {
     const all = vis.rows.filter(r => r.role === 'grid').flatMap(r => r.cells)
     expect(Math.max(...all.flatMap(c => c.frames!.flatMap(f => f.flat())))).toBeCloseTo(1, 5)
-    const [med, gat] = vis.rows.find(r => r.key === 'result')!.cells
+    const [, med, gat] = vis.rows.find(r => r.key === 'result')!.cells
     expect(peak(gat.frames![MID])).toBeGreaterThan(peak(med.frames![MID]))
   })
 
@@ -155,15 +161,19 @@ describe('the verdict under the figure', () => {
 
   it('is read off the FRAMES being drawn, so the line cannot contradict the picture', () => {
     const fig = smoothFigure({ frames: 9, sigma: 1, planes: 600, channels: 2 })
-    const [med, gat] = fig.vis.rows.find(r => r.key === 'result')!.cells
-    expect(fig.note).toBe(smoothVerdict(amplitudeGap(med.frames!, gat.frames!)))
+    // by NAME: adding the input as a column once repointed this at input-vs-median, and the figure
+    // said "median is enough" over a picture of the median smearing
+    const at = (c: string) => fig.vis.rows.find(r => r.key === 'result')!
+      .cells[fig.vis.columns.indexOf(c)].frames!
+    expect(fig.note).toBe(smoothVerdict(amplitudeGap(at('median'), at('gated'))))
   })
 
   it('narrows as the Gaussian widens — a blurred spot smears less visibly', () => {
     const gapAt = (sigma: number) => {
       const fig = smoothFigure({ frames: 5, sigma, planes: 600, channels: 2 })
-      const [m, g] = fig.vis.rows.find(r => r.key === 'result')!.cells
-      return amplitudeGap(m.frames!, g.frames!)
+      const at = (c: string) => fig.vis.rows.find(r => r.key === 'result')!
+        .cells[fig.vis.columns.indexOf(c)].frames!
+      return amplitudeGap(at('median'), at('gated'))
     }
     expect(gapAt(2)).toBeLessThan(gapAt(1))
     expect(gapAt(1)).toBeLessThan(gapAt(0))

@@ -81,12 +81,6 @@ export interface VisRow {
   cells: VisCell[]
   /** true when every column holds the same value — the state a two-pass config must not be in */
   uniform: boolean
-  /**
-   * Draw ONE cell across every column instead of one per column. For a row that is the shared INPUT
-   * to what the columns show: duplicating it per column would say the two columns were given
-   * different data, which is the opposite of the claim the figure exists to make.
-   */
-  span?: boolean
 }
 
 export interface VisColumns {
