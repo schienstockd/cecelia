@@ -114,10 +114,11 @@ const tspec = (k: Kind): TransformSpec => k === 'logicle' ? { kind: k, T: 262144
 const axisQ = (p: string, k: Kind) => k === 'logicle'
   ? `&${p}t=logicle&${p}T=262144&${p}W=0.5&${p}M=4.5&${p}A=0` : `&${p}t=${k}`
 
-// Colour-by is a POINTS-mode encoding: contour rings and the outlier tail describe a distribution,
-// not per-cell values, so there is nothing to colour there (PlotLayers says the same). Off in those
-// modes, which also keeps the third column off the wire.
-const colourOn = computed(() => !!zChan.value && renderMode.value === 'points')
+// Colour-by paints in the two PER-EVENT modes: `points` (each dot takes the ramp) and `binned` (the
+// mean of the measure per cell). Contour rings and the outlier tail describe a distribution, not
+// per-cell values, so there is nothing to colour there — and the third column stays off the wire.
+const colourOn = computed(() =>
+  !!zChan.value && (renderMode.value === 'points' || renderMode.value === 'binned'))
 // query for a given population on given axis transforms. `zk` adds the colour-by measure (a third
 // value per point); the child-POP overlays never ask for it — they're drawn in the pop's own colour.
 function plotQ(pop: string, xk: Kind, yk: Kind, zk?: Kind) {
@@ -407,7 +408,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
          PLOT REGION (.panel-main) below these fixed controls, so the plot stays 1:1 with a visible
          x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <span class="ctrl-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
@@ -438,7 +439,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">colour</span>
           <select class="ax-chan" v-model="zChan"
-                  v-tooltip.bottom="'Colour the dots by a third measure (points mode)'">
+                  v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
             <option value="">density</option>
             <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
               <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>

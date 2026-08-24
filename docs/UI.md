@@ -2602,7 +2602,9 @@ growing a second control. See `docs/PLOTS.md` → *Dot RADIUS is a user knob*.
 **Each plot's controls are four rows: X, Y, `colour`, `pop`.** `colour` is the FlowJo-style
 colour-by-parameter — a third measure painted onto the dots (default `density`, the local-density
 pseudocolour), with its own scale select and the shared amber auto-override marker, and a colour bar on
-the plot. It is a `points`-mode encoding, so its scale select disables in contour/outlier modes. Every
+the plot. It paints in the two per-event modes (`points` and `binned`), so its scale select disables in
+contour/outlier modes; picking a measure also adds a fourth **binned** chip to the render-mode toggle
+(mean of the measure per cell — for when overlapping dots read as speckle). Every
 row is persisted in the panel's `ui` bag like the axes. The **channel-pairs matrix** has the same
 `colour` row (one measure for the whole matrix, one colour bar above the grid), and the board's read-only
 **gating-strategy** view has it in its ⚙ options — so a colour-by figure can be built where figures are

@@ -28,6 +28,51 @@ export const CONTOUR_BLUR_PASSES = 3
 export const CONTOUR_LEVELS = [0.05, 0.12, 0.24, 0.42, 0.65, 0.88]
 export const OUTLIER_LEVEL = CONTOUR_LEVELS[0]
 
+// ── Binned COLOUR-BY field (the "binned" render mode) ─────────────────────────────────────────────
+// A dot plot coloured by a measure is speckle: dots overlap, the last one painted wins, and at any
+// realistic panel size you read noise rather than a field. Binning answers the actual question —
+// "how does this measure vary across the 2D space" — by averaging it per cell.
+// Coarser than the DOT grid on purpose: a cell has to hold enough events for its mean to mean anything.
+export const VALUE_GRID = 64
+export const VALUE_BLUR_RADIUS = 1
+export const VALUE_BLUR_PASSES = 1
+
+/**
+ * Per-cell MEAN of a per-point value, over a G×G grid on `ext`.
+ *
+ * Blurs the SUM and the COUNT with the same kernel and divides — a kernel-WEIGHTED mean, not a blurred
+ * mean. Blurring the means directly would let a dense cell's value bleed into a sparse neighbour with
+ * equal weight, so a handful of events would read as loudly as a thousand.
+ *
+ * A point whose value is not finite is skipped entirely (the measure is missing for that cell) rather
+ * than counted as zero, which would drag its cell's mean toward the ramp's floor.
+ *
+ * Returns `mean` (row-major `gy*G+gx`, NaN where the smoothed count is zero) and `count` — the RAW
+ * per-cell count, so the caller can paint only cells that really hold events (the cloud keeps its
+ * shape and empty space stays empty) while still colouring them with the smoothed value.
+ */
+export function valueGrid(points: Float32Array, values: Float32Array, ext: Ext, G = VALUE_GRID,
+                          radius = VALUE_BLUR_RADIUS, passes = VALUE_BLUR_PASSES):
+    { mean: Float32Array; count: Float32Array } {
+  const xs = ext.xMax > ext.xMin ? ext.xMax - ext.xMin : 1
+  const ys = ext.yMax > ext.yMin ? ext.yMax - ext.yMin : 1
+  const sum = new Float32Array(G * G), cnt = new Float32Array(G * G), raw = new Float32Array(G * G)
+  const n = Math.min(points.length / 2, values.length)
+  for (let i = 0; i < n; i++) {
+    const px = points[2 * i], py = points[2 * i + 1], v = values[i]
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(v)) continue
+    const gx = Math.floor(((px - ext.xMin) / xs) * G), gy = Math.floor(((py - ext.yMin) / ys) * G)
+    if (gx < 0 || gx > G - 1 || gy < 0 || gy > G - 1) continue
+    const k = gy * G + gx
+    sum[k] += v; cnt[k] += 1; raw[k] += 1
+  }
+  boxBlur(sum, G, radius, passes)
+  boxBlur(cnt, G, radius, passes)
+  const mean = new Float32Array(G * G)
+  for (let k = 0; k < mean.length; k++) mean[k] = cnt[k] > 0 ? sum[k] / cnt[k] : NaN
+  return { mean, count: raw }
+}
+
 // separable box blur, `passes` times (≈ Gaussian), in place on a G×G grid
 function boxBlur(g: Float32Array, G: number, radius: number, passes: number) {
   if (radius < 1) return

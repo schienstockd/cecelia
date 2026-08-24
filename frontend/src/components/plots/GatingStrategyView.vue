@@ -236,7 +236,7 @@ defineExpose({ exportImage, exportSvg })
         <option value="root">root</option>
         <option v-for="p in flatPaths" :key="p" :value="p">{{ p }}</option>
       </select>
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="gs-opts">
         <button ref="gearBtn" class="gs-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Colour, size & hierarchy'"><i class="pi pi-cog" /></button>
@@ -246,7 +246,7 @@ defineExpose({ exportImage, exportSvg })
                    v-tooltip.bottom="'Draw the parent-child tree beside the plots'"
                    :model-value="showHierarchy" @update:model-value="showHierarchy = $event" />
             <label class="gs-row"><span class="gs-lbl">colour</span>
-              <select v-model="zChan" v-tooltip.bottom="'Colour the dots by a third measure (points mode)'">
+              <select v-model="zChan" v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
                 <option value="">density</option>
                 <optgroup v-for="grp in colourGroups" :key="grp.title" :label="grp.title">
                   <option v-for="c in grp.cols" :key="c" :value="c">{{ colLabel(c) }}</option>

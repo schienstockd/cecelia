@@ -158,7 +158,7 @@ function exportAs(kind: string) {
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>
       <span class="ctrl-sep" />
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">pop</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to compare; its gates are shown'">
@@ -202,7 +202,7 @@ function exportAs(kind: string) {
       </div>
       <label class="ax-row"><span class="ax-lbl">colour</span>
         <select class="ax-chan" v-model="zChan"
-                v-tooltip.bottom="'Colour every tile\'s dots by a third measure (points mode)'">
+                v-tooltip.bottom="'Colour every tile\'s dots by a third measure (points / binned)'">
           <option value="">density</option>
           <optgroup v-for="grp in pickGroups" :key="grp.title" :label="grp.title">
             <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>

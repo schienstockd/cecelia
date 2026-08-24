@@ -19,6 +19,7 @@ import type { GateSpec } from '../../stores/gating'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
+import type { RenderMode } from './RenderModeToggle.vue'
 import GateOverlay from './GateOverlay.vue'
 import { svgDoc, svgLine, svgText } from '../../plots/export'
 
@@ -42,7 +43,9 @@ const props = withDefaults(defineProps<{
   valueLabel?: string
   valueLegend?: boolean
   dotSize?: number                               // dot radius (px) — scales every dot on the layer
-  renderMode?: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = + tail dots
+  // the shared mode set (RenderModeToggle): contour = contours only; outliers = + tail dots;
+  // binned = the colour-by mean field
+  renderMode?: RenderMode
   showPops?: boolean
   mode?: 'off' | 'rectangle' | 'polygon'         // 'off' = read-only (no draw/edit)
   gateLineWidth?: number

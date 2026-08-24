@@ -15,6 +15,7 @@
 -->
 <script setup lang="ts">
 import { DOT_R } from '../../plots/density'
+import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
@@ -70,7 +71,7 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (the correction view reads its own keys) — as in ClusterPlots.
 interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean; dotSize: number
-  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[]
+  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: RenderMode; channels: string[]
   // colour-by (single plot): the third measure painted as the dot colour, and its ramp scale.
   // Unset like xt/yt so the panel's per-measure transform default fires (see the comment on ckey).
   z?: string; zt?: GateKind }

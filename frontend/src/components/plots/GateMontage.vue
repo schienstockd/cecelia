@@ -27,6 +27,7 @@ import {
 import { splitXYZ } from '../../plots/valueColour'
 import { DOT_R } from '../../plots/density'
 import ColourBarLegend from './ColourBarLegend.vue'
+import type { RenderMode } from './RenderModeToggle.vue'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -34,7 +35,7 @@ const props = withDefaults(defineProps<{
   projectUid: string; imageUid: string; valueName: string; popType: string
   defs: PanelDef[]
   colLabel: (col: string) => string
-  renderMode?: 'points' | 'contour' | 'outliers'
+  renderMode?: RenderMode
   gateLabels?: boolean
   gateLineWidth?: number
   // coloured population overlays drawn on every tile (the manager's "eye" pops + transient napari
@@ -216,7 +217,8 @@ watch(sig, loadPanels, { immediate: true })
 // label a colour nothing on screen uses.
 // `single` is a full-size plot in a board slot, not a montage cell, so it keeps the bar INSIDE the plot
 // (like the Gate page's plot) and the strip stays out of the way — one legend either way, never two.
-const showLegend = computed(() => !!valueRamp.value && props.renderMode === 'points' && !single.value)
+const showLegend = computed(() => !!valueRamp.value && !single.value &&
+                                 (props.renderMode === 'points' || props.renderMode === 'binned'))
 const legendLabel = computed(() => props.colourBy?.col ? props.colLabel(props.colourBy.col) : '')
 
 // ── export: plot-only image (single cell hi-res, or the whole grid on white for the board PDF) ──────

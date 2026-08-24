@@ -702,6 +702,13 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   - **The ramp's range is the WHOLE dataset (root), not the displayed population** — selecting a child
     must not re-map the colours, or the same cell changes colour as you walk the tree and two plots of
     the same measure can't be compared. (Same reason the axis ticks are root-derived.)
+  - **…and it is a 2–98 PERCENTILE of it, not min…max** (`_ramp_range`). Measured on a real 3P spleen
+    dataset (4471 cells, `Bcells-ubiTom` on logicle): p2–p98 covered **28%** of the full range, so
+    min…max spent ~70% of the colour scale on a handful of outlying cells and the whole cloud came out
+    one flat orange. This is the same clip a viewer applies for contrast limits, and it is not hidden —
+    the colour bar is labelled with the clipped numbers, and values outside clamp to the ramp's ends
+    (they stay visible, at the extreme colour). An AXIS keeps min…max: a gate is drawn against an axis,
+    so it may not lie about where a cell sits. Nothing is gated on a colour.
   - **`z` is an axis in everything but geometry**: same measure list, same per-measure transform default
     (logicle for a marker, linear for a centroid), same auto-linearisation + amber override marker. The
     labels on the colour bar are RAW values inverted server-side — the client has no transform math.
@@ -711,6 +718,10 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
     export gets it for free and the SVG export emits it as vector.
   - A cell with **no value** for the measure is drawn in the dim ink, NOT at the ramp's floor (which
     would read as a real low measurement).
+  - **Two ways to draw it.** `points` gives each dot the ramp (FlowJo's colour-by-parameter); **`binned`**
+    fills each grid cell with the MEAN of the measure there, which is what to reach for when the cloud is
+    dense enough that overlapping dots read as speckle. Same ramp, same legend, same colour bar — see
+    `docs/PLOTS.md` → *`binned`*. The mode chip only appears once a measure is picked.
   - **Available on every gate scatter, read-only ones included**: the single plot (`colour` row), the
     channel-pairs matrix (`colour` row — one measure for the whole matrix) and the board's read-only
     gating-strategy view (⚙ → colour), each persisting the measure + scale in its own view state. A

@@ -4944,7 +4944,13 @@ end
         meta = JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$base&z=$(HTTP.escapeuri(z))"))[2])
         @test meta.zExtent !== nothing && length(meta.zTicks) == 3 && meta.usedZ == "linear"
         lo, hi = Float32(meta.zExtent[1]), Float32(meta.zExtent[2])
-        @test all(i -> lo <= xyz[3i] <= hi, 1:n)                 # every value inside the legend's ramp
+        # The ramp is a CONTRAST setting, not an axis: a 2–98 percentile clip, so it sits INSIDE the
+        # data range and holds the bulk of it. (Full min…max spent ~70% of the colour scale on outliers
+        # on real data — see `_ramp_range`.) Outliers are not dropped; they clamp to the ramp's ends.
+        zs = Float32[xyz[3i] for i in 1:n]
+        @test minimum(zs) <= lo && hi <= maximum(zs)
+        @test count(v -> lo <= v <= hi, zs) >= 0.9 * n
+        @test hi > lo
         # no colour measure asked for → the response says nothing about a ramp (the client falls back
         # to the density pseudocolour rather than inventing a range)
         @test JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?" * base))[2]).zExtent === nothing

@@ -630,6 +630,32 @@ function _gates_bbox(gates)
     (xlo, xhi, ylo, yhi)
 end
 
+# The COLOUR ramp's range: a robust 2–98 percentile of the (transformed) values, not min…max.
+#
+# Measured on a real 3P spleen dataset (4471 cells, `Bcells-ubiTom` on logicle): p2–p98 covered **28%**
+# of the full min…max range, so a full-range ramp spent ~70% of the colour scale on a handful of outlying
+# cells and the whole cloud came out one flat orange. The same clip is what a viewer does for contrast
+# limits, and it is not hidden: the colour bar is labelled with THESE numbers, and values outside clamp
+# to the ends of the ramp (they stay visible, at the extreme colour).
+#
+# An axis is different and keeps min…max — a gate is drawn against it, so it may not lie about where a
+# cell sits. Nothing is gated on a colour.
+const RAMP_CLIP = 0.02
+function _ramp_range(v::AbstractVector)
+    f = Float32[x for x in v if isfinite(x)]
+    isempty(f) && return nothing
+    n = length(f)
+    lo_i = clamp(floor(Int, RAMP_CLIP * (n - 1)) + 1, 1, n)
+    hi_i = clamp(ceil(Int, (1 - RAMP_CLIP) * (n - 1)) + 1, 1, n)
+    # partialsort! reorders `f` but never changes WHICH values it holds, so the second k-th-smallest
+    # query is still correct — two O(n) selections instead of an O(n log n) sort of a million cells.
+    lo = partialsort!(f, lo_i)
+    hi = partialsort!(f, hi_i)
+    hi > lo && return (Float64(lo), Float64(hi))
+    e = _finite_extrema(f)                      # degenerate clip (near-constant measure) → full range
+    e[2] > e[1] ? e : nothing
+end
+
 # Grow a display extent `(lo, hi)` to also enclose `[glo, ghi]`, plus a `margin` fraction of the
 # resulting span so a gate edge lands inside the axes (grabbable), not flush on the border. No-op
 # when the target range is not finite (no gate). Used to autoscale a plot to its child gates so a
@@ -693,12 +719,16 @@ function api_gating_plotmeta(req::HTTP.Request)
         zt0 = _axis_transform(q, "z")
         rzext = _finite_extrema(rv[3])
         zt = auto ? effective_transform(zt0, rzext[1], rzext[2]) : zt0
-        e = _finite_extrema(Float32.(apply_transform(zt, rv[3])))
-        zext = [e[1], e[2]]
-        # the legend's labels are RAW values (inverted through the transform) — served from here for the
-        # same reason the axis ticks are: the client has no transform math, so it cannot label a
-        # logicle-scaled ramp itself. Three is what a thin colour bar fits.
-        zticks = _axis_ticks(zt, rzext[1], rzext[2]; n = 3)
+        # robust range (see `_ramp_range`): the ramp is a contrast setting, not an axis
+        e = _ramp_range(Float32.(apply_transform(zt, rv[3])))
+        if e !== nothing
+            zext = [e[1], e[2]]
+            # the legend's labels are RAW values (inverted through the transform) — served from here for
+            # the same reason the axis ticks are: the client has no transform math, so it cannot label a
+            # logicle-scaled ramp itself. They describe the CLIPPED range, so the bar states what it
+            # actually shows. Three is what a thin colour bar fits.
+            zticks = _axis_ticks(zt, invert_transform(zt, e[1]), invert_transform(zt, e[2]); n = 3)
+        end
     end
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
     n = length(xv)
