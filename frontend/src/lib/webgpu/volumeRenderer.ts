@@ -146,7 +146,13 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
-      { binding: 0, visibility: GPUShaderStage.FRAGMENT,
+      // VERTEX **and** fragment. The overlay passes read this uniform in their VERTEX stage — the
+      // camera projects a point before there is a fragment to shade — and a binding a stage cannot see
+      // is a pipeline-creation validation error, not a warning. `createRenderPipeline` then hands back
+      // an INVALID pipeline; setting it makes the whole render pass invalid, and the volume draws in
+      // that same pass, so the canvas goes black the moment any overlay is switched on. It rendered
+      // fine until then, which is exactly why this survived being written.
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
         buffer: { type: 'uniform', minBindingSize: UNIFORM_BYTES } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'uint', viewDimension: '3d' } },

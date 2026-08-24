@@ -56,6 +56,16 @@ const LEADING_VEC4S = (() => {
   if (!m) throw new Error('could not read UNIFORM_BYTES from volumeRenderer.ts')
   return Number(m[1])
 })()
+// The uniform's stage VISIBILITY, read from the renderer rather than restated here. It has to include
+// VERTEX — the overlay passes project a point before there is a fragment to shade — and a layout that
+// omits a stage makes `createRenderPipeline` return an INVALID pipeline, which invalidates the whole
+// render pass (the volume draws in that pass too). This harness had its own copy of the wrong answer.
+const UNIFORM_VIS = (() => {
+  const m = VR.match(/binding: 0, visibility: ([^,]+),\s*\n?\s*buffer:/)
+  if (!m) throw new Error('could not read binding 0 visibility from volumeRenderer.ts')
+  return m[1].trim()
+})()
+
 const CH0 = (() => {
   const m = VR.match(/const CH0 = (\d+)/)
   if (!m) throw new Error('could not read CH0 from volumeRenderer.ts')
@@ -72,6 +82,15 @@ const sharedOpen = src.indexOf('const SHARED_WGSL = `')
 if (sharedOpen < 0) throw new Error('SHARED_WGSL not found — did the export shape change?')
 const sharedBody = src.slice(sharedOpen + 'const SHARED_WGSL = `'.length)
 const SHARED = sharedBody.slice(0, sharedBody.indexOf('`'))
+
+// The camera's sign convention, pinned. `projectJS` below re-derives the projection independently —
+// that is the point of it — but 'independent' has to mean 'derived from the same stated intent', not
+// 'derived from whatever it said when it was written'. If the shader's `up` is ever flipped back, this
+// throws at generation time rather than letting the harness quietly accuse a correct shader.
+if (!SHARED.includes('c.up = cross(c.right, c.fwd)')) {
+  throw new Error("SHARED_WGSL's camera no longer says `up = cross(right, fwd)` — the overlay check's " +
+                  'own derivation (projectJS) encodes that convention and must be flipped with it')
+}
 
 // The WGSL is a template literal; take it verbatim and resolve only the two interpolations.
 const open = src.indexOf('export const MIP_WGSL = `')
@@ -170,7 +189,7 @@ try {
   ctx.configure({device, format, alphaMode: 'opaque'})
 
   const bgl = device.createBindGroupLayout({entries: [
-    {binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: {type: 'uniform'}},
+    {binding: 0, visibility: ${UNIFORM_VIS}, buffer: {type: 'uniform'}},
     {binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'uint', viewDimension: '3d'}},
     {binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'float', viewDimension: '2d'}}]})
   const rt = device.createTexture({size: [cv.width, cv.height], format: 'rgba8unorm',
@@ -379,7 +398,12 @@ try {
         const fwd = [cp*sy, sp, cp*cy]
         const ro = [fwd[0]*dist, fwd[1]*dist, fwd[2]*dist]
         const right = norm(cross([0,1,0], fwd))
-        const up = cross(fwd, right)
+        // cross(right, fwd), NOT cross(fwd, right): screen up is -y in world, because NDC y points up
+        // while framebuffer rows count down. This mirror is the whole subject of the orientation check
+        // below, and this line is the version of it the OVERLAYS have to agree with — it was left on
+        // the old convention when the shader was fixed, which made an independent re-derivation into a
+        // stale one and would have reported the CORRECT shader as 'WRONG PLACE'.
+        const up = cross(right, fwd)
         const d = [world[0]-ro[0], world[1]-ro[1], world[2]-ro[2]]
         const sx = dot(d, right), sy2 = dot(d, up)
         if (ortho) { const hh = dist * HA; return [sx/(hh*aspect), sy2/hh] }
