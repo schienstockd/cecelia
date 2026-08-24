@@ -5,6 +5,10 @@
   parent's children by their gate's channel-pair, and for each group render the PARENT's cells as a
   density scatter on those channels with the child gate outlines + "name  pct%" labels.
 
+  It also offers COLOUR BY (docs/POPULATION.md → Colour by a third measure): a third measure painted onto
+  the dots, chosen in the ⚙ options and persisted in the panel state like every other selector here, so a
+  saved board reopens with the same figure. The montage draws ONE colour bar for the grid.
+
   Reuse (feedback_use_existing_framework): this owns ONLY the selectors + turning the population tree
   into montage tiles (`PanelDef[]`). The fetch + render + export of those tiles is the shared
   GateMontage (the SAME renderer the channel-pairs matrix uses), which in turn hosts the SAME read-only
@@ -16,7 +20,11 @@ import TeleportPopover from '../TeleportPopover.vue'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { orientGate } from '../../plots/gateGeometry'
-import type { PanelDef } from '../../plots/montage'
+import { defaultTransformForCol } from '../../utils/gatingAxes'
+import { dotRadiusFor } from '../../plots/density'
+import { measureGroups } from '../../utils/measureGroups'
+import { pairTransform } from '../../plots/pairsMatrix'
+import type { ColourBy, PanelDef } from '../../plots/montage'
 import type { VisProps } from '../../plots/plot'
 import GateMontage from './GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from './RenderModeToggle.vue'
@@ -26,7 +34,9 @@ const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   vis?: VisProps
   state: { imageUid?: string; valueName?: string; popType?: string; rootPop?: string
-    renderMode?: RenderMode; showHierarchy?: boolean }
+    renderMode?: RenderMode; showHierarchy?: boolean
+    // colour-by: the third measure painted as the dot colour ('' = density) + its ramp scale
+    z?: string; zt?: 'linear' | 'log' | 'asinh' | 'logicle' }
 }>()
 
 // ── selectors (persisted in the panel state) ─────────────────────────────────────────────────────
@@ -50,6 +60,25 @@ const valueNames = ref<string[]>([])
 // names (CD4), mirroring the gating store's colLabel so axes read the same as on the Gate page.
 const channels = ref<string[]>([])
 const channelNames = ref<string[]>([])
+// the rest of the measure universe, for the colour-by picker — grouped by family through the SAME
+// `measureGroups` every other picker uses, so the board's list reads like the Gate page's
+const columns = ref<string[]>([])
+const obsColumns = ref<string[]>([])
+const spatialAxes = ref<string[]>([])
+const colourGroups = computed(() => measureGroups({
+  columns: columns.value, channels: channels.value, spatialAxes: spatialAxes.value,
+  obsColumns: obsColumns.value, popType: popType.value }))
+// COLOUR BY a third measure. No gating store here (this view is store-agnostic), so the default scale
+// comes from the shared pure rule with THIS segmentation's spatial axes — same rule the Gate page uses.
+type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
+const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
+const zDefault = (col: string): Kind =>
+  defaultTransformForCol(col, { spatialAxes: spatialAxes.value, popType: popType.value })
+const zChan = computed({ get: () => props.state.z ?? '',
+                         set: v => { props.state.z = v; props.state.zt = v ? zDefault(v) : undefined } })
+const zt = computed<Kind>({ get: () => props.state.zt ?? zDefault(zChan.value), set: v => { props.state.zt = v } })
+const colourBy = computed<ColourBy | null>(() =>
+  zChan.value ? { col: zChan.value, t: pairTransform(zt.value) } : null)
 function colLabel(col: string): string {
   const i = channels.value.indexOf(col)
   return i >= 0 && channelNames.value[i] ? channelNames.value[i] : col
@@ -65,8 +94,14 @@ async function loadChannels() {
     valueNames.value = d.valueNames ?? []
     channels.value = d.channels ?? []
     channelNames.value = d.channelNames ?? []
+    columns.value = d.columns ?? []
+    obsColumns.value = d.obsColumns ?? []
+    spatialAxes.value = [...(d.spatialColumns ?? []), ...(d.temporalColumns ?? [])]
     if (valueNames.value.length && !valueNames.value.includes(valueName.value)) valueName.value = valueNames.value[0]
-  } catch { valueNames.value = []; channels.value = []; channelNames.value = [] }
+  } catch {
+    valueNames.value = []; channels.value = []; channelNames.value = []
+    columns.value = []; obsColumns.value = []; spatialAxes.value = []
+  }
 }
 async function loadTree() {
   if (!props.projectUid || !imageUid.value) { tree.value = null; return }
@@ -201,15 +236,28 @@ defineExpose({ exportImage, exportSvg })
         <option value="root">root</option>
         <option v-for="p in flatPaths" :key="p" :value="p">{{ p }}</option>
       </select>
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="gs-opts">
         <button ref="gearBtn" class="gs-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
-                v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>
+                v-tooltip.bottom="'Colour, size & hierarchy'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
           <div class="gs-pop">
             <CcToggle class="gs-check" label="show gating hierarchy"
                    v-tooltip.bottom="'Draw the parent-child tree beside the plots'"
                    :model-value="showHierarchy" @update:model-value="showHierarchy = $event" />
+            <label class="gs-row"><span class="gs-lbl">colour</span>
+              <select v-model="zChan" v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
+                <option value="">density</option>
+                <optgroup v-for="grp in colourGroups" :key="grp.title" :label="grp.title">
+                  <option v-for="c in grp.cols" :key="c" :value="c">{{ colLabel(c) }}</option>
+                </optgroup>
+              </select>
+            </label>
+            <label class="gs-row"><span class="gs-lbl">scale</span>
+              <select v-model="zt" :disabled="!zChan" v-tooltip.bottom="'Colour scale'">
+                <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </label>
           </div>
         </TeleportPopover>
       </div>
@@ -217,7 +265,8 @@ defineExpose({ exportImage, exportSvg })
 
     <GateMontage ref="montageRef" :project-uid="projectUid" :image-uid="imageUid" :value-name="valueName"
                  :pop-type="popType" :defs="panelDefs" :col-label="colLabel" :render-mode="renderMode"
-                 :gate-labels="true" :font-size="vis?.fontSize ?? 11">
+                 :colour-by="colourBy" :gate-labels="true" :font-size="vis?.fontSize ?? 11"
+                 :dot-size="dotRadiusFor(vis?.pointSize)">
       <template #empty>
         No gate to show for “{{ rootPop }}”.
         {{ showHierarchy ? 'No gated populations beneath it — draw gates on the Gate page first.'
@@ -239,4 +288,9 @@ defineExpose({ exportImage, exportSvg })
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; }   /* padding: TeleportPopover */
 .gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: var(--cc-fs-sm); }
+/* colour-by rows in the options popover: label + select, one per line so a long measure name doesn't
+   push the select out of the popover */
+.gs-row { display: flex; align-items: center; gap: 6px; font-size: var(--cc-fs-sm); }
+.gs-row select { flex: 1; min-width: 0; }
+.gs-lbl { width: 3rem; flex: none; color: var(--cc-text-dim); }
 </style>

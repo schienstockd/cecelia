@@ -50,3 +50,19 @@ export const axisLabelWithUnit = (name: string, unit?: string | null): string =>
  * list its centroids in `uns/spatial_cols`.
  */
 export const isImageYAxis = (col: string): boolean => /^centroid_y$/i.test(col ?? '')
+
+/**
+ * THE default scale for a measure, wherever one is picked: the gate plot's X/Y, the pairs matrix's
+ * shared transform, and the colour ramp of either (on the Gate page AND on the read-only Analysis
+ * board, which has no gating store — hence the injected lists rather than a store lookup).
+ *
+ * A raw coordinate is a position: linear, never logicle. A track property is a continuous aggregate:
+ * linear. A flow intensity is logicle (FlowJo). The rule was written out per panel, so the colour-by
+ * rows would have been the third and fourth copy of it.
+ */
+export const defaultTransformForCol = (
+  col: string,
+  o: { spatialAxes?: string[]; popType?: string } = {},
+): 'linear' | 'logicle' =>
+  ((o.spatialAxes ?? []).includes(col) || isCentroidAxis(col) || o.popType === 'track')
+    ? 'linear' : 'logicle'

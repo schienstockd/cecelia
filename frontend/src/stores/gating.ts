@@ -5,7 +5,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
 import { clusterMeasure } from '../utils/clusterMeasure'
-import { isCentroidAxis, centroidLabel } from '../utils/gatingAxes'
+import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { popPath } from '../utils/popName'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
@@ -123,10 +123,14 @@ export const useGatingStore = defineStore('gating', () => {
   // spatial + temporal centroid axes, offered together as a "Spatial / Time" group in the axis pickers
   const spatialAxes = computed(() => [...spatialColumns.value, ...temporalColumns.value])
   const isSpatialAxis = (col: string) => spatialAxes.value.includes(col)
-  // columns that should default to a LINEAR transform in the gate axis pickers: raw coordinates
-  // (spatial/temporal axes + any centroid column, matched by name via isCentroidAxis so it holds even
-  // for data that doesn't list centroids in spatial_cols) are positions, never logicle.
-  const isLinearAxis = (col: string) => isSpatialAxis(col) || isCentroidAxis(col)
+  // THE default scale for a measure, wherever one is picked: raw coordinates (spatial/temporal axes +
+  // any centroid column, matched by name so it holds even for data that doesn't list centroids in
+  // spatial_cols) are positions and never logicle; a flow intensity is logicle. The rule itself is the
+  // pure `utils/gatingAxes` `defaultTransformForCol` — the board's read-only gating view shares it
+  // without a store — and this binds it to THIS segmentation's spatial axes and pop type. (It replaced
+  // an `isLinearAxis` predicate that every picker then turned into the same transform by hand.)
+  const defaultTransformFor = (col: string): 'linear' | 'logicle' =>
+    defaultTransformForCol(col, { spatialAxes: spatialAxes.value, popType: popType.value })
 
   const flat = computed(() => flatten(tree.value))
   // transient pops (e.g. the napari cell selection) — auto-highlighted on the plots
@@ -375,7 +379,7 @@ export const useGatingStore = defineStore('gating', () => {
 
   return {
     imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
-    spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, isLinearAxis,
+    spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,

@@ -694,6 +694,43 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   (`plots/flowColors.ts` `BLUE_HEAT_ANCHORS`, from R `.flowColorRampBlueHeat`, `flowHelpers.R:775`) is
   interpolated to 256 stops so the gradient is smooth, with the low end lifted off pure black
   (`#0b1a4d`) so sparse points stay visible on the dark theme. No server density call.
+- **Colour by a third measure ("z"), FlowJo-style.** The `colour` row on a gating plot picks a THIRD
+  measure, painted onto the dots as colour instead of the local density (points mode only — a contour
+  ring describes a distribution, so there is no per-cell value to colour). `plotdata?z=<col>` then
+  answers **triples** `[x,y,z,…]`, read in ONE pass with x/y so `z[i]` is the same cell as
+  `(x[i],y[i])`; `plotmeta` adds `zExtent`/`zTicks`/`zUnit`/`usedZ`. Decisions worth knowing:
+  - **The ramp's range is the WHOLE dataset (root), not the displayed population** — selecting a child
+    must not re-map the colours, or the same cell changes colour as you walk the tree and two plots of
+    the same measure can't be compared. (Same reason the axis ticks are root-derived.)
+  - **…and it is a 2–98 PERCENTILE of it, not min…max** (`_ramp_range`). Measured on a real 3P spleen
+    dataset (4471 cells, `Bcells-ubiTom` on logicle): p2–p98 covered **28%** of the full range, so
+    min…max spent ~70% of the colour scale on a handful of outlying cells and the whole cloud came out
+    one flat orange. This is the same clip a viewer applies for contrast limits, and it is not hidden —
+    the colour bar is labelled with the clipped numbers, and values outside clamp to the ramp's ends
+    (they stay visible, at the extreme colour). An AXIS keeps min…max: a gate is drawn against an axis,
+    so it may not lie about where a cell sits. Nothing is gated on a colour.
+  - **`z` is an axis in everything but geometry**: same measure list, same per-measure transform default
+    (logicle for a marker, linear for a centroid), same auto-linearisation + amber override marker. The
+    labels on the colour bar are RAW values inverted server-side — the client has no transform math.
+  - **Same ramp as the density pseudocolour** (`flowColors.ts` `heatCss`, one lookup for dots and bar),
+    so the two modes look alike; the **colour bar is what distinguishes them**, and it is drawn on the
+    plot canvas (top-right, inside the plot area — the gating chrome has no third gutter) so the PNG
+    export gets it for free and the SVG export emits it as vector.
+  - A cell with **no value** for the measure is drawn in the dim ink, NOT at the ramp's floor (which
+    would read as a real low measurement).
+  - **Two ways to draw it.** `points` gives each dot the ramp (FlowJo's colour-by-parameter); **`binned`**
+    fills each grid cell with the MEAN of the measure there, which is what to reach for when the cloud is
+    dense enough that overlapping dots read as speckle. Same ramp, same legend, same colour bar — see
+    `docs/PLOTS.md` → *`binned`*. The mode chip only appears once a measure is picked.
+  - **Available on every gate scatter, read-only ones included**: the single plot (`colour` row), the
+    channel-pairs matrix (`colour` row — one measure for the whole matrix) and the board's read-only
+    gating-strategy view (⚙ → colour), each persisting the measure + scale in its own view state. A
+    MONTAGE draws **one** legend for the grid, not a bar per tile (`ColourBarLegend`): every tile shares
+    the ramp, and a bar inside a 200px pairs tile would cost more of the tile than it explains. A
+    single-tile montage keeps the bar inside the plot, like the gating page.
+  - The montage fetches the colour column **whatever the render mode is** (the mode only decides whether
+    the dots use it), because refetching every tile on a points↔contour toggle is a worse trade than
+    carrying one extra column. The single plot, which refetches on far less, leaves it off the wire.
 - **Contours are client-side too, on their own grid.** `plots/contour.ts` runs **d3-contour** over a
   separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
   (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier
@@ -737,7 +774,11 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
 - **Gate display options** live in `GatingPlots` (apply to all plots) and are edited in the
   manager's collapsible **Options** box (grouped into `plot` / `viewer` sub-headings): a **gate-labels** toggle (subtle
   population name centred above each gate — bold with a dark halo for legibility, drawn on
-  `GateOverlay`; **on by default**) and a **line-width** slider (gate stroke thickness). Passed to
+  `GateOverlay`; **on by default**), a **line-width** slider (gate stroke thickness) and a **dot-size**
+  slider — the PLOT twin of the manager's "Napari dots", scaling every dot on the scatter (base speckle,
+  population overlays and the outlier tail together, so their relative sizes hold). Its default is
+  `plots/density.ts` `DOT_R` = 0.7, the FlowJo speckle that reads on a dense cloud; a sparse cloud, or one
+  carrying a colour-by measure, wants more. Passed to
   `GateOverlay` as `showLabels` / `lineWidth`. An **Axis** toggle — **whole-dataset scale**
   (double-diagonal icon, default) vs **autoscale-to-pop** (single-diagonal) — adds `x0/y0=1` to
   the plot queries. With it on, `plotmeta` sets each axis to `[transformed(0), transformed(full-

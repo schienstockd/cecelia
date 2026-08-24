@@ -14,6 +14,8 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
+import { DOT_R } from '../../plots/density'
+import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
@@ -68,8 +70,11 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (the correction view reads its own keys) — as in ClusterPlots.
-interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
-  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
+interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean; dotSize: number
+  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: RenderMode; channels: string[]
+  // colour-by (single plot): the third measure painted as the dot colour, and its ramp scale.
+  // Unset like xt/yt so the panel's per-measure transform default fires (see the comment on ckey).
+  z?: string; zt?: GateKind }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
@@ -78,13 +83,13 @@ const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled works
 const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
 // Axis transforms (xt/yt) are intentionally LEFT UNSET here so the panels' own per-axis default
 // fires: GatePlotPanel/GatePairsPanel resolve `ui.xt ?? axisDefaultTransform(col)` (linear for
-// spatial/centroid axes via the store's isLinearAxis, logicle for flow intensities). That fallback
+// spatial/centroid axes via the store's defaultTransformFor, logicle for flow intensities). That fallback
 // only runs while ui.xt is undefined — pre-seeding a concrete transform here would pin logicle and
 // silently defeat it. Channels (x/y) start empty; the panel picks index-based defaults once columns
 // load (see ensureChannels).
 const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PlotState>(zoomRef, () =>
-    ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
+    ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true, dotSize: DOT_R,
        x: '', y: '', renderMode: 'points', channels: [] }), ckey,
     // every plot panel here is `:square` (GatePlotPanel / GatePairsPanel), so Tile hands out square
     // cells; `tileBox` keeps the grid sized to the VIEWPORT even once the workspace has grown taller
@@ -164,11 +169,14 @@ const trackLink = computed(() => ({
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
 // option to the defaults below and it persists automatically — see useViewState.ts.
-const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZero,
+const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZero, dotSize: gDotSize,
         selTracks, trackPops } = useViewState(shared, {
   scope: 'global' as 'global' | 'local',     // global = one value for every plot; local = active plot only
   hl: [] as string[],                         // global-scope highlighted pop paths
   lineWidth: 1.5, labels: true, fromZero: true,
+  // dot radius on the scatters (plots/density DOT_R = the FlowJo speckle). Scoped like every other
+  // plot option, so one slider can grow the dots on all plots or just the active one.
+  dotSize: DOT_R,
   // WHICH POPULATIONS the registry views plot (`popType::valueName/pop` keys, the board's own
   // vocabulary). Separate from `hl` above: that one is "overlay this population on the gating
   // scatter", which is a different question with a different answer, and reusing it is what left the
@@ -189,12 +197,14 @@ const panelHL = (s: PlotState) => scope.value === 'global' ? gHL.value : s.hl
 const panelLineWidth = (s: PlotState) => scope.value === 'global' ? gLineWidth.value : s.lineWidth
 const panelLabels = (s: PlotState) => scope.value === 'global' ? gLabels.value : s.labels
 const panelFromZero = (s: PlotState) => scope.value === 'global' ? gFromZero.value : s.fromZero
+const panelDotSize = (s: PlotState) => scope.value === 'global' ? gDotSize.value : (s.dotSize ?? DOT_R)
 
 // what the manager shows/edits = the active scope's value
 const activeHL = computed(() => scope.value === 'global' ? gHL.value : (activePanel.value?.state.hl ?? []))
 const activeLineWidth = computed(() => scope.value === 'global' ? gLineWidth.value : (activePanel.value?.state.lineWidth ?? 1.5))
 const activeLabels = computed(() => scope.value === 'global' ? gLabels.value : (activePanel.value?.state.labels ?? true))
 const activeFromZero = computed(() => scope.value === 'global' ? gFromZero.value : (activePanel.value?.state.fromZero ?? true))
+const activeDotSize = computed(() => scope.value === 'global' ? gDotSize.value : (activePanel.value?.state.dotSize ?? DOT_R))
 
 // edits route to the global value or the active plot depending on scope
 // the ONE selection toggle (utils/selection.ts) — four hosts had a copy of it each
@@ -291,6 +301,7 @@ function toggleHighlight(path: string) {
   else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl, path)
 }
 function setLineWidth(v: number) { if (scope.value === 'global') gLineWidth.value = v; else if (activePanel.value) activePanel.value.state.lineWidth = v }
+function setDotSize(v: number) { if (scope.value === 'global') gDotSize.value = v; else if (activePanel.value) activePanel.value.state.dotSize = v }
 function setLabels(v: boolean)   { if (scope.value === 'global') gLabels.value = v;    else if (activePanel.value) activePanel.value.state.labels = v }
 function setFromZero(v: boolean) { if (scope.value === 'global') gFromZero.value = v;  else if (activePanel.value) activePanel.value.state.fromZero = v }
 
@@ -478,11 +489,13 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
+                          :dot-size="panelDotSize(p.state)"
                           :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                           @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
           <GatePlotPanel v-else :index="i" :arrange="p.arrange"
                          :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                          :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
+                         :dot-size="panelDotSize(p.state)"
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
@@ -500,8 +513,9 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                       @toggle="togglePop" @update:scope="scope = $event" />
         <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
+                           :dot-size="activeDotSize"
                            @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
-                           @update:line-width="setLineWidth" @update:gate-labels="setLabels"
+                           @update:line-width="setLineWidth" @update:dot-size="setDotSize" @update:gate-labels="setLabels"
                            @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot" />
       </div>
     </template>

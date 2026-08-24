@@ -366,11 +366,12 @@ A blank/stale `valueName` is resolved server-side to a real labelProps key (the 
 | GET | `/api/gating/popmap` | `projectUid,imageUid,valueName,popType` | `{tree}` — nested `{name,gate,filter,children}` |
 | GET | `/api/gating/stats` | `…,pop` | `{count, parentCount, pctParent}` |
 | GET | `/api/gating/membership` | `…,pops=/a,/b[,binary=1]` | JSON `{membership:{pop:[labels]}}`, or (binary, single pop) raw `Int32[]` |
-| GET | `/api/gating/plotmeta` | `…,x,y,pop,xt,yt,<transform params>,densityThreshold,x0,y0` | `{n, mode:"scatter"\|"density", xExtent,yExtent, xLabel,yLabel, xTicks,yTicks}` — `x0=1`/`y0=1` → "whole-dataset" axis for that axis: `[transformed(0), transformed(full-dataset max)]` (max over **all** cells, not the `pop` subset), so the axis stays fixed across populations; omitted/`0` = autoscale to the displayed pop |
-| GET | `/api/gating/plotdata` | `…,x,y,pop,xt,yt,…` | **binary** `Float32` interleaved `[x0,y0,x1,y1,…]` (already transformed) |
+| GET | `/api/gating/plotmeta` | `…,x,y,pop,xt,yt,<transform params>,densityThreshold,x0,y0[,z,zt,…]` | `{n, mode:"scatter"\|"density", xExtent,yExtent, xLabel,yLabel, xTicks,yTicks}` — `x0=1`/`y0=1` → "whole-dataset" axis for that axis: `[transformed(0), transformed(full-dataset max)]` (max over **all** cells, not the `pop` subset), so the axis stays fixed across populations; omitted/`0` = autoscale to the displayed pop. **`z`** (colour-by) adds `{zExtent:[lo,hi]\|null, zTicks:[{pos,label}]×3, zUnit, usedZ}` — the ramp's range in **transformed** space, over the **whole dataset** (root), so selecting a child population doesn't re-map the colours, and clipped to a **2–98 percentile** (a colour ramp is a contrast setting, not an axis — see `_ramp_range`); values outside clamp to the ramp's ends |
+| GET | `/api/gating/plotdata` | `…,x,y,pop,xt,yt,…[,z,zt,…]` | **binary** `Float32` interleaved `[x0,y0,x1,y1,…]` (already transformed). With **`z`** (colour-by measure) the body is **triples** `[x0,y0,z0,x1,y1,z1,…]` — x/y/z read in ONE pass, so `z[i]` is the same cell as `(x[i],y[i])`; the client switches stride on whether it asked for `z` |
 | GET | `/api/gating/density` | `…,x,y,pop,xt,yt,bins` | **binary** `Float32` grid `bins×bins` (row-major counts) |
 
-**Axis transforms** (per axis, prefix `x`/`y`): `xt=linear\|log\|asinh\|logicle`. Params:
+**Axis transforms** (per axis, prefix `x`/`y` — and `z` for the colour ramp, which is an axis in
+everything but geometry): `xt=linear\|log\|asinh\|logicle`. Params:
 `xfloor` (log), `xcof` (asinh cofactor), `xT,xW,xM,xA` (logicle). Gates and plot
 coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}` where
 `pos` is the transformed position and `label` the raw (inverse) value.
@@ -417,7 +418,8 @@ client suppresses echo, see `POPULATION.md`).
 
 `plotdata`/`density`/membership(`binary=1`) return raw little-endian arrays — read
 `response.arrayBuffer()` → `new Float32Array(buf)` (or `Int32Array` for membership). Call
-`plotmeta` first for `n`, extents, ticks, and scatter-vs-density mode.
+`plotmeta` first for `n`, extents, ticks, and scatter-vs-density mode. `plotdata?z=…` is the one
+variable-stride body (pairs → triples); split it with `plots/valueColour.ts` `splitXYZ`.
 
 ---
 

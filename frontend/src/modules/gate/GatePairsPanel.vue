@@ -7,6 +7,9 @@
   SAME highlight pipeline as the normal plot: the manager's "eye" populations AND the transient napari
   cell-selection light up across every tile (linked brushing). Rendering/fetching is the shared
   GateMontage (feedback_use_existing_framework); the tiles come from the pure buildPairDefs.
+
+  It also honours COLOUR BY (a third measure painted onto every tile's dots, docs/POPULATION.md): one
+  measure for the whole matrix, with ONE colour bar above the grid rather than a bar per tile.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -17,7 +20,8 @@ import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateMontage from '../../components/plots/GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
-import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
+import { buildPairDefs, reconcileChannels, estimateMatrixLoad, pairTransform } from '../../plots/pairsMatrix'
+import type { ColourBy } from '../../plots/montage'
 import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
@@ -29,22 +33,24 @@ const MAX_CHANNELS = 8            // N×N tiles grow fast — cap the selection 
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
-  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
+  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
   // persisted per-plot config (owned by GatingPlots' PlotState): the channel list, the one shared
   // transform, and the render mode. Read/written directly so they survive navigation.
-  ui: { channels?: string[]; xt?: Kind; renderMode?: RenderMode }
+  ui: { channels?: string[]; xt?: Kind; renderMode?: RenderMode
+        // colour-by: the third measure painted as the dot colour ('' = density), and its ramp scale.
+        // Same two keys the single plot uses (GatingPlots' PlotState) — one plot, one meaning.
+        z?: string; zt?: Kind }
   arrange?: ArrangeCmd | null
   persistKey?: string
 }>()
 const emit = defineEmits<{ activate: [number]; 'update:parent': [string]; remove: [] }>()
 const g = useGatingStore()
 
-// track properties → linear by default; flow intensities → logicle (FlowJo) — same rule as GatePlotPanel
-const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-// centroid/spatial axes are raw coordinates → linear (same rule as GatePlotPanel). Pairs share ONE
-// transform across all selected channels, so it's linear only when EVERY selected channel is a linear axis.
+// The default scale comes from the store's ONE rule (`defaultTransformFor`: logicle for a flow
+// intensity, linear for a track property or a raw coordinate). Pairs share ONE transform across all
+// selected channels, so it's linear only when EVERY selected channel would default to linear.
 const pairsDefault = (chs: string[]): Kind =>
-  chs.length > 0 && chs.every(c => g.isLinearAxis(c)) ? 'linear' : defaultTransform
+  chs.length > 0 && chs.every(c => g.defaultTransformFor(c) === 'linear') ? 'linear' : g.defaultTransformFor('')
 // Changing the channel selection re-derives the shared transform (FlowJo-style: transform follows the
 // parameters) — else a once-set transform sticks when the selection changes to/from centroid axes. Only
 // fires on user picks via the multiselect's v-model; a restored bag sets ui.channels directly.
@@ -57,6 +63,13 @@ const coerced = ref(false)
 const pairsOverride = computed(() =>
   coerced.value ? transformOverride(transform.value, 'linear') : null)
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
+// COLOUR BY a third measure, for the whole matrix. Same control, same default rule and same persistence
+// keys as the single plot's `colour` row; the montage owns the one legend.
+const zChan = computed({ get: () => props.ui.z ?? '', set: v => { props.ui.z = v; props.ui.zt = v ? g.defaultTransformFor(v) : undefined } })
+const zt = computed<Kind>({ get: () => props.ui.zt ?? g.defaultTransformFor(zChan.value), set: v => { props.ui.zt = v } })
+// `pairTransform` is the shared kind→spec builder (logicle carries its FlowJo shape), so the ramp is
+// requested in exactly the form the axes are
+const colourBy = computed<ColourBy | null>(() => zChan.value ? { col: zChan.value, t: pairTransform(zt.value) } : null)
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
 
@@ -145,7 +158,7 @@ function exportAs(kind: string) {
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>
       <span class="ctrl-sep" />
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">pop</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to compare; its gates are shown'">
@@ -187,6 +200,17 @@ function exportAs(kind: string) {
         <i v-if="pairsOverride" class="pi pi-exclamation-triangle ax-warn"
            v-tooltip.bottom="overrideTooltip(pairsOverride, '')" />
       </div>
+      <label class="ax-row"><span class="ax-lbl">colour</span>
+        <select class="ax-chan" v-model="zChan"
+                v-tooltip.bottom="'Colour every tile\'s dots by a third measure (points / binned)'">
+          <option value="">density</option>
+          <optgroup v-for="grp in pickGroups" :key="grp.title" :label="grp.title">
+            <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+          </optgroup>
+        </select>
+        <select class="tsel" v-model="zt" :disabled="!zChan" v-tooltip.bottom="'Colour scale'">
+          <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+      </label>
       </div>
     </template>
     <template #footer>
@@ -204,7 +228,8 @@ function exportAs(kind: string) {
     <GateMontage ref="montageRef" :project-uid="g.projectUid()" :image-uid="g.imageUid ?? ''"
                  :value-name="g.valueName" :pop-type="g.popType" :defs="defs" :col-label="g.colLabel"
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
-                 :highlight="highlightPops" :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
+                 :highlight="highlightPops" :colour-by="colourBy" :dot-size="props.dotSize"
+                 :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
                  :reload-key="reloadKey" @coerced="coerced = $event">
       <template #empty>Select channels above to compare them against each other.</template>
     </GateMontage>

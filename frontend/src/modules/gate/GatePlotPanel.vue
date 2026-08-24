@@ -10,6 +10,10 @@
   Independent "pop colours" toggle overlays the visible child populations in their colours
   (works with either mode). The active panel (orange border) also follows the population the
   user selects in the manager.
+
+  A third measure can be painted onto the dots as COLOUR (FlowJo's colour-by-parameter) — pick it in
+  the `colour` row. It replaces the density pseudocolour in points mode and brings a colour bar;
+  the ramp's range comes from the whole dataset, so it doesn't re-map as you walk the tree.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -29,14 +33,17 @@ import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
+import { splitXYZ } from '../../plots/valueColour'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
-  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
+  gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean; dotSize: number
   // persisted per-plot axis config (owned by GatingPlots' PlotState) — channels, transforms, render
   // mode. Read/written directly like the summary panels' `ui` bag so these survive navigation.
   ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
-        yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: RenderMode }
+        yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: RenderMode
+        // colour-by: the third measure painted as the dot colour ('' = density pseudocolour)
+        z?: string; zt?: 'linear' | 'log' | 'asinh' | 'logicle' }
   // window-arrangement command (Tile/Cascade); seq bumps to force re-apply
   arrange?: ArrangeCmd | null
   persistKey?: string        // CanvasPanel geometry persistence key
@@ -49,11 +56,9 @@ const log = useLogStore()
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
-// track properties (motility, per-track aggregates) are plain continuous values → linear by
-// default; flow intensities default to logicle (FlowJo). User can switch either per axis.
-const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-// spatial/temporal + centroid axes are raw coordinates → linear by default (never logicle).
-const axisDefaultTransform = (col: string): Kind => g.isLinearAxis(col) ? 'linear' : defaultTransform
+// the ONE default-scale rule, shared with the pairs matrix and both colour-by rows (store:
+// `defaultTransformFor` — logicle for a flow intensity, linear for a track property or a raw coordinate)
+const axisDefaultTransform = (col: string): Kind => g.defaultTransformFor(col)
 // axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
 // Picking a NEW axis re-derives its transform (linear for spatial/centroid, logicle for flow) — the
 // transform follows the parameter, FlowJo-style. Without this a once-set transform sticks across axis
@@ -64,6 +69,11 @@ const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v
 const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v; props.ui.yt = axisDefaultTransform(v) } })
 const xt = computed<Kind>({ get: () => props.ui.xt ?? axisDefaultTransform(xChan.value), set: v => { props.ui.xt = v } })
 const yt = computed<Kind>({ get: () => props.ui.yt ?? axisDefaultTransform(yChan.value), set: v => { props.ui.yt = v } })
+// COLOUR BY (optional third measure). Same measure list and same transform default as an axis — a
+// marker is colour-ramped in logicle like it is plotted, a centroid linearly — because the ramp is an
+// axis in everything but geometry. '' = off (dots keep their local-density pseudocolour).
+const zChan = computed({ get: () => props.ui.z ?? '', set: v => { props.ui.z = v; props.ui.zt = v ? axisDefaultTransform(v) : undefined } })
+const zt = computed<Kind>({ get: () => props.ui.zt ?? axisDefaultTransform(zChan.value), set: v => { props.ui.zt = v } })
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
@@ -82,10 +92,16 @@ const points = ref<Float32Array | null>(null)
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })            // fixed (full data range)
 const viewExtents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })        // = extents (camera fixed)
 const viewTick = ref(0)
-const xUnit = ref(''); const yUnit = ref('')      // served by plotmeta; '' for a non-spatial axis
+const xUnit = ref(''); const yUnit = ref(''); const zUnit = ref('')   // served by plotmeta; '' when the measure has no length unit
 const xTicks = ref<{ pos: number; label: string }[]>([])
 const yTicks = ref<{ pos: number; label: string }[]>([])
 const popLayers = ref<PopLayer[]>([])
+// colour-by: one transformed value per base point, plus the ramp's whole-dataset range and its
+// raw-value labels (both served by plotmeta — the client has no transform math to invert a logicle
+// ramp itself). Cleared whenever the colour measure is off.
+const baseValues = ref<Float32Array | null>(null)
+const valueExtent = ref<[number, number] | null>(null)
+const valueTicks = ref<{ pos: number; label: string }[]>([])
 const loading = ref(false)
 // server flag: a track-grained plot (popType track/trackclust) on a segmentation that hasn't been
 // tracked → show a "track first" message instead of an empty plot. Set from plotmeta.
@@ -98,29 +114,40 @@ const tspec = (k: Kind): TransformSpec => k === 'logicle' ? { kind: k, T: 262144
 const axisQ = (p: string, k: Kind) => k === 'logicle'
   ? `&${p}t=logicle&${p}T=262144&${p}W=0.5&${p}M=4.5&${p}A=0` : `&${p}t=${k}`
 
-// query for a given population on given axis transforms
-function plotQ(pop: string, xk: Kind, yk: Kind) {
-  const z = props.axisFromZero ? 1 : 0
+// Colour-by paints in the two PER-EVENT modes: `points` (each dot takes the ramp) and `binned` (the
+// mean of the measure per cell). Contour rings and the outlier tail describe a distribution, not
+// per-cell values, so there is nothing to colour there — and the third column stays off the wire.
+const colourOn = computed(() =>
+  !!zChan.value && (renderMode.value === 'points' || renderMode.value === 'binned'))
+// query for a given population on given axis transforms. `zk` adds the colour-by measure (a third
+// value per point); the child-POP overlays never ask for it — they're drawn in the pop's own colour.
+function plotQ(pop: string, xk: Kind, yk: Kind, zk?: Kind) {
+  const z0 = props.axisFromZero ? 1 : 0
   return `projectUid=${g.projectUid()}&imageUid=${g.imageUid}&valueName=${g.valueName}&popType=${g.popType}` +
     `&x=${encodeURIComponent(xChan.value)}&y=${encodeURIComponent(yChan.value)}` +
-    `&pop=${encodeURIComponent(pop)}${axisQ('x', xk)}${axisQ('y', yk)}&x0=${z}&y0=${z}&autoLinear=1`
+    `&pop=${encodeURIComponent(pop)}${axisQ('x', xk)}${axisQ('y', yk)}&x0=${z0}&y0=${z0}&autoLinear=1` +
+    (zk && colourOn.value ? `&z=${encodeURIComponent(zChan.value)}${axisQ('z', zk)}` : '')
 }
-// meta is fetched with the PREFERRED transforms (xt/yt); the server decides what's actually usable and
-// reports it as usedX/usedY (a non-linear transform that would collapse a bounded/0–1 measure → linear).
-const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value))
+// meta is fetched with the PREFERRED transforms (xt/yt/zt); the server decides what's actually usable
+// and reports it as usedX/usedY/usedZ (a non-linear transform that would collapse a bounded/0–1
+// measure → linear).
+const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value, zt.value))
 
 // The transform the server actually USED for each axis (from plotmeta). It differs from the preferred
 // xt/yt when the measure's range can't use it (auto-linearised): the axis select then shows this and
 // goes amber. It reverts to the preference automatically on a compatible measure (server re-decides).
 const effXt = ref<Kind>(xt.value)
 const effYt = ref<Kind>(yt.value)
+const effZt = ref<Kind>(zt.value)
 // the shared "we substituted a setting" shape — one wording, one amber marker, and the WHY is never
 // optional (the select's tooltip used to say only "Axis transform"). See plots/autoOverride.ts.
 const xOverride = computed(() => transformOverride(xt.value, effXt.value))
 const yOverride = computed(() => transformOverride(yt.value, effYt.value))
+const zOverride = computed(() => colourOn.value ? transformOverride(zt.value, effZt.value) : null)
 // the axis dropdown DISPLAYS the effective transform; changing it sets the user's PREFERENCE (persisted)
 const xtSel = computed<Kind>({ get: () => effXt.value, set: v => { xt.value = v } })
 const ytSel = computed<Kind>({ get: () => effYt.value, set: v => { yt.value = v } })
+const ztSel = computed<Kind>({ get: () => effZt.value, set: v => { zt.value = v } })
 
 // child-gate outlines for the current axes, already projected into the effective display transform by
 // the server (plotmeta) — the client has no transform math, so it can't re-project a gate drawn under a
@@ -148,7 +175,8 @@ async function fetchMeta() {
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
     usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean
-    xUnit?: string; yUnit?: string }
+    xUnit?: string; yUnit?: string; zUnit?: string
+    zExtent?: [number, number] | null; zTicks?: { pos: number; label: string }[]; usedZ?: Kind }
   // A newer fetch (image/segmentation/axis/parent switch) is already in flight — a late stale meta
   // would otherwise overwrite the fresh extents/ticks/gates (last-writer race), leaving the plot on
   // the wrong axes or blank until the user nudged a control. (Mirrors fetchGatesFor's key guard.)
@@ -159,9 +187,16 @@ async function fetchMeta() {
   xTicks.value = meta.xTicks; yTicks.value = meta.yTicks
   effXt.value = meta.usedX ?? xt.value
   effYt.value = meta.usedY ?? yt.value
+  // when there is no colour measure the select just shows the preference — reporting the server's
+  // "linear" default for a ramp nobody asked for would amber a control for no reason
+  effZt.value = colourOn.value ? (meta.usedZ ?? zt.value) : zt.value
+  // the ramp's range is the server's (whole dataset, in the transform it actually used); null means it
+  // has nothing to colour by — the dots fall back to density rather than to a made-up range
+  valueExtent.value = colourOn.value ? (meta.zExtent ?? null) : null
+  valueTicks.value = colourOn.value ? (meta.zTicks ?? []) : []
   // the unit the SERVER put the values in (µm / px for a spatial axis, '' otherwise) — never guessed
   // here, so the axis label can't claim µm while the numbers are pixels
-  xUnit.value = meta.xUnit ?? ''; yUnit.value = meta.yUnit ?? ''
+  xUnit.value = meta.xUnit ?? ''; yUnit.value = meta.yUnit ?? ''; zUnit.value = meta.zUnit ?? ''
   serverGates.value = meta.gates ?? []
 }
 // refresh ONLY the server-projected child-gate outlines — gates come from plotmeta now, so a gate
@@ -190,14 +225,18 @@ async function fetchPoints() {
   // has no points, so don't ask for them (the server's own comment says the client skips the empty
   // data reads; only the message half was wired up). CLEAR them: leaving the previous image's cloud
   // under the "Not tracked yet" message would read as data.
-  if (notTracked.value) { points.value = new Float32Array(0); return }
+  if (notTracked.value) { points.value = new Float32Array(0); baseValues.value = null; return }
   const key = metaQ.value                    // snapshot the view; drop a stale response
-  const buf = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value))
+  const colour = colourOn.value              // snapshot too: the response's stride depends on it
+  const buf = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value, effZt.value))
   // same last-writer guard as fetchMeta: if the image/segmentation/axis/parent changed while this
   // was in flight, an out-of-order resolve must NOT clobber the current cloud (the intermittent
   // "blank until I toggle a control" gap on image switch).
   if (key !== metaQ.value) return
-  points.value = buf
+  // colour-by → the body is [x,y,z] TRIPLES, split into the pairs the renderer draws plus the parallel
+  // value array (same index = same dot; the server read all three columns in one pass to guarantee it)
+  if (colour) { const { points: pts, values } = splitXYZ(buf); points.value = pts; baseValues.value = values }
+  else { points.value = buf; baseValues.value = null }
 }
 
 // full reload: axes + points + layers (axes / parent / image / value-name change)
@@ -295,11 +334,18 @@ function buildCsv(): string {
   const xName = g.colLabel(xChan.value) || 'x'
   const yRaw = g.colLabel(yChan.value) || 'y'
   const yName = yRaw === xName ? `${yRaw} (y)` : yRaw
+  // the colour-by measure is a real per-event column, so it belongs in the export too (blank for the
+  // child-pop overlay rows — those are separate fetches, drawn in the pop colour, and carry no value)
+  const zVals = baseValues.value
+  const zRaw = g.colLabel(zChan.value) || 'colour'
+  const zName = [xName, yName].includes(zRaw) ? `${zRaw} (colour)` : zRaw
   const rows: Record<string, unknown>[] = []
-  const push = (arr: Float32Array, pop: string) => {
-    for (let i = 0; i < arr.length / 2; i++) rows.push({ [xName]: arr[2 * i], [yName]: arr[2 * i + 1], population: pop })
+  const push = (arr: Float32Array, pop: string, vals: Float32Array | null = null) => {
+    for (let i = 0; i < arr.length / 2; i++) rows.push({ [xName]: arr[2 * i], [yName]: arr[2 * i + 1],
+      ...(vals ? { [zName]: vals[i] } : {}), population: pop })
   }
-  push(pts, parent.value === 'root' ? 'root' : (parent.value.split('/').filter(Boolean).pop() ?? parent.value))
+  push(pts, parent.value === 'root' ? 'root' : (parent.value.split('/').filter(Boolean).pop() ?? parent.value),
+       colourOn.value && zVals?.length === pts.length / 2 ? zVals : null)
   if (showPops.value) for (const pl of popLayers.value) push(pl.points, pl.path.split('/').filter(Boolean).pop() ?? pl.path)
   return rowsToCsv(rows)
 }
@@ -324,7 +370,9 @@ function ensureChannels() {
 // until the user nudged a dropdown.
 watch([() => g.columns, () => g.imageUid, () => g.valueName],
       () => { ensureChannels(); fetchPlot() }, { immediate: true, flush: 'post' })
-watch([xChan, yChan, xt, yt, parent, () => props.axisFromZero], fetchPlot)
+// zChan/zt/colourOn are in here because the colour measure changes what the POINTS request returns
+// (triples vs pairs) and what plotmeta reports for the ramp — not just how the dots are painted.
+watch([xChan, yChan, xt, yt, zChan, zt, colourOn, parent, () => props.axisFromZero], fetchPlot)
 watch(() => props.highlight, loadPopLayers, { deep: true })
 // another plot changed the gate of the population we display (or an ancestor) → refresh smoothly
 const parentVersion = computed(() => g.popVersion[parent.value] ?? 0)
@@ -360,7 +408,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
          PLOT REGION (.panel-main) below these fixed controls, so the plot stays 1:1 with a visible
          x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
-      <RenderModeToggle v-model="renderMode" />
+      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <span class="ctrl-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
@@ -389,6 +437,19 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
+        <label class="ax-row cc-muted"><span class="ax-lbl">colour</span>
+          <select class="ax-chan" v-model="zChan"
+                  v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
+            <option value="">density</option>
+            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
+              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            </optgroup>
+          </select>
+          <select class="tsel" :class="{ 'cc-auto-override': !!zOverride }" v-model="ztSel" :disabled="!colourOn"
+                  v-tooltip.bottom="overrideTooltip(zOverride, 'Colour scale')">
+            <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+          <i v-if="zOverride" class="pi pi-exclamation-triangle ax-warn"
+             v-tooltip.bottom="overrideTooltip(zOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
@@ -410,7 +471,10 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
                      :x-label="axisLabelWithUnit(g.colLabel(xChan), xUnit)"
                      :y-label="axisLabelWithUnit(g.colLabel(yChan), yUnit)"
+                     :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
+                     :value-label="axisLabelWithUnit(g.colLabel(zChan), zUnit)"
                      :pop-layers="popLayers" :render-mode="renderMode" :show-pops="showPops"
+                     :dot-size="props.dotSize"
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
@@ -441,7 +505,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
-.ax-lbl { width: 1.8rem; color: var(--cc-text-dim); flex-shrink: 0; }
+/* wide enough for the longest row label ("colour") so all four rows' selects still line up */
+.ax-lbl { width: 3.4rem; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }

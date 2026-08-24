@@ -165,55 +165,79 @@ _axis_unit(img, vn, pop_type, col)::String =
 # read the raw x/y vectors, then put SPATIAL axes into the gates' unit. One wrapper over the stored-value
 # read so every consumer — the point cloud, the whole-dataset extents that drive the ticks, density —
 # gets the same unit from one place; the plotdata handler reads both through this.
-function _plot_xy_raw(img, vn, pop_type, x, y, pop)
-    xv, yv = _plot_xy_stored(img, vn, pop_type, x, y, pop)
-    sx = _axis_scale(img, vn, pop_type, x); sy = _axis_scale(img, vn, pop_type, y)
-    (sx == 1.0 ? xv : xv .* sx, sy == 1.0 ? yv : yv .* sy)
+_plot_xy_raw(img, vn, pop_type, x, y, pop) = _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop))
+
+# x/y are all-or-nothing: ONE of them missing means there is nothing to plot, and returning a full
+# vector beside an empty one would index past the end of the short one (a 500) in every consumer.
+_xy_pair(v) = (isempty(v[1]) || isempty(v[2])) ? (Float64[], Float64[]) : (v[1], v[2])
+
+# The same read for ANY number of plot columns — x/y, plus the optional "colour by" measure z (a third
+# property painted onto the 2D plot, FlowJo's colour-by-parameter). ONE read for all of them, because
+# `z[i]` has to be the SAME CELL as `(x[i], y[i])`: a second, separate read for z would align only by
+# luck (any difference in the population filter or row order silently mis-colours every dot).
+function _plot_cols_raw(img, vn, pop_type, cols, pop)
+    vs = _plot_cols_stored(img, vn, pop_type, cols, pop)
+    [(s = _axis_scale(img, vn, pop_type, c); s == 1.0 ? v : v .* s) for (c, v) in zip(cols, vs)]
 end
 
 # read x/y (optionally subset to a population) → transformed Float32 vectors.
 # Chain idiom (docs/DATAMODEL.md): select the two channels, push the population's label
 # filter into the reader (filter_rows), then materialise once.
-# read the STORED x/y vectors for the scatter (one row per cell, or per track for pop_type="track"),
+# read the STORED columns for the scatter (one row per cell, or per track for pop_type="track"),
 # optionally subset to a population, before transform. Values as they are on disk — centroids in
-# pixels; `_plot_xy_raw` is the wrapper that converts spatial axes.
-function _plot_xy_stored(img, vn, pop_type, x, y, pop)
+# pixels; `_plot_cols_raw` is the wrapper that converts spatial axes. Returns one vector per REQUESTED
+# column (duplicates allowed — the same measure on two axes reads once); a column this table doesn't
+# have comes back EMPTY, so the CALLER decides what missing means (see `_xy_pair` and `_plot_xyz`).
+function _plot_cols_stored(img, vn, pop_type, cols, pop)
+    cols = String.(cols)
+    empty = [Float64[] for _ in cols]
+    want = unique(cols)                                  # `select_cols` takes each column once
     if _track_grained(pop_type)
         # per-track scatter: one point per track from `track_props` (label == track_id)
         tp = track_props(img; value_name = vn,
-                         cell_measures = track_cell_measures([x, y], _track_free_cols(img, vn)))
-        (x in names(tp) && y in names(tp)) || return (Float64[], Float64[])
+                         cell_measures = track_cell_measures(want, _track_free_cols(img, vn)))
+        any(c -> c in names(tp), want) || return empty
         if !is_root(pop)
             m = _live_map(img, vn, pop_type)
-            has_pop(m, pop) || return (Float64[], Float64[])
+            has_pop(m, pop) || return empty
             keep = Set(cells_in_pop(m, pop))                 # gated track_ids
             tp = tp[[t in keep for t in tp.label], :]
         end
-        return (Float64.(tp[!, x]), Float64.(tp[!, y]))
+        return [c in names(tp) ? Float64.(tp[!, c]) : Float64[] for c in cols]
     end
-    # cell scatter — chain idiom: select the two channels, push the population's label filter into
+    # cell scatter — chain idiom: select the columns, push the population's label filter into
     # the reader (filter_rows), then materialise once.
-    lp = label_props(img; value_name = vn) |> select_cols([x, y])
+    lp = label_props(img; value_name = vn) |> select_cols(want)
     if !is_root(pop)
         m = _live_map(img, vn, pop_type)
         # the pop may have vanished since the client last rendered (e.g. a plot/highlight still
         # pointing at a napari selection that has since been cleared) — return empty data rather
         # than letting cells_in_pop throw a 500 ("pop_membership: not found: /Napari selection").
-        has_pop(m, pop) || return (Float64[], Float64[])
+        has_pop(m, pop) || return empty
         filter_rows(lp, cells_in_pop(m, pop); by = :label)
     end
     df = as_df(lp)
-    # the requested axes may not exist on the cell table (e.g. a stale panel pointing at track columns
+    # a requested column may not exist on the cell table (e.g. a stale panel pointing at track columns
     # like `live.track.*` while popType=flow) — `select_cols` drops unknown columns, so guard here and
-    # return empty rather than throwing a 500 (mirrors the track branch's `x in names(...)` guard).
-    (x in names(df) && y in names(df)) || return (Float64[], Float64[])
-    (Float64.(df[!, x]), Float64.(df[!, y]))
+    # return it EMPTY rather than throwing a 500. Per column, not all-or-nothing: an unusable COLOUR-BY
+    # measure must not blank the x/y cloud it was only supposed to tint.
+    [c in names(df) ? Float64.(df[!, c]) : Float64[] for c in cols]
 end
 
 # transformed Float32 vectors for plotdata/density/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
     xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop)
     Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv))
+end
+
+# x/y PLUS the colour-by measure, from the one aligned read (see `_plot_cols_raw`)
+function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt)
+    v = _plot_cols_raw(img, vn, pop_type, [x, y, z], pop)
+    xv, yv = _xy_pair(v)
+    # an unreadable colour measure (not a column of THIS table) is "no value for any cell" — NaN, which
+    # the client paints in the dim ink — not a short vector, and never a reason to drop the dots.
+    zv = length(v[3]) == length(xv) ? Float32.(apply_transform(zt, v[3])) : fill(NaN32, length(xv))
+    (Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv)), zv)
 end
 
 # broadcast the updated tree to all clients
@@ -606,6 +630,32 @@ function _gates_bbox(gates)
     (xlo, xhi, ylo, yhi)
 end
 
+# The COLOUR ramp's range: a robust 2–98 percentile of the (transformed) values, not min…max.
+#
+# Measured on a real 3P spleen dataset (4471 cells, `Bcells-ubiTom` on logicle): p2–p98 covered **28%**
+# of the full min…max range, so a full-range ramp spent ~70% of the colour scale on a handful of outlying
+# cells and the whole cloud came out one flat orange. The same clip is what a viewer does for contrast
+# limits, and it is not hidden: the colour bar is labelled with THESE numbers, and values outside clamp
+# to the ends of the ramp (they stay visible, at the extreme colour).
+#
+# An axis is different and keeps min…max — a gate is drawn against it, so it may not lie about where a
+# cell sits. Nothing is gated on a colour.
+const RAMP_CLIP = 0.02
+function _ramp_range(v::AbstractVector)
+    f = Float32[x for x in v if isfinite(x)]
+    isempty(f) && return nothing
+    n = length(f)
+    lo_i = clamp(floor(Int, RAMP_CLIP * (n - 1)) + 1, 1, n)
+    hi_i = clamp(ceil(Int, (1 - RAMP_CLIP) * (n - 1)) + 1, 1, n)
+    # partialsort! reorders `f` but never changes WHICH values it holds, so the second k-th-smallest
+    # query is still correct — two O(n) selections instead of an O(n log n) sort of a million cells.
+    lo = partialsort!(f, lo_i)
+    hi = partialsort!(f, hi_i)
+    hi > lo && return (Float64(lo), Float64(hi))
+    e = _finite_extrema(f)                      # degenerate clip (near-constant measure) → full range
+    e[2] > e[1] ? e : nothing
+end
+
 # Grow a display extent `(lo, hi)` to also enclose `[glo, ghi]`, plus a `margin` fraction of the
 # resulting span so a gate edge lands inside the axes (grabbable), not flush on the border. No-op
 # when the target range is not finite (no gate). Used to autoscale a plot to its child gates so a
@@ -637,13 +687,18 @@ function api_gating_plotmeta(req::HTTP.Request)
             xExtent = [0.0, 1.0], yExtent = [0.0, 1.0], xLabel = x, yLabel = y,
             xUnit = "", yUnit = "",              # same response shape as the real path below
             xTicks = Dict{String,Any}[], yTicks = Dict{String,Any}[],
-            usedX = "linear", usedY = "linear", gates = Dict{String,Any}[]))
+            usedX = "linear", usedY = "linear", gates = Dict{String,Any}[],
+            zExtent = nothing, zTicks = Dict{String,Any}[], zUnit = "", usedZ = "linear"))
     end
     xt0 = _axis_transform(q, "x"); yt0 = _axis_transform(q, "y")
+    # "colour by" (optional): a THIRD measure painted onto the 2D plot as the dot colour. It has no
+    # axis — only a range for the colour ramp — so all it needs from here is its transform + extent.
+    z = get(q, "z", "")
     # raw extents over the WHOLE dataset (root): used both for ticks (labels read in data units, and
     # selecting a population doesn't rescale the axis) AND to decide auto-linearisation — so the
     # transform choice is stable across populations, not re-decided per subset. Track-aware via _raw.
-    rxv, ryv = _plot_xy_raw(img, vn, pop_type, x, y, ROOT)
+    rv = _plot_cols_raw(img, vn, pop_type, isempty(z) ? [x, y] : [x, y, z], ROOT)
+    rxv, ryv = _xy_pair(rv)
     rxext = _finite_extrema(rxv); ryext = _finite_extrema(ryv)
     # A non-linear transform that would collapse a bounded/small-range measure (morphology like
     # solidity ∈ [0,1]) into a sliver is auto-swapped to linear; usedX/usedY tell the client so it can
@@ -655,6 +710,26 @@ function api_gating_plotmeta(req::HTTP.Request)
     auto = get(q, "autoLinear", "") == "1"
     xt = auto ? effective_transform(xt0, rxext[1], rxext[2]) : xt0
     yt = auto ? effective_transform(yt0, ryext[1], ryext[2]) : yt0
+    # The colour ramp's range is taken over the WHOLE dataset (root), like the ticks: selecting a
+    # child population must not re-map the colours, or the same dot changes colour as you walk the
+    # tree and two plots of the same measure can't be compared. `nothing` when no colour-by measure
+    # (or when it isn't a column on this table — an empty read).
+    zt = LinearTransform(); zext = nothing; zticks = Dict{String,Any}[]
+    if !isempty(z) && !isempty(rv[3])
+        zt0 = _axis_transform(q, "z")
+        rzext = _finite_extrema(rv[3])
+        zt = auto ? effective_transform(zt0, rzext[1], rzext[2]) : zt0
+        # robust range (see `_ramp_range`): the ramp is a contrast setting, not an axis
+        e = _ramp_range(Float32.(apply_transform(zt, rv[3])))
+        if e !== nothing
+            zext = [e[1], e[2]]
+            # the legend's labels are RAW values (inverted through the transform) — served from here for
+            # the same reason the axis ticks are: the client has no transform math, so it cannot label a
+            # logicle-scaled ramp itself. They describe the CLIPPED range, so the bar states what it
+            # actually shows. Three is what a thin colour bar fits.
+            zticks = _axis_ticks(zt, invert_transform(zt, e[1]), invert_transform(zt, e[2]); n = 3)
+        end
+    end
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
@@ -703,6 +778,11 @@ function api_gating_plotmeta(req::HTTP.Request)
         yTicks = _axis_ticks(yt, ryext[1], ryext[2]),
         usedX = transform_kind(xt), usedY = transform_kind(yt),
         gates = gates,
+        # colour-by: the ramp's [lo, hi] in TRANSFORMED space (plotdata sends transformed values), the
+        # unit for the legend, and the transform actually used — same auto-linearisation as an axis.
+        zExtent = zext, zTicks = zticks,
+        zUnit = isempty(z) ? "" : _axis_unit(img, vn, pop_type, z),
+        usedZ = transform_kind(zt),
     ))
 end
 
@@ -715,11 +795,25 @@ function api_gating_plotdata(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    xv, yv = _plot_xy(img, vn, get(q, "popType", "flow"), x, y, get(q, "pop", ROOT), xt, yt)
+    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    # `z` (optional) = the colour-by measure: the response becomes TRIPLES [x,y,z,…] instead of pairs,
+    # read in the SAME pass as x/y so each z belongs to its own dot (`_plot_cols_raw`). The client
+    # switches stride on whether it asked for z, so old callers are untouched.
+    z = get(q, "z", "")
+    if isempty(z)
+        xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
+        n = length(xv)
+        buf = Vector{Float32}(undef, 2n)
+        @inbounds for i in 1:n
+            buf[2i-1] = xv[i]; buf[2i] = yv[i]
+        end
+        return 200, collect(reinterpret(UInt8, buf))
+    end
+    xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, _axis_transform(q, "z"))
     n = length(xv)
-    buf = Vector{Float32}(undef, 2n)
+    buf = Vector{Float32}(undef, 3n)
     @inbounds for i in 1:n
-        buf[2i-1] = xv[i]; buf[2i] = yv[i]
+        buf[3i-2] = xv[i]; buf[3i-1] = yv[i]; buf[3i] = zv[i]
     end
     200, collect(reinterpret(UInt8, buf))
 end

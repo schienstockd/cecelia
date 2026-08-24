@@ -8,7 +8,9 @@
   The host owns WHICH tiles to render (`defs`, built by tree walk or buildPairDefs); this owns the
   per-tile fetch (plotmeta/plotdata/stats), the transpose reuse (mirror tiles share one fetch), the
   optional coloured population overlays (`highlight` — the "show pops" / napari-brushing layers, same as
-  the normal gating plot), the layout, and PNG/PDF export. Store-agnostic (the board fetches its own
+  the normal gating plot), the optional COLOUR-BY measure (`colourBy` — every tile's dots take the ramp
+  from one third measure, with ONE legend for the grid rather than a bar per tile), the layout, and
+  PNG/PDF export. Store-agnostic (the board fetches its own
   tree independent of the gating store), so all reactivity is driven by props.
 -->
 <script setup lang="ts">
@@ -19,9 +21,13 @@ import { elementToImageURL, loadImg, svgDoc, svgText, rowsToCsv } from '../../pl
 import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
-  type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate,
+  type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate, type ColourBy,
   idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate,
 } from '../../plots/montage'
+import { splitXYZ } from '../../plots/valueColour'
+import { DOT_R } from '../../plots/density'
+import ColourBarLegend from './ColourBarLegend.vue'
+import type { RenderMode } from './RenderModeToggle.vue'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -29,12 +35,15 @@ const props = withDefaults(defineProps<{
   projectUid: string; imageUid: string; valueName: string; popType: string
   defs: PanelDef[]
   colLabel: (col: string) => string
-  renderMode?: 'points' | 'contour' | 'outliers'
+  renderMode?: RenderMode
   gateLabels?: boolean
   gateLineWidth?: number
   // coloured population overlays drawn on every tile (the manager's "eye" pops + transient napari
   // selection). Host resolves the colour; empty on the read-only board.
   highlight?: { path: string; colour: string }[]
+  // COLOUR BY a third measure, for the whole grid (null = the local-density pseudocolour). The ramp's
+  // range is whole-dataset, so every tile's colours mean the same thing and ONE legend describes them.
+  colourBy?: ColourBy | null
   // null → responsive wrap (gating-strategy montage); N → strict N-column matrix (channel pairs)
   cols?: number | null
   // true (default) → whole-dataset axis (x0=1), tiles align on a fixed scale; false → autoscale each
@@ -45,9 +54,11 @@ const props = withDefaults(defineProps<{
   // napari selection) — the parent's point cloud can change without any def changing.
   reloadKey?: string | number
   fontSize?: number                              // axis font size (px) forwarded to each tile (vis slider)
+  dotSize?: number                               // dot radius (px) forwarded to each tile (see plots/density DOT_R)
 }>(), {
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
-  highlight: () => [], cols: null, axisFromZero: true, reloadKey: 0, fontSize: 11,
+  highlight: () => [], colourBy: null, cols: null, axisFromZero: true, reloadKey: 0, fontSize: 11,
+  dotSize: DOT_R,
 })
 // true when ≥1 tile's preferred transform was auto-linearised (host shows an amber hint on its control)
 const emit = defineEmits<{ coerced: [boolean] }>()
@@ -61,8 +72,13 @@ interface PanelData {
   points: Float32Array; extents: Ext; xTicks: Tick[]; yTicks: Tick[]
   gates: { path: string; colour: string; gate: GateSpec; label: string }[]
   popLayers: PopLayer[]
+  values: Float32Array | null            // colour-by value per point (null = colouring by density)
 }
 const panelData = ref<Record<string, PanelData>>({})
+// The colour ramp for the WHOLE grid: range + raw-value labels, as plotmeta served them. It depends on
+// the measure and the dataset, not on a tile's axes, so every tile's meta reports the same one and the
+// legend is drawn once. null → nothing to colour by (no measure, or not a column on this table).
+const valueRamp = ref<{ extent: [number, number]; ticks: Tick[] } | null>(null)
 // Pearson r per canonical pair (groupKey) — computed once from each scatter tile's points and reused by
 // its upper-triangle mirror (the corr cell), so the whole matrix costs nothing extra.
 const corrByGroup = ref<Record<string, number | null>>({})
@@ -74,14 +90,23 @@ let loadTok = 0
 // per-run fetch memo → mirror tiles (a,b)/(b,a) and repeated highlight/stat lookups hit the network once.
 async function loadPanels() {
   const defs = props.defs.filter(isScatter)
-  if (!props.imageUid || !defs.length) { panelData.value = {}; corrByGroup.value = {}; err.value = ''; return }
+  if (!props.imageUid || !defs.length) {
+    panelData.value = {}; corrByGroup.value = {}; valueRamp.value = null; err.value = ''; return
+  }
   const tok = ++loadTok
   loading.value = true; err.value = ''
   const id = montageId.value
+  // ONE colour-by for the grid (null = colour by density). Fetched whatever the render mode is: the
+  // mode only decides whether the dots USE the values (PlotLayers), and refetching every tile on a
+  // points↔contour toggle would be a worse trade than carrying one extra column.
+  const colour: ColourBy | null = props.colourBy?.col ? props.colourBy : null
   interface MetaData { extents: Ext; xTicks: Tick[]; yTicks: Tick[]
-    effA: TransformSpec; effB: TransformSpec; coerced: boolean; gates: SrvGate[] }
+    effA: TransformSpec; effB: TransformSpec; coerced: boolean; gates: SrvGate[]
+    // colour-by: the ramp the server decided (whole-dataset range + raw labels) and the transform it
+    // actually used, which the point fetch has to repeat or the values won't match the legend
+    ramp: { extent: [number, number]; ticks: Tick[] } | null; effZ: ColourBy | null }
   const metaCache = new Map<string, Promise<MetaData>>()
-  const ptsCache = new Map<string, Promise<Float32Array>>()
+  const ptsCache = new Map<string, Promise<{ points: Float32Array; values: Float32Array | null }>>()
   const statCache = new Map<string, Promise<number | undefined>>()
 
   // meta uses the whole-dataset axis (x0=1) + autoLinear (server may swap a collapsing transform → linear
@@ -89,22 +114,31 @@ async function loadPanels() {
   // (for the point fetch) and the server-projected child-gate outlines (canonical orientation).
   const metaFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
     if (!metaCache.has(o.groupKey)) metaCache.set(o.groupKey, (async () => {
-      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true)}`)).json() as {
+      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true, colour)}`)).json() as {
         xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[]
-        usedX?: string; usedY?: string; gates?: SrvGate[] }
+        usedX?: string; usedY?: string; gates?: SrvGate[]
+        zExtent?: [number, number] | null; zTicks?: Tick[]; usedZ?: string }
       return { extents: { xMin: m.xExtent[0], xMax: m.xExtent[1], yMin: m.yExtent[0], yMax: m.yExtent[1] },
                xTicks: m.xTicks, yTicks: m.yTicks,
                effA: effSpec(m.usedX, o.ta), effB: effSpec(m.usedY, o.tb),
                coerced: (!!m.usedX && m.usedX !== o.ta.kind) || (!!m.usedY && m.usedY !== o.tb.kind),
-               gates: m.gates ?? [] } as MetaData
+               gates: m.gates ?? [],
+               ramp: colour && m.zExtent ? { extent: m.zExtent, ticks: m.zTicks ?? [] } : null,
+               effZ: colour ? { col: colour.col, t: effSpec(m.usedZ, colour.t) } : null } as MetaData
     })())
     return metaCache.get(o.groupKey)!
   }
   // points fetched with the EFFECTIVE transforms so the cloud matches the extent + projected gates.
-  const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string, effA: TransformSpec, effB: TransformSpec) => {
+  const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string, effA: TransformSpec, effB: TransformSpec,
+                  effZ: ColourBy | null) => {
     const key = `${pop}|${o.groupKey}`
-    if (!ptsCache.has(key)) ptsCache.set(key, (async () =>
-      new Float32Array(await (await fetch(`/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero)}`)).arrayBuffer()))())
+    if (!ptsCache.has(key)) ptsCache.set(key, (async () => {
+      const buf = new Float32Array(await (await fetch(
+        `/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero, false, effZ)}`)).arrayBuffer())
+      // colour-by → TRIPLES: split into the pairs the tiles draw plus the parallel values (the server
+      // read all three columns in one pass, so index i is the same cell in both)
+      return effZ ? splitXYZ(buf) : { points: buf, values: null }
+    })())
     return ptsCache.get(key)!
   }
   const labelFor = async (c: PanelChild): Promise<string> => {
@@ -120,12 +154,14 @@ async function loadPanels() {
 
   const corrMap: Record<string, number | null> = {}
   let anyCoerced = false
+  let ramp: { extent: [number, number]; ticks: Tick[] } | null = null   // one ramp for every tile
   try {
     const entries = await Promise.all(defs.map(async d => {
       const o = canonicalOrient(d)
       const m = await metaFor(o, d.parentPath)          // effective transforms decided here…
-      const ptsRaw = await ptsFor(o, d.parentPath, m.effA, m.effB)   // …then points fetched with them
+      const { points: ptsRaw, values } = await ptsFor(o, d.parentPath, m.effA, m.effB, m.effZ)   // …then points, with them
       if (m.coerced) anyCoerced = true
+      if (m.ramp) ramp = m.ramp                        // identical across tiles (whole-dataset range)
       corrMap[o.groupKey] = pearson(ptsRaw)   // r is orientation-invariant → compute on the canonical cloud
       // outlines come from the server (projected into the effective transform), keyed by path; merge the
       // child's name/colour/label. Transpose for the mirror tile like the points/extents.
@@ -139,7 +175,11 @@ async function loadPanels() {
         return { path: c.path, colour: c.colour, gate, label: await labelFor(c) }
       }))).filter((g): g is { path: string; colour: string; gate: GateSpec; label: string } => g !== null)
       const popLayers = await Promise.all((props.highlight ?? []).map(async h => {
-        const raw = await ptsFor(o, h.path, m.effA, m.effB)
+        // An overlay is drawn in its POPULATION's colour, so it ignores the values — but it asks with
+        // the SAME params as the base, because the fetch memo is keyed by (pop, pair): a highlight on
+        // the tile's own parent is the same request, and two shapes of it under one key would leave
+        // which one wins to whichever tile got there first.
+        const raw = (await ptsFor(o, h.path, m.effA, m.effB, m.effZ)).points
         return { path: h.path, colour: h.colour, points: o.swap ? transposePoints(raw) : raw }
       }))
       const data: PanelData = {
@@ -148,12 +188,16 @@ async function loadPanels() {
         xTicks: o.swap ? m.yTicks : m.xTicks,
         yTicks: o.swap ? m.xTicks : m.yTicks,
         gates, popLayers,
+        values,                                        // per-point, orientation-invariant → no transpose
       }
       return [d.key, data] as const
     }))
-    if (tok === loadTok) { panelData.value = Object.fromEntries(entries); corrByGroup.value = corrMap; emit('coerced', anyCoerced) }
+    if (tok === loadTok) {
+      panelData.value = Object.fromEntries(entries); corrByGroup.value = corrMap
+      valueRamp.value = ramp; emit('coerced', anyCoerced)
+    }
   } catch (e) {
-    if (tok === loadTok) { err.value = e instanceof Error ? e.message : String(e); panelData.value = {}; corrByGroup.value = {} }
+    if (tok === loadTok) { err.value = e instanceof Error ? e.message : String(e); panelData.value = {}; corrByGroup.value = {}; valueRamp.value = null }
   } finally { if (tok === loadTok) loading.value = false }
 }
 
@@ -164,12 +208,24 @@ const sig = computed(() => JSON.stringify({
   id: montageId.value,
   defs: props.defs.filter(isScatter).map(d =>
     ({ k: d.key, p: d.parentPath, x: d.xChan, y: d.yChan, xt: d.xt, yt: d.yt, c: d.children.map(c => [c.path, c.gate]) })),
-  hl: props.highlight, rk: props.reloadKey, fz: props.axisFromZero,
+  hl: props.highlight, rk: props.reloadKey, fz: props.axisFromZero, cb: props.colourBy,
 }))
 watch(sig, loadPanels, { immediate: true })
 
+// ONE legend for the grid — see ColourBarLegend. Only when the dots are actually taking the ramp:
+// contour/outlier modes describe a distribution, so PlotLayers ignores the values there and a bar would
+// label a colour nothing on screen uses.
+// `single` is a full-size plot in a board slot, not a montage cell, so it keeps the bar INSIDE the plot
+// (like the Gate page's plot) and the strip stays out of the way — one legend either way, never two.
+const showLegend = computed(() => !!valueRamp.value && !single.value &&
+                                 (props.renderMode === 'points' || props.renderMode === 'binned'))
+const legendLabel = computed(() => props.colourBy?.col ? props.colLabel(props.colourBy.col) : '')
+
 // ── export: plot-only image (single cell hi-res, or the whole grid on white for the board PDF) ──────
-const gridRef = useTemplateRef<HTMLElement>('gridRef')
+// `hostRef` wraps the legend strip + the grid: it is what BOTH export paths capture, so the legend
+// travels with the figure. Tile rects are measured against it, so the geometry is unchanged.
+const hostRef = useTemplateRef<HTMLElement>('hostRef')
+const legendRef = useTemplateRef<{ svgBody(ink: string): string; getEl(): HTMLElement | null }>('legendRef')
 type CellExport = {
   exportImage(bg?: string, light?: boolean): Promise<string | null>
   hiRes(cv: HTMLCanvasElement, scale: number): Promise<CanvasImageSource | null>
@@ -181,8 +237,9 @@ const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
 async function exportImage(bg = '#ffffff', light = true): Promise<string | null> {
   const defs = props.defs.filter(isScatter)
+  // a single tile keeps its OWN bar (it is a full-size plot, not a montage cell), so it exports itself
   if (defs.length === 1) return (await cellRefs.get(defs[0].key)?.exportImage(bg, light)) ?? null
-  const el = gridRef.value
+  const el = hostRef.value
   if (!el) return null
   // Multi-tile: composite each scatter tile's UNIFIED export image (dots + gate + axis on one canvas —
   // see GateScatterCell.exportImage) at its grid rect, OVER an HTML overlay that carries the non-scatter
@@ -219,7 +276,7 @@ async function exportImage(bg = '#ffffff', light = true): Promise<string | null>
 // math as exportImage (getBoundingClientRect ÷ ancestor-zoom k), so it lines up identically.
 function exportSvg(bg = '#ffffff', light = true): string {
   const scatterDefs = props.defs.filter(isScatter)
-  const el = gridRef.value; if (!el) return ''
+  const el = hostRef.value; if (!el) return ''
   if (scatterDefs.length === 1) return cellRefs.get(scatterDefs[0].key)?.exportSvg?.(bg, light) ?? ''
   if (light) el.classList.add('cc-light')
   try {
@@ -234,6 +291,14 @@ function exportSvg(bg = '#ffffff', light = true): string {
       body += `<g transform="translate(${(r.left - gr.left) / k} ${(r.top - gr.top) / k})">${cbody}</g>`
     }
     const ink = getComputedStyle(el).getPropertyValue('--cc-text').trim() || '#111'
+    // the colour-bar legend, as the SAME vector body it draws on screen, translated to where it sits
+    const lel = legendRef.value?.getEl()
+    if (lel) {
+      const lr = lel.getBoundingClientRect()
+      const dim = getComputedStyle(lel).getPropertyValue('--cc-text-dim').trim() || ink
+      body += `<g transform="translate(${(lr.left - gr.left) / k} ${(lr.top - gr.top) / k})">` +
+              `${legendRef.value?.svgBody(dim) ?? ''}</g>`
+    }
     for (const node of Array.from(el.querySelectorAll('.gm-diag, .gm-corr'))) {
       const span = node.querySelector('.gm-corr-v') ?? node.querySelector('span') ?? node
       const txt = (span.textContent ?? '').trim(); if (!txt) continue
@@ -253,8 +318,10 @@ function exportCsv(): string {
     const pd = panelData.value[d.key]; if (!pd?.points) continue
     const xL = props.colLabel(d.xChan), yL = props.colLabel(d.yChan)
     const pop = d.parentPath === 'root' ? 'root' : (d.parentPath.split('/').filter(Boolean).pop() ?? d.parentPath)
-    const p = pd.points
-    for (let i = 0; i < p.length / 2; i++) rows.push({ xChan: xL, yChan: yL, x: p[2 * i], y: p[2 * i + 1], population: pop })
+    const p = pd.points, v = pd.values
+    const zL = props.colourBy?.col ? props.colLabel(props.colourBy.col) : ''
+    for (let i = 0; i < p.length / 2; i++) rows.push({ xChan: xL, yChan: yL, x: p[2 * i], y: p[2 * i + 1],
+      ...(v && zL ? { colourChan: zL, colour: v[i] } : {}), population: pop })
   }
   return rowsToCsv(rows)
 }
@@ -267,45 +334,59 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 </script>
 
 <template>
-  <div ref="gridRef" class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
-    <div v-if="err" class="gm-msg cc-muted cc-fs-md">{{ err }}</div>
-    <div v-else-if="!defs.length" class="gm-msg cc-muted cc-fs-md"><slot name="empty">Nothing to show.</slot></div>
-    <template v-for="d in defs" :key="d.key">
-      <!-- DIAGONAL (ggpairs): the channel name — labels its whole row and column -->
-      <div v-if="d.role === 'diagonal'" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
-      <!-- UPPER triangle (ggpairs): the pair's correlation, reused from its mirror scatter -->
-      <div v-else-if="d.role === 'corr'" class="gm-cell gm-corr"
-           v-tooltip.top="`corr(${colLabel(d.xChan)}, ${colLabel(d.yChan)})`">
-        <span class="gm-corr-k cc-eyebrow cc-fs-2xs">Corr</span>
-        <span class="gm-corr-v" :style="{ fontSize: corrFont(corrFor(d)) }">{{ fmtCorr(corrFor(d)) }}</span>
-      </div>
-      <div v-else class="gm-cell">
-        <div v-if="cols == null" class="gm-title" v-tooltip.top="`derived from ${titleFor(d.parentPath)}`">{{ titleFor(d.parentPath) }}</div>
-        <GateScatterCell v-if="panelData[d.key]" class="gm-plot" :ref="el => setCellRef(d.key, el)"
-                         :points="panelData[d.key].points" :extents="panelData[d.key].extents"
-                         :view-extents="panelData[d.key].extents"
-                         :x-ticks="panelData[d.key].xTicks" :y-ticks="panelData[d.key].yTicks"
-                         :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)" :y-label="colLabel(d.yChan)"
-                         :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
-                         :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
-                         :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
-                         :hide-axis-labels="cols != null" :font-size="fontSize"
-                         :flip-y="isImageYAxis(d.yChan)" />
-        <div v-else class="gm-loading">…</div>
-      </div>
-    </template>
+  <div ref="hostRef" class="gm-host">
+    <!-- ONE colour bar for the whole grid (never per tile — see ColourBarLegend) -->
+    <div v-if="showLegend" class="gm-legend">
+      <ColourBarLegend ref="legendRef" :extent="valueRamp!.extent" :ticks="valueRamp!.ticks" :label="legendLabel" />
+    </div>
+    <div class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
+      <div v-if="err" class="gm-msg cc-muted cc-fs-md">{{ err }}</div>
+      <div v-else-if="!defs.length" class="gm-msg cc-muted cc-fs-md"><slot name="empty">Nothing to show.</slot></div>
+      <template v-for="d in defs" :key="d.key">
+        <!-- DIAGONAL (ggpairs): the channel name — labels its whole row and column -->
+        <div v-if="d.role === 'diagonal'" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
+        <!-- UPPER triangle (ggpairs): the pair's correlation, reused from its mirror scatter -->
+        <div v-else-if="d.role === 'corr'" class="gm-cell gm-corr"
+             v-tooltip.top="`corr(${colLabel(d.xChan)}, ${colLabel(d.yChan)})`">
+          <span class="gm-corr-k cc-eyebrow cc-fs-2xs">Corr</span>
+          <span class="gm-corr-v" :style="{ fontSize: corrFont(corrFor(d)) }">{{ fmtCorr(corrFor(d)) }}</span>
+        </div>
+        <div v-else class="gm-cell">
+          <div v-if="cols == null" class="gm-title" v-tooltip.top="`derived from ${titleFor(d.parentPath)}`">{{ titleFor(d.parentPath) }}</div>
+          <GateScatterCell v-if="panelData[d.key]" class="gm-plot" :ref="el => setCellRef(d.key, el)"
+                           :points="panelData[d.key].points" :extents="panelData[d.key].extents"
+                           :view-extents="panelData[d.key].extents"
+                           :x-ticks="panelData[d.key].xTicks" :y-ticks="panelData[d.key].yTicks"
+                           :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)" :y-label="colLabel(d.yChan)"
+                           :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
+                           :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
+                           :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
+                           :hide-axis-labels="cols != null" :font-size="fontSize" :dot-size="dotSize"
+                           :base-values="panelData[d.key].values" :value-extent="valueRamp?.extent ?? null"
+                           :value-ticks="valueRamp?.ticks" :value-label="legendLabel"
+                           :value-legend="single"
+                           :flip-y="isImageYAxis(d.yChan)" />
+          <div v-else class="gm-loading">…</div>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* the capture host: the colour-bar legend strip (if any) above the scrolling grid. BOTH export paths
+   capture THIS element, so the legend travels with the figure. */
+.gm-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.gm-legend { flex: none; display: flex; justify-content: flex-end; padding: 2px 8px 0; }
 /* Two layouts. WRAP (gating-strategy): responsive squares that fill the width and wrap. MATRIX
    (channel pairs): a strict N-column grid (columns set inline) so every channel lines up in a row/col. */
 .gm-grid { flex: 1; min-height: 0; overflow: auto; padding: 6px; display: grid; gap: 8px;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-content: start; }
 .gm-grid.matrix { grid-auto-rows: max-content; }
 .gm-grid.single { grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
-/* light theme for PDF export: dark ink on white */
-.gm-grid.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff; --cc-surface-2: #f0f0f3; }
+/* light theme for PDF export: dark ink on white — set on the CAPTURE host, so the grid, its tiles and
+   the legend strip all inherit the flipped vars */
+.gm-host.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff; --cc-surface-2: #f0f0f3; }
 .gm-cell { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm); overflow: hidden; background: var(--cc-bg); }
 /* montage plot area is SQUARE — but the SQUARE is the DOTS (.panel-plot in GateScatterCell), not this

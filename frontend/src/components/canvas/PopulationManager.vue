@@ -26,6 +26,7 @@ import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { popNameError, popPath, isInSubtree } from '../../utils/popName'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
+import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
@@ -42,6 +43,7 @@ const props = withDefaults(defineProps<{
   highlighted: string[]            // pops highlighted in the current scope (global / active plot)
   scope: 'global' | 'local'
   lineWidth: number                // gate stroke width
+  dotSize?: number                 // scatter dot radius (px) — the plot-side twin of "Napari dots" below
   gateLabels: boolean              // show population names on gates
   axisFromZero: boolean            // axis origin at 0 vs autoscale
   popType?: string                 // 'flow' (default) | 'track' | 'clust' | 'trackclust'
@@ -58,6 +60,7 @@ const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
   'update:lineWidth': [number]
+  'update:dotSize': [number]
   'update:gateLabels': [boolean]
   'update:axisFromZero': [boolean]
   'update:vis': [patch: Partial<VisProps>]
@@ -567,6 +570,16 @@ function moveTo(target: string) {
                    v-tooltip.top="'Gate line thickness'"
                    @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
             <span class="pm-opt-val cc-readout cc-fs-xs">{{ lineWidth.toFixed(1) }}</span>
+          </div>
+          <!-- scatter dot size: the PLOT twin of the napari point size below. The default (0.7 → a
+               1.4px square) is the FlowJo speckle, which reads on a dense cloud but is hard to see on a
+               sparse one or when the dots carry a colour-by measure. Scales every dot on the plot. -->
+          <div class="pm-opt-row">
+            <span class="pm-opt-label cc-muted cc-fs-xs">Dot size</span>
+            <input type="range" min="0.25" max="3" step="0.25" :value="dotSize ?? DOT_R"
+                   v-tooltip.top="'Radius of each plotted cell'"
+                   @input="emit('update:dotSize', parseFloat(($event.target as HTMLInputElement).value))" />
+            <span class="pm-opt-val cc-readout cc-fs-xs">{{ (dotSize ?? DOT_R).toFixed(2) }}</span>
           </div>
           <div class="pm-opt-row">
             <span class="pm-opt-label cc-muted cc-fs-xs">Axis</span>
