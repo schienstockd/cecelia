@@ -742,8 +742,19 @@ Comparison is on the **string** form: a spec is JSON and a control's value is wh
 emits, so `"1"` in a spec matches the number `1` a slider produced. Without that the same condition
 would work behind a `select` and silently fail behind an `int`.
 
-An **absent** value satisfies nothing — a param gated on `mode` stays hidden until `mode` has a value.
-The alternative would flash every conditional param on first render, before defaults are applied.
+An **absent** value falls back to the referenced param's **spec default**, and only then satisfies
+nothing. In the form that changes nothing — `buildParamValues` seeds the bag from the defaults before
+anything renders, so the key is always present.
+
+It matters for the two callers that validate RAW params: chain-node validation and a composite's
+sub-step validation. Without the fallback `validate_params` saw `nothing` for the mode key, ruled the
+conditional param out, and skipped its validation **entirely** — not the required-check, all of it. A
+run was still safe (`run_task` applies `_apply_spec_defaults` first), so what was lost is the
+pre-flight check — the one that exists to reject a typo before a long job rather than after it
+(`_spec_defaults`, `app/src/tasks/task.jl`).
+
+The suite's per-param sweep SATISFIES a `showIf` before probing the param it guards, for the same
+reason: otherwise a conditional param is never reached and reads as one with no constraints.
 
 A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
 with no error. The suite rejects that (`showIf conditions name a param that exists`).

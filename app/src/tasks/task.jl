@@ -628,9 +628,48 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
 
+"""
+    _spec_defaults(spec_params) -> Dict{String,Any}
+
+Every param's spec DEFAULT, flattened, sections and groups recursed into.
+
+Only `showIf` reads this, and only for the params a condition NAMES. The frontend seeds its value bag
+from the defaults before anything is rendered (`buildParamValues`), so a condition there is always
+evaluated against a complete form. Two callers here do NOT: chain-node validation (`chain.jl`) and a
+composite's sub-step validation both call `validate_params` on the raw params. `showIf` then saw
+`nothing` for the mode key, ruled the conditional param out, and skipped its validation entirely —
+not its required-check, all of it.
+
+Scope worth being exact about: `run_task` calls `_apply_spec_defaults` BEFORE validating, so the RUN
+was never exposed and a bad value still failed there. What was lost is the pre-flight check, which is
+the one that exists to catch a typo before a long job rather than after it — and for
+`opticalFlow.train` the typo is in `temporalScales`, whose whole reason for being parsed in Julia is
+that coastal does not check it.
+"""
+function _spec_defaults(spec_params::Vector)::Dict{String,Any}
+    out = Dict{String,Any}()
+    for p in spec_params
+        p isa AbstractDict || continue
+        key = string(get(p, "key", ""))
+        inner = get(p, "params", [])
+        # Sections and groups hold their children under the FLAT key, which is how `params` arrives
+        # here — so their defaults belong in the same map, not nested under the container's name.
+        inner isa AbstractVector && !isempty(inner) && merge!(out, _spec_defaults(inner))
+        (isempty(key) || !haskey(p, "default")) && continue
+        d = p["default"]
+        isnothing(d) || (out[key] = d)
+    end
+    out
+end
+
 function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Vector;
                                        extra_options::Set{String} = Set{String}(),
-                                       in_composite::Bool = false)
+                                       in_composite::Bool = false,
+                                       defaults::Union{Nothing,Dict{String,Any}} = nothing)
+    # Computed once at the outermost call and handed down, so a section's `showIf` can name a
+    # top-level param — which is the usual direction, the mode switch being above the section it
+    # governs.
+    defaults = isnothing(defaults) ? _spec_defaults(spec_params) : defaults
     for p in spec_params
         p isa AbstractDict || continue
         key      = string(get(p, "key", ""))
@@ -646,7 +685,8 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
 
         if type_str == "section"
             inner = get(p, "params", [])
-            isempty(inner) || _validate_params_against_spec(params, inner; extra_options, in_composite)
+            isempty(inner) || _validate_params_against_spec(params, inner; extra_options,
+                                                            in_composite, defaults)
             continue
         end
 
@@ -658,7 +698,8 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
                 for (_, entry) in val
                     entry isa AbstractDict || continue
                     entry_dict = Dict{String,Any}(string(k) => v for (k, v) in entry)
-                    _validate_params_against_spec(entry_dict, inner; extra_options, in_composite)
+                    _validate_params_against_spec(entry_dict, inner; extra_options,
+                                                  in_composite, defaults)
                 end
             end
             continue
@@ -667,7 +708,7 @@ function _validate_params_against_spec(params::Dict{String,Any}, spec_params::Ve
         # A param `showIf` has ruled out is NOT required — otherwise the two combine into a form that
         # cannot be submitted, with nothing on screen explaining why. Same rule as the frontend's
         # `missingRequired`, so the Run button and the server agree on which params are in play.
-        _show_if_satisfied(p, params) || continue
+        _show_if_satisfied(p, params; defaults) || continue
         required = get(p, "required", false)
         val = get(params, key, nothing)
 
@@ -688,12 +729,20 @@ end
 
 # Is this param in play, given the form? Mirrors the frontend `showIfSatisfied`: keys AND, values
 # within a key OR, compared as STRINGS because a spec is JSON and a submitted value may be a number.
-# An absent value satisfies nothing.
-function _show_if_satisfied(p::AbstractDict, params::AbstractDict)::Bool
+#
+# `defaults` is what makes it a faithful mirror rather than a stricter twin. The frontend evaluates a
+# condition against a bag seeded from the spec defaults, so the referenced key is always present; a
+# submitted param dict carries only what the caller set. Falling back to the default is therefore not
+# leniency — it is reading the same form the user saw. Without it a param gains a `showIf` and quietly
+# stops being validated for every caller that is not the GUI. An absent value with no default still
+# satisfies nothing.
+function _show_if_satisfied(p::AbstractDict, params::AbstractDict;
+                            defaults::Union{Nothing,Dict{String,Any}} = nothing)::Bool
     cond = get(p, "showIf", nothing)
     cond isa AbstractDict || return true
     for (k, want) in cond
         have = get(params, string(k), nothing)
+        isnothing(have) && !isnothing(defaults) && (have = get(defaults, string(k), nothing))
         isnothing(have) && return false
         got = string(have)
         # Operator form — `{"csvPath": {"notEndsWith": ".xml"}}`. Mirrors the frontend exactly, or the

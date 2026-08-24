@@ -103,6 +103,32 @@ describe('paramsFromManifest', () => {
   it('leaves the metric chips alone when the form offered no options to reconcile against', () => {
     expect(paramsFromManifest(M, []).flowMetrics).toBeUndefined()
   })
+  // ── the scale mode ───────────────────────────────────────────────────────────────────────────
+  // Restored together with the spans, never one without the other. Handing back the spans while the
+  // form still says "frame lags" trains a materially different model under "use this model's
+  // settings" — the `intensityWeight` mistake, one field along.
+  it('restores the spans AND the mode for a model that declared seconds', () => {
+    const p = paramsFromManifest(
+      { ...M, temporalScaleUnit: 's', temporalScaleSeconds: [5, 10, 20, 40],
+        cumulativeWindowSeconds: 25 } as FlowManifest, OFFERED)
+    expect(p.temporalScaleMode).toBe('seconds')
+    expect(p.temporalScaleSeconds).toBe('5,10,20,40')
+    expect(p.cumulativeWindowSeconds).toBe(25)
+  })
+
+  it('sets the mode explicitly for a frame-lag model, so a stale form does not carry over', () => {
+    const p = paramsFromManifest({ ...M, temporalScaleUnit: 'frames' } as FlowManifest, OFFERED)
+    expect(p.temporalScaleMode).toBe('frames')
+    expect(p.temporalScaleSeconds).toBeUndefined()
+  })
+
+  // Every model trained before the mode existed. It has no opinion, so the form keeps its default.
+  it('says nothing about the mode for a model that predates it', () => {
+    const p = paramsFromManifest(M, OFFERED)
+    expect('temporalScaleMode' in p).toBe(false)
+    expect(p.temporalScales).toEqual(['1', '2', '4', '8'])
+  })
+
 })
 
 describe('unmappedFields', () => {

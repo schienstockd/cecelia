@@ -163,4 +163,58 @@ describe('modelDetailGroups', () => {
         .toBe('320×640 nm/px')
     })
   })
+  // ── the time spans the feature stack covers ──────────────────────────────────────────────────
+  // The rows that say whether a model transfers. Frame offsets alone are the same physical motion
+  // only on a movie acquired at the same rate; declared spans re-resolve themselves onto the
+  // recipient's.
+  describe('temporal scales', () => {
+    const SECONDS: FlowManifest = {
+      temporalScales: [1, 2, 4, 8],
+      cumulativeWindow: 5,
+      temporalScaleUnit: 's',
+      temporalScaleSeconds: [5, 10, 20, 40],
+      cumulativeWindowSeconds: 25,
+      temporalReferenceInterval: 5,
+      maxFrameInterval: 5,
+      temporalScalesPerMovie: { a: [1, 2, 4, 8], b: [1, 2, 4, 8] },
+    }
+
+    it('reads a frame-lag model as frames, with the unit spelled out', () => {
+      expect(fieldsOf({ temporalScales: [1, 2, 4, 8], cumulativeWindow: 5 }, 'Input'))
+        .toEqual({ 'Temporal scales': '1, 2, 4, 8 frames', 'Cumulative window': '5 frames' })
+    })
+
+    it('leads with the spans for a model that declared them', () => {
+      const f = fieldsOf(SECONDS, 'Input')
+      expect(f['Temporal spans']).toBe('5, 10, 20, 40 s')
+      expect(f['Cumulative window']).toBe('25 s')
+      expect(f['Temporal scales']).toBeUndefined()
+    })
+
+    // The offsets are still shown — they are what the channels are named after — but never bare:
+    // without the rate they belong to they read as a setting somebody chose.
+    it('shows the offsets against the rate they belong to', () => {
+      expect(fieldsOf(SECONDS, 'Input')['As frame offsets']).toBe('1, 2, 4, 8 at 5 s/frame')
+    })
+
+    it('states the ceiling, so the refusal is readable before the run rather than at it', () => {
+      expect(fieldsOf(SECONDS, 'Input').Needs).toBe('5 s/frame or finer')
+    })
+
+    // The visible evidence that a mixed-rate set was pooled on one TIMESCALE and not one frame
+    // count. Only when they differ: identical lists repeated per uID is noise.
+    it('shows the per-movie offsets only when the movies disagree', () => {
+      expect(fieldsOf(SECONDS, 'Input')['Per movie']).toBeUndefined()
+      expect(fieldsOf({ ...SECONDS, temporalScalesPerMovie: { a: [1, 2, 4, 8], b: [3, 6, 12, 24] } },
+                      'Input')['Per movie'])
+        .toBe('a: [1, 2, 4, 8]  b: [3, 6, 12, 24]')
+    })
+
+    // Every model in a vault today has none of these keys and its dialog must look as it did.
+    it('says nothing extra for a model that predates the mode', () => {
+      expect(Object.keys(fieldsOf({ temporalScales: [1, 2], cumulativeWindow: 5 }, 'Input')))
+        .toEqual(['Temporal scales', 'Cumulative window'])
+    })
+  })
+
 })

@@ -349,23 +349,37 @@ What normalisation cannot touch, and therefore what actually fails to transfer:
 So "physical units" means **choosing the feature geometry in physical units**, in two independent
 pieces:
 
-- **Temporal — cheap and unambiguous. The INFERENCE half is built (2026-08-21).** Declare the scales
-  in SECONDS and resolve them per movie to frame offsets (`round(seconds / frameInterval)`), at
-  training and at inference, recording the seconds in the manifest. A recipient's movie then adapts
-  itself instead of the recipient matching a frame count. Coarser-than-declared data cannot be fixed
-  (you cannot interpolate frames you did not acquire), so a model would also declare a maximum usable
-  frame interval.
+- **Temporal — DONE, both halves (inference 2026-08-21, training 2026-08-24).** Declare the scales in
+  SECONDS and resolve them per movie to frame offsets, at training and at inference, recording the
+  seconds in the manifest. A recipient's movie adapts itself instead of the recipient matching a frame
+  count. Coarser-than-declared data cannot be fixed (you cannot interpolate frames you did not
+  acquire), so a model declares a maximum usable frame interval.
 
-  What exists now: `segment.coastal`'s **Temporal scale** param, `frames` (default, unchanged
-  behaviour) or `seconds`, which derives the durations from the manifest's own `physicalScales × the
-  trained frame offsets` and re-resolves them for the target movie. **No retraining, no manifest
-  change, no model invalidated** — the durations are recoverable from what P0 already records, so this
-  did not have to wait behind the training-side change. A rate mismatch is warned about in BOTH modes,
-  which was the actual gap: nothing told you the model was fitted at another frame rate.
+  `segment.coastal`'s **Temporal scale** (`frames` default / `seconds`) plus `opticalFlow.train`'s own,
+  where `seconds` takes the spans and resolves each training movie onto its own offsets. Full account
+  in `docs/SEGMENTATION.md` → *Temporal scale*; the three things worth carrying back here:
 
-  Still to do on this axis, and it does need the retrain: declaring the seconds **primarily** (so a
-  model has no frame offsets at all), and the *maximum usable frame interval* — the current code
-  clamps a too-short duration to 1 frame and says so, where a declared ceiling would refuse.
+  **It did not need the retrain, and the reason is the design that made it cheap.** A seconds model
+  still records ordinary frame offsets in `temporalScales` — the spans at the FINEST training interval
+  — plus `temporalReferenceInterval` saying which rate they belong to. So it IS a frames model with a
+  statement attached, every path that predates the mode reads it unchanged, and no model in any vault
+  is invalidated. "Declaring the seconds primarily, so a model has no frame offsets at all" was the
+  wrong target: the offsets are what the channels are NAMED after, and removing them would have forced
+  a second manifest shape on every reader for no gain.
+
+  **The inference-only half shipped broken, and the bug was in the layer this plan did not name.**
+  Coastal names its per-scale planes `mag_{offset}` and stacks the metric dict by `sorted(keys)` — a
+  string sort. So `[1,2,4,8]` resolved to `[2,4,8,16]` fed `mag_16` into the channel the model reads
+  as `mag_1`, at the right channel count and therefore silently. Every ratio ≥ 2 was affected, i.e.
+  the common case. Fixed by renaming the resolved planes onto the trained names by position
+  (`mag_rename`), which is now also what lets a mixed-rate training set pool at all. The lesson for
+  the spatial half below: the arithmetic was never the risk, the CHANNEL IDENTITY was.
+
+  **Collapse and clamp are refusals, not notes.** The old code deduped a collapsed scale set and
+  reported it; that shifts every channel after the mag block and zero-fills the tail. Both now raise,
+  naming `maxFrameInterval` — the shortest span and the smallest gap between two spans, whichever is
+  smaller. A training movie that trips either is skipped with a warning rather than clamped onto its
+  closest frames (Dominik, 2026-08-24).
 - **Spatial — a choice between two known approaches.** Either resample XY to a canonical µm/px
   (exactly what cellpose 1–3 did with diameter → 30 px, and what v4 gave up), or train across scales
   by resampling as augmentation and let the net absorb it. The first is predictable and costs a
@@ -378,10 +392,10 @@ get multi-scale training data today is to synthesise it by resampling — which 
 P0.5 needs. One implementation, two uses, and P0.5 is what says whether the spatial half needs
 canonicalising at all.
 
-**Consequences to accept before starting.** This is a change to coastal's training *and* inference, in
-the same code `perf/coastal-speed` is optimising, and it invalidates every model in the vault (they
-were fitted to frame offsets and pixel sizes). So the order is: flowperf lands → this is decided →
-one retrain, in physical units. Which is also why not retraining now is right.
+**Consequences to accept before starting.** Written of both halves together, and the temporal one
+turned out cheaper than this: it invalidated nothing, because a seconds model still carries frame
+offsets (above). What remains true is the SPATIAL half — resampling XY changes what every pixel-valued
+knob means, so that one does invalidate the vault and still sequences behind flowperf.
 
 ### The half that is an experiment — and it needs no retraining
 

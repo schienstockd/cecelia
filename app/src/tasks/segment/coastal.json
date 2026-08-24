@@ -282,11 +282,11 @@
       "tip": "Match durations when this movie's frame rate differs from the model's",
       "options": [
         {
-          "label": "As trained (frames)",
+          "label": "As trained",
           "value": "frames"
         },
         {
-          "label": "Match durations (seconds)",
+          "label": "Match durations",
           "value": "seconds"
         }
       ]
