@@ -224,11 +224,13 @@ const frame = usePlotResize(canvas, () => {
   // The overlay slice for the frame ACTUALLY on screen, not the one asked for — same rule as the
   // timestamp. A range of `null` means nothing is drawn at this timepoint, which is not an error.
   const range = shownT.value >= 0 ? timepointRange(points, shownT.value) : null
+  // The planes actually LOADED: one in the 2D view, the crop range in 3D. Not "-1 for 3D" — a view
+  // cropped to eight planes would then draw the whole stack's cells against a box holding eight.
+  const [pLo, pHi] = mode.value === 'plane'
+    ? [zPlane.value, zPlane.value]
+    : [zRange.value[0], zRange.value[1]]
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
-                   settings.viewerPointSize,
-                   // The 2D view shows one plane, so it must show only the points ON it; the 3D view
-                   // projects the whole loaded slab and shows all of them.
-                   mode.value === 'plane' ? zPlane.value : -1)
+                   settings.viewerPointSize, pLo, pHi)
   // A tail of N frames ENDING at the frame on screen. Contiguous in the segment buffer by construction,
   // so this is two array reads rather than a per-frame filter.
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0

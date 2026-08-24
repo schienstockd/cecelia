@@ -393,12 +393,12 @@ try {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST})
       device.queue.writeBuffer(ibuf, 0, inst)
 
-      async function pointAt(yaw, pitch, ortho, planeFilter) {
+      async function pointAt(yaw, pitch, ortho, planeLo, planeHi) {
         u[0] = yaw; u[1] = pitch; u[2] = N * 1.7; u[3] = 1
         u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = ortho ? 1 : 0
         u[8] = N; u[9] = N; u[10] = N; u[11] = 0
         u[12] = N; u[13] = N; u[14] = N; u[15] = N
-        u[16] = 12; u[17] = planeFilter
+        u[16] = 12; u[17] = planeLo; u[19] = planeHi === undefined ? planeLo : planeHi
         for (let c = 0; c < MAX_CHANNELS; c++) { const o = CH0 + c*4; u[o+2] = 0 }  // volume off
         device.queue.writeBuffer(ubuf, 0, u)
         const enc = device.createCommandEncoder()
@@ -428,7 +428,7 @@ try {
       const aspect = cv.width / cv.height
       for (const cse of [{yaw: 0, pitch: 0, ortho: true, name: '2D face-on, orthographic'},
                          {yaw: 0.7, pitch: 0.35, ortho: false, name: '3D rotated, perspective'}]) {
-        const got = await pointAt(cse.yaw, cse.pitch, cse.ortho, -1)
+        const got = await pointAt(cse.yaw, cse.pitch, cse.ortho, -1, -1)
         const ndc = projectJS([0, 0, 0], cse.yaw, cse.pitch, N*1.7, aspect, cse.ortho)  // box centre
         const ex = Math.round((ndc[0]*0.5 + 0.5) * cv.width)
         const ey = Math.round((1 - (ndc[1]*0.5 + 0.5)) * cv.height)
@@ -441,13 +441,18 @@ try {
                                          : 'NOTHING DREW'), okp ? 'ok' : 'bad')
       }
 
-      // the plane filter must remove the point entirely, not merely dim it
-      const onPlane = await pointAt(0, 0, true, 0)
-      const offPlane = await pointAt(0, 0, true, 3)
-      const filtered = onPlane.best > 100 && offPlane.best < 20
+      // the plane filter must remove the point entirely, not merely dim it — and a RANGE has to keep a
+      // point inside it, which is what a cropped 3D view needs
+      const onPlane = await pointAt(0, 0, true, 0, 0)
+      const offPlane = await pointAt(0, 0, true, 3, 3)
+      const inRange = await pointAt(0, 0, true, 0, 5)
+      const outRange = await pointAt(0, 0, true, 2, 5)
+      const filtered = onPlane.best > 100 && offPlane.best < 20 &&
+                       inRange.best > 100 && outRange.best < 20
       if (!filtered) bad++
-      say('overlay plane filter → on-plane ' + onPlane.best + ', off-plane ' + offPlane.best + '  ' +
-          (filtered ? 'OK' : 'NOT FILTERED — the 2D view would show every plane at once'),
+      say('overlay plane filter → on ' + onPlane.best + ', off ' + offPlane.best +
+          ', in-range ' + inRange.best + ', out-of-range ' + outRange.best + '  ' +
+          (filtered ? 'OK' : 'NOT FILTERED — a cropped view would show the whole stack at once'),
           filtered ? 'ok' : 'bad')
     }
   }

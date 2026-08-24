@@ -52,7 +52,7 @@ struct P {
   vp:   vec4<f32>,                       // channel count, canvas w, canvas h, orthographic
   ext:  vec4<f32>,                       // physical extent x, y, z; w = z origin of the loaded slab (µm)
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
-  ov:   vec4<f32>,                       // overlays: point size (px), plane filter (-1 = none), tail width, unused
+  ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;
@@ -226,8 +226,11 @@ struct POut {
   let corner = q[vi];
   o.local = corner;
 
-  // Off the plane on screen → a degenerate quad. -1 means "no filter" (the 3D view sees every plane).
-  if (p.ov.y >= 0.0 && abs(plane - p.ov.y) > 0.5) {
+  // Outside the planes actually LOADED → a degenerate quad. A range, not one plane, because the 3D view
+  // can be cropped to part of the stack: filtering on a single plane there would draw the whole stack's
+  // cells against a box that only holds eight of its planes. The 2D view passes lo == hi. Negative lo
+  // means no filter at all.
+  if (p.ov.y >= 0.0 && (plane < p.ov.y - 0.5 || plane > p.ov.w + 0.5)) {
     o.pos = vec4(0.0, 0.0, 2.0, 1.0);     // behind the far plane: clipped, no fragments
     return o;
   }
@@ -279,8 +282,8 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
 ) -> SOut {
   var o: SOut;
   o.rgb = rgb;
-  if (p.ov.y >= 0.0 && abs(plane - p.ov.y) > 0.5) {
-    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // off-plane in the 2D view: clipped away
+  if (p.ov.y >= 0.0 && (plane < p.ov.y - 0.5 || plane > p.ov.w + 0.5)) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // outside the loaded planes: clipped away
     return o;
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);

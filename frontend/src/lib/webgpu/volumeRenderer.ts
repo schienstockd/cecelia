@@ -110,10 +110,15 @@ export interface VolumeRenderer {
   setOverlayPoints(data: Float32Array): void
   /**
    * Which slice of the instance buffer to draw, and how. `sizePx` is a SCREEN size — a cell marker is
-   * annotation, so it must stay legible zoomed out and not swallow the cell zoomed in. `planeFilter` is
-   * a z-plane index for the 2D view, or -1 to draw every plane (the 3D view).
+   * annotation, so it must stay legible zoomed out and not swallow the cell zoomed in.
+   *
+   * `planeLo`/`planeHi` are the z planes actually LOADED, inclusive: the 2D view passes the same index
+   * twice, a cropped 3D view passes its range, and `-1` draws every plane. A range rather than one
+   * index because a 3D view cropped to eight planes would otherwise draw the whole stack's cells
+   * against a box that holds eight of them.
    */
-  setOverlayDraw(first: number, count: number, sizePx: number, planeFilter: number): void
+  setOverlayDraw(first: number, count: number, sizePx: number,
+                 planeLo: number, planeHi?: number): void
   /** Replace the track-tail segment instances (`SEG_STRIDE` floats each). Same lifetime as the points:
    *  once per (image, populations), never per frame. */
   setOverlaySegments(data: Float32Array): void
@@ -468,11 +473,13 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       device.queue.writeBuffer(pointBuf, 0, data)
     },
 
-    setOverlayDraw(first: number, count: number, sizePx: number, planeFilter: number) {
+    setOverlayDraw(first: number, count: number, sizePx: number,
+                   planeLo: number, planeHi = planeLo) {
       pointFirst = Math.max(0, Math.floor(first))
       pointCount = Math.max(0, Math.floor(count))
       u[16] = Math.max(1, sizePx)
-      u[17] = planeFilter
+      u[17] = planeLo
+      u[19] = Math.max(planeLo, planeHi)
     },
 
     setOverlaySegments(data: Float32Array) {
