@@ -27,6 +27,7 @@ const NOT_IN_MENU: Record<string, string> = {
   '/settings':          'lives in the sidebar FOOTER, and must never be hideable (a profile could strand the user)',
   '/console':           'bare route, opened in its own window',
   '/tasks-window':      'bare route, the Task Manager opened in its own window',
+  '/viewer-window':     'bare route, the volume viewer opened in its own window from the viewer panel',
   '/setup':             'bare route, the first-launch wizard',
   '/custom/:category':  'parameterised — the Custom group is generated per category at runtime',
 }

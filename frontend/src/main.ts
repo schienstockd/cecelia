@@ -54,6 +54,10 @@ const router = createRouter({
     // the Task Manager in its own window — same idiom, and it carries `?project=<uid>` because a
     // popup opens with no project and this list is scoped to one (modules/TasksView.vue).
     { path: '/tasks-window', component: () => import('./modules/TasksView.vue'),          meta: { label: 'Task Manager', bare: true } },
+    // the in-browser volume viewer in its own window — the "web eye" beside napari, seeded with
+    // `?project=<uid>&image=<uid>&valueName=<vn>` because a popup opens with no project open.
+    // docs/todo/WEB_VIEWER_PLAN.md.
+    { path: '/viewer-window', component: () => import('./modules/ViewerWindow.vue'),      meta: { label: 'Viewer', bare: true } },
     // first-launch setup wizard — bare (clean welcome screen, no sidebar/header). The boot guard
     // below routes here when the backend reports setupRequired. See docs/todo/ONBOARDING_PLAN.md.
     { path: '/setup',     component: () => import('./modules/SetupModule.vue'),          meta: { label: 'Setup', bare: true } },

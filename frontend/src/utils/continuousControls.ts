@@ -162,15 +162,30 @@ export function rearmedTimers(source: string): string[] {
  *
  * A `<select>` is deliberately not matched — its DOM value only changes through a user selection,
  * which fires `change` at the same moment, so it cannot drift.
+ *
+ * **A `range` is matched too, but on a stricter shape**, added after the same bug landed on a slider. A
+ * range committed on `@change` with nothing writing the value during the drag is uncontrolled for the
+ * whole gesture — far longer than a keystroke — so any re-render in between patches the thumb back out
+ * from under the pointer. The viewer's z slider did this while playback re-rendered the panel every
+ * tick, and it reads as the control "jiggling around" rather than as a lost value.
+ *
+ * The stricter shape matters: the canonical range pattern IS `:value` + `@input` writing the value +
+ * `@change` doing the slow work (docs/UI.md → *Continuous controls*), and that is controlled on every
+ * event, so it cannot drift. `PoolThrottle` and `PopulationManager` are all of that shape. So a range is
+ * only flagged when NOTHING writes the value mid-drag: no `v-model` and no `@input`.
  */
 const DRIFT_PRONE_TYPE = /^(text|number|search|email|url|tel|password)$/
+const DRIFT_PRONE_RANGE = /^range$/
 
 export function driftingTextFields(source: string): string[] {
   return openingTags(templateBlock(source))
     .filter(t => t.startsWith('<input') || t.startsWith('<textarea'))
+    .filter(t => /\s:value="/.test(t) && /\s@change="/.test(t) && !/\sv-model/.test(t))
     .filter(t => {
       const type = attr(t, 'type') ?? 'text'          // an <input> with no type is a text field
-      return t.startsWith('<textarea') || DRIFT_PRONE_TYPE.test(type)
+      if (t.startsWith('<textarea') || DRIFT_PRONE_TYPE.test(type)) return true
+      // A range is the canonical `@input` writes / `@change` commits shape, which cannot drift. It is
+      // only at risk when nothing writes the value during the drag.
+      return DRIFT_PRONE_RANGE.test(type) && !/\s@input="/.test(t)
     })
-    .filter(t => /\s:value="/.test(t) && /\s@change="/.test(t) && !/\sv-model/.test(t))
 }

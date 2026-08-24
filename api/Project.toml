@@ -1,5 +1,7 @@
 [deps]
 Blosc = "a74b3585-a348-5f62-a45c-50e91977d574"
+ChunkCodecCore = "0b6fb165-00bc-4d37-ab8b-79f91016dbe1"
+ChunkCodecLibZstd = "55437552-ac27-4d47-9aa3-63184e8fd398"
 Cecelia = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
 FixedPointNumbers = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"

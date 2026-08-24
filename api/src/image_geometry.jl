@@ -52,8 +52,12 @@ reads as 16128, and 98% of a real frame lands above a contrast ceiling that shou
 it. There is no error — the preview just renders saturated white noise. Python is immune because numpy
 honours the `>u2` descriptor on read, which is why this only ever bit the Julia preview path.
 
-`ntoh`/`ltoh` are no-ops when the store's order already matches the host, so this is correct on a
-big-endian machine too, and a no-op for 1-byte dtypes (`|u1`).
+`ntoh`/`ltoh` are no-ops when the store's order already matches the host — but the BROADCAST is not.
+It allocates and copies the whole block to compute nothing, which measured **+65%** on an 81.5 MB
+channel read of `Dml3RG` (68 -> 112 ms) and applies to every little-endian store, i.e. every
+corrected/cropped version the writers produce (`zarr_utils.native_dtype`). So the swap is guarded by
+whether the store's order actually DIFFERS from the host's, rather than relying on the element-wise
+no-op. Still correct on a big-endian machine, and still a no-op for 1-byte dtypes (`|u1`).
 
 See `docs/NAPARI.md` → *Byte order (big-endian zarr)* for the other half of this trap (the writers
 force native order via `zarr_utils.native_dtype`, so corrected/cropped versions are little-endian).
@@ -61,10 +65,14 @@ force native order via `zarr_utils.native_dtype`, so corrected/cropped versions 
 function read_native(arr, idx...)
     blk = arr[idx...]
     order = _zarr_byte_order(arr)
-    order == '>' && return ntoh.(blk)
-    order == '<' && return ltoh.(blk)
-    blk                                          # '|' (not applicable, 1-byte) or unknown → as-is
+    order == '>' &&  HOST_IS_LITTLE_ENDIAN && return ntoh.(blk)   # big store, little host
+    order == '<' && !HOST_IS_LITTLE_ENDIAN && return ltoh.(blk)   # little store, big host
+    blk    # orders already agree, or '|' (not applicable, 1-byte), or unknown → as-is, no copy
 end
+
+"""Whether THIS machine is little-endian. The one place that fact is spelled out — a second copy is how
+the two halves of a byte-order guard drift apart."""
+const HOST_IS_LITTLE_ENDIAN = Base.ENDIAN_BOM == 0x04030201
 
 # Leading character of the numpy dtype descriptor in the array's zarr metadata: '>' big, '<' little,
 # '|' not-applicable. Zarr.jl v2 metadata keeps it as the raw string (e.g. ">u2"); anything else

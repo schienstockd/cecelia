@@ -1387,6 +1387,13 @@ end
     @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
 end
 
+# Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for
+# `arr.metadata.dtype`, which is exactly enough to assert the no-copy path by object identity.
+struct FakeZMeta; dtype::String; end
+struct FakeZArray; block::Vector{UInt16}; metadata::FakeZMeta; end
+FakeZArray(b, dt) = FakeZArray(b, FakeZMeta(dt))
+Base.getindex(a::FakeZArray, ::Colon) = a.block
+
 @testset "API: zarr byte order" begin
     # `read_native` must apply the STORED byte order. bioformats2raw writes big-endian (`>u2`) and
     # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
@@ -1427,6 +1434,20 @@ end
         end
         # `|u1` (not-applicable, 1-byte) is passed through untouched — swapping a byte is a no-op, but
         # the descriptor must not be misread as an order either.
+        # A matching order must return the block ITSELF, not a copy of it. `ltoh`/`ntoh` are no-ops
+        # element-wise, so the old guard was correct — and it still broadcast over the whole block to
+        # compute nothing, +65% on an 81.5 MB channel read (68 -> 112 ms) for every little-endian store,
+        # which is every corrected/cropped version the writers produce. Identity is the only way to
+        # assert "no copy" without measuring, so this uses a stand-in whose getindex returns a KNOWN
+        # object; on a big-endian host the same test holds with the orders swapped.
+        let block = UInt16[1, 2, 3]
+            same_order = HOST_IS_LITTLE_ENDIAN ? "<u2" : ">u2"
+            other_order = HOST_IS_LITTLE_ENDIAN ? ">u2" : "<u2"
+            @test read_native(FakeZArray(block, same_order), :) === block    # ← the no-copy contract
+            @test read_native(FakeZArray(block, other_order), :) !== block   # a real swap still copies
+            @test read_native(FakeZArray(block, "|u1"), :) === block
+        end
+
         p8 = joinpath(d, "store8")
         b = UInt8[0x00, 0x3f, 0xff]
         a8 = zcreate(UInt8, Zarr.DirectoryStore(p8), length(b); chunks = (length(b),))
@@ -4482,6 +4503,7 @@ end
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs",
         "/api/crop/frame", "/api/crop/info",
+        "/api/viewer/meta",
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -4595,7 +4617,7 @@ end
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
-    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file"]
+    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab"]
 
     # Would genuinely restart/shut down/spawn a worker if called with an empty body. Their PRESENCE is
     # still pinned by the inventory half; only the live call is skipped.
@@ -4621,7 +4643,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 82 && length(POST_ROUTES) == 117
+    @test length(GET_ROUTES) == 83 && length(POST_ROUTES) == 117
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5210,5 +5232,158 @@ end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: viewer slab (voxels the GPU can upload without a transform)" begin
+    # `read_slab` feeds a WebGPU 3D texture directly: the response body is copied to VRAM with no
+    # reshape, so its linear order MUST be x-fastest, then y, then z. Every assertion here is about a
+    # failure that is SILENT — a transposed or byte-swapped volume renders a plausible-looking image of
+    # the wrong thing, and neither the route nor the browser can tell. See docs/todo/WEB_VIEWER_PLAN.md.
+    #
+    # The pattern is `x + 10y + 100z + 1000c + 10000t`, so every axis has its own decimal digit and any
+    # swap between two of them is visible in a single voxel.
+    val(x, y, z, c, t) = UInt16(x + 10y + 100z + 1000c + 10000t)
+    axes_attr(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names])])
+
+    # Store declared (t,c,z,y,x) in C-order → Zarr.jl presents it REVERSED, so Julia dims are x,y,z,c,t.
+    function make_store(dir, c_axes, jdims, fill!)
+        g = zgroup(Zarr.DirectoryStore(dir); attrs = axes_attr(c_axes))
+        a = zcreate(UInt16, g, "0", jdims...; chunks = jdims)
+        buf = zeros(UInt16, jdims...)
+        fill!(buf)
+        a[fill(Colon(), length(jdims))...] = buf
+        dir
+    end
+
+    nt, nc, nz, ny, nx = 2, 2, 3, 4, 5
+    mktempdir() do d
+        p = make_store(joinpath(d, "std.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+
+        vol, sx, sy, sz = read_slab(p, 0, 1)          # t=0, c=1 (both 0-based)
+        @test (sx, sy, sz) == (nx, ny, nz)
+        @test vol[1, 1, 1] == val(1, 1, 1, 2, 1)
+        @test vol[nx, ny, nz] == val(nx, ny, nz, 2, 1)
+        # x and y are DIFFERENT lengths here on purpose — a square frame hides a transpose.
+        @test vol[2, 3, 1] == val(2, 3, 1, 2, 1)
+
+        # THE upload contract: the first `nx` elements of the flat body must walk x, not y or z.
+        @test vec(vol)[1:nx] == [val(x, 1, 1, 2, 1) for x in 1:nx]
+        @test vec(vol)[nx + 1] == val(1, 2, 1, 2, 1)              # then y
+        @test vec(vol)[nx * ny + 1] == val(1, 1, 2, 2, 1)         # then z
+
+        # …and the wire bytes are little-endian pairs of exactly that, nothing padded or reordered.
+        bytes = slab_bytes(vol)
+        @test length(bytes) == nx * ny * nz * 2
+        @test bytes[1] == UInt8(val(1, 1, 1, 2, 1) % 256)
+        @test bytes[2] == UInt8(val(1, 1, 1, 2, 1) ÷ 256)
+
+        # t is honoured (0-based → 1-based) rather than silently always frame 1
+        @test read_slab(p, 1, 0)[1][1, 1, 1] == val(1, 1, 1, 1, 2)
+
+        # ── One z plane (the 2D view) ───────────────────────────────────────────────────
+        # This is the view a timecourse is actually watched in, and the ONLY one that plays: on Dml3RG a
+        # plane timepoint is 8.8 MB against 326 MB, so the whole 181-frame movie is 1.59 GB and fits in
+        # VRAM. It shares `read_slab` with the volume deliberately — a scalar z drops the dim exactly as
+        # t and c do — so there is no second reader to disagree about axis order.
+        pv, px, py, pz = read_slab(p, 0, 1; z = 2)      # 0-based z → the THIRD plane
+        @test (px, py, pz) == (nx, ny, 1)               # reports depth 1, not the stack's depth
+        @test ndims(pv) == 2
+        @test pv[2, 3] == val(2, 3, 3, 2, 1)            # ← the requested plane, not plane 1
+        @test vec(pv)[1:nx] == [val(x, 1, 3, 2, 1) for x in 1:nx]   # still x-fastest on the wire
+        # z=0 is a real plane, not "no plane" — an absent z means the whole stack and the two must not
+        # collapse into each other.
+        @test read_slab(p, 0, 0; z = 0)[1][2, 3] == val(2, 3, 1, 1, 1)
+        @test size(read_slab(p, 0, 0)[1], 3) == nz      # z omitted → the whole stack
+        # Out of range is clamped to a real plane rather than throwing: the slider's bound and the
+        # store's depth can disagree for a moment after a version switch.
+        @test read_slab(p, 0, 0; z = 999)[1][2, 3] == val(2, 3, nz, 1, 1)
+        @test read_slab(p, 0, 0; z = -5)[1][2, 3] == val(2, 3, 1, 1, 1)
+    end
+
+    # A store whose axes are NOT (t,c,z,y,x) must be PERMUTED to (x,y,z), not passed through. This is
+    # the whole reason the permute is written out instead of relying on the usual layout: pass-through
+    # would put z where x belongs and still render.
+    mktempdir() do d
+        # C-order (t,c,y,x,z) → Julia dims are z,x,y,c,t
+        p = make_store(joinpath(d, "odd.ome.zarr"), ["t", "c", "y", "x", "z"],
+                       (nz, nx, ny, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, y in 1:ny, x in 1:nx, z in 1:nz
+                           b[z, x, y, c, t] = val(x, y, z, c, t)
+                       end)
+        vol, sx, sy, sz = read_slab(p, 0, 0)
+        @test (sx, sy, sz) == (nx, ny, nz)             # reported as x,y,z whatever the store's order
+        @test vol[2, 3, 1] == val(2, 3, 1, 1, 1)       # …and the voxels actually moved
+        @test vec(vol)[1:nx] == [val(x, 1, 1, 1, 1) for x in 1:nx]
+    end
+
+    # Degenerate ranks: a 2D still and a single-channel stack answer the same shape of question, with
+    # the missing axes counting as 1 — not an error, and not a silently dropped dimension.
+    mktempdir() do d
+        p2 = make_store(joinpath(d, "flat2d.ome.zarr"), ["y", "x"], (nx, ny),
+                        b -> for y in 1:ny, x in 1:nx; b[x, y] = val(x, y, 1, 1, 1) end)
+        vol, sx, sy, sz = read_slab(p2, 0, 0)
+        @test (sx, sy, sz) == (nx, ny, 1)
+        @test vol[2, 3] == val(2, 3, 1, 1, 1)
+        # an image with no z axis: asking for a plane is a no-op, not an error
+        @test read_slab(p2, 0, 0; z = 3)[1][2, 3] == val(2, 3, 1, 1, 1)
+
+        p3 = make_store(joinpath(d, "zyx.ome.zarr"), ["z", "y", "x"], (nx, ny, nz),
+                        b -> for z in 1:nz, y in 1:ny, x in 1:nx; b[x, y, z] = val(x, y, z, 1, 1) end)
+        @test read_slab(p3, 0, 0)[2:4] == (nx, ny, nz)
+    end
+
+    # Big-endian: a raw bioformats2raw store is `>u2` and Zarr.jl hands the bytes back UNSWAPPED, so a
+    # slab read with plain `arr[...]` is garbage that renders as saturated noise. `read_slab` must go
+    # through `read_native`. Same stamp trick as the byte-order testset above.
+    mktempdir() do d
+        p = make_store(joinpath(d, "be.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+        za = JSON3.read(read(joinpath(p, "0", ".zarray"), String), Dict{String,Any})
+        za["dtype"] = ">u2"
+        write(joinpath(p, "0", ".zarray"), JSON3.write(za))
+        got = read_slab(p, 0, 0)[1]
+        @test got[1, 1, 1] == ntoh(val(1, 1, 1, 1, 1))
+        @test got[1, 1, 1] != val(1, 1, 1, 1, 1)       # ← fails if read_native was bypassed
+    end
+
+    # Cold-start contrast: one spec per channel, sampled from a FIXED (t, z) so playback cannot flicker
+    # as the window chases each frame's own distribution (WEB_VIEWER_PLAN.md decision 5).
+    mktempdir() do d
+        p = make_store(joinpath(d, "c.ome.zarr"), ["t", "c", "z", "y", "x"],
+                       (nx, ny, nz, nc, nt),
+                       b -> for t in 1:nt, c in 1:nc, z in 1:nz, y in 1:ny, x in 1:nx
+                           b[x, y, z, c, t] = val(x, y, z, c, t)
+                       end)
+        specs = _sampled_specs(p, nc)
+        @test length(specs) == nc
+        @test all(s -> s[2] >= s[1], specs)
+        @test _sampled_specs(p, nc) == specs           # same (t, z) every time, so stable
+    end
+
+    # `resolved_display_specs` is the ONE place a colormap name becomes RGB — the browser must not
+    # re-derive napari's palette (a name table missing `bop blue` rendered a channel WHITE).
+    mktempdir() do d
+        pj = joinpath(d, "props.json")
+        write(pj, JSON3.write((; Image = [
+            (; contrast_limits = [0.0, 10.0], colormap = "bop blue", visible = true),
+            (; contrast_limits = [1.0, 5.0], colormap = "green", visible = false),
+        ])))
+        r = resolved_display_specs(pj, 2)
+        @test length(r) == 2
+        @test r[1].lo == 0.0 && r[1].hi == 10.0 && r[1].visible
+        @test r[1].lut[end] == (0.12549f0, 0.678431f0, 0.972549f0)   # resolved, not the string
+        @test r[2].lut[end] == (0f0, 1f0, 0f0) && r[2].visible == false
+        # Props describing FEWER channels than the store has → `nothing`, so the route falls back to
+        # sampling instead of indexing off the end or shifting every channel's colour by one.
+        @test resolved_display_specs(pj, 3) === nothing
+        @test resolved_display_specs(joinpath(d, "absent.json"), 1) === nothing
     end
 end

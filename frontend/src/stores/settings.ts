@@ -92,6 +92,25 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariDiscreteGpu') === 'true'  // default false
   )
 
+  // Browser volume viewer (/viewer-window) — the two options that are the WINDOW's, not the image's.
+  // Per-channel contrast deliberately is not here: the server answers it (napari's saved props, or a
+  // percentile sample), so a local copy would be a second source of truth. See ViewerWindow.vue.
+  // `viewerSteps` is ray steps per pixel — 256 measured 5.3 ms/frame on real data at 1566x1003.
+  // `viewerCompress` asks the slab route for zstd: ~28x smaller on real data for ~60 ms of server CPU,
+  // so it is a clear win over a network and a small loss on this machine (docs/todo/WEB_VIEWER_PLAN.md).
+  const viewerSteps = ref(Number(localStorage.getItem('cc.viewerSteps') ?? '256') || 256)
+  const viewerCompress = ref(localStorage.getItem('cc.viewerCompress') === 'true')   // default false
+  const viewerFps = ref(Number(localStorage.getItem('cc.viewerFps') ?? '10') || 10)
+  const viewerLoop = ref(localStorage.getItem('cc.viewerLoop') !== 'false')          // default true
+  // How many timepoints to keep instant — NOT a byte budget. It used to be megabytes of VRAM, which is
+  // a question nobody can answer: WebGPU exposes no free-VRAM figure, so neither the user nor the app
+  // can compute a safe number, and setting it too high LOST THE GPU DEVICE (unrecoverable — the viewer
+  // can only offer a reload). Timepoints is the outcome the user actually wants ("how much of my movie
+  // is instant"), and it is a request rather than a promise: the viewer clamps it to `SAFE_CACHE_BYTES`,
+  // which is the safety net, since a timepoint is 8.8 MB as a plane and 326 MB as a volume and no count
+  // can be safe in both. 0 = as much of the movie as fits.
+  const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
+
   // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted
   // globally (not per-set): they're a viewing preference, not a project attribute, and the player is a
   // project-agnostic page.
@@ -388,6 +407,11 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
+  watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
+  watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
+  watch(viewerFps,                v => localStorage.setItem('cc.viewerFps',                String(v)))
+  watch(viewerLoop,               v => localStorage.setItem('cc.viewerLoop',               String(v)))
+  watch(viewerCacheFrames,        v => localStorage.setItem('cc.viewerCacheFrames',        String(v)))
   watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
   watch(moviesZoom,               v => localStorage.setItem('cc.moviesZoom',               String(v)))
   watch(moviesAutoplay,           v => localStorage.setItem('cc.moviesAutoplay',           String(v)))
@@ -409,7 +433,7 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

@@ -31,6 +31,7 @@ include("optical_flow_api.jl")
 include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("crop_api.jl")       # routes only; builds on both
+include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
@@ -226,6 +227,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
     "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
     "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
+    "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
@@ -585,6 +587,8 @@ function handle_stream(stream::HTTP.Stream)
             try_serve_board_asset(stream, req.target) && return   # else falls through → 404 below
         elseif spath == "/api/movies/file"
             try_serve_movie(stream, req.target) && return         # range-served mp4; else → 404 below
+        elseif spath == "/api/viewer/slab"
+            try_serve_slab(stream, req.target) && return          # raw voxels + Content-Encoding
         elseif !startswith(spath, "/api/") && spath != "/ws"
             try_serve_static(stream, spath) && return
         end
