@@ -34,33 +34,56 @@ STATE = {}
 
 
 def build():
+    """One entry per image uid. Multiple images so a phantom-vs-real comparison can hold DIMENSIONS
+    fixed and vary only the data - fXgbTl (small, whole-plane chunks) and VJy1Nx (the real target)."""
     repo = os.environ.get('CCIA_REPO') or os.getcwd()
     sys.path.insert(0, os.path.join(repo, 'python'))
     import numcodecs
     a = STATE['args']
-    zpath = os.path.join(os.path.expanduser(a.projects_dir), a.project, '0', a.uid, a.version)
-    lvl = os.path.join(zpath, '0')
-    meta = json.load(open(os.path.join(lvl, '.zarray'), encoding='utf-8'))
-    nt, nc, nz, ny, nx = meta['shape']
-    cy_n, cx_n = meta['chunks'][3], meta['chunks'][4]
-    STATE.update(zpath=zpath, lvl=lvl, meta=meta, nt=nt, nc=nc, nz=nz, ny=ny, nx=nx,
-                 cy=int(np.ceil(ny / cy_n)), cx=int(np.ceil(nx / cx_n)), cy_n=cy_n, cx_n=cx_n,
-                 codec=numcodecs.get_codec(meta['compressor']),
-                 zstd=numcodecs.Zstd(level=1))
-    print('serving %s  shape=%s chunks=%s' % (zpath, meta['shape'], meta['chunks']), flush=True)
+    STATE['imgs'] = {}
+    STATE['zstd'] = numcodecs.Zstd(level=1)
+    for uid in [u.strip() for u in a.uids.split(',') if u.strip()]:
+        zpath = os.path.join(os.path.expanduser(a.projects_dir), a.project, '0', uid, a.version)
+        lvl = os.path.join(zpath, '0')
+        if not os.path.isdir(lvl):
+            print('SKIP %s (no %s)' % (uid, lvl), flush=True)
+            continue
+        meta = json.load(open(os.path.join(lvl, '.zarray'), encoding='utf-8'))
+        nt, nc, nz, ny, nx = meta['shape']
+        cy_n, cx_n = meta['chunks'][3], meta['chunks'][4]
+        STATE['imgs'][uid] = dict(
+            uid=uid, zpath=zpath, lvl=lvl, meta=meta, nt=nt, nc=nc, nz=nz, ny=ny, nx=nx,
+            cy=int(np.ceil(ny / cy_n)), cx=int(np.ceil(nx / cx_n)), cy_n=cy_n, cx_n=cx_n,
+            codec=numcodecs.get_codec(meta['compressor']),
+            # The two on-disk layouts are BOTH in use in the same project: VJy1Nx is flat
+            # ('.', one file per chunk) and fXgbTl is nested ('/', a directory tree). Hardcoding
+            # the flat form made every fXgbTl chunk look absent, so read_slab returned zeros and
+            # the render would have been silently black. Read it, never assume it.
+            sep=meta.get('dimension_separator', '.'))
+        print('serving %s  shape=%s chunks=%s' % (uid, meta['shape'], meta['chunks']), flush=True)
+    if not STATE['imgs']:
+        raise SystemExit('no images found')
 
 
-def chunk_keys(t, c):
-    return [(z, iy, ix) for z in range(STATE['nz'])
-            for iy in range(STATE['cy']) for ix in range(STATE['cx'])]
+def img_of(q):
+    uids = list(STATE['imgs'])
+    return STATE['imgs'][q.get('uid', [uids[0]])[0]]
 
 
-def read_slab(t, c):
+def chunk_keys(s):
+    return [(z, iy, ix) for z in range(s['nz'])
+            for iy in range(s['cy']) for ix in range(s['cx'])]
+
+
+def chunk_path(s, t, c, z, iy, ix):
+    return os.path.join(s['lvl'], s['sep'].join(str(v) for v in (t, c, z, iy, ix)))
+
+
+def read_slab(s, t, c):
     """One channel's whole (z,y,x) volume as a contiguous uint16 array."""
-    s = STATE
     out = np.zeros((s['nz'], s['ny'], s['nx']), dtype=np.uint16)
-    for z, iy, ix in chunk_keys(t, c):
-        k = os.path.join(s['lvl'], '%d.%d.%d.%d.%d' % (t, c, z, iy, ix))
+    for z, iy, ix in chunk_keys(s):
+        k = chunk_path(s, t, c, z, iy, ix)
         y0, x0 = iy * s['cy_n'], ix * s['cx_n']
         y1, x1 = min(y0 + s['cy_n'], s['ny']), min(x0 + s['cx_n'], s['nx'])
         if not os.path.exists(k):
@@ -69,6 +92,20 @@ def read_slab(t, c):
                             dtype=np.uint16).reshape(s['cy_n'], s['cx_n'])
         out[z, y0:y1, x0:x1] = buf[:y1 - y0, :x1 - x0]
     return out
+
+
+def read_scale(s):
+    """NGFF per-axis scale (t,c,z,y,x) from the multiscales .zattrs, so the browser gets the real
+    voxel anisotropy instead of hardcoding it."""
+    try:
+        za = json.load(open(os.path.join(s['zpath'], '.zattrs'), encoding='utf-8'))
+        ds = za['multiscales'][0]['datasets'][0]
+        for ct in ds.get('coordinateTransformations', []):
+            if ct.get('type') == 'scale':
+                return ct['scale']
+    except Exception:
+        pass
+    return None
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -96,28 +133,45 @@ class H(http.server.BaseHTTPRequestHandler):
         s = STATE
         try:
             if u.path in ('/', '/index.html'):
+                body = open(os.path.join(HERE, 'real_volume.html'), 'rb').read()
+                return self._send(200, body, 'text/html; charset=utf-8')
+
+            if u.path == '/timecourse':
+                body = open(os.path.join(HERE, 'timecourse.html'), 'rb').read()
+                return self._send(200, body, 'text/html; charset=utf-8')
+
+            if u.path == '/chunk_bench':
                 body = open(os.path.join(HERE, 'chunk_bench.html'), 'rb').read()
                 return self._send(200, body, 'text/html; charset=utf-8')
 
+            if u.path == '/images':
+                return self._send(200, json.dumps(sorted(STATE['imgs'])).encode(), 'application/json')
+
             if u.path == '/meta':
-                keys = [k for k in chunk_keys(0, 0)]
-                present = sum(
-                    1 for c in range(s['nc']) for (z, iy, ix) in keys
-                    if os.path.exists(os.path.join(s['lvl'], '%d.%d.%d.%d.%d' % (0, c, z, iy, ix))))
+                s = img_of(q)
+                keys = chunk_keys(s)
+                present = sum(1 for c in range(s['nc']) for (z, iy, ix) in keys
+                              if os.path.exists(chunk_path(s, 0, c, z, iy, ix)))
                 body = json.dumps({
+                    'uid': s['uid'],
                     'shape': s['meta']['shape'], 'chunks': s['meta']['chunks'],
                     'compressor': s['meta']['compressor'], 'nz': s['nz'], 'ny': s['ny'],
                     'nx': s['nx'], 'nc': s['nc'], 'nt': s['nt'], 'cy': s['cy'], 'cx': s['cx'],
                     'chunks_per_timepoint_nominal': s['nz'] * s['cy'] * s['cx'] * s['nc'],
                     'chunks_per_timepoint_present': present,
+                    'dimension_separator': s['sep'],
                     'bytes_per_channel_uncompressed': s['nz'] * s['ny'] * s['nx'] * 2,
+                    'scale_um': read_scale(s),
                 }).encode()
                 return self._send(200, body, 'application/json',
                                   {'X-Server-Ms': round(1000 * (time.perf_counter() - t0), 1)})
 
             if u.path.startswith('/raw/'):
-                key = u.path[5:]
-                p = os.path.join(s['lvl'], key)
+                # URLs always use dots; the store's own separator is applied here, so a client
+                # never has to know which layout it is talking to.
+                s = img_of(q)
+                idx = u.path[5:].split('?')[0].split('.')
+                p = os.path.join(s['lvl'], s['sep'].join(idx))
                 if not os.path.exists(p):
                     return self._send(204, b'', 'application/octet-stream')   # sparse: absent chunk
                 body = open(p, 'rb').read()
@@ -125,15 +179,16 @@ class H(http.server.BaseHTTPRequestHandler):
                                   {'X-Server-Ms': round(1000 * (time.perf_counter() - t0), 2)})
 
             if u.path == '/slab':
+                s = img_of(q)
                 t = int(q.get('t', ['0'])[0]); c = int(q.get('c', ['0'])[0])
-                arr = read_slab(t, c)
+                arr = read_slab(s, t, c)
                 raw = arr.tobytes()
                 srv_read = round(1000 * (time.perf_counter() - t0), 1)
                 acc = self.headers.get('Accept-Encoding', '')
                 enc = None
                 if 'zstd' in acc:
                     t1 = time.perf_counter()
-                    raw = s['zstd'].encode(raw)
+                    raw = STATE['zstd'].encode(raw)
                     enc = 'zstd'
                     comp = round(1000 * (time.perf_counter() - t1), 1)
                 else:
@@ -156,7 +211,7 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--project', default='zolIMa')
-    ap.add_argument('--uid', default='VJy1Nx')
+    ap.add_argument('--uids', default='fXgbTl,VJy1Nx')
     ap.add_argument('--version', default='ccidSmoothed.ome.zarr')
     ap.add_argument('--projects-dir', default='~/cecelia-feijoa/projects')
     ap.add_argument('--port', type=int, default=7788)

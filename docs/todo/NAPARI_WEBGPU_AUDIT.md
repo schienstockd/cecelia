@@ -507,9 +507,8 @@ fairer *renderer-to-renderer* comparison, and B wins that one too.
 
 ### Three caveats, none of which changes the verdict
 
-1. **The phantom is smooth, so texture-cache locality is optimistic.** Real data with fine structure
-   would have worse hit rates. MIP has no early termination, so the *sample count* is identical — it
-   is purely a cache-behaviour question, and it is testable once G3 delivers real chunks.
+1. ~~**The phantom is smooth, so texture-cache locality is optimistic.**~~ **CLOSED, 2026-08-24**
+   — see *Real data closes G2's last caveat* below. Real voxels cost the same as the phantom.
 2. **Rays that miss the slab do zero work.** The volume is a 4.8:1 plate (366 x 347 x 76 µm) and
    fills roughly 70% of the frame, so ~30% of pixels are free. That is true of any renderer drawing
    this data, napari included, but it means `Gsample/s` figures in the raw JSON are upper bounds.
@@ -517,6 +516,43 @@ fairer *renderer-to-renderer* comparison, and B wins that one too.
    measurement already puts that at ~1.2 s server-side today — three orders of magnitude above the
    frame cost. The renderer was never going to be the problem; the audit now has the number to prove
    it rather than assert it.
+
+## Real data closes G2's last caveat
+
+Harness: `docs/todo/spike/webgpu/real_volume.html` + `chunk_server.py`. Raw: `g2_real_volume.json`.
+The **real** `VJy1Nx/ccidSmoothed` timepoint 9 — fetched, contrast-windowed and uploaded — rendered
+against a phantom at **identical dimensions**, so the only variable is the data.
+
+| steps | real ms | phantom ms | ratio |
+|---|---|---|---|
+| 64 | 2.24 | 2.35 | 0.95 |
+| 128 | 3.51 | 3.37 | 1.04 |
+| **256** | **5.34** | 5.43 | 0.98 |
+| 512 | 9.80 | 9.85 | 0.99 |
+
+**Real data is not slower.** The ratio sits between 0.95 and 1.04 at every step count, so the
+cache-locality worry was unfounded and G2's 5.84 ms stands as a real-data figure.
+
+It is a hostile test rather than a flattering one: this data is **almost entirely zeros**. The
+per-channel 99.9th percentiles are `[12, 46, 138, 54]` out of 65535. The shader's contrast window
+does all the visible work — without percentile windowing (the convention `image_render.jl`'s
+`percentile_spec` already uses) the frame renders black. Anything rendering these stores has to
+compute it; napari does the equivalent in `set_contrast_from_sample`.
+
+Time to first volume, same run: fetch **640 ms** (328 ms of it the Python server's read), contrast
+**36 ms**, GPU upload **535 ms** — ~1.2 s total, consistent with G3's 1123 ms from a separate harness.
+
+Two on-disk facts found while wiring this up, both worth knowing beyond this audit:
+
+- **Both chunk-key layouts are live in the same project.** `VJy1Nx` is flat (`.`), `fXgbTl` is nested
+  (`/`). Hardcoding flat made every `fXgbTl` chunk look absent, so the slab came back all zeros —
+  which would have rendered **black with no error**. Read `dimension_separator`, never assume it.
+  Moot for new data: `config.jl:897-901` offers only `nested` and `v3` (also nested), so flat is
+  legacy that `zarr_utils.py:146` keeps readable (Dominik, 2026-08-24).
+- **`fXgbTl`'s whole-plane chunks are a consequence of its size, not a format choice.** The writer
+  asked for 512x512 tiles and the image is 420x441, so one tile covers the plane. Large images still
+  land on 3x3 tiles per plane, so per-plane chunking for big stores is a `chunkSizeY`/`chunkSizeX`
+  change in the writers, independent of the separator.
 
 ## G3 — chunk delivery: **one design dies, the other reaches parity with the incumbent**
 
@@ -581,6 +617,73 @@ A correction to my own instrumentation: the page reports `arrayBuffer().byteLeng
    tens, and cecelia already owns that decision surface (`store_layout` / `store_compressor`,
    `app/src/config.jl`). The prior assessment flagged the same lever for archive/transfer; this
    measurement extends it to the viewer.
+
+## G4 — the timecourse slider, and where the cold path actually goes
+
+Harnesses: `docs/todo/spike/webgpu/timecourse.html`, `upload_bench.html`. Raw:
+`g4_timecourse.json`, `g4_upload_bench.json`.
+
+### The slider works, and caching is the whole trick
+
+`fXgbTl` (31 t x 4 c, 47.4 MB/timepoint) with a 3 GB VRAM budget holds **all 31 timepoints**:
+
+| | |
+|---|---|
+| whole movie into VRAM | **5.5 s** for 1.47 GB |
+| scrubbing afterwards | **sub-millisecond per frame** — 186 cache hits, 1 miss |
+| cold load, median | fetch **86 ms** · upload **148 ms** (server read 27 ms) |
+
+Once resident, the slider is limited by `requestAnimationFrame`, not by us. So the design that makes
+a browser timecourse usable is not clever rendering — it is an **LRU texture cache under a byte
+budget, with directional prefetch and cancellation**, which the prototype implements. At 4 channels
+`VJy1Nx` is 351 MB/timepoint, so a 3 GB budget holds ~8 of 181 and the misses are felt; at 1 channel
+four times as many fit. **Channel count is the practical VRAM lever.**
+
+Two design points the prototype had to get right, both of which the real viewer will need:
+
+- **Contrast is computed once and held.** Recomputing percentiles per timepoint makes playback
+  flicker as the window tracks each frame's own distribution. napari fixes it per layer for the same
+  reason (`set_contrast_from_sample`).
+- **Coalesce at two levels.** Paint through `requestAnimationFrame` (a dragged slider fires per
+  pixel), and carry a sequence token so fetches for timepoints already scrolled past are
+  `AbortController`-cancelled rather than queued. This is the same rule `frontend/CLAUDE.md` states
+  for continuous controls, and it is load-bearing here rather than cosmetic.
+
+### Upload: a hypothesis raised and REFUTED
+
+The cold path is upload-dominated (148 ms vs 86 ms on `fXgbTl`; 535 ms vs 640 ms on `VJy1Nx`), and
+cost tracked **rows** rather than bytes across the two images — time 3.61x where rows were 2.96x and
+bytes 7.41x. That suggested `queue.writeTexture` was repacking every row because `bytesPerRow` is not
+a multiple of 256 (1104x2 = 2208; 441x2 = 882).
+
+**Wrong.** Padding rows to a 256-byte pitch changes nothing:
+
+| config | 256-aligned | writeTexture tight | writeTexture padded | buffer + copy | copy only |
+|---|---|---|---|---|---|
+| 441x1046x38 (35 MB) | no | 99 ms | 100 ms | 100 ms | 100 ms |
+| 1104x1046x38 (88 MB) | no | 209 ms | 212 ms | 219 ms | 100 ms |
+| 1152x1046x38 (92 MB) | **yes** | 214 ms | 214 ms | 213 ms | 100 ms |
+| 2048x1046x38 (163 MB) | **yes** | 301 ms | 299 ms | 301 ms | 100 ms |
+| 1152x1046x36 (87 MB) | **yes** | 208 ms | 208 ms | 206 ms | 100 ms |
+
+Aligned 1152 costs the same as unaligned 1104. The hypothesis is dead.
+
+**What the table does show is a measurement floor.** "copy only" is **exactly 100.0 ms for every
+size** — 35 MB through 163 MB. That is not a copy time; it is `onSubmittedWorkDone()` resolving on a
+~100 ms boundary, the same artefact that invalidated the first G2 attempt (`wall_ms` pinned at 100.0).
+So the GPU-side copy is faster than this timer can resolve, and all four methods carry that floor.
+Subtracting it, the marginal rate between configs is **~0.8 GB/s** (+75 MB costs +92 ms).
+
+**So the cost is neither row repacking nor the GPU copy — it is moving bytes from the JS heap into
+GPU-visible memory.** `buffer_copy` used `queue.writeBuffer`, which still performs that staging copy,
+which is exactly why it matched `writeTexture` to within noise. The untested lever is a `MAP_WRITE`
+buffer: `mapAsync`, write the fetched slab directly into `getMappedRange()`, unmap, then
+`copyBufferToTexture` — so a network payload lands in GPU-visible memory **once** instead of twice.
+Not implemented, not measured; recorded because it is the one remaining idea with a mechanism behind
+it, and because two upload paths were already mislabelled here once.
+
+Whatever the outcome, this is an optimisation, not a gate: the slider is already usable inside a
+cached window, and unusable outside one for reasons that caching solves.
 
 ## The side-by-side, per inventory item
 

@@ -1,0 +1,141 @@
+{
+ "version": 1,
+ "runs": [
+  {
+   "data": "real",
+   "steps": 64,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 2.242,
+   "fps": 446,
+   "readback_max": 255
+  },
+  {
+   "data": "real",
+   "steps": 128,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 3.511,
+   "fps": 284.9,
+   "readback_max": 255
+  },
+  {
+   "data": "real",
+   "steps": 256,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 5.34,
+   "fps": 187.3,
+   "readback_max": 255
+  },
+  {
+   "data": "real",
+   "steps": 512,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 9.803,
+   "fps": 102,
+   "readback_max": 255
+  },
+  {
+   "data": "phantom",
+   "steps": 64,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 2.354,
+   "fps": 424.7,
+   "readback_max": 255
+  },
+  {
+   "data": "phantom",
+   "steps": 128,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 3.368,
+   "fps": 296.9,
+   "readback_max": 255
+  },
+  {
+   "data": "phantom",
+   "steps": 256,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 5.432,
+   "fps": 184.1,
+   "readback_max": 255
+  },
+  {
+   "data": "phantom",
+   "steps": 512,
+   "channels": 4,
+   "viewport": [
+    1566,
+    1003
+   ],
+   "ms": 9.849,
+   "fps": 101.5,
+   "readback_max": 255
+  }
+ ],
+ "adapter": {
+  "looks_discrete": true,
+  "maxTextureDimension3D": 16384
+ },
+ "load": {
+  "uid": "VJy1Nx",
+  "t": 9,
+  "shape": [
+   181,
+   4,
+   38,
+   1046,
+   1104
+  ],
+  "fetch_ms": 640,
+  "contrast_ms": 36,
+  "upload_ms": 535,
+  "decoded_bytes": 351054336,
+  "server_read_ms": 328.5,
+  "contrast": {
+   "lo": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "hi": [
+    12,
+    46,
+    138,
+    54
+   ]
+  }
+ },
+ "real_vs_phantom": {
+  "64": 0.952,
+  "128": 1.042,
+  "256": 0.983,
+  "512": 0.995
+ }
+}

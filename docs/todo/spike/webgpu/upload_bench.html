@@ -1,0 +1,162 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — 3D texture upload paths</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:14px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 10px;max-width:92ch}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:10px;overflow:auto;
+     max-height:64vh;margin:0;font-size:12px}
+ button{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;border-radius:5px;
+        padding:8px 14px;cursor:pointer;margin:8px 6px 0 0}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}
+ table{border-collapse:collapse;font:12px ui-monospace,monospace;margin-top:8px}
+ td,th{border:1px solid #262b33;padding:3px 8px;text-align:right}th{color:#9aa0a8}
+ td:first-child,th:first-child{text-align:left}
+</style></head><body>
+<h1>3D texture upload — is the cold path bound by rows or by bytes?</h1>
+<p class="sub">Measured: uploading a timepoint costs ~3 µs <b>per row</b>, and total time tracked row
+count (2.96x) far better than byte count (7.41x) between two real images. The suspicion is that
+<code>queue.writeTexture</code> repacks every row because <code>bytesPerRow</code> is not a multiple of
+256 (1104x2 = 2208, 441x2 = 882). This isolates that: same data, four upload paths, at widths that are
+and are not 256-aligned. Synthetic data — this measures the transfer, not the store.</p>
+<div id=status class=sub>starting…</div>
+<button id=run disabled>Run</button>
+<button id=save disabled>Save results</button>
+<pre id=out>—</pre>
+<script type="module">
+const el = id => document.getElementById(id);
+const say = (h, c) => el('status').innerHTML = '<span class="' + (c || '') + '">' + h + '</span>';
+const R = {version: 1, runs: []};
+const align = (v, a) => Math.ceil(v / a) * a;
+
+// (nx, ny, nz) per channel-stack. ny/nz held at VJy1Nx's real values so only the WIDTH varies;
+// the last row holds bytes ~constant against nx=1104 to separate width from volume.
+const CONFIGS = [
+  {nx: 441,  ny: 1046, nz: 38, note: 'fXgbTl width (882 B/row, unaligned)'},
+  {nx: 1104, ny: 1046, nz: 38, note: 'VJy1Nx width (2208 B/row, unaligned)'},
+  {nx: 1152, ny: 1046, nz: 38, note: '2304 B/row = 256x9, ALIGNED'},
+  {nx: 2048, ny: 1046, nz: 38, note: '4096 B/row, ALIGNED'},
+  {nx: 1152, ny: 1046, nz: 36, note: 'aligned, bytes ~= the 1104x38 case'},
+];
+const REPS = 3;
+
+async function main() {
+  if (!('gpu' in navigator)) { say('navigator.gpu absent', 'bad'); return; }
+  const adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+  const discrete = adapter.limits.maxTextureDimension3D > 2048;
+  R.adapter = {looks_discrete: discrete, maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+               maxBufferSize: adapter.limits.maxBufferSize};
+  const device = await adapter.requestDevice();
+  device.addEventListener('uncapturederror', e => say('GPU error: ' + e.error.message, 'bad'));
+  say('ready — click Run (allocates up to ~330 MB per config)');
+  el('run').disabled = false;
+
+  const med = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+  async function timeIt(fn) {
+    await fn();                                   // warm
+    const ts = [];
+    for (let i = 0; i < REPS; i++) {
+      const t0 = performance.now();
+      await fn();
+      ts.push(performance.now() - t0);
+    }
+    return med(ts);
+  }
+
+  el('run').onclick = async () => {
+    el('run').disabled = true;
+    for (const cfg of CONFIGS) {
+      const {nx, ny, nz} = cfg;
+      const tight = nx * 2;
+      const padded = align(tight, 256);
+      const rows = ny * nz;
+      const bytes = tight * rows;
+      say('config ' + nx + 'x' + ny + 'x' + nz + '…');
+
+      const tex = device.createTexture({size: [nx, ny, nz], dimension: '3d', format: 'r16uint',
+        usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING});
+      const srcTight  = new Uint8Array(tight * rows);
+      const srcPadded = new Uint8Array(padded * rows);
+      for (let i = 0; i < srcTight.length; i += 997) srcTight[i] = i & 255;
+
+      const row = {config: `${nx}x${ny}x${nz}`, nx, ny, nz, note: cfg.note,
+                   bytes_per_row: tight, padded_bytes_per_row: padded,
+                   row_aligned_256: tight % 256 === 0, rows, bytes, methods: {}};
+
+      // A — writeTexture with the TIGHT pitch: what the prototype does today
+      row.methods.writeTexture_tight = await timeIt(async () => {
+        device.queue.writeTexture({texture: tex}, srcTight,
+          {bytesPerRow: tight, rowsPerImage: ny}, [nx, ny, nz]);
+        await device.queue.onSubmittedWorkDone();
+      });
+
+      // B — writeTexture with a PADDED pitch: same call, aligned rows
+      row.methods.writeTexture_padded = await timeIt(async () => {
+        device.queue.writeTexture({texture: tex}, srcPadded,
+          {bytesPerRow: padded, rowsPerImage: ny}, [nx, ny, nz]);
+        await device.queue.onSubmittedWorkDone();
+      });
+
+      // C — staging GPUBuffer + copyBufferToTexture (bytesPerRow MUST be 256-aligned here)
+      let bufOk = padded * rows <= adapter.limits.maxBufferSize;
+      if (bufOk) {
+        const buf = device.createBuffer({size: padded * rows,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC});
+        row.methods.buffer_copy = await timeIt(async () => {
+          device.queue.writeBuffer(buf, 0, srcPadded);
+          const enc = device.createCommandEncoder();
+          enc.copyBufferToTexture({buffer: buf, bytesPerRow: padded, rowsPerImage: ny},
+                                  {texture: tex}, [nx, ny, nz]);
+          device.queue.submit([enc.finish()]);
+          await device.queue.onSubmittedWorkDone();
+        });
+        // D — the copy alone, buffer already resident: the floor for this path
+        device.queue.writeBuffer(buf, 0, srcPadded);
+        await device.queue.onSubmittedWorkDone();
+        row.methods.buffer_copy_resident = await timeIt(async () => {
+          const enc = device.createCommandEncoder();
+          enc.copyBufferToTexture({buffer: buf, bytesPerRow: padded, rowsPerImage: ny},
+                                  {texture: tex}, [nx, ny, nz]);
+          device.queue.submit([enc.finish()]);
+          await device.queue.onSubmittedWorkDone();
+        });
+        buf.destroy();
+      } else {
+        row.methods.buffer_copy = null;
+        row.methods.buffer_copy_resident = null;
+      }
+
+      for (const [k, ms] of Object.entries(row.methods)) {
+        if (ms == null) continue;
+        row.methods[k] = {ms: +ms.toFixed(2), mb_per_s: +(bytes / 1e6 / (ms / 1000)).toFixed(0),
+                          us_per_row: +(1000 * ms / rows).toFixed(3)};
+      }
+      R.runs.push(row);
+      tex.destroy();
+      el('out').textContent = JSON.stringify(R.runs, null, 1);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+
+    let t = '<table><tr><th>config</th><th>aligned</th><th>writeTexture tight</th>' +
+            '<th>writeTexture padded</th><th>buffer+copy</th><th>copy only</th></tr>';
+    for (const r of R.runs) {
+      const g = k => r.methods[k] ? r.methods[k].mb_per_s + ' MB/s' : '—';
+      t += `<tr><td>${r.config}</td><td>${r.row_aligned_256}</td><td>${g('writeTexture_tight')}</td>` +
+           `<td>${g('writeTexture_padded')}</td><td>${g('buffer_copy')}</td>` +
+           `<td>${g('buffer_copy_resident')}</td></tr>`;
+    }
+    say('done.' + t + '</table>', 'good');
+    el('save').disabled = false;
+    el('run').disabled = false;
+  };
+}
+
+el('save').onclick = () => {
+  const b = new Blob([JSON.stringify(R, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = 'webgpu_upload_bench.json'; a.click();
+};
+
+main().catch(e => say('FAILED: ' + e, 'bad'));
+</script></body></html>

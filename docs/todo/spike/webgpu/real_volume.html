@@ -1,0 +1,417 @@
+<!doctype html><html><head><meta charset=utf-8><title>Cecelia — real-data volume render</title>
+<style>
+ body{font:13px/1.5 ui-monospace,monospace;background:#0f1115;color:#e6e6e6;margin:0;padding:14px}
+ h1{font:600 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
+ p.sub{font:12px/1.5 system-ui,sans-serif;color:#9aa0a8;margin:0 0 10px;max-width:88ch}
+ #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+ canvas{background:#000;border:1px solid #262b33;border-radius:6px;cursor:grab}
+ canvas:active{cursor:grabbing}
+ pre{background:#171a20;border:1px solid #262b33;border-radius:6px;padding:10px;overflow:auto;
+     max-height:60vh;min-width:28ch;margin:0;font-size:12px}
+ button,select{font:600 12px system-ui,sans-serif;background:#2b6cb0;color:#fff;border:0;
+        border-radius:5px;padding:7px 12px;cursor:pointer;margin:8px 6px 0 0}
+ select{background:#222831}
+ button:disabled{background:#333;color:#888;cursor:default}
+ .bad{color:#ff8a80}.good{color:#8ce99a}.warn{color:#ffd479}
+ #diag{font:12px ui-monospace,monospace;color:#9aa0a8;white-space:pre-wrap;margin:8px 0}
+ label{font:12px system-ui,sans-serif;color:#9aa0a8;margin-right:10px}
+ table{border-collapse:collapse;font:12px ui-monospace,monospace;margin-top:8px}
+ td,th{border:1px solid #262b33;padding:3px 8px;text-align:right}th{color:#9aa0a8}
+ td:first-child,th:first-child{text-align:left}
+</style></head><body>
+<h1>Real-data volume render — closing G2's last caveat</h1>
+<p class="sub">G2 measured a smooth procedural phantom, so texture-cache locality was optimistic. This
+renders the <b>real</b> volume and then a phantom at <b>identical dimensions</b>, so the only variable
+is the data. Two things come out of it: whether real data costs more to render, and — more usefully —
+whether a browser MIP actually shows the data. Drag to rotate.</p>
+<div>
+  <label>image <select id=img></select></label>
+  <label>timepoint <input id=tp type=number value=0 min=0 style="width:5em"></label>
+  <button id=load>Load real volume</button>
+  <button id=bench disabled>Run benchmark</button>
+  <button id=save disabled>Save results</button>
+</div>
+<div id=status class=sub>starting…</div>
+<div id=wrap>
+  <div><canvas id=cv width=820 height=560></canvas><div id=diag></div></div>
+  <pre id=out>—</pre>
+</div>
+<script type="module">
+const el = id => document.getElementById(id);
+const say = (h, c) => el('status').innerHTML = '<span class="' + (c || '') + '">' + h + '</span>';
+const diag = m => { el('diag').textContent += m + '\n'; };
+const R = {version: 1, runs: []};
+
+const STEPS = [64, 128, 256, 512];
+const BATCH = 20, STRIDE = 256;
+
+const WGSL = `
+struct P {
+  yaw: f32, pitch: f32, dist: f32, steps: f32,
+  nch: f32, resx: f32, resy: f32, pad0: f32,
+  ext: vec4<f32>,
+  dims: vec4<f32>,
+  lo: vec4<f32>,
+  hi: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var vol: texture_3d<u32>;
+
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
+  var xy = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+  var o: VOut;
+  o.pos = vec4(xy[i], 0.0, 1.0);
+  o.uv = xy[i];
+  return o;
+}
+
+fn hitBox(ro: vec3<f32>, rd: vec3<f32>, h: vec3<f32>) -> vec2<f32> {
+  let inv = 1.0 / rd;
+  let a = min((-h - ro) * inv, (h - ro) * inv);
+  let b = max((-h - ro) * inv, (h - ro) * inv);
+  return vec2(max(max(a.x, a.y), a.z), min(min(b.x, b.y), b.z));
+}
+
+fn chCol(c: i32) -> vec3<f32> {
+  if (c == 0) { return vec3(1.0, 0.30, 0.30); }
+  if (c == 1) { return vec3(0.30, 1.0, 0.35); }
+  if (c == 2) { return vec3(0.35, 0.55, 1.0); }
+  return vec3(1.0, 0.40, 1.0);
+}
+
+fn win(c: i32, v: f32) -> f32 {
+  var lo = p.lo.x; var hi = p.hi.x;
+  if (c == 1) { lo = p.lo.y; hi = p.hi.y; }
+  if (c == 2) { lo = p.lo.z; hi = p.hi.z; }
+  if (c == 3) { lo = p.lo.w; hi = p.hi.w; }
+  return clamp((v - lo) / max(hi - lo, 1.0), 0.0, 1.0);
+}
+
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let h = p.ext.xyz * 0.5;
+  let cy = cos(p.yaw); let sy = sin(p.yaw);
+  let cp = cos(p.pitch); let sp = sin(p.pitch);
+  let fwd = vec3(cp * sy, sp, cp * cy);
+  let ro = fwd * p.dist;
+  let right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
+  let up = cross(fwd, right);
+  let rd = normalize(-fwd + right * (in.uv.x * 0.45 * (p.resx / p.resy)) + up * (in.uv.y * 0.45));
+
+  let t = hitBox(ro, rd, h);
+  let t0 = max(t.x, 0.0);
+  if (t.y <= t0) { return vec4(0.02, 0.02, 0.03, 1.0); }
+
+  let n = i32(p.steps);
+  let dt = (t.y - t0) / f32(n);
+  let zpc = i32(p.dims.w);
+  let nch = i32(p.nch);
+
+  var mx = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  for (var s = 0; s < n; s = s + 1) {
+    let wp = ro + rd * (t0 + (f32(s) + 0.5) * dt);
+    let uvw = (wp + h) / p.ext.xyz;
+    let vi = vec3<i32>(uvw * p.dims.xyz);
+    if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
+        vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
+    for (var c = 0; c < nch; c = c + 1) {
+      let v = f32(textureLoad(vol, vec3<i32>(vi.x, vi.y, vi.z + c * zpc), 0).r);
+      mx[c] = max(mx[c], v);
+    }
+  }
+  var acc = vec3(0.0);
+  for (var c = 0; c < nch; c = c + 1) {
+    acc = acc + chCol(c) * win(c, mx[c]);
+  }
+  return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`;
+
+const med = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+let G = null;   // gpu context
+
+async function initGpu() {
+  if (!('gpu' in navigator)) throw new Error('navigator.gpu absent');
+  const adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+  const discrete = adapter.limits.maxTextureDimension3D > 2048;
+  diag('adapter: maxTextureDimension3D=' + adapter.limits.maxTextureDimension3D +
+       (discrete ? ' (discrete)' : ' (INTEGRATED — wrong GPU)'));
+  R.adapter = {looks_discrete: discrete, maxTextureDimension3D: adapter.limits.maxTextureDimension3D};
+  const hasTS = adapter.features.has('timestamp-query');
+  const device = await adapter.requestDevice({requiredFeatures: hasTS ? ['timestamp-query'] : []});
+  device.addEventListener('uncapturederror', e => diag('!! ' + e.error.message));
+  const cv = el('cv');
+  const ctx = cv.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({device, format: fmt, alphaMode: 'opaque'});
+  const mod = device.createShaderModule({code: WGSL});
+  const errs = (await mod.getCompilationInfo()).messages.filter(m => m.type === 'error');
+  if (errs.length) throw new Error('WGSL: ' + errs.map(m => m.lineNum + ':' + m.message).join(' | '));
+  diag('shader compiled OK');
+  const bgl = device.createBindGroupLayout({entries: [
+    {binding: 0, visibility: GPUShaderStage.FRAGMENT,
+     buffer: {type: 'uniform', hasDynamicOffset: true, minBindingSize: 96}},
+    {binding: 1, visibility: GPUShaderStage.FRAGMENT,
+     texture: {sampleType: 'uint', viewDimension: '3d'}}]});
+  const layout = device.createPipelineLayout({bindGroupLayouts: [bgl]});
+  const pipe = f => device.createRenderPipeline({layout,
+    vertex: {module: mod, entryPoint: 'vs'},
+    fragment: {module: mod, entryPoint: 'fs', targets: [{format: f}]},
+    primitive: {topology: 'triangle-list'}});
+  const ubuf = device.createBuffer({size: STRIDE * BATCH,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  const ts = hasTS ? {
+    qs: device.createQuerySet({type: 'timestamp', count: 2}),
+    q: device.createBuffer({size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC}),
+    r: device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ})} : null;
+  G = {device, ctx, fmt, bgl, ubuf, ts, pipeCanvas: pipe(fmt), pipeOff: pipe('rgba8unorm'),
+       tex: null, bind: null, M: null, view: {yaw: 0.7, pitch: 0.35}, lo: [0,0,0,0], hi: [1,1,1,1]};
+  return G;
+}
+
+function makeTexture(M) {
+  if (G.tex) G.tex.destroy();
+  G.tex = G.device.createTexture({size: [M.nx, M.ny, M.nz * M.nc], dimension: '3d',
+    format: 'r16uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST});
+  G.bind = G.device.createBindGroup({layout: G.bgl, entries: [
+    {binding: 0, resource: {buffer: G.ubuf, offset: 0, size: 96}},
+    {binding: 1, resource: G.tex.createView()}]});
+  G.M = M;
+}
+
+// physical extent in um, from the store's own NGFF scale (t,c,z,y,x)
+function extentOf(M) {
+  const s = M.scale_um || [1, 1, 1, 1, 1];
+  return [M.nx * s[4], M.ny * s[3], M.nz * s[2]];
+}
+
+const slots = new Float32Array(STRIDE * BATCH / 4);
+function fillSlots(M, steps, nch, rx, ry, baseYaw, pitch) {
+  const E = extentOf(M);
+  for (let i = 0; i < BATCH; i++) {
+    const o = i * STRIDE / 4;
+    slots[o + 0] = baseYaw + i * 0.09; slots[o + 1] = pitch;
+    slots[o + 2] = Math.max(...E) * 1.7; slots[o + 3] = steps;
+    slots[o + 4] = nch; slots[o + 5] = rx; slots[o + 6] = ry; slots[o + 7] = 0;
+    slots[o + 8] = E[0]; slots[o + 9] = E[1]; slots[o + 10] = E[2]; slots[o + 11] = 0;
+    slots[o + 12] = M.nx; slots[o + 13] = M.ny; slots[o + 14] = M.nz; slots[o + 15] = M.nz;
+    for (let k = 0; k < 4; k++) { slots[o + 16 + k] = G.lo[k]; slots[o + 20 + k] = G.hi[k]; }
+  }
+  G.device.queue.writeBuffer(G.ubuf, 0, slots);
+}
+
+async function drawCanvas(steps = 256) {
+  const cv = el('cv'), M = G.M;
+  if (!M) return;
+  fillSlots(M, steps, M.nc, cv.width, cv.height, G.view.yaw, G.view.pitch);
+  const enc = G.device.createCommandEncoder();
+  const pass = enc.beginRenderPass({colorAttachments: [{
+    view: G.ctx.getCurrentTexture().createView(),
+    clearValue: {r: 0, g: 0, b: 0, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+  pass.setPipeline(G.pipeCanvas); pass.setBindGroup(0, G.bind, [0]); pass.draw(3); pass.end();
+  G.device.queue.submit([enc.finish()]);
+  await G.device.queue.onSubmittedWorkDone();
+}
+
+// ── contrast from the real data: per-channel 1st / 99.9th percentile on a strided subsample, the
+// same convention as image_render.jl's percentile_spec fallback.
+function percentiles(u16, nvox) {
+  const stride = Math.max(1, Math.floor(nvox / 200000));
+  const v = [];
+  for (let i = 0; i < nvox; i += stride) v.push(u16[i]);
+  v.sort((a, b) => a - b);
+  const at = f => v[Math.min(v.length - 1, Math.max(0, Math.floor(f * v.length)))];
+  return [at(0.01), Math.max(at(0.999), at(0.01) + 1)];
+}
+
+async function fetchVolume(uid, t, M) {
+  const t0 = performance.now();
+  const bufs = [];
+  let wire = 0, srvRead = 0;
+  await Promise.all(Array.from({length: M.nc}, async (_, c) => {
+    const r = await fetch(`/slab?uid=${uid}&t=${t}&c=${c}`, {cache: 'no-store'});
+    const b = await r.arrayBuffer();
+    srvRead = Math.max(srvRead, +r.headers.get('X-Server-Read-Ms'));
+    bufs[c] = b; wire += b.byteLength;
+  }));
+  const fetchMs = performance.now() - t0;
+  const nvox = M.nz * M.ny * M.nx;
+  const lo = [0, 0, 0, 0], hi = [1, 1, 1, 1];
+  const t1 = performance.now();
+  for (let c = 0; c < M.nc; c++) {
+    const [a, b] = percentiles(new Uint16Array(bufs[c]), nvox);
+    lo[c] = a; hi[c] = b;
+  }
+  const contrastMs = performance.now() - t1;
+  G.lo = lo; G.hi = hi;
+  const t2 = performance.now();
+  for (let c = 0; c < M.nc; c++) {
+    G.device.queue.writeTexture({texture: G.tex, origin: [0, 0, c * M.nz]},
+      new Uint8Array(bufs[c]), {bytesPerRow: M.nx * 2, rowsPerImage: M.ny}, [M.nx, M.ny, M.nz]);
+  }
+  await G.device.queue.onSubmittedWorkDone();
+  const uploadMs = performance.now() - t2;
+  return {fetch_ms: +fetchMs.toFixed(1), contrast_ms: +contrastMs.toFixed(1),
+          upload_ms: +uploadMs.toFixed(1), decoded_bytes: wire, server_read_ms: srvRead,
+          contrast: {lo, hi}};
+}
+
+// ── phantom at the SAME dimensions, so the comparison varies only the data
+async function fillPhantom(M) {
+  const slice = new Uint16Array(M.nx * M.ny);
+  for (let c = 0; c < M.nc; c++) {
+    for (let z = 0; z < M.nz; z++) {
+      const zc = (z / M.nz - 0.5) * 2;
+      for (let y = 0; y < M.ny; y++) {
+        const yc = (y / M.ny - 0.5) * 2, row = y * M.nx;
+        for (let x = 0; x < M.nx; x++) {
+          const xc = (x / M.nx - 0.5) * 2;
+          const r = Math.sqrt(xc * xc + yc * yc + zc * zc);
+          slice[row + x] = Math.min(65535, Math.round(
+            65535 * (0.6 * Math.exp(-40 * Math.abs(r - 0.30 - 0.18 * c)) + 0.01)));
+        }
+      }
+      G.device.queue.writeTexture({texture: G.tex, origin: [0, 0, c * M.nz + z]},
+        slice, {bytesPerRow: M.nx * 2, rowsPerImage: M.ny}, [M.nx, M.ny, 1]);
+    }
+  }
+  await G.device.queue.onSubmittedWorkDone();
+  G.lo = [655, 655, 655, 655]; G.hi = [39321, 39321, 39321, 39321];
+}
+
+async function benchOne(M, label) {
+  const [vw, vh] = [1566, 1003];
+  const rt = G.device.createTexture({size: [vw, vh], format: 'rgba8unorm',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC});
+  const view = rt.createView();
+  const RB = 64, BPR = 256;
+  const out = [];
+  for (const steps of STEPS) {
+    const reps = [];
+    for (let k = 0; k < 4; k++) {
+      fillSlots(M, steps, M.nc, vw, vh, 0.7 + k * 0.31, 0.35);
+      const rb = G.device.createBuffer({size: BPR * RB,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+      const enc = G.device.createCommandEncoder();
+      for (let i = 0; i < BATCH; i++) {
+        const d = {colorAttachments: [{view, clearValue: {r: 0, g: 0, b: 0, a: 1},
+                                       loadOp: 'clear', storeOp: 'store'}]};
+        if (G.ts && i === 0) d.timestampWrites = {querySet: G.ts.qs, beginningOfPassWriteIndex: 0};
+        if (G.ts && i === BATCH - 1)
+          d.timestampWrites = Object.assign(d.timestampWrites || {querySet: G.ts.qs},
+                                            {endOfPassWriteIndex: 1});
+        const pass = enc.beginRenderPass(d);
+        pass.setPipeline(G.pipeOff); pass.setBindGroup(0, G.bind, [i * STRIDE]);
+        pass.draw(3); pass.end();
+      }
+      enc.copyTextureToBuffer({texture: rt, origin: [(vw >> 1) - 32, (vh >> 1) - 32, 0]},
+        {buffer: rb, bytesPerRow: BPR, rowsPerImage: RB}, [RB, RB, 1]);
+      if (G.ts) { enc.resolveQuerySet(G.ts.qs, 0, 2, G.ts.q, 0);
+                  enc.copyBufferToBuffer(G.ts.q, 0, G.ts.r, 0, 16); }
+      G.device.queue.submit([enc.finish()]);
+      await G.device.queue.onSubmittedWorkDone();
+      await rb.mapAsync(GPUMapMode.READ);
+      const px = new Uint8Array(rb.getMappedRange().slice(0));
+      rb.unmap(); rb.destroy();
+      let mx = 0;
+      for (let i = 0; i < px.length; i += 4) mx = Math.max(mx, px[i], px[i+1], px[i+2]);
+      let ms = null;
+      if (G.ts) {
+        await G.ts.r.mapAsync(GPUMapMode.READ);
+        const v = new BigUint64Array(G.ts.r.getMappedRange().slice(0));
+        G.ts.r.unmap();
+        ms = Number(v[1] - v[0]) / 1e6 / BATCH;
+      }
+      reps.push({ms, mx});
+    }
+    const ms = med(reps.map(r => r.ms));
+    out.push({data: label, steps, channels: M.nc, viewport: [vw, vh],
+              ms: +ms.toFixed(3), fps: +(1000 / ms).toFixed(1),
+              readback_max: Math.max(...reps.map(r => r.mx))});
+    say(label + ' @ ' + steps + ' steps → ' + ms.toFixed(2) + ' ms');
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  rt.destroy();
+  return out;
+}
+
+// ── drag to rotate
+(function drag() {
+  const cv = el('cv');
+  let on = false, px = 0, py = 0;
+  cv.addEventListener('pointerdown', e => { on = true; px = e.clientX; py = e.clientY;
+                                            cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointerup', e => { on = false; cv.releasePointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    if (!on || !G || !G.M) return;
+    G.view.yaw += (e.clientX - px) * 0.008;
+    G.view.pitch = Math.max(-1.4, Math.min(1.4, G.view.pitch + (e.clientY - py) * 0.008));
+    px = e.clientX; py = e.clientY;
+    drawCanvas(256);
+  });
+})();
+
+async function main() {
+  await initGpu();
+  const uids = await (await fetch('/images')).json();
+  el('img').innerHTML = uids.map(u => '<option>' + u + '</option>').join('');
+  say('ready — pick an image and click Load');
+
+  el('load').onclick = async () => {
+    el('load').disabled = true; el('bench').disabled = true;
+    const uid = el('img').value, t = +el('tp').value;
+    say('loading ' + uid + ' t=' + t + '…');
+    const M = await (await fetch('/meta?uid=' + uid)).json();
+    diag(uid + ': ' + JSON.stringify(M.shape) + '  chunks/timepoint=' +
+         M.chunks_per_timepoint_present + '  scale=' + JSON.stringify(M.scale_um));
+    makeTexture(M);
+    const load = await fetchVolume(uid, t, M);
+    R.load = Object.assign({uid, t, shape: M.shape}, load);
+    diag('fetch ' + load.fetch_ms + ' ms · contrast ' + load.contrast_ms +
+         ' ms · upload ' + load.upload_ms + ' ms · server read ' + load.server_read_ms + ' ms');
+    diag('contrast per channel: lo=' + JSON.stringify(load.contrast.lo) +
+         ' hi=' + JSON.stringify(load.contrast.hi));
+    await drawCanvas(256);
+    el('out').textContent = JSON.stringify(R, null, 1);
+    say('loaded — DRAG the canvas to rotate. Then Run benchmark.', 'good');
+    el('load').disabled = false; el('bench').disabled = false;
+  };
+
+  el('bench').onclick = async () => {
+    el('bench').disabled = true;
+    const M = G.M, uid = el('img').value, t = +el('tp').value;
+    R.runs = await benchOne(M, 'real');
+    await fillPhantom(M);
+    await drawCanvas(256);
+    R.runs = R.runs.concat(await benchOne(M, 'phantom'));
+    // reload the real data so the canvas is left showing it
+    await fetchVolume(uid, t, M);
+    await drawCanvas(256);
+    const pick = (d, s) => R.runs.find(r => r.data === d && r.steps === s);
+    let rows = '';
+    for (const s of STEPS) {
+      const a = pick('real', s), b = pick('phantom', s);
+      rows += '<tr><td>' + s + ' steps</td><td>' + a.ms.toFixed(2) + '</td><td>' +
+              b.ms.toFixed(2) + '</td><td>' + (a.ms / b.ms).toFixed(2) + 'x</td></tr>';
+    }
+    R.real_vs_phantom = Object.fromEntries(STEPS.map(s =>
+      [s, +(pick('real', s).ms / pick('phantom', s).ms).toFixed(3)]));
+    el('out').textContent = JSON.stringify(R, null, 1);
+    say('done. real vs phantom at identical dimensions:' +
+        '<table><tr><th>steps</th><th>real ms</th><th>phantom ms</th><th>ratio</th></tr>' +
+        rows + '</table>', 'good');
+    el('save').disabled = false; el('bench').disabled = false;
+  };
+}
+
+el('save').onclick = () => {
+  const b = new Blob([JSON.stringify(R, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = 'webgpu_real_volume.json'; a.click();
+};
+
+main().catch(e => { say('FAILED: ' + e, 'bad'); diag('stack: ' + (e && e.stack)); });
+</script></body></html>
