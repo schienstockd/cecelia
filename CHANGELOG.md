@@ -66,8 +66,48 @@ _Changes on `main` that have not yet been tagged in a release._
   track→cell expansion carried only the requested columns, so a gated or clustered track's cells came back
   with no centroids at all — which is exactly what a track plot draws.
 
+### Added — flow models can be trained on time spans, not frame lags
+
+- **`Train flow model` has its own Temporal scale: frame lags (default) or spans in seconds.** In
+  seconds you give the spans — `5,10,20,40` — and each training movie is resolved onto its own frame
+  lags. A set that mixes 5 s/frame and 15 s/frame acquisitions now contributes one motion timescale
+  instead of three-fold different ones under the same channel names, which is what training on frame
+  lags silently did. A movie whose frame interval is unknown, recorded in another unit, or too coarse
+  for the spans is skipped with a warning naming its rate — it is not clamped onto its nearest frames.
+- **A model trained this way states the acquisition it needs.** The model details dialog gains
+  *Temporal spans*, *As frame offsets* (against the rate they belong to) and *Needs — N s/frame or
+  finer*, and segmenting a coarser movie under `Match durations` refuses with that number rather than
+  quietly using the closest frames it has. The figure is the rate below which every span still lands
+  on its own frame offset, found by search — resolving is not monotone in the frame interval, so
+  there is no formula for it that is both correct and tight. "Use this model's settings" restores the
+  spans and the mode together.
+- Nothing existing changes: frame lags remain the default in both tasks, and every model already in a
+  vault trains, loads and segments exactly as before.
+
 ### Fixed
 
+- **Coastal segmentation's `Match durations (seconds)` fed the model its motion channels in the wrong
+  order.** Any result produced with it should be re-run. Coastal names each per-scale flow plane after
+  the frame lag it was measured at (`mag_4`) and stacks them by a *string* sort of those names, at
+  training and at inference alike. Matching durations changes the lags, so it changes the names: a
+  model trained on lags 1, 2, 4, 8 and pointed at a movie twice as fast resolves to 2, 4, 8, 16, and
+  `mag_16` sorts ahead of `mag_2` — the channel the network reads as its shortest motion scale was
+  handed its longest. The channel count was unaffected, so nothing raised and a plausible but wrong
+  mask came back. Every rate ratio of 2 or more was affected, which is the common case. The planes are
+  now renamed onto the names training used before the model sees them. `As trained` was never
+  affected, and it is the default.
+- **A movie too coarse for the model is now refused instead of silently reshaped.** When two of the
+  model's motion scales landed on the same frame lag, or one fell below a single frame, the scale list
+  was quietly shortened — which shifted every channel after the motion block and zero-filled the end.
+  Both cases now stop the run and name the frame rate the model needs.
+- **The flow preview showed a different channel set than the run it previews.** It read the scales
+  from the manifest directly, so under `Match durations` the metric sheet and the probability map were
+  built from the trained lags while the run used the resolved ones.
+- **A conditional parameter went unchecked when a chain node was validated.** A `showIf` condition
+  was evaluated against the submitted values alone, so a chain node (or a composite sub-step) that
+  omitted the key the condition names had the param skipped entirely — not just its required-check.
+  The run itself was never affected, only the check that runs before it. The condition now falls back
+  to the referenced param's spec default, which is what the form itself always did.
 - **"Find your way around" no longer opens with a warning.** The orientation tour — the guide Cecelia
   starts by itself on a first launch — read "1 missing · needs pages your view profile hides
   (/settings)", for everyone, including users who had never chosen a view profile. Settings is reached

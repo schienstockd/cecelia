@@ -12,6 +12,22 @@ export interface FlowManifest {
   [key: string]: unknown
   temporalScales?: number[]
   cumulativeWindow?: number
+  /**
+   * `s` when the scales were DECLARED as spans in seconds and `temporalScales` is their resolution at
+   * `temporalReferenceInterval`; `frames`, or absent, when the offsets are themselves the setting.
+   * The field that says whether this model re-resolves itself onto a recipient's frame rate.
+   */
+  temporalScaleUnit?: 's' | 'frames' | string
+  /** The declared spans, in seconds. Authoritative — inference resolves from these, not the offsets. */
+  temporalScaleSeconds?: number[]
+  /** The cumulative window as a span, in seconds. */
+  cumulativeWindowSeconds?: number
+  /** Seconds per frame `temporalScales` belongs to — the finest interval among the movies used. */
+  temporalReferenceInterval?: number
+  /** The coarsest acquisition, in s/frame, this model can be applied to. Past it two spans collide. */
+  maxFrameInterval?: number
+  /** uID → the frame offsets that movie was actually read at, before its planes were renamed. */
+  temporalScalesPerMovie?: Record<string, number[]>
   droppedMetrics?: string[]
   metricKeys?: string[]
   channelName?: string
@@ -83,6 +99,8 @@ export interface DetailGroup { label: string; fields: DetailField[] }
 /** Keys rendered by an explicit rule below — everything else falls through to "Other". */
 const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
+  'temporalScaleUnit', 'temporalScaleSeconds', 'cumulativeWindowSeconds',
+  'temporalReferenceInterval', 'maxFrameInterval', 'temporalScalesPerMovie',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
   'intensityWeight',
@@ -135,6 +153,45 @@ function zPlaneFields(m: FlowManifest): (DetailField | null)[] {
 }
 
 /**
+ * The time spans the feature stack covers — the rows that say whether this model transfers.
+ *
+ * Two shapes, because there are two kinds of model. Offsets alone (`frames`, and every model trained
+ * before the mode existed) are only the same physical motion on a movie acquired at the same rate, so
+ * the interval they belong to is shown beside them rather than left to be looked up in Scale. Declared
+ * spans re-resolve themselves onto a recipient's frame rate, so what matters is the spans and the
+ * ceiling past which they stop being distinct.
+ *
+ * The per-movie offsets are shown only when they DIFFER, and then that difference is the point: it is
+ * the visible evidence that a mixed-rate set was pooled on one timescale rather than one frame count.
+ */
+function temporalFields(m: FlowManifest): (DetailField | null)[] {
+  const dt = m.temporalReferenceInterval
+  if (m.temporalScaleUnit !== 's' || !m.temporalScaleSeconds?.length) {
+    return [
+      field('Temporal scales', m.temporalScales?.length
+        ? `${m.temporalScales.join(', ')} frames` : undefined),
+      field('Cumulative window', m.cumulativeWindow === undefined
+        ? undefined : `${m.cumulativeWindow} frames`),
+    ]
+  }
+  const per = Object.entries(m.temporalScalesPerMovie ?? {})
+  const distinct = new Set(per.map(([, v]) => v.join(',')))
+  return [
+    field('Temporal spans', `${m.temporalScaleSeconds.map(v => `${v}`).join(', ')} s`),
+    field('Cumulative window', m.cumulativeWindowSeconds === undefined
+      ? undefined : `${m.cumulativeWindowSeconds} s`),
+    field('As frame offsets', m.temporalScales?.length && dt
+      ? `${m.temporalScales.join(', ')} at ${dt} s/frame` : m.temporalScales),
+    distinct.size > 1
+      ? { label: 'Per movie', mono: true,
+          value: per.map(([uid, v]) => `${uid}: [${v.join(', ')}]`).join('  ') }
+      : null,
+    field('Needs', m.maxFrameInterval === undefined
+      ? undefined : `${m.maxFrameInterval} s/frame or finer`),
+  ]
+}
+
+/**
  * What a pixel and a frame were, physically. One row when every movie agrees, one row per movie when
  * they do not — pooling two magnifications is legitimate and a single averaged number would hide it.
  *
@@ -181,8 +238,7 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
     // models trained before it recorded, and those models are still in people's vaults. Reading the
     // old key is how the modal keeps describing them instead of quietly dropping the row.
     ...zPlaneFields(m),
-    field('Temporal scales', m.temporalScales),
-    field('Cumulative window', m.cumulativeWindow),
+    ...temporalFields(m),
     field('Normalise', m.normalise === undefined ? undefined : `${m.normalise}th percentile`),
   ]
 

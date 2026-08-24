@@ -105,7 +105,8 @@ def read_manifest(model_path):
 def manifest_frame_interval(manifest):
     """Seconds per frame the model was TRAINED at, or None when that cannot be known.
 
-    Read from `physicalScales` (written by `opticalFlow.train`; see MODEL_VAULT_PLAN P0), which
+    Read from `temporalReferenceInterval` when the model declared its scales in seconds, and
+    otherwise from `physicalScales` (written by `opticalFlow.train`; see MODEL_VAULT_PLAN P0), which
     records one entry per source movie, unconverted, with its unit. Three cases return None, and the
     distinction matters because the caller uses this to decide whether to touch the scales at all:
 
@@ -115,6 +116,15 @@ def manifest_frame_interval(manifest):
     * source movies that DISAGREE — a model fitted across intervals has no single scale to convert
       from, so "cannot resolve" is the honest answer rather than a mean nobody chose.
     """
+    # A model whose scales were DECLARED in seconds carries its own reference interval, and it is
+    # authoritative: the source movies were resolved ONTO it, so they legitimately disagree with each
+    # other (that is the whole point of declaring durations) and the per-movie scan below would
+    # correctly refuse to pick one. See `opticalFlow.train`'s `temporalScaleMode`.
+    ref = manifest.get('temporalReferenceInterval')
+    if ref is not None:
+        ref = float(ref)
+        return ref if ref > 0 else None
+
     scales = manifest.get('physicalScales')
     if not isinstance(scales, dict):
         return None
@@ -140,40 +150,188 @@ def resolve_scales_for_interval(scales, cumulative, dt_model, dt_target):
     wrong-but-in-range, which is the failure mode hardest to notice in someone else's hands
     (docs/todo/MODEL_VAULT_PLAN.md -> *Would you train in physical units instead?*).
 
-    Returns `(scales, cumulative, note)` — `note` is a human-readable summary, or '' when nothing
-    changed. Collapsed duplicates are why the returned list can be SHORTER: on a coarser movie two
-    declared durations can land on the same frame offset, and the model then sees the same plane
-    twice under two names, which is worse than one plane. Nothing here can invent frames that were
-    not acquired, so a duration below one target frame clamps to 1 and is reported.
+    Returns `(scales, cumulative, note, problem)`. `note` is a human-readable summary of what moved,
+    or '' when nothing did. `problem` is '' when the conversion is usable and a reason when it is
+    NOT — the caller raises on it rather than proceeding.
+
+    The returned list is ALWAYS the same length as `scales`, in the same ascending order, so the
+    i-th resolved offset is the i-th trained one. That is a contract, not an implementation detail:
+    the per-scale planes are named `mag_{offset}` and both coastal's trainer and its inference stack
+    the metric dict by `sorted(keys)`, a STRING sort — so a resolved set that is shorter, or that
+    sorts differently, silently permutes the model's input channels. Two ways that happens, both
+    now refused rather than reported:
+
+    * **collapse** — on a coarser movie two declared durations land on the same offset. The old code
+      deduped and returned a shorter list, which shifted every channel after the mag block and
+      zero-filled the tail.
+    * **clamp** — a duration shorter than one target frame. Nothing can invent frames that were not
+      acquired, so this movie is simply too coarse for this model.
+
+    Lexicographic reordering (`[1,2,4,8]` -> `[2,4,8,16]`, where `mag_16` sorts before `mag_2`) is
+    NOT refused, because it is fully repairable: the caller renames the resolved planes back onto the
+    trained names before the model sees them. See `mag_rename`.
     """
+    trained = sorted(set(int(s) for s in scales))
     if not dt_model or not dt_target or dt_model <= 0 or dt_target <= 0:
-        return sorted(set(scales)), cumulative, ''
+        return trained, cumulative, '', ''
     if abs(dt_model - dt_target) < 1e-9:
-        return sorted(set(scales)), cumulative, ''
+        return trained, cumulative, '', ''
 
     ratio = dt_model / dt_target
     out, clamped = [], []
-    for sc in sorted(set(int(s) for s in scales)):
+    for sc in trained:
         want = int(round(sc * ratio))
         if want < 1:
             want = 1
             clamped.append(sc)
         out.append(want)
-    resolved = sorted(set(out))
     cum = max(1, int(round(cumulative * ratio)))
 
-    parts = [f'temporal scales {sorted(set(int(s) for s in scales))} -> {resolved}',
-             f'cumulative window {cumulative} -> {cum}',
-             f'({dt_model:g} s/frame trained, {dt_target:g} s/frame here)']
-    if len(resolved) < len(set(int(s) for s in scales)):
-        parts.append('- durations collapsed onto the same frame offset')
+    rate = f'({dt_model:g} s/frame trained, {dt_target:g} s/frame here)'
     if clamped:
-        parts.append(f'- {clamped} are shorter than one frame here and clamped to 1')
-    return resolved, cum, ' '.join(parts)
+        secs = ', '.join(f'{sc * dt_model:g} s' for sc in clamped)
+        return trained, cumulative, '', (
+            f'this movie is too coarse for the model {rate}: {secs} is shorter than one frame here, '
+            f'and frames that were not acquired cannot be interpolated')
+    if len(set(out)) < len(trained):
+        return trained, cumulative, '', (
+            f'this movie is too coarse for the model {rate}: temporal scales {trained} land on '
+            f'{sorted(set(out))} here, so two of the trained durations become the same frame offset')
+
+    note = (f'temporal scales {trained} -> {out}  cumulative window {cumulative} -> {cum}  {rate}')
+    return out, cum, note, ''
+
+
+def mag_rename(trained_scales, resolved_scales):
+    """`{resolved plane name: trained plane name}` for the per-scale magnitude planes.
+
+    The repair for the channel order. `flow_metrics_for_frame` names its per-scale planes after the
+    offset it computed them at, and both sides of coastal stack the metric dict by `sorted(keys)` —
+    so feeding a model trained on `[1,2,4,8]` a movie resolved to `[2,4,8,16]` puts `mag_16` in the
+    channel the model reads as `mag_1`, because "mag_16" < "mag_2" as strings. Renaming the planes
+    onto the names training used makes the sort reproduce the training order exactly.
+
+    Pairing is by POSITION, which is what makes it right: both lists are ascending and the same
+    length (`resolve_scales_for_interval` refuses anything else), so the i-th resolved offset IS the
+    i-th trained duration. Empty when nothing needs renaming.
+    """
+    trained = sorted(set(int(s) for s in trained_scales))
+    resolved = [int(s) for s in resolved_scales]
+    if len(trained) != len(resolved):
+        raise ValueError(f'cannot pair {len(resolved)} resolved temporal scales with '
+                         f'{len(trained)} trained ones')
+    return {f'mag_{r}': f'mag_{t}' for r, t in zip(resolved, trained) if r != t}
+
+
+def apply_mag_rename(metrics, rename):
+    """`metrics` with the per-scale planes renamed onto the trained names. See `mag_rename`.
+
+    A no-op (the same dict, not a copy) when there is nothing to rename, because that is the common
+    case and this sits inside the per-plane, per-timepoint path.
+    """
+    if not rename:
+        return metrics
+    return {rename.get(k, k): v for k, v in metrics.items()}
+
+
+
+
+def scales_from_seconds(seconds, cumulative_seconds, dt):
+    """`(offsets, cumulative, problem)` — what these DURATIONS are in frames at `dt` s/frame.
+
+    The direct resolution a model that declared its scales in seconds gets, instead of the
+    trained-offsets × ratio arithmetic in `resolve_scales_for_interval`. Same refusals, one rounding
+    instead of two: going through the offsets rounds `d -> n` at training and `n × ratio` again here,
+    which can land a frame off the duration that was actually declared, and being exactly the span
+    the user asked for is the entire reason for declaring one.
+
+    The cumulative window clamps rather than refusing. It is a single `cumulative_mag` plane at any
+    length, so unlike the per-scale planes it cannot change the channel layout — the floor of 2 is
+    coastal's own (a window of 1 sums one flow and is not cumulative).
+    """
+    dt = float(dt)
+    if dt <= 0:
+        return [], 0, 'frame interval must be positive'
+    wanted = sorted({float(x) for x in seconds})
+    out = []
+    for d in wanted:
+        n = int(round(d / dt))
+        if n < 1:
+            return [], 0, (f'{d:g} s is shorter than one frame at {dt:g} s/frame, and frames that '
+                           f'were not acquired cannot be interpolated')
+        out.append(n)
+    if len(set(out)) < len(out):
+        return [], 0, (f'at {dt:g} s/frame the declared spans {[f"{d:g}s" for d in wanted]} land on '
+                       f'{out}, so two of them become the same frame offset')
+    cum = max(2, int(round(float(cumulative_seconds) / dt))) if cumulative_seconds else 0
+    return out, cum, ''
+
+
+#: Grid the frame-interval ceiling is searched on, in seconds. Fine enough that the answer is the
+#: true bound for any span a microscope reports, coarse enough that the scan is a few thousand steps.
+FRAME_INTERVAL_STEP = 0.01
+
+
+def max_frame_interval(seconds):
+    """The coarsest acquisition, in s/frame, at which these spans and everything FINER resolve.
+
+    Past it two spans round to the same frame offset (or the shortest rounds below one frame), the
+    model's mag planes stop being distinct features, and `scales_from_seconds` refuses. A model
+    declares this so the refusal can be explained in advance instead of at the point of failure.
+
+    Found by scanning `FRAME_INTERVAL_STEP` upward to the first interval that fails, rather than by a
+    closed form, because the predicate is NOT monotone in dt and a closed form is therefore either
+    wrong or far too tight. Both:
+
+    * **Not monotone.** Spans 10 and 15 collide at 6 s/frame (`[2, 2]`) and separate again at 7
+      (`[1, 2]`). So "the largest dt that works" is not a threshold — there are holes above it, and
+      quoting one would promise something the resolver does not honour at every finer rate.
+    * **Too tight.** The obvious closed form — the shortest span, and the smallest gap between two of
+      them — gives 15 for spans 15/30/60/120, which resolve perfectly well at 20 (`[1, 2, 3, 6]`).
+      That is not conservative, it is WRONG in the direction that matters: a model would tell someone
+      their data is too coarse for it when it is not, and the refusal message would quote a rate
+      nobody needs to hit.
+
+    So the number returned is the strongest thing that is actually true and actually useful: every
+    interval at or below it resolves. `test_the_ceiling_is_exactly_where_it_starts_failing` pins both
+    halves — the ceiling works, one step past it does not.
+    """
+    vals = sorted({float(s) for s in seconds})
+    if not vals:
+        return None
+    # `2 * vals[0]` is a hard stop: past it the shortest span rounds below one frame and nothing
+    # coarser can ever resolve, so the scan cannot run away.
+    dt = FRAME_INTERVAL_STEP
+    last_ok = None
+    while dt <= 2 * vals[0] + FRAME_INTERVAL_STEP:
+        if scales_from_seconds(vals, 0, dt)[2]:
+            break
+        last_ok = dt
+        dt = round(dt + FRAME_INTERVAL_STEP, 6)
+    return last_ok
+
+def temporal_seconds(manifest):
+    """`(durations, cumulative_seconds)` when the model DECLARED its scales in seconds, else None.
+
+    Written by `opticalFlow.train` under `temporalScaleMode: seconds`. The durations are
+    authoritative and `temporalScales` is their resolution at `temporalReferenceInterval` — recorded
+    too, so a reader (and every code path that predates this) still sees ordinary frame offsets.
+    """
+    if str(manifest.get('temporalScaleUnit', 'frames')) != 's':
+        return None
+    secs = manifest.get('temporalScaleSeconds')
+    if not secs:
+        return None
+    return [float(x) for x in secs], float(manifest.get('cumulativeWindowSeconds') or 0)
 
 
 def temporal_config(manifest):
     """`(scales, cumulative_window, dropped_metrics)` — the flow feature set a model expects.
+
+    Frame offsets, always — including for a model that declared its scales in seconds, whose
+    `temporalScales` records what those durations were at its reference interval. That is what keeps
+    this one function: a seconds model is a frames model plus a statement about which frame rate its
+    offsets belong to, so nothing downstream has to learn a second shape.
 
     `droppedMetrics` records planes deliberately excluded at training. Three of the 15 carry no
     cell/background structure on intravital data (divergence, vorticity, flow_structure_alignment;
@@ -296,7 +454,7 @@ class CoastalUtils(SegmentationUtils):
     TEMPORAL_SCALE_MODES = ('frames', 'seconds')
 
     def _temporal_for(self, model_params):
-        """The resolved `(scales, cumulative, dropped)` for a group, by model path.
+        """The resolved `(scales, cumulative, dropped, rename)` for a group, by model path.
 
         Resolves on a miss rather than raising: `predict_slice` is also driven DIRECTLY — by the
         preview, by a test, by a REPL session — with a group the constructor never saw. Memoised, so
@@ -308,7 +466,14 @@ class CoastalUtils(SegmentationUtils):
         return self._temporal[key]
 
     def _resolve_temporal(self, model_params):
-        """`(scales, cumulative, dropped)` for one model group, after the scale-mode decision.
+        """`(scales, cumulative, dropped, rename)` for one group, after the scale-mode decision.
+
+        `rename` is the repair that makes `seconds` mode correct at all: resolving the scales renames
+        the per-scale planes (`mag_{offset}`), and coastal stacks the metric dict by `sorted(keys)`
+        — a string sort — at training and at inference alike. So `[1,2,4,8]` resolved to `[2,4,8,16]`
+        feeds `mag_16` into the channel the model reads as `mag_1`, with the right channel COUNT and
+        therefore no error. `mag_rename` maps the resolved planes back onto the trained names; see
+        `apply_mag_rename`, which is where they are applied.
 
         The mismatch is logged in BOTH modes — that is the point. In `seconds` mode it says what was
         changed; in `frames` mode it says what was *not*, because until now nothing told you that the
@@ -328,8 +493,38 @@ class CoastalUtils(SegmentationUtils):
             raise ValueError(f'temporalScaleMode must be one of {self.TEMPORAL_SCALE_MODES}, '
                              f'got {mode!r}')
 
-        new_scales, new_cum, note = resolve_scales_for_interval(
+        # A model that DECLARED its scales in seconds resolves from the durations themselves rather
+        # than from the offsets they became at its reference rate — one rounding, not two. Only in
+        # `seconds` mode: `frames` still means "feed it the offsets it was trained on", which is what
+        # reproduces an existing pipeline exactly.
+        declared = temporal_seconds(manifest)
+        if mode == 'seconds' and declared and dt_target:
+            secs, cum_secs = declared
+            new_scales, new_cum, problem = scales_from_seconds(
+                secs, cum_secs or cumulative * (dt_model or 0), dt_target)
+            if problem:
+                raise ValueError(
+                    f'this model was trained on spans of {", ".join(f"{d:g} s" for d in secs)} and '
+                    f'{problem}. Segment a movie acquired at {max_frame_interval(secs):g} s/frame or '
+                    f'finer, or set Temporal scale back to "As trained".')
+            new_cum = new_cum or cumulative
+            if new_scales != scales:
+                self.logger.log(
+                    f'>> temporal scales matched by duration: '
+                    f'{[f"{d:g}s" for d in secs]} -> {new_scales} frames at {dt_target:g} s/frame '
+                    f'(trained offsets {scales} at {dt_model:g} s/frame)')
+            return new_scales, new_cum, dropped, mag_rename(scales, new_scales)
+
+        new_scales, new_cum, note, problem = resolve_scales_for_interval(
             scales, cumulative, dt_model, dt_target)
+
+        if problem and mode == 'seconds':
+            # Refused, not clamped. Both ways this fails — a collapsed scale set and a duration
+            # below one frame — change the CHANNEL LAYOUT the model reads, which is the silent
+            # wrong-mask failure the manifest exists to prevent.
+            raise ValueError(
+                f'cannot match durations: {problem}. Set Temporal scale back to '
+                f'"As trained" to feed the model its trained frame offsets instead.')
 
         if not note:
             # Nothing changed. Silent when the two intervals agree — but NOT when one of them is
@@ -345,17 +540,17 @@ class CoastalUtils(SegmentationUtils):
             elif manifest and dt_target is None:
                 self.logger.log('[WARN] This image records no frame interval in seconds — the '
                                 "model's temporal scales cannot be checked against it.")
-            return new_scales, new_cum, dropped
+            return new_scales, new_cum, dropped, {}
 
         if mode == 'seconds':
             self.logger.log(f'>> temporal scales matched by duration: {note}')
-            return new_scales, new_cum, dropped
+            return new_scales, new_cum, dropped, mag_rename(scales, new_scales)
 
         self.logger.log(
             f'[WARN] Frame rate differs from the model\'s: {note}. The model sees different '
             f'displacements than it was fitted on. Set Temporal scale to "Match durations" to '
             f'convert.')
-        return scales, cumulative, dropped
+        return scales, cumulative, dropped, {}
 
     @staticmethod
     def _quieten_cv2_threads():
@@ -600,15 +795,16 @@ class CoastalUtils(SegmentationUtils):
                 'TEMPORAL_RADIUS > 0 (see SegmentationUtils.predict_slice)')
 
         is_3d = (tile.ndim == 4)
-        scales, cumulative, dropped = self._temporal_for(model_params)
+        scales, cumulative, dropped, rename = self._temporal_for(model_params)
         inference = self._get_inference(model_params)
-        feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped)
+        feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped,
+                                        rename)
         projected = self._cached_projection(window, model_params, norm_params)
         flow_caches = self._flow_caches_for(window.tile, window.start, window.index, cumulative)
 
         if not is_3d:
             frame, metrics = self._cached_features(
-                feature_key, 0, projected, window.index, scales, cumulative, dropped,
+                feature_key, 0, projected, window.index, scales, cumulative, dropped, rename,
                 flow_caches, window.start)
             return np.asarray(inference.predict_frame(frame, metrics)[1]).astype(self.LABEL_DTYPE)
 
@@ -627,7 +823,7 @@ class CoastalUtils(SegmentationUtils):
         features = self._map_z(
             FLOW_WORKERS, n_z,
             lambda z: self._cached_features(feature_key, z, projected[:, z], window.index,
-                                            scales, cumulative, dropped,
+                                            scales, cumulative, dropped, rename,
                                             flow_caches, window.start))
         planes = self._map_z(
             PREDICT_WORKERS, n_z,
@@ -768,7 +964,7 @@ class CoastalUtils(SegmentationUtils):
     # only when there is more than one group to share it with: a single-pass run allocates nothing
     # and behaves exactly as before.
 
-    def _feature_key(self, context_id, model_params, scales, cumulative, dropped):
+    def _feature_key(self, context_id, model_params, scales, cumulative, dropped, rename=None):
         """What makes two model groups' flow inputs interchangeable — or None to not cache.
 
         None whenever caching cannot pay: no window stamp (an older base, or the 2D non-temporal
@@ -781,13 +977,18 @@ class CoastalUtils(SegmentationUtils):
                     model_params.get('cellChannels'), 'cellChannels',
                     'coastal_models_for_python (coastal.jl)') or [0]),
                 model_params.get('normalise'),
-                tuple(scales), cumulative, tuple(sorted(dropped)))
+                # `rename` too, and not because it changes the flow: two groups can resolve to the
+                # SAME offsets from different trained ones (one model fitted at 5 s/frame, another at
+                # 15), and then the planes they need are named differently. Sharing on the offsets
+                # alone would hand the second group the first one's channel names.
+                tuple(scales), cumulative, tuple(sorted(dropped)),
+                tuple(sorted((rename or {}).items())))
 
     def _cached_features(self, feature_key, z, window, center, scales, cumulative, dropped,
-                         flow_caches=None, window_offset=0):
+                         rename=None, flow_caches=None, window_offset=0):
         """`_plane_features`, memoised per z for as long as one window is being worked on."""
         if feature_key is None:
-            return self._plane_features(window, center, scales, cumulative, dropped,
+            return self._plane_features(window, center, scales, cumulative, dropped, rename,
                                         flow_caches, z, window_offset)
 
         with self._feature_lock:
@@ -803,14 +1004,14 @@ class CoastalUtils(SegmentationUtils):
         # would serialise the very z-loop `FLOW_WORKERS` exists to widen. Two threads racing on the
         # same key would each compute it and one would win; they cannot race here in practice
         # because `_map_z` visits each z once per group.
-        value = self._plane_features(window, center, scales, cumulative, dropped,
+        value = self._plane_features(window, center, scales, cumulative, dropped, rename,
                                      flow_caches, z, window_offset)
         with self._feature_lock:
             if self._feature_cache_key == feature_key[0]:
                 self._feature_cache[(feature_key, z)] = value
         return value
 
-    def _plane_features(self, window, center, scales, cumulative, dropped,
+    def _plane_features(self, window, center, scales, cumulative, dropped, rename=None,
                         flow_caches=None, z=0, window_offset=0):
         """One 2D plane's model input: `[W, Y, X]` window → `(frame, metrics)`.
 
@@ -820,15 +1021,19 @@ class CoastalUtils(SegmentationUtils):
         cache = None if flow_caches is None else flow_caches[z]
         frame, metrics = self._flow_metrics(window, center, scales, cumulative,
                                             flow_cache=cache, window_offset=window_offset)
+        # Renamed BEFORE the drop, so `droppedMetrics` keeps meaning the names training recorded.
+        # A dropped plane is never a `mag_*` one today (they follow the scales and are not offered as
+        # ticks) but the two must not be free to disagree about which spelling they use.
+        metrics = apply_mag_rename(metrics, rename)
         if dropped:
             metrics = {k: v for k, v in metrics.items() if k not in dropped}
         return frame, metrics
 
-    def _predict_plane(self, window, center, scales, cumulative, dropped, inference):
+    def _predict_plane(self, window, center, scales, cumulative, dropped, inference, rename=None):
         """One 2D plane: `[W, Y, X]` window → uint32 labels `[Y, X]`.
 
         The 2D path, and what `_plane_features` + `predict_frame` do per z on the 3D one.
         """
-        frame, metrics = self._plane_features(window, center, scales, cumulative, dropped)
+        frame, metrics = self._plane_features(window, center, scales, cumulative, dropped, rename)
         _, instances, _ = inference.predict_frame(frame, metrics)
         return np.asarray(instances).astype(self.LABEL_DTYPE)

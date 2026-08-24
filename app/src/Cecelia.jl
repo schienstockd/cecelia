@@ -163,7 +163,8 @@ export resync_ome_meta!
 export RemoveImage
 export CellposeSegment
 export CoastalSegment, coastal_models_for_python
-export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
+export TrainFlowModel, parse_temporal_scales, parse_temporal_seconds, flow_max_frame_interval,
+       flow_model_target, flow_training_qc_findings
 export flow_model_filename
 export MeasureLabels
 export Branching

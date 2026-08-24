@@ -85,9 +85,52 @@
       "tip": "Rest of each movie is held out to tell convergence from memorising; 1 = none"
     },
     {
+      "key": "temporalScaleMode",
+      "label": "Temporal scale",
+      "type": "select",
+      "default": "frames",
+      "tip": "Frames pools every movie at the same lags; seconds resolves spans per movie",
+      "options": [
+        {
+          "label": "Frame lags",
+          "value": "frames"
+        },
+        {
+          "label": "Spans in seconds",
+          "value": "seconds"
+        }
+      ]
+    },
+    {
+      "key": "temporalScaleSeconds",
+      "label": "Temporal spans (s)",
+      "type": "text",
+      "default": "5,10,20,40",
+      "showIf": {
+        "temporalScaleMode": "seconds"
+      },
+      "tip": "Motion spans each movie is read at, converted to its own frame lags"
+    },
+    {
+      "key": "cumulativeWindowSeconds",
+      "label": "Cumulative window (s)",
+      "type": "float",
+      "min": 0.0,
+      "max": 600.0,
+      "step": 5.0,
+      "default": 30.0,
+      "showIf": {
+        "temporalScaleMode": "seconds"
+      },
+      "tip": "Span summed for total displacement"
+    },
+    {
       "key": "temporalScales",
       "label": "Temporal scales",
       "type": "chipSelect",
+      "showIf": {
+        "temporalScaleMode": "frames"
+      },
       "default": [
         "1",
         "2",
@@ -138,6 +181,9 @@
       "max": 51,
       "step": 1,
       "default": 5,
+      "showIf": {
+        "temporalScaleMode": "frames"
+      },
       "tip": "Frames summed for total displacement"
     },
     {

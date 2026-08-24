@@ -918,20 +918,73 @@ fitted across intervals has no single interval to convert from, and a mean is a 
   because the alternative changes what the network is fed and so what a re-run of an existing
   pipeline produces. A mismatch is now **logged as a warning** either way: until this existed nothing
   told you the model in the picker was fitted at a different frame rate than the movie you aimed it at.
-- **`seconds`** — `resolve_scales_for_interval` re-expresses each offset as the same DURATION on this
-  movie (`round(scale × dt_model / dt_target)`, floor 1). Two consequences worth knowing before
-  picking it. On a **faster** movie the offsets grow, and `TEMPORAL_RADIUS` grows with them — a 3×
-  faster movie reads and holds a 3× deeper window per tile, and needs proportionally more timepoints
-  (the existing "not enough timepoints" guard now says so). On a **slower** movie durations
-  **collapse** onto the same offset and the list gets shorter, which is deliberate: two declared
-  durations landing on one frame offset would feed the model the same plane twice under two channel
-  names, shifting every later channel.
+- **`seconds`** — each offset is re-expressed as the same DURATION on this movie. For a model that
+  declared its spans (below) that is `round(span / dt_target)` directly; for one that did not, it is
+  `round(scale × dt_model / dt_target)`. On a **faster** movie the offsets grow, and
+  `TEMPORAL_RADIUS` grows with them — a 3× faster movie reads and holds a 3× deeper window per tile,
+  and needs proportionally more timepoints (the "not enough timepoints" guard says so). On a movie
+  **too coarse** for the model it **refuses**: see below.
+
+**Two things this mode gets wrong if you build it the obvious way**, both found on 2026-08-24 in the
+shipped inference-only version, and both about the CHANNEL LAYOUT rather than the arithmetic.
+
+*Renaming.* Coastal names its per-scale planes `mag_{offset}` and stacks the metric dict by
+`sorted(keys)` — a plain **string** sort, in `train.py::_stack_metrics` and `segment.py::predict_frame`
+alike. So resolving `[1,2,4,8]` to `[2,4,8,16]` puts `mag_16` first, in the channel the model was
+fitted to read `mag_1` in. The channel *count* is unchanged, so nothing raises and a plausible wrong
+mask comes back. `mag_rename` / `apply_mag_rename` pair the resolved offsets to the trained ones **by
+position** and rename the planes before the model sees them, which makes the sort reproduce the
+training order exactly.
+
+*Refusing.* The old code deduped a collapsed scale set and reported it in a note. Two declared
+durations landing on one frame offset is not a shorter feature set — it shifts every channel after
+the mag block and zero-fills the tail. Same for a duration shorter than one target frame, which
+cannot be fixed because frames that were not acquired cannot be interpolated. Both now raise, naming
+the ceiling and pointing back at `As trained`.
+
+### Declaring the spans at training
+
+`opticalFlow.train`'s own **Temporal scale**: `frames` (default) or `seconds`. In `seconds` you give
+the SPANS — `5,10,20,40` — and each training movie is resolved onto its **own** frame offsets. A set
+that mixes 5 s/frame and 15 s/frame then contributes one feature geometry instead of three-fold
+different ones under identical channel names, which is what `frames` silently does.
+
+Three things follow from it, and the third is what keeps the change small:
+
+- A movie whose frame interval is unknown, in another unit, or too coarse for the spans is
+  **skipped**, with a warning naming its rate. Not clamped onto its closest frames: a clamped movie
+  contributes different spans than the rest under the same channel names.
+- The sequences are renamed onto ONE canonical set of offsets — the spans at the **finest** interval
+  among the movies actually used (`pooled_offsets`). Finest, so at least one movie needs no rename
+  and no canonical offset rounds below one of its frames.
+- **The model stays an ordinary frame-offset model.** `temporalScales` means exactly what it always
+  meant; `temporalReferenceInterval` says which frame rate those offsets belong to, and
+  `manifest_frame_interval` returns it in preference to `physicalScales` — which for a mixed-rate
+  model correctly returns `None`. Nothing downstream needs a second shape.
+
+The manifest gains `temporalScaleUnit`, `temporalScaleSeconds`, `cumulativeWindowSeconds`,
+`temporalReferenceInterval`, `maxFrameInterval` and `temporalScalesPerMovie`, and only on a seconds
+model — an absent key means "this model does not work that way", where a present null would read as a
+measurement that went missing.
+
+`maxFrameInterval` is the coarsest acquisition the model can be applied to — and specifically the
+rate below which **everything** resolves, found by scanning up to the first failure rather than by a
+closed form. **Resolving is not monotone in the frame interval**, which is the whole reason: spans of
+10 s and 15 s collide at 6 s/frame (`[2, 2]`) and separate again at 7 (`[1, 2]`). So "the coarsest
+rate that works" is not a threshold — there are holes above it — and a ceiling quoting one would
+promise a rate while leaving a finer rate broken.
+
+The obvious closed form (the shortest span, and the smallest gap between two of them) was tried first
+and is **wrong in the direction that matters**: it gives 15 for spans 15/30/60/120, which resolve
+perfectly well at 20. That is not a conservative ceiling, it is a model telling someone their data is
+too coarse for it when it is not — found by running the end-to-end check on fXgbTl, which refused a
+20 s/frame movie the resolver was happy with.
 
 This is the temporal half of *"choosing the feature geometry in physical units"*
 ([`MODEL_VAULT_PLAN.md`](todo/MODEL_VAULT_PLAN.md) → *Would you train in physical units instead?*),
-done at **inference only**. It needs no retraining and invalidates no model, which is why it is
-separable from the training-side change the plan sequences behind `perf/coastal-speed`. The spatial
-half is untouched — pixel sizes are still matched by the user, not by the code.
+now on **both** sides. Existing models are untouched and still segment exactly as before — `frames`
+is the default in both tasks. The spatial half is untouched: pixel sizes are still matched by the
+user, not by the code.
 
 **Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
 label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis

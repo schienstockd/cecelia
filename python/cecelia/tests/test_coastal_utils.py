@@ -770,34 +770,195 @@ class ResolveScalesForIntervalTest(unittest.TestCase):
         return coastal_utils.resolve_scales_for_interval(scales, cumulative, dt_model, dt_target)
 
     def test_the_same_interval_changes_nothing_and_says_nothing(self):
-        scales, cum, note = self._r([1, 2, 4, 8], 5, 15.0, 15.0)
-        self.assertEqual((scales, cum, note), ([1, 2, 4, 8], 5, ''))
+        self.assertEqual(self._r([1, 2, 4, 8], 5, 15.0, 15.0), ([1, 2, 4, 8], 5, '', ''))
 
     def test_a_faster_movie_needs_more_frames_for_the_same_time(self):
         # 15 s/frame trained, 5 s/frame here: scale 4 was 60 s, which is 12 frames now.
-        scales, cum, note = self._r([1, 2, 4, 8], 5, 15.0, 5.0)
+        scales, cum, note, problem = self._r([1, 2, 4, 8], 5, 15.0, 5.0)
         self.assertEqual(scales, [3, 6, 12, 24])
         self.assertEqual(cum, 15)
+        self.assertEqual(problem, '')
         self.assertIn('15 s/frame trained, 5 s/frame here', note)
 
-    def test_a_slower_movie_collapses_durations_and_says_so(self):
-        # 5 s/frame trained, 15 s/frame here: 5 s, 10 s and 20 s all land on 1 frame.
-        scales, cum, note = self._r([1, 2, 4, 8], 5, 5.0, 15.0)
-        self.assertEqual(scales, [1, 3])
-        self.assertIn('collapsed', note)
-        self.assertIn('clamped to 1', note)
+    def test_the_resolved_list_pairs_positionally_with_the_trained_one(self):
+        """The contract `mag_rename` rests on. Same length, same order, so the i-th resolved offset
+        is the i-th trained duration — a shorter or reordered list silently permutes the model's
+        input channels, because coastal stacks the metric dict by a STRING sort of its keys."""
+        scales, _, _, problem = self._r([1, 2, 4, 8], 5, 15.0, 5.0)
+        self.assertEqual(problem, '')
+        self.assertEqual(len(scales), 4)
+        self.assertEqual(scales, sorted(scales))
 
-    def test_duplicates_never_survive(self):
-        """Two declared durations on one frame offset would feed the model the same plane twice
-        under two channel names — worse than one plane, and it shifts every later channel."""
-        scales, _, _ = self._r([2, 3], 5, 5.0, 15.0)
-        self.assertEqual(len(scales), len(set(scales)))
+    def test_a_slower_movie_that_collapses_durations_is_refused(self):
+        """5 s/frame trained, 15 s/frame here: 5 s, 10 s and 20 s all land on 1 frame. The old code
+        deduped to `[1, 3]` and reported it, which fed a 12-channel model 11 planes with the tail
+        zero-filled and everything after the mag block shifted."""
+        scales, cum, note, problem = self._r([1, 2, 4, 8], 5, 5.0, 15.0)
+        self.assertEqual((scales, cum, note), ([1, 2, 4, 8], 5, ''), 'nothing may be returned resolved')
+        self.assertIn('too coarse', problem)
+
+    def test_a_duration_below_one_target_frame_is_refused_not_clamped(self):
+        # 5 s/frame trained, 30 s/frame here: scale 1 was 5 s, which is a sixth of a frame now.
+        scales, _, _, problem = self._r([1, 4], 5, 5.0, 30.0)
+        self.assertEqual(scales, [1, 4])
+        self.assertIn('shorter than one frame', problem)
+        self.assertIn('cannot be interpolated', problem)
 
     def test_an_unknown_interval_leaves_everything_alone(self):
         for dt_model, dt_target in ((None, 5.0), (15.0, None), (None, None), (0, 5.0)):
-            scales, cum, note = self._r([1, 2, 4], 5, dt_model, dt_target)
-            self.assertEqual((scales, cum, note), ([1, 2, 4], 5, ''),
+            self.assertEqual(self._r([1, 2, 4], 5, dt_model, dt_target), ([1, 2, 4], 5, '', ''),
                              f'{dt_model!r}/{dt_target!r} must be a no-op')
+
+
+class MagRenameTest(unittest.TestCase):
+    """The repair for coastal's string-sorted channel order.
+
+    `flow_metrics_for_frame` names its per-scale planes `mag_{offset}`, and BOTH coastal's trainer
+    (`train.py::_stack_metrics`) and its inference (`segment.py::predict_frame`) stack the metric dict
+    by `sorted(keys)` — lexicographic. So resolving `[1,2,4,8]` to `[2,4,8,16]` puts `mag_16` first,
+    in the channel the model reads as `mag_1`, with the right channel COUNT and therefore no error.
+    """
+
+    @staticmethod
+    def _m(trained, resolved):
+        from cecelia.utils import coastal_utils
+        return coastal_utils.mag_rename(trained, resolved)
+
+    def test_nothing_to_do_when_the_offsets_are_unchanged(self):
+        self.assertEqual(self._m([1, 2, 4, 8], [1, 2, 4, 8]), {})
+
+    def test_the_planes_are_paired_by_position_not_by_name(self):
+        self.assertEqual(self._m([1, 2, 4, 8], [3, 6, 12, 24]),
+                         {'mag_3': 'mag_1', 'mag_6': 'mag_2',
+                          'mag_12': 'mag_4', 'mag_24': 'mag_8'})
+
+    def test_renaming_restores_the_training_channel_order(self):
+        """The actual failure, reproduced end to end. Without the rename `mag_16` sorts into the
+        channel the model was fitted to read `mag_1` in."""
+        from cecelia.utils import coastal_utils
+        fixed = ['acceleration', 'cumulative_mag', 'edge_strength', 'normal_flow']
+        trained_order = sorted(fixed + [f'mag_{s}' for s in (1, 2, 4, 8)])
+
+        resolved = {k: k for k in fixed + [f'mag_{s}' for s in (2, 4, 8, 16)]}
+        self.assertNotEqual(sorted(resolved), trained_order, 'the bug must still be reproducible')
+
+        repaired = coastal_utils.apply_mag_rename(
+            resolved, coastal_utils.mag_rename([1, 2, 4, 8], [2, 4, 8, 16]))
+        self.assertEqual(sorted(repaired), trained_order)
+        # And the plane the model reads as the SHORTEST lag really is the shortest one measured.
+        self.assertEqual(repaired['mag_1'], 'mag_2')
+
+    def test_a_length_mismatch_raises_rather_than_pairing_some_of_them(self):
+        with self.assertRaises(ValueError):
+            self._m([1, 2, 4, 8], [1, 2, 4])
+
+    def test_apply_is_a_no_op_object_when_there_is_nothing_to_rename(self):
+        """It sits inside the per-plane, per-timepoint path; an empty rename must not copy the dict."""
+        from cecelia.utils import coastal_utils
+        metrics = {'mag_1': 1}
+        self.assertIs(coastal_utils.apply_mag_rename(metrics, {}), metrics)
+
+
+class ScalesFromSecondsTest(unittest.TestCase):
+    """Resolving DECLARED spans onto a movie — the direct path a seconds-trained model gets."""
+
+    @staticmethod
+    def _s(seconds, cum, dt):
+        from cecelia.utils import coastal_utils
+        return coastal_utils.scales_from_seconds(seconds, cum, dt)
+
+    def test_spans_become_that_movies_own_frame_offsets(self):
+        self.assertEqual(self._s([5, 10, 20, 40], 25, 5.0), ([1, 2, 4, 8], 5, ''))
+        self.assertEqual(self._s([5, 10, 20, 40], 25, 2.5), ([2, 4, 8, 16], 10, ''))
+
+    def test_one_rounding_not_two(self):
+        """Via the offsets this would round `d -> n` at training and `n x ratio` again here. Being
+        exactly the span the user declared is the entire reason for declaring one."""
+        offsets, _, problem = self._s([7], 0, 3.0)
+        self.assertEqual((offsets, problem), ([2], ''))  # 7/3 = 2.33 -> 2
+
+    def test_a_coarse_movie_that_collides_two_spans_is_refused(self):
+        # Both spans still round to a whole frame — they just round to the SAME one, which is the
+        # failure that has no error of its own downstream: the channel count stays plausible.
+        offsets, _, problem = self._s([10, 12], 25, 10.0)
+        self.assertEqual(offsets, [])
+        self.assertIn('the same frame offset', problem)
+
+    def test_a_span_below_one_frame_is_refused(self):
+        offsets, _, problem = self._s([5, 10], 25, 12.0)
+        self.assertEqual(offsets, [])
+        self.assertIn('shorter than one frame', problem)
+
+    def test_the_cumulative_window_clamps_instead_of_refusing(self):
+        """It is one `cumulative_mag` plane at any length, so unlike the per-scale planes it cannot
+        change the channel layout. 2 is coastal's floor — a window of 1 is not cumulative."""
+        _, cum, problem = self._s([5, 10], 3, 5.0)
+        self.assertEqual((cum, problem), (2, ''))
+
+
+class MaxFrameIntervalTest(unittest.TestCase):
+    """The ceiling a seconds-trained model declares.
+
+    Not a closed form, and the reason is the first test below: the predicate is not monotone in dt, so
+    "the coarsest rate that works" is not a threshold. What a model can honestly promise is the rate
+    below which everything works, and that is what this returns.
+    """
+
+    SPAN_SETS = ([15, 30, 60, 120], [5, 10, 20, 40], [10, 15, 40], [3, 7, 30], [12], [10, 15])
+
+    @staticmethod
+    def _c(seconds):
+        from cecelia.utils import coastal_utils
+        return coastal_utils.max_frame_interval(seconds)
+
+    def test_resolving_is_not_monotone_in_the_frame_interval(self):
+        """Why there is no closed form. 10 s and 15 s collide at 6 s/frame and separate again at 7 —
+        so a ceiling of "the largest dt that resolves" would promise a rate while leaving a hole at a
+        FINER one, which is the opposite of a guarantee."""
+        from cecelia.utils import coastal_utils
+        at6 = coastal_utils.scales_from_seconds([10, 15], 0, 6.0)
+        at7 = coastal_utils.scales_from_seconds([10, 15], 0, 7.0)
+        self.assertIn('the same frame offset', at6[2])
+        self.assertEqual((at7[0], at7[2]), ([1, 2], ''))
+
+    def test_the_ceiling_is_exactly_where_it_starts_failing(self):
+        """The contract, both halves. Only the first half was checked before, which is how a ceiling
+        that was too TIGHT by a third went unnoticed: spans 15/30/60/120 resolve at 20 s/frame while
+        the old closed form advertised 15, so a model would have told someone their data was too
+        coarse for it when it was not."""
+        from cecelia.utils import coastal_utils
+        step = coastal_utils.FRAME_INTERVAL_STEP
+        for spans in self.SPAN_SETS:
+            dt = self._c(spans)
+            self.assertEqual(coastal_utils.scales_from_seconds(spans, 0, dt)[2], '',
+                             f'{spans} must resolve at its own ceiling {dt}')
+            self.assertNotEqual(coastal_utils.scales_from_seconds(spans, 0, round(dt + step, 6))[2],
+                                '', f'{spans} must NOT resolve one step past {dt}')
+
+    def test_everything_finer_than_the_ceiling_resolves_too(self):
+        """The promise the number actually makes. A ceiling with a hole below it is worse than none."""
+        from cecelia.utils import coastal_utils
+        step = coastal_utils.FRAME_INTERVAL_STEP
+        for spans in self.SPAN_SETS:
+            dt = self._c(spans)
+            probe = step
+            while probe <= dt:
+                self.assertEqual(coastal_utils.scales_from_seconds(spans, 0, probe)[2], '',
+                                 f'{spans} failed at {probe}, below its ceiling {dt}')
+                probe = round(probe + step, 6)
+
+    def test_the_shortest_span_bounds_it(self):
+        """Nothing coarser than twice the shortest span can ever resolve — it rounds below one frame —
+        which is what stops the scan."""
+        for spans in self.SPAN_SETS:
+            self.assertLessEqual(self._c(spans), 2 * min(spans))
+
+    def test_a_single_span(self):
+        # One span cannot collide with anything, so only the below-one-frame bound applies.
+        self.assertEqual(self._c([12]), 23.99)
+
+    def test_no_spans(self):
+        self.assertIsNone(self._c([]))
 
 
 class TemporalScaleModeTest(unittest.TestCase):
@@ -843,3 +1004,89 @@ class TemporalScaleModeTest(unittest.TestCase):
                     dim_utils=_DimUtils(frame_interval=5.0, frame_interval_unit='ms'),
                     params_extra={'temporalScaleMode': 'seconds'})
         self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[0], [1, 2, 4, 8])
+
+    def test_seconds_mode_returns_the_rename_that_keeps_the_channels_in_order(self):
+        """Without it the resolution is worse than doing nothing: `mag_24` sorts before `mag_3`, so
+        the model reads the longest lag in the channel it was fitted to read the shortest."""
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[3],
+                         {'mag_3': 'mag_1', 'mag_6': 'mag_2',
+                          'mag_12': 'mag_4', 'mag_24': 'mag_8'})
+
+    def test_frames_mode_never_renames(self):
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0))
+        self.assertEqual(cu._temporal_for({'model': '/nonexistent/model.pt'})[3], {})
+
+    def test_a_target_too_coarse_to_match_is_refused_not_clamped(self):
+        """Trained at 5 s/frame, run on a 30 s/frame movie: every trained span is under one frame
+        here. Clamping fed the model a channel layout it was never fitted on and returned a mask."""
+        with self.assertRaises(ValueError) as ctx:
+            _utils(manifest={**self._MANIFEST,
+                             'physicalScales': {'a': {'t': 5.0, 'tUnit': 's'}}},
+                   dim_utils=_DimUtils(frame_interval=30.0),
+                   params_extra={'temporalScaleMode': 'seconds'})
+        self.assertIn('cannot match durations', str(ctx.exception))
+        self.assertIn('As trained', str(ctx.exception))
+
+
+class DeclaredSecondsModelTest(unittest.TestCase):
+    """A model whose scales were DECLARED in seconds — `opticalFlow.train`'s `seconds` mode.
+
+    Its `temporalScales` are the spans resolved at `temporalReferenceInterval`, so every path that
+    predates the mode still sees an ordinary frame-offset model. What changes is that inference
+    re-resolves from the SPANS, which is one rounding rather than two, and that the reference interval
+    is authoritative even when the source movies disagree — which is the case the whole mode exists
+    for and the one `physicalScales` correctly refuses to answer.
+    """
+
+    _MANIFEST = {'temporalScales': [1, 2, 4, 8], 'cumulativeWindow': 5,
+                 'temporalScaleUnit': 's',
+                 'temporalScaleSeconds': [5.0, 10.0, 20.0, 40.0],
+                 'cumulativeWindowSeconds': 25.0,
+                 'temporalReferenceInterval': 5.0,
+                 'maxFrameInterval': 5.0,
+                 # Pooled across rates on purpose: two movies, 5 s and 15 s per frame.
+                 'physicalScales': {'a': {'t': 5.0, 'tUnit': 's'},
+                                    'b': {'t': 15.0, 'tUnit': 's'}}}
+
+    def test_the_reference_interval_wins_over_disagreeing_source_movies(self):
+        from cecelia.utils import coastal_utils
+        self.assertEqual(coastal_utils.manifest_frame_interval(self._MANIFEST), 5.0)
+        # Without it, a mixed-rate model cannot be duration-matched at all.
+        self.assertIsNone(coastal_utils.manifest_frame_interval(
+            {'physicalScales': self._MANIFEST['physicalScales']}))
+
+    def test_frames_mode_still_feeds_it_the_trained_offsets(self):
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=2.5))
+        scales, cum, _, rename = cu._temporal_for({'model': '/nonexistent/model.pt'})
+        self.assertEqual((scales, cum, rename), ([1, 2, 4, 8], 5, {}))
+
+    def test_seconds_mode_resolves_from_the_spans_and_renames(self):
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=2.5),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        scales, cum, _, rename = cu._temporal_for({'model': '/nonexistent/model.pt'})
+        self.assertEqual(scales, [2, 4, 8, 16])
+        self.assertEqual(cum, 10)
+        self.assertEqual(rename, {'mag_2': 'mag_1', 'mag_4': 'mag_2',
+                                  'mag_8': 'mag_4', 'mag_16': 'mag_8'})
+
+    def test_at_the_reference_rate_nothing_moves(self):
+        cu = _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=5.0),
+                    params_extra={'temporalScaleMode': 'seconds'})
+        scales, cum, _, rename = cu._temporal_for({'model': '/nonexistent/model.pt'})
+        self.assertEqual((scales, cum, rename), ([1, 2, 4, 8], 5, {}))
+
+    def test_past_the_declared_ceiling_it_refuses_and_names_the_ceiling(self):
+        from cecelia.utils import coastal_utils
+        spans = self._MANIFEST['temporalScaleSeconds']
+        ceiling = coastal_utils.max_frame_interval(spans)
+        self.assertLess(ceiling, 12.0, 'the probe below must actually be past the ceiling')
+        with self.assertRaises(ValueError) as ctx:
+            _utils(manifest=self._MANIFEST, dim_utils=_DimUtils(frame_interval=12.0),
+                   params_extra={'temporalScaleMode': 'seconds'})
+        msg = str(ctx.exception)
+        # The ceiling the resolver ACTUALLY enforces, not a second spelling of it in the test — the
+        # two drifting apart is the defect this whole class exists to pin down.
+        self.assertIn(f'{ceiling:g} s/frame or finer', msg)
+        self.assertIn('As trained', msg)

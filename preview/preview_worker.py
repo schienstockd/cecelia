@@ -796,8 +796,6 @@ def _flow_frame_and_metrics(ctx):
     from `CoastalUtils` — the exact silent-misalignment failure the metric-set contract exists to
     prevent. One path, used by both, and it is the run's own.
     """
-    from cecelia.utils.coastal_utils import temporal_config
-
     models = ctx.params.get('models') or {}
     if not models:
         raise ValueError('no models in preview params')
@@ -806,16 +804,18 @@ def _flow_frame_and_metrics(ctx):
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     mp = models[sorted(models.keys())[0]]
-    scales, cumulative, dropped = temporal_config(seg._manifest(mp))
+    # `_temporal_for`, not `temporal_config`: the run's resolution, including the Temporal scale mode
+    # and the plane rename it needs. Reading the manifest directly showed the TRAINED offsets whatever
+    # the form said, so under "Match durations" the preview and the run disagreed about the very
+    # channels this view exists to display.
+    scales, cumulative, dropped, rename = seg._temporal_for(mp)
 
     context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
 
     window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
-    frame, metrics = seg._flow_metrics(window, centre, scales, cumulative)
-    if dropped:
-        # The model's OWN dropped set, from its manifest. Keeping a plane the model was not trained
-        # on would show a sheet that does not match the channels it is fed.
-        metrics = {k: v for k, v in metrics.items() if k not in dropped}
+    # `_plane_features` rather than `_flow_metrics` + a local drop: it is the run's own composition of
+    # the two, so the rename cannot be forgotten here while the run applies it.
+    frame, metrics = seg._plane_features(window, centre, scales, cumulative, dropped, rename)
     return seg, mp, frame, metrics, scales
 
 
