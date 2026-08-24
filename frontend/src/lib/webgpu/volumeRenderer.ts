@@ -35,12 +35,16 @@ import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../u
 export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
+import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 
-/** Bytes in the uniform struct: 5 leading vec4s + one vec4 per channel slot. */
-const UNIFORM_BYTES = 5 * 16 + MAX_CHANNELS * 16
-/** Float index of channel slot 0 — five vec4s in. Written out because getting it wrong shifts every
+/** Bytes in the uniform struct: 6 leading vec4s + one vec4 per channel slot. */
+const UNIFORM_BYTES = 6 * 16 + MAX_CHANNELS * 16
+/** Float index of channel slot 0 — six vec4s in. Written out because getting it wrong shifts every
  *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
-const CH0 = 20
+const CH0 = 24
+/** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
+ *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
+const LABEL_BPV = 4
 
 export interface VolumeRenderer {
   readonly adapter: AdapterReport
@@ -58,14 +62,16 @@ export interface VolumeRenderer {
    * absolute image µm, so a view showing planes 10-17 has to know where its box starts or every marker
    * lands a slab's worth of z away from its cell.
    */
-  setImage(meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number): void
+  setImage(meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number,
+           withLabels?: boolean): void
   /**
    * Upload one timepoint — one raw little-endian slab per channel, each exactly
    * `nX*nY*nZ*bytesPerVoxel` long — and hold it. Resolves once the bytes are actually on the GPU, so
    * the caller can time the transfer rather than the staging copy. Evicts to stay inside the budget,
    * never evicting `keep`.
    */
-  uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number): Promise<void>
+  uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number,
+                  labelBytes?: ArrayBuffer | null): Promise<void>
   /**
    * Cap the cache at `n` timepoints. The effective `capacity` is the smallest of this, the byte ceiling
    * `setImage` was given, and anything the GPU turned out not to allow.
@@ -121,6 +127,13 @@ export interface VolumeRenderer {
   /** Which slice of the segment buffer to draw, and how wide in screen px. A tail is contiguous in that
    *  buffer by construction — see `buildTrackBuffer`. */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number): void
+  /**
+   * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
+   * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
+   * `contourPx` is napari's `contour` — an outline that many voxels thick instead of a filled region,
+   * which is what lets the signal under the mask stay readable.
+   */
+  setLabelStyle(opacity: number, contourPx: number): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   draw(): void
@@ -157,6 +170,13 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       { binding: 1, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'uint', viewDimension: '3d' } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
+      // The mask and its palette. Always BOUND, even with no segmentation shown — WebGPU has no
+      // optional binding, so switching labels off binds a 1x1x1 placeholder and sets the opacity to 0
+      // rather than swapping layouts. The shader never reads it at opacity 0.
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
     ],
   })
@@ -245,10 +265,23 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
+  // The label palette: one row, written once and never again. Ids index it modulo its width.
+  const palTex = device.createTexture({
+    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  device.queue.writeTexture({ texture: palTex }, labelPaletteBytes(),
+                            { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1])
+  // Bound wherever a timepoint has no mask, because a bind group must be complete.
+  const noLabels = device.createTexture({
+    size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
+  })
 
   const u = new Float32Array(UNIFORM_BYTES / 4)
-  /** t → its volume texture and the bind group that reads it. */
-  const slots = new Map<number, { texture: GPUTexture; bindGroup: GPUBindGroup }>()
+  /** t → its volume texture, its mask (when one is shown) and the bind group that reads them. */
+  const slots = new Map<number,
+    { texture: GPUTexture; labelTexture: GPUTexture | null; bindGroup: GPUBindGroup }>()
   /** LRU order, least recently used FIRST. */
   let order: number[] = []
   let bindGroup: GPUBindGroup | null = null
@@ -264,6 +297,9 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
   const recap = () => { capacity = Math.max(2, Math.min(byteCap, requested, allowed)) }
   /** z planes per timepoint actually loaded — `meta.nZ` in 3D, 1 in the 2D plane view. */
   let depth = 1
+  /** Whether a mask rides along in each timepoint's slot. Set by `setImage`, because it changes what a
+   *  timepoint COSTS and therefore how many fit — a mask is 4 bytes a voxel against the image's 2. */
+  let labels = false
   let steps = 256
   let destroyed = false
   /** Overlay instances, grown on demand. One buffer for the whole movie — see `setOverlayPoints`. */
@@ -296,7 +332,11 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     // a browser crash rather than a bad frame, so the invariant is enforced here too and not only
     // where the eviction list is computed.
     if (t === boundT) { bindGroup = null; boundT = -1 }
-    if (!dead) slots.get(t)?.texture.destroy()
+    if (!dead) {
+      const slot = slots.get(t)
+      slot?.texture.destroy()
+      slot?.labelTexture?.destroy()
+    }
     slots.delete(t)
     const i = order.indexOf(t)
     if (i >= 0) order.splice(i, 1)
@@ -327,7 +367,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     adapter: report,
     lost: device.lost,
 
-    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0) {
+    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0, withLabels = false) {
       // NOT gated on the device being alive, deliberately. Nothing here touches the GPU except
       // `dropAll()` and `setChannels`, which guard themselves — while what it DOES set is the geometry
       // every later decision is derived from. A `!usable()` early return left the renderer describing a
@@ -339,7 +379,11 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       meta = m
       depth = Math.max(1, Math.min(zd, m.nZ))
       const nch = Math.min(m.nC, MAX_CHANNELS)
-      bytesPerTimepoint = m.nX * m.nY * depth * m.bytesPerVoxel * nch
+      labels = withLabels
+      // The mask is part of what a timepoint costs, so it is part of what decides how many fit. Leaving
+      // it out would let the cache promise a capacity it cannot hold, and the frame that discovers that
+      // is an out-of-memory scope firing mid-scrub rather than a smaller cache.
+      bytesPerTimepoint = m.nX * m.nY * depth * (m.bytesPerVoxel * nch + (withLabels ? LABEL_BPV : 0))
       allowed = Infinity                       // a new shape gets a fresh chance at the limit
       byteCap = cacheCapacity(budgetBytes, bytesPerTimepoint)
       recap()
@@ -356,7 +400,8 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       setChannels(m.channels)
     },
 
-    async uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number) {
+    async uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number,
+                          labelBytes: ArrayBuffer | null = null) {
       const m = meta
       if (!m || !usable()) return
       const nch = Math.min(m.nC, MAX_CHANNELS)
@@ -372,9 +417,16 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
         size: [m.nX, m.nY, depth * nch], dimension: '3d', format: 'r16uint',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
+      // The mask goes in the SAME error scope and the same slot as the image it annotates. One
+      // allocation failing has to take the pair down together: a slot holding a volume and no mask
+      // would render the image with the outlines silently missing.
+      const labelTexture = (labels && labelBytes) ? device.createTexture({
+        size: [m.nX, m.nY, depth], dimension: '3d', format: 'r32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      }) : null
       const oom = await device.popErrorScope()
       if (oom) {
-        if (!dead) texture.destroy()
+        if (!dead) { texture.destroy(); labelTexture?.destroy() }
         // Hold one below what we managed, so there is always room for the next frame to arrive.
         allowed = Math.max(2, slots.size - 1)
         recap()
@@ -382,6 +434,12 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
         return
       }
       if (!usable()) return
+      if (labelTexture && labelBytes) {
+        device.queue.writeTexture(
+          { texture: labelTexture }, labelBytes,
+          { bytesPerRow: m.nX * LABEL_BPV, rowsPerImage: m.nY }, [m.nX, m.nY, depth],
+        )
+      }
       for (let c = 0; c < Math.min(channelBytes.length, nch); c++) {
         device.queue.writeTexture(
           { texture, origin: [0, 0, c * depth] },
@@ -396,7 +454,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       // anything faster than that is unmeasurable through it (it is what voided the audit's first G2).
       await device.queue.onSubmittedWorkDone()
       // The device can go during that await, and everything below allocates against it.
-      if (!usable()) { if (!dead) texture.destroy(); return }
+      if (!usable()) { if (!dead) { texture.destroy(); labelTexture?.destroy() } return }
 
       const bg = device.createBindGroup({
         layout: bindGroupLayout,
@@ -404,10 +462,12 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
           { binding: 0, resource: { buffer: uniforms } },
           { binding: 1, resource: texture.createView() },
           { binding: 2, resource: lutTex.createView() },
+          { binding: 3, resource: (labelTexture ?? noLabels).createView() },
+          { binding: 4, resource: palTex.createView() },
         ],
       })
       dropSlot(t)                                    // a re-upload replaces, never leaks
-      slots.set(t, { texture, bindGroup: bg })
+      slots.set(t, { texture, labelTexture, bindGroup: bg })
       touch(t)
       for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
     },
@@ -490,6 +550,12 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       u[18] = Math.max(1, widthPx)
     },
 
+    setLabelStyle(opacity: number, contourPx: number) {
+      u[20] = Math.max(0, Math.min(1, opacity))
+      u[21] = Math.max(0, Math.round(contourPx))
+      u[22] = LABEL_PALETTE_N
+    },
+
     resize(): boolean {
       const dpr = window.devicePixelRatio || 1
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
@@ -539,7 +605,7 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       pointBuf?.destroy(); pointBuf = null
       segBuf?.destroy(); segBuf = null
       if (dead) return                     // the device took its resources with it
-      lutTex.destroy(); uniforms.destroy()
+      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
       device.destroy()
     },
   }

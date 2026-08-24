@@ -38,6 +38,13 @@ export interface ViewerMeta {
   spaceUnit: string | null
   /** Minutes per frame, or null when the image has no real timecourse. */
   frameIntervalMin: number | null
+  /**
+   * Segmentations with a mask ON DISK, so the viewer can offer them (P4). Not simply the registered
+   * label names: `labels` and `label_props` are independent registries — an imported track set has a
+   * table and no mask, and a store can be registered before it is written — so the server checks the
+   * directory and this list is the answer.
+   */
+  labelNames?: string[]
   channels: ViewerChannel[]
 }
 
@@ -71,6 +78,12 @@ export interface SlabQuery {
   /** `zstd` costs ~60 ms of server CPU and saves ~97% of the wire on real data — worth it over a
    *  network, a loss on loopback. The client picks because only the client knows which it is. */
   enc?: 'identity' | 'zstd'
+  /**
+   * Serve the MASK for this segmentation instead of the image (P4). Same route, same reader, same
+   * headers and the same `z`/`zTo` selection — a mask is another zarr of the same geometry, which is
+   * what makes it one parameter rather than a second route. The dtype differs and `X-Slab-Bpv` says so.
+   */
+  labels?: string
 }
 
 export function slabUrl(q: SlabQuery): string {
@@ -79,6 +92,7 @@ export function slabUrl(q: SlabQuery): string {
     t: String(q.t), c: String(q.c), enc: q.enc ?? 'identity',
   })
   if (q.valueName) p.set('valueName', q.valueName)
+  if (q.labels) p.set('labels', q.labels)
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
@@ -107,9 +121,14 @@ export function parseSlabShape(header: string | null): [number, number, number] 
  * a plausible-looking image of something else. Reading `.zarray`'s `dimension_separator` wrong already
  * produced exactly that once — every chunk looked absent, the slab was all zeros, and the render was
  * black with no error anywhere.
+ *
+ * `bytesPerVoxel` is overridable for exactly one caller: a MASK has the image's geometry but not its
+ * dtype (UInt32 label ids against UInt16 intensities), so the shape half of the guard asks the same
+ * question and the length half does not.
  */
 export function slabShapeError(
   header: string | null, byteLength: number, meta: ViewerMeta, zDepth = meta.nZ,
+  bytesPerVoxel = meta.bytesPerVoxel,
 ): string | null {
   const shape = parseSlabShape(header)
   if (!shape) return 'Slab response carried no X-Slab-Shape header'
@@ -117,7 +136,7 @@ export function slabShapeError(
   if (nx !== meta.nX || ny !== meta.nY || nz !== zDepth) {
     return `Slab is ${nz}x${ny}x${nx} (z,y,x) but ${zDepth}x${meta.nY}x${meta.nX} was asked for`
   }
-  const want = nx * ny * nz * meta.bytesPerVoxel
+  const want = nx * ny * nz * bytesPerVoxel
   if (byteLength !== want) return `Slab is ${byteLength} bytes, expected ${want}`
   return null
 }

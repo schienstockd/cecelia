@@ -20,7 +20,8 @@
 //      on real data is indistinguishable from an empty channel or a bad contrast window.
 //
 // Run:  node docs/todo/spike/webgpu/shader_check.mjs   → writes ~/Downloads/TMP/shader_check.html
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -106,6 +107,21 @@ wgsl = wgsl.replaceAll('${SHARED_WGSL}', SHARED)
            .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (wgsl.includes('${')) throw new Error('unresolved interpolation left in the WGSL: ' + wgsl.match(/\$\{[^}]*\}/))
 
+// Did we get the WHOLE shader? A backtick inside a WGSL comment ends the template literal it is
+// embedded in, and the extraction then takes everything up to THAT backtick — a silently truncated
+// shader that is still perfectly valid JavaScript, so neither the syntax check at the bottom nor
+// `node --check` on the source notices. It has happened twice. The entry points are the cheapest
+// evidence that the string is complete; the line count in the summary is the second.
+const complete = (name, code) => {
+  for (const want of ['@vertex fn vs', '@fragment fn fs']) {
+    if (!code.includes(want)) {
+      throw new Error(`${name} is missing '${want}' — the extraction was TRUNCATED, almost certainly ` +
+                      'by a backtick inside a WGSL comment (the template literal ends there)')
+    }
+  }
+}
+complete('MIP_WGSL', wgsl)
+
 // The overlay pass, extracted the same way. It shares the uniform buffer and therefore the camera, and
 // `project()` in it is meant to be the exact inverse of the raycast's ray construction — so the check
 // below re-derives the projection in JS and asserts the point lands where JS says it should. That is
@@ -121,6 +137,7 @@ pwgsl = pwgsl.replaceAll('${SHARED_WGSL}', SHARED)
              .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
              .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (pwgsl.includes('${')) throw new Error('unresolved interpolation in POINTS_WGSL: ' + pwgsl.match(/\$\{[^}]*\}/))
+complete('POINTS_WGSL', pwgsl)
 
 // The track-tail pass, extracted the same way. It is checked below for COMPILATION only: a segment
 // quad's correctness is a screen-space width, and asserting that needs a known camera plus a readback
@@ -136,6 +153,7 @@ swgsl = swgsl.replaceAll('${SHARED_WGSL}', SHARED)
              .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
              .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (swgsl.includes('${')) throw new Error('unresolved interpolation in SEGMENTS_WGSL: ' + swgsl.match(/\$\{[^}]*\}/))
+complete('SEGMENTS_WGSL', swgsl)
 
 const NCH = 3
 const page = `<!doctype html><html><head><meta charset=utf-8><title>Cecelia — MIP shader check</title>
@@ -191,7 +209,9 @@ try {
   const bgl = device.createBindGroupLayout({entries: [
     {binding: 0, visibility: ${UNIFORM_VIS}, buffer: {type: 'uniform'}},
     {binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'uint', viewDimension: '3d'}},
-    {binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'float', viewDimension: '2d'}}]})
+    {binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'float', viewDimension: '2d'}},
+    {binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'uint', viewDimension: '3d'}},
+    {binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {sampleType: 'float', viewDimension: '2d'}}]})
   const rt = device.createTexture({size: [cv.width, cv.height], format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC})
   const pipe = f => device.createRenderPipeline({
@@ -235,16 +255,36 @@ try {
   device.queue.writeTexture({texture: lut}, lutBytes,
     {bytesPerRow: LUT_STOPS * 4, rowsPerImage: MAX_CHANNELS}, [LUT_STOPS, MAX_CHANNELS])
 
-  // Leading vec4s: cam, vp, ext, dims, ov. The count comes from the app (LEADING_VEC4S) rather than
+  // ── labels (P4): a mask volume, a known palette, and a placeholder for "no mask" ───────────────
+  // The palette is BUILT HERE with primaries rather than read from the app: what is being checked is
+  // the shader's INDEXING (id % rows), so the rows have to be colours a readback can name. The app's
+  // real palette is golden-angle hues, which are exactly what you cannot assert against by eye.
+  const PALN = 8
+  const PALCOL = [[255,0,0],[0,255,0],[0,0,255],[255,255,0],
+                  [255,0,255],[0,255,255],[255,128,0],[128,0,255]]
+  const palBytes = new Uint8Array(PALN * 4)
+  for (let i = 0; i < PALN; i++) {
+    palBytes[i*4] = PALCOL[i][0]; palBytes[i*4+1] = PALCOL[i][1]
+    palBytes[i*4+2] = PALCOL[i][2]; palBytes[i*4+3] = 255
+  }
+  const palTex = device.createTexture({size: [PALN, 1], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST})
+  device.queue.writeTexture({texture: palTex}, palBytes, {bytesPerRow: PALN * 4}, [PALN, 1])
+  const noLab = device.createTexture({size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING})
+
+  // Leading vec4s: cam, vp, ext, dims, ov, lab. The count comes from the app (LEADING_VEC4S) rather than
   // being typed here, because a mismatch shifts every channel's contrast window by one slot and
   // renders as the wrong channel being bright, not as an error.
   const U = LEADING_VEC4S * 16 + MAX_CHANNELS * 16
   const ubuf = device.createBuffer({size: U, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST})
   const bind = device.createBindGroup({layout: bgl, entries: [
     {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: vol.createView()},
-    {binding: 2, resource: lut.createView()}]})
+    {binding: 2, resource: lut.createView()}, {binding: 3, resource: noLab.createView()},
+    {binding: 4, resource: palTex.createView()}]})
 
   const u = new Float32Array(U / 4)
+  const LAB0 = (LEADING_VEC4S - 1) * 4          // the labels vec4 is the LAST leading one
   function setUniforms(w, h, chVisible) {
     u[0] = 0.7; u[1] = 0.35; u[2] = N * 1.7; u[3] = 256          // yaw, pitch, dist, steps
     u[4] = NCH; u[5] = w; u[6] = h                                // nch, viewport
@@ -497,7 +537,8 @@ try {
     }
     const bindH = device.createBindGroup({layout: bgl, entries: [
       {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: texH.createView()},
-      {binding: 2, resource: lut.createView()}]})
+      {binding: 2, resource: lut.createView()}, {binding: 3, resource: noLab.createView()},
+      {binding: 4, resource: palTex.createView()}]})
     u[0] = 0; u[1] = 0; u[2] = N * 1.7; u[3] = 1
     u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = 1        // face-on, orthographic, one step
     u[8] = N; u[9] = N; u[10] = 1; u[11] = 0
@@ -531,6 +572,101 @@ try {
         okOrient ? 'ok' : 'bad')
   }
 
+  // ── LABELS (P4): nearest surface, palette indexing, contour ─────────────────────
+  // The check the 3D decision rests on. A MIP of label ids is meaningless — the largest id is not a
+  // visible feature — so the shader takes the NEAREST label along the ray instead, and napari has no
+  // behaviour here to compare against (it cannot project a Labels layer at all). "Nearest" is exactly
+  // the kind of claim that looks right from one angle and is a coin flip: two labelled slabs at
+  // different depths, in the same screen column, and the near one has to win.
+  {
+    const A = 3, B = 5                                  // ids; the palette rows are A % PALN, B % PALN
+    const lo = Math.floor(N / 4), hi = Math.floor(3 * N / 4)
+    const labTex = device.createTexture({size: [N, N, N], dimension: '3d', format: 'r32uint',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST})
+    const bindL = device.createBindGroup({layout: bgl, entries: [
+      {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: vol.createView()},
+      {binding: 2, resource: lut.createView()}, {binding: 3, resource: labTex.createView()},
+      {binding: 4, resource: palTex.createView()}]})
+
+    // Face-on and orthographic, the camera sits at +z and the ray marches toward -z, so the LAST
+    // plane is the near one. Written from that derivation rather than from trying both.
+    function writeLab(withNear) {
+      const planeL = new Uint32Array(N * N)
+      for (let z = 0; z < N; z++) {
+        planeL.fill(0)
+        const near = z >= N - 8, far = z < 8
+        const id = (near && withNear) ? A : (far ? B : 0)
+        if (id) for (let y = lo; y < hi; y++) for (let x = lo; x < hi; x++) planeL[y * N + x] = id
+        device.queue.writeTexture({texture: labTex, origin: [0, 0, z]},
+          planeL, {bytesPerRow: N * 4, rowsPerImage: N}, [N, N, 1])
+      }
+    }
+
+    // Count pixels of a given colour. The image channels are switched OFF, so the composite is the
+    // label colour alone at opacity 1 — an exact readback rather than a blend to reason about.
+    async function labFrame(contour) {
+      u[0] = 0; u[1] = 0; u[2] = N * 1.7; u[3] = N            // face-on; one sample per plane
+      u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = 1  // orthographic
+      u[8] = N; u[9] = N; u[10] = N; u[11] = 0
+      u[12] = N; u[13] = N; u[14] = N; u[15] = N
+      u[16] = 0; u[17] = -1; u[18] = 0; u[19] = -1
+      u[LAB0] = 1; u[LAB0+1] = contour; u[LAB0+2] = PALN      // opacity, contour px, palette rows
+      for (let c = 0; c < MAX_CHANNELS; c++) u[CH0 + c*4 + 2] = 0
+      device.queue.writeBuffer(ubuf, 0, u)
+      const bpr = Math.ceil(cv.width * 4 / 256) * 256
+      const rb = device.createBuffer({size: bpr * cv.height,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ})
+      const enc = device.createCommandEncoder()
+      const pass = enc.beginRenderPass({colorAttachments: [{view: rt.createView(),
+        clearValue: {r:0,g:0,b:0,a:1}, loadOp: 'clear', storeOp: 'store'}]})
+      pass.setPipeline(pipeOff); pass.setBindGroup(0, bindL); pass.draw(3); pass.end()
+      enc.copyTextureToBuffer({texture: rt}, {buffer: rb, bytesPerRow: bpr, rowsPerImage: cv.height},
+                              [cv.width, cv.height, 1])
+      device.queue.submit([enc.finish()])
+      await rb.mapAsync(GPUMapMode.READ)
+      const px = new Uint8Array(rb.getMappedRange().slice(0))
+      rb.unmap(); rb.destroy()
+      const count = rgb => {
+        let n = 0
+        for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+          const o = y * bpr + x * 4
+          if (Math.abs(px[o]-rgb[0]) < 24 && Math.abs(px[o+1]-rgb[1]) < 24 && Math.abs(px[o+2]-rgb[2]) < 24) n++
+        }
+        return n
+      }
+      return {a: count(PALCOL[A % PALN]), b: count(PALCOL[B % PALN])}
+    }
+
+    writeLab(true)
+    const both = await labFrame(0)
+    const okNear = both.a > 500 && both.b === 0
+    if (!okNear) bad++
+    say('labels, near+far in one column → ' + both.a + ' px of the NEAR id, ' + both.b +
+        ' of the far  ' + (okNear ? 'OK' : both.a + both.b === 0 ? 'NOTHING DREW'
+          : 'THE FAR LABEL WON — the march is keeping the last hit, not the first'),
+        okNear ? 'ok' : 'bad')
+
+    // The far label must still draw when it is the only one — otherwise "the near one wins" would be
+    // satisfied by never reading the texture at all, and the palette row would be untested.
+    writeLab(false)
+    const only = await labFrame(0)
+    const okFar = only.b > 500 && only.a === 0
+    if (!okFar) bad++
+    say('labels, far id alone → ' + only.b + ' px in palette row ' + (B % PALN) + '  ' +
+        (okFar ? 'OK' : 'WRONG ROW OR NOTHING — id % rows is not indexing the palette'),
+        okFar ? 'ok' : 'bad')
+
+    // contour: an OUTLINE, not a fill. A ratio rather than an exact count, because the outline's width
+    // in screen pixels depends on the zoom this harness happens to use.
+    const outline = await labFrame(2)
+    const okContour = outline.b > 20 && outline.b < only.b * 0.5
+    if (!okContour) bad++
+    say('labels, contour 2 → ' + outline.b + ' px against ' + only.b + ' filled  ' +
+        (okContour ? 'OK' : outline.b === 0 ? 'CONTOUR ERASED THE LABEL'
+          : 'STILL FILLED — the neighbour test is not finding the edge'),
+        okContour ? 'ok' : 'bad')
+  }
+
   // the tail pass: compilation only, for now
   {
     const smod = device.createShaderModule({code: SWGSL})
@@ -555,6 +691,23 @@ const dir = join(homedir(), 'Downloads', 'TMP')
 mkdirSync(dir, { recursive: true })
 const dest = join(dir, 'shader_check.html')
 writeFileSync(dest, page)
+
+// SYNTAX-CHECK THE PAGE BEFORE ANNOUNCING IT. A JS parse error in a generated harness presents exactly
+// as a hang — a blank page, no output, nothing in the console — and the page is only ever opened by a
+// person who is being asked to trust its verdict. It has happened here twice already (a backtick inside
+// a WGSL comment terminates the template literal it is embedded in). Checking the generated script the
+// way node checks any module is the only version of this that cannot be skipped.
+const script = page.slice(page.indexOf('<script type="module">') + '<script type="module">'.length,
+                          page.lastIndexOf('</script>'))
+const probe = join(dir, '.shader_check_syntax.mjs')
+writeFileSync(probe, script)
+try {
+  execFileSync(process.execPath, ['--check', probe], { stdio: 'pipe' })
+} catch (e) {
+  throw new Error('the generated page does not parse — it would open blank:\n' +
+                  String(e.stderr ?? e.message))
+}
+rmSync(probe, { force: true })
 console.log('wrote ' + dest)
 console.log('WGSL extracted: ' + wgsl.split('\n').length + ' lines, MAX_CHANNELS=' + MAX_CHANNELS +
             ', LUT_STOPS=' + LUT_STOPS)

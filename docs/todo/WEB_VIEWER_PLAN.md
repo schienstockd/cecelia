@@ -361,25 +361,42 @@ labelProps key (a SEGMENTATION, e.g. `memTom`). Same parameter name, different n
 therefore sends no `valueName` to the overlay route at all and reports the segmentation the server
 chose — sending the image version resolves to the active segmentation by luck, not by intent.
 
-### P4 — labels / segmentation masks — **SERVER HALF BUILT**
+### P4 — labels / segmentation masks — **BUILT**
 `/api/viewer/slab?labels=<value_name>` serves a segmentation's mask through the SAME reader, headers and
 shape guard as the image: a mask is another zarr of the same geometry, which is what makes this phase
-cheap. Real stores are `UInt32` (`X-Slab-Bpv` reports it), so the client wants `r32uint`. Paths come
+cheap. Real stores are `UInt32` (`X-Slab-Bpv` reports it, and a narrower store is widened client-side
+rather than refused — at half the width it renders as a plausible mask of something else). Paths come
 from `img_labels_path`, the image-owned accessor the tasks write through — never a filename built in the
 api. `/api/viewer/meta` lists the segmentations that have a mask ON DISK in `labelNames`, because
 `labels` and `label_props` are independent registries (an imported track set has a table and no mask)
 and a store can be registered before it is written.
 
-**Still to do:** the client half — a second 3D texture plus a palette lookup in the shader, and the
-decision of what to do in 3D. napari cannot project a Labels layer at all (`projection_mode` accepts
-only `'none'`), so there is no behaviour to match and a choice to make: a MIP of label ids is
-meaningless (the maximum id is not a visible feature), so either draw labels only in the 2D view, or
-give the 3D view a nearest-surface pass rather than a maximum. The 2D view is the one people gate on.
+**The mask rides the image's slab request and lives in the image's texture slot.** Not an optimisation —
+the guarantee. A mask cached separately can be a frame behind the pixels it outlines, and an outline
+that is one frame stale still looks like an answer. It costs 4 bytes a voxel against the image's 2 per
+channel, so it is part of `bytesPerTimepoint` and therefore of how many timepoints fit; leaving it out
+of that sum would let the cache promise a capacity it cannot hold, and the frame that discovers it is
+an out-of-memory scope firing mid-scrub.
 
-An extra `r32uint` texture plus a palette lookup. Cheap, and **better than napari**, which cannot
-project a Labels layer at all (`projection_mode` accepts only `'none'`) — so 3D masks stop needing
-the volumetric workaround. Covers branch labels and colour-by-column, which are the same texture with
-a different palette.
+**3D shows the NEAREST label, not a maximum**, and that was the phase's one real decision. A MIP of
+label ids is meaningless — the largest id is not a visible feature, it is whichever cell happened to be
+labelled last — and napari cannot project a Labels layer at all (`projection_mode` accepts only
+`'none'`), so there was no behaviour to match. The ray already marches front to back, so the first
+non-zero id along it IS the nearest surface: one line, no second pass, and in 2D (`steps == 1`) the same
+line gives the exact per-plane mask. `shader_check.mjs` asserts it with two labelled slabs at different
+depths in one screen column — "nearest" is exactly the kind of claim that looks right from one angle and
+is a coin flip.
+
+Style matches napari's Labels layer: filled at 0.7 opacity, with `contour` as an outline N voxels thick
+(in-plane only — the outline of a 3D object through its z neighbours is a surface, and would fill the
+region back in). Both persist. The palette is `distinctColors` (the house "N distinct colours" helper) at
+64 rows, indexed `id % 64`: golden-angle hues mean consecutive ids — which is what segmentation gives
+touching cells — come out as far apart in hue as they can be. napari's own shuffled colormap is not
+reproducible here and was never part of the parity bar.
+
+**One segmentation at a time, through a picker** (question 2 below, now answered by building it). napari
+shows every segmentation at once as its own layer; a panel narrow enough for one population list will
+not hold three, and the 2D view is the one people gate on.
 
 ### P5 — the offline capture path in C
 Camera in `image_render.jl` + the four capture commands + title cards, on `jobs.jl` with
@@ -477,6 +494,26 @@ staging copy: use a `MAP_WRITE` buffer, write the fetched slab straight into `ge
 unmap, `copyBufferToTexture`. Untested. Also unmeasured: `onSubmittedWorkDone`'s ~100 ms quantum makes
 anything faster than that unmeasurable — batch N operations per submit to get under it, as G2 did.
 
+## The overlay pipelines could never have been created (fixed 2026-08-25)
+
+Found by reading, not by running, and worth recording because the failure mode is unusual: the bind
+group layout declared the shared uniform `FRAGMENT`-visible only, while the points and tails passes read
+it in their **vertex** stage. WebGPU makes that a pipeline-creation validation error —
+`createRenderPipeline` returns an INVALID pipeline, and setting an invalid pipeline invalidates the
+whole render pass, which is the pass the volume draws in. So the viewer would have rendered perfectly
+until the first population was switched on and then gone black, with the only diagnostic in the console.
+
+`frontend/src/utils/webgpuBindings.ts` parses the WGSL and pins it, following CALLS rather than
+entry-point bodies: no entry point mentions `p` directly — `camera()` is what touches the uniform — so a
+shallow scan would conclude binding 0 is unused and pass a layout that cannot work. Verified against its
+own bug.
+
+The harness had its own copy of the same mistake, and a second, worse one: `projectJS` still used the
+PRE-FIX camera convention, so the overlay check would have reported the corrected shader as "WRONG
+PLACE" and sent the one-click verification below to the wrong verdict. Both are now derived from the
+renderer rather than restated, and generation throws if `SHARED_WGSL`'s camera stops saying
+`cross(right, fwd)`.
+
 ## LOOK AT THIS FIRST — the vertical orientation
 
 **Every image was rendering vertically MIRRORED, and it is fixed but unverified** (2026-08-24). Derived,
@@ -514,12 +551,13 @@ assumption; each is a place where a different answer would change what gets buil
    does now — the two are separate concerns (a channel LUT comes from napari's saved props; an overlay
    ramp is a display choice made in the viewer). The alternative is to resolve overlay ramps server-side
    too, which keeps one palette owner but means a round trip whenever the column changes.
-2. **Which segmentation the overlay shows.** The viewer takes the ACTIVE labelProps and reports which,
+2. **ANSWERED by building it (P4).** The mask picker is one segmentation at a time, and the overlays
+   still take the ACTIVE labelProps and report which. Still worth saying if the all-at-once behaviour is
+   load-bearing for how you compare segmentations — nothing about the design forbids a second mask
+   texture, it is a panel-space judgement.
+   **Which segmentation the overlay shows.** The viewer takes the ACTIVE labelProps and reports which,
    because its `valueName` is an image version and not a segmentation (see the namespace trap in P3).
-   napari shows EVERY segmentation's populations at once, each as its own layer. *Assumption taken:*
-   one segmentation at a time with a picker, because a viewer panel narrow enough for one population
-   list will not hold three. Say if the all-at-once behaviour is load-bearing for how you compare
-   segmentations.
+   napari shows EVERY segmentation's populations at once, each as its own layer.
 3. **Track tails: napari's `tail_length` is in frames and `tail_width` in pixels.** WebGPU line-list
    draws 1px lines only, so a width control needs quads (six vertices per segment instead of two).
    *Assumption taken:* build the quad version, since a 1px tail on a noisy MIP is close to invisible and

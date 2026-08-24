@@ -50,6 +50,7 @@ import {
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
+import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
@@ -112,6 +113,18 @@ const hiddenPops = ref<Set<string>>(new Set())
 /** Which obs column shades the points, '' for the population colour. A REQUEST, not a display toggle:
  *  the values come from the server, so changing it refetches. */
 const colourBy = ref('')
+/**
+ * Which segmentation's MASK is drawn, '' for none (P4).
+ *
+ * A REQUEST, and the most expensive kind: the mask rides each timepoint's slab and lives in that
+ * timepoint's texture slot, so switching it reallocates and refetches the whole cache. That is the
+ * price of the guarantee — a mask cached on its own can be a frame behind the pixels it outlines, and
+ * an outline that is one frame stale still looks like an answer.
+ *
+ * ONE AT A TIME, where napari shows every segmentation at once as its own layer. A panel narrow enough
+ * for one population list will not hold three, and the 2D view is the one people gate on.
+ */
+const labelName = ref('')
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
 let segments: SegmentBuffer = {
   data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
@@ -239,6 +252,11 @@ const frame = usePlotResize(canvas, () => {
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0
     ? tailRange(segments, shownT.value, settings.viewerTailLength) : null
   r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth)
+  // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
+  // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
+  // switches the shader's label path off — the placeholder texture stays bound, because a bind group
+  // has to be complete.
+  r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.draw()
 })
 
@@ -331,17 +349,40 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // second say in what is fetched.
     const zd = r.cache.zDepth
     const zq = slabZ(zd, m.nZ, zPlane.value, zRange.value[0])
-    const bufs = await Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-      const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc }),
-                              { cache: 'no-store', signal: ac.signal })
-      if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
-      const buf = await res.arrayBuffer()
-      // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing.
-      const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd)
-      if (bad) throw new Error(bad)
-      serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
-      return buf
-    }))
+    // The MASK goes with the channels, in the same round trip and into the same texture slot. Fetching
+    // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
+    // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
+    // cannot label this response with a different segmentation's name.
+    const vn = labelName.value
+    const [bufs, labelBuf] = await Promise.all([
+      Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
+        const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc }),
+                                { cache: 'no-store', signal: ac.signal })
+        if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
+        const buf = await res.arrayBuffer()
+        // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing.
+        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd)
+        if (bad) throw new Error(bad)
+        serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
+        return buf
+      })),
+      (async () => {
+        if (!vn) return null
+        const res = await fetch(
+          slabUrl({ projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn }),
+          { cache: 'no-store', signal: ac.signal })
+        if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
+        const buf = await res.arrayBuffer()
+        // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
+        // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
+        // width it would render as a plausible mask of something else.
+        const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
+        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv)
+        if (bad) throw new Error('Mask: ' + bad)
+        serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
+        return widenLabelSlab(buf, bpv)
+      })(),
+    ])
     const fetchMs = performance.now() - t0
 
     // The auto WINDOW is taken from the first timepoint only and then held — recomputed per frame it
@@ -354,7 +395,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), m.nX)))
 
     const t1 = performance.now()
-    await r.uploadTimepoint(tp, bufs, t.value)
+    await r.uploadTimepoint(tp, bufs, t.value, labelBuf)
     timing.value = {
       fetchMs: Math.round(fetchMs), uploadMs: Math.round(performance.now() - t1), serverMs,
     }
@@ -580,7 +621,8 @@ function reallocate(refit = false) {
   hits.value = 0; misses.value = 0
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
-  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, mode.value === 'plane' ? zPlane.value : zRange.value[0])
+  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
+             mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value)
   r.setCapacity(settings.viewerCacheFrames || m.nT)
   r.setOrthographic(mode.value === 'plane')
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
@@ -794,6 +836,45 @@ onUnmounted(() => {
         <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
           Showing {{ MAX_CHANNELS }} of {{ meta.nC }} channels
         </div>
+
+        <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
+             directory check, not the label registry, so an imported track set with a table and no mask
+             does not offer an empty option. -->
+        <template v-if="meta.labelNames?.length">
+          <div class="cc-eyebrow cc-fs-2xs">Segmentation</div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
+            <select
+              class="cc-select cc-fs-2xs vw-grow" :value="labelName"
+              v-tooltip.bottom="'Draw a segmentation over the image — reloads the timecourse'"
+              @change="e => { labelName = (e.target as HTMLSelectElement).value; reallocate() }"
+            >
+              <option value="">none</option>
+              <option v-for="n in meta.labelNames" :key="n" :value="n">{{ n }}</option>
+            </select>
+          </div>
+          <div v-if="labelName" class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
+            <input
+              type="range" class="vw-grow" :min="0" :max="1" :step="0.05"
+              v-model.number="settings.viewerLabelOpacity" @input="frame.redraw()"
+              v-tooltip.bottom="'How strongly the mask covers the signal'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelOpacity.toFixed(2) }}</span>
+          </div>
+          <div v-if="labelName" class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Outline</span>
+            <input
+              type="range" class="vw-grow" :min="0" :max="5" :step="1"
+              v-model.number="settings.viewerLabelContour" @input="frame.redraw()"
+              v-tooltip.bottom="'Outline width in voxels — 0 fills each cell'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
+          </div>
+          <div v-if="labelName && mode === 'volume'" class="cc-muted cc-fs-3xs">
+            3D shows the nearest mask surface
+          </div>
+        </template>
 
         <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
              no populations, and an empty group would read as a broken feature rather than as an image
