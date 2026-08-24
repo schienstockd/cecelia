@@ -625,55 +625,6 @@ end
     @test_throws ParamValidationError parse_temporal_scales("1.5")
 end
 
-# The `seconds` half of the same choice: the SPANS a model is fitted on, resolved per movie to that
-# movie's own frame offsets. Not `parse_temporal_scales` with a different message — a fractional span
-# is legitimate here (2.5 s on a 0.5 s/frame movie), and refusing it would be refusing the thing the
-# mode exists for.
-@testset "parse_temporal_seconds" begin
-    @test parse_temporal_seconds("5,10,20,40") == [5.0, 10.0, 20.0, 40.0]
-    @test parse_temporal_seconds(" 40 , 5 ,10 ") == [5.0, 10.0, 40.0]   # sorted
-    @test parse_temporal_seconds("2 4 4 2") == [2.0, 4.0]               # deduped, whitespace-split
-    @test parse_temporal_seconds([5, 10]) == [5.0, 10.0]                # a REPL caller's vector
-    @test parse_temporal_seconds("2.5,7.5") == [2.5, 7.5]               # fractional spans are real
-
-    @test_throws ParamValidationError parse_temporal_seconds("")
-    @test_throws ParamValidationError parse_temporal_seconds("   ")
-    @test_throws ParamValidationError parse_temporal_seconds("5,x")
-    @test_throws ParamValidationError parse_temporal_seconds("5,0")     # a span of 0 is not a span
-    @test_throws ParamValidationError parse_temporal_seconds("5,-10")
-    @test_throws ParamValidationError parse_temporal_seconds("5,Inf")
-end
-
-# The coarsest acquisition a set of spans can be resolved onto. Past it two spans round to the same
-# frame offset, the mag planes stop being distinct features, and inference refuses — so the form says
-# the ceiling before the run rather than the runner discovering it one movie at a time.
-@testset "flow_max_frame_interval" begin
-    # Found by scanning to the first failure, not by a closed form: resolving is not monotone in the
-    # frame interval (10 s and 15 s collide at 6 s/frame and separate again at 7), so the honest
-    # number is the rate below which EVERYTHING resolves.
-    @test isnothing(Cecelia.flow_temporal_offsets([10, 15], 6))        # collide
-    @test Cecelia.flow_temporal_offsets([10, 15], 7) == [1, 2]         # and separate again
-    @test Cecelia.flow_temporal_offsets([15, 30, 60, 120], 15) == [1, 2, 4, 8]
-
-    # The contract, both halves: the ceiling resolves and one step past it does not.
-    for spans in ([15, 30, 60, 120], [5, 10, 20, 40], [10, 15, 40], [3, 7, 30], [12], [10, 15])
-        dt = Cecelia.flow_max_frame_interval(spans)
-        @test !isnothing(Cecelia.flow_temporal_offsets(spans, dt))
-        @test isnothing(Cecelia.flow_temporal_offsets(spans, dt + Cecelia.FRAME_INTERVAL_STEP))
-    end
-
-    # Order- and duplicate-independent: the spans are a SET.
-    @test Cecelia.flow_max_frame_interval([120, 15, 60, 30, 15]) ==
-          Cecelia.flow_max_frame_interval([15, 30, 60, 120])
-    @test Cecelia.flow_max_frame_interval([15, 30, 60, 120]) == 20.0
-    @test Cecelia.flow_max_frame_interval([12]) == 23.99
-    # Mirrors `coastal_utils.max_frame_interval`, which is what actually refuses at inference. Two
-    # spellings of one rule, and a drift between them would advertise a ceiling the resolver rejects,
-    # or — as the closed form did — a ceiling a third TIGHTER than the resolver accepts.
-    @test Cecelia.flow_max_frame_interval([5, 10, 20, 40]) == 6.66
-    @test Cecelia.flow_max_frame_interval([3, 7, 30]) == 4.66
-end
-
 # Which metric planes the model reads. Same silent-failure family as the scales above: coastal stacks
 # what it is given in sorted-key order and zero-fills the rest, so an inference set that differs from
 # the training set shifts every later channel and raises nothing.

@@ -43,6 +43,13 @@ export interface ParamDef {
   // as strings (a spec is JSON; a control's value is a string). This is the DECLARATIVE half of
   // conditional visibility — the half that can be decided from the form alone. A condition needing a
   // file read stays a server hook setting `hidden`. See `showIfSatisfied` in paramValues.ts.
+  // Relabel a `chipSelect`'s options with a physical quantity derived from the SELECTED IMAGES,
+  // leaving the values untouched. `frameDuration` reads each option as a frame lag and appends what
+  // it spans at the finest frame interval in the set — `"4"` → `"4 · 60s"`. The one case today is
+  // `opticalFlow.train`'s temporal scales, where a lag is not a displacement until you know the rate
+  // and the whole point of the seconds mode is that the DURATIONS define the model. See
+  // `utils/frameDuration.ts`; a value with no rate to read is left exactly as the spec wrote it.
+  labelUnit?: 'frameDuration'
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
                         | { endsWith?: string | string[]; notEndsWith?: string | string[] }>
   // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in

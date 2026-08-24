@@ -144,10 +144,11 @@ class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
 
     #: accumulators built once before the movie loop and read again when the manifest is written
     SINGLE_BINDING = ('scales', 'phys_scales', 'used', 'planes_used', 'windows', 'crops',
-                      # The POOLED offsets, which is what `temporalScales` records and therefore what
-                      # every channel of the model is named after. Rebinding it is why
-                      # `pooled_offsets` is a function rather than an `if` in the middle of `run`.
-                      'pool_scales', 'pool_cumulative', 'ref_interval')
+                      # `scales` IS what `temporalScales` records now, in BOTH modes: the spans are
+                      # `lag x ref_interval`, so they resolve back to exactly these. The three below
+                      # are what `seconds_config` derives — a function's return rather than an `if` in
+                      # the middle of `run`, for this test's reason.
+                      'ref_interval', 'declared', 'cum_seconds')
 
     @classmethod
     def setUpClass(cls):
@@ -193,58 +194,162 @@ class RunnerLocalsAreNotShadowedTest(unittest.TestCase):
 
 
 
-class PooledOffsetsTest(unittest.TestCase):
-    """The canonical channel names a pooled training set shares.
+class _Log:
+    """Collects what the runner said, so a test can read it back."""
 
-    The failure this prevents is not a crash. Coastal names its per-scale planes `mag_{offset}` and
-    stacks the metric dict by `sorted(keys)`, so a set pooled across frame rates in `seconds` mode
-    has sequences whose channels mean different spans under different names — which `run`'s
-    `key_sets` guard catches, and which renaming onto one set of offsets is what actually fixes.
+    def __init__(self):
+        self.lines = []
+
+    def log(self, line):
+        self.lines.append(str(line))
+
+    def progress(self, *_a, **_k):
+        pass
+
+
+class _StubDimUtils:
+    """Only what `reference_interval` reads: the T axis, the interval, its unit, the frame count."""
+
+    def __init__(self, dt, n_t, unit):
+        self._dt, self._n_t, self._unit = dt, n_t, unit
+        self.im_dim_order = list('TCZYX')
+
+    def is_timeseries(self):
+        return True
+
+    def dim_val(self, ax):
+        return self._n_t if ax == 'T' else 4
+
+    def im_time_increment(self, default=None):
+        return self._dt if self._dt is not None else default
+
+    def im_time_increment_unit(self, default='s'):
+        return self._unit or default
+
+
+def _movie(uid, dt, n_t, unit='s'):
+    """A movie entry, carrying the metadata the stubbed `_open` will hand back for it."""
+    return {'uID': uid, 'imPath': f'/nonexistent/{uid}.zarr', 'dt': dt, 'nT': n_t, 'unit': unit}
+
+
+class SecondsConfigTest(unittest.TestCase):
+    """What `seconds` mode declares — DERIVED from the lags, not typed in beside them.
+
+    The form is one chip row of frame lags whose labels read as durations, so a span is
+    `lag x the reference interval`. Two things fall out, and both are the point:
+
+    * a span that is not a whole number of the reference movie's frames cannot be expressed at all,
+      where the free-text box it replaced could ask for 20 s on a 15 s/frame movie and silently get
+      15 s;
+    * `round(lag x ref / ref) == lag`, so the pooled channel names are the chips the user picked and
+      `temporalScales` means the same thing in both modes. That is what removed `pooled_offsets`.
+
+    `_open` is stubbed to metadata only, which is all `reference_interval` reads — no zarr, no pixels.
     """
 
-    @staticmethod
-    def _p(mode, scales, cumulative, declared, cum_seconds, movie_dt):
-        return _load_runner().pooled_offsets(
-            mode, scales, cumulative, declared, cum_seconds, movie_dt)
+    def setUp(self):
+        self.runner = _load_runner()
+        self._real_open = self.runner._open
+        self.log = _Log()
 
-    def test_frames_mode_is_the_identity_and_states_no_reference(self):
-        """Every movie was read at the form's offsets, so there is nothing to reconcile — and no
-        interval to claim, which is a different thing from claiming one and being wrong."""
-        self.assertEqual(self._p('frames', [1, 2, 4, 8], 5, [], 0.0, {}),
-                         ([1, 2, 4, 8], 5, None))
+    def tearDown(self):
+        self.runner._open = self._real_open
 
-    def test_the_finest_movie_sets_the_canonical_offsets(self):
-        offsets, cum, ref = self._p('seconds', [1, 2, 4, 8], 5, [5.0, 10.0, 20.0, 40.0], 25.0,
-                                    {'fast': 5.0, 'slow': 15.0})
-        self.assertEqual((offsets, cum, ref), ([1, 2, 4, 8], 5, 5.0))
+    def _config(self, mode, movies, scales, cumulative=5):
+        by_path = {m['imPath']: m for m in movies}
 
-    def test_the_finest_movie_needs_no_rename_of_its_own(self):
-        """Why finest rather than mean or first: the reference is a real acquisition, so at least one
-        pooled sequence is already on the canonical names and no offset rounds below one frame."""
+        def _open(path):
+            m = by_path[path]
+            return None, _StubDimUtils(m['dt'], m['nT'], m['unit'])
+
+        self.runner._open = _open
+        return self.runner.seconds_config(mode, movies, scales, cumulative, 0, 42, self.log)
+
+    def test_frames_mode_declares_nothing_in_seconds(self):
+        """The lags ARE the setting there and mean nothing in seconds, so no reference is claimed
+        rather than one being invented."""
+        self.assertEqual(self._config('frames', [], [1, 2, 4, 8]), (None, [], 0.0))
+
+    def test_the_spans_are_the_lags_at_the_coarsest_usable_rate(self):
+        ref, spans, cum = self._config(
+            'seconds', [_movie('slow', 15.0, 40), _movie('fast', 5.0, 40)], [1, 2, 4, 8])
+        self.assertEqual((ref, spans, cum), (15.0, [15.0, 30.0, 60.0, 120.0], 75.0))
+
+    def test_the_spans_resolve_back_to_the_lags_at_the_reference(self):
+        """The identity the design rests on — no reconciling step, because the canonical channel names
+        are the chips that were picked."""
         from cecelia.utils import coastal_utils
-        movie_dt = {'fast': 2.5, 'mid': 5.0, 'slow': 15.0}
-        spans = [5.0, 10.0, 20.0, 40.0]
-        offsets, _, ref = self._p('seconds', [1, 2, 4, 8], 5, spans, 25.0, movie_dt)
-        own, _, problem = coastal_utils.scales_from_seconds(spans, 25.0, ref)
-        self.assertEqual(problem, '')
-        self.assertEqual(coastal_utils.mag_rename(offsets, own), {})
+        lags = [1, 2, 3, 6]
+        ref, spans, cum = self._config('seconds', [_movie('a', 12.0, 40)], lags, cumulative=4)
+        back, back_cum, problem = coastal_utils.scales_from_seconds(spans, cum, ref)
+        self.assertEqual((problem, back, back_cum), ('', lags, 4))
+        self.assertEqual(coastal_utils.mag_rename(lags, back), {})
 
-    def test_every_pooled_movie_renames_onto_the_same_channel_count(self):
-        """The property that makes the pool trainable at all: one channel layout across sequences."""
+    def test_the_coarsest_anchor_is_what_lets_every_movie_resolve(self):
+        """The reason for coarsest over finest, as an assertion rather than a comment. On the finest
+        anchor the spans are as short as that movie allows and every coarser movie is refused for a
+        span below one of its frames — 1 of 3 here against 3 of 3."""
         from cecelia.utils import coastal_utils
-        movie_dt = {'a': 2.0, 'b': 5.0, 'c': 6.0}
-        spans = [10.0, 20.0, 40.0]
-        offsets, _, _ = self._p('seconds', [1, 2, 4], 5, spans, 20.0, movie_dt)
-        for uid, dt in movie_dt.items():
-            own, _, problem = coastal_utils.scales_from_seconds(spans, 20.0, dt)
-            self.assertEqual(problem, '', uid)
+        lags, rates = [1, 2, 4], (5.0, 10.0, 15.0)
+        movies = [_movie(f'r{dt:g}', dt, 60) for dt in rates]
+        ref, spans, cum = self._config('seconds', movies, lags)
+        self.assertEqual(ref, max(rates))
+        for dt in rates:
+            self.assertEqual(coastal_utils.scales_from_seconds(spans, cum, dt)[2], '',
+                             f'{dt} s/frame must resolve at the coarsest anchor')
+        # And the anchor nobody should pick, so the comparison cannot rot.
+        finest = [l * min(rates) for l in lags]
+        refused = [dt for dt in rates if coastal_utils.scales_from_seconds(finest, 0, dt)[2]]
+        self.assertEqual(refused, [10.0, 15.0], 'the finest anchor must still be the worse one')
+
+    def test_a_movie_too_short_for_the_lags_cannot_be_the_reference(self):
+        """Exact here and nowhere else: at its OWN rate a candidate's lags ARE `scales`, so
+        `max(scales) + 1` is precisely what it needs. Checking it now stops the reference being set by
+        a movie the main loop then skips, which would record an interval nothing trained at."""
+        ref, spans, _ = self._config(
+            'seconds', [_movie('slow_but_short', 15.0, 6), _movie('fast', 5.0, 40)], [1, 2, 4, 8])
+        self.assertEqual(ref, 5.0, 'a 6-frame movie cannot carry lag 8, coarse though it is')
+        self.assertEqual(spans, [5.0, 10.0, 20.0, 40.0])
+
+    def test_a_unit_that_is_not_seconds_cannot_be_the_reference(self):
+        """The runner does not convert — see `_physical_scale`. So a ms movie is not an anchor."""
+        ref, _, _ = self._config(
+            'seconds', [_movie('ms', 1.0, 40, unit='ms'), _movie('ok', 15.0, 40)], [1, 2])
+        self.assertEqual(ref, 15.0)
+
+    def test_no_anchor_at_all_raises_rather_than_guessing(self):
+        """A 1.0 s/frame fallback would be a measurement nobody made."""
+        for movies in ([_movie('none', None, 40)],
+                       [_movie('ms', 250.0, 40, unit='ms')],
+                       [_movie('short', 5.0, 3)],
+                       []):
+            with self.assertRaises(ValueError) as ctx:
+                self._config('seconds', movies, [1, 2, 4, 8])
+            self.assertIn('no movie can anchor the spans', str(ctx.exception))
+
+    def test_it_says_which_movie_anchored_the_spans(self):
+        """The reference decides what every channel means, so a run that cannot be read back to the
+        movie it was anchored on cannot be checked."""
+        self._config('seconds', [_movie('slow', 15.0, 40), _movie('fast', 5.0, 40)], [1, 2])
+        said = ' '.join(self.log.lines)
+        self.assertIn('slow', said)
+        self.assertIn('15 s/frame', said)
+
+    def test_every_movie_renames_onto_the_lags(self):
+        """The property that makes a mixed-rate pool trainable at all: one channel layout across
+        sequences, which is what coastal's sorted-key stacking requires."""
+        from cecelia.utils import coastal_utils
+        lags = [1, 2, 4]
+        movies = [_movie('a', 5.0, 60), _movie('b', 10.0, 60), _movie('c', 15.0, 60)]
+        ref, spans, cum = self._config('seconds', movies, lags)
+        self.assertEqual(ref, 15.0)
+        for m in movies:
+            own, _, problem = coastal_utils.scales_from_seconds(spans, cum, m['dt'])
+            self.assertEqual(problem, '', m['uID'])
             renamed = coastal_utils.apply_mag_rename(
-                {f'mag_{o}': o for o in own}, coastal_utils.mag_rename(offsets, own))
-            self.assertEqual(sorted(renamed), sorted(f'mag_{o}' for o in offsets), uid)
+                {f'mag_{o}': o for o in own}, coastal_utils.mag_rename(lags, own))
+            self.assertEqual(sorted(renamed), sorted(f'mag_{o}' for o in lags), m['uID'])
 
-    def test_a_reference_that_cannot_carry_the_spans_raises(self):
-        with self.assertRaises(ValueError):
-            self._p('seconds', [1, 2], 5, [10.0, 12.0], 20.0, {'a': 10.0})
 
 if __name__ == '__main__':
     unittest.main()

@@ -944,23 +944,41 @@ the ceiling and pointing back at `As trained`.
 
 ### Declaring the spans at training
 
-`opticalFlow.train`'s own **Temporal scale**: `frames` (default) or `seconds`. In `seconds` you give
-the SPANS — `5,10,20,40` — and each training movie is resolved onto its **own** frame offsets. A set
-that mixes 5 s/frame and 15 s/frame then contributes one feature geometry instead of three-fold
-different ones under identical channel names, which is what `frames` silently does.
+`opticalFlow.train`'s own **Read other rates as**: `Same lags` (default) or `Same durations`. One chip
+row of frame LAGS either way — the mode only decides what a movie at a *different* frame rate is read
+at. Under `Same durations` each training movie is resolved onto its **own** frame offsets, so a set
+mixing 5 s/frame and 15 s/frame contributes one motion timescale instead of three-fold different ones
+under identical channel names, which is what `Same lags` silently does.
 
-Three things follow from it, and the third is what keeps the change small:
+**The spans are derived from the lags, not typed in beside them.** They are `lag x the reference
+interval`, and the chip labels carry both (`4 · 60s`). Two things fall out of that, and the second is
+what keeps the change small:
 
-- A movie whose frame interval is unknown, in another unit, or too coarse for the spans is
-  **skipped**, with a warning naming its rate. Not clamped onto its closest frames: a clamped movie
-  contributes different spans than the rest under the same channel names.
-- The sequences are renamed onto ONE canonical set of offsets — the spans at the **finest** interval
-  among the movies actually used (`pooled_offsets`). Finest, so at least one movie needs no rename
-  and no canonical offset rounds below one of its frames.
-- **The model stays an ordinary frame-offset model.** `temporalScales` means exactly what it always
-  meant; `temporalReferenceInterval` says which frame rate those offsets belong to, and
-  `manifest_frame_interval` returns it in preference to `physicalScales` — which for a mixed-rate
-  model correctly returns `None`. Nothing downstream needs a second shape.
+- A span that is not a whole number of the reference movie's frames is **unrepresentable**, where the
+  free-text box this replaced could ask for 20 s on a 15 s/frame movie and silently get 15 s. One
+  control instead of two holding the same information in different units.
+- `round(lag x ref / ref) == lag`, so the pooled channel names are the chips the user picked and
+  `temporalScales` means the same thing in both modes. There is no reconciling step at all.
+
+**The reference is the COARSEST usable interval, and that is the one non-obvious decision.** The spans
+have to be representable on every movie in the set. Anchor on the coarsest and that is guaranteed: for
+any movie with `dt <= dt_ref` the ratio `r = dt_ref / dt` is at least 1, so every lag scales UP
+(`round(lag x r) >= lag >= 1`) and consecutive lags stay distinct because their gap scales by `r` too.
+Anchor on the **finest** and the spans are as short as that one movie allows, so every coarser movie is
+refused for a span below one of its frames — measured on lags `[1,2,4]` across 5/10/15 s/frame, the
+finest anchor resolves **1 of 3** movies and the coarsest resolves **3 of 3**. The anchor needs no
+rename of its own either way, since at its own rate its lags *are* the chips.
+
+A candidate for the reference must have a T axis, an interval in seconds, and enough timepoints for the
+largest lag — checked in a metadata-only pass before any pixels are read, so the reference cannot be
+set by a movie the main loop then skips. Beyond that, a movie whose interval is unknown, in another
+unit, or too coarse for the spans is **skipped** with a warning naming its rate. Not clamped onto its
+closest frames: a clamped movie contributes different spans than the rest under the same channel names.
+
+**The model stays an ordinary frame-offset model.** `temporalScales` means exactly what it always meant;
+`temporalReferenceInterval` says which frame rate those offsets belong to, and
+`manifest_frame_interval` returns it in preference to `physicalScales` — which for a mixed-rate model
+correctly returns `None`. Nothing downstream needs a second shape.
 
 The manifest gains `temporalScaleUnit`, `temporalScaleSeconds`, `cumulativeWindowSeconds`,
 `temporalReferenceInterval`, `maxFrameInterval` and `temporalScalesPerMovie`, and only on a seconds

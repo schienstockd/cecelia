@@ -22,6 +22,7 @@
 import type { Severity } from '../lib/severity'
 import { isImageVersionField } from './paramValues'
 import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
+import { spanAnchorRate, secondsLabel, type RateImage } from '../utils/frameDuration'
 
 /** What the renderer shows: a one-line readout, a severity, and the full reasoning on hover. */
 export interface ParamAdvisory {
@@ -69,6 +70,9 @@ export interface DataFlag {
 export interface AdvisorImage {
   uid?: string
   sizeT?: number | null
+  /** Frame interval + its unit, as `ccid.json` recorded them — Bioformats' word, not the OME enum. */
+  timeIncrement?: number | null
+  timeIncrementUnit?: string | null
   sizeZ?: number | null
   physicalSizeX?: number | null
   /** the version the image is currently ON — what the viewer shows and what a picker preselects */
@@ -405,7 +409,81 @@ export function spatialSigmaAdvisory(value: unknown, stat: unknown): ParamAdviso
            + 'Gaussian has to fill the counts before a statistic across frames means anything.' }
 }
 
+/**
+ * What the picked lags mean in seconds, and whether every selected movie can be read at them.
+ *
+ * `opticalFlow.train` picks frame lags, and a lag is not a displacement until you know the interval —
+ * the same chips are 5–40 s on one movie and 15–120 s on another. Under *read other rates as the same
+ * durations* it is those SECONDS that define the model, so the number the run will actually train on
+ * has to be visible before the run.
+ *
+ * Anchored on the COARSEST interval in the set, which is what `train_run.reference_interval` picks —
+ * the only anchor every selected movie can carry. If this readout used a different one it would
+ * promise spans the run does not train.
+ *
+ * Deliberately NOT a re-implementation of the resolver: whether a COARSER movie can be read at these
+ * spans is the runner's call and it refuses per movie by name. What this can say without a second
+ * spelling of that rule is when the set mixes rates at all, which is when the question arises.
+ */
+export function temporalSpanAdvisory(
+  value: unknown, images: readonly RateImage[] | undefined, mode: unknown,
+): ParamAdvisory | null {
+  const lags = (Array.isArray(value) ? value : []).map(Number)
+    .filter(n => Number.isFinite(n) && n > 0).sort((a, b) => a - b)
+  if (!lags.length) return null
+  const rate = spanAnchorRate(images)
+
+  // No rate, nothing to say in seconds — but say THAT, because under `seconds` mode the run cannot
+  // start at all, and a silent form would let it be discovered at the runner.
+  if (!rate) {
+    return mode === 'seconds'
+      ? { severity: 'warn',
+          message: 'no frame interval in seconds — spans cannot be resolved',
+          tip: 'Reading other rates as the same durations needs at least one selected movie with a '
+             + 'frame interval recorded in seconds. Switch to "Same lags", or fix the metadata.' }
+      : null
+  }
+
+  const spans = lags.map(n => secondsLabel(n * rate.seconds))
+  const anchor = rate.mixed ? `coarsest of ${rate.known}` : rate.uid || 'the set'
+  const partial = rate.known < rate.total ? `, ${rate.total - rate.known} without one` : ''
+  return {
+    // `ok` — this is a readout, not a concern. The doubts ride on `flag`.
+    severity: 'ok',
+    message: `${spans.join(', ')} at ${secondsLabel(rate.seconds)}/frame (${anchor})${partial}`,
+    tip: mode === 'seconds'
+      ? 'These durations are what the model is fitted on. Every other movie is read at the same '
+      + 'durations, i.e. at its own frame lags — one too coarse for them is skipped, by name, in the '
+      + 'run log.'
+      : 'Every movie is read at these LAGS, so a movie at another frame rate sees a different '
+      + 'displacement. Switch to "Same durations" to read it at these times instead.',
+    // Two different doubts, one slot, so the more serious wins. A CONVERTED rate is one the runner
+    // will not use at all — it skips a movie whose interval is not in seconds rather than guessing —
+    // so the form must not quietly promise it. Mixed rates are merely the case the mode exists for:
+    // legitimate to pool, wrong to read as one timescale.
+    flag: rate.converted
+      ? { severity: 'fail',
+          tip: 'this interval is not recorded in seconds — the run skips a movie it cannot read '
+             + 'in seconds rather than converting it' }
+      : rate.mixed && mode !== 'seconds'
+        ? { severity: 'warn',
+            tip: 'the selected movies were acquired at different rates, so one set of lags is not '
+               + 'one timescale' }
+        : undefined,
+  }
+}
+
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
+  // Registered under the KEY, not `chipSelect`: every chipSelect in every task would match the type,
+  // and this judgement is about what a temporal LAG means.
+  temporalScales: {
+    // the anchor is the selected images' coarsest interval, and the phrasing depends on the mode
+    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.timeIncrement ?? ''}`).join(','),
+                      ctx.values?.temporalScaleMode],
+    advise: async (value, ctx) =>
+      temporalSpanAdvisory(value, ctx.images, ctx.values?.temporalScaleMode),
+  },
+
   // ASYNC, not pure: the frame extent belongs to the ACTIVE image version, and only its store knows
   // it. `/api/images/geometry` reads it off that version (omit `valueName` ⇒ the ACTIVE one, which
   // is what the task will run against).

@@ -66,6 +66,29 @@ _Changes on `main` that have not yet been tagged in a release._
   track→cell expansion carried only the requested columns, so a gated or clustered track's cells came back
   with no centroids at all — which is exactly what a track plot draws.
 
+### Changed — the flow training form
+
+- **One chip row for the temporal scales, labelled with what each lag spans.** The separate
+  *Temporal spans (s)* text box is gone. The chips now read `4 · 60s` — the lag, and what it covers at
+  the frame rate of the images you have selected — and a line beneath states the anchor
+  (`15s, 30s, 60s, 120s at 15s/frame (fXgbTl)`). The mode is now **Read other rates as: Same lags /
+  Same durations**, because that is the only thing it decides. A span that is not a whole number of the
+  reference movie's frames can no longer be asked for; typing `20` on a 15 s/frame movie used to be
+  accepted and silently trained as 15 s.
+- **The spans are anchored on the coarsest selected movie, not the finest.** The spans have to be
+  representable on every movie in the set, and only the coarsest anchor guarantees that — every finer
+  movie scales the lags up rather than below one frame. On lags 1/2/4 across 5/10/15 s/frame the finest
+  anchor could train 1 of 3 movies; the coarsest trains 3 of 3.
+- **The loss weights all move in the same step and share one range** — 0 to 4 in steps of 0.05, where
+  they were 0–10 or 0–2 in steps of 0.5 or 0.25. 0.05 rather than 0.1 because `intensityWeight`'s
+  default of 0.25 has to be a stop the slider can reach.
+- **The flow-boundary weight now appears in the model details, beside the foreground blur** — the two
+  together are the foreground target. The training-convergence plot says outright that it has no curve
+  of its own: it is not a loss term, it reshapes the target, so its effect lands in `foreground` and,
+  far more visibly, in that term's floor. Measured on fXgbTl at blur 1.0, `floor_foreground` is 0.317
+  at weight 0 against 0.015 at weight 1.0 — so two runs at different weights are not comparable until
+  the floor is subtracted.
+
 ### Added — flow models can be trained on time spans, not frame lags
 
 - **`Train flow model` has its own Temporal scale: frame lags (default) or spans in seconds.** In

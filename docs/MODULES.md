@@ -759,6 +759,28 @@ reason: otherwise a conditional param is never reached and reads as one with no 
 A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
 with no error. The suite rejects that (`showIf conditions name a param that exists`).
 
+**`labelUnit` — relabel a chipSelect's options with a physical quantity read off the SELECTED
+IMAGES.** Frontend-only, and it changes the label while leaving the `value` untouched, so the
+submitted params and `validate_params`' option check are unaffected.
+
+```json
+{ "key": "temporalScales", "type": "chipSelect", "labelUnit": "frameDuration",
+  "default": ["1", "2", "4", "8"] }
+```
+
+One value today: `frameDuration` reads each option as a frame LAG and appends what it spans at the
+finest frame interval among the selected images — `"4"` → `"4 · 60s"`. It exists because a frame lag
+is not a displacement until you know the interval: the same chips are 5–40 s on one movie and
+15–120 s on another, and `opticalFlow.train` has a mode where those SECONDS are what defines the
+model. With no interval to read, the label is left exactly as the spec wrote it — a chip reading
+`4 · 4s` off a defaulted 1.0 would be a measurement nobody made.
+
+Reach for it instead of a second control holding the same information in other units. The pair it
+replaced was a chipSelect of lags and a free-text box of seconds, `showIf`-switched — two ways to say
+one thing, and the text box could express a span that was not a whole number of frames and so got
+silently rounded. Arithmetic + rule in `frontend/src/utils/frameDuration.ts`; the accompanying
+readout ("15s, 30s, 60s, 120s at 15s/frame") is a `paramAdvisors.ts` entry, not more label.
+
 **`hidden` — the SERVER ruled this param out.** Set by `_inject_dynamic_options!`, never authored in
 a spec file (a spec-file `hidden: true` is just a param nobody can set — delete it instead).
 

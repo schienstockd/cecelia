@@ -104,16 +104,18 @@ describe('paramsFromManifest', () => {
     expect(paramsFromManifest(M, []).flowMetrics).toBeUndefined()
   })
   // ── the scale mode ───────────────────────────────────────────────────────────────────────────
-  // Restored together with the spans, never one without the other. Handing back the spans while the
-  // form still says "frame lags" trains a materially different model under "use this model's
-  // settings" — the `intensityWeight` mistake, one field along.
-  it('restores the spans AND the mode for a model that declared seconds', () => {
+  // The mode, and NOT the spans. The spans are not a form field: they are `temporalScales x the
+  // reference interval`, so restoring the lags has already restored them. Handing back a second,
+  // independently-stored copy is how the two would come to disagree.
+  it('restores the mode, and reads the spans back through the lags', () => {
     const p = paramsFromManifest(
       { ...M, temporalScaleUnit: 's', temporalScaleSeconds: [5, 10, 20, 40],
-        cumulativeWindowSeconds: 25 } as FlowManifest, OFFERED)
+        temporalReferenceInterval: 5, cumulativeWindowSeconds: 25 } as FlowManifest, OFFERED)
     expect(p.temporalScaleMode).toBe('seconds')
-    expect(p.temporalScaleSeconds).toBe('5,10,20,40')
-    expect(p.cumulativeWindowSeconds).toBe(25)
+    // 5, 10, 20, 40 s at the model's own 5 s/frame reference IS lags 1, 2, 4, 8.
+    expect(p.temporalScales).toEqual(['1', '2', '4', '8'])
+    expect(p.temporalScaleSeconds).toBeUndefined()
+    expect(p.cumulativeWindowSeconds).toBeUndefined()
   })
 
   it('sets the mode explicitly for a frame-lag model, so a stale form does not carry over', () => {

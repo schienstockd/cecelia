@@ -26,6 +26,18 @@
   tell the truth. Terms with no floor — the contrastive ones, whose minimum genuinely is 0 — are left
   alone.
 
+  **One knob is on and has no line, by construction.** `foregroundBoundaryWeight` is not a loss term:
+  coastal passes it into `ForegroundLoss` as `boundary_weight`, where it pinches the foreground TARGET
+  at flow discontinuities. So it never gets a `history` entry and can never be a chip here — asked
+  about it and it looked like a bug. What it does instead is move the target, which moves that term's
+  FLOOR: measured on fXgbTl at blur 1.0, `floor_foreground` is 0.317 at weight 0 and 0.015 at weight
+  1.0, a 21x drop, because a pinched target has lower entropy. Two runs at different weights therefore
+  have non-comparable `foreground` curves unless the floor is subtracted — which is what the note
+  under the terms row says, rather than leaving the absence to be discovered.
+
+  (Not `lossWeights.boundary`, which IS a term with a curve — coastal's `ConfettiBoundaryLoss`, pinned
+  at 0 by this task.)
+
   **The held-out curve is the one that answers the question.** A training loss only ever says the
   number went down, measured on the frames the weights were just fitted to. When the run had a
   `trainRatio` split, each term also carries a `val_` curve — drawn dashed in the SAME colour as its
@@ -55,7 +67,9 @@ import { applyPlotTheme, plotTheme } from '../../plots/overlays'
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
                        model?: string }
 interface Manifest { lossCurves?: LossCurves; lossFloors?: LossCurves
-                     lossWeights?: Record<string, number>; epochs?: number }
+                     lossWeights?: Record<string, number>; epochs?: number
+                     // NOT one of `lossWeights` — it is not a term. See the note above the terms row.
+                     foregroundBoundaryWeight?: number }
 interface FlowModel { name: string; label: string; stem: string; manifest: Manifest }
 
 // `model` comes from the HOST — the vault owns the selection and its global/local scope, exactly as
@@ -120,6 +134,9 @@ const rows = computed(() => shown.value.flatMap(s =>
 const valRows = computed(() => shown.value.flatMap(s =>
   (s.val ?? []).map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
 const hasVal = computed(() => shown.value.some(s => s.val?.length))
+// Non-zero only. At 0 — the default, and every model trained before it existed — there is nothing to
+// explain and a permanent caption would be noise.
+const flowBoundary = computed(() => current.value?.manifest?.foregroundBoundaryWeight || 0)
 // Log only when every plotted value is positive — val included. Zero is a legitimate loss, and
 // log(0) would drop the point silently rather than fail.
 const isLog = computed(() =>
@@ -263,6 +280,13 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         <ChipSelect :options="termOptions" :model-value="terms" multiple aria-label="Loss terms"
                     @update:model-value="v => state.terms = v as string[]" />
       </label>
+      <!-- Short line, action in the tooltip (docs/ui/COPY.md): the fact is that a knob is on with no
+           chip for it, and the useful move is to read `foreground` against its floor instead. -->
+      <p v-if="flowBoundary" class="cc-muted cc-fs-2xs ftv-note"
+         v-tooltip.bottom="'Not a loss term — it shapes the foreground target, so it moves ' +
+                           'foreground and that term\'s floor'">
+        Flow boundary {{ flowBoundary }} — no curve of its own
+      </p>
     </div>
 
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
@@ -284,6 +308,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-ctrl { display: flex; flex-direction: column; gap: 0.4rem; padding: 4px 6px; }
 .ftv-bar { flex-wrap: wrap; }
 .ftv-terms { flex-wrap: wrap; gap: 0.4rem; }
+.ftv-note  { margin: 0.15rem 0 0; }
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
 .ftv-off { opacity: 0.45; }
 .ftv-host { flex: 1; min-height: 0; }
