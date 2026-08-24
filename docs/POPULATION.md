@@ -135,6 +135,37 @@ pop to empty + a warning, never a crash. Created/edited via `pop/add`·`pop/upda
 Filter pops are badged in the manager to distinguish them from hand-drawn gates — one manager, not two
 (SPATIAL_REGIONS_PLAN Decision 15).
 
+**Boolean (combined) populations.** A population can also be defined by COMBINING others — the third
+membership kind, beside a gate and a filter (Decision 16). The stored form is one spec,
+`boolean: {op, pops, not}`, and it covers every case the manager offers:
+
+| what the user wants | stored as |
+|---|---|
+| positive for nuc-GFP **or** mem-TOM | `op="or"`, `pops=[/GFP+, /TOM+]` |
+| mem-TOM+ **and** nuc-GFP+ **but not** CD169+ | `op="and"`, `pops=[/TOM+, /GFP+]`, `not=[/CD169+]` |
+| everything except CD169+ (a plain not-gate) | `op="and"`, `pops=[]`, `not=[/CD169+]` (also accepted as `op="not"`) |
+
+Membership = the included terms combined with `op`, minus every excluded term, **∩ the parent** like any
+other population — so an empty include list means "the parent's cells". Each referenced mask is that
+population's OWN membership (its ancestors already applied), which is why combining two gates from
+different branches means what it reads as. No gate and no column of its own: it links populations that
+already exist, so a combination costs nothing to recompute and no single 2D shape has to be drawn for a
+question that isn't one.
+
+Three consequences follow from references being **paths**:
+
+- **Order is a dependency, not depth.** A combination may reference a population *deeper* than itself, so
+  `topo_order` is a real topological sort over (parent ⊕ reference) edges, not a sort by path depth. Left
+  in a cycle (only reachable by hand-editing a sidecar), the affected pops are emitted as-is and degrade
+  to empty + a warning rather than taking the map down — the same rule as a missing column.
+- **Rename and move rewrite them.** `_repath!` rewrites every reference along with the path, so
+  "GFP+ or TOM+" doesn't silently lose a term the moment either gate is renamed or re-parented.
+- **Delete is refused, not silently orphaning.** Only delete can leave a reference dangling, so
+  `pop/delete` 400s and names the combination that would break (`boolean_dependents`).
+
+Loops are rejected at the mutation, not at recompute: a population cannot reference itself, one of its
+own descendants, or anything that (transitively) depends on it (`boolean_cycle`).
+
 Clustering is **set-scope**, so a cluster pop is written **set-wide**: the same filter pop lands in
 every clustered image's sidecar (the filter is image-independent and cluster IDs are comparable
 across the run). Membership of a run is recorded as `partOf` (the clustered uIDs) in the

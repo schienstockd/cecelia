@@ -380,12 +380,20 @@ coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}`
 
 | Path | Body (besides project/image/valueName/popType) |
 |---|---|
-| `/api/gating/pop/add` | `name`, `parent` (default `root`), `colour`, `show`, `gate` (gate spec) or `filter` `{measure,fun,values,default_all}`, `is_track` |
+| `/api/gating/pop/add` | `name`, `parent` (default `root`), `colour`, `show`, `gate` (gate spec) or `filter` `{measure,fun,values,default_all}` or `boolean` `{op,pops,not}`, `is_track` |
 | `/api/gating/pop/set-gate` | `path`, `gate` (gate spec) |
-| `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility), `filter? {measure?,fun?,values?,default_all?}` (only the keys present are mutated — the tick-cluster-into-pop UX rewrites `filter.values` to retoggle which cluster IDs belong to a `clust`/`trackclust` pop) |
-| `/api/gating/pop/delete` | `path` (cascades to descendants); `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population — one request, so one undo step |
+| `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility), `filter? {measure?,fun?,values?,default_all?}` (only the keys present are mutated — the tick-cluster-into-pop UX rewrites `filter.values` to retoggle which cluster IDs belong to a `clust`/`trackclust` pop), `boolean? {op,pops,not}` (Decision 16 — replaced WHOLE, not patched key-by-key: a combination *is* its term list; `boolean: null` clears it back to an ordinary population) |
+| `/api/gating/pop/delete` | `path` (cascades to descendants); `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population — one request, so one undo step. **400** when something going would be COMBINED by a boolean population that stays (the reply names both) — references are paths, and only delete can orphan one; rename/move rewrite them |
 | `/api/gating/pop/rename` | `path`, `newName` (cascades child paths) → also returns `path` (new) |
 | `/api/gating/pop/move` | `path`, `parent` (`"root"` for top level) — re-parents the population and its whole subtree → also returns `path` (new). The gate is unchanged; MEMBERSHIP is re-derived (a pop is its gate ∩ its parent's). Rejects a move into its own subtree, onto an occupied path, or one that would collide with another pop type's name (`pop_name_conflict`, same guard as rename) |
+
+**Boolean (combined) populations** (Decision 16) — `boolean: {op: "and"|"or", pops: [path…], not: [path…]}` on
+`pop/add` / `pop/update`. Membership is the included `pops` combined with `op`, minus every path in `not`,
+then ∩ the parent like any other population; an empty `pops` means "everything in the parent except `not`"
+(the plain not-gate, also accepted as `op: "not"` with the terms in `pops`). 400 on an unknown operator, an
+empty term list, a self-reference, a reference to a population that isn't in the map, or a combination that
+would depend on itself (`A = not B`, `B = not A`, or referencing one's own descendant). See
+`docs/POPULATION.md` → *Boolean populations*.
 
 **Undo / redo** (hand-drawn gating only): `POST /api/gating/undo` · `POST /api/gating/redo`, body = the usual `{projectUid, imageUid, valueName, popType}` and nothing else → `{tree, canUndo, canRedo}`, broadcasting `gating:popmap` like any edit. `409` when the stack is empty; `400` for a non-`flow`/`track` pop type. History is a ring of whole-tree snapshots (limit 50) held **in process**, keyed per `(project, image, valueName, popType)` and recorded at `_persist_and_broadcast!` — the one choke point every mutation already goes through, so a new mutation is undoable without doing anything. A step does not record itself; a fresh edit clears the redo branch. Nothing is persisted: history dies with the backend rather than growing a user-facing sidecar with an edit log. See `docs/POPULATION.md` → *Undo / redo*.
 

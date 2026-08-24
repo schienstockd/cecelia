@@ -32,10 +32,15 @@ export interface FilterCondition { measure: string; fun: string; values: unknown
 // a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`
 export interface FilterSpec { measure: string; fun: string; values: unknown; default_all: boolean; conditions?: FilterCondition[] }
 
+// a boolean spec (Decision 16): the included terms combined with `op`, minus every excluded term.
+// `pops: []` + `not: [x]` is the plain "everything here except x" case.
+export interface BooleanSpec { op: 'and' | 'or'; pops: string[]; not: string[] }
+
 export interface PopNode {
   name: string; colour: string; show: boolean
   gate?: GateSpec
   filter?: FilterSpec
+  boolean?: BooleanSpec
   is_track?: boolean
   transient?: boolean              // ephemeral (napari cell selection) — not persisted
   membership_sig?: string          // explicit-label pops (napari selection): hash of label set
@@ -48,6 +53,7 @@ export interface FlatPop {
   path: string; name: string; parent: string; colour: string; show: boolean
   depth: number; gate?: GateSpec; transient?: boolean
   filter?: FilterSpec  // cluster / region / user-defined filter pops
+  boolean?: BooleanSpec  // a combination of OTHER populations (Decision 16)
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -56,7 +62,7 @@ function flatten(tree: PopTree): FlatPop[] {
     for (const n of nodes) {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, parent, colour: n.colour, show: n.show, depth,
-                 gate: n.gate, transient: n.transient, filter: n.filter })
+                 gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -73,7 +79,7 @@ function gateSignatures(tree: PopTree): Map<string, string> {
       // include membership_sig so explicit-label pops (the napari selection) bump their version
       // when their cell set changes — they have no gate/filter to diff on.
       m.set(path, JSON.stringify(n.gate ?? null) + '|' + JSON.stringify(n.filter ?? null)
-                  + '|' + (n.membership_sig ?? ''))
+                  + '|' + JSON.stringify(n.boolean ?? null) + '|' + (n.membership_sig ?? ''))
       walk(n.children ?? [], path)
     }
   }
@@ -299,6 +305,13 @@ export const useGatingStore = defineStore('gating', () => {
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
       filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun, values: conditions[0]?.values } })
+  // boolean population (Decision 16): membership is a set operation over OTHER pops in this map —
+  // "nuc-GFP+ OR mem-TOM+", or "both, but NOT CD169+". No gate and no column of its own; it links
+  // gates that already exist. Sent whole on both add and edit (a term list has no partial patch).
+  const addBooleanPop = (name: string, parent: string, colour: string, spec: BooleanSpec) =>
+    _post('/api/gating/pop/add', { name, parent, colour, boolean: spec })
+  const updateBooleanPop = (path: string, spec: BooleanSpec) =>
+    _post('/api/gating/pop/update', { path, boolean: spec })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
   // Step through the server's history. `_post` handles the response tree + flags like any other
   // mutation, so an undo lands on screen exactly the way the edit it reverses did. `mirrorUids` is
@@ -383,7 +396,7 @@ export const useGatingStore = defineStore('gating', () => {
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,

@@ -20,6 +20,7 @@ import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc } from '../../plots/export'
+import { isClickNotDrag, isDegeneratePolygon } from '../../plots/gateGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -386,8 +387,15 @@ function onMove(e: MouseEvent) {
 function onUp() {
   if (props.mode === 'rectangle' && dragging && start && cur) {
     dragging = false
-    const [ax, ay] = pxToData(start[0], start[1]); const [bx, by] = pxToData(cur[0], cur[1])
+    const from = start, to = cur
     start = cur = null
+    // A CLICK IS NOT A GATE. `onDown` seeds `cur = start`, so releasing without moving used to emit a
+    // zero-area rectangle: a population with no cells and an outline too thin to see. The tool stays
+    // armed on purpose (gate repeatedly without re-selecting it), so ANY stray click on the plot did
+    // it — which is what "I drew a gate and it fell to zero, redrawing is fine" was. Swallowed, not
+    // cancelled: a mis-click shouldn't disarm the tool either. (plots/gateGeometry.ts)
+    if (isClickNotDrag(from, to)) { draw(); return }
+    const [ax, ay] = pxToData(from[0], from[1]); const [bx, by] = pxToData(to[0], to[1])
     emit('draw', { kind: 'rectangle', x_min: Math.min(ax, bx), x_max: Math.max(ax, bx), y_min: Math.min(ay, by), y_max: Math.max(ay, by) })
   }
 }
@@ -420,7 +428,11 @@ function onContextMenu(e: MouseEvent) {
   }
 }
 function finishPolygon() {
-  if (polyPts.value.length < 3) { polyPts.value = []; emit('cancel'); return }
+  // < 3 points isn't a polygon; neither is one closed on the spot or drawn in a straight line — the
+  // polygon tool's version of the zero-area rectangle above, and just as invisible once stored.
+  if (polyPts.value.length < 3 || isDegeneratePolygon(polyPts.value)) {
+    polyPts.value = []; emit('cancel'); return
+  }
   const verts = polyPts.value.map(p => pxToData(p[0], p[1])) as [number, number][]
   polyPts.value = []; cur = null
   emit('draw', { kind: 'polygon', vertices: verts })
