@@ -32,26 +32,31 @@
 
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
 
-export const MIP_WGSL = `
+/**
+ * The uniform layout and the camera, shared verbatim by all three passes.
+ *
+ * ONE COPY, interpolated, because there were three and that is exactly how a convention drifts. The
+ * raycast builds rays from this basis and the overlay passes invert it; if the two ever disagree by a
+ * sign, a marker sits beside the cell it marks and still looks plausible.
+ *
+ * THE VERTICAL FLIP IS HERE, in `up`. `cross(right, fwd)` rather than `cross(fwd, right)` — i.e. screen
+ * up is -y in world. Image row 0 must appear at the TOP, as it does in napari and in every image
+ * viewer, and the naive basis puts it at the bottom: WebGPU's NDC y points up while a framebuffer's
+ * rows count down from the top, so a right-handed basis and a raster image disagree by exactly this
+ * sign. Derived rather than guessed (screen top mapped to the LAST texture row), and asserted by
+ * `docs/todo/spike/webgpu/shader_check.mjs` — the orientation check there is the one-click proof.
+ */
+const SHARED_WGSL = `
 struct P {
   cam:  vec4<f32>,                       // yaw, pitch, dist, steps
   vp:   vec4<f32>,                       // channel count, canvas w, canvas h, orthographic
   ext:  vec4<f32>,                       // physical extent x, y, z; w = z origin of the loaded slab (µm)
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
-  ov:   vec4<f32>,                       // overlays: point size (px), plane filter (-1 = none), 0, 0
+  ov:   vec4<f32>,                       // overlays: point size (px), plane filter (-1 = none), tail width, unused
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
-
 @group(0) @binding(0) var<uniform> p: P;
-@group(0) @binding(1) var vol: texture_3d<u32>;
-@group(0) @binding(2) var lut: texture_2d<f32>;
 
-struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-
-// ── The camera, written once and used by both passes ──────────────────────────────
-// The raycast builds rays from this basis; the overlay pass inverts it to place a point on screen. Two
-// derivations of one camera would drift the instant either changed, and the symptom would be an overlay
-// that sits next to the cell it is marking rather than on it.
 struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
 fn camera() -> Cam {
   let cy = cos(p.cam.x); let sy = sin(p.cam.x);
@@ -60,12 +65,14 @@ fn camera() -> Cam {
   c.fwd = vec3(cp * sy, sp, cp * cy);
   c.ro = c.fwd * p.cam.z;
   c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
-  c.up = cross(c.fwd, c.right);
+  // screen up is -y in world: see the note above. Written as the cross product in the other order
+  // rather than as a negation, so there is no minus sign for someone to 'tidy away'.
+  c.up = cross(c.right, c.fwd);
   return c;
 }
 
-// World µm → clip space, the exact inverse of the ray construction below. 'w' (the distance along the
-// view axis) is returned so the caller can size a point in perspective and reject what is behind.
+// World µm → clip space, the exact inverse of the ray construction. 'w' (distance along the view axis)
+// is returned so a caller can size a point under perspective.
 fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
   let d = world - c.ro;
   let sx = dot(d, c.right);
@@ -84,6 +91,14 @@ fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
 fn boxCentre() -> vec3<f32> {
   return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
 }
+`
+
+export const MIP_WGSL = `
+${SHARED_WGSL}
+@group(0) @binding(1) var vol: texture_3d<u32>;
+@group(0) @binding(2) var lut: texture_2d<f32>;
+
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 // One oversized triangle covers the viewport with three vertices and no vertex buffer.
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -187,41 +202,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
  * the sorted-by-timepoint layout exists to avoid.
  */
 export const POINTS_WGSL = `
-struct P {
-  cam:  vec4<f32>,
-  vp:   vec4<f32>,
-  ext:  vec4<f32>,
-  dims: vec4<f32>,
-  ov:   vec4<f32>,
-  ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
-};
-@group(0) @binding(0) var<uniform> p: P;
-
-struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
-fn camera() -> Cam {
-  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
-  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
-  var c: Cam;
-  c.fwd = vec3(cp * sy, sp, cp * cy);
-  c.ro = c.fwd * p.cam.z;
-  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
-  c.up = cross(c.fwd, c.right);
-  return c;
-}
-fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
-  let d = world - c.ro;
-  let sx = dot(d, c.right);
-  let sy = dot(d, c.up);
-  if (p.vp.w > 0.5) {
-    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
-    return vec3(sx / (hh * aspect), sy / hh, 1.0);
-  }
-  let w = max(dot(d, -c.fwd), 1e-4);
-  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
-}
-fn boxCentre() -> vec3<f32> {
-  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
-}
+${SHARED_WGSL}
 
 struct POut {
   @builtin(position) pos: vec4<f32>,
@@ -285,41 +266,7 @@ struct POut {
  * `POINTS_WGSL` for why that matters more than it looks.
  */
 export const SEGMENTS_WGSL = `
-struct P {
-  cam:  vec4<f32>,
-  vp:   vec4<f32>,
-  ext:  vec4<f32>,
-  dims: vec4<f32>,
-  ov:   vec4<f32>,
-  ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
-};
-@group(0) @binding(0) var<uniform> p: P;
-
-struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
-fn camera() -> Cam {
-  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
-  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
-  var c: Cam;
-  c.fwd = vec3(cp * sy, sp, cp * cy);
-  c.ro = c.fwd * p.cam.z;
-  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
-  c.up = cross(c.fwd, c.right);
-  return c;
-}
-fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
-  let d = world - c.ro;
-  let sx = dot(d, c.right);
-  let sy = dot(d, c.up);
-  if (p.vp.w > 0.5) {
-    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
-    return vec3(sx / (hh * aspect), sy / hh, 1.0);
-  }
-  let w = max(dot(d, -c.fwd), 1e-4);
-  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
-}
-fn boxCentre() -> vec3<f32> {
-  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
-}
+${SHARED_WGSL}
 
 struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
 

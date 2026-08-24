@@ -479,6 +479,24 @@ staging copy: use a `MAP_WRITE` buffer, write the fetched slab straight into `ge
 unmap, `copyBufferToTexture`. Untested. Also unmeasured: `onSubmittedWorkDone`'s ~100 ms quantum makes
 anything faster than that unmeasurable — batch N operations per submit to get under it, as G2 did.
 
+## LOOK AT THIS FIRST — the vertical orientation
+
+**Every image was rendering vertically MIRRORED, and it is fixed but unverified** (2026-08-24). Derived,
+not guessed: WebGPU's NDC y points up while a framebuffer's rows count down from the top, so the
+right-handed camera basis the raycast started with mapped the screen's TOP to the LAST texture row.
+Image row 0 therefore appeared at the BOTTOM — and a fluorescence field of scattered cells looks exactly
+as plausible either way, which is why it survived P1 and P2 unnoticed.
+
+The fix is one line, in `SHARED_WGSL`: `up = cross(right, fwd)` instead of `cross(fwd, right)`. It is in
+the shared prelude because there were THREE copies of the camera by then (raycast, points, tails) and a
+sign convention with three copies drifts by definition; extracting it was part of the same change.
+
+**One click confirms or refutes it.** `node docs/todo/spike/webgpu/shader_check.mjs` writes
+`~/Downloads/TMP/shader_check.html`; the *orientation* line draws a plane lit only in its top half and
+asserts the top of the screen lights. If it says MIRRORED, revert that one line. Nothing else in the
+viewer depends on the sign — the overlays project through the same basis, so points and pixels agree
+either way, which is also why the bug could not be seen by comparing them.
+
 ## Open questions for Dominik — none blocking
 
 Written down rather than guessed at (2026-08-24). Work continued past all of these under the stated

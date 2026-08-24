@@ -65,6 +65,14 @@ if (CH0 !== LEADING_VEC4S * 4) {
   throw new Error(`CH0 (${CH0}) disagrees with UNIFORM_BYTES (${LEADING_VEC4S} vec4s)`)
 }
 
+// The three shaders share an interpolated prelude (one camera, one uniform layout — there were three
+// copies and that is how a sign convention drifts). Resolve it first, or every body arrives with an
+// unresolved ${SHARED_WGSL} and nothing compiles.
+const sharedOpen = src.indexOf('const SHARED_WGSL = `')
+if (sharedOpen < 0) throw new Error('SHARED_WGSL not found — did the export shape change?')
+const sharedBody = src.slice(sharedOpen + 'const SHARED_WGSL = `'.length)
+const SHARED = sharedBody.slice(0, sharedBody.indexOf('`'))
+
 // The WGSL is a template literal; take it verbatim and resolve only the two interpolations.
 const open = src.indexOf('export const MIP_WGSL = `')
 if (open < 0) throw new Error('MIP_WGSL not found — did the export shape change?')
@@ -73,7 +81,8 @@ const close = body.indexOf('`')
 if (close < 0) throw new Error('unterminated MIP_WGSL template literal')
 let wgsl = body.slice(0, close)
 if (wgsl.includes('${') === false) throw new Error('no interpolation found — check the extraction')
-wgsl = wgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
+wgsl = wgsl.replaceAll('${SHARED_WGSL}', SHARED)
+             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
            .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
            .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (wgsl.includes('${')) throw new Error('unresolved interpolation left in the WGSL: ' + wgsl.match(/\$\{[^}]*\}/))
@@ -88,7 +97,8 @@ const pBody = src.slice(pOpen + 'export const POINTS_WGSL = `'.length)
 const pClose = pBody.indexOf('`')
 if (pClose < 0) throw new Error('unterminated POINTS_WGSL template literal')
 let pwgsl = pBody.slice(0, pClose)
-pwgsl = pwgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
+pwgsl = pwgsl.replaceAll('${SHARED_WGSL}', SHARED)
+             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
              .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
              .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (pwgsl.includes('${')) throw new Error('unresolved interpolation in POINTS_WGSL: ' + pwgsl.match(/\$\{[^}]*\}/))
@@ -102,7 +112,8 @@ const sBody = src.slice(sOpen + 'export const SEGMENTS_WGSL = `'.length)
 const sClose = sBody.indexOf('`')
 if (sClose < 0) throw new Error('unterminated SEGMENTS_WGSL template literal')
 let swgsl = sBody.slice(0, sClose)
-swgsl = swgsl.replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
+swgsl = swgsl.replaceAll('${SHARED_WGSL}', SHARED)
+             .replaceAll('${MAX_CHANNELS}', String(MAX_CHANNELS))
              .replaceAll('${LUT_STOPS}', String(LUT_STOPS))
              .replaceAll('${VIEW_HALF_ANGLE}', String(VIEW_HALF_ANGLE))
 if (swgsl.includes('${')) throw new Error('unresolved interpolation in SEGMENTS_WGSL: ' + swgsl.match(/\$\{[^}]*\}/))
@@ -439,6 +450,56 @@ try {
           (filtered ? 'OK' : 'NOT FILTERED — the 2D view would show every plane at once'),
           filtered ? 'ok' : 'bad')
     }
+  }
+
+  // ── ORIENTATION: does image row 0 appear at the TOP? ────────────────────────────
+  // The one check that answers a question no amount of staring at a fluorescence image will: WebGPU's
+  // NDC y points up while a framebuffer's rows count down, so a right-handed camera basis renders every
+  // image vertically MIRRORED, and cells scattered on a dark field look exactly as plausible either way.
+  // A plane lit only in its top half must light the top of the screen.
+  {
+    const half = new Uint16Array(N * N)
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) half[y * N + x] = y < N / 2 ? 4000 : 0
+    const texH = device.createTexture({size: [N, N, NCH], dimension: '3d', format: 'r16uint',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST})
+    for (let c = 0; c < NCH; c++) {
+      device.queue.writeTexture({texture: texH, origin: [0, 0, c]},
+        half, {bytesPerRow: N * 2, rowsPerImage: N}, [N, N, 1])
+    }
+    const bindH = device.createBindGroup({layout: bgl, entries: [
+      {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: texH.createView()},
+      {binding: 2, resource: lut.createView()}]})
+    u[0] = 0; u[1] = 0; u[2] = N * 1.7; u[3] = 1
+    u[4] = NCH; u[5] = cv.width; u[6] = cv.height; u[7] = 1        // face-on, orthographic, one step
+    u[8] = N; u[9] = N; u[10] = 1; u[11] = 0
+    u[12] = N; u[13] = N; u[14] = 1; u[15] = 1
+    u[16] = 0; u[17] = -1; u[18] = 0
+    for (let c = 0; c < MAX_CHANNELS; c++) { const o = CH0 + c*4; u[o] = 0; u[o+1] = 3000; u[o+2] = c === 0 ? 1 : 0 }
+    device.queue.writeBuffer(ubuf, 0, u)
+    const bpr = Math.ceil(cv.width * 4 / 256) * 256
+    const rb = device.createBuffer({size: bpr * cv.height,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ})
+    const enc = device.createCommandEncoder()
+    const pass = enc.beginRenderPass({colorAttachments: [{view: rt.createView(),
+      clearValue: {r:0,g:0,b:0,a:1}, loadOp: 'clear', storeOp: 'store'}]})
+    pass.setPipeline(pipeOff); pass.setBindGroup(0, bindH); pass.draw(3); pass.end()
+    enc.copyTextureToBuffer({texture: rt}, {buffer: rb, bytesPerRow: bpr, rowsPerImage: cv.height},
+                            [cv.width, cv.height, 1])
+    device.queue.submit([enc.finish()])
+    await rb.mapAsync(GPUMapMode.READ)
+    const px = new Uint8Array(rb.getMappedRange().slice(0))
+    rb.unmap(); rb.destroy()
+    // sum the lit red channel in the top and bottom quarters of the frame, down the middle column
+    const midx = Math.floor(cv.width / 2)
+    let top = 0, bot = 0
+    for (let y = 0; y < Math.floor(cv.height / 4); y++) top += px[y * bpr + midx * 4]
+    for (let y = Math.floor(cv.height * 3 / 4); y < cv.height; y++) bot += px[y * bpr + midx * 4]
+    const okOrient = top > bot * 2 && top > 200
+    if (!okOrient) bad++
+    say('orientation: image row 0 → top of screen (top ' + top + ' vs bottom ' + bot + ')  ' +
+        (okOrient ? 'OK' : top + bot < 200 ? 'NOTHING DREW'
+                                           : 'MIRRORED VERTICALLY — the camera basis needs its up flipped'),
+        okOrient ? 'ok' : 'bad')
   }
 
   // the tail pass: compilation only, for now
