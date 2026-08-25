@@ -1123,11 +1123,24 @@ function onOverlaysTick(e: StorageEvent) {
   const [uid] = e.newValue.split(':')
   if (uid === imageUid) void loadOverlays()
 }
-onMounted(() => window.addEventListener('storage', onOverlaysTick))
+// A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
+// cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
+// fires. Payload: `<imageUid>:<valueName>:<ts>`. Guards on both uid AND valueName so an unrelated
+// segmentation's task doesn't refetch this window's pixels.
+function onSlabsTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerSlabsTick' || !e.newValue) return
+  const [uid, vn] = e.newValue.split(':')
+  if (uid === imageUid && vn === labelName.value) reallocate()
+}
+onMounted(() => {
+  window.addEventListener('storage', onOverlaysTick)
+  window.addEventListener('storage', onSlabsTick)
+})
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('storage', onOverlaysTick)
+  window.removeEventListener('storage', onSlabsTick)
   stopPlay()
   pump.cancel()
   zPump.cancel()

@@ -639,9 +639,17 @@ function onTaskStatus(data: Record<string, unknown>) {
   const status = String(data.status ?? '')
   if (!settings.napariUpdateImage) return
   if (status !== 'done') return
-  const napariUid = projectStore.napariImageUid
-  if (!napariUid || String(data.imageUid ?? '') !== napariUid) return
+  const openUid = projectStore.openImageUid
+  const taskUid = String(data.imageUid ?? '')
+  if (!openUid || taskUid !== openUid) return
   reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
+  // Ping the WebGPU popup so it refetches overlays (pop counts / colours may have changed after a
+  // seg or gating task). Slabs are NOT re-invalidated from here — a mask-writing task rewrites the
+  // label store on disk, and the popup keeps its cached mask until `labelName` changes. That gap
+  // is spelled out in VIEWER_CONTROLS_SPLIT_PLAN.md → Audit § refresh-labels.
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
+  }
 }
 
 // Refresh the SHOWN image. Data-only by default (re-push overlays, re-read from disk — the pyramid and
@@ -659,7 +667,7 @@ function reloadViewer() {
 
 function onTaskResult(data: Record<string, unknown>) {
   const imageUid = String(data.imageUid ?? '')
-  if (!imageUid || imageUid !== projectStore.napariImageUid) return
+  if (!imageUid || imageUid !== projectStore.openImageUid) return
   const meta = (data.meta ?? {}) as Record<string, unknown>
 
   const addedValueName = meta.valueName as string | undefined
@@ -669,6 +677,13 @@ function onTaskResult(data: Record<string, unknown>) {
   }
 
   const labelValueName = meta.labelValueName as string | undefined
+  // A task that wrote a label store — the popup's cached mask pixels for THIS vn are stale. Ping
+  // the popup so it invalidates its slabs. The listener on the other side matches on `imageUid`
+  // AND `valueName`, so only the popup showing the affected mask reallocates.
+  if (labelValueName && typeof localStorage !== 'undefined') {
+    localStorage.setItem('cc.viewerSlabsTick',
+                          `${imageUid}:${labelValueName}:${Date.now()}`)
+  }
   if (labelValueName && settings.napariUpdateImage) {
     // Mark newly added label as visible and show it in napari
     visibleLabels.value = { ...visibleLabels.value, [labelValueName]: true }

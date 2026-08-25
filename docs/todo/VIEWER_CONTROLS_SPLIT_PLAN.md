@@ -1,7 +1,9 @@
 # Viewer controls — split between window and panel
 
 Status: **in progress** (Dominik, 2026-08-25). P0-P5 landed on branch `feat/viewer-masks-movies`;
-P6 (rename `napari*`) next.
+follow-up wiring fixes (pop.show ground truth, radio-like labels, task-done ping) landed
+2026-08-25 after user testing exposed gaps. P6 (rename `napari*`) next. Full endpoint audit
+below in § Napari endpoint audit.
 
 Companion to [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). That plan replaced napari's *canvas* with a
 WebGPU one; this plan settles where the *controls* live now that napari's own layer list is going
@@ -93,7 +95,49 @@ is untouched until P8.
    option must survive remount. Row order + visibility state + per-layer opacity/contour/colour need
    to be in the module's persisted bag, not local component state.
 
-## Audit — every napari sink today
+## Napari endpoint audit — wiring status 2026-08-25
+
+Complement to the intent table below: what's actually wired to the WebGPU popup RIGHT NOW, and
+which paths still silently do nothing when napari is down. Re-audited 2026-08-25 after user
+reported "toggles that used to work for napari dont do anything" — my earlier P3-P5 work fixed
+symptoms without checking every sink.
+
+Legend: **WIRED** = the WebGPU popup responds. **SHADOW** = the POST fires silently, no popup
+effect. **N/A** = napari-only concept, will be deleted at P6/P9.
+
+| Route | Caller | Wire | Status | Notes |
+|---|---|---|---|---|
+| `show-labels` | `ViewerPanel.toggleLabel` | settings bag `cc.napariLabelVisibility` → popup reads `labelName` | **WIRED** | Radio-like since 2026-08-25: exclusive `valueName` on, all others explicit `false` (bag defaults unknown to `true`, so omitting others left them ticked). |
+| `show-populations` | `PopulationManager` per-pop eye → `gating.updatePop({show})` → `_post` | `_post` writes `cc.viewerOverlaysTick` on every mutation; popup refetches `/api/viewer/overlays`. `pop.show` is ground truth every fetch. | **WIRED** | Fixed 2026-08-25 — was seeding-only. |
+| `show-populations` | `gating.refreshNapariPops` (per-pop `show` change, PopulationManager sidebar) | ping | **WIRED** | Fixed 2026-08-25 — the ping was on `refreshNapari` only. |
+| `show-tracks` | `gating.refreshNapari` (popType=track) | ping | **WIRED** | Same fix path. |
+| `show-tracks` | `ViewerPanel.toggleTrack` per-segmentation eye → `settings.setTrackVisibility` | settings bag storage event reaches popup, but popup does NOT read `getTrackVisibility` | **SHADOW** | **P7 — WebGPU-native tracks** owns this. Tracks in the popup are rendered from the current overlays payload; per-vn selection has no viewer effect yet. |
+| `refresh-labels` | `pushAllOverlays` on task done, live preview | none | **SHADOW** | After a seg task rewrites the mask, the popup's cached slabs are stale. `labelName` didn't change → no `reallocate()`. **Gap:** need a `cc.viewerSlabsTick` or invalidation on task-done. Wired partial: task-done now pings overlays (2026-08-25); slab invalidation still open. |
+| `colour-labels` | `ViewerPanel.onColourBy`, `onRecolour` | `settings.setColourBy` writes `_setPrefs` → storage event → popup's `colourBy` computed → `watch(colourBy, loadOverlays)` refetches with new column | **WIRED** | Overrides live in same `_setPrefs` bag and reach the popup, but the palette apply lives in `buildPointBuffer` / palette utils — verify overrides propagate to the mask palette in a browser test. |
+| `set-z-view` | `napariOverlays.setZView` (movie flow, per-frame) | popup has its own z slider / show3D toggle | **N/A** | Popup owns its own view state; the panel's `settings.setShow3D` writes the bag but the popup doesn't read `getShow3D` (only used by napari's batch movie). Fine for now; check when movies land. |
+| `set-3d-level` | `napariOverlays.setDetail3d` | popup has its own detail slider | **N/A** | Same. |
+| `apply-view-state` | `napariOverlays.applyViewState`, `restoreView` | popup has its own camera | **N/A** | Movie flow only. |
+| `view-state` | `ViewerPanel.recordMovie` (GET snapshot) | movie flow reads from panel state | **N/A** | Recording moves to server compositor. |
+| `centre` | correction worklist, plot click-through | none | **SHADOW** | **P8 — WebGPU-native picking** owns this direction too. A "centre on cell" click from a plot has no popup receiver. |
+| `screenshot` | `AnimationPanel`, `ImageStripView` | none — reads napari's canvas | **N/A** | Move to popup canvas `toBlob()` at P9. |
+| `open` | `ViewerPanel.openInNapari`, `ImageStripView`, `useNapariOpen` | popup opens via `ImageTable.openViewer` writing `projectStore.openImageUid` (P1) | **N/A** | Two open paths coexist. `openInNapari` is legacy; the popup opens independently. |
+| `close` | `serviceApi.close` | popup unaffected | **N/A** | Napari process only. |
+| `restart` | `ViewerPanel.restart` button | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
+| `status` | `useNapariStatus`, `SettingsModule` | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
+| `gpu` | `SettingsModule` | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
+| `configure-autosave` | `ViewerPanel.setAutosave` | popup unaffected | **DELETE at P6** | Napari layer-props autosave. |
+| `overlay-legend` | `napariOverlays.captureViewLegend` (batch movies) | popup unaffected | **N/A** | Batch legend for the compositor. |
+| `start-selection` / `stop-selection` / `selection-scope` | `gating` cell-selection UI | popup unaffected | **P8** | Draw-to-select round-trip. |
+| `apply-movie-config` | `BatchMoviesPanel` | popup unaffected | **N/A** | Batch recorder. |
+
+**Not-yet-wired action items (hoisted from Status column):**
+1. **Slab invalidation on task-done** — mask-writing tasks (segment, correction) leave the popup drawing stale pixels until `labelName` changes. Add `cc.viewerSlabsTick` with `imageUid:valueName:ts`; popup listens, calls `reallocate()` if own labelName matches. Fire from `ViewerPanel.onTaskStatus` when `data.meta.labelValueName` is present.
+2. **Per-segmentation track eye** — bag is written, but popup doesn't read `getTrackVisibility`. Blocked on P7's WebGPU-native tracks (per-vn track sourcing).
+3. **Colour override propagation to mask palette** — the `_setPrefs` bag reaches the popup, but confirm the mask palette respects overrides (not just the point buffer). Browser test.
+4. **Plot click → centre in viewer** — P8, no interim.
+5. **Segmentation added by a task** (`onTaskResult` labelValueName path) — currently sets `visibleLabels[labelValueName] = true` without unticking others. Behaves differently from `toggleLabel`'s radio-like. Either make the add path exclusive too, or accept the newly-added-label bias (probably fine — user just made it, wants to see it).
+
+## Audit — every napari sink today (intent table)
 
 Full grep 2026-08-25. `/api/napari/*` routes registered in `api/src/server.jl:212-349`:
 
