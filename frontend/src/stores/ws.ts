@@ -343,7 +343,13 @@ export const useWsStore = defineStore('ws', () => {
 
     if (type === 'napari:opened') {
       const imageUid = String(data.imageUid ?? '')
-      if (imageUid) useProjectStore().napariImageUid = imageUid
+      if (imageUid) {
+        // Napari opened X — record BOTH the napari-specific state and the shared "focused image"
+        // that the panel and browser viewer read. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
+        const p = useProjectStore()
+        p.napariImageUid = imageUid
+        p.openImageUid = imageUid
+      }
     }
 
     if (type === 'task:result') {

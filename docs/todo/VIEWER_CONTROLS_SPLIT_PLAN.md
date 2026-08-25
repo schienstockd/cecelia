@@ -262,38 +262,47 @@ paths.
 `napariReloadTick` / `napariAsDask` toggles stay; the bridge stays. Only the shared image state is in
 scope.
 
-### P2 — lift panel-local layer state to a store
+### P2 — cross-window state sync (settings ⇄ popup viewer)
 
-**Why.** The WebGPU viewer can subscribe directly to Pinia stores; no backend routing needed. Today
-the panel keeps `visibleLabels`, `trackVns`, `branchVns`, `previewShown`, `colourByCol` etc. as local
-`ref()`s. Lifting them to a store gives the viewer (and any future consumer) a subscription surface
-without changing what the panel does.
+**Discovered during P1 execution.** `/viewer-window` is a popup route (`lib/popout.ts:36-40` +
+`main.ts:60`), so the WebGPU viewer runs in a **separate browser window with its own Pinia store
+instance**. Sharing a Pinia field between the main window's panel and the popup does NOT work —
+they're different JS contexts. The main window's writes are invisible to the popup.
+
+**What already exists.** `stores/settings.ts:214-261` has the per-image bags the plan wanted to
+create: `_labelVisStore`, `_trackVisStore`, `_branchVisStore`, `_colourByStore`, plus per-set bags
+(`_show3DStore`, `_showGatedTracksStore`, `_pointSizeStore`, `_popVisibleStore`,
+`_colourOverridesStore`). All persist to `localStorage` under `cc.napari*` keys. **Do NOT create a
+second copy — the plan's original `stores/viewer.ts` proposal is retracted.**
+
+**The mechanism.** `localStorage` fires a `storage` event in every OTHER window on the same origin
+when a key changes. That's the cross-window bridge: panel writes → localStorage set →
+`storage` event in popup → popup's settings store rehydrates the ref → popup ViewerWindow reacts.
+BroadcastChannel is the cleaner API but requires a new pipe; localStorage-storage-events reuses what
+persistence already writes. Storage-events is the minimum-invention path.
 
 **Steps.**
-1. Create `frontend/src/stores/viewer.ts` (new file). Fields keyed by `imageUid`:
-   ```ts
-   visibleLabels: Record<string, Record<string, boolean>>  // { imageUid: { vn: shown } }
-   trackVns:      Record<string, Record<string, boolean>>
-   branchVns:     Record<string, Record<string, boolean>>
-   previewShown:  Record<string, Record<string, boolean>>
-   colourByCol:   Record<string, string>                    // { imageUid: obs col }
-   selectedValueName: Record<string, string>                // { imageUid: version }
-   ```
-   Persistence: read the existing `useViewState` pattern from `docs/UI.md` → *Persisting view state*.
-   Some of these already have per-image persistence in `stores/settings.ts:214-220` (see
-   `getLabelVisibility`) — check and reuse; do NOT create a second copy.
-2. `ViewerPanel.vue` mechanical rewrite: every `visibleLabels.value[vn]` / `trackVns.value[vn]` / …
-   becomes `useViewerStore().visibleLabels[openImageUid][vn]` (or a getter/setter helper). The `ref()`
-   declarations at the top of `<script setup>` go away.
-3. Napari push helpers keep their existing calling convention (`pushLabels(o)` etc.) — the panel just
-   reads its data from the store instead of local refs.
-4. Verify: turn a segmentation on in the panel → napari (if open) draws it as before. `pixi run
-   test-frontend` passes.
-5. **No WebGPU viewer changes yet.** The viewer stays wired to its own selectors; the store is now
-   there for it to subscribe to in P3-P5.
+1. In `stores/settings.ts`, after the last `set*Visibility` function, add a single
+   `window.addEventListener('storage', ...)` block that:
+   - Parses `event.key` against the known keys (`cc.napariLabelVisibility`,
+     `cc.napariTrackVisibility`, `cc.napariBranchVisibility`, `cc.napariColourBy`,
+     `cc.napariShow3D`, `cc.napariShowGatedTracks`, `cc.napariPointSize`, `cc.napariPopVisible`,
+     `cc.napariColourOverrides`, plus any singular `cc.viewer*` keys the viewer reads).
+   - For each matched key, reassigns the corresponding `_*Store` ref from `JSON.parse(event.newValue
+     ?? '{}')`. Vue's reactivity handles the rest.
+   - Guarded on typeof window (Vitest jsdom doesn't fire storage events but shouldn't throw).
+2. **No API changes.** Callers of `settings.setLabelVisibility(...)` etc. keep their existing
+   signatures. The listener is purely a receiver in the OTHER window.
+3. `panelImageUid` (the panel writes for) and `openImageUid` (both windows read) both propagate
+   correctly because they're already in the same Pinia store, and `openImageUid` was made
+   cross-window-writable via the eye-click path (P1).
+4. Test the storage listener with a Vitest-driven synthetic `StorageEvent` in
+   `stores/settings.test.ts` (or new file): dispatch a storage event, assert the ref updated.
+5. **No ViewerWindow changes yet.** The viewer stays wired to its own selectors; the sync channel is
+   now in place for P3-P5 to consume.
 
 **Do NOT touch in this phase.** The viewer's mask `<select>`, colour-by `<select>`, and pop rows all
-stay as they are.
+stay as they are. No panel-side changes needed — writers already hit localStorage.
 
 ### P3 — delete viewer's own segmentation selector
 

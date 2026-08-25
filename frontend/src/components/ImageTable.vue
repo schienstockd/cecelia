@@ -408,6 +408,11 @@ async function resyncFlagged() {
  * No version is sent because this table shows images, not versions: the server resolves the default.
  */
 function openViewer(img: CciaImage) {
+  // Record the focus so the ViewerPanel (in this window) shows this image's controls even when
+  // napari isn't running. The popup itself is a fresh app instance and cannot write back into this
+  // store; this write is what makes the panel see the image at all. See P1 in
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  project.openImageUid = img.uid
   openViewerWindow({
     projectUid: projectMeta.current?.uid ?? '',
     imageUid: img.uid,

@@ -74,6 +74,14 @@ export const useProjectStore = defineStore('project', () => {
   const loadedProjectUid = ref<string | null>(null)
   const activeSetUid = ref<string | null>(null)
   const napariImageUid = ref<string | null>(null)
+  // WHICH image the user is currently focused on IN A VIEWER — napari or the browser (WebGPU) viewer.
+  // The panel treats this as "the image whose controls I show"; napari-specific state (whether napari
+  // itself has this image open) stays on `napariImageUid`. See
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1 for the split; when napari retires (P9) the two merge.
+  //
+  // Writers: the napari WS `open` event (setting both fields — napari opened X, that IS the current
+  // focus) and the ImageTable eye click that opens the browser viewer (setting this one only).
+  const openImageUid = ref<string | null>(null)
   // Reload signal for the napari viewer: bumped by anything asking to refresh the SHOWN image (the
   // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic, so it
   // watches this tick and decides data-only vs full reopen (see settings.napariResetOnReload).
@@ -166,6 +174,7 @@ export const useProjectStore = defineStore('project', () => {
     loadedProjectUid.value = null
     activeSetUid.value = null
     napariImageUid.value = null
+    openImageUid.value = null
     imageSelection.value = {}
     imageSort.value = {}
     dataVersion.value = {}
@@ -343,7 +352,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, openImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

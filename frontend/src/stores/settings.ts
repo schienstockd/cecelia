@@ -4,6 +4,7 @@ import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../ut
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
+import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -473,6 +474,23 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen, open => { if (open) {          // opening clears the badge (all facets)
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
+
+  // Cross-window sync for the per-image / per-set viewer state bags. The volume viewer runs in a
+  // popup with its OWN Pinia store; localStorage `storage` events are the bridge. Decoder + full
+  // rationale in utils/viewerBagChannel.ts (pure, tested); this file's job is to dispatch. See
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P2.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', e => {
+      const ev = decodeViewerBagEvent(e.key, e.newValue)
+      if (!ev) return
+      switch (ev.kind) {
+        case 'labelVis':  _labelVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
+        case 'trackVis':  _trackVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
+        case 'branchVis': _branchVisStore.value = ev.value as Record<string, Record<string, boolean>>; break
+        case 'setPrefs':  _setPrefs.value       = ev.value as Record<string, NapariSetPrefs>; break
+      }
+    })
+  }
 
   return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })

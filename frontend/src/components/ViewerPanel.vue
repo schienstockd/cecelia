@@ -45,7 +45,7 @@ const taskStore    = useTaskStore()
 // task is queued/running on the currently-open image — otherwise the hint is noise.
 const segCacheWarn = computed(() => {
   if (!settings.napariLabelsCache) return false
-  const uid = projectStore.napariImageUid
+  const uid = projectStore.openImageUid
   if (!uid) return false
   return taskStore.tasks.some(t =>
     t.module === 'segment' && t.imageUid === uid && (t.status === 'queued' || t.status === 'running')
@@ -92,8 +92,11 @@ const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
 
+// The image the user is focused on — napari OR the browser viewer. This computed name is a legacy
+// (P6 renames it). The read is now `openImageUid`: the panel gates its content on ANY viewer being
+// open, not just napari. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
 const napariImage = computed(() => {
-  const uid = projectStore.napariImageUid
+  const uid = projectStore.openImageUid
   if (!uid) return null
   for (const set of projectStore.sets) {
     const img = set.images.find(i => i.uid === uid)
@@ -154,7 +157,7 @@ const foldedLabelCount = computed(() => labelRows.value.length - activeLabelRows
 // the set the open image belongs to — the key for per-set napari viewer prefs (colour-by, show-3D,
 // point size, overlay toggles). These are experiment-level: set once, hold across the set's images.
 const currentSetUid = computed(() =>
-  projectStore.napariImageUid ? projectStore.setUidOfImage(projectStore.napariImageUid) : null)
+  projectStore.openImageUid ? projectStore.setUidOfImage(projectStore.openImageUid) : null)
 // per-set option accessors bound to the open image's set (write-throughs persist to the settings store)
 // Deliberately the SAME stored value the viewer's 3D button reads and the movie's z control writes —
 // one setting with two entry points, not two settings that can disagree about what is on screen.
@@ -931,7 +934,7 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
-    <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open in Napari.</span></div>
+    <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open.</span></div>
   </div>
 </template>
 
