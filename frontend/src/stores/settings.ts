@@ -213,14 +213,34 @@ export const useSettingsStore = defineStore('settings', () => {
   const labLogUnseenLevel = ref<'' | 'warn' | 'fail'>('')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
-  // unknown labels default to true; persisted across sessions
+  // The WebGPU viewer renders ONE segmentation at a time (single-slot bind group), so the panel
+  // is radio-like: exactly one label ticked. The default therefore picks the FIRST name, not
+  // "everything true" — the napari-era default made every fresh image read as all-ticked while
+  // only the first one actually drew, and adding a segmentation later reintroduced the same lie
+  // because `?? true` treated every unknown name as visible.
+  // Persisted across sessions.
   const _labelVisStore = ref<Record<string, Record<string, boolean>>>(
     JSON.parse(localStorage.getItem('cc.napariLabelVisibility') ?? '{}')
   )
   function getLabelVisibility(imageUid: string, labelNames: string[]): Record<string, boolean> {
-    const stored = _labelVisStore.value[imageUid] ?? {}
+    const stored = _labelVisStore.value[imageUid]
     const out: Record<string, boolean> = {}
-    for (const vn of labelNames) out[vn] = stored[vn] ?? true   // default visible
+    if (stored) {
+      // Existing selection: honour every stored flag; new names arriving after a persist stay off
+      // rather than silently flipping the visible one (radio-like invariant).
+      for (const vn of labelNames) out[vn] = stored[vn] ?? false
+      // Legacy napari-era bags carry every name true (napari layered them all); on the WebGPU
+      // viewer that would read as "all ticked but only one draws". Collapse to the FIRST true one.
+      const firstTrue = labelNames.find(n => out[n])
+      if (firstTrue) for (const vn of labelNames) if (vn !== firstTrue) out[vn] = false
+      // A persisted bag with no name currently true (e.g. every stored one was renamed) falls back
+      // to the first — nothing rendering after opening the viewer is a worse read than a default.
+      if (labelNames.length && !firstTrue) out[labelNames[0]] = true
+    } else {
+      // First open on this image: pick the first name, not "everything true".
+      for (const vn of labelNames) out[vn] = false
+      if (labelNames.length) out[labelNames[0]] = true
+    }
     return out
   }
   function setLabelVisibility(imageUid: string, vis: Record<string, boolean>) {

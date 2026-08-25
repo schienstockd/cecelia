@@ -454,10 +454,15 @@ async function recordTimelapse() {
 // per-pop default for older senders; blank is fine.
 const pushPopulations = pushPopulationsNow
 
-// Per-pop-type visibility toggle; the choice is remembered (persisted) so it carries across opens.
+// Per-pop-type visibility toggle. Persists FIRST (so a hidden panel state survives a napari-down
+// window) and pings the WebGPU viewer to re-derive its hidden-pop set; the napari push is a silent
+// shadow. Previously this only persisted on a successful push, so a napari-down window read every
+// popType as ticked while none of them actually reached the viewer.
 async function togglePopType(popType: string) {
   const next = !popVisible(popType)
-  if (await pushPopulations(popType, next)) setPopVisible(popType, next)
+  setPopVisible(popType, next)
+  pingViewerOverlays()
+  try { await pushPopulations(popType, next) } catch { /* napari down — the WebGPU viewer already knows */ }
 }
 
 // Push the tracks for the currently-toggled-on segmentations (one Tracks layer per segmentation,
@@ -469,11 +474,14 @@ const onTrackVns = computed(() => Object.keys(trackVns.value).filter(vn => track
 const pushTracks = pushTracksNow
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, re-push the on-set.
+// Pings the WebGPU viewer too — the tracks path is P7-shadowed today (the viewer draws ribbons for
+// every gated track), but persisting + pinging keeps this ready for the P7 rewire.
 async function toggleTrack(vn: string) {
   const uid = projectStore.napariImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // Per-segmentation toggle: flip this segmentation's branch (skeleton) label overlay. Uses
@@ -508,14 +516,16 @@ async function toggleGatedTracks() {
   const next = !gatedTracksShown.value
   gatedTracksShown.value = next
   if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, next)
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // Master toggle for the trackclust (track-cluster) populations as ribbons. Persisted per pop type
 // (per-set popVis['trackclust']); re-pushes the track overlays (one call covers all ribbons).
 async function toggleTrackclust() {
   setPopVisible('trackclust', !popVisible('trackclust'))
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // ── Colour-by an obs column (tracks + labels) ──────────────────────────────────
@@ -598,6 +608,16 @@ function onValueNameChange(e: Event) {
   selectedValueName.value = name
   loadObsCols()
   openInNapari(name)
+}
+
+// Fire the WebGPU-viewer overlays-refetch ping. Every panel toggle that changes what the viewer
+// should draw calls this after persisting settings, so a popup viewer with its own store re-reads
+// its inputs (label bag, pop-type bag, track bag) via the `storage` bridge. See P5 of
+// VIEWER_CONTROLS_SPLIT_PLAN.md.
+function pingViewerOverlays() {
+  const openUid = projectStore.openImageUid
+  if (!openUid || typeof localStorage === 'undefined') return
+  localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
 }
 
 async function toggleLabel(valueName: string) {

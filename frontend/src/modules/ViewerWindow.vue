@@ -531,12 +531,25 @@ async function loadOverlays() {
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
     const p = body as OverlayPayload
-    // `pop.show` is the ground truth (authored in the Population Manager, persisted in the gating
-    // JSON). The viewer's row-eye is a transient override for the SAME fetch — the next refetch
-    // resyncs to `pop.show`. Trying to preserve local eye state across refetches was worse: PopManager
-    // pings this window on every write, so the override would be clobbered within a second anyway
-    // (Dominik, 2026-08-25: "the toggles for pops and tracks dont do anything").
-    hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
+    // Two layers of ground truth are folded into `hiddenPops`:
+    //   1. Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON.
+    //      The viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs.
+    //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
+    //      on every write, so the override would be clobbered within a second anyway (Dominik,
+    //      2026-08-25: "the toggles for pops and tracks dont do anything").
+    //   2. Per-pop-TYPE panel gates — the "Populations & tracks" icon row. If the panel has flow off,
+    //      no flow pop shows; the viewer's fetch is always popType=flow today, so an off toggle hides
+    //      every pop in the payload (Dominik, 2026-08-26: "the toggles in populations & tracks in the
+    //      viewer controls panel also don't work anymore. they should be the gate to show pops from
+    //      the pop manager").
+    // Empty `setUid` = a viewer opened without a set context (rare — export path); default to shown.
+    const flowOn = setUid ? settings.getPopVisible(setUid, 'flow') : true
+    const hidden = new Set<string>()
+    for (const x of p.pops ?? []) {
+      if (!x.show) hidden.add(x.path)
+      else if (!flowOn) hidden.add(x.path)   // panel says the whole family is off
+    }
+    hiddenPops.value = hidden
     overlays.value = p
     rebuildOverlays()
   } catch (e) {
