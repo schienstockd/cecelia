@@ -1,6 +1,6 @@
 # The 2D viewer: pan/zoom, per-viewport tiles, cache + prefetch
 
-## Status
+Status: OPEN — Phase B (zoom-driven whole-plane LOD) shipping in PR #660; Phase C (per-viewport tiles) is next.
 
 Follow-up to the spatial-buffering audit (`docs/archive/spatial-buffering-pyramid-prompt.md`).
 The audit's Phase 1 (measurements) and Phase 2 server surface shipped in PR #659

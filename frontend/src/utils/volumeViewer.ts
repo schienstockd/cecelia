@@ -67,8 +67,12 @@ export interface ViewerMeta {
 }
 
 /** Channels the shader can composite in one pass. Beyond this the viewer shows the first MAX_CHANNELS
- *  and says so — a silent truncation would read as "that channel is empty". */
-export const MAX_CHANNELS = 8
+ *  and says so — a silent truncation would read as "that channel is empty". Sized for 25-ch CODEX-style
+ *  stacks and multi-marker IF; the cost is one row in the LUT texture and one vec4 in the uniform block
+ *  per slot. In 3D mode this also multiplies the vol texture's z-layer count (nZ * nT * MAX_CHANNELS),
+ *  which can bump into `maxTextureDimension3D` (2048 on integrated) for deep z-stacks — but 2D and
+ *  moderate 3D fit fine. */
+export const MAX_CHANNELS = 32
 /** Stops per channel in the LUT texture. Matches the bridge's `_LUT_MAX_STOPS`, which is what caps the
  *  stops the props file can carry in the first place. */
 export const LUT_STOPS = 64
@@ -166,36 +170,6 @@ export function pickTileLevel(zoom: number, meta: ViewerMeta): number {
   if (n <= 1 || !Number.isFinite(zoom) || zoom <= 1) return 0
   const raw = Math.floor(Math.log2(zoom))
   return Math.max(0, Math.min(n - 1, raw))
-}
-
-/**
- * 2D whole-plane LOD: the FINEST level whose one-channel slab bytes fit under a budget.
- *
- * The 2D plane view fetches an entire XY plane per (t, c) — one texture per channel, so the WebGPU
- * `maxBufferSize` cap (256 MB on the Dawn adapter observed) applies per-channel not per-image.
- * `f8gzA2` L0 is 20329×16898×u16 = 687 MB per channel; L1 = 172 MB; L2 = 43 MB — so the finest that
- * fits a 200 MB budget is L1. Small images stay on L0 (a 2024² u16 plane is 8 MB).
- *
- * `override` (0-based) is the user's choice from the plane's Level dropdown; `-1`/`undefined` picks
- * automatically. Clamped to `[0, nLevels-1]`. Different policy from `pickVolumeLevel`: volumes default
- * to the coarsest (napari-parity, Imaris octree not shipped), planes default to the finest that fits
- * (a whole plane is what plays, so detail matters most).
- *
- * Phase A of `docs/todo/VIEWER_TILES_PLAN.md`. Phase B/C move to zoom-triggered LOD and per-viewport
- * tiles once the whole-plane path is proven on the tilescan case.
- */
-export function pickPlaneLevel(meta: ViewerMeta, budgetBytes: number, override?: number): number {
-  const n = meta.levels?.length ?? 1
-  if (n <= 1) return 0
-  if (override !== undefined && override >= 0 && Number.isFinite(override)) {
-    return Math.max(0, Math.min(n - 1, Math.floor(override)))
-  }
-  const bpv = meta.bytesPerVoxel
-  for (let l = 0; l < n; l++) {
-    const lv = meta.levels![l]
-    if (lv.nX * lv.nY * bpv <= budgetBytes) return l
-  }
-  return n - 1                                // nothing fits — take the coarsest and log it upstream
 }
 
 /**
@@ -393,20 +367,6 @@ export const VIEW_HALF_ANGLE = 0.45
  * plane view is what plays, and 3D at ~400 ms a frame was never going to stream anyway.
  */
 export const SAFE_CACHE_BYTES = 1.5e9
-
-/**
- * Byte cap on ONE channel's whole-plane fetch, used by `pickPlaneLevel` to auto-choose a level.
- *
- * WebGPU's `maxBufferSize` on the Dawn integrated adapter is 256 MB — a per-channel staging buffer
- * exceeding that took the viewer down on `f8gzA2` (687 MB per channel at L0). 200 MB leaves headroom
- * for the staging overhead and is conservative enough to work on every card measured; discrete
- * adapters typically report 4 GB, so this is where the plane-view LOD kicks in for whole-slide data.
- *
- * NOT the whole-image cap: the plane texture stacks `nC` channels along z, so a big image with many
- * channels still needs a coarser level even when one channel would fit. Adjust here rather than
- * per-caller — a second copy would drift from the reason the number exists.
- */
-export const PLANE_LEVEL_BUDGET_BYTES = 200e6
 
 /**
  * Camera that FILLS the frame with the image, looking straight down z.

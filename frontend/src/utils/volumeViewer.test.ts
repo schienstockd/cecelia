@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, contrastCeiling,
-  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel, pickPlaneLevel,
+  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE,
   type ViewerMeta,
 } from './volumeViewer'
@@ -364,54 +364,6 @@ describe('pickTileLevel — 2D pan/zoom LOD', () => {
     const m = withLevels([{ nX: 800, nY: 800 }, { nX: 400, nY: 400 }])
     expect(pickTileLevel(0.5, m)).toBe(0)
     expect(pickTileLevel(0, m)).toBe(0)
-  })
-})
-
-describe('pickPlaneLevel — 2D whole-plane LOD (finest that fits a per-channel byte budget)', () => {
-  // Mirror the real `f8gzA2` shape so the test is grounded: 20329×16898 L0, u16, 6 levels 2×.
-  const bigLevels = [
-    { level: 0, nX: 20329, nY: 16898, chunkX: 1024, chunkY: 1024 },
-    { level: 1, nX: 10164, nY: 8449,  chunkX: 1024, chunkY: 1024 },
-    { level: 2, nX: 5082,  nY: 4224,  chunkX: 1024, chunkY: 1024 },
-    { level: 3, nX: 2541,  nY: 2112,  chunkX: 1024, chunkY: 1024 },
-    { level: 4, nX: 1270,  nY: 1056,  chunkX: 1024, chunkY: 1024 },
-    { level: 5, nX: 635,   nY: 528,   chunkX: 528, chunkY: 528 },
-  ]
-  const big = meta({ nX: 20329, nY: 16898, nZ: 1, nC: 25, bytesPerVoxel: 2, levels: bigLevels })
-  const BUDGET = 200e6                                              // conservative Dawn-integrated cap
-
-  it('picks the FINEST level whose one-channel slab fits (finest that fits, not coarsest)', () => {
-    // L0 is 687 MB per channel, L1 is 172 MB, L2 is 43 MB → L1 is the answer.
-    expect(pickPlaneLevel(big, BUDGET)).toBe(1)
-  })
-
-  it('stays on L0 for small images that fit at full resolution', () => {
-    // A 2024² intravital-shape crop is 8 MB per channel — L0 fits, don't drop resolution.
-    const small = meta({ nX: 2024, nY: 2024, bytesPerVoxel: 2, levels: [
-      { level: 0, nX: 2024, nY: 2024, chunkX: 1024, chunkY: 1024 },
-      { level: 1, nX: 1012, nY: 1012, chunkX: 1012, chunkY: 1012 },
-    ] })
-    expect(pickPlaneLevel(small, BUDGET)).toBe(0)
-  })
-
-  it('honours an override and clamps it', () => {
-    expect(pickPlaneLevel(big, BUDGET, 0)).toBe(0)                  // user forces L0 — asked for it
-    expect(pickPlaneLevel(big, BUDGET, 3)).toBe(3)
-    expect(pickPlaneLevel(big, BUDGET, 99)).toBe(5)                 // clamped to deepest
-    expect(pickPlaneLevel(big, BUDGET, -5)).toBe(1)                 // -1/undef → auto
-    expect(pickPlaneLevel(big, BUDGET, undefined)).toBe(1)
-  })
-
-  it('takes the deepest level when NOTHING fits — degrades gracefully rather than refusing', () => {
-    // A pathological budget: even the coarsest doesn't fit. Not a real case, but the fallback must
-    // be a valid level index or `setImage` crashes.
-    expect(pickPlaneLevel(big, 1e3)).toBe(5)
-  })
-
-  it('stays on L0 when there is no pyramid or only one level', () => {
-    expect(pickPlaneLevel(meta(), BUDGET)).toBe(0)
-    const one = meta({ levels: [{ level: 0, nX: 8, nY: 6, chunkX: 4, chunkY: 4 }] })
-    expect(pickPlaneLevel(one, BUDGET)).toBe(0)
   })
 })
 

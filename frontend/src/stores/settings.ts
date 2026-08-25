@@ -147,10 +147,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // Imaris-style octree LOD was on the wishlist but never shipped, so "coarsest by default, user
   // may override" is the answer this ships with. (Spatial audit Phase 2.5, 2026-08-25.)
   const viewerVolumeLevel = ref(Number(localStorage.getItem('cc.viewerVolumeLevel') ?? '-1'))
-  // 2D plane pyramid LEVEL. -1 = auto (the FINEST level whose one-channel slab fits under
-  // `PLANE_LEVEL_BUDGET_BYTES` — different policy from 3D because a whole plane is what plays and
-  // detail matters, so we take the sharpest that fits rather than the coarsest that works).
-  // 0..N-1 = force that level. Phase A of `docs/todo/VIEWER_TILES_PLAN.md`.
+  // 2D plane pyramid LEVEL. -1 = auto (zoom-driven — the coarsest level whose native pixel is still
+  // ≤ one device pixel, so we never ship pixels the screen cannot show; recomputes as the user zooms,
+  // debounced). 0..N-1 = pin that level. Different policy from 3D (which defaults to the coarsest and
+  // stays there): the plane view is what you pan/zoom, so the pyramid does what pyramids are for.
+  // Phase B of `docs/todo/VIEWER_TILES_PLAN.md`.
   const viewerPlaneLevel = ref(Number(localStorage.getItem('cc.viewerPlaneLevel') ?? '-1'))
 
   // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted

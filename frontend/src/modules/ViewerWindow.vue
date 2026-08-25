@@ -42,8 +42,8 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickPlaneLevel,
-  MAX_CHANNELS, SAFE_CACHE_BYTES, PLANE_LEVEL_BUDGET_BYTES,
+  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
@@ -208,6 +208,13 @@ const rampStyle = computed(() => {
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 })
 const fitDist = ref(1)
 /**
+ * The level the current textures were ALLOCATED for. `slabLevel` is a derived value that reacts to
+ * camera zoom; when the two disagree the level watch fires `reallocate(false)` (debounced), so a wheel
+ * gesture that crosses two thresholds refetches once. Set inside `reallocate()` right after `setImage`
+ * so the watch cannot chase a level that has already been picked up.
+ */
+const loadedLevel = ref(-1)
+/**
  * `plane` shows ONE z plane, `volume` the whole stack as a MIP. Plane is the default for anything with
  * a z axis, because it is what a timecourse is actually watched in — and it is the only one that plays:
  * on `Dml3RG` a plane timepoint is 8.8 MB against 326 MB, so the whole 181-frame movie is 1.59 GB and
@@ -240,18 +247,43 @@ const zRange = ref<[number, number]>([0, 0])
 const zDepth = computed(() =>
   mode.value === 'plane' ? 1 : Math.max(1, zRange.value[1] - zRange.value[0] + 1))
 /**
+ * L0 image pixels per DEVICE pixel — the zoom the LOD picker takes. Derived from `cam.dist`: the
+ * plane view is orthographic with visible height = `2 · dist · VIEW_HALF_ANGLE` µm at every depth
+ * (`visibleExtentUm`), which converts to L0 pixels via `voxelUm[1]` and divides by device-pixel canvas
+ * height. `zoom > 1` = one device pixel shows multiple L0 pixels (zoomed out — coarser level cheaper
+ * and no detail lost); `zoom ≤ 1` = magnified past 1:1 (stay on L0).
+ */
+const camZoom = computed(() => {
+  const c = canvas.value
+  const m = meta.value
+  if (!c || !m) return 1
+  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleL0Y = visibleHeightUm / (m.voxelUm[1] || 1)
+  const devicePxY = Math.max(c.clientHeight * (window.devicePixelRatio || 1), 1)
+  return visibleL0Y / devicePxY
+})
+/**
  * Pyramid level the current view fetches at. napari renders 3D at the coarsest level, and a full-res
  * volume of a wide-XY image exceeds WebGPU's `maxBufferSize` (`f8gzA2` needs 1.28 GB against a 256 MB
  * cap) — so the 3D view picks the deepest level by default, user-overridable via
- * `settings.viewerVolumeLevel`. The 2D plane view stays on L0 today; tile-per-viewport LOD for pan/zoom
- * is Phase 2's work (spatial audit).
+ * `settings.viewerVolumeLevel`.
+ *
+ * The 2D plane view is ZOOM-DRIVEN — `pickTileLevel(camZoom, meta)` at every camera dist. That is the
+ * whole point of the pyramid: at fit-to-window on a 20k×17k image, one device pixel already covers
+ * ~20 L0 pixels, so fetching L0 ships pixels the screen cannot show — L4 is the coarsest level whose
+ * native pixel is still ≤ one device pixel and it is 256× cheaper on the wire. As the user zooms in
+ * past a `floor(log2(zoom))` threshold, `slabLevel` drops and the level watch reallocates. Level swaps
+ * are debounced through `levelPump` so a wheel gesture that crosses two thresholds refetches once.
+ * Still a whole-plane-per-level fetch (Phase B of `docs/todo/VIEWER_TILES_PLAN.md`); per-viewport tiles
+ * come next.
  */
 const slabLevel = computed(() => {
   const m = meta.value
   if (!m) return 0
   if (mode.value === 'plane') {
     const o = settings.viewerPlaneLevel
-    return pickPlaneLevel(m, PLANE_LEVEL_BUDGET_BYTES, o < 0 ? undefined : o)
+    if (o >= 0) return Math.max(0, Math.min((m.levels?.length ?? 1) - 1, Math.floor(o)))
+    return pickTileLevel(camZoom.value, m)
   }
   const override = settings.viewerVolumeLevel
   return pickVolumeLevel(m, override < 0 ? undefined : override)
@@ -706,6 +738,21 @@ function onUp() { dragFrom = null }
  * scheduler for exactly this.
  */
 const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
+/**
+ * 2D pyramid LOD swap on zoom. A wheel gesture crossing a `floor(log2(zoom))` threshold changes the
+ * `slabLevel` computed, and the watch pumps a reallocate at that new level. Debounced (150 ms) because
+ * a single gesture emits an event per pixel of travel — the smallest wait that lets a fast wheel scroll
+ * settle before we refetch. Same discipline as the z pump: value moves immediately (the readout tracks
+ * the pointer), refetch collapses to the last position through `debouncedLatest`.
+ *
+ * `loadedLevel` gates against the initial mount: a first `reallocate(true)` sets `loadedLevel` to the
+ * fit-appropriate level; only DRIFT from that level fires a second reallocate.
+ */
+const levelPump = debouncedLatest<number>(async () => reallocate(false), { wait: 150 })
+watch(slabLevel, (newLvl) => {
+  if (!meta.value || mode.value !== 'plane') return
+  if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
+})
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const m = meta.value
@@ -818,17 +865,19 @@ function reallocate(refit = false) {
   hits.value = 0; misses.value = 0
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
+  // Refit BEFORE `setImage`: `slabLevel` reacts to `cam.dist` (2D pan/zoom LOD), so a mode switch that
+  // reads `renderNX`/`renderNY` from the stale dist=1 default would allocate a level-0 texture for
+  // a big image (687 MB per channel for `f8gzA2`), then immediately refetch on the level watch fire.
+  const c = fitNow(m)
+  fitDist.value = c.dist
+  if (refit) cam.value = c
   r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
              mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
              renderNX.value, renderNY.value)
+  loadedLevel.value = slabLevel.value
   r.setCapacity(settings.viewerCacheFrames || m.nT)
   r.setOrthographic(mode.value === 'plane')
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
-  // Only re-frame when the BOX changed (a 2D/3D switch). Looking at a different plane of the same
-  // image is not a reason to throw away a rotation or a zoom — that reads as the view jumping.
-  const c = fitNow(m)
-  fitDist.value = c.dist
-  refit && (cam.value = c)
   syncCacheState()
   gotoT(t.value)
 }
@@ -1055,17 +1104,18 @@ onUnmounted(() => {
             </option>
           </select>
         </div>
-        <!-- 2D pyramid level. Different policy from 3D: auto picks the FINEST level whose one-channel
-             slab fits `PLANE_LEVEL_BUDGET_BYTES` — because a whole plane is what plays and detail
-             matters more than in the volume view. Big-XY images (`f8gzA2`) still need this: L0 at
-             687 MB/channel exceeds the 256 MB adapter buffer cap. Phase A of VIEWER_TILES_PLAN.md.
-             Only shown when there IS a pyramid to pick from. -->
+        <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
+             pixel is closest to (without going finer than) one device pixel, so we never ship pixels
+             the screen cannot show. At fit-to-window on a 20k×17k image that is L4 or L5; as the user
+             zooms in past a `floor(log2)` threshold the level drops and the textures reallocate. The
+             dropdown lets a user pin a specific level, same as the 3D control. Phase B of
+             VIEWER_TILES_PLAN.md. Only shown when there IS a pyramid to pick from. -->
         <div v-if="mode === 'plane' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
           <select v-model.number="settings.viewerPlaneLevel" class="vw-grow"
-                  v-tooltip.top="'Pyramid resolution — auto picks the finest that fits VRAM'"
+                  v-tooltip.top="'Pyramid resolution — auto picks by camera zoom'"
                   @change="reallocate()">
-            <option :value="-1">Auto (L{{ slabLevel }} — finest that fits)</option>
+            <option :value="-1">Auto (L{{ slabLevel }} — zoom-driven)</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
