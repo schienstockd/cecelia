@@ -920,6 +920,7 @@ onUnmounted(() => {
           <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
         </div>
 
+        <div class="cc-row cc-row-tight">
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
@@ -1119,7 +1120,6 @@ onUnmounted(() => {
             >
             <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
           </div>
-          <div class="cc-row cc-row-tight">
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
                             storage-key="cc.vw.debug" :default-open="false" max-height="none">
@@ -1160,9 +1160,9 @@ onUnmounted(() => {
             {{ hits }} hit / {{ misses }} miss<template v-if="lastMissMs"> · last miss {{ lastMissMs }} ms</template><br>
             <template v-if="timing">
               fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
+            </template>
+          </div>
         </CollapsibleSection>
-          </template>
-        </div>
       </template>
     </aside>
   </div>
