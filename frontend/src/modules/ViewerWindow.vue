@@ -531,11 +531,18 @@ async function loadOverlays() {
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
     const p = body as OverlayPayload
-    // The gating `show` flag SEEDS the viewer's visibility; it does not lock it. It used to disable the
-    // toggle outright, so a population hidden in the population manager could not be looked at here at
-    // all (Dominik, 2026-08-25) — and the viewer is where you go to look. Seeded once per fetch rather
-    // than merged, because a re-fetch is a new answer about which populations exist.
-    hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
+    // The gating `show` flag SEEDS the viewer's visibility; it does not lock it (Dominik,
+    // 2026-08-25). The seeding rule is "once per image", not "once per fetch": now that P5 pings
+    // this window on every pop-manager write, blindly reseeding here would erase the user's row-eye
+    // choices every time someone toggles an unrelated pop. So the merge below (a) prunes rows that
+    // no longer exist, (b) seeds new arrivals from `pop.show`, (c) leaves everything else alone.
+    const paths = new Set((p.pops ?? []).map(x => x.path))
+    const merged = new Set(Array.from(hiddenPops.value).filter(pth => paths.has(pth)))
+    for (const x of p.pops ?? []) {
+      const isNew = !overlays.value?.pops?.some(y => y.path === x.path)
+      if (isNew && !x.show) merged.add(x.path)
+    }
+    hiddenPops.value = merged
     overlays.value = p
     rebuildOverlays()
   } catch (e) {
@@ -1112,8 +1119,21 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 
+// The pop manager (in the main window) writes `pop.show` to the server and pings a localStorage
+// key; this listener is the popup's side of the P5 bridge. The tick's value is `<imageUid>:<ts>`,
+// so this window only refetches on changes to the image IT shows — a viewer on image A stays
+// still when the user gates image B in the main window. See
+// docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
+function onOverlaysTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerOverlaysTick' || !e.newValue) return
+  const [uid] = e.newValue.split(':')
+  if (uid === imageUid) void loadOverlays()
+}
+onMounted(() => window.addEventListener('storage', onOverlaysTick))
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('storage', onOverlaysTick)
   stopPlay()
   pump.cancel()
   zPump.cancel()

@@ -224,11 +224,12 @@ anchors in that phase → the referenced source. Do not re-derive the architectu
 | P2 | Lift panel-local layer state to a store | not started | Move `visibleLabels`, `trackVns`, `branchVns`, `previewShown`, `colourByCol`, `selectedValueName` from `ViewerPanel.vue` refs into `stores/viewer.ts` (new file), keyed by `imageUid`. Panel behaviour unchanged (still reads/writes the same names, now via `useViewerStore()`); napari push helpers unchanged. Prep step so WebGPU viewer can subscribe in P3-P5. |
 | P3 | Delete viewer's own segmentation selector | not started | The mask `<select>` at `ViewerWindow.vue:1306` goes away. Viewer reads `useViewerStore().visibleLabels` — one row per `visibleLabels[vn] === true`. |
 | P4 | Delete viewer's own colour-by selector | not started | Colour-by `<select>` at `ViewerWindow.vue:1364-1372` goes away. Viewer reads `useViewerStore().colourByCol`. |
-| P5 | Populations from module-page pop managers | not started | Viewer reads pops from the gating store filtered by `p.show === true`. Delete `hiddenPops` local set. The per-row eye in the viewer is discussed under P5 — ask before implementing. |
+| P5 | Populations from module-page pop managers | **DONE** 2026-08-25 | Pop manager pings `cc.viewerOverlaysTick`; viewer refetches overlays on the storage event. Two-level model kept: `pop.show` SEEDS row visibility, viewer row eye can override transiently (per Dominik's in-code note, `ViewerWindow.vue:534-537`). |
 | P6 | Rename `napari*` → viewer-oriented names | not started | Mechanical rename pass across `ViewerPanel.vue`, `stores/`, `utils/`. Delete napari-only settings toggles (`asDask`, `labelsCache`, `autoSaveLayerProps`) — they do not apply to a WebGPU renderer. Delete the "Restart napari" button + `bridgeStale` warning. |
 | P7 | WebGPU-native tracks (per-vn selection + ribbons) | not started | Currently napari-only. Renderer draws track ribbons from the tracks-per-vn draw list; sinks (`viewerLabels.ts` / `napariOverlays.ts` track paths) retired. |
 | P8 | WebGPU-native picking (click → gating plot highlight) | not started | Click round-trip currently goes through napari. `WEB_VIEWER_PLAN.md` P6. |
 | P9 | Delete the bridge and everything napari | not started | Napari push helpers, `napariOverlays.ts`, `napariAutoShow.ts`, `napariColormap.ts`, `viewerLabels.ts`, WS handlers for napari events, `/api/napari/*` routes, `api/src/napari.jl`, `app/src/napari.jl`, python napari reader, tests. Grep-clean pass; nothing named `napari*` survives outside `docs/archive/`. |
+| PX | Multi-mask rendering (N-slot bind group + `viewerMaxSegmentations` setting) | not started | Bitmask ruled out (would lose per-cell contours + IDs). N-slot with a user-owned cap clamped to `adapter.limits.maxSampledTexturesPerShaderStage`. Per-cell contours + palette colouring per mask preserved. Independent of the panel-split; can land at any point after P3. |
 
 ### P1 — shared image state (fix the ghost)
 
@@ -336,28 +337,27 @@ Locked decision 3 forbids selectors in the viewer.
 
 ### P5 — populations from the module-page pop manager
 
-**Current data model already supports this.** Each pop has `show: boolean` in its persisted config
-(`stores/gating.ts:40,53,64`). `PopulationManager.vue:113` toggles it via `updatePop`. After the
-toggle, `refreshNapari` POSTs to `/api/napari/show-populations` which drives napari.
+**Shipped 2026-08-25** (subset). The pop manager already writes `pop.show` on disk via `updatePop`;
+`stores/gating.ts:refreshNapari` used to only push to napari. Now it ALSO fires a localStorage
+`cc.viewerOverlaysTick`; the viewer popup listens for that storage event and re-fetches overlays.
+Pop-manager writes → server → cross-window ping → viewer refetches. `PopulationManager.vue:113`'s
+`toggleNapari(p)` is now effectively `togglePop(p)` — the name is P6 territory.
 
-**Steps.**
-1. Rename `refreshNapari` → `refreshViewer` in `stores/gating.ts`. `POST /api/napari/show-populations`
-   becomes `POST /api/viewer/show-populations` (or leaves napari alive until P8; if leaving, dual-write
-   to both endpoints during transition).
-2. `ViewerWindow.vue`'s overlays fetch (`utils/volumeViewer.ts` → `overlaysUrl`) is already the
-   WebGPU-side sink for pops. Confirm the server-side handler at
-   `api/src/viewer_api.jl` filters pops by `show: true` — if it does not, that filter moves here.
-3. `ViewerWindow.vue:1353-1362` — delete the per-pop CcToggle row. Pops are no longer togglable inside
-   the viewer; the layer row shows visibility as read-only (it appears iff `show: true` in the pop
-   store).
-4. Delete `hiddenPops` local set (`ViewerWindow.vue`, look for `hiddenPops` / `togglePop`).
-5. **Rework thinking on the row's eye toggle.** Even napari lets you eye-toggle a layer without
-   removing it. Two-level model: pop-store `show: true` decides EXISTENCE; layer-row eye decides
-   render-time visibility (transient, not persisted, resets when the pop is next added). If Dominik
-   prefers one-level (pop store is the only truth), delete the row eye too.
-   **Ask before implementing.**
-6. Verify: tick a pop in the module-page PopulationManager → a row appears in the viewer, pop
-   overlays draw. Untick → row disappears, overlays gone.
+**Design settled — two-level model kept, not simplified to one.** Dominik's in-code note
+(`ViewerWindow.vue:534-537`, 2026-08-25) is authoritative: the gating `show` flag SEEDS the viewer's
+per-row eye but does not LOCK it. Users may want to peek at a pop hidden in the manager without
+changing the manager's decision. The row eye stays as a transient render-visibility control.
+
+Consequence: `hiddenPops` local set in ViewerWindow stays; row `togglePop` stays. What P5 fixed was
+the SYNC gap — the viewer was blind to pop-manager writes. The row eye is now the transient viz
+control (napari-style), and `pop.show` seeds it on every refetch.
+
+**Also done as part of P5**:
+- Ping value is `<imageUid>:<timestamp>`, not just a timestamp — a viewer on image A doesn't
+  refetch when the user gates image B in the main window.
+- `hiddenPops` seeding is now "once per image, merge on refetch": a user's row-eye state survives
+  writes to unrelated pops. New pops (never seen before this fetch) seed from `pop.show`; pops that
+  vanished are dropped; existing entries are left alone.
 
 ### P6 — rename `napari*` → viewer-oriented names
 
@@ -422,6 +422,63 @@ population to the open gating plots (`docs/todo/README.md` links `project_napari
 3. Rewire the gating store's selection handlers (`stores/gating.ts:startCellSelection` etc.) to
    consume `viewerPick` instead of the napari WS event.
 4. Verify: click a cell in the viewer → gated plots highlight the same cell.
+
+### PX — multi-mask rendering (N-slot bind group with configurable cap)
+
+**Independent of the panel-split work; deferrable.** Landed here rather than folded into P3 because
+it's a renderer/shader extension, not a controls question. Numbered `PX` because it can happen at any
+point after P3 (P3's "first-ticked wins" is the interim behaviour).
+
+**Direction settled (Dominik, 2026-08-25).** Per-cell contours in 2D and per-cell IDs are both
+required. Bitmask packing was considered and rejected: it loses cell IDs at the voxel level and can
+only draw per-mask (structure) contours, not per-cell outlines within a mask. Going N-slot bind
+group instead, with the cap **exposed as a user-visible setting** rather than hardcoded — the
+hardcoded 4 got called out as arbitrary and it is; hardware allows more.
+
+**Design.**
+
+- `settings.viewerMaxSegmentations` (default `4`, min `1`). At runtime, clamped to
+  `adapter.limits.maxSampledTexturesPerShaderStage - <existing bindings>` — currently 5 existing
+  bindings (uniforms, image, lut, one label, palette). On NVIDIA that ceiling is 11–27; on Intel
+  integrated it's often exactly 16. Setting exposes the raw number and shows the clamped-effective
+  value beside it.
+- **Shader** (`frontend/src/lib/webgpu/mipShader.ts`): the single `lab` binding becomes N bindings
+  (or a `binding_array<texture_3d<u32>, N>` when the target lets us — check WGSL support). The label
+  sample path loops over the N; each mask keeps its own per-cell contour path (`labEdge` per mask)
+  and per-cell palette colouring (`labColour` per mask, palette-row offset per mask so overlapping
+  cells across masks don't collide colour-wise).
+- **Uniform block**: N sets of `{ opacity, contourPx, paletteRow }` — a small `array<vec4<f32>, N>`
+  in the uniform buffer.
+- **Cache slot** (`frontend/src/lib/webgpu/volumeRenderer.ts:387`):
+  `labelTexture: GPUTexture | null` becomes `labelTextures: (GPUTexture | null)[]` sized to N. OOM
+  handling still ties all N mask textures to the volume in the same error scope — if any of the N
+  fails to allocate, the whole slot is dropped so a partial mask never renders.
+- **Fetch**: one endpoint returns N slabs in one HTTP round-trip
+  (`/api/viewer/label-slabs?vns=a,b,c&t=T` returning concatenated `r32uint` byte buffers with a
+  small header giving offsets). One request per timepoint reload, same as today.
+- **UI**: when the panel has more ticked than the effective cap allows, show a warning in the
+  Segmentation section — "6 ticked, showing 4 — raise the segmentation limit in Settings if your
+  GPU can" — instead of silently truncating.
+
+**Memory reality.** N× per-timepoint mask data. For a 1104×1046×38 volume at 4 B/voxel that's
+~175 MB per mask per timepoint; N=8 = 1.4 GB masks per timepoint; if the cache holds 4 timepoints
+worth, ~5.6 GB just for masks. That's why the cap is user-owned — the setting is the tradeoff.
+
+**Steps.**
+1. Add `viewerMaxSegmentations` to `stores/settings.ts` with persistence, default 4.
+2. Add adapter-limit computation once at renderer init; expose the "effective cap" via a
+   `renderer.maxSegmentations` field the panel can read to render the warning threshold.
+3. Rework the shader as described. Bench N=1, 2, 4, 8 at the reference RTX 2000 Ada — expected
+   per-fragment cost is roughly linear in N over the ~256 ray steps.
+4. Rework the renderer's cache to hold `labelTextures[]` per slot; teach the fetch path to request
+   N slabs.
+5. Add the new `/api/viewer/label-slabs` endpoint (Julia) reading N label stores per timepoint and
+   returning a concatenated buffer + offsets. Existing single-slab endpoint stays or is deprecated.
+6. `ViewerWindow.vue`: turn the "N ticked, showing X only" hint from P3 into the actual per-mask
+   row list, up to the effective cap; overflow warning above.
+7. Settings UI: expose the setting under a "Viewer" section, with the effective cap shown as
+   "up to K on this GPU" beside it.
+8. Bench and update `WEB_VIEWER_PLAN.md` with the numbers.
 
 ### P9 — delete the bridge and everything napari
 

@@ -368,9 +368,21 @@ export const useGatingStore = defineStore('gating', () => {
   // re-push populations to napari after a per-pop visibility change (silent if napari is down)
   const refreshNapariPops = () => _napari('/api/napari/show-populations', true)
   // unified re-push used by the manager's per-pop visibility toggle — routes to the right overlay
-  // for the current popType (track → Tracks layers, else → population Points), silent.
-  const refreshNapari = () => popType.value === 'track'
-    ? _napari('/api/napari/show-tracks', true) : _napari('/api/napari/show-populations', true)
+  // for the current popType (track → Tracks layers, else → population Points), silent. Also pings
+  // the browser volume viewer via localStorage — /viewer-window is a popup with its own store
+  // (P2), so a `pop.show` change here needs a channel to reach it. The tick's VALUE carries the
+  // imageUid so a popup on image A doesn't refetch on a change to image B (broadcasts are cheap
+  // but noisy). See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
+  const _pingViewer = () => {
+    if (typeof localStorage !== 'undefined' && imageUid.value) {
+      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+    }
+  }
+  const refreshNapari = () => {
+    _pingViewer()
+    return popType.value === 'track'
+      ? _napari('/api/napari/show-tracks', true) : _napari('/api/napari/show-populations', true)
+  }
   // add a Shapes layer in napari; drawing on it selects cells → highlighted here. The z scope
   // (whole stack vs ± slices around the live z) is captured now and applied when the polygon closes.
   // a blank/garbage dial value (v-model.number can yield NaN) → 0; never negative
