@@ -23,13 +23,16 @@
 // INTEGRATED GPU on this machine, and Firefox blanks every `adapter.info` field, so there is no name to
 // check. `maxTextureDimension3D` is the usable tell: the discrete card reports 16384, integrated 2048.
 // This is the browser-side twin of the PRIME trap in `app/src/napari.jl:55-59` — the difference is a
-// 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3.
+// 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3. The check is shared with the Settings
+// diagnostic in `utils/webgpuProbe.ts` — one place, so a second consumer cannot forget the trap.
 
 import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from './mipShader'
 import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, extentUm,
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
 } from '../../utils/volumeViewer'
+import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
+export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 
@@ -38,13 +41,6 @@ const UNIFORM_BYTES = 5 * 16 + MAX_CHANNELS * 16
 /** Float index of channel slot 0 — five vec4s in. Written out because getting it wrong shifts every
  *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
 const CH0 = 20
-
-export interface AdapterReport {
-  maxTextureDimension3D: number
-  /** Whether this looks like the discrete GPU. False means the browser handed us the integrated one. */
-  looksDiscrete: boolean
-  hasTimestamps: boolean
-}
 
 export interface VolumeRenderer {
   readonly adapter: AdapterReport
@@ -133,21 +129,8 @@ export interface VolumeRenderer {
   destroy(): void
 }
 
-export class WebGpuUnavailable extends Error {}
-
 export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<VolumeRenderer> {
-  if (!('gpu' in navigator)) throw new WebGpuUnavailable('This browser has no WebGPU')
-  // 'high-performance' is not advice here — without it the browser picks the integrated GPU.
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
-  if (!adapter) throw new WebGpuUnavailable('No WebGPU adapter available')
-
-  const maxDim3D = adapter.limits.maxTextureDimension3D
-  const hasTimestamps = adapter.features.has('timestamp-query')
-  const report: AdapterReport = {
-    maxTextureDimension3D: maxDim3D, looksDiscrete: maxDim3D > 2048, hasTimestamps,
-  }
-
-  const device = await adapter.requestDevice()
+  const { device, report } = await acquireGpuDevice()
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
   const format = navigator.gpu.getPreferredCanvasFormat()

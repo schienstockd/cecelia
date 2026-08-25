@@ -26,6 +26,7 @@ import { claudeChatCommand } from '../lib/claudeOverview'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import GpuDiagnostic from '../components/GpuDiagnostic.vue'
 
 const showPackages = ref(false)
 
@@ -1274,6 +1275,9 @@ async function switchWt(path: string) {
       </div>
       <span v-if="diag && diag.threads > 1" class="field-hint cc-muted cc-fs-xs">Multithreaded API active ({{ diag.threads }} threads).</span>
       <span v-else-if="diag" class="field-hint cc-muted cc-fs-xs">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
+
+      <h3 class="cc-eyebrow subsection-title">WebGPU</h3>
+      <GpuDiagnostic />
     </section>
 
     <!-- ── Developer ───────────────────────────────────────────────────── -->
@@ -1373,6 +1377,8 @@ async function switchWt(path: string) {
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--cc-border);
 }
+
+.subsection-title { margin: 1.1rem 0 0.5rem; }
 
 .field {
   margin-bottom: 1.1rem;
