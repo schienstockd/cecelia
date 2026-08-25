@@ -7,9 +7,13 @@
     maxHeight   string   CSS max-height for the body div (default: '320px').
     storageKey  string   When set, the open/closed state is remembered in localStorage under this
                          key (so it survives navigation — see the "persist every option" rule).
+    open        bool     CONTROLLED mode: pass it (with @update:open, or v-model:open) and the parent
+                         owns which sections are open. Omit it and the section manages itself, exactly
+                         as before. This is what an ACCORDION needs — "only one open at a time" is a
+                         fact about a GROUP of sections, and no section can know it alone.
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   label:        string
@@ -19,15 +23,24 @@ const props = withDefaults(defineProps<{
   defaultOpen?: boolean
   maxHeight?:   string
   storageKey?:  string
+  open?:        boolean
 }>(), {
   defaultOpen: true,
   maxHeight:   '320px',
 })
+const emit = defineEmits<{ 'update:open': [boolean] }>()
 
 const stored = props.storageKey ? localStorage.getItem(props.storageKey) : null
-const open = ref(stored === null ? props.defaultOpen : stored === '1')
-watch(open, v => {
+const inner = ref(stored === null ? props.defaultOpen : stored === '1')
+watch(inner, v => {
   if (props.storageKey) { try { localStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
+})
+// `undefined` is what distinguishes the two modes, so a parent that passes `:open="false"` is still
+// controlling it — not falling back to the internal state, which would read as a section that will not
+// stay shut.
+const open = computed({
+  get: () => (props.open === undefined ? inner.value : props.open),
+  set: (v: boolean) => { props.open === undefined ? (inner.value = v) : emit('update:open', v) },
 })
 </script>
 

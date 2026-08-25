@@ -28,7 +28,7 @@
   per several seconds instead of once per frame.
 -->
 <script setup lang="ts">
-import { ref, computed, shallowRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { usePlotResize } from '../composables/usePlotResize'
@@ -642,6 +642,21 @@ const SHORTCUTS: { keys: string; what: string }[] = [
 ]
 const keysOpen = ref(false)
 const keysBtn = ref<HTMLElement | null>(null)
+
+/**
+ * ONE panel section open at a time.
+ *
+ * Not tidiness: with several open, expanding Overlays pushed the 2D/3D toggle off the top of the panel
+ * — "once i expand overlays the 2d/3d toggles disappear" (Dominik, 2026-08-25). The sections that stay
+ * put (View, Timepoint) are deliberately not in the accordion, because they are the ones you reach for
+ * while looking at something else.
+ *
+ * '' is a real state — everything collapsed — so clicking an open section shuts it rather than being
+ * a no-op. Persisted, like every other user-settable option.
+ */
+const openSection = ref(localStorage.getItem('cc.vw.section') ?? 'channels')
+watch(openSection, v => localStorage.setItem('cc.vw.section', v))
+const sectionOpen = (key: string) => (v: boolean) => { openSection.value = v ? key : '' }
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
  * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — napari draws both, and a fourth
@@ -926,7 +941,8 @@ onUnmounted(() => {
         </div>
 
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
-                            storage-key="cc.vw.channels" :default-open="true" max-height="none">
+                            :open="openSection === 'channels'"
+                            @update:open="sectionOpen('channels')" max-height="none">
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
@@ -960,7 +976,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
-                            storage-key="cc.vw.seg" :default-open="true" max-height="none">
+                            :open="openSection === 'seg'"
+                            @update:open="sectionOpen('seg')" max-height="none">
           <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
                directory check, not the label registry, so an imported track set with a table and no mask
                does not offer an empty option. -->
@@ -1001,7 +1018,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Overlays" tip="Cell populations and track tails"
-                            storage-key="cc.vw.ovl" :default-open="true" max-height="none">
+                            :open="openSection === 'ovl'"
+                            @update:open="sectionOpen('ovl')" max-height="none">
           <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
                no populations, and an empty group would read as a broken feature rather than as an image
                that has not been through segmentation yet. -->
@@ -1095,34 +1113,43 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
-                            storage-key="cc.vw.ann" :default-open="false" max-height="none">
+                            :open="openSection === 'ann'"
+                            @update:open="sectionOpen('ann')" max-height="none">
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
                in front of you, and a separate row for each would double the group's height. -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
             <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-            <input
-              type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-              :disabled="!settings.viewerScaleBar" v-model.number="settings.viewerScaleBarPx"
-              v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-            >
-            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
+                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
+                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
+            <template v-if="settings.viewerScaleBar">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerScaleBarPx"
+                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+            </template>
           </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
             <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-            <input
-              type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-              :disabled="!settings.viewerTimestamp" v-model.number="settings.viewerTimestampPx"
-              v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
-            >
-            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+            <template v-if="settings.viewerTimestamp">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerTimestampPx"
+                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+            </template>
           </div>
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
-                            storage-key="cc.vw.debug" :default-open="false" max-height="none">
+                            :open="openSection === 'debug'"
+                            @update:open="sectionOpen('debug')" max-height="none">
           <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
           <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
             <span class="cc-muted cc-fs-2xs cc-lbl-col">Steps</span>
