@@ -5496,6 +5496,59 @@ end
     end
 end
 
+@testset "API: viewer meta names the versions and which one it resolved" begin
+    # The viewer window is a pop-out with no project open, so it cannot look up either the list of
+    # image versions or which one it is showing. Without the SECOND field a version picker opens on an
+    # empty box and the first change is a no-op; without the first there is nothing to pick from.
+    #
+    # "Active" here must be the ccid's `_active` — the version a task would run against — and NOT
+    # "default", which is merely one of the names. The two differ on every image that has been through
+    # a correction step, which is most of them.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-meta")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        img.filepath = Dict("default"    => "ccidImage.ome.zarr",
+                            "smoothed"   => "ccidSmoothed.ome.zarr",
+                            "_active"    => "smoothed")
+        save!(img)
+
+        # A minimal (t,c,z,y,x) store per version, so `open_level0` has something real to measure.
+        proj_dir = dirname(dirname(img._dir))
+        for fn in ["ccidImage.ome.zarr", "ccidSmoothed.ome.zarr"]
+            dir = joinpath(proj_dir, "0", img.uid, fn)
+            g = zgroup(Zarr.DirectoryStore(dir);
+                       attrs = Dict("multiscales" => [Dict("axes" =>
+                           [Dict("name" => n) for n in ["t", "c", "z", "y", "x"]])]))
+            a = zcreate(UInt16, g, "0", 5, 4, 3, 1, 2; chunks = (5, 4, 3, 1, 2))
+            a[:, :, :, :, :] = zeros(UInt16, 5, 4, 3, 1, 2)
+        end
+
+        ask(q) = JSON3.read(api_viewer_meta(HTTP.Request("GET", "/api/viewer/meta?" * q))[2])
+
+        # No version asked for → the ACTIVE one, named back.
+        m = ask("projectUid=$(proj.uid)&imageUid=$(img.uid)")
+        @test m.valueName == "smoothed"
+        @test Set(m.valueNames) == Set(["default", "smoothed"])
+        # `_active` is bookkeeping, not a version anyone can pick.
+        @test !("_active" in m.valueNames)
+
+        @test m.activeValueName == "smoothed"
+
+        # A version asked for → that one, echoed rather than re-resolved. `activeValueName` must NOT
+        # follow it: the whole point is that a picker can then say "this is not the active version",
+        # which is impossible if the only field echoes the request.
+        m2 = ask("projectUid=$(proj.uid)&imageUid=$(img.uid)&valueName=default")
+        @test m2.valueName == "default"
+        @test m2.activeValueName == "smoothed"
+        @test Set(m2.valueNames) == Set(["default", "smoothed"])
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
 @testset "API: viewer overlays on an image with no cell table" begin
     # An unsegmented image is the FIRST thing the viewer opens for most users. It must answer an empty
     # overlay, not a 500 — the panel asks unconditionally.

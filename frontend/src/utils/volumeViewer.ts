@@ -45,6 +45,19 @@ export interface ViewerMeta {
    * directory and this list is the answer.
    */
   labelNames?: string[]
+  /**
+   * Every registered version of this image, and the one these numbers describe.
+   *
+   * Both come from the server because the viewer is a pop-out with no project open — it cannot look
+   * up either. `valueName` is what `resolve_image_version` ACTUALLY resolved, so a picker shows what
+   * it is on rather than guessing; absent `valueName` in the request resolves the ACTIVE version, the
+   * one a task would run against, which is the only definition of "active" this app should have.
+   */
+  valueNames?: string[]
+  valueName?: string
+  /** The ACTIVE version, whatever was asked for — so a picker can say whether what is on screen is
+   *  the version every task runs against. `valueName` echoes an explicit request and cannot. */
+  activeValueName?: string
   channels: ViewerChannel[]
 }
 

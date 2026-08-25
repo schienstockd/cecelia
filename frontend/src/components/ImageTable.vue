@@ -3,6 +3,7 @@ import { useInlineEdit } from '../composables/useInlineEdit'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
+import { openViewerWindow } from '../utils/viewerWindow'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus, type TaskEntry } from '../stores/tasks'
@@ -396,7 +397,25 @@ async function resyncFlagged() {
   }
 }
 
-// ── Napari ────────────────────────────────────────────────────────────────────
+// ── Viewers ───────────────────────────────────────────────────────────────────
+
+/**
+ * The eye: the BROWSER volume viewer, in its own window.
+ *
+ * It used to be reachable only from the viewer panel's ↗, which is disabled until napari has an image
+ * open — so looking at an image in the browser meant starting a desktop process first, every time
+ * (Dominik, 2026-08-25). Nothing about the browser viewer ever needed napari; the two are alternatives.
+ * No version is sent because this table shows images, not versions: the server resolves the default.
+ */
+function openViewer(img: CciaImage) {
+  openViewerWindow({
+    projectUid: projectMeta.current?.uid ?? '',
+    imageUid: img.uid,
+    setUid: props.setUid,
+    name: img.name,
+  })
+}
+
 
 const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
 async function openInNapari(imageUid: string) {
@@ -611,8 +630,19 @@ const unselectableUids = computed(() =>
       <span class="name-cell">
       <span class="row-gutter">
         <button
-          class="viewer-btn"
+          class="viewer-btn cc-btn cc-btn-bare cc-btn-icon"
           data-guide="images.viewerBtn"
+          :disabled="!isImported(img)"
+          @click.stop="openViewer(img)"
+          v-tooltip.right="!isImported(img)
+            ? 'Import this image first'
+            : 'Open this image in the viewer'"
+        ><i class="pi pi-eye" /></button>
+        <!-- Napari SECOND, and `pi-external-link` because that is what it is: a separate desktop
+             process, outside the app. The eye is the one that opens something here. -->
+        <button
+          class="viewer-btn cc-btn cc-btn-bare cc-btn-icon"
+          data-guide="images.napariBtn"
           :class="{ 'viewer-active': project.napariImageUid === img.uid }"
           :disabled="napariLoading.has(img.uid) || !isImported(img)"
           @click.stop="openInNapari(img.uid)"
@@ -620,10 +650,10 @@ const unselectableUids = computed(() =>
             ? 'Import this image first'
             : project.napariImageUid === img.uid
               ? 'Currently shown in Napari — click to reload'
-              : 'Open this image in Napari viewer'"
+              : 'Open this image in Napari'"
         >
           <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
-          <i v-else class="pi pi-eye" />
+          <i v-else class="pi pi-external-link" />
         </button>
         <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
           @click.stop="toggleStarred(img)"

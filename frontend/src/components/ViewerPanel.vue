@@ -27,7 +27,6 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { useNapariStatus } from '../composables/useNapariStatus'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
-import { openPopoutWindow } from '../lib/popout'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -690,24 +689,6 @@ async function restartNapari() {
   setTimeout(pollBridge, 1500)
 }
 
-// Open the SAME image in the browser volume viewer, in its own window — the "web eye" beside napari,
-// so the two can be compared while the browser side catches up (docs/todo/WEB_VIEWER_PLAN.md). A popup
-// is a fresh app instance with no project open, so the image travels in the query; the URL, the window
-// name and the re-focus come from lib/popout.ts.
-function openWebViewer() {
-  const uid = projectStore.napariImageUid
-  const proj = projectMeta.current?.uid
-  if (!uid || !proj) return
-  const q = new URLSearchParams({ project: proj, image: uid })
-  // The SET, so the popup can read the same per-set viewer prefs this panel writes — point size,
-  // colour-by, which population type is shown. They are set-scoped, and a popup is a fresh app
-  // instance with no project open, so the uid has to travel in the query like everything else.
-  currentSetUid.value && q.set('set', currentSetUid.value)
-  selectedValueName.value && q.set('valueName', selectedValueName.value)
-  napariImage.value?.name && q.set('name', napariImage.value.name)
-  openPopoutWindow('/viewer-window', 1200, 800, '?' + q.toString())
-}
-
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
   ws.on('task:result', onTaskResult)
@@ -769,12 +750,6 @@ onUnmounted(() => {
           @click="settings.napariAsDask = !settings.napariAsDask"
           v-tooltip.bottom="'Fast open, slices on demand; untick for smoother viewing'"
         ><i class="pi pi-database" /></button>
-
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="!projectStore.napariImageUid"
-          @click="openWebViewer"
-          v-tooltip.bottom="'Open this image in the browser volume viewer, in its own window'"
-        ><i class="pi pi-external-link" /></button>
       </div>
 
       <!-- Segment-running warning: cache-on serves stale label bytes on re-run (dask task-name

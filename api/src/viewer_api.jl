@@ -224,7 +224,26 @@ function api_viewer_meta(req::HTTP.Request)
         catch
             String[]
         end
+        # Which VERSIONS this image has, and which one these numbers describe. The viewer window is a
+        # pop-out with no project open, so it can look up neither — and without the second field a
+        # version picker cannot show what it is already on. `resolve_image_version(.., nothing)` picks
+        # the ACTIVE version, the one a task would run against, so this reports that rule's answer
+        # rather than introducing a second notion of "active".
+        value_names, active_vn = try
+            raw = read_ccid_raw(state_file(joinpath(projects_dir(), pu), iu))
+            fp  = get(raw, "filepath", nothing)
+            fp isa AbstractDict ? (versioned_keys(fp), versioned_active(fp)) : (String[], "")
+        catch
+            (String[], "")
+        end
         200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny, labelNames = label_names,
+                            valueNames = value_names,
+                            valueName = vnn === nothing ? active_vn : vn,
+                            # The ACTIVE one regardless of what was asked for, so a picker can say
+                            # whether the version on screen is the one every task runs against. With
+                            # only `valueName` an explicit request echoes itself and the comparison is
+                            # impossible.
+                            activeValueName = active_vn,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
                             contrastSource = src, voxelUm = vox, spaceUnit = unit,
                             frameIntervalMin = tmin, calibrated = cal, channels))

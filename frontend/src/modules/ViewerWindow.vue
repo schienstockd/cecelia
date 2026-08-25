@@ -35,9 +35,11 @@ import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
   createVolumeRenderer, WebGpuUnavailable,
-  type VolumeRenderer, type UniformState,
+  type VolumeRenderer, type UniformState, type FrameSample,
 } from '../lib/webgpu/volumeRenderer'
 import { publishUiLog } from '../lib/uiLogChannel'
+import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
+import InlineNote from '../components/InlineNote.vue'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -73,7 +75,14 @@ const settings = useSettingsStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
-const valueName = String(route.query.valueName ?? '') || undefined
+/**
+ * Which VERSION of the image is on screen — a ref, because it is now a control rather than a seed.
+ *
+ * Empty means "whatever the server resolves", which is the ACTIVE version (what a task would run
+ * against). The meta response says which one that was, so the picker fills in from the answer rather
+ * than from a second copy of the active-version rule living in the browser.
+ */
+const valueName = ref(String(route.query.valueName ?? ''))
 /**
  * The image's SET, seeded by the viewer panel that opened this window.
  *
@@ -124,6 +133,88 @@ const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | nul
  * the camera is not looking at it".
  */
 const shader = ref<UniformState | null>(null)
+/**
+ * Is the version on screen the ACTIVE one — the zarr every task reads?
+ *
+ * Worth stating rather than leaving to be inferred from two names that often differ by one word
+ * ("smoothed" vs "driftCorrected"). Null when the image has only one version, or the server is old
+ * enough not to report which is active: an absent answer must read as no claim, not as a pass.
+ */
+const versionNote = computed(() => {
+  const active = meta.value?.activeValueName
+  if (!active || !valueName.value || (meta.value?.valueNames?.length ?? 0) < 2) return null
+  return valueName.value === active
+    ? { severity: 'ok' as const, short: 'Active version',
+        detail: 'The version every task on this image reads.' }
+    : { severity: 'warn' as const, short: 'Not the active version',
+        detail: `Tasks on this image read "${active}". This view is of "${valueName.value}".` }
+})
+
+/**
+ * Clear the canvas to magenta and draw nothing — Debug only, off by default.
+ *
+ * The one question the offscreen probe cannot answer: it renders into its own texture, so it proves
+ * the shader works without proving anything reaches the SCREEN. This uses the real swap chain and the
+ * simplest operation on it. Magenta appears → the canvas composites, and the fault is between the
+ * draw and the swap-chain texture. Magenta does not appear → nothing this canvas draws is ever shown,
+ * and the fault is below us: the browser, the compositor, or something filtering the page.
+ */
+const testPattern = ref(false)
+/**
+ * Composite the canvas as `opaque` instead of `premultiplied` — Debug only, off by default.
+ *
+ * The shader writes alpha 1 on every path, so the two are pixel-identical; they differ only in which
+ * compositor path the browser takes. `opaque` is the mode that can be refused or mishandled, and on
+ * this machine it showed nothing at all — including a magenta clear with no shader involved, and in a
+ * standalone WebGPU page sharing only that one line. Kept as a switch so the comparison stays
+ * available rather than becoming folklore.
+ */
+const opaqueCanvas = ref(false)
+
+/**
+ * With the test fill on, read the CANVAS ELEMENT back and say what it holds.
+ *
+ * This is the end of the line for the blank-viewer diagnosis. The fill clears the real swap-chain
+ * texture to magenta with no pipeline, no bind group and no shader — the simplest thing WebGPU can be
+ * asked to do. If the element then reads magenta while the screen is black, the canvas holds the
+ * colour and is not being composited: nothing in this repo can fix that. If the element reads black
+ * too, the clear never reached the swap chain, which IS ours.
+ */
+async function checkFill() {
+  if (!canvas.value) return
+  // Two frames of grace: the clear is submitted from a rAF and the snapshot must see the result of it,
+  // not of the frame before.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const c = await sampleCanvas(canvas.value)
+  const pct = (v: number) => (v * 100).toFixed(1) + '%'
+  vlog('warn',
+       testPattern.value
+         ? `Test fill ON — canvas element holds ${c ? `${pct(c.lit)} lit / max ${pct(c.max)}` : 'nothing readable'}`
+         : `Test fill OFF — canvas element holds ${c ? `${pct(c.lit)} lit / max ${pct(c.max)}` : 'nothing readable'}`,
+       testPattern.value
+         ? 'The fill clears the swap-chain texture to magenta with no shader involved. Lit here + a ' +
+           'black screen = the canvas is not being composited, which is below this app. Black here = ' +
+           'the clear never reached the swap chain, which is ours.'
+         : 'Baseline, for comparison with the fill.')
+}
+
+/**
+ * The browser renders but does not DISPLAY — set when the shader produced an image and the canvas
+ * element came back black.
+ *
+ * Not a debug field: it is the difference between a viewer that looks broken and one that says what is
+ * wrong. This state is unfixable from here — the pixels exist, the canvas holds nothing, and no shader,
+ * uniform or pipeline change moves it (Firefox 154 / Wayland / Mesa iris, both `alphaMode` paths, and a
+ * standalone WebGPU page sharing none of this code: all black, 2026-08-25). What it needs is a
+ * sentence, because a black rectangle reads as "this image is empty".
+ */
+const displayFault = ref(false)
+
+/** What the shader last actually produced — see `sampleFrame`. Debug only. */
+const probe = ref<FrameSample | null>(null)
+/** What the CANVAS ELEMENT holds after that draw — see `utils/canvasSample.ts`. The pair is the whole
+ *  diagnosis: shader lit + canvas black is a swap-chain problem, both lit is a compositing one. */
+const canvasProbe = ref<CanvasSample | null>(null)
 /**
  * Say it in the app's console, not just in this window.
  *
@@ -327,6 +418,8 @@ const frame = usePlotResize(canvas, () => {
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
   // has to be complete.
   r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
+  r.setTestPattern(testPattern.value)
   r.draw()
   // Read back AFTER the draw, so Debug shows the numbers the frame on screen was rendered from rather
   // than the ones the next frame will use.
@@ -345,7 +438,42 @@ const frame = usePlotResize(canvas, () => {
          `${st.nch} ch, ${mode.value === 'plane' ? 'plane ' + zPlane.value : '3D'}`,
          `box ${st.ext.map(v => v.toFixed(1)).join(' × ')} µm · camera ${st.dist.toFixed(0)} µm · ` +
          `pan ${st.pan[0].toFixed(0)},${st.pan[1].toFixed(0)} · ${st.steps} step(s) · ` +
-         (st.ortho ? 'orthographic' : 'perspective'))
+         (st.ortho ? 'orthographic' : 'perspective') +
+         ` · canvas ${st.canvas[0]}×${st.canvas[1]}`)
+    // And what it actually PRODUCED. A blank viewer has two completely different causes — the shader
+    // drew black, or it drew an image the screen never got — and nothing else told them apart: the
+    // fetch reports bytes, the cache reports residency, the uniforms read back correct, and the canvas
+    // is black either way.
+    // THREE measurements, because there are three places the pixels can be lost and each pair of them
+    // is ambiguous on its own: the volume alone, the volume WITH the overlays (which share the render
+    // pass and can invalidate all of it), and the canvas element itself.
+    void Promise.all([r.sampleFrame(false), r.sampleFrame(true), sampleCanvas(canvas.value!)])
+      .then(([vol, full, el]) => {
+        probe.value = full ?? vol
+        canvasProbe.value = el
+        const pct = (v: number) => (v * 100).toFixed(1) + '%'
+        const say = (f: FrameSample | CanvasSample | null) =>
+          f ? `${pct(f.lit)} lit / max ${pct(f.max)}` : 'not sampled'
+        const [pts, tails] = r.overlayCounts()
+        // The one reading that names a cause outright: the volume draws, and adding the overlays to
+        // the same pass loses it. An invalid overlay pipeline or an instanced draw past the end of its
+        // buffer discards the whole pass, including what was already in it.
+        const overlaysKill = !!vol && vol.max > 0 && !!full && full.max === 0
+        // Rendered but not displayed. Only claimed when BOTH probes answered: a null canvas read means
+        // the browser would not snapshot the canvas, which is not the same as the canvas being black.
+        displayFault.value = !!full && full.max > 0 && !!el && el.max === 0
+        vlog(overlaysKill || (!!full && full.max > 0 && !!el && el.max === 0) ? 'warn' : 'info',
+             `Viewer pixels — volume: ${say(vol)} · +overlays: ${say(full)} · canvas: ${say(el)}`,
+             `${pts} point + ${tails} tail instances` +
+             (overlaysKill
+               ? ' — THE OVERLAYS ARE DISCARDING THE PASS: the volume renders and adding them to the' +
+                 ' same pass loses everything in it.'
+               : !!full && full.max > 0 && !!el && el.max === 0
+                 ? ' — the draw is not reaching the swap-chain texture.'
+                 : !!el && el.max > 0
+                   ? ' — the canvas element holds the image, so anything blank on screen is below us.'
+                   : ''))
+      })
   }
 })
 
@@ -451,7 +579,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc }),
+        const res = await fetch(slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc }),
                                 { cache: 'no-store', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -464,7 +592,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       (async () => {
         if (!vn) return null
         const res = await fetch(
-          slabUrl({ projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn }),
+          slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn }),
           { cache: 'no-store', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -814,6 +942,66 @@ function autoContrast(c: number) {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
+/**
+ * Read the metadata for the current VERSION and put its first frame on screen.
+ *
+ * Separate from `start()` because switching version is not a restart: the device, the pipelines and
+ * the palette all survive it — only the pixels and their geometry change. A different version can be
+ * a different shape and a different channel count, so every cached texture goes (that is `setImage`)
+ * and the auto contrast window is re-derived rather than carried across.
+ */
+async function loadVersion(r: VolumeRenderer) {
+  starting.value = 'Reading image'
+  const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+  if (!res.ok) throw new Error((await res.json()).error ?? `Metadata failed: ${res.status}`)
+  const m: ViewerMeta = await res.json()
+  meta.value = m
+  // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
+  // when we asked for nothing in particular — otherwise this is already what we asked for.
+  valueName.value ||= m.valueName ?? ''
+  mode.value = m.nZ > 1 ? 'plane' : 'volume'
+  zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
+  zRange.value = [0, Math.max(m.nZ - 1, 0)]
+  autoWin.value = []                     // a different version has its own distribution
+  seenMax.value = []
+  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, !!labelName.value)
+  r.setCapacity(settings.viewerCacheFrames || m.nT)
+  r.setOrthographic(mode.value === 'plane')
+  const c = fitNow(m)
+  cam.value = c
+  fitDist.value = c.dist
+  r.resize()
+  starting.value = ''
+  gotoT(t.value < m.nT ? t.value : 0)
+  // After the first frame is on its way: the overlays are a separate, small request and must not
+  // delay the pixels.
+  void loadOverlays()
+}
+
+/**
+ * Switch version. Everything in flight is for the OLD pixels, so it is abandoned rather than allowed
+ * to land in the new textures — a slab that arrives after the switch has the right shape and the
+ * wrong content, which renders as a plausible image of something else.
+ */
+async function changeVersion(vn: string) {
+  const r = renderer.value
+  if (!r || vn === valueName.value) return
+  pump.cancel()
+  for (const ac of aborts.values()) ac.abort()
+  aborts.clear(); inflight.clear()
+  shownT.value = -1
+  announce.value = true
+  hits.value = 0; misses.value = 0
+  waitingFor.value = -1
+  valueName.value = vn
+  try { await loadVersion(r) }
+  catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+    vlog('error', 'Viewer version ' + vn + ': ' + error.value)
+    starting.value = ''
+  }
+}
+
 async function start() {
   heldAfterCrash.value = false
   error.value = ''
@@ -861,26 +1049,7 @@ async function start() {
       vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
     })
 
-    starting.value = 'Reading image'
-    const res = await fetch(metaUrl({ projectUid, imageUid, valueName }))
-    if (!res.ok) throw new Error((await res.json()).error ?? `Metadata failed: ${res.status}`)
-    const m: ViewerMeta = await res.json()
-    meta.value = m
-    mode.value = m.nZ > 1 ? 'plane' : 'volume'
-    zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
-    zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value)
-    r.setCapacity(settings.viewerCacheFrames || m.nT)
-    r.setOrthographic(mode.value === 'plane')
-    const c = fitNow(m)
-    cam.value = c
-    fitDist.value = c.dist
-    r.resize()
-    starting.value = ''
-    gotoT(0)
-    // After the first frame is on its way: the overlays are a separate, small request and must not
-    // delay the pixels.
-    void loadOverlays()
+    await loadVersion(r)
   } catch (e) {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
@@ -956,6 +1125,13 @@ onUnmounted(() => {
         <button class="cc-btn cc-btn-primary" @click="start"
                 v-tooltip.top="'Open this image again'">Try again</button>
       </div>
+      <!-- Rendered, not displayed. Above `starting`/`error` because it outlives both: the load
+           succeeded, nothing threw, and the canvas is still blank. -->
+      <div v-else-if="displayFault" class="cc-empty cc-empty-overlay cc-muted-warn">
+        This browser is drawing the image but not displaying it
+        <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
+        <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
+      </div>
       <div v-else-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
       <div v-else-if="error" class="cc-empty cc-empty-overlay cc-muted-error">
         {{ error }}
@@ -983,7 +1159,24 @@ onUnmounted(() => {
           <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
         </div>
       </TeleportPopover>
-      <div v-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
+      <!-- Which VERSION of the image. A select rather than chips: the names are user-invented and can
+           be long ("driftCorrected"), and chips would wrap this narrow panel to three rows. -->
+      <select
+        v-if="(meta?.valueNames?.length ?? 0) > 1"
+        class="cc-input-xs vw-version" :value="valueName"
+        @change="changeVersion(($event.target as HTMLSelectElement).value)"
+        v-tooltip.bottom="'Which version of the image to show'" aria-label="Image version"
+      >
+        <option v-for="vn in meta!.valueNames" :key="vn" :value="vn">{{ vn }}</option>
+      </select>
+      <!-- Whether what is on screen is the version every task runs against. Through `InlineNote`, the
+           same shape a task param's advisory uses, because it is the same statement: we checked your
+           data and here is what we found. `ok` is a real verdict here, not guidance. -->
+      <InlineNote
+        v-if="versionNote" :severity="versionNote.severity"
+        :short="versionNote.short" :detail="versionNote.detail"
+      />
+      <div v-else-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
 
       <div v-if="renderer && !renderer.adapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
@@ -1065,6 +1258,47 @@ onUnmounted(() => {
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
+
+        <!-- Annotations sits with the viewport controls above rather than beside the layer sections
+             below: scale bar + timestamp are burnt into the render, they are not a layer whose
+             visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
+             is what changes while you look; Annotations is set once. See
+             docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
+        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
+                            :open="openSection === 'ann'"
+                            @update:open="v => setSection('ann', v)" max-height="none">
+          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
+               in front of you, and a separate row for each would double the group's height. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
+            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
+            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
+                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
+                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
+            <template v-if="settings.viewerScaleBar">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerScaleBarPx"
+                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+            </template>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
+            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
+            <template v-if="settings.viewerTimestamp">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerTimestampPx"
+                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+            </template>
+          </div>
+        </CollapsibleSection>
 
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
@@ -1238,41 +1472,6 @@ onUnmounted(() => {
           </template>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
-                            :open="openSection === 'ann'"
-                            @update:open="v => setSection('ann', v)" max-height="none">
-          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
-               in front of you, and a separate row for each would double the group's height. -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
-            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
-                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
-                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
-            <template v-if="settings.viewerScaleBar">
-              <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerScaleBarPx"
-                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
-            </template>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
-            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-            <template v-if="settings.viewerTimestamp">
-              <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerTimestampPx"
-                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
-            </template>
-          </div>
-        </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
                             :open="openSection === 'debug'"
                             @update:open="v => setSection('debug', v)" max-height="none">
@@ -1302,6 +1501,18 @@ onUnmounted(() => {
                   v-tooltip.right="'Compress slabs on the wire — a win remotely, a cost locally'">Compress</span>
             <CcToggle v-model="settings.viewerCompress" aria-label="Compress slabs on the wire" />
           </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Composite the canvas as opaque — same pixels, different browser path'">Opaque</span>
+            <CcToggle :model-value="opaqueCanvas" aria-label="Composite the canvas as opaque"
+                      @update:modelValue="v => { opaqueCanvas = v; frame.redraw(); void checkFill() }" />
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Fill the canvas with one colour and draw nothing — is the canvas shown at all?'">Test fill</span>
+            <CcToggle :model-value="testPattern" aria-label="Fill the canvas with a test colour"
+                      @update:modelValue="v => { testPattern = v; frame.redraw(); void checkFill() }" />
+          </div>
           <div class="cc-eyebrow cc-fs-2xs">Image</div>
           <div class="cc-muted cc-fs-3xs">
             {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
@@ -1323,7 +1534,15 @@ onUnmounted(() => {
             {{ shader.ext[2].toFixed(1) }} µm · {{ shader.nch }} ch<br>
             camera {{ shader.dist.toFixed(0) }} µm · pan {{ shader.pan[0].toFixed(0) }},
             {{ shader.pan[1].toFixed(0) }} · {{ shader.steps }} step{{ shader.steps === 1 ? '' : 's' }}
-            · {{ shader.ortho ? 'ortho' : 'perspective' }}
+            · {{ shader.ortho ? 'ortho' : 'perspective' }}<br>
+            canvas {{ shader.canvas[0] }} × {{ shader.canvas[1] }}
+            <template v-if="probe"><br>
+              shader {{ (probe.lit * 100).toFixed(1) }}% lit / {{ (probe.max * 100).toFixed(1) }}%
+            </template>
+            <template v-if="canvasProbe"><br>
+              canvas {{ (canvasProbe.lit * 100).toFixed(1) }}% lit /
+              {{ (canvasProbe.max * 100).toFixed(1) }}%
+            </template>
           </div>
         </CollapsibleSection>
       </template>
@@ -1342,6 +1561,7 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-version { width: 100%; }
 .vw-key { white-space: nowrap; }
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }

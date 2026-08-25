@@ -24,10 +24,10 @@ import type { GuideStep } from './types'
 // (plan R1). So we point at the control that puts them on screen and say what to look for.
 const napariCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
   {
-    anchor: 'images.viewerBtn',
+    anchor: 'images.napariBtn',
     placement: 'right',
     title: 'Open it in napari',
-    text: 'The eye opens the image itself — the overlay is a separate switch.',
+    text: 'The ↗ opens the image itself — the overlay is a separate switch.',
     bullets: ['napari is its own window, so bring it to the front.'],
     when: c => c.napariImageUid !== null,
   },

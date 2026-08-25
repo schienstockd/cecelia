@@ -1,9 +1,16 @@
 // WebGPU adapter probe shared by the volume renderer and the Settings diagnostic.
 //
 // THE ADAPTER TRAP — see lib/webgpu/volumeRenderer.ts comment for the full rationale. `requestAdapter({})`
-// returns the INTEGRATED GPU on hybrid machines, and Firefox blanks every `adapter.info` field, so there
-// is nothing to read back. `maxTextureDimension3D > 2048` is the practical proxy: discrete cards report
-// 16384, integrated 2048. Same tell used by WEB_VIEWER_PLAN.md decision 3.
+// returns the INTEGRATED GPU on hybrid machines, so every call here passes
+// `powerPreference: 'high-performance'`.
+//
+// The discrete/integrated read has TWO signals, in this order:
+//   1. `adapter.info.vendor` — 'nvidia'/'amd'/'apple' means discrete-class. This is the honest read
+//      when the browser fills it in (Chromium does; Firefox has historically blanked every field).
+//   2. `maxTextureDimension3D > 2048` — only as a fallback when vendor is blank. Chromium reports the
+//      WebGPU spec DEFAULT (2048) at `adapter.limits` for any adapter (the raw hardware max becomes
+//      visible only after `requiredLimits` at device time), so the limit-only heuristic misreads a
+//      real NVIDIA card on Chromium as integrated. Vendor-first fixes that.
 //
 // TWO ENTRY POINTS. `acquireGpuDevice()` is for the renderers — it asks for a device and throws
 // `WebGpuUnavailable` when there is nothing to give back. `probeWebGpu()` is for the Settings diagnostic
@@ -57,6 +64,20 @@ export function adapterNameText(n: GpuAdapterName): string {
   return [n.vendor, n.architecture, n.device, n.description].filter(Boolean).join(' ')
 }
 
+/**
+ * Discrete-class read, vendor-first — see the file header.
+ *
+ * `nvidia` / `amd` / `apple` in `adapter.info.vendor` is a straight answer; `intel` is straight the
+ * other way. When the vendor is blank (Firefox has historically done this), fall back to the 3D
+ * texture-size heuristic — weak, but the only signal left.
+ */
+export function isDiscreteAdapter(name: GpuAdapterName, maxTextureDimension3D: number): boolean {
+  const v = name.vendor.toLowerCase()
+  if (v === 'nvidia' || v === 'amd' || v === 'apple') return true
+  if (v === 'intel') return false
+  return maxTextureDimension3D > 2048
+}
+
 export interface GpuLimitsDump {
   maxTextureDimension3D: number
   maxBufferSize: number
@@ -103,13 +124,26 @@ export async function acquireGpuDevice(): Promise<{
   if (!adapter) throw new WebGpuUnavailable('No WebGPU adapter available')
 
   const maxDim3D = adapter.limits.maxTextureDimension3D
+  const name = adapterName(adapter)
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
-    looksDiscrete: maxDim3D > 2048,
+    looksDiscrete: isDiscreteAdapter(name, maxDim3D),
     hasTimestamps: adapter.features.has('timestamp-query'),
-    name: adapterName(adapter),
+    name,
   }
-  const device = await adapter.requestDevice()
+  // A `requestDevice()` call with no `requiredLimits` gets the WebGPU spec-DEFAULT device
+  // (maxBufferSize=256 MB, maxStorageBufferBindingSize=128 MB), regardless of what the adapter
+  // supports — and the volume renderer stages a whole timepoint through one buffer, ~350 MB for
+  // a 4-channel Ada block. That is the "Buffer size exceeds the max buffer size limit" error the
+  // Dawn console reports as ""Dawn_DynamicUploaderStaging"". Pass the adapter's own ceilings back
+  // through `requiredLimits` so we get a device sized for what the hardware can actually do.
+  const device = await adapter.requestDevice({
+    requiredLimits: {
+      maxBufferSize: adapter.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+      maxTextureDimension3D: maxDim3D,
+    },
+  })
   return { adapter, device, report }
 }
 
@@ -141,7 +175,8 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
     }
   }
   const maxDim3D = adapter.limits.maxTextureDimension3D
-  const looksDiscrete = maxDim3D > 2048
+  const name = adapterName(adapter)
+  const looksDiscrete = isDiscreteAdapter(name, maxDim3D)
   const hasTimestamps = adapter.features.has('timestamp-query')
   const limits: GpuLimitsDump = {
     maxTextureDimension3D: maxDim3D,
@@ -175,8 +210,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   })
   return {
     supported: true, adapterFound: true, looksDiscrete, hasTimestamps,
-    name: adapterName(adapter),
-    limits, hasR16Uint, verdict, reason,
+    name, limits, hasR16Uint, verdict, reason,
   }
 }
 

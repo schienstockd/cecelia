@@ -45,6 +45,9 @@ const CH0 = 28
 /** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
  *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
 const LABEL_BPV = 4
+/** Probe side for `sampleFrame`. 128 because `128 * 4` is already a multiple of the 256-byte
+ *  `bytesPerRow` alignment a texture-to-buffer copy requires — no padded rows to unpick. */
+const PROBE_PX = 128
 
 export interface VolumeRenderer {
   readonly adapter: AdapterReport
@@ -146,9 +149,52 @@ export interface VolumeRenderer {
    * after `draw()`, which is where the per-frame fields are written.
    */
   uniformState(): UniformState
+  /**
+   * Render the CURRENT state into a small offscreen target and read the pixels back.
+   *
+   * The one question a blank viewer cannot otherwise answer: did the shader produce black, or did it
+   * produce an image that never reached the screen? Everything else is consistent with both — the
+   * fetch reports bytes, the cache reports residency, the uniforms read back correct, and the canvas
+   * is black either way. This renders the same pipeline with the same bind group into its own texture,
+   * so it is independent of the canvas, the compositor and whatever the driver does with them.
+   *
+   * `null` when there is nothing bound to render yet, or the device is gone.
+   */
+  sampleFrame(withOverlays?: boolean): Promise<FrameSample | null>
+  /** How many overlay instances the next draw will issue — `[points, tails]`. A non-zero count is the
+   *  difference between a pass that draws the volume alone and one that can be invalidated by an
+   *  overlay, which is not visible from anywhere else. */
+  overlayCounts(): [number, number]
+  /**
+   * Clear the canvas to a flat colour and draw NOTHING else.
+   *
+   * The last split a blank viewer needs. `sampleFrame` proves the shader produces an image, but it
+   * renders into its OWN texture — so it cannot tell "the image never reaches the canvas" from "the
+   * canvas never reaches the screen". This uses the real swap chain and the simplest operation there
+   * is: no pipeline, no bind group, no shader, just the clear. If the colour appears, the canvas
+   * composites and the problem is between the draw and the swap-chain texture. If it does not, nothing
+   * this canvas produces is ever shown, and no amount of rendering will change that.
+   */
+  setTestPattern(on: boolean): void
+  /** Reconfigure how the canvas composites with the page — see the note on `alphaMode`. The shader
+   *  writes alpha 1 everywhere, so this changes no pixel we produce, only which compositor path the
+   *  browser takes to show them. */
+  setAlphaMode(mode: GPUCanvasAlphaMode): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
+}
+
+/** What the shader actually produced, 0-1 per channel — see `sampleFrame`. */
+export interface FrameSample {
+  /** Brightest of R, G, B over the probe. 0 means the shader drew nothing at all. */
+  max: number
+  /** Mean over R, G, B — separates "one bright speck" from "an image". */
+  mean: number
+  /** Fraction of probe pixels that are not pure black. */
+  lit: number
+  /** Probe side, px. */
+  size: number
 }
 
 /** The uniform block in the units a person reads, for the Debug panel — see `uniformState`. */
@@ -164,6 +210,9 @@ export interface UniformState {
   ortho: boolean
   /** Channels the shader will composite. */
   nch: number
+  /** The DRAWING BUFFER the frame was rendered at, px. Not the CSS size: they come apart on a
+   *  device-pixel-ratio change, and a stale one here is a frame drawn for a different canvas. */
+  canvas: [number, number]
 }
 
 export async function createVolumeRenderer(
@@ -187,7 +236,21 @@ export async function createVolumeRenderer(
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
   const format = navigator.gpu.getPreferredCanvasFormat()
-  ctx.configure({ device, format, alphaMode: 'opaque' })
+  /**
+   * How the canvas composites with the page. Flippable at runtime (see `setAlphaMode`) so
+   * the two paths can be compared without an app rebuild.
+   */
+  let alphaMode: GPUCanvasAlphaMode = 'opaque'
+  /**
+   * Configure the swap chain. Called again on every SIZE CHANGE — assigning `canvas.width` RESETS
+   * the canvas (that is what the attribute does, for every context type). The configuration is
+   * supposed to survive it and `getCurrentTexture()` is supposed to hand back a texture of the new
+   * size; on the driver observed here it did not (`sampleFrame` measured 22% of pixels lit while the
+   * canvas stayed black), because the first `configure` had happened at the default 300x150 and
+   * nothing reattached it afterwards. Reconfiguring is cheap and idempotent.
+   */
+  const configureCtx = () => ctx.configure({ device, format, alphaMode })
+  configureCtx()
 
   const module = device.createShaderModule({ code: MIP_WGSL })
   // Compile errors are reported, not thrown, so an unchecked module fails later as a blank canvas —
@@ -354,6 +417,8 @@ export async function createVolumeRenderer(
   /** The device is GONE (lost, or destroyed by us). Every entry point below is a no-op afterwards: a
    *  queue that no longer exists is not an error you can catch, it is a browser crash. */
   let dead = false
+  /** Clear the canvas to a flat colour instead of rendering — see `setTestPattern`. */
+  let testPattern = false
   void device.lost.then(() => { dead = true })
   const usable = () => !destroyed && !dead
   /** The timepoint whose texture the current `bindGroup` reads. NOT the same as the timepoint being
@@ -384,6 +449,38 @@ export async function createVolumeRenderer(
   const dropAll = () => { for (const t of [...slots.keys()]) dropSlot(t) }
 
   const pushUniforms = () => { if (usable()) device.queue.writeBuffer(uniforms, 0, u) }
+
+  /**
+   * Encode the volume and, optionally, the overlays into an open pass. ONE encoder for both the canvas
+   * and the probe, so "what the probe renders" and "what the screen renders" cannot drift — and the
+   * drift is exactly what a blank canvas with a working shader would be.
+   *
+   * `withOverlays` exists because the overlays are the one part that can invalidate the WHOLE pass: an
+   * invalid overlay pipeline or an instanced draw past the end of its buffer discards everything in
+   * the pass, including the volume drawn into it first. Rendering the pass twice, with and without,
+   * says whether that is happening without anyone having to reason about it.
+   */
+  function encodePass(pass: GPURenderPassEncoder, withOverlays: boolean) {
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, bindGroup!)
+    pass.draw(3)
+    if (!withOverlays) return
+    // Overlays go in the SAME pass, after the volume: `loadOp: 'clear'` has already run, so this
+    // blends over a finished MIP without a second attachment or a second clear. Tails first, then
+    // points: a marker has to sit ON TOP of the path that leads to it, not under it.
+    if (segBuf && segCount > 0) {
+      pass.setPipeline(segPipeline)
+      pass.setBindGroup(0, bindGroup!)
+      pass.setVertexBuffer(0, segBuf)
+      pass.draw(6, segCount, 0, segFirst)
+    }
+    if (pointBuf && pointCount > 0) {
+      pass.setPipeline(pointsPipeline)
+      pass.setBindGroup(0, bindGroup!)
+      pass.setVertexBuffer(0, pointBuf)
+      pass.draw(6, pointCount, 0, pointFirst)
+    }
+  }
 
   // Standalone rather than a method, because `setImage` calls it and `this` inside a returned object
   // literal is not the object as far as the compiler is concerned.
@@ -611,11 +708,61 @@ export async function createVolumeRenderer(
       u[22] = LABEL_PALETTE_N
     },
 
+    async sampleFrame(withOverlays = false) {
+      if (!usable() || !bindGroup) return null
+      // Its own square target rather than a copy of the canvas: a canvas texture is transient (it
+      // belongs to the compositor between frames) and copying one needs a COPY_SRC usage on the
+      // context, which would change how every real frame is presented for the sake of a diagnostic.
+      const N = PROBE_PX
+      const tex = device.createTexture({
+        size: [N, N], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      })
+      // bytesPerRow must be a multiple of 256; PROBE_PX * 4 already is, which is why it is 128 and not
+      // an arbitrary 100.
+      const buf = device.createBuffer({ size: N * N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
+      // The probe is square, so tell the shader that — `aspect` comes from these two and a stretched
+      // aspect would frame the volume differently from what is on screen.
+      const [w, h] = [u[5], u[6]]
+      u[5] = N; u[6] = N
+      pushUniforms()
+      const enc = device.createCommandEncoder()
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: tex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
+        }],
+      })
+      encodePass(pass, withOverlays)
+      pass.end()
+      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
+      device.queue.submit([enc.finish()])
+      // Put the real canvas size back before anything else draws.
+      u[5] = w; u[6] = h
+      pushUniforms()
+      try {
+        await buf.mapAsync(GPUMapMode.READ)
+        const px = new Uint8Array(buf.getMappedRange().slice(0))
+        let max = 0, sum = 0, lit = 0
+        for (let i = 0; i < px.length; i += 4) {
+          const m = Math.max(px[i], px[i + 1], px[i + 2])
+          if (m > 0) lit++
+          if (m > max) max = m
+          sum += px[i] + px[i + 1] + px[i + 2]
+        }
+        return {
+          max: max / 255, mean: sum / (px.length / 4 * 3) / 255,
+          lit: lit / (px.length / 4), size: N,
+        }
+      } catch { return null }
+      finally { buf.destroy(); tex.destroy() }
+    },
+
     uniformState() {
       return {
         dist: u[2], ext: [u[8], u[9], u[10]] as [number, number, number],
         pan: [u[24], u[25]] as [number, number],
         steps: u[3], ortho: u[7] > 0.5, nch: u[4],
+        canvas: [u[5], u[6]] as [number, number],
       }
     },
 
@@ -625,8 +772,22 @@ export async function createVolumeRenderer(
       const h = Math.max(1, Math.round(canvas.clientHeight * dpr))
       if (canvas.width === w && canvas.height === h) return false
       canvas.width = w; canvas.height = h
+      // Reattach the swap chain to the canvas it just reset. See `configureCtx`.
+      if (usable()) configureCtx()
       return true
     },
+
+    overlayCounts(): [number, number] {
+      return [pointBuf ? pointCount : 0, segBuf ? segCount : 0]
+    },
+
+    setAlphaMode(mode: GPUCanvasAlphaMode) {
+      if (mode === alphaMode || !usable()) return
+      alphaMode = mode
+      configureCtx()
+    },
+
+    setTestPattern(on: boolean) { testPattern = on },
 
     draw() {
       if (!usable() || !bindGroup) return
@@ -637,27 +798,18 @@ export async function createVolumeRenderer(
       const pass = enc.beginRenderPass({
         colorAttachments: [{
           view: ctx.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
+          // Magenta, and nothing drawn over it — see `setTestPattern`. A colour no image contains, so
+          // "did it work" needs no interpretation.
+          clearValue: testPattern ? { r: 1, g: 0, b: 1, a: 1 } : { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear', storeOp: 'store',
         }],
       })
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, bindGroup)
-      pass.draw(3)
-      // Overlays go in the SAME pass, after the volume: `loadOp: 'clear'` has already run, so this
-      // blends over a finished MIP without a second attachment or a second clear. Tails first, then
-      // points: a marker has to sit ON TOP of the path that leads to it, not under it.
-      if (segBuf && segCount > 0) {
-        pass.setPipeline(segPipeline)
-        pass.setBindGroup(0, bindGroup)
-        pass.setVertexBuffer(0, segBuf)
-        pass.draw(6, segCount, 0, segFirst)
+      if (testPattern) {
+        pass.end()
+        device.queue.submit([enc.finish()])
+        return
       }
-      if (pointBuf && pointCount > 0) {
-        pass.setPipeline(pointsPipeline)
-        pass.setBindGroup(0, bindGroup)
-        pass.setVertexBuffer(0, pointBuf)
-        pass.draw(6, pointCount, 0, pointFirst)
-      }
+      encodePass(pass, true)
       pass.end()
       device.queue.submit([enc.finish()])
     },
