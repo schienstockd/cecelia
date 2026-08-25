@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useLogStore, type LogLevel } from '../stores/log'
 import { isVisible, formatEntry, logGroup, LOG_GROUPS, type LogGroup } from '../utils/logFilter'
 import { openPopoutWindow } from '../lib/popout'
@@ -38,6 +38,16 @@ function onScroll() {
 }
 
 watch(() => log.entries.length, async () => {
+  if (!log.follow) return
+  await nextTick()
+  if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+})
+
+// The store is now populated at CREATE time (from the cross-window UI-log ring), so the popout mounts
+// with a full history and no length change has fired yet — the watcher above only reacts to CHANGES.
+// Without this the console opened scrolled to the TOP of history, showing the oldest line and hiding
+// the recent one, until the next live event arrived to nudge the autoscroll.
+onMounted(async () => {
   if (!log.follow) return
   await nextTick()
   if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight

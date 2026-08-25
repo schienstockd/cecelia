@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { uiLogFromStorageEvent, uiLogPayload } from './uiLogChannel'
+import {
+  parseUiLogRing, serialiseUiLogRing, uiLogFromStorageEvent, uiLogPayload,
+  type UiLogLine,
+} from './uiLogChannel'
 
 // Only the pure halves, the same split as `openProjectChannel`: the listener and the write are the
 // untestable ends, and everything that can be wrong is in the decision between them.
@@ -29,6 +32,57 @@ describe('uiLogFromStorageEvent', () => {
     const line = uiLogFromStorageEvent(ev('cc.uiLog', '{"message":"hi","level":"trace"}'))
     expect(line?.level).toBe('info')
     expect(line?.source).toBe('app')
+  })
+})
+
+describe('parseUiLogRing', () => {
+  const line = (over: Partial<UiLogLine> = {}): UiLogLine => ({
+    level: 'info', message: 'hi', source: 'app', ts: '2026-08-25T01:02:03.000Z', ...over,
+  })
+
+  it('returns the stored lines', () => {
+    const raw = JSON.stringify([line({ message: 'a' }), line({ message: 'b', level: 'error' })])
+    expect(parseUiLogRing(raw)).toEqual([
+      line({ message: 'a' }), line({ message: 'b', level: 'error' }),
+    ])
+  })
+
+  // Same reasoning as uiLogFromStorageEvent: private mode gives null, a hand-edited value fails to
+  // parse, a half-upgraded write is an object not an array. None of these should hide the whole ring.
+  it('returns empty rather than throwing on absent, unparseable, or non-array input', () => {
+    expect(parseUiLogRing(null)).toEqual([])
+    expect(parseUiLogRing('not json')).toEqual([])
+    expect(parseUiLogRing('{"not":"an array"}')).toEqual([])
+  })
+
+  it('skips a bad row rather than the whole ring', () => {
+    const good = line({ message: 'good' })
+    const raw = JSON.stringify([good, { level: 'info' /* no message */ }, null, good])
+    expect(parseUiLogRing(raw)).toEqual([good, good])
+  })
+
+  it('normalises an odd level or missing source, mirroring the storage-event reader', () => {
+    const raw = JSON.stringify([{ message: 'hi', level: 'trace', ts: '2026-08-25T01:02:03.000Z' }])
+    expect(parseUiLogRing(raw)[0]).toMatchObject({ level: 'info', source: 'app' })
+  })
+})
+
+describe('serialiseUiLogRing', () => {
+  const line = (i: number): UiLogLine => ({
+    level: 'info', message: `line ${i}`, source: 'app', ts: '2026-08-25T01:02:03.000Z',
+  })
+
+  it('appends the new line at the end so hydration replays in order', () => {
+    const out = parseUiLogRing(serialiseUiLogRing([line(1), line(2)], line(3)))
+    expect(out.map(l => l.message)).toEqual(['line 1', 'line 2', 'line 3'])
+  })
+
+  // Eviction is why the ring exists as a bounded thing: a runaway UI storm ("GPU: Draw failed", every
+  // frame) must not fill localStorage and start rejecting the settings store's writes.
+  it('evicts the oldest lines when over cap', () => {
+    const existing = Array.from({ length: 5 }, (_, i) => line(i + 1))
+    const out = parseUiLogRing(serialiseUiLogRing(existing, line(99), 3))
+    expect(out.map(l => l.message)).toEqual(['line 4', 'line 5', 'line 99'])
   })
 })
 
