@@ -251,24 +251,24 @@ const overlaysErr = ref('')
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
-/** Which obs column shades the points, '' for the population colour. A REQUEST, not a display toggle:
- *  the values come from the server, so changing it refetches. */
-const colourByLocal = ref('')
 /**
- * Point size and colour-by, SHARED with the napari viewer panel when the set is known.
- *
- * A `computed` with a setter rather than a plain ref, so every read and write goes to the one store
- * the other panel already uses — the same image cannot then look different depending on which eye
- * opened it. Falls back to the window's own setting when there is no set uid to key on.
+ * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
+ * and write goes to the one store the panel already uses — the same image cannot then look different
+ * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
  */
 const pointSize = computed({
   get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
   set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
 })
-const colourBy = computed({
-  get: () => (setUid ? settings.getColourBy(setUid) : colourByLocal.value),
-  set: (v: string) => setUid ? settings.setColourBy(setUid, v) : (colourByLocal.value = v),
-})
+/**
+ * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
+ * locked decision 3: the viewer has no selectors. The CHOICE lives in `ViewerPanel`, keyed per set
+ * in `settings.setColourBy`, and reaches this window via the P2 storage-event bridge. A change here
+ * is a request for the server (the values come from disk), so a watch refetches the overlays.
+ * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
+ */
+const colourBy = computed(() => setUid ? settings.getColourBy(setUid) : '')
+watch(colourBy, () => { void loadOverlays() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
  *
@@ -1424,16 +1424,14 @@ onUnmounted(() => {
                   :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
                 />
               </div>
+              <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
+                   section, keyed per set. This row shows what it resolved to; the legend below shows
+                   its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
               <div class="cc-row cc-row-tight">
                 <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-                <select
-                  class="cc-select cc-fs-2xs vw-grow" :value="colourBy"
-                  v-tooltip.bottom="'Shade the points by a per-cell measure'"
-                  @change="e => { colourBy = (e.target as HTMLSelectElement).value; void loadOverlays() }"
-                >
-                  <option value="">population</option>
-                  <option v-for="c in overlays!.colourColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <span class="cc-fs-2xs vw-grow" :title="colourBy || 'population'">
+                  {{ colourBy || 'population' }}
+                </span>
               </div>
               <!-- The legend says which SCALE is in use, because that is the server's decision (the same
                    rule the plots use) and the two kinds look nothing alike. -->
