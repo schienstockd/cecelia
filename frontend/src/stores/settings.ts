@@ -141,6 +141,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
   const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
+  // 3D pyramid LEVEL for the volume view. -1 = auto (the DEEPEST level = coarsest resolution),
+  // 0..N-1 = force that level. napari also renders 3D at the coarsest level, and a full-res volume
+  // exceeds WebGPU's `maxBufferSize` on wide-XY images (`f8gzA2` → 1.28 GB against a 256 MB cap).
+  // Imaris-style octree LOD was on the wishlist but never shipped, so "coarsest by default, user
+  // may override" is the answer this ships with. (Spatial audit Phase 2.5, 2026-08-25.)
+  const viewerVolumeLevel = ref(Number(localStorage.getItem('cc.viewerVolumeLevel') ?? '-1'))
 
   // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted
   // globally (not per-set): they're a viewing preference, not a project attribute, and the player is a
@@ -443,6 +449,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerFps,                v => localStorage.setItem('cc.viewerFps',                String(v)))
   watch(viewerLoop,               v => localStorage.setItem('cc.viewerLoop',               String(v)))
   watch(viewerCacheFrames,        v => localStorage.setItem('cc.viewerCacheFrames',        String(v)))
+  watch(viewerVolumeLevel,        v => localStorage.setItem('cc.viewerVolumeLevel',        String(v)))
   watch(viewerScaleBar,           v => localStorage.setItem('cc.viewerScaleBar',           String(v)))
   watch(viewerTimestamp,          v => localStorage.setItem('cc.viewerTimestamp',          String(v)))
   watch(viewerPointSize,          v => localStorage.setItem('cc.viewerPointSize',          String(v)))
@@ -474,7 +481,7 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
