@@ -437,9 +437,17 @@ the test asserts its bytes against `render_view_frame`'s own output, including t
 the untransposed order. Verified end to end by hand as well (fixture store → 3-frame mp4 on disk); that
 path is not in the suite because it needs the Python env.
 
+**Built: `interpolate_keyframes`** — one view state per frame, tweened. napari-animation does this
+today and it is the one part of that dependency worth keeping: a keyframe is a saved view state plus
+the number of frames it takes to reach it, and every saved animation config already means exactly that.
+**Numbers tween, everything else steps** — a contrast limit, a zoom, a slider position and a camera
+angle have a meaningful half-way point; a colormap NAME and a visibility flag do not, and inventing one
+either errors or silently picks a side a frame early. `visible` is the trap: a `Bool` is an `Integer` in
+Julia, so lerping it gives 0.5 and then `true` for every frame after the first.
+
 **Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently drive
-napari), keyframe interpolation, title cards, and the overlays (points, tracks, masks) on the CPU frame
-— which are P3/P4's content drawn by renderer C rather than new capability.
+napari), title cards, and the overlays (points, tracks, masks) on the CPU frame — which are P3/P4's
+content drawn by renderer C rather than new capability.
 
 ### P6 — the selection round-trip
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

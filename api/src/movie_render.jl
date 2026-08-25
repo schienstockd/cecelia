@@ -116,3 +116,77 @@ function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
     end
     (W, H, written, false)
 end
+
+# ── Keyframe animation ────────────────────────────────────────────────────────────
+#
+# napari-animation does this today (`napari_utils.record_keyframes`), and it is the one part of that
+# dependency worth keeping: a keyframe is a saved VIEW STATE plus a number of steps to reach it from
+# the one before, and the movie tweens between them. Renderer C has to answer the same contract,
+# because the animation page already speaks it and every saved animation config is a list of these.
+
+"""
+    interpolate_keyframes(keyframes) -> Vector{Dict{String,Any}}
+
+One view state per frame, tweened between the keyframes. `keyframes` is the animation page's own
+shape: `[(; viewState, steps), …]` or the equivalent `Dict`s, where `steps` is how many frames it takes
+to reach THAT keyframe from the previous one. The first keyframe's `steps` is ignored — it starts the
+sequence rather than arriving from anywhere — which is napari-animation's rule and therefore what every
+saved config already means.
+
+**Numbers tween, everything else steps.** A contrast limit, a zoom, a slider position and a camera
+angle all have a meaningful half-way point; a colormap NAME and a visibility flag do not, and inventing
+one would either error or silently pick a side. So a non-numeric value holds the outgoing keyframe's
+until the incoming keyframe is reached, and changes exactly there. Same for a value that exists in one
+state and not the other: whichever exists is held, because "absent" means "this layer was not in that
+snapshot", not "zero".
+
+Total frames is `1 + sum(steps[2:end])`: the first keyframe is a frame, and every later one is the LAST
+frame of its own transition — so the sequence starts exactly at keyframe 1 and ends exactly at
+keyframe N, with no duplicated frame at the joins.
+"""
+function interpolate_keyframes(keyframes::AbstractVector)
+    length(keyframes) >= 2 ||
+        throw(ArgumentError("interpolate_keyframes needs at least 2 keyframes, got $(length(keyframes))"))
+    states = [_kf_state(k) for k in keyframes]
+    out = Dict{String,Any}[states[1]]
+    for i in 2:length(states)
+        n = max(1, _kf_steps(keyframes[i]))
+        for j in 1:n
+            push!(out, _kf_blend(states[i - 1], states[i], j / n))
+        end
+    end
+    out
+end
+
+_kf_get(k, name) = k isa AbstractDict ? get(k, name, get(k, Symbol(name), nothing)) :
+                   (hasproperty(k, Symbol(name)) ? getproperty(k, Symbol(name)) : nothing)
+_kf_state(k) = (v = _kf_get(k, "viewState"); v === nothing ? Dict{String,Any}() : _kf_dict(v))
+_kf_steps(k) = (s = _kf_get(k, "steps"); s === nothing ? 15 : (x = _kf_int(s); x === nothing ? 15 : x))
+
+_kf_int(x::Integer) = Int(x)
+_kf_int(x::Real) = isfinite(x) ? round(Int, x) : nothing
+_kf_int(x::AbstractString) = tryparse(Int, x)
+_kf_int(::Any) = nothing
+
+_kf_dict(d::AbstractDict) = Dict{String,Any}(String(k) => v for (k, v) in d)
+_kf_dict(x) = Dict{String,Any}()
+
+# `f` is 0 at the outgoing state and 1 at the incoming one, and it REACHES 1 — the last frame of a
+# transition IS the keyframe, which is what stops a discrete value changing one frame early or late.
+function _kf_blend(a, b, f::Real)
+    out = Dict{String,Any}()
+    for k in union(keys(a), keys(b))
+        av = get(a, k, nothing); bv = get(b, k, nothing)
+        out[k] = av === nothing ? bv : bv === nothing ? av : _kf_lerp(av, bv, f)
+    end
+    out
+end
+
+_kf_lerp(a::AbstractDict, b::AbstractDict, f) = _kf_blend(_kf_dict(a), _kf_dict(b), f)
+_kf_lerp(a::Real, b::Real, f) = (isa(a, Bool) || isa(b, Bool)) ? (f >= 1 ? b : a) :
+                             (isfinite(a) && isfinite(b) ? a + (b - a) * f : (f >= 1 ? b : a))
+function _kf_lerp(a::AbstractVector, b::AbstractVector, f)
+    length(a) == length(b) || return f >= 1 ? b : a
+    [_kf_lerp(a[i], b[i], f) for i in eachindex(a)]
+end
+_kf_lerp(a, b, f) = f >= 1 ? b : a          # strings, symbols, anything with no half-way point
