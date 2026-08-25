@@ -183,6 +183,8 @@ const PWGSL = ${JSON.stringify(pwgsl)}
 const SWGSL = ${JSON.stringify(swgsl)}
 const HA = ${VIEW_HALF_ANGLE}
 const MAX_CHANNELS = ${MAX_CHANNELS}, LUT_STOPS = ${LUT_STOPS}, NCH = ${NCH}
+// The uniform layout, read out of the renderer at generation time — see LEADING_VEC4S/CH0 above.
+const LEADING_VEC4S = ${LEADING_VEC4S}, CH0 = ${CH0}
 const N = 64                                     // phantom is N x N x N per channel
 
 try {
@@ -699,6 +701,21 @@ writeFileSync(dest, page)
 // way node checks any module is the only version of this that cannot be skipped.
 const script = page.slice(page.indexOf('<script type="module">') + '<script type="module">'.length,
                           page.lastIndexOf('</script>'))
+// A generator-side constant USED in the page but never emitted into it is a ReferenceError at run
+// time — the page renders its header, says the shader compiled, and then stops. No syntax check can
+// see it, and it is invisible here because the same name is in scope on this side. `LEADING_VEC4S` and
+// `CH0` were both missing for the whole life of the uniform-layout extraction, which meant every check
+// after the uniform buffer — orientation, overlays, labels — had never once run.
+const bare = script.replace(/\/\/[^\n]*/g, '')
+for (const name of ['MAX_CHANNELS', 'LUT_STOPS', 'NCH', 'HA', 'LEADING_VEC4S', 'CH0']) {
+  const used = new RegExp('(?<![.\\w])' + name + '(?![\\w])').test(bare)
+  const declared = new RegExp('(?:const|let|var)\\s+[^;\\n]*\\b' + name + '\\s*=').test(bare)
+  if (used && !declared) {
+    throw new Error(`the page uses ${name} but never declares it — it is a generator-side constant ` +
+                    'that has to be interpolated into the page, or the page dies at that line')
+  }
+}
+
 const probe = join(dir, '.shader_check_syntax.mjs')
 writeFileSync(probe, script)
 try {
