@@ -124,7 +124,7 @@ const overlaysErr = ref('')
 const hiddenPops = ref<Set<string>>(new Set())
 /** Which obs column shades the points, '' for the population colour. A REQUEST, not a display toggle:
  *  the values come from the server, so changing it refetches. */
-const colourBy = ref('')
+const colourByLocal = ref('')
 /**
  * Point size and colour-by, SHARED with the napari viewer panel when the set is known.
  *
@@ -135,6 +135,10 @@ const colourBy = ref('')
 const pointSize = computed({
   get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
   set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
+})
+const colourBy = computed({
+  get: () => (setUid ? settings.getColourBy(setUid) : colourByLocal.value),
+  set: (v: string) => setUid ? settings.setColourBy(setUid, v) : (colourByLocal.value = v),
 })
 /**
  * Which segmentation's MASK is drawn, '' for none (P4).
