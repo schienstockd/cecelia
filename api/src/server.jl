@@ -32,6 +32,7 @@ include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
+include("movie_render.jl")   # renderer C's timelapse sweep — builds on image_render.jl + read_slab
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")

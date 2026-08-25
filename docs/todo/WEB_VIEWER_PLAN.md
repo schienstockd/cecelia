@@ -398,7 +398,7 @@ reproducible here and was never part of the parity bar.
 shows every segmentation at once as its own layer; a panel narrow enough for one population list will
 not hold three, and the 2D view is the one people gate on.
 
-### P5 — the offline capture path in C — **THE FRAME IS BUILT**
+### P5 — the offline capture path in C — **FRAME + SWEEP BUILT**
 Camera in `image_render.jl` + the four capture commands + title cards, on `jobs.jl` with
 progress/cancel. Non-interactive, so 117 ms/frame is fine. `capture_view_state`/`apply_view_state` are
 the keyframe contract the animation page already speaks, so B must be able to answer them too.
@@ -419,10 +419,27 @@ the three ways a movie differs from a thumbnail:
 
 `read_slab` gained an `(arr, caxes)` form so a sweep opens the store once instead of `nT * nC` times.
 
-**Still to do:** the sweep itself on `jobs.jl` (progress/cancel), handing frames to
-`python/cecelia/utils/movie_io.py`'s writer through `run_py` — the encoder already exists and is not
-worth a second one in Julia; keyframe interpolation; title cards; and the overlays (points, tracks,
-masks) on the CPU frame, which are P3/P4's content drawn by renderer C rather than new capability.
+**Built: `record_view_movie`** (`api/src/movie_render.jl`) — the sweep, with progress and
+cancellation, handing frames to `movie_io`'s writer through `run_py`. The encoder already existed and a
+second one in Julia would be two answers about codec, pixel format and even dimensions.
+
+**The frames cross the language boundary as raw RGB24 in one file**, and that is the decision worth
+stating. A PNG per frame pays an encode and a decode for bytes already in memory, which is most of the
+render. A pipe would avoid the temp, but `run_py` streams stdout and takes no stdin, and a second
+launcher is the duplication this codebase keeps paying for; a FIFO would avoid it and does not exist on
+Windows. So: one sequential write, one sequential read, deleted after — `w * h * 3 * nT` bytes, ~600 MB
+for a 181-frame movie of the real target, against a render that takes ~30 s.
+
+The one thing that cannot be checked downstream is the byte ORDER: a transposed movie plays perfectly —
+right length, right size, real pixels, just on its side — and on a field of scattered cells nobody
+notices. `write_raw_frames` is therefore a separate function that needs no Python and no encoder, and
+the test asserts its bytes against `render_view_frame`'s own output, including that they differ from
+the untransposed order. Verified end to end by hand as well (fixture store → 3-frame mp4 on disk); that
+path is not in the suite because it needs the Python env.
+
+**Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently drive
+napari), keyframe interpolation, title cards, and the overlays (points, tracks, masks) on the CPU frame
+— which are P3/P4's content drawn by renderer C rather than new capability.
 
 ### P6 — the selection round-trip
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

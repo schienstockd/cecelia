@@ -4834,6 +4834,58 @@ end
     end
 end
 
+@testset "API: record_view_movie — the raw frame hand-off" begin
+    # Julia composites, Python encodes. The ONE thing that cannot be checked downstream is the byte
+    # ORDER: a transposed movie plays perfectly — right length, right size, real pixels, just on its
+    # side — and on a field of scattered cells nobody notices. So it is asserted here, against
+    # `render_view_frame`'s own output rather than against a shape.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    if !api_have_fixture(v2)
+        @test_skip "zarr format fixture missing"
+    else
+        a2, ax2 = open_level0(v2)
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        kw = (; channels = 0:1, specs = specs)
+
+        io = IOBuffer()
+        W, H, n, stopped = write_raw_frames(io, a2, ax2, [0, 1, 2]; kw...)
+        @test (W, H) == (64, 64)
+        @test n == 3 && !stopped
+        bytes = take!(io)
+        @test length(bytes) == W * H * 3 * n
+
+        img  = render_view_frame(a2, ax2, 0; kw...)
+        want = collect(reinterpret(UInt8, vec(permutedims(img, (2, 1)))))
+        @test bytes[1:length(want)] == want
+        # ...and NOT the untransposed order, which is the sideways movie. Guarded on the two actually
+        # differing, so a symmetric frame could never make this pass vacuously.
+        wrong = collect(reinterpret(UInt8, vec(img)))
+        @test wrong != want
+        @test bytes[1:length(want)] != wrong
+
+        # frames follow one another in sweep order, so frame 1's bytes start where frame 0's end
+        img1 = render_view_frame(a2, ax2, 1; kw...)
+        want1 = collect(reinterpret(UInt8, vec(permutedims(img1, (2, 1)))))
+        @test bytes[(length(want) + 1):(2 * length(want))] == want1
+
+        # h264/yuv420p needs even dimensions and nothing downstream fixes an odd frame: a 63x61 crop
+        # has to come out 62x60, and the size the encoder is told must be the size written.
+        odd = IOBuffer()
+        Wo, Ho, no, _ = write_raw_frames(odd, a2, ax2, [0]; crop = (x = 0:62, y = 0:60), kw...)
+        @test (Wo, Ho) == (62, 60)
+        @test length(take!(odd)) == Wo * Ho * 3 * no
+
+        # cancellation is checked BETWEEN frames, so it costs at most one and writes nothing
+        cio = IOBuffer()
+        _, _, nc, sc = write_raw_frames(cio, a2, ax2, [0, 1, 2]; cancelled = () -> true, kw...)
+        @test nc == 0 && sc
+        @test isempty(take!(cio))
+
+        # a t range with nothing in it is a caller error, not an empty movie
+        @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
+    end
+end
+
 @testset "API: store layout defaults" begin
     # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
     # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.
