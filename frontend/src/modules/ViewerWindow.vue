@@ -660,7 +660,15 @@ const keysBtn = ref<HTMLElement | null>(null)
  */
 const openSection = ref(localStorage.getItem('cc.vw.section') ?? 'channels')
 watch(openSection, v => localStorage.setItem('cc.vw.section', v))
-const sectionOpen = (key: string) => (v: boolean) => { openSection.value = v ? key : '' }
+/**
+ * Takes the key AND the event, rather than returning a handler.
+ *
+ * Binding `@update:open="sectionOpen('channels')"` looks like it binds the returned handler and does
+ * not: Vue compiles a CALL expression as an inline STATEMENT, so it runs the outer function on every
+ * event and throws the returned one away — the boolean never arrives and nothing ever expands
+ * (Dominik, 2026-08-25). Only a bare identifier or a member expression is bound as the handler itself.
+ */
+const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
  * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — napari draws both, and a fourth
@@ -946,7 +954,7 @@ onUnmounted(() => {
 
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
-                            @update:open="sectionOpen('channels')" max-height="none">
+                            @update:open="v => setSection('channels', v)" max-height="none">
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
@@ -981,7 +989,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                             :open="openSection === 'seg'"
-                            @update:open="sectionOpen('seg')" max-height="none">
+                            @update:open="v => setSection('seg', v)" max-height="none">
           <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
                directory check, not the label registry, so an imported track set with a table and no mask
                does not offer an empty option. -->
@@ -1023,7 +1031,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Overlays" tip="Cell populations and track tails"
                             :open="openSection === 'ovl'"
-                            @update:open="sectionOpen('ovl')" max-height="none">
+                            @update:open="v => setSection('ovl', v)" max-height="none">
           <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
                no populations, and an empty group would read as a broken feature rather than as an image
                that has not been through segmentation yet. -->
@@ -1118,7 +1126,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
                             :open="openSection === 'ann'"
-                            @update:open="sectionOpen('ann')" max-height="none">
+                            @update:open="v => setSection('ann', v)" max-height="none">
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
                in front of you, and a separate row for each would double the group's height. -->
           <div class="cc-row cc-row-tight">
@@ -1153,7 +1161,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
                             :open="openSection === 'debug'"
-                            @update:open="sectionOpen('debug')" max-height="none">
+                            @update:open="v => setSection('debug', v)" max-height="none">
           <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
           <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
             <span class="cc-muted cc-fs-2xs cc-lbl-col">Steps</span>
