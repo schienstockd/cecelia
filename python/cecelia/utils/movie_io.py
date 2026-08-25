@@ -137,6 +137,46 @@ def movie_writer(path, fps):
         writer.close()
 
 
+def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=None):
+    """Encode a file of raw RGB24 frames to an mp4 through :func:`movie_writer`.
+
+    The frames come from Julia's compositor (``api/src/movie_render.jl``, renderer C) — the offline
+    half of the browser-viewer split. They arrive as ONE file of ``width * height * 3`` bytes per
+    frame, top row first, rather than as a PNG each: a PNG per frame pays an encode and a decode for
+    bytes that were already in memory, and PNG encoding is half of that renderer's warm frame.
+
+    Reads one frame at a time. ``np.fromfile`` on the whole file would hold the entire movie in memory
+    (~600 MB for a 181-frame recording of a real timecourse) to hand the writer one frame at a time
+    anyway.
+    """
+    import numpy as np
+    import os
+
+    expect = int(width) * int(height) * 3
+    n = int(frames)
+    have = os.path.getsize(raw_path)
+    if have < expect * n:
+        # Checked BEFORE the writer opens, so a truncated render never creates a partial mp4 that
+        # looks like a finished one. The per-frame check below stays as well: this one cannot tell a
+        # short file from a wrong `width`.
+        raise ValueError(
+            f'{raw_path} holds {have} bytes, expected {expect * n} for {n} frames of '
+            f'{width}x{height} RGB24 — the render was truncated')
+    with open(raw_path, 'rb') as fh, movie_writer(out_path, fps) as writer:
+        for i in range(n):
+            buf = fh.read(expect)
+            if len(buf) != expect:
+                # A short read is a truncated render, and encoding what arrived would produce a movie
+                # that looks complete and is not. Fail with the frame number, which says how far it got.
+                raise ValueError(
+                    f'raw frame {i} is {len(buf)} bytes, expected {expect} '
+                    f'({width}x{height} RGB24) — the render was truncated')
+            writer.append_data(np.frombuffer(buf, dtype=np.uint8).reshape(int(height), int(width), 3))
+            if log is not None and (i + 1) % 25 == 0:
+                log.log(f'[PROGRESS] {i + 1}/{n}')
+    return n
+
+
 # ── Side-by-side composition (version comparison) ────────────────────────────
 # One movie per image VERSION is recorded by the normal path, then the finished files are composed
 # here into a single frame each. Composing at the frame level (rather than loading several versions

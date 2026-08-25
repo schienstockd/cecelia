@@ -13,7 +13,8 @@
 export type LogLevel = 'info' | 'warn' | 'error'
 
 /** The chip axis: one per runtime component that can talk. */
-export type LogGroup = 'app' | 'backend' | 'tasks' | 'napari' | 'preview' | 'runner' | 'notebooks'
+export type LogGroup =
+  'app' | 'backend' | 'tasks' | 'viewer' | 'napari' | 'preview' | 'runner' | 'notebooks'
 
 /**
  * Sources the BACKEND stamps on a `server:log` frame — mirrored from `LOG_SOURCES` in
@@ -32,6 +33,10 @@ export const LOG_GROUPS: { value: LogGroup; label: string; tip: string; quiet?: 
   { value: 'app',       label: 'App',       tip: 'This browser UI — actions, fetch failures, render errors' },
   { value: 'backend',   label: 'Backend',   tip: 'The Julia server (:8080)' },
   { value: 'tasks',     label: 'Tasks',     tip: 'Task and chain runs' },
+  // The VIEWERS, as opposed to the napari process. Its own chip rather than a napari one because the
+  // napari half is going: the browser volume viewer is what replaces it, and its diagnostics —
+  // which GPU, what geometry, a lost device — are the ones that survive (Dominik, 2026-08-25).
+  { value: 'viewer',    label: 'Viewer',    tip: 'Opening images — GPU, geometry, load failures' },
   { value: 'napari',    label: 'Napari',    tip: 'Viewer bridge output (:7655) — errors always show', quiet: true },
   { value: 'preview',   label: 'Preview',   tip: 'Task-preview worker (:7656) — errors always show',  quiet: true },
   { value: 'runner',    label: 'Runner',    tip: 'Detached task runner (:7657) — errors always show', quiet: true },
@@ -41,12 +46,59 @@ export const LOG_GROUPS: { value: LogGroup; label: string; tip: string; quiet?: 
 /** The groups shown until the user says otherwise. */
 export const DEFAULT_GROUPS: LogGroup[] = LOG_GROUPS.filter(g => !g.quiet).map(g => g.value)
 
+/**
+ * The chips that existed while the persisted selection was a bare array of group names.
+ *
+ * Frozen deliberately. A saved array cannot tell "the user turned this off" from "this chip did not
+ * exist yet", so a new non-quiet chip would arrive switched OFF for everyone who had ever opened the
+ * console — which is how a feature ships and appears not to work. Anything not in this list is new to
+ * such a selection and starts on; the newer shape records what was known, so this list never grows.
+ */
+const V1_GROUPS: readonly LogGroup[] =
+  ['app', 'backend', 'tasks', 'napari', 'preview', 'runner', 'notebooks'] as const
+
+/** The persisted shape. The array form is what v1 wrote; `known` is what made it self-describing. */
+interface StoredGroups { groups: LogGroup[]; known: LogGroup[] }
+
+/**
+ * The chip selection to restore from `raw`, with chips added since it was saved switched on.
+ *
+ * Pure, so the migration can be asserted rather than discovered by a user whose new chip is silently
+ * off. Anything unreadable falls back to the defaults — a corrupt filter should not hide the console.
+ */
+export function restoreGroups(raw: string | null): LogGroup[] {
+  if (!raw) return [...DEFAULT_GROUPS]
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { return [...DEFAULT_GROUPS] }
+
+  const stored: StoredGroups | null =
+    Array.isArray(parsed) ? { groups: parsed as LogGroup[], known: [...V1_GROUPS] }
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as StoredGroups).groups)
+      ? { groups: (parsed as StoredGroups).groups,
+          known: (parsed as StoredGroups).known ?? [...V1_GROUPS] }
+    : null
+  if (!stored) return [...DEFAULT_GROUPS]
+
+  const on = new Set(stored.groups)
+  const known = new Set(stored.known)
+  for (const g of LOG_GROUPS) if (!g.quiet && !known.has(g.value)) on.add(g.value)
+  // Chip order, not selection order: the console renders from LOG_GROUPS anyway, and a stable order
+  // makes the stored value comparable between saves.
+  return LOG_GROUPS.map(g => g.value).filter(v => on.has(v))
+}
+
+/** What to persist for a selection — records the chips that existed, so the next added one can tell
+ *  "off" from "new". */
+export function storeGroups(groups: LogGroup[]): string {
+  return JSON.stringify({ groups, known: LOG_GROUPS.map(g => g.value) } satisfies StoredGroups)
+}
+
 // Fine-grained `source` → chip group. Anything unlisted is the UI's own — which is the right default,
 // because every one of the nineteen ad-hoc frontend tags ('manageImages', 'gating', 'movies', …) is a
 // thing this browser did, and a new one should not need a change here to be reachable.
 const GROUP_OF: Record<string, LogGroup> = {
   backend: 'backend', server: 'backend',
-  napari: 'napari', viewer: 'napari',
+  napari: 'napari', viewer: 'viewer',
   preview: 'preview',
   runner: 'runner',
   notebooks: 'notebooks',

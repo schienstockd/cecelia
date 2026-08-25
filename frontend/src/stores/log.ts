@@ -1,6 +1,10 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { DEFAULT_GROUPS, gapBefore, logGroup, type LogGroup, type LogLevel } from '../utils/logFilter'
+import {
+  DEFAULT_GROUPS, gapBefore, logGroup, restoreGroups, storeGroups,
+  type LogGroup, type LogLevel,
+} from '../utils/logFilter'
+import { onUiLog } from '../lib/uiLogChannel'
 
 export type { LogLevel, LogGroup }
 
@@ -19,14 +23,11 @@ let _id = 0
 
 const GROUPS_KEY = 'cc.consoleGroups'
 
-/** Read the persisted chip selection. A user-settable option must survive a reload (CLAUDE.md). */
+/** Read the persisted chip selection. A user-settable option must survive a reload (CLAUDE.md), and a
+ *  chip added since the selection was saved must arrive ON — see `restoreGroups`. */
 function loadGroups(): LogGroup[] {
-  try {
-    const raw = localStorage.getItem(GROUPS_KEY)
-    if (!raw) return [...DEFAULT_GROUPS]
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed as LogGroup[] : [...DEFAULT_GROUPS]
-  } catch { return [...DEFAULT_GROUPS] }   // private mode, or a key someone hand-edited
+  try { return restoreGroups(localStorage.getItem(GROUPS_KEY)) }
+  catch { return [...DEFAULT_GROUPS] }     // private mode
 }
 
 export const useLogStore = defineStore('log', () => {
@@ -148,7 +149,7 @@ export const useLogStore = defineStore('log', () => {
 
   function setGroups(next: LogGroup[]) {
     groups.value = next
-    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)) } catch { /* private mode */ }
+    try { localStorage.setItem(GROUPS_KEY, storeGroups(next)) } catch { /* private mode */ }
   }
 
   function toggleGroup(g: LogGroup) {
@@ -187,6 +188,15 @@ export const useLogStore = defineStore('log', () => {
     }
     return out
   })
+
+  // Lines from the app's OTHER windows. A pop-out is a second app instance with its own store, and two
+  // of them (the volume viewer, the Task Manager) render no console at all — so without this their
+  // diagnostics have nowhere to go. Backend lines already reach every window from one ring, which is
+  // why napari prints everywhere; this is the same for the ones the browser says. Installed on the
+  // store rather than in App.vue because `main.ts` creates the store in every window, console or not,
+  // and a window that cannot show a line is not the window that should decide to drop it.
+  onUiLog(line => push(line.level, line.message,
+                       { detail: line.detail, source: line.source, ts: line.ts }))
 
   return {
     entries, unreadErrors, consoleOpen, lastEntry, groups, query, follow, lastSeq, ringId, groupCounts,

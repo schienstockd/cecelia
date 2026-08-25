@@ -4773,6 +4773,181 @@ end
     end
 end
 
+@testset "API: render_view_frame — renderer C's movie frame" begin
+    # The offline frame (WEB_VIEWER_PLAN.md → P5). Asserted on the committed real stores rather than a
+    # phantom, because the three things that break here are all store-shaped: axis order, byte order,
+    # and whether a z SELECTION means the same thing as it does on the browser's slab route.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = api_fixture("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(api_have_fixture(v2) && api_have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        lum(px) = Float64(ColorTypes.red(px)) + Float64(ColorTypes.green(px)) + Float64(ColorTypes.blue(px))
+
+        full = render_view_frame(v2, 1)
+        @test size(full) == (64, 64)                       # (y, x), native — no silent downsample
+        @test eltype(full) <: RGB
+        @test maximum(lum, full) > 0.05                    # real pixels, not a black read
+
+        # A MIP over the stack can only be BRIGHTER than any one plane of it, everywhere. That is the
+        # assertion that catches a z selection reading the wrong axis: a transposed read still produces
+        # a plausible picture, and still differs from the plane.
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        nch = 2
+        mip   = render_view_frame(v2, 1; channels = 0:(nch - 1), specs = specs)
+        plane = render_view_frame(v2, 1; z = 0, channels = 0:(nch - 1), specs = specs)
+        @test size(mip) == size(plane)
+        @test all(lum(mip[i]) >= lum(plane[i]) - 1e-6 for i in eachindex(mip))
+        @test mip != plane                                 # the fixture has structure across z
+
+        # A range that covers the whole stack IS the whole-stack projection — one vocabulary with the
+        # slab route, where `nothing` / Int / UnitRange are the same three answers.
+        @test render_view_frame(v2, 1; z = 0:2, channels = 0:(nch - 1), specs = specs) == mip
+        @test render_view_frame(v2, 1; z = 0:0, channels = 0:(nch - 1), specs = specs) == plane
+
+        # crop is 0-based inclusive, and clamps rather than producing a zero-size frame — an encoder
+        # reports that as a corrupt movie, not as a bad crop.
+        @test size(render_view_frame(v2, 1; crop = (x = 10:29, y = 4:13))) == (10, 20)
+        @test size(render_view_frame(v2, 1; crop = (x = 900:999, y = 900:999))) == (1, 1)
+        @test size(render_view_frame(v2, 1; crop = (y = 0:31,))) == (32, 64)
+
+        # max_px strides the long side down; 0 leaves it alone
+        @test size(render_view_frame(v2, 1; max_px = 32)) == (32, 32)
+        @test size(render_view_frame(v2, 1; max_px = 0)) == (64, 64)
+
+        # one channel through one LUT: nothing else may bleed in
+        red1 = render_view_frame(v2, 1; channels = [0], specs = [(0.0, 4000.0, "red", true)])
+        @test all(ColorTypes.green(px) == 0 && ColorTypes.blue(px) == 0 for px in red1)
+
+        # the two formats hold the same pixels, so they must render the same frame
+        @test render_view_frame(v3, 1; channels = 0:(nch - 1), specs = specs) == mip
+
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = Int[])
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = [99])
+        @test_throws ArgumentError render_view_frame(v2, 1; channels = [0, 1], specs = specs[1:1])
+
+        # opening ONCE and reading many slabs must answer exactly what the path form does — that
+        # overload exists so a movie sweep is not nT*nC metadata round trips.
+        a2, ax2 = open_level0(v2)
+        @test render_view_frame(a2, ax2, 1; channels = 0:(nch - 1), specs = specs) == mip
+        @test read_slab(a2, ax2, 1, 0; z = 1) == read_slab(v2, 1, 0; z = 1)
+    end
+end
+
+@testset "API: record_view_movie — the raw frame hand-off" begin
+    # Julia composites, Python encodes. The ONE thing that cannot be checked downstream is the byte
+    # ORDER: a transposed movie plays perfectly — right length, right size, real pixels, just on its
+    # side — and on a field of scattered cells nobody notices. So it is asserted here, against
+    # `render_view_frame`'s own output rather than against a shape.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    if !api_have_fixture(v2)
+        @test_skip "zarr format fixture missing"
+    else
+        a2, ax2 = open_level0(v2)
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        kw = (; channels = 0:1, specs = specs)
+
+        io = IOBuffer()
+        W, H, n, stopped = write_raw_frames(io, a2, ax2, [0, 1, 2]; kw...)
+        @test (W, H) == (64, 64)
+        @test n == 3 && !stopped
+        bytes = take!(io)
+        @test length(bytes) == W * H * 3 * n
+
+        img  = render_view_frame(a2, ax2, 0; kw...)
+        want = collect(reinterpret(UInt8, vec(permutedims(img, (2, 1)))))
+        @test bytes[1:length(want)] == want
+        # ...and NOT the untransposed order, which is the sideways movie. Guarded on the two actually
+        # differing, so a symmetric frame could never make this pass vacuously.
+        wrong = collect(reinterpret(UInt8, vec(img)))
+        @test wrong != want
+        @test bytes[1:length(want)] != wrong
+
+        # frames follow one another in sweep order, so frame 1's bytes start where frame 0's end
+        img1 = render_view_frame(a2, ax2, 1; kw...)
+        want1 = collect(reinterpret(UInt8, vec(permutedims(img1, (2, 1)))))
+        @test bytes[(length(want) + 1):(2 * length(want))] == want1
+
+        # h264/yuv420p needs even dimensions and nothing downstream fixes an odd frame: a 63x61 crop
+        # has to come out 62x60, and the size the encoder is told must be the size written.
+        odd = IOBuffer()
+        Wo, Ho, no, _ = write_raw_frames(odd, a2, ax2, [0]; crop = (x = 0:62, y = 0:60), kw...)
+        @test (Wo, Ho) == (62, 60)
+        @test length(take!(odd)) == Wo * Ho * 3 * no
+
+        # cancellation is checked BETWEEN frames, so it costs at most one and writes nothing
+        cio = IOBuffer()
+        _, _, nc, sc = write_raw_frames(cio, a2, ax2, [0, 1, 2]; cancelled = () -> true, kw...)
+        @test nc == 0 && sc
+        @test isempty(take!(cio))
+
+        # a t range with nothing in it is a caller error, not an empty movie
+        @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
+    end
+end
+
+@testset "API: interpolate_keyframes — renderer C's tween" begin
+    # napari-animation does this today, and it is the one part of that dependency worth keeping: a
+    # keyframe is a saved view state plus the number of frames it takes to reach it. Every saved
+    # animation config already means that, so C has to answer the same contract.
+    kf(v, steps = 15) = Dict("viewState" => v, "steps" => steps)
+
+    @test_throws ArgumentError interpolate_keyframes([kf(Dict("a" => 0))])
+
+    # frame count: the first keyframe IS a frame, and every later one is the LAST frame of its own
+    # transition — no duplicated frame at the joins.
+    seq = interpolate_keyframes([kf(Dict("a" => 0.0), 99), kf(Dict("a" => 10.0), 5)])
+    @test length(seq) == 6
+    @test seq[1]["a"] == 0.0                    # starts exactly at keyframe 1
+    @test seq[end]["a"] == 10.0                 # and ends exactly at keyframe 2
+    @test seq[2]["a"] ≈ 2.0                     # evenly spaced in between
+    @test issorted([f["a"] for f in seq])
+
+    # three keyframes: each leg has its own step count, and the joins are the keyframes themselves
+    tri = interpolate_keyframes([kf(Dict("a" => 0.0)), kf(Dict("a" => 1.0), 2), kf(Dict("a" => 5.0), 4)])
+    @test length(tri) == 7
+    @test tri[3]["a"] == 1.0                    # the middle keyframe lands on a frame exactly
+    @test tri[end]["a"] == 5.0
+
+    # A NON-NUMERIC value has no half-way point. It holds the outgoing keyframe's until the incoming
+    # one is reached and changes exactly there — the alternative is erroring, or silently picking a
+    # side one frame early, which reads as a colormap that flickers before the transition.
+    cm = interpolate_keyframes([kf(Dict("colormap" => "red")), kf(Dict("colormap" => "green"), 4)])
+    @test [f["colormap"] for f in cm] == ["red", "red", "red", "red", "green"]
+
+    # `visible` is a Bool, which is an Integer in Julia — lerping it would produce 0.5 and then `true`
+    # for every frame after the first. It has to step like a string does.
+    vis = interpolate_keyframes([kf(Dict("visible" => false)), kf(Dict("visible" => true), 3)])
+    @test [f["visible"] for f in vis] == [false, false, false, true]
+
+    # nested state (camera / dims / per-layer props) tweens all the way down
+    a = Dict("camera" => Dict("zoom" => 1.0, "center" => [0.0, 0.0]), "dims" => Dict("current_step" => [0, 4]))
+    b = Dict("camera" => Dict("zoom" => 3.0, "center" => [10.0, 20.0]), "dims" => Dict("current_step" => [8, 4]))
+    nest = interpolate_keyframes([kf(a), kf(b, 4)])
+    @test nest[3]["camera"]["zoom"] ≈ 2.0
+    @test nest[3]["camera"]["center"] ≈ [5.0, 10.0]
+    @test nest[3]["dims"]["current_step"] ≈ [4.0, 4.0]      # a slider sweeps; the caller rounds
+    @test nest[end]["dims"]["current_step"] == [8, 4]
+
+    # a key in one snapshot and not the other means "that layer was not in this snapshot", NOT zero —
+    # tweening towards a zero that was never asked for fades a channel out for no reason
+    part = interpolate_keyframes([kf(Dict("a" => 4.0)), kf(Dict("a" => 4.0, "b" => 9.0), 2)])
+    @test part[2]["b"] == 9.0 && part[end]["b"] == 9.0
+
+    # arrays of different length cannot be tweened elementwise, so they step
+    len = interpolate_keyframes([kf(Dict("v" => [1.0, 2.0])), kf(Dict("v" => [1.0, 2.0, 3.0]), 2)])
+    @test len[2]["v"] == [1.0, 2.0]
+    @test len[end]["v"] == [1.0, 2.0, 3.0]
+
+    # steps <= 0 would divide by zero or emit nothing; it means "get there next frame"
+    z = interpolate_keyframes([kf(Dict("a" => 0.0)), kf(Dict("a" => 1.0), 0)])
+    @test length(z) == 2 && z[end]["a"] == 1.0
+
+    # the animation page's own shape, and a missing `steps` falling back to napari's default of 15
+    nt = interpolate_keyframes([(; viewState = Dict("a" => 0.0)), (; viewState = Dict("a" => 1.0))])
+    @test length(nt) == 16 && nt[end]["a"] == 1.0
+end
+
 @testset "API: store layout defaults" begin
     # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
     # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.

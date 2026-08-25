@@ -135,6 +135,22 @@ const labelRows = computed(() => {
   }))
 })
 const hasLabelRows = computed(() => labelRows.value.length > 0)
+/**
+ * Segmentations worth a row without being asked for: the ones DOING something — a mask, tracks or
+ * branches on screen, or a run writing right now.
+ *
+ * Seven registered segmentations is an ordinary number on a real image (`fXgbTl` has seven), and a row
+ * each made this section taller than everything under it put together — the panel became a scroll to
+ * reach Populations (Dominik, 2026-08-25). The rest are one click away rather than gone, because which
+ * segmentations EXIST is still the question this section answers.
+ */
+const activeLabelRows = computed(() => labelRows.value.filter(
+  r => r.live || previewShown.value[r.valueName] || visibleLabels.value[r.valueName]
+    || trackVns.value[r.valueName] || branchVns.value[r.valueName]))
+const labelsExpanded = ref(false)
+const shownLabelRows = computed(() =>
+  labelsExpanded.value ? labelRows.value : activeLabelRows.value)
+const foldedLabelCount = computed(() => labelRows.value.length - activeLabelRows.value.length)
 
 // the set the open image belongs to — the key for per-set napari viewer prefs (colour-by, show-3D,
 // point size, overlay toggles). These are experiment-level: set once, hold across the set's images.
@@ -286,6 +302,7 @@ watch(napariImage, (img) => {
   // restore the remembered preference rather than always starting hidden
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
+  labelsExpanded.value = false                 // a different image is a different list
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
   // Tracks are seeded over BOTH registries — a points-only set is exactly the one whose tracks you
   // want. Through the shared helper, because `pushTracksNow` must seed from the SAME list: it once
@@ -682,6 +699,10 @@ function openWebViewer() {
   const proj = projectMeta.current?.uid
   if (!uid || !proj) return
   const q = new URLSearchParams({ project: proj, image: uid })
+  // The SET, so the popup can read the same per-set viewer prefs this panel writes — point size,
+  // colour-by, which population type is shown. They are set-scoped, and a popup is a fresh app
+  // instance with no project open, so the uid has to travel in the query like everything else.
+  currentSetUid.value && q.set('set', currentSetUid.value)
   selectedValueName.value && q.set('valueName', selectedValueName.value)
   napariImage.value?.name && q.set('name', napariImage.value.name)
   openPopoutWindow('/viewer-window', 1200, 800, '?' + q.toString())
@@ -787,8 +808,9 @@ onUnmounted(() => {
         <span v-else class="viewer-hint cc-muted">No versions registered.</span>
 
         <!-- segmentation label sets: show labels / tracks, delete -->
-        <div v-if="hasLabelRows" class="viewer-labels-list">
-          <div v-for="row in labelRows" :key="row.valueName" class="viewer-label-row">
+        <div v-if="shownLabelRows.length" class="viewer-labels-list"
+             :class="{ 'is-scrolled': labelsExpanded }">
+          <div v-for="row in shownLabelRows" :key="row.valueName" class="viewer-label-row">
             <i :class="['pi', row.masked ? 'pi-th-large' : 'pi-circle-fill', 'viewer-label-icon']"
                v-tooltip.right="row.masked ? undefined : 'Points only — tracks, no mask'" />
             <span class="viewer-label-name cc-muted" :title="row.valueName">{{ row.valueName }}</span>
@@ -830,6 +852,15 @@ onUnmounted(() => {
             </template>
           </div>
         </div>
+        <!-- The fold. Named by COUNT rather than "Show all": the number is the whole reason to click,
+             and a section that silently shows a subset would read as segmentations having vanished. -->
+        <button
+          v-if="hasLabelRows && foldedLabelCount > 0"
+          class="cc-btn cc-btn-ghost viewer-more cc-fs-2xs"
+          @click="labelsExpanded = !labelsExpanded"
+          v-tooltip.bottom="labelsExpanded ? 'Show only the segmentations in use'
+                                           : 'Show every segmentation on this image'"
+        >{{ labelsExpanded ? 'Show fewer' : `${foldedLabelCount} more` }}</button>
       </div>
 
     <!-- ── Populations & tracks: overlays on the open image ────────────────── -->
@@ -1027,6 +1058,11 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.2rem;
 }
+/* Expanded, the list is capped and scrolls rather than pushing Populations off the panel — the whole
+   point of the fold. Six rows: enough that most images never scroll at all. */
+.viewer-labels-list.is-scrolled { max-height: 9rem; overflow-y: auto; }
+/* Left-aligned with the rows above it, not a full-width bar: it is a disclosure, not an action. */
+.viewer-more { align-self: flex-start; padding: 0.1rem 0.3rem; }
 .viewer-label-row {
   display: flex;
   align-items: center;

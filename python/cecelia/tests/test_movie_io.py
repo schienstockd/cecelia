@@ -120,6 +120,59 @@ class TestWriterRoundTrip(unittest.TestCase):
             self.assertEqual(count, n_card + 4)
 
 
+class TestEncodeRawFrames(unittest.TestCase):
+    """Renderer C's hand-off: a file of raw RGB24 frames in, an mp4 out.
+
+    Julia composites the frames and this encodes them, because ``movie_writer`` is the one imageio
+    writer in the repo. The interesting failure is not "it did not encode" — it is a TRUNCATED render
+    encoding to a movie that looks complete and is short.
+    """
+
+    def _raw(self, d, w, h, n, first=0):
+        path = os.path.join(d, 'frames.rgb24')
+        with open(path, 'wb') as fh:
+            for i in range(n):
+                fh.write(np.full((h, w, 3), first + i * 40, dtype=np.uint8).tobytes())
+        return path
+
+    def test_round_trip_keeps_the_frames_and_their_order(self):
+        import imageio.v2 as imageio
+        with tempfile.TemporaryDirectory() as d:
+            raw = self._raw(d, 66, 34, 4, first=10)
+            out = os.path.join(d, 'clip.mp4')
+            self.assertEqual(
+                movie_io.encode_raw_frames(raw, out, width=66, height=34, frames=4, fps=10), 4)
+            with imageio.get_reader(out) as r:
+                frames = [f for f in r]
+            self.assertEqual(len(frames), 4)
+            self.assertEqual(frames[0].shape[:2], (34, 66))
+            # h264 is lossy, so the assertion is on ORDER (each frame brighter than the last) rather
+            # than on exact values — a row/column swap or a reversed sweep breaks it, rounding does not.
+            means = [float(f.mean()) for f in frames]
+            self.assertEqual(means, sorted(means))
+            self.assertGreater(means[-1] - means[0], 50)
+
+    def test_a_truncated_render_is_refused_before_a_partial_movie_exists(self):
+        with tempfile.TemporaryDirectory() as d:
+            raw = self._raw(d, 66, 34, 3)          # three frames written...
+            out = os.path.join(d, 'clip.mp4')
+            with self.assertRaises(ValueError) as cm:
+                movie_io.encode_raw_frames(raw, out, width=66, height=34, frames=4, fps=10)
+            self.assertIn('truncated', str(cm.exception))
+            self.assertFalse(os.path.exists(out), 'no half-written mp4 may be left behind')
+
+    def test_a_wrong_frame_size_is_caught_rather_than_reshaping_the_movie(self):
+        # Same byte count, wrong geometry: 66x34 and 34x66 are both 6732 px. Nothing downstream can
+        # tell these apart, so the size has to come from the renderer and be trusted exactly once.
+        with tempfile.TemporaryDirectory() as d:
+            raw = self._raw(d, 66, 34, 2)
+            out = os.path.join(d, 'clip.mp4')
+            movie_io.encode_raw_frames(raw, out, width=34, height=66, frames=2, fps=10)
+            import imageio.v2 as imageio
+            with imageio.get_reader(out) as r:
+                self.assertEqual(r.get_data(0).shape[:2], (66, 34))   # it believes the caller
+
+
 class TestStitchMovies(unittest.TestCase):
     """Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). These encode for real —
     the geometry rules only mean anything against frames that survived a round trip through h.264."""

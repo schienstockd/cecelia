@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   logGroup, isVisible, matchesQuery, gapBefore, formatEntry,
-  LOG_GROUPS, DEFAULT_GROUPS, SERVER_LOG_SOURCES, type LogGroup,
+  LOG_GROUPS, DEFAULT_GROUPS, SERVER_LOG_SOURCES, restoreGroups, storeGroups, type LogGroup,
 } from './logFilter'
 
 const entry = (o: Partial<Parameters<typeof isVisible>[0]> = {}) =>
@@ -14,7 +14,7 @@ describe('logGroup', () => {
 
   it('folds the aliases that mean the same component', () => {
     expect(logGroup('server')).toBe('backend')   // the pre-rework tag, still in old ring entries
-    expect(logGroup('viewer')).toBe('napari')    // a frontend call site for the same thing
+    expect(logGroup('viewer')).toBe('viewer')    // its own chip: the napari half is going
     expect(logGroup('chain')).toBe('tasks')
     expect(logGroup('task')).toBe('tasks')
   })
@@ -36,7 +36,7 @@ describe('logGroup', () => {
 
 describe('default groups', () => {
   it('starts with the app-side groups on and the chatty children off', () => {
-    expect(DEFAULT_GROUPS).toEqual(['app', 'backend', 'tasks'])
+    expect(DEFAULT_GROUPS).toEqual(['app', 'backend', 'tasks', 'viewer'])
     for (const g of ['napari', 'preview', 'runner', 'notebooks'] as LogGroup[])
       expect(DEFAULT_GROUPS).not.toContain(g)
   })
@@ -127,5 +127,37 @@ describe('formatEntry', () => {
 
   it('omits what is absent rather than printing empty brackets', () => {
     expect(formatEntry({ level: 'info', message: 'plain' })).toBe('INFO plain')
+  })
+})
+
+describe('restoreGroups', () => {
+  it('turns a chip that did not exist yet ON, without disturbing the rest', () => {
+    // The v1 shape — a bare array — cannot tell "the user turned this off" from "this chip did not
+    // exist". A new chip arriving switched off is how a feature ships and appears not to work.
+    const v1 = JSON.stringify(['app', 'backend'])
+    expect(restoreGroups(v1)).toEqual(['app', 'backend', 'viewer'])
+  })
+
+  it('leaves a chip the user turned off in the newer shape alone', () => {
+    const saved = storeGroups(['app', 'backend'])
+    expect(restoreGroups(saved)).toEqual(['app', 'backend'])
+  })
+
+  it('never turns a quiet chip on by itself', () => {
+    for (const g of LOG_GROUPS.filter(x => x.quiet).map(x => x.value)) {
+      expect(restoreGroups(JSON.stringify(['app']))).not.toContain(g)
+    }
+  })
+
+  it('falls back to the defaults rather than hiding the console', () => {
+    expect(restoreGroups(null)).toEqual(DEFAULT_GROUPS)
+    expect(restoreGroups('not json')).toEqual(DEFAULT_GROUPS)
+    expect(restoreGroups('42')).toEqual(DEFAULT_GROUPS)
+  })
+
+  it('returns chip order, so a stored value is comparable between saves', () => {
+    const order = LOG_GROUPS.map(g => g.value)
+    const got = restoreGroups(storeGroups(['tasks', 'app']))
+    expect(got).toEqual(order.filter(v => got.includes(v)))
   })
 })

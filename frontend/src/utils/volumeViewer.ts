@@ -38,6 +38,13 @@ export interface ViewerMeta {
   spaceUnit: string | null
   /** Minutes per frame, or null when the image has no real timecourse. */
   frameIntervalMin: number | null
+  /**
+   * Segmentations with a mask ON DISK, so the viewer can offer them (P4). Not simply the registered
+   * label names: `labels` and `label_props` are independent registries — an imported track set has a
+   * table and no mask, and a store can be registered before it is written — so the server checks the
+   * directory and this list is the answer.
+   */
+  labelNames?: string[]
   channels: ViewerChannel[]
 }
 
@@ -71,6 +78,12 @@ export interface SlabQuery {
   /** `zstd` costs ~60 ms of server CPU and saves ~97% of the wire on real data — worth it over a
    *  network, a loss on loopback. The client picks because only the client knows which it is. */
   enc?: 'identity' | 'zstd'
+  /**
+   * Serve the MASK for this segmentation instead of the image (P4). Same route, same reader, same
+   * headers and the same `z`/`zTo` selection — a mask is another zarr of the same geometry, which is
+   * what makes it one parameter rather than a second route. The dtype differs and `X-Slab-Bpv` says so.
+   */
+  labels?: string
 }
 
 export function slabUrl(q: SlabQuery): string {
@@ -79,6 +92,7 @@ export function slabUrl(q: SlabQuery): string {
     t: String(q.t), c: String(q.c), enc: q.enc ?? 'identity',
   })
   if (q.valueName) p.set('valueName', q.valueName)
+  if (q.labels) p.set('labels', q.labels)
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
@@ -107,9 +121,14 @@ export function parseSlabShape(header: string | null): [number, number, number] 
  * a plausible-looking image of something else. Reading `.zarray`'s `dimension_separator` wrong already
  * produced exactly that once — every chunk looked absent, the slab was all zeros, and the render was
  * black with no error anywhere.
+ *
+ * `bytesPerVoxel` is overridable for exactly one caller: a MASK has the image's geometry but not its
+ * dtype (UInt32 label ids against UInt16 intensities), so the shape half of the guard asks the same
+ * question and the length half does not.
  */
 export function slabShapeError(
   header: string | null, byteLength: number, meta: ViewerMeta, zDepth = meta.nZ,
+  bytesPerVoxel = meta.bytesPerVoxel,
 ): string | null {
   const shape = parseSlabShape(header)
   if (!shape) return 'Slab response carried no X-Slab-Shape header'
@@ -117,7 +136,7 @@ export function slabShapeError(
   if (nx !== meta.nX || ny !== meta.nY || nz !== zDepth) {
     return `Slab is ${nz}x${ny}x${nx} (z,y,x) but ${zDepth}x${meta.nY}x${meta.nX} was asked for`
   }
-  const want = nx * ny * nz * meta.bytesPerVoxel
+  const want = nx * ny * nz * bytesPerVoxel
   if (byteLength !== want) return `Slab is ${byteLength} bytes, expected ${want}`
   return null
 }
@@ -220,7 +239,20 @@ export function lutFromHex(hex: string): number[][] {
 // needs the ray origin, not a projection). Pitch is clamped just short of the poles: at exactly ±π/2
 // the up vector is parallel to the view direction and `cross` returns zero, which blanks the frame.
 
-export interface OrbitCamera { yaw: number; pitch: number; dist: number }
+export interface OrbitCamera {
+  yaw: number
+  pitch: number
+  dist: number
+  /**
+   * Where the camera is pointed, in µm across the SCREEN's own axes — right and up, not world x and y.
+   *
+   * Screen axes rather than world ones because that is what a drag means: the image must follow the
+   * pointer at any orientation, and at yaw 90° world x runs into the screen. The shader adds this to
+   * the ray origin, so the overlays pan with the pixels for free — they invert the same basis.
+   */
+  panX: number
+  panY: number
+}
 
 const PITCH_LIMIT = Math.PI / 2 - 0.01
 
@@ -284,7 +316,7 @@ export function fitCamera(
   const halfH = Math.max(ey / 2, ex / 2 / Math.max(aspect, 1e-6))
   const toNearFace = perspective ? Math.max(ez, 0) / 2 : 0
   //                            2% of breathing room ↓
-  return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace }
+  return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace, panX: 0, panY: 0 }
 }
 
 /**
@@ -317,6 +349,23 @@ export function orbitDrag(cam: OrbitCamera, dx: number, dy: number, width: numbe
     yaw: cam.yaw + dx * k,
     pitch: Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, cam.pitch + dy * k)),
   }
+}
+
+/**
+ * Drag in canvas px → a pan, in µm across the screen's axes.
+ *
+ * `height` is the canvas height, and the conversion is exact rather than a feel constant: the visible
+ * height is `2 · dist · VIEW_HALF_ANGLE` µm (see `visibleExtentUm`), so one pixel of drag is that over
+ * the canvas height. The image therefore tracks the pointer at every zoom — a fixed µm-per-pixel would
+ * crawl when zoomed in and fly when zoomed out, which is the tell of a pan that was tuned rather than
+ * derived.
+ *
+ * The signs are the ones that make content FOLLOW the pointer, which is the whole point of a drag: the
+ * camera moves the other way. Drag right and the eye moves left, so the image comes with you.
+ */
+export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number): OrbitCamera {
+  const umPerPx = (2 * Math.max(cam.dist, 0) * VIEW_HALF_ANGLE) / Math.max(height, 1)
+  return { ...cam, panX: cam.panX - dx * umPerPx, panY: cam.panY + dy * umPerPx }
 }
 
 /** Wheel → dolly. Multiplicative, so a notch feels the same at every distance; clamped to a band

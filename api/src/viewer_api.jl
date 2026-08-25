@@ -55,10 +55,18 @@ planes, so a full-depth MIP is mostly paying for empty stack.
 
 Pixels go through `read_native`, never `arr[...]`: a raw `bioformats2raw` store is big-endian and
 Zarr.jl does not swap it (see `image_geometry.jl`).
+
+The `(arr, caxes)` form is for a caller that reads MANY slabs out of one store — a movie sweep asks for
+`nT * nC` of them, and re-opening per read is `nT * nC` metadata round trips for a store whose geometry
+cannot change mid-sweep. The path form is the one an HTTP request wants, since there the open IS the
+lookup.
 """
-function read_slab(zarr_path::AbstractString, t::Int, c::Int;
+read_slab(zarr_path::AbstractString, t::Int, c::Int;
+          z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing) =
+    read_slab(open_level0(zarr_path)..., t, c; z = z)
+
+function read_slab(arr, caxes, t::Int, c::Int;
                    z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing)
-    arr, caxes = open_level0(zarr_path)
     nd    = ndims(arr)
     dims  = axis_dims(caxes, nd)
     names = caxes_or_fallback(caxes, nd)

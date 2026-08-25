@@ -98,14 +98,17 @@ describe('buildPointBuffer', () => {
     expect(planes.filter(p => p === 2).length).toBe(2)
   })
 
-  it('skips hidden populations, and the ones the server already marked hidden', () => {
+  it('skips hidden populations, and ONLY the ones the caller hid', () => {
     const both = buildPointBuffer(payload(), meta())
     expect(both.count).toBe(4)
     const oneHidden = buildPointBuffer(payload(), meta(), new Set(['/B']))
     expect(oneHidden.count).toBe(2)
+    // The payload's own `show` is the gating manager's flag, and it SEEDS the caller's hidden set once
+    // when the overlays are fetched. Testing it again here would mean a population the user switched on
+    // in the viewer still drew nothing, behind a toggle that says it is on (Dominik, 2026-08-25).
     const serverHidden = payload()
     serverHidden.pops[0].show = false
-    expect(buildPointBuffer(serverHidden, meta()).count).toBe(2)
+    expect(buildPointBuffer(serverHidden, meta()).count).toBe(4)
   })
 
   it('ignores a member the cell table no longer holds', () => {

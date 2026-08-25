@@ -53,6 +53,8 @@ struct P {
   ext:  vec4<f32>,                       // physical extent x, y, z; w = z origin of the loaded slab (µm)
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
+  lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, unused
+  pan:  vec4<f32>,                       // pan across the SCREEN's axes, in um: right, up; z/w unused
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;
@@ -63,11 +65,15 @@ fn camera() -> Cam {
   let cp = cos(p.cam.y); let sp = sin(p.cam.y);
   var c: Cam;
   c.fwd = vec3(cp * sy, sp, cp * cy);
-  c.ro = c.fwd * p.cam.z;
   c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
   // screen up is -y in world: see the note above. Written as the cross product in the other order
   // rather than as a negation, so there is no minus sign for someone to 'tidy away'.
   c.up = cross(c.right, c.fwd);
+  // PAN moves the eye across the screen's own axes. Here rather than at the ray, because project()
+  // inverts this same origin — so the overlays pan with the pixels and cannot drift apart. Moving the
+  // eye rather than the box is also what keeps the pan correct once the view is rotated: 'right' is
+  // wherever right currently is, which at yaw 90 degrees runs along world z.
+  c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y;
   return c;
 }
 
@@ -97,6 +103,14 @@ export const MIP_WGSL = `
 ${SHARED_WGSL}
 @group(0) @binding(1) var vol: texture_3d<u32>;
 @group(0) @binding(2) var lut: texture_2d<f32>;
+// The segmentation mask for the SAME timepoint and the same planes — uploaded in the same slot as the
+// image, so a mask can never be one frame behind the pixels it outlines. 'r32uint': real label stores
+// are UInt32 and an id is an identity, not a quantity, so there is nothing to interpolate.
+@group(0) @binding(3) var lab: texture_3d<u32>;
+// Label colours, one row: 'id % rows'. Consecutive ids get consecutive rows, and the rows are
+// golden-angle hues, so cells labelled next to each other come out maximally far apart in hue — which
+// is the property that matters when two touching cells must be told apart.
+@group(0) @binding(4) var pal: texture_2d<f32>;
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
@@ -129,6 +143,33 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   return mix(a, b, f);
 }
 
+// The label id at a voxel, 0 outside the loaded box. Out of range reads as BACKGROUND deliberately: a
+// cell touching the edge of the slab then draws its outline along that edge rather than losing it.
+fn labAt(vi: vec3<i32>) -> u32 {
+  if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
+      vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { return 0u; }
+  return textureLoad(lab, vi, 0).r;
+}
+
+// napari's 'contour': the label's OUTLINE, w voxels thick, instead of a filled region — which is what
+// lets the channel signal under the mask stay readable while the boundary stays exact. Filled at w = 0,
+// which is napari's default and this one. In-plane only (x/y): the outline of a 3D object through its
+// z neighbours is a surface, not a contour, and would fill the region back in.
+fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
+  if (w <= 0) { return true; }
+  for (var k = 1; k <= w; k = k + 1) {
+    if (labAt(vi + vec3<i32>(k, 0, 0)) != id || labAt(vi - vec3<i32>(k, 0, 0)) != id ||
+        labAt(vi + vec3<i32>(0, k, 0)) != id || labAt(vi - vec3<i32>(0, k, 0)) != id) { return true; }
+  }
+  return false;
+}
+
+// 'id % rows' on the one-row palette. Id 0 never reaches here, so every row is available to real cells.
+fn labColour(id: u32) -> vec3<f32> {
+  let rows = max(i32(p.lab.z), 1);
+  return textureLoad(pal, vec2<i32>(i32(id % u32(rows)), 0), 0).rgb;
+}
+
 @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
   let h = p.ext.xyz * 0.5;
   let c = camera();
@@ -158,12 +199,24 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   let nch = min(i32(p.vp.x), ${MAX_CHANNELS});
 
   var mx = array<f32, ${MAX_CHANNELS}>();
+  // The NEAREST label along the ray, not the maximum. A maximum over label ids is meaningless — the
+  // largest id is not a visible feature, it is whichever cell happened to be labelled last — and napari
+  // cannot project a Labels layer at all ('projection_mode' accepts only 'none'), so there is no
+  // behaviour to copy either. The ray marches front to back, so the first non-zero id IS the nearest
+  // surface, which is the one thing a person can actually point at. In 2D ('steps == 1') the single
+  // sample is the plane, so the same line gives the exact per-plane mask with no second path.
+  var labId: u32 = 0u;
+  var labVi = vec3<i32>(0, 0, 0);
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
     let vi = vec3<i32>(uvw * p.dims.xyz);
     if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
         vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
+    if (p.lab.x > 0.0 && labId == 0u) {
+      let id = textureLoad(lab, vi, 0).r;
+      if (id != 0u) { labId = id; labVi = vi; }
+    }
     for (var c = 0; c < nch; c = c + 1) {
       // Channels are stacked along z in ONE texture, so a channel is a z offset of zpc planes.
       let v = f32(textureLoad(vol, vec3<i32>(vi.x, vi.y, vi.z + c * zpc), 0).r);
@@ -176,6 +229,12 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     if (p.ch[c].z < 0.5) { continue; }
     let win = clamp((mx[c] - p.ch[c].x) / max(p.ch[c].y - p.ch[c].x, 1.0), 0.0, 1.0);
     acc = acc + ramp(c, win);
+  }
+  // The mask goes OVER the composite at its opacity, the way napari layers a Labels layer over the
+  // image — not added to it. Adding would brighten the signal it is meant to annotate, and two masks
+  // over one bright cell would saturate to white.
+  if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
+    acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }
