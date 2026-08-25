@@ -601,29 +601,22 @@ function onValueNameChange(e: Event) {
 }
 
 async function toggleLabel(valueName: string) {
-  const uid = projectStore.napariImageUid
+  // Write the settings bag FIRST — the WebGPU viewer reads it via `storage` events and is the primary
+  // sink now. The napari push runs after as a shadow (silent on failure): if napari isn't running,
+  // that's expected in the WebGPU era, not an error. See VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+  const uid = projectStore.openImageUid
   const files = napariImage.value?.labels?.[valueName] ?? []
   const wasVisible = visibleLabels.value[valueName] ?? false
-  if (!files.length) {
-    log.error(`No label files registered for "${valueName}"`, { source: 'napari' })
-    return
-  }
+  const next = !wasVisible
+  visibleLabels.value = { ...visibleLabels.value, [valueName]: next }
+  if (uid) settings.setLabelVisibility(uid, visibleLabels.value)
+  if (!files.length) return   // nothing on disk to push to napari; the bag write above is enough
   try {
-    // the outline rides the push: this rebuilds the layer, so omitting it refills the mask
-    const res = await apiPushLabels({ labels: { [valueName]: files }, show: !wasVisible,
-                                      cache: settings.napariLabelsCache,
-                                      labelContour: labelContour.value })
-    if (res?.ok) {
-      visibleLabels.value = { ...visibleLabels.value, [valueName]: !wasVisible }
-      if (uid) settings.setLabelVisibility(uid, visibleLabels.value)
-    } else {
-      log.error(`Show labels "${valueName}" failed: ${res ? await _resError(res) : 'network error'}`,
-                { source: 'napari' })
-    }
-  } catch (e) {
-    log.error(`Show labels "${valueName}" failed: ${e instanceof Error ? e.message : String(e)}`,
-              { source: 'napari' })
-  }
+    // legacy shadow: keep napari in sync if it happens to be up (P9 removes this)
+    await apiPushLabels({ labels: { [valueName]: files }, show: next,
+                          cache: settings.napariLabelsCache,
+                          labelContour: labelContour.value })
+  } catch { /* napari down — expected; the WebGPU viewer already got the update */ }
 }
 
 function onTaskStatus(data: Record<string, unknown>) {
