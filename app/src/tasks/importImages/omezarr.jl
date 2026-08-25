@@ -764,7 +764,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     end
 
     zarr_out      = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
-    pyramid_scale = Int(get(params, "pyramidScale", 2))
+    pyramid_levels = Int(get(params, "pyramidLevels", get(params, "pyramidScale", 2)))
 
     bf2raw = bioformats2raw_bin()
     if !isfile(bf2raw)
@@ -799,7 +799,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
 
     on_log("[INFO] Source:  $src_path")
     on_log("[INFO] Output:  $zarr_out")
-    on_log("[INFO] Pyramid: $pyramid_scale levels")
+    on_log("[INFO] Pyramid: $pyramid_levels levels")
     stage_local && on_log("[INFO] Staged source locally (network-source speedup).")
 
     # Tell bioformats2raw to use the configured compressor — it defaults to blosc/lz4-5, which would
@@ -826,7 +826,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
 
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

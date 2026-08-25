@@ -2640,12 +2640,12 @@ end
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
 
-        # importImages.omezarr with pyramidScale=99 fails validate_params (min/max) before any job.
+        # importImages.omezarr with pyramidLevels=99 fails validate_params (min/max) before any job.
         drain()
         handle_task_run(nothing, Dict{Symbol,Any}(
             :taskId => "t-fail", :funName => "importImages.omezarr",
             :projectUid => proj.uid, :imageUid => img.uid,
-            :params => Dict{String,Any}("pyramidScale" => 99)))
+            :params => Dict{String,Any}("pyramidLevels" => 99)))
 
         # the handler runs the task on a @spawn — poll until the terminal frame lands (or time out)
         frames = Any[]
@@ -2658,7 +2658,7 @@ end
         @test any(f -> f.status == "failed" && f.fun == "importImages.omezarr", status)
         # the [ERROR] log names the offending param → confirms we reached (and reported) validation
         errs = filter(f -> f.type == "task:log" && occursin("[ERROR]", String(f.line)), frames)
-        @test any(f -> occursin("pyramidScale", String(f.line)), errs)
+        @test any(f -> occursin("pyramidLevels", String(f.line)), errs)
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")

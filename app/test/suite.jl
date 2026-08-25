@@ -2658,7 +2658,7 @@ end
     s2 = add_set!(proj2; name="s")
     img2 = add_image!(s2; name="img", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
     @test_throws ParamValidationError run_task(
-        ImportOmezarr(), img2, Dict{String,Any}("pyramidScale" => 99))
+        ImportOmezarr(), img2, Dict{String,Any}("pyramidLevels" => 99))
     rm(proj2.root; recursive=true)
 end
 
@@ -11041,7 +11041,7 @@ end
         # Every placeholder the catalog uses must be one a caller actually passes; a typo'd
         # `{metrics}` would otherwise only surface when that finding fires in production.
         KNOWN = Set(["channel", "pct", "unit", "dims", "metric", "value", "dir", "median",
-                     "count", "min"])
+                     "count", "min", "tiles", "suggest"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -11336,6 +11336,91 @@ end
 
         # the finding renders — a `{channel}` placeholder with no substitution throws (see qc_text)
         @test occursin("1", fs[1]["short"])
+    end
+
+    # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
+    # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than
+    # a bf2raw wrapper, so the same test exercises `series_base`'s flat branch.
+    @testset "pyramid_qc_findings + pyramid_metrics" begin
+        function mkzarr(dir; datasets, l0_shape, l0_chunks, deepest_shape, deepest_chunks)
+            mkpath(dir)
+            # root `.zgroup` + `.zattrs` with multiscales listing every dataset path
+            write(joinpath(dir, ".zgroup"), JSON3.write(Dict("zarr_format" => 2)))
+            ms = Dict("multiscales" => [Dict(
+                "version"  => "0.4",
+                "axes"     => [Dict("name"=>"t","type"=>"time"),   Dict("name"=>"c","type"=>"channel"),
+                               Dict("name"=>"z","type"=>"space"),  Dict("name"=>"y","type"=>"space"),
+                               Dict("name"=>"x","type"=>"space")],
+                "datasets" => [Dict("path" => string(i)) for i in 0:datasets-1],
+            )])
+            write(joinpath(dir, ".zattrs"), JSON3.write(ms))
+            # only the FIRST and LAST datasets get a `.zarray` — those are the two `pyramid_layout` reads
+            for (i, sh, ch) in ((0, l0_shape, l0_chunks),
+                                (datasets - 1, deepest_shape, deepest_chunks))
+                sub = joinpath(dir, string(i)); mkpath(sub)
+                write(joinpath(sub, ".zarray"), JSON3.write(Dict(
+                    "zarr_format" => 2, "shape" => sh, "chunks" => ch,
+                    "dtype" => ">u2", "dimension_separator" => "/",
+                    "compressor" => Dict("id"=>"blosc","cname"=>"zstd","clevel"=>3,"shuffle"=>1,"blocksize"=>0),
+                    "filters" => nothing, "fill_value" => 0, "order" => "C")))
+            end
+        end
+
+        # Deep enough: bf2raw-style, deepest 1×1. No finding, metrics banked.
+        deep = mktempdir()
+        mkzarr(deep;
+               datasets = 6,
+               l0_shape      = [1, 25, 1, 16898, 20329],
+               l0_chunks     = [1, 1, 1, 1024, 1024],
+               deepest_shape = [1, 25, 1, 528, 635],
+               deepest_chunks= [1, 25, 1, 528, 635])   # capped-to-frame
+        @test isempty(Cecelia.pyramid_qc_findings(deep))
+        pmm = Cecelia.pyramid_metrics(deep)
+        @test pmm["nPyramidLevels"] == 6
+        @test pmm["deepestGridTiles"] == 1
+
+        # Too shallow: same L0 but only 2 levels. Deepest = 8449×10164, chunk 1024 → 9×10 = 90 tiles.
+        shallow = mktempdir()
+        mkzarr(shallow;
+               datasets = 2,
+               l0_shape      = [1, 25, 1, 16898, 20329],
+               l0_chunks     = [1, 1, 1, 1024, 1024],
+               deepest_shape = [1, 25, 1, 8449, 10164],
+               deepest_chunks= [1, 1, 1, 1024, 1024])
+        fs = Cecelia.pyramid_qc_findings(shallow)
+        @test length(fs) == 1
+        @test fs[1]["code"]  == "import.pyramid_too_shallow"
+        @test fs[1]["level"] == "warn"     # advisory, never a gate — the store still works
+        @test fs[1]["detail"]["nLevels"]            == 2
+        @test fs[1]["detail"]["deepestGridWidth"]   == 10
+        @test fs[1]["detail"]["deepestGridHeight"]  == 9
+        @test fs[1]["detail"]["deepestGridTiles"]   == 90
+        # ceil(log2(20329/1024)) + 1 = 5 + 1 = 6 — enough to collapse to one tile
+        @test fs[1]["detail"]["suggestedLevels"]    == 6
+        # the placeholders got substituted — `qc_text` would throw otherwise (see the saturation test).
+        # "9×10" reads Y×X, matching how the modal renders shape as shape[-2]×shape[-1].
+        @test occursin("9×10", fs[1]["short"])
+        pms = Cecelia.pyramid_metrics(shallow)
+        @test pms["nPyramidLevels"]   == 2
+        @test pms["deepestGridTiles"] == 90
+
+        # Missing store / no multiscales → nothing to say. Same posture as saturation when the
+        # check didn't run: the finding list is empty and the metrics function returns `nothing`.
+        gone = mktempdir(); rm(gone; recursive = true)
+        @test isempty(Cecelia.pyramid_qc_findings(gone))
+        @test Cecelia.pyramid_metrics(gone) === nothing
+
+        # Small image where the default is fine: L0 already fits in one chunk. No finding, and
+        # `suggestedLevels` collapses to the current level count (no re-import would help).
+        small = mktempdir()
+        mkzarr(small;
+               datasets = 1,
+               l0_shape      = [1, 2, 1, 256, 256],
+               l0_chunks     = [1, 1, 1, 1024, 1024],
+               deepest_shape = [1, 2, 1, 256, 256],
+               deepest_chunks= [1, 1, 1, 1024, 1024])
+        @test isempty(Cecelia.pyramid_qc_findings(small))
+        @test Cecelia.pyramid_metrics(small)["nPyramidLevels"] == 1
     end
 
     # Julia and Python each carry the compressor table — a bioformats2raw command line cannot read a

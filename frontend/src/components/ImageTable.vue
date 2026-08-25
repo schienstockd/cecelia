@@ -12,6 +12,7 @@ import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
 import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
+import { shortUnit, fmtNum } from '../utils/physicalSize'
 import { type SortState } from '../utils/sortRows'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -85,15 +86,8 @@ function qcTip(img: CciaImage): string | Record<string, unknown> {
 }
 // The calibration as one short cell: XY pixel size, then the frame interval when there is one. Unit
 // verbatim from the file (`physicalSizeUnit`) rather than assumed µm — an image calibrated in nm is
-// rare and silently mislabelling it would be worse than the extra character. OME sometimes spells the
-// micron out ("micrometer"/"micrometre"/"microns"); normalise to µm so it fits the cell.
-function shortUnit(u: string | null | undefined): string {
-  if (!u) return 'µm'
-  return /^micro(meter|metre|n)s?$/i.test(u) ? 'µm' : u
-}
-function fmtNum(n: number): string {
-  return Number(n.toFixed(3)).toString()
-}
+// rare and silently mislabelling it would be worse than the extra character. `shortUnit` / `fmtNum`
+// live in `utils/physicalSize` so the modal renders the same "0.346 µm" instead of the raw double.
 function scaleText(img: CciaImage): string {
   const u = shortUnit(img.physicalSizeUnit)
   const parts: string[] = []
@@ -1008,6 +1002,13 @@ const unselectableUids = computed(() =>
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* PrimeIcons freezes `pi-spin` under reduced-motion (`animation-duration: 1ms`), which is what every
+   other spinner-icon in the app does; this one is the last hand-rolled one that kept spinning. Match
+   the same treatment — the badge's colour/background is still there to say "running", so freezing the
+   arc costs no information. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1ms; }
+}
 
 /* ── Napari eye button ───────────────────────────────────────────────────────── */
 

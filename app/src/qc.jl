@@ -79,6 +79,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # pyramid depth (pyramid_qc_findings). The user picks `pyramidLevels` in the import form BEFORE
+    # anything reads the source, so a big image imported at the default (2 levels) has no zoomed-out
+    # view — every viewport pull at low zoom stays a per-tile fetch. This finding measures the store
+    # after the fact and says how many more levels would collapse it to one tile.
+    "import.pyramid_too_shallow" => (
+        short = "Pyramid too shallow — deepest level is still {tiles} tiles",
+        long  = "Re-import with {suggest} pyramid levels — zoomed-out views can't fetch the whole image in one request until the deepest level fits one tile."),
+
     # clipping at acquisition (import.channel_saturated)
     "import.channel_saturated" => (
         short = "Channel {channel} clipped at the detector",
@@ -492,6 +500,118 @@ function saturation_qc_findings(meta::AbstractDict)
     fs
 end
 
+"""
+    pyramid_layout(zarr_path) -> Union{NamedTuple,Nothing}
+
+Layout facts a pyramid QC finding needs: `(nLevels, l0XY, l0ChunkXY, deepestGridXY, suggestedLevels)`.
+`nothing` when the store carries no readable multiscales metadata.
+
+`suggestedLevels` is the smallest `N` that would collapse the deepest level to one chunk given the
+L0 XY and chunk size — `1 + ceil(log2(max(w, h) / chunk))`, or 1 when the store already fits.
+`deepestGridXY` is the actual XY tile count at the deepest level as written on disk (bf2raw caps
+chunks to the frame, so this can be 1×1 even when the maths says more levels would help).
+
+Pure metadata read — no pixels — and read STRUCTURALLY through `series_base` / `ngff_multiscales`
+so it works for both bf2raw and flat `create_multiscales` stores.
+"""
+function pyramid_layout(zarr_path::AbstractString)
+    isdir(zarr_path) || return nothing
+    base = try series_base(zarr_path) catch; return nothing end
+    ms   = try ngff_multiscales(base)  catch; return nothing end
+    isnothing(ms) && return nothing
+    datasets = get(first(ms), :datasets, nothing)
+    (isnothing(datasets) || isempty(datasets)) && return nothing
+
+    # L0 shape + chunks. Both are XY-only for this finding — T/C/Z stay at 1 across every level and
+    # do not enter the "how many tiles cover a frame" question the pyramid depth is being scored on.
+    l0_meta = try zarr_array_meta(joinpath(base, string(get(first(datasets), :path, "0"))))
+              catch; nothing end
+    isnothing(l0_meta) && return nothing
+    l0_shape = collect(Int, get(l0_meta, :shape, Int[]))
+    l0_chunk = _pyramid_chunk_shape(l0_meta)
+    (length(l0_shape) < 2 || length(l0_chunk) < 2) && return nothing
+    # Y then X, matching NGFF row-major axis order and how storeLevelRows on the frontend renders it
+    # (shape[-2] then shape[-1]) — the finding text and the modal have to say the same thing.
+    l0h, l0w = l0_shape[end-1], l0_shape[end]
+    ch,  cw  = l0_chunk[end-1], l0_chunk[end]
+    (cw <= 0 || ch <= 0) && return nothing
+
+    # Deepest level's actual chunk grid, computed from what is on disk rather than assumed 2× per
+    # step. bf2raw's cap-to-frame keeps deepest at 1×1 even when levels are short (see FtGoJO);
+    # a re-tiling writer might not.
+    deep_meta = try zarr_array_meta(joinpath(base, string(get(last(datasets), :path, "0"))))
+                catch; nothing end
+    deep_shape = isnothing(deep_meta) ? Int[] : collect(Int, get(deep_meta, :shape, Int[]))
+    deep_chunk = isnothing(deep_meta) ? Int[] : _pyramid_chunk_shape(deep_meta)
+    (length(deep_shape) < 2 || length(deep_chunk) < 2) && return nothing
+    gh = deep_chunk[end-1] > 0 ? cld(deep_shape[end-1], deep_chunk[end-1]) : 1
+    gw = deep_chunk[end]   > 0 ? cld(deep_shape[end],   deep_chunk[end])   : 1
+
+    # `suggestedLevels` — how deep the pyramid WOULD have to be to end at one tile. Uses L0 chunk
+    # (which is the tile-serving unit anyone will decide the LOD off) rather than the store's
+    # smallest chunk. `+ 1` because "one level" IS L0 alone; "two levels" adds one 2× downsample.
+    dim_max = max(l0w, l0h); chunk_max = max(cw, ch)
+    suggested = dim_max <= chunk_max ? length(datasets) :
+                Int(ceil(log2(dim_max / chunk_max))) + 1
+    (; nLevels = length(datasets), l0YX = (l0h, l0w), l0ChunkYX = (ch, cw),
+       deepestGridYX = (gh, gw), suggestedLevels = suggested)
+end
+
+# XY chunk shape from a `.zarray` (v2) or `zarr.json` (v3). Local mirror of the api-side helper —
+# duplicated deliberately, so app-side QC doesn't depend on the api package loading first.
+function _pyramid_chunk_shape(meta)
+    haskey(meta, :chunks) && return collect(Int, meta[:chunks])
+    grid = get(meta, :chunk_grid, nothing)
+    isnothing(grid) && return Int[]
+    cfg = get(grid, :configuration, nothing)
+    isnothing(cfg) && return Int[]
+    collect(Int, get(cfg, :chunk_shape, Int[]))
+end
+
+"""
+    pyramid_qc_findings(zarr_path) -> Vector
+
+`warn` when the pyramid didn't go deep enough for this image — i.e. the deepest level still
+has more than one tile per axis, so no zoomed-out view fetches the whole frame in one request.
+Empty when the store has no multiscales, or when the deepest level is already 1×1.
+
+Advisory: the store still works at full resolution; it just means low-zoom viewport paints
+stay per-tile fetches.
+"""
+function pyramid_qc_findings(zarr_path::AbstractString)
+    layout = pyramid_layout(zarr_path)
+    isnothing(layout) && return Dict{String,Any}[]
+    gh, gw = layout.deepestGridYX
+    (gw <= 1 && gh <= 1) && return Dict{String,Any}[]
+    tiles = gw * gh
+    [qc_finding("warn", "import.pyramid_too_shallow";
+                tiles = "$(gh)×$(gw)", suggest = layout.suggestedLevels,
+                detail = Dict{String,Any}(
+                    "nLevels"           => layout.nLevels,
+                    "suggestedLevels"   => layout.suggestedLevels,
+                    "l0Height"          => layout.l0YX[1],
+                    "l0Width"           => layout.l0YX[2],
+                    "chunkHeight"       => layout.l0ChunkYX[1],
+                    "chunkWidth"        => layout.l0ChunkYX[2],
+                    "deepestGridHeight" => gh,
+                    "deepestGridWidth"  => gw,
+                    "deepestGridTiles"  => tiles))]
+end
+
+"""
+    pyramid_metrics(zarr_path) -> Union{Dict,Nothing}
+
+Cohort-comparable pyramid layout: `nPyramidLevels` and `deepestGridTiles` (the tile count at the
+deepest level). Peers imported the same way usually agree on both; a lone outlier is either a
+re-import at a different setting or a chunk-shape difference worth noticing.
+"""
+function pyramid_metrics(zarr_path::AbstractString)
+    layout = pyramid_layout(zarr_path)
+    isnothing(layout) && return nothing
+    Dict{String,Any}("nPyramidLevels"   => layout.nLevels,
+                     "deepestGridTiles" => layout.deepestGridYX[1] * layout.deepestGridYX[2])
+end
+
 # `meta["saturation"]["channels"]`, normalised to String-keyed Dicts. JSON3 hands back Symbol keys
 # (CLAUDE.md → JSON3 gotcha), and this is read from the persisted ccid on every QC recompute.
 function _saturation_channels(meta::AbstractDict)::Vector{Dict{String,Any}}
@@ -545,11 +665,19 @@ function write_metadata_qc!(img::CciaImage)
     isfile(ccid) || return
     raw      = read_ccid_raw(ccid)
     meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta))
+    # Pyramid depth is a store fact, not a meta fact — SizeX/SizeY were deliberately kept off `meta`
+    # (see `read_ome_metadata`, and its comment about the extent being per-version). So the pyramid
+    # QC reads the default store directly. Absent path (registered filepath missing) reports no
+    # findings and no metrics, same as saturation when the check didn't run.
+    zp = img_filepath(img, VERSIONED_DEFAULT_VAL)
+    findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta),
+                    isnothing(zp) ? Dict{String,Any}[] : pyramid_qc_findings(zp))
 
     metrics = import_metrics(meta)
     sm      = saturation_metrics(meta)
     isnothing(sm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, sm))
+    pm      = isnothing(zp) ? nothing : pyramid_metrics(zp)
+    isnothing(pm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, pm))
 
     if isnothing(metrics)
         write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, findings)

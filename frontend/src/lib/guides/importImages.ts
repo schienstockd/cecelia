@@ -105,7 +105,7 @@ export const importImagesGuide: GuideDef = {
       selectText: 'Select the images you just added — one conversion is queued per image.',
       selectHint: ['The flag icon in the Name header selects everything that needs attention.'],
       params: [
-        'Pyramid scale — downscaled copies for fast zoomed-out viewing; 2-3 suits a 512-1024 px frame.',
+        'Pyramid levels — downscaled copies for fast zoomed-out viewing; 2-3 suits a 512-1024 px frame.',
         'Copy to local scratch first — much faster when the source is on a network share.',
         'The defaults are right for most files; you can leave Advanced alone.',
       ],

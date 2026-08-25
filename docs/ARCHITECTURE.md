@@ -110,10 +110,10 @@ init_cecelia!()
 img = init_object("proj-uid", "img-uid")
 
 # Type dispatch
-run_task(ImportOmezarr(), img, Dict("pyramidScale" => 2))
+run_task(ImportOmezarr(), img, Dict("pyramidLevels" => 2))
 
 # String dispatch (ergonomic for notebooks/scripts)
-run_task("proj-uid", "img-uid"; fun_name="importImages.omezarr", params=Dict("pyramidScale" => 2))
+run_task("proj-uid", "img-uid"; fun_name="importImages.omezarr", params=Dict("pyramidLevels" => 2))
 
 # Batch
 run_tasks("proj-uid", ["uid-1", "uid-2"]; fun_name="cleanupImages.smooth", params=params)
