@@ -17,7 +17,7 @@ import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   fps: number
   sizeX: number | null
   sizeY: number | null
@@ -33,8 +33,14 @@ const props = defineProps<{
   // napari's BAKED overlays — drawn into the canvas, so they are burnt into every frame and can only
   // be left out by hiding them for the render. Optional: pass them and the chips appear, omit them
   // (the Animation page) and the row is exactly what it was.
-  timestamp?: boolean
-  scaleBar?: boolean
+  //
+  // `boolean | null`, and NOT a bare `boolean`, because absence is the whole signal here. Vue casts an
+  // optional Boolean prop with no default to `false` when the parent omits it, so `!== undefined` was
+  // always true and the Animation page — the one caller that passes neither — rendered two chips that
+  // could never turn on: they emitted to a parent not listening. A union plus an explicit default
+  // suppresses the cast, so absent really is absent. `utils/booleanProps.ts` ratchets the class.
+  timestamp?: boolean | null
+  scaleBar?: boolean | null
   // How much of the z stack to record. Optional in the same way: pass `sizeZ` and the row appears (and
   // only for a real stack), omit it and the control is exactly what it was.
   sizeZ?: number | null
@@ -44,7 +50,10 @@ const props = defineProps<{
   // omit it, or pass 0/1, and the row is exactly what it was.
   levels?: number | null
   detail3d?: number | null
-}>()
+// `null` defaults for the two overlay props: a union alone does NOT suppress Vue's Boolean cast — the
+// cast-to-false branch fires whenever the prop is absent and has no `default`, whatever the union says.
+// Verified against Vue's own prop resolution rather than read off the docs.
+}>(), { timestamp: null, scaleBar: null })
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
   (e: 'update:sizeX', v: number | null): void
@@ -57,7 +66,7 @@ const emit = defineEmits<{
   (e: 'update:detail3d', v: number): void
 }>()
 
-const hasOverlays = computed(() => props.timestamp !== undefined || props.scaleBar !== undefined)
+const hasOverlays = computed(() => props.timestamp !== null || props.scaleBar !== null)
 // Whole stack (3D) or one slice (2D). A segmented pair rather than a toggle: neither is the "off"
 // state of the other, and "3D"/"slice" says what you get where an on/off switch would need a label
 // saying which way is which.
