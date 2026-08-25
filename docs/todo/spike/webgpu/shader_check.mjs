@@ -368,7 +368,8 @@ try {
     }
     const bind2 = device.createBindGroup({layout: bgl, entries: [
       {binding: 0, resource: {buffer: ubuf}}, {binding: 1, resource: tex2.createView()},
-      {binding: 2, resource: lut.createView()}]})
+      {binding: 2, resource: lut.createView()}, {binding: 3, resource: noLab.createView()},
+      {binding: 4, resource: palTex.createView()}]})
 
     async function plane2d(ortho) {
       // depth 1: dims.z = 1, zpc = 1, extent z = 1 voxel — what setImage(meta, budget, 1) produces
@@ -453,8 +454,14 @@ try {
         return [sx/(w*HA*aspect), sy2/(w*HA)]
       }
 
-      // One point, dead centre of the box, in a colour nothing else draws.
-      const inst = new Float32Array([N/2, N/2, N/2, 0, 1, 1, 0])
+      // One point, OFF CENTRE, in a colour nothing else draws.
+      //
+      // Off centre is the whole point. It sat at the box centre, which projects to the SCREEN centre
+      // under any camera whatsoever — so the check passed at 9.5 px with the right and up vectors
+      // swapped, with a y flip, with any basis error at all. It was measuring the marker's centroid
+      // search, not the projection. A point offset in +x and -y moves under each of those.
+      const OFF = new Float32Array([N * 0.75, N * 0.25, N / 2])
+      const inst = new Float32Array([OFF[0], OFF[1], OFF[2], 0, 1, 1, 0])
       const ibuf = device.createBuffer({size: inst.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST})
       device.queue.writeBuffer(ibuf, 0, inst)
@@ -495,15 +502,21 @@ try {
       for (const cse of [{yaw: 0, pitch: 0, ortho: true, name: '2D face-on, orthographic'},
                          {yaw: 0.7, pitch: 0.35, ortho: false, name: '3D rotated, perspective'}]) {
         const got = await pointAt(cse.yaw, cse.pitch, cse.ortho, -1, -1)
-        const ndc = projectJS([0, 0, 0], cse.yaw, cse.pitch, N*1.7, aspect, cse.ortho)  // box centre
+        // the instance's position relative to the box centre — the same shift boxCentre() applies
+        const rel = [OFF[0] - N/2, OFF[1] - N/2, OFF[2] - N/2]
+        const ndc = projectJS(rel, cse.yaw, cse.pitch, N*1.7, aspect, cse.ortho)
         const ex = Math.round((ndc[0]*0.5 + 0.5) * cv.width)
         const ey = Math.round((1 - (ndc[1]*0.5 + 0.5)) * cv.height)
         const off = Math.hypot(got.x - ex, got.y - ey)
-        const okp = got.best > 100 && off <= 14        // within the marker itself
+        // ...and it must not be at the screen centre, or this check has quietly gone back to being
+        // one that any camera passes.
+        const fromCentre = Math.hypot(ex - cv.width / 2, ey - cv.height / 2)
+        const okp = got.best > 100 && off <= 14 && fromCentre > 40
         if (!okp) bad++
         say('overlay ' + cse.name + ' → point at (' + got.x + ',' + got.y + '), JS says (' +
             ex + ',' + ey + '), off by ' + off.toFixed(1) + 'px  ' +
-            (okp ? 'OK' : got.best > 100 ? 'WRONG PLACE — right/up swapped, or a y flip'
+            (okp ? 'OK' : got.best > 100 ? (fromCentre > 40 ? 'WRONG PLACE — right/up swapped, or a y flip'
+                                                            : 'VACUOUS — the point projects to the screen centre')
                                          : 'NOTHING DREW'), okp ? 'ok' : 'bad')
       }
 
