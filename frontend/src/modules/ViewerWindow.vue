@@ -42,8 +42,8 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel,
-  MAX_CHANNELS, SAFE_CACHE_BYTES,
+  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickPlaneLevel,
+  MAX_CHANNELS, SAFE_CACHE_BYTES, PLANE_LEVEL_BUDGET_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
@@ -249,7 +249,10 @@ const zDepth = computed(() =>
 const slabLevel = computed(() => {
   const m = meta.value
   if (!m) return 0
-  if (mode.value === 'plane') return 0
+  if (mode.value === 'plane') {
+    const o = settings.viewerPlaneLevel
+    return pickPlaneLevel(m, PLANE_LEVEL_BUDGET_BYTES, o < 0 ? undefined : o)
+  }
   const override = settings.viewerVolumeLevel
   return pickVolumeLevel(m, override < 0 ? undefined : override)
 })
@@ -1047,6 +1050,22 @@ onUnmounted(() => {
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
             <option :value="-1">Auto ({{ (meta.levels?.length ?? 1) - 1 }} — coarsest)</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
+        </div>
+        <!-- 2D pyramid level. Different policy from 3D: auto picks the FINEST level whose one-channel
+             slab fits `PLANE_LEVEL_BUDGET_BYTES` — because a whole plane is what plays and detail
+             matters more than in the volume view. Big-XY images (`f8gzA2`) still need this: L0 at
+             687 MB/channel exceeds the 256 MB adapter buffer cap. Phase A of VIEWER_TILES_PLAN.md.
+             Only shown when there IS a pyramid to pick from. -->
+        <div v-if="mode === 'plane' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
+          <select v-model.number="settings.viewerPlaneLevel" class="vw-grow"
+                  v-tooltip.top="'Pyramid resolution — auto picks the finest that fits VRAM'"
+                  @change="reallocate()">
+            <option :value="-1">Auto (L{{ slabLevel }} — finest that fits)</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
