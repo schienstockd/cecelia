@@ -1,5 +1,8 @@
 # Viewer controls — split between window and panel
 
+Status: **in progress** (Dominik, 2026-08-25). P0-P5 landed on branch `feat/viewer-masks-movies`;
+P6 (rename `napari*`) next.
+
 Companion to [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). That plan replaced napari's *canvas* with a
 WebGPU one; this plan settles where the *controls* live now that napari's own layer list is going
 away. Two control sites (`ViewerWindow.vue` and `ViewerPanel.vue`) grew independently and now overlap
@@ -12,9 +15,6 @@ truth lives in the viewer itself.
 `napari.jl`, no `napari*` prefixes on panel state, no napari-only capability. WEB_VIEWER_PLAN P4-P8
 collapse into this PR. Multi-week scope, phased below; each phase leaves a working browser and can be
 checkpointed.
-
-Status: **in progress** (Dominik, 2026-08-25). P1 template reshuffle landed on branch
-`feat/viewer-masks-movies`; P2 sync + selector removal starting.
 
 ## The design in one paragraph
 

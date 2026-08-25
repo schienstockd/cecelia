@@ -531,18 +531,12 @@ async function loadOverlays() {
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
     const p = body as OverlayPayload
-    // The gating `show` flag SEEDS the viewer's visibility; it does not lock it (Dominik,
-    // 2026-08-25). The seeding rule is "once per image", not "once per fetch": now that P5 pings
-    // this window on every pop-manager write, blindly reseeding here would erase the user's row-eye
-    // choices every time someone toggles an unrelated pop. So the merge below (a) prunes rows that
-    // no longer exist, (b) seeds new arrivals from `pop.show`, (c) leaves everything else alone.
-    const paths = new Set((p.pops ?? []).map(x => x.path))
-    const merged = new Set(Array.from(hiddenPops.value).filter(pth => paths.has(pth)))
-    for (const x of p.pops ?? []) {
-      const isNew = !overlays.value?.pops?.some(y => y.path === x.path)
-      if (isNew && !x.show) merged.add(x.path)
-    }
-    hiddenPops.value = merged
+    // `pop.show` is the ground truth (authored in the Population Manager, persisted in the gating
+    // JSON). The viewer's row-eye is a transient override for the SAME fetch — the next refetch
+    // resyncs to `pop.show`. Trying to preserve local eye state across refetches was worse: PopManager
+    // pings this window on every write, so the override would be clobbered within a second anyway
+    // (Dominik, 2026-08-25: "the toggles for pops and tracks dont do anything").
+    hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
     rebuildOverlays()
   } catch (e) {

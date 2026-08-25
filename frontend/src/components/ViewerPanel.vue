@@ -604,12 +604,28 @@ async function toggleLabel(valueName: string) {
   // Write the settings bag FIRST — the WebGPU viewer reads it via `storage` events and is the primary
   // sink now. The napari push runs after as a shadow (silent on failure): if napari isn't running,
   // that's expected in the WebGPU era, not an error. See VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+  //
+  // Radio-like: the WebGPU viewer draws one label mask at a time (r32uint, single-slot bind group;
+  // multi-mask is deferred to PX). Ticking a segmentation UNticks the others so what you see in the
+  // panel matches what you see in the viewer, instead of the viewer silently picking one of several
+  // ticked (Dominik, 2026-08-25: "dont just show the last one clicked").
   const uid = projectStore.openImageUid
   const files = napariImage.value?.labels?.[valueName] ?? []
   const wasVisible = visibleLabels.value[valueName] ?? false
   const next = !wasVisible
-  visibleLabels.value = { ...visibleLabels.value, [valueName]: next }
-  if (uid) settings.setLabelVisibility(uid, visibleLabels.value)
+  // Every label name gets an EXPLICIT boolean — `settings.getLabelVisibility` defaults unknown
+  // names to true (so a fresh image shows all masks), which means omitting a name leaves it
+  // reading as visible in the viewer. Radio-like: only `valueName` is true when enabling; all
+  // false when disabling. Build the full name set from the panel + the store's current view so
+  // no name gets orphaned.
+  const allNames = new Set<string>([
+    ...Object.keys(napariImage.value?.labels ?? {}),
+    ...Object.keys(visibleLabels.value),
+  ])
+  const bag: Record<string, boolean> = {}
+  for (const n of allNames) bag[n] = next && n === valueName
+  visibleLabels.value = bag
+  if (uid) settings.setLabelVisibility(uid, bag)
   if (!files.length) return   // nothing on disk to push to napari; the bag write above is enough
   try {
     // legacy shadow: keep napari in sync if it happens to be up (P9 removes this)
