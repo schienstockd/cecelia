@@ -371,12 +371,44 @@ export const useGatingStore = defineStore('gating', () => {
       return false
     }
   }
+  // Publish the pop manager's CURRENT selection so the WebGPU viewer can follow it. The overlays
+  // route resolves valueName+popType server-side when the client sends nothing (which is what the
+  // viewer used to do, defaulting to the ACTIVE segmentation + popType=flow) — but the pop manager
+  // is the authoring surface. If the user is gating in `(coastalSm15, clust)`, that is what the
+  // viewer should draw, not the active `default` `flow` (Dominik, 2026-08-26: "it should switch
+  // depending on the pop manager not depending on the segmentation being shown on the image").
+  //
+  // Bag keyed by imageUid — one open pop-manager tab per image is the normal shape, and a viewer
+  // on image B should not follow a selection change on image A. Written on every selectImage +
+  // popType/valueName ref change; the popup window reads it on mount + on storage event.
+  const _publishGatingCurrent = () => {
+    if (typeof localStorage === 'undefined' || !imageUid.value) return
+    const raw = localStorage.getItem('cc.gatingCurrent') ?? '{}'
+    let bag: Record<string, { valueName: string; popType: string }> = {}
+    try { bag = JSON.parse(raw) } catch { bag = {} }
+    bag[imageUid.value] = { valueName: valueName.value, popType: popType.value }
+    localStorage.setItem('cc.gatingCurrent', JSON.stringify(bag))
+  }
+  watch([imageUid, valueName, popType], _publishGatingCurrent, { immediate: true })
+  // A change in the pop manager's (imageUid, valueName, popType) with no other mutation still
+  // means the viewer should redraw — the OTHER ping-firing sites (`_post`, `refreshNapari*`) only
+  // fire on pop mutations or explicit refresh, not on tab switches. Without this the viewer keeps
+  // drawing yesterday's popType until the user gates something.
+  watch([imageUid, valueName, popType], () => {
+    if (typeof localStorage !== 'undefined' && imageUid.value) {
+      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+    }
+  })
+
   // Ping the browser volume viewer via localStorage — /viewer-window is a popup with its own store
   // (P2), so a `pop.show` change here needs a channel to reach it. The tick's VALUE carries the
   // imageUid so a popup on image A doesn't refetch on a change to image B (broadcasts are cheap
   // but noisy). See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
   const _pingViewer = () => {
     if (typeof localStorage !== 'undefined' && imageUid.value) {
+      // Publish the current (valueName, popType) BEFORE the tick, so a viewer that refetches on the
+      // storage event reads the up-to-date selection rather than a stale one.
+      _publishGatingCurrent()
       localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
     }
   }

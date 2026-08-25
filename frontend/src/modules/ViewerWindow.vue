@@ -248,6 +248,26 @@ const heldProbe = ref('')
  */
 const overlays = ref<OverlayPayload | null>(null)
 const overlaysErr = ref('')
+/**
+ * The pop manager's CURRENT (valueName, popType) for THIS image. Published to `cc.gatingCurrent`
+ * by the gating store (main window) on selectImage + on any (valueName, popType) change, and
+ * refreshed here on `storage` events. Read by `loadOverlays` so the viewer draws the pops the
+ * user is authoring, not the pops of the "active segmentation" resolved server-side. Empty
+ * strings = fall back to the server default (`_resolve_vn` + popType=flow) — the previous
+ * behaviour, preserved for a viewer opened before the pop manager has selected anything.
+ * Dominik, 2026-08-26: "why do you have flowtom as the only pop source for fXgbTl. it should
+ * switch depending on the pop manager not depending on the segmentation being shown on the image".
+ */
+function readGatingCurrent(): { valueName: string; popType: string } {
+  if (typeof localStorage === 'undefined' || !imageUid) return { valueName: '', popType: '' }
+  try {
+    const bag = JSON.parse(localStorage.getItem('cc.gatingCurrent') ?? '{}') as
+                Record<string, { valueName?: string; popType?: string }>
+    const e = bag[imageUid] ?? {}
+    return { valueName: String(e.valueName ?? ''), popType: String(e.popType ?? '') }
+  } catch { return { valueName: '', popType: '' } }
+}
+const gatingCurrent = ref(readGatingCurrent())
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
@@ -526,7 +546,12 @@ async function loadOverlays() {
     // other resolves to the active segmentation by luck rather than by intent. The server picks the
     // active one and says which in `valueName`, so the panel can report it. A segmentation PICKER is
     // the next step — see the plan.
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value }),
+    // Follow the pop manager's selection when it has published one. Empty strings fall back to the
+    // server defaults (`_resolve_vn` + popType=flow) — matches the pre-P5 behaviour for a viewer
+    // opened before the pop manager writes anything.
+    const gc = gatingCurrent.value
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
+                                          valueName: gc.valueName, popType: gc.popType }),
                             { cache: 'no-store' })
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
@@ -1134,7 +1159,11 @@ onMounted(() => window.addEventListener('keydown', onKey))
 function onOverlaysTick(e: StorageEvent) {
   if (e.key !== 'cc.viewerOverlaysTick' || !e.newValue) return
   const [uid] = e.newValue.split(':')
-  if (uid === imageUid) void loadOverlays()
+  if (uid !== imageUid) return
+  // The gating store writes `cc.gatingCurrent` BEFORE the tick, so re-read the current selection
+  // here rather than in a separate storage listener — one storage event, one refetch.
+  gatingCurrent.value = readGatingCurrent()
+  void loadOverlays()
 }
 // A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
 // cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
