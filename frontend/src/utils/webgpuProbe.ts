@@ -16,11 +16,45 @@
 
 export type GpuVerdict = 'ready' | 'reduced' | 'unavailable'
 
+/** What an adapter says it IS, when it says anything — all four fields are optional in the spec and
+ *  Firefox has historically blanked every one. Empty strings when the browser gives nothing. */
+export interface GpuAdapterName {
+  vendor: string
+  architecture: string
+  device: string
+  description: string
+}
+
 export interface AdapterReport {
-  /** Whether this looks like the discrete GPU. False means the browser handed us the integrated one. */
+  /**
+   * Whether this looks like the discrete GPU. False means the browser handed us the integrated one.
+   *
+   * A PROXY, and a weak one on Linux: Mesa's `iris` reports `maxTextureDimension3D` 16384 for Intel
+   * integrated, the same as a discrete card, so this reads "discrete" on a hybrid Linux laptop that is
+   * actually running on the iGPU — where Mesa then segfaulted opening an image (Dominik, 2026-08-25).
+   * Prefer `name` wherever it says anything.
+   */
   looksDiscrete: boolean
   maxTextureDimension3D: number
   hasTimestamps: boolean
+  /** The adapter's own identification, reported rather than interpreted — the point is to put the real
+   *  answer beside the proxy above instead of replacing one guess with another. */
+  name: GpuAdapterName
+}
+
+/** `adapter.info`, defaulted. Typed loosely because `info` is still optional in the DOM lib on some
+ *  TypeScript versions, and a missing field must read as "the browser said nothing", not as a crash. */
+export function adapterName(adapter: GPUAdapter): GpuAdapterName {
+  const i = (adapter as GPUAdapter & { info?: Partial<GpuAdapterName> }).info
+  return {
+    vendor: i?.vendor ?? '', architecture: i?.architecture ?? '',
+    device: i?.device ?? '', description: i?.description ?? '',
+  }
+}
+
+/** The adapter's name as one string, or `''` when the browser blanked every field. */
+export function adapterNameText(n: GpuAdapterName): string {
+  return [n.vendor, n.architecture, n.device, n.description].filter(Boolean).join(' ')
 }
 
 export interface GpuLimitsDump {
@@ -69,6 +103,7 @@ export async function acquireGpuDevice(): Promise<{
     maxTextureDimension3D: maxDim3D,
     looksDiscrete: maxDim3D > 2048,
     hasTimestamps: adapter.features.has('timestamp-query'),
+    name: adapterName(adapter),
   }
   const device = await adapter.requestDevice()
   return { adapter, device, report }

@@ -33,7 +33,12 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
-import { createVolumeRenderer, WebGpuUnavailable, type VolumeRenderer } from '../lib/webgpu/volumeRenderer'
+import {
+  createVolumeRenderer, WebGpuUnavailable,
+  type VolumeRenderer, type UniformState,
+} from '../lib/webgpu/volumeRenderer'
+import { publishUiLog } from '../lib/uiLogChannel'
+import { adapterNameText } from '../utils/webgpuProbe'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
@@ -109,6 +114,27 @@ const chMax = computed(() =>
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
 const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
 const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | null>(null)
+/**
+ * The uniform block as the shader last received it — Debug only.
+ *
+ * A frame that draws nothing has no other evidence to offer: the fetch reports bytes, the cache reports
+ * residency, and both can be perfect while the box is the wrong size or the camera is somewhere else
+ * entirely. This is the one readout that separates "the data never arrived" from "the data is there and
+ * the camera is not looking at it".
+ */
+const shader = ref<UniformState | null>(null)
+/**
+ * Say it in the app's console, not just in this window.
+ *
+ * This is a pop-out — a second app instance with its own store and NO console rail (App.vue renders one
+ * only for the shell) — so a `logStore` call here would go somewhere nobody can read. The channel puts
+ * the line in the console you already watch napari in, which is the whole ask: "can't we print this to
+ * the console" (Dominik, 2026-08-25).
+ */
+const vlog = (level: 'info' | 'warn' | 'error', message: string, detail?: string) =>
+  publishUiLog({ level, message, detail, source: 'viewer' })
+/** Announce the geometry once per box, not once per frame — set wherever the box is (re)built. */
+const announce = ref(true)
 
 /**
  * The h5ad-derived overlays (P3): population points now, tracks next.
@@ -290,6 +316,21 @@ const frame = usePlotResize(canvas, () => {
   // has to be complete.
   r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.draw()
+  // Read back AFTER the draw, so Debug shows the numbers the frame on screen was rendered from rather
+  // than the ones the next frame will use.
+  const st = r.uniformState()
+  shader.value = st
+  // Once per box: the numbers only change when the mode, the plane or the crop does, and a line per
+  // frame is not a log.
+  if (announce.value && shownT.value >= 0) {
+    announce.value = false
+    vlog('info',
+         `Viewer drawing ${meta.value?.nX}×${meta.value?.nY}×${meta.value?.nZ}, ` +
+         `${st.nch} ch, ${mode.value === 'plane' ? 'plane ' + zPlane.value : '3D'}`,
+         `box ${st.ext.map(v => v.toFixed(1)).join(' × ')} µm · camera ${st.dist.toFixed(0)} µm · ` +
+         `pan ${st.pan[0].toFixed(0)},${st.pan[1].toFixed(0)} · ${st.steps} step(s) · ` +
+         (st.ortho ? 'orthographic' : 'perspective'))
+  }
 })
 
 /**
@@ -443,6 +484,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // An abort is the normal outcome for a prefetch the user scrubbed away from — not an error to show.
     if (e instanceof DOMException && e.name === 'AbortError') return false
     error.value = e instanceof Error ? e.message : String(e)
+    vlog('error', 'Viewer timepoint ' + tp + ': ' + error.value)
     return false
   }).finally(() => {
     inflight.delete(tp)
@@ -727,6 +769,7 @@ function reallocate(refit = false) {
   for (const ac of aborts.values()) ac.abort()
   aborts.clear(); inflight.clear()
   shownT.value = -1
+  announce.value = true
   hits.value = 0; misses.value = 0
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
@@ -759,7 +802,19 @@ onMounted(async () => {
   if (!projectUid || !imageUid) { error.value = 'No image — open this window from the viewer panel'; return }
   try {
     starting.value = 'Starting GPU'
-    const r = await createVolumeRenderer(canvas.value!)
+    // A GPU error after setup is console-only by default, and its only visible symptom is a canvas
+    // with nothing on it — which reads as an empty channel or a bad contrast window. Show it.
+    const r = await createVolumeRenderer(canvas.value!, msg => {
+      error.value = 'GPU: ' + msg
+      vlog('error', 'GPU error: ' + msg)
+    })
+    // The adapter, said out loud. `looksDiscrete` is a guess from a limit and the console is where a
+    // guess belongs next to the evidence for it.
+    const named = adapterNameText(r.adapter.name)
+    vlog(r.adapter.looksDiscrete ? 'info' : 'warn',
+         'Viewer GPU: ' + (named || (r.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated')),
+         `maxTextureDimension3D=${r.adapter.maxTextureDimension3D}, ` +
+         `timestamp-query=${r.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name'))
     renderer.value = r
     void r.lost.then(info => {
       stopPlay()
@@ -769,6 +824,7 @@ onMounted(async () => {
       for (const ac of aborts.values()) ac.abort()
       lostDevice.value = true
       error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
     })
 
     starting.value = 'Reading image'
@@ -795,6 +851,8 @@ onMounted(async () => {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
       : (e instanceof Error ? e.message : String(e))
+    vlog('error', 'Viewer failed to start: ' + error.value,
+         e instanceof Error ? e.stack : undefined)
     starting.value = ''
   }
 })
@@ -1200,6 +1258,16 @@ onUnmounted(() => {
             <template v-if="timing">
               fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
             </template>
+          </div>
+          <!-- What the shader was ACTUALLY told for the frame on screen. The readouts above can all be
+               perfect while the box is the wrong size or the camera is somewhere else, and a frame that
+               draws nothing offers no other evidence. -->
+          <div v-if="shader" class="cc-muted cc-fs-3xs">
+            box {{ shader.ext[0].toFixed(0) }} × {{ shader.ext[1].toFixed(0) }} ×
+            {{ shader.ext[2].toFixed(1) }} µm · {{ shader.nch }} ch<br>
+            camera {{ shader.dist.toFixed(0) }} µm · pan {{ shader.pan[0].toFixed(0) }},
+            {{ shader.pan[1].toFixed(0) }} · {{ shader.steps }} step{{ shader.steps === 1 ? '' : 's' }}
+            · {{ shader.ortho ? 'ortho' : 'perspective' }}
           </div>
         </CollapsibleSection>
       </template>

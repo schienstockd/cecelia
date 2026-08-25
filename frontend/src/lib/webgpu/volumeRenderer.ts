@@ -137,13 +137,53 @@ export interface VolumeRenderer {
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   draw(): void
+  /**
+   * What the shader is actually being told, read back out of the uniform block.
+   *
+   * Not a convenience: the uniform is the ONE thing a black frame cannot be reasoned about without.
+   * Every input to it is computed correctly in isolation and the failure mode is a canvas with nothing
+   * on it, so "is the box the size I think, is the camera where I think" has no other answer. Read
+   * after `draw()`, which is where the per-frame fields are written.
+   */
+  uniformState(): UniformState
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
 }
 
-export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<VolumeRenderer> {
+/** The uniform block in the units a person reads, for the Debug panel — see `uniformState`. */
+export interface UniformState {
+  /** Camera distance, µm. */
+  dist: number
+  /** The LOADED box, µm — x, y, z. In the 2D view z is one voxel deep. */
+  ext: [number, number, number]
+  /** Pan across the screen's axes, µm. */
+  pan: [number, number]
+  /** Ray samples per pixel. 1 in the 2D view. */
+  steps: number
+  ortho: boolean
+  /** Channels the shader will composite. */
+  nch: number
+}
+
+export async function createVolumeRenderer(
+  canvas: HTMLCanvasElement,
+  /**
+   * Called with any GPU error raised AFTER setup — a bad draw, a bad write, a bind group built per
+   * timepoint. WebGPU hands these to the console and carries on, so without a caller listening the
+   * only symptom is a black canvas, which is indistinguishable from an empty channel or a contrast
+   * window that excludes the data. Optional: a caller with nowhere to show it should not be forced to.
+   */
+  onError?: (message: string) => void,
+): Promise<VolumeRenderer> {
   const { device, report } = await acquireGpuDevice()
+  // EVERY resource below is created inside a validation scope. WebGPU does not throw on a bad layout or
+  // a bad pipeline — it returns an INVALID object and logs to the console — and setting an invalid
+  // pipeline poisons the whole render pass, so the volume drawn in that same pass never appears. A
+  // black canvas is the entire symptom. That has already cost a day once (the vertex-stage visibility
+  // of binding 0), so the scope is around the construction rather than around the one call that was
+  // wrong last time.
+  device.pushErrorScope('validation')
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
   const format = navigator.gpu.getPreferredCanvasFormat()
@@ -363,6 +403,18 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
     }
   }
 
+  const setupError = await device.popErrorScope()
+  if (setupError) throw new Error('GPU setup: ' + setupError.message)
+  // Anything that goes wrong from here on is UNCAPTURED — per-frame work is not worth an error scope
+  // and its round trip. Reported once and then left alone: a bad draw repeats every frame, and a
+  // message that rewrites itself sixty times a second is not a message.
+  let reported = false
+  device.onuncapturederror = e => {
+    if (reported || destroyed) return
+    reported = true
+    onError?.(e.error.message)
+  }
+
   return {
     adapter: report,
     lost: device.lost,
@@ -557,6 +609,14 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
       u[20] = Math.max(0, Math.min(1, opacity))
       u[21] = Math.max(0, Math.round(contourPx))
       u[22] = LABEL_PALETTE_N
+    },
+
+    uniformState() {
+      return {
+        dist: u[2], ext: [u[8], u[9], u[10]] as [number, number, number],
+        pan: [u[24], u[25]] as [number, number],
+        steps: u[3], ortho: u[7] > 0.5, nch: u[4],
+      }
     },
 
     resize(): boolean {

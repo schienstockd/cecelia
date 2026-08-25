@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 import { DEFAULT_GROUPS, gapBefore, logGroup, type LogGroup, type LogLevel } from '../utils/logFilter'
+import { onUiLog } from '../lib/uiLogChannel'
 
 export type { LogLevel, LogGroup }
 
@@ -187,6 +188,15 @@ export const useLogStore = defineStore('log', () => {
     }
     return out
   })
+
+  // Lines from the app's OTHER windows. A pop-out is a second app instance with its own store, and two
+  // of them (the volume viewer, the Task Manager) render no console at all — so without this their
+  // diagnostics have nowhere to go. Backend lines already reach every window from one ring, which is
+  // why napari prints everywhere; this is the same for the ones the browser says. Installed on the
+  // store rather than in App.vue because `main.ts` creates the store in every window, console or not,
+  // and a window that cannot show a line is not the window that should decide to drop it.
+  onUiLog(line => push(line.level, line.message,
+                       { detail: line.detail, source: line.source, ts: line.ts }))
 
   return {
     entries, unreadErrors, consoleOpen, lastEntry, groups, query, follow, lastSeq, ringId, groupCounts,
