@@ -77,14 +77,14 @@ function fmt(n: number | undefined | null): string {
              (Dominik, 2026-08-25). -->
         <template v-if="adapterText">
           <span>Adapter</span>
-          <span>{{ adapterText }}</span>
+          <span class="ellipsis" :title="adapterText">{{ adapterText }}</span>
         </template>
 
         <span>GPU type</span>
         <span>{{ report.looksDiscrete ? 'Discrete' : 'Integrated' }}<template
           v-if="!adapterText"> (from limits — the browser gives no adapter name)</template></span>
 
-        <span>Ready to render the volume viewer</span>
+        <span>Ready</span>
         <span v-if="report.hasR16Uint === true">Yes</span>
         <span v-else-if="report.hasR16Uint === false" :style="{ color: SEVERITY.fail.color }">
           No — required texture format refused
@@ -124,7 +124,13 @@ function fmt(n: number | undefined | null): string {
           tip="Adapter limits and features as reported">
         <div class="kv kv-mono">
           <span>maxTextureDimension3D</span>
-          <span>{{ report.limits.maxTextureDimension3D }}</span>
+          <span>
+            {{ report.limits.maxTextureDimension3D }}<span
+              v-if="report.limits.maxTextureDimension3D <= 2048"
+              class="cc-muted"
+              v-tooltip.top="'WebGPU baseline — large images use coarser LOD by design'">
+              (baseline)</span>
+          </span>
           <span>maxBufferSize</span>
           <span>{{ fmt(report.limits.maxBufferSize) }}</span>
           <span>maxStorageBufferBindingSize</span>
@@ -152,13 +158,14 @@ function fmt(n: number | undefined | null): string {
 
 .kv {
   display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.3rem 0.9rem;
-  font-size: var(--cc-fs-sm);
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text);
 }
 .kv > span:nth-child(odd) { color: var(--cc-text-dim); }
 .kv-mono > span { font-family: var(--cc-mono); word-break: break-all; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 .os-guide { padding: 0.5rem 1rem; }
 .os-guide code { background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); }
