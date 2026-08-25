@@ -270,17 +270,37 @@ const colourBy = computed({
   set: (v: string) => setUid ? settings.setColourBy(setUid, v) : (colourByLocal.value = v),
 })
 /**
- * Which segmentation's MASK is drawn, '' for none (P4).
+ * Which segmentation's MASK is drawn, '' for none.
  *
- * A REQUEST, and the most expensive kind: the mask rides each timepoint's slab and lives in that
- * timepoint's texture slot, so switching it reallocates and refetches the whole cache. That is the
- * price of the guarantee — a mask cached on its own can be a frame behind the pixels it outlines, and
- * an outline that is one frame stale still looks like an answer.
+ * Not a selector any more — the CHOICE lives in `ViewerPanel`, keyed per image in
+ * `settings.getLabelVisibility` (P3, docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md). Locked decision 3:
+ * the viewer has no selectors. Here we read whichever vn the panel has ticked on and render it;
+ * the panel's write hits localStorage and reaches this window via the P2 storage-event bridge.
  *
- * ONE AT A TIME, where napari shows every segmentation at once as its own layer. A panel narrow enough
- * for one population list will not hold three, and the 2D view is the one people gate on.
+ * STILL ONE AT A TIME. Multi-mask rendering (multi-texture bind group) is a later phase; if the
+ * panel has more than one ticked, the first one wins deterministically. This is the visible
+ * limitation the row hint below spells out.
  */
-const labelName = ref('')
+const labelName = computed(() => {
+  const names = meta.value?.labelNames ?? []
+  if (!imageUid || !names.length) return ''
+  // `imageUid` is the const from route.query set at setup. In the popup this is the ONLY viewer;
+  // the popup's settings store rehydrates from localStorage on change (P2), so a tick in the
+  // panel reaches here without touching the popup's `openImageUid`.
+  const vis = settings.getLabelVisibility(imageUid, names)
+  return names.find(n => vis[n]) ?? ''
+})
+// A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
+// — so a change here has to `reallocate()` for the same reason a `<select>` did.
+watch(labelName, () => reallocate())
+/** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
+ *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
+const shownLabelCount = computed(() => {
+  const names = meta.value?.labelNames ?? []
+  if (!imageUid || !names.length) return 0
+  const vis = settings.getLabelVisibility(imageUid, names)
+  return names.filter(n => vis[n]).length
+})
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
 let segments: SegmentBuffer = {
   data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
@@ -1338,20 +1358,23 @@ onUnmounted(() => {
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                             :open="openSection === 'seg'"
                             @update:open="v => setSection('seg', v)" max-height="none">
-          <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
-               directory check, not the label registry, so an imported track set with a table and no mask
-               does not offer an empty option. -->
+          <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
+               is decided in the ViewerPanel per image and reaches this window via the P2
+               storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
+               for it. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+               `labelNames` is the server's directory check, not the label registry, so an imported
+               track set with a table and no mask does not offer a phantom row. -->
           <template v-if="meta!.labelNames?.length">
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <select
-                class="cc-select cc-fs-2xs vw-grow" :value="labelName"
-                v-tooltip.bottom="'Draw a segmentation over the image — reloads the timecourse'"
-                @change="e => { labelName = (e.target as HTMLSelectElement).value; reallocate() }"
-              >
-                <option value="">none</option>
-                <option v-for="n in meta!.labelNames" :key="n" :value="n">{{ n }}</option>
-              </select>
+              <span v-if="labelName" class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
+              <span v-else class="cc-muted cc-fs-2xs vw-grow">none — tick one in the viewer panel</span>
+            </div>
+            <!-- More than one ticked: only the first renders because the compositor's bind group has
+                 one label slot. Multi-mask rendering is a later phase; naming the limit here is the
+                 alternative to silently dropping the others. -->
+            <div v-if="shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
+              {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
             </div>
             <div v-if="labelName" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
