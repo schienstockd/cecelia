@@ -972,13 +972,18 @@ async function start() {
     mode.value = 'plane'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
     zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, false,
-               renderNX.value, renderNY.value)
-    r.setCapacity(settings.viewerCacheFrames || m.nT)
-    r.setOrthographic(mode.value === 'plane')
+    // Fit the camera BEFORE `setImage`: `slabLevel` is zoom-driven off `cam.dist`, so setImage
+    // reading `renderNX`/`renderNY` from the stale dist=1 default would pick L0 for a big image
+    // (687 MB per channel for `f8gzA2`) and allocate that texture — the reason 3D once crashed
+    // maxBufferSize. Same reorder as `reallocate(true)`.
     const c = fitNow(m)
     cam.value = c
     fitDist.value = c.dist
+    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, false,
+               renderNX.value, renderNY.value)
+    loadedLevel.value = slabLevel.value
+    r.setCapacity(settings.viewerCacheFrames || m.nT)
+    r.setOrthographic(mode.value === 'plane')
     r.resize()
     starting.value = ''
     gotoT(0)
