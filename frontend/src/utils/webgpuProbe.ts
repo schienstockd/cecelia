@@ -68,9 +68,13 @@ export interface GpuProbeReport {
   supported: boolean
   /** `requestAdapter({powerPreference:'high-performance'})` returned an adapter. */
   adapterFound: boolean
-  /** `maxTextureDimension3D > 2048` — the adapter-trap proxy for discrete silicon. */
+  /** `maxTextureDimension3D > 2048` — the adapter-trap proxy for discrete silicon. Weak on Linux:
+   *  Mesa's `iris` reports 16384 for Intel integrated too, so read `name` first. */
   looksDiscrete: boolean
   hasTimestamps: boolean
+  /** What the adapter says it is. Empty strings when the browser gives nothing, which is the state
+   *  that made the proxy above necessary in the first place. */
+  name: GpuAdapterName
   /** Present when an adapter was returned. */
   limits?: GpuLimitsDump
   /** r16uint sampled-texture support — the volume renderer's on-disk format. Null when we could not
@@ -117,6 +121,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   if (!('gpu' in navigator)) {
     return {
       supported: false, adapterFound: false, looksDiscrete: false, hasTimestamps: false,
+      name: { vendor: '', architecture: '', device: '', description: '' },
       hasR16Uint: null, verdict: 'unavailable',
       reason: 'WebGPU is not available in this browser',
     }
@@ -130,6 +135,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   if (!adapter) {
     return {
       supported: true, adapterFound: false, looksDiscrete: false, hasTimestamps: false,
+      name: { vendor: '', architecture: '', device: '', description: '' },
       hasR16Uint: null, verdict: 'unavailable',
       reason: 'No WebGPU adapter available — check the browser flag and OS graphics settings',
     }
@@ -169,6 +175,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   })
   return {
     supported: true, adapterFound: true, looksDiscrete, hasTimestamps,
+    name: adapterName(adapter),
     limits, hasR16Uint, verdict, reason,
   }
 }

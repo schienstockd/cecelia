@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
-import { probeWebGpu, type GpuProbeReport } from '../utils/webgpuProbe'
+import { probeWebGpu, adapterNameText, type GpuProbeReport } from '../utils/webgpuProbe'
 import { SEVERITY, type Severity } from '../lib/severity'
 
 const report  = ref<GpuProbeReport | null>(null)
@@ -28,6 +28,7 @@ const severity = computed<Severity>(() => {
   }
 })
 const sevStyle = computed(() => SEVERITY[severity.value])
+const adapterText = computed(() => report.value ? adapterNameText(report.value.name) : '')
 
 async function runProbe() {
   probing.value = true
@@ -70,8 +71,18 @@ function fmt(n: number | undefined | null): string {
       </div>
 
       <div v-if="report.limits" class="kv">
+        <!-- The adapter's own name first, where it gives one. The row below is a proxy off a texture
+             limit, and on Linux it is wrong: Mesa's `iris` reports 16384 for Intel integrated, so it
+             read "Discrete" on a laptop running the iGPU right up until Mesa segfaulted the browser
+             (Dominik, 2026-08-25). -->
+        <template v-if="adapterText">
+          <span>Adapter</span>
+          <span>{{ adapterText }}</span>
+        </template>
+
         <span>GPU type</span>
-        <span>{{ report.looksDiscrete ? 'Discrete' : 'Integrated' }}</span>
+        <span>{{ report.looksDiscrete ? 'Discrete' : 'Integrated' }}<template
+          v-if="!adapterText"> (from limits — the browser gives no adapter name)</template></span>
 
         <span>Ready to render the volume viewer</span>
         <span v-if="report.hasR16Uint === true">Yes</span>

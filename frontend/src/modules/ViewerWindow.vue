@@ -38,7 +38,8 @@ import {
   type VolumeRenderer, type UniformState,
 } from '../lib/webgpu/volumeRenderer'
 import { publishUiLog } from '../lib/uiLogChannel'
-import { adapterNameText } from '../utils/webgpuProbe'
+import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
+import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
@@ -135,6 +136,17 @@ const vlog = (level: 'info' | 'warn' | 'error', message: string, detail?: string
   publishUiLog({ level, message, detail, source: 'viewer' })
 /** Announce the geometry once per box, not once per frame — set wherever the box is (re)built. */
 const announce = ref(true)
+/**
+ * The last attempt at THIS image never reached a frame — see `utils/viewerCrashGuard.ts`.
+ *
+ * The probe below cannot see this case: the adapter answers, `r16uint` checks out, and the driver
+ * segfaults later anyway, taking the browser with it before any handler runs. Reopening the window
+ * lands on the same URL, so the next click is the same crash. We start held instead.
+ */
+const heldAfterCrash = ref(false)
+/** The GPU verdict, shown WITH the hold. Sending someone to Settings → Diagnostics from a pop-out
+ *  means finding another window; the probe is one call and the answer belongs next to the question. */
+const heldProbe = ref('')
 
 /**
  * The h5ad-derived overlays (P3): population points now, tracks next.
@@ -320,6 +332,10 @@ const frame = usePlotResize(canvas, () => {
   // than the ones the next frame will use.
   const st = r.uniformState()
   shader.value = st
+  // A frame is on screen, so whatever the driver was going to do to us, it did not. This is the only
+  // place the breadcrumb is cleared: clearing it at device creation would clear it before the line
+  // that crashes.
+  if (shownT.value >= 0) clearViewerAttempt()
   // Once per box: the numbers only change when the mode, the plane or the crop does, and a line per
   // frame is not a log.
   if (announce.value && shownT.value >= 0) {
@@ -798,9 +814,27 @@ function autoContrast(c: number) {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
-onMounted(async () => {
-  if (!projectUid || !imageUid) { error.value = 'No image — open this window from the viewer panel'; return }
+async function start() {
+  heldAfterCrash.value = false
+  error.value = ''
   try {
+    starting.value = 'Checking the GPU'
+    // ASKED BEFORE ANYTHING IS BUILT. `probeWebGpu` never throws — every failure is a report field —
+    // so an adapter that cannot do what the viewer needs becomes a sentence here rather than a blank
+    // canvas three steps later. It is the same probe as Settings → Diagnostics, so the two can never
+    // disagree about this machine.
+    const probe = await probeWebGpu()
+    if (probe.verdict === 'unavailable') {
+      error.value = probe.reason
+      vlog('error', 'Viewer will not start: ' + probe.reason)
+      starting.value = ''
+      return
+    }
+    if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
+
+    // The breadcrumb goes down BEFORE the device is created, because that is the line the driver dies
+    // on. Cleared when a frame is on screen, not here.
+    markViewerAttempt(imageUid)
     starting.value = 'Starting GPU'
     // A GPU error after setup is console-only by default, and its only visible symptom is a canvas
     // with nothing on it — which reads as an empty channel or a bad contrast window. Show it.
@@ -853,8 +887,22 @@ onMounted(async () => {
       : (e instanceof Error ? e.message : String(e))
     vlog('error', 'Viewer failed to start: ' + error.value,
          e instanceof Error ? e.stack : undefined)
+    clearViewerAttempt()          // it failed in a way we could catch: not the crash this guards
     starting.value = ''
   }
+}
+
+onMounted(() => {
+  if (!projectUid || !imageUid) { error.value = 'No image — open this window from the viewer panel'; return }
+  if (viewerCrashedLastTime(imageUid)) {
+    heldAfterCrash.value = true
+    void probeWebGpu().then(p => {
+      heldProbe.value = p.reason + (adapterNameText(p.name) ? ' — ' + adapterNameText(p.name) : '')
+      vlog(p.verdict === 'ready' ? 'info' : 'warn', 'Viewer held after a crash: ' + heldProbe.value)
+    })
+    return
+  }
+  void start()
 })
 
 /**
@@ -900,7 +948,15 @@ onUnmounted(() => {
         :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
         :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
       />
-      <div v-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
+      <!-- Held after a crash. Offered rather than refused: the breadcrumb cannot tell a driver crash
+           from a force-quit, so the honest statement is what it saw, not a diagnosis. -->
+      <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
+        The last attempt to show this image did not finish
+        <span v-if="heldProbe" class="cc-muted cc-fs-2xs">{{ heldProbe }}</span>
+        <button class="cc-btn cc-btn-primary" @click="start"
+                v-tooltip.top="'Open this image again'">Try again</button>
+      </div>
+      <div v-else-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
       <div v-else-if="error" class="cc-empty cc-empty-overlay cc-muted-error">
         {{ error }}
         <button v-if="lostDevice" class="cc-btn cc-btn-ghost" @click="reload"
