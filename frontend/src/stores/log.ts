@@ -4,7 +4,7 @@ import {
   DEFAULT_GROUPS, gapBefore, logGroup, restoreGroups, storeGroups,
   type LogGroup, type LogLevel,
 } from '../utils/logFilter'
-import { onUiLog } from '../lib/uiLogChannel'
+import { clearUiLogRing, onUiLog, publishUiLog, readUiLogRing } from '../lib/uiLogChannel'
 
 export type { LogLevel, LogGroup }
 
@@ -71,14 +71,22 @@ export const useLogStore = defineStore('log', () => {
     if (level === 'error' && !consoleOpen.value) unreadErrors.value++
   }
 
+  // The three UI-side entry points also tee to `publishUiLog`, which is what makes a `logStore.info()`
+  // in the main window reach the console popout — a separate app instance with its own store — and
+  // land in the persisted ring a popout opened LATER hydrates from. `push` itself does NOT publish, so
+  // `pushServer` (backend ring, arrives on each window's own WS) and the `onUiLog` handler below
+  // (already a peer's line) never echo. See `lib/uiLogChannel.ts`.
   function info(message: string, opts?: { detail?: string; source?: string }) {
     push('info', message, opts)
+    publishUiLog({ level: 'info', message, detail: opts?.detail, source: opts?.source ?? 'app' })
   }
   function warn(message: string, opts?: { detail?: string; source?: string }) {
     push('warn', message, opts)
+    publishUiLog({ level: 'warn', message, detail: opts?.detail, source: opts?.source ?? 'app' })
   }
   function error(message: string, opts?: { detail?: string; source?: string }) {
     push('error', message, opts)
+    publishUiLog({ level: 'error', message, detail: opts?.detail, source: opts?.source ?? 'app' })
   }
 
   /**
@@ -171,8 +179,11 @@ export const useLogStore = defineStore('log', () => {
   function clear() {
     entries.value = []
     unreadErrors.value = 0
-    // NOT lastSeq: the ring on the server is unaffected by clearing this view, and resetting the
-    // cursor would make the next frame look like a 500-line gap and refetch everything just cleared.
+    // Also wipe the cross-window ring — a popout opened next would otherwise hydrate the lines the
+    // user just cleared, and Clear looks broken across windows. The backend server ring is untouched
+    // (its cursor is `lastSeq`, held here; resetting it would make the next frame look like a 500-line
+    // gap and refetch everything just cleared).
+    clearUiLogRing()
   }
 
   const lastEntry = computed(() =>
@@ -188,6 +199,18 @@ export const useLogStore = defineStore('log', () => {
     }
     return out
   })
+
+  // Hydrate from the cross-window ring — the persisted history that makes a console popout opened
+  // AFTER a line was said still see it. The live channel below covers going-forward; without this
+  // rehydration the popout would still start blank of everything before it opened, which is the
+  // reported bug. Kept small and best-effort: an unreadable ring falls back to no history rather than
+  // taking the store down. See `lib/uiLogChannel.ts`.
+  for (const l of readUiLogRing()) {
+    entries.value.push({
+      id: _id++, level: l.level, message: l.message, detail: l.detail,
+      source: l.source, timestamp: new Date(l.ts),
+    })
+  }
 
   // Lines from the app's OTHER windows. A pop-out is a second app instance with its own store, and two
   // of them (the volume viewer, the Task Manager) render no console at all — so without this their

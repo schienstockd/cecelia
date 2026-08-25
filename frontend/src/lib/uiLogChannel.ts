@@ -10,15 +10,22 @@
 // **`localStorage` + the `storage` event**, the same transport as `lib/openProjectChannel.ts`, for the
 // same reason: it is the one cross-window mechanism this app already relies on, and the event fires in
 // every OTHER window of the origin but never in the one that wrote — so a publisher cannot hear itself
-// and there is no echo to filter. Unlike the open project this carries an EVENT rather than state, so
-// the value is overwritten freely and nothing reads the key at mount; a line published to no listening
-// window is simply lost, which is the correct behaviour for a log line and not for a project uid.
+// and there is no echo to filter. Two keys share this transport: `cc.uiLog` is the LIVE event (an
+// overwrite is fine — a listening window gets it, a window not open yet does not); `cc.uiLogRing` is
+// the small persisted HISTORY the console popout hydrates from at mount, so a popout opened AFTER a
+// line was said still sees it. Without the ring the live channel alone leaves a fresh popout blank of
+// everything before it opened — which is the reported bug and the whole reason there IS a ring.
 //
 // The `n` counter is load-bearing. `storage` fires only when the value CHANGES, so two identical
 // messages in a row — "GPU: Draw failed", every frame — would deliver once and then go silent.
 import type { LogLevel } from '../utils/logFilter'
 
 const KEY = 'cc.uiLog'
+const RING_KEY = 'cc.uiLogRing'
+/** The ring's cap. 200 covers the longest UI storm we see in practice (viewer errors during a lost
+ *  device) with room for prior activity — the docked view already keeps 3000, so this is enough
+ *  history to hydrate a popout with, not a second store. */
+const RING_CAP = 200
 
 /** One console line, as it crosses between windows. `ts` travels so a line is filed where it happened
  *  rather than where it was received. */
@@ -41,11 +48,72 @@ export function uiLogPayload(line: Omit<UiLogLine, 'ts'> & { ts?: string }, n: n
   return JSON.stringify({ ...line, ts: line.ts ?? now(), n })
 }
 
-/** Publish a line to the app's other windows. Never throws: private mode disables storage, and a
- *  console line is not worth taking a window down for. */
+/** Publish a line to the app's other windows and append it to the persisted ring. Never throws:
+ *  private mode disables storage, and a console line is not worth taking a window down for. */
 export function publishUiLog(line: Omit<UiLogLine, 'ts'> & { ts?: string }): void {
-  try { localStorage.setItem(KEY, uiLogPayload(line, ++seq)) }
+  const resolved: UiLogLine = {
+    level: line.level,
+    message: line.message,
+    detail: line.detail,
+    source: line.source,
+    ts: line.ts ?? new Date().toISOString(),
+  }
+  try { localStorage.setItem(KEY, uiLogPayload(resolved, ++seq)) }
   catch { /* storage disabled — the other windows just won't hear it */ }
+  appendToRing(resolved)
+}
+
+/**
+ * What a stored ring value means, as a pure decision — the untypeable half of `readUiLogRing`, split
+ * out so a hand-edited or half-upgraded value can be asserted without a DOM. Silent-drops the entries
+ * that fail the shape check rather than the whole ring, because one bad row shouldn't hide the rest.
+ */
+export function parseUiLogRing(raw: string | null): UiLogLine[] {
+  if (!raw) return []
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { return [] }
+  if (!Array.isArray(parsed)) return []
+  const out: UiLogLine[] = []
+  for (const v of parsed) {
+    if (!v || typeof v !== 'object') continue
+    const rec = v as Partial<UiLogLine>
+    if (typeof rec.message !== 'string' || !rec.message) continue
+    const level: LogLevel = rec.level === 'error' || rec.level === 'warn' ? rec.level : 'info'
+    out.push({
+      level,
+      message: rec.message,
+      detail: typeof rec.detail === 'string' ? rec.detail : undefined,
+      source: typeof rec.source === 'string' && rec.source ? rec.source : 'app',
+      ts: typeof rec.ts === 'string' ? rec.ts : new Date().toISOString(),
+    })
+  }
+  return out
+}
+
+/** Cap-and-serialise for the ring. Pure so the eviction rule can be asserted directly. Newest at the
+ *  end (chronological), so a hydrating popout replays lines in order. */
+export function serialiseUiLogRing(current: UiLogLine[], next: UiLogLine, cap: number = RING_CAP): string {
+  const merged = current.concat(next)
+  const capped = merged.length > cap ? merged.slice(merged.length - cap) : merged
+  return JSON.stringify(capped)
+}
+
+/** The persisted history a popout hydrates from at mount. Bounded, so a long-running session cannot
+ *  fill the ~5 MB quota with log lines and start rejecting other stores' writes. */
+export function readUiLogRing(): UiLogLine[] {
+  try { return parseUiLogRing(localStorage.getItem(RING_KEY)) }
+  catch { return [] }                       // private mode disables `getItem`
+}
+
+/** Wipe the shared history. Called by the console's Clear button so clearing one window's console
+ *  clears what a popout opened next would hydrate — otherwise Clear looks broken across windows. */
+export function clearUiLogRing(): void {
+  try { localStorage.removeItem(RING_KEY) } catch { /* private mode */ }
+}
+
+function appendToRing(line: UiLogLine): void {
+  try { localStorage.setItem(RING_KEY, serialiseUiLogRing(readUiLogRing(), line)) }
+  catch { /* storage disabled or quota exceeded — history is best-effort */ }
 }
 
 /**
