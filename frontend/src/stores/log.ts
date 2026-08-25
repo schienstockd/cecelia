@@ -1,6 +1,9 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { DEFAULT_GROUPS, gapBefore, logGroup, type LogGroup, type LogLevel } from '../utils/logFilter'
+import {
+  DEFAULT_GROUPS, gapBefore, logGroup, restoreGroups, storeGroups,
+  type LogGroup, type LogLevel,
+} from '../utils/logFilter'
 import { onUiLog } from '../lib/uiLogChannel'
 
 export type { LogLevel, LogGroup }
@@ -20,14 +23,11 @@ let _id = 0
 
 const GROUPS_KEY = 'cc.consoleGroups'
 
-/** Read the persisted chip selection. A user-settable option must survive a reload (CLAUDE.md). */
+/** Read the persisted chip selection. A user-settable option must survive a reload (CLAUDE.md), and a
+ *  chip added since the selection was saved must arrive ON — see `restoreGroups`. */
 function loadGroups(): LogGroup[] {
-  try {
-    const raw = localStorage.getItem(GROUPS_KEY)
-    if (!raw) return [...DEFAULT_GROUPS]
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed as LogGroup[] : [...DEFAULT_GROUPS]
-  } catch { return [...DEFAULT_GROUPS] }   // private mode, or a key someone hand-edited
+  try { return restoreGroups(localStorage.getItem(GROUPS_KEY)) }
+  catch { return [...DEFAULT_GROUPS] }     // private mode
 }
 
 export const useLogStore = defineStore('log', () => {
@@ -149,7 +149,7 @@ export const useLogStore = defineStore('log', () => {
 
   function setGroups(next: LogGroup[]) {
     groups.value = next
-    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)) } catch { /* private mode */ }
+    try { localStorage.setItem(GROUPS_KEY, storeGroups(next)) } catch { /* private mode */ }
   }
 
   function toggleGroup(g: LogGroup) {
