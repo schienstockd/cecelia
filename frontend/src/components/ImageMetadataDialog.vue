@@ -12,7 +12,9 @@ import type { CciaImage } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { formatBytes } from '../utils/storage'
-import { storeFormatFacts, storeFormatTitle, type StoreEncoding } from '../utils/storeFormat'
+import { storeFormatFacts, storeFormatTitle, storeLevelRows,
+         type StoreEncoding } from '../utils/storeFormat'
+import { formatPhysicalSize, fmtNum } from '../utils/physicalSize'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -26,17 +28,24 @@ function num(v: number | null | undefined): string {
   return v === null || v === undefined ? '—' : String(v)
 }
 
+// Calibration readouts share the ImageTable's formatting (`0.346 µm`, not `0.3459441507762987
+// micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
 const physical = computed(() => {
   const i = img.value
-  const unit = i.physicalSizeUnit ?? 'px'
-  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v} ${unit}`)
-  return { x: fmt(i.physicalSizeX), y: fmt(i.physicalSizeY), z: fmt(i.physicalSizeZ) }
+  const u = i.physicalSizeUnit
+  return {
+    x: formatPhysicalSize(i.physicalSizeX, u),
+    y: formatPhysicalSize(i.physicalSizeY, u),
+    z: formatPhysicalSize(i.physicalSizeZ, u),
+  }
 })
 
 const timeStr = computed(() => {
   const i = img.value
   if (i.timeIncrement === null || i.timeIncrement === undefined) return '—'
-  return `${i.timeIncrement} ${i.timeIncrementUnit ?? 's'}`
+  // Time is not a physical-size (unit is 's' or 'ms', not µm) — normalise the number the same way
+  // but keep the unit as-recorded rather than routing it through the µm-shortening path.
+  return `${fmtNum(i.timeIncrement)} ${i.timeIncrementUnit ?? 's'}`
 })
 
 const channels = computed(() => img.value.channelNames?.filter(c => c && c.length) ?? [])
@@ -74,6 +83,19 @@ const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 // copy-to-clipboard for path-like values — shared helper, keyed per field
 const { isCopied, copy: copyValue } = useCopyFlash()
 const copy = (key: string, value: string) => copyValue(value, key)
+
+// Which stored versions have their Pyramid section expanded. Default collapsed — a project with N
+// stored versions (default + drift-corrected + AF-corrected + …) would otherwise show N per-level
+// tables the moment the modal opens, and only one is usually of interest. Local ref, not persisted:
+// the modal reopens fresh from an info-icon click, so persisting a per-open toggle would over-index
+// on a decision the user makes once per look.
+const expandedLevels = ref<Set<string>>(new Set())
+const togglePyramid = (vn: string) => {
+  const s = new Set(expandedLevels.value)
+  s.has(vn) ? s.delete(vn) : s.add(vn)
+  expandedLevels.value = s
+}
+const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
 </script>
 
 <template>
@@ -160,6 +182,37 @@ const copy = (key: string, value: string) => copyValue(value, key)
               </span>
             </div>
             <span v-else class="cc-muted cc-fs-xs">—</span>
+            <!-- Pyramid layout: per-level XY shape, XY chunk, and tile grid at that level. Collapsed by
+                 default (see `expandedLevels` — one card per stored version could otherwise mean N tables
+                 open on the first look). One row is a valid answer for a store with `nscales=1` (drift/AF
+                 corrections default to that), which is exactly the state the toggle is here to surface. -->
+            <template v-if="levelsFor(vn).length">
+              <button class="md-pyr-toggle cc-section-toggle"
+                      @click="togglePyramid(vn)"
+                      v-tooltip.top="expandedLevels.has(vn) ? 'Hide pyramid layout' : 'Show pyramid layout'">
+                <i :class="['pi', expandedLevels.has(vn) ? 'pi-chevron-down' : 'pi-chevron-right']" />
+                <span class="cc-eyebrow cc-fs-2xs">Pyramid</span>
+                <span class="cc-muted cc-fs-2xs">{{ levelsFor(vn).length }} level{{ levelsFor(vn).length === 1 ? '' : 's' }}</span>
+              </button>
+              <table v-if="expandedLevels.has(vn)" class="md-pyr">
+                <thead>
+                  <tr>
+                    <th class="cc-muted cc-fs-2xs">level</th>
+                    <th class="cc-muted cc-fs-2xs">XY</th>
+                    <th class="cc-muted cc-fs-2xs">chunk XY</th>
+                    <th class="cc-muted cc-fs-2xs">grid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in levelsFor(vn)" :key="row.level">
+                    <td class="md-pyr-lvl">{{ row.level }}</td>
+                    <td class="md-fact-v">{{ row.xy }}</td>
+                    <td class="md-fact-v">{{ row.chunk }}</td>
+                    <td class="md-fact-v">{{ row.grid }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
           </li>
           <!-- A label set's size is the sum of its files (base + nuc). No codec facts: it is written
                with the fixed `labels` compressor, which nothing here asks the user to choose. -->
@@ -246,4 +299,16 @@ const copy = (key: string, value: string) => copyValue(value, key)
 .md-fact-v { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); color: var(--cc-text); }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
+
+/* Pyramid section — bare inline toggle inside a store card. `.cc-section-toggle` gives us the row
+   affordance without CollapsibleSection's panel-bar chrome (which would fight the card border). */
+.md-pyr-toggle { padding: 0.15rem 0; gap: 0.4rem; }
+.md-pyr {
+  border-collapse: collapse; margin-top: 0.15rem;
+  font-size: var(--cc-fs-sm);
+}
+.md-pyr th, .md-pyr td { text-align: left; padding: 0.1rem 0.65rem 0.1rem 0; }
+.md-pyr td { font-family: var(--cc-mono); }
+.md-pyr th { font-weight: 400; }
+.md-pyr-lvl { color: var(--cc-text-dim); font-family: var(--cc-mono); }
 </style>

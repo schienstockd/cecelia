@@ -21,6 +21,11 @@ export interface StoreEncoding {
   separator?: string | null
   /** The codec, already described by the API (`zstd + shuffle`) — not derived here. */
   label?: string | null
+  /** Per-level shape + chunk shape from `multiscales.datasets`, level 0 first. Absent when the
+   *  store carries no multiscales metadata (unreadable, or a bare zarr). A single-row array is a
+   *  meaningful answer, not a bug: `create_multiscales(nscales=1)` writes exactly one level, which
+   *  is what an AF-corrected store looks like on disk. */
+  levels?: Array<{ path: string, shape: number[], chunks: number[] }> | null
 }
 
 /** One labelled fact about the layout: a short key and its value. */
@@ -34,6 +39,52 @@ export interface StoreFact { k: string, v: string }
 export function formatShape(dims: number[] | null | undefined): string {
   if (!dims || dims.length === 0) return '—'
   return dims.map(d => String(d)).join('×')
+}
+
+/** One row of the pyramid table: level label, XY-only shape and chunk shape (T/C/Z are already in
+ *  the modal's Dimensions section and do not vary across levels), plus the XY chunk grid so a
+ *  level whose chunks collapsed to one tile reads as `grid 1×1` instead of "just small". */
+export interface StoreLevelRow { level: string, xy: string, chunk: string, grid: string }
+
+/** XY dims from a shape/chunk whose axes are `[t, c, z, y, x]` (the ONE order every cecelia writer
+ *  emits — bf2raw's series and our own `create_multiscales` both). `-1` when an axis is missing,
+ *  which the row renders as `—`. */
+function xyPair(dims: number[] | null | undefined): [number, number] {
+  if (!dims || dims.length < 2) return [-1, -1]
+  return [dims[dims.length - 2], dims[dims.length - 1]]
+}
+
+function fmtXY(pair: [number, number]): string {
+  const [y, x] = pair
+  return y < 0 || x < 0 ? '—' : `${y}×${x}`
+}
+
+/**
+ * Compact per-level table for the pyramid: XY shape, XY chunk, and the tile grid at that level
+ * (`ceil(shape / chunk)`). The grid column is the point of this whole readout — a level whose
+ * chunks were "capped to the frame" (bf2raw's behaviour when the level shrinks below one chunk)
+ * shows up as `1×1` instead of the reader having to eyeball the numbers.
+ *
+ * Returns `[]` when no levels were reported, so the caller collapses the section entirely rather
+ * than rendering an empty table.
+ */
+export function storeLevelRows(s: StoreEncoding | null | undefined): StoreLevelRow[] {
+  if (!s?.levels?.length) return []
+  return s.levels.map((lvl, i) => {
+    const [sy, sx] = xyPair(lvl.shape)
+    const [cy, cx] = xyPair(lvl.chunks)
+    // Grid at this level: how many tiles cover the frame. `ceil(shape/chunk)`. A missing axis
+    // (shape or chunk unreadable) reports `—` rather than a silently-1 that would say "this level
+    // is one tile" whether it is or isn't.
+    const gy = sy < 0 || cy <= 0 ? -1 : Math.ceil(sy / cy)
+    const gx = sx < 0 || cx <= 0 ? -1 : Math.ceil(sx / cx)
+    return {
+      level: `L${i}`,
+      xy:    fmtXY([sy, sx]),
+      chunk: fmtXY([cy, cx]),
+      grid:  fmtXY([gy, gx]),
+    }
+  })
 }
 
 /**

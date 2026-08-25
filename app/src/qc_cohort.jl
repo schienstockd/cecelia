@@ -93,7 +93,12 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # are comparable across a set shot in one session — an image clipping far more than its peers is a
     # real gain/expression difference. See qc.jl saturation_metrics.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsSaturated",
-                                         "maxClippedSignalFrac", "maxClippedFrac"],
+                                         "maxClippedSignalFrac", "maxClippedFrac",
+                                         # `nPyramidLevels` catches a re-import of one image at a
+                                         # different depth from its peers (usually a user leaving the
+                                         # default in place). `deepestGridTiles` catches a chunk-shape
+                                         # difference the level count alone would hide.
+                                         "nPyramidLevels", "deepestGridTiles"],
     # AF correction: both metrics describe the ACQUISITION, which is what makes them comparable across a
     # set shot in one session. `saturatedFrac` is the fraction of input voxels clipped at the sensor —
     # measured across the nine kSUFux movies it spanned 0.001% to 0.018%, a 13x spread at identical

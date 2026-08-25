@@ -9,8 +9,8 @@
   "resource_pool": "io",
   "params": [
     {
-      "key": "pyramidScale",
-      "label": "Pyramid scale",
+      "key": "pyramidLevels",
+      "label": "Pyramid levels",
       "type": "int",
       "min": 1,
       "max": 10,

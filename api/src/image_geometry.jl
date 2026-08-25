@@ -219,6 +219,37 @@ function store_compression(zarr_path::AbstractString)
     end
 end
 
+"""
+    store_pyramid_levels(zarr_path) -> Union{Vector{NamedTuple},Nothing}
+
+Per-level shape + chunk shape for every dataset in this store's `multiscales`. `nothing` when the
+store is not multiscales-shaped or its group metadata is unreadable — a display-only answer that
+must never throw at the caller (the image-metadata modal listing versions).
+
+Each element is `(path, shape, chunks)`, in the order the `multiscales.datasets` entries declare —
+which is level 0 first, then successively downsampled. XY size + chunk grid comparison is the whole
+point (an AF-corrected store defaults to `nscales=1` and this returns one row, which is exactly the
+information the modal needs to make that visible).
+"""
+function store_pyramid_levels(zarr_path::AbstractString)
+    base = Cecelia.series_base(zarr_path)          # flat root OR bf2raw series wrapper
+    ms   = ngff_multiscales(base)
+    isnothing(ms) && return nothing
+    datasets = get(first(ms), :datasets, nothing)
+    (isnothing(datasets) || isempty(datasets)) && return nothing
+    levels = NamedTuple[]
+    for d in datasets
+        path = string(get(d, :path, ""))
+        isempty(path) && continue
+        meta = zarr_array_meta(joinpath(base, path))
+        isnothing(meta) && continue
+        shape = haskey(meta, :shape) ? collect(Int, meta[:shape]) : Int[]
+        chunks = _chunk_shape(meta)
+        push!(levels, (; path = path, shape = shape, chunks = chunks))
+    end
+    isempty(levels) ? nothing : levels
+end
+
 # How chunk keys are spelled on disk: "/" nests them into a directory tree (`0/0/36/0/8/0/0`), "."
 # keeps them flat (`56.2.15.1.1`). NOT cosmetic — it decides how many DIRECTORIES a store costs, which
 # is most of its filesystem footprint and all of its cost on a network share. Measured on a real
@@ -366,6 +397,16 @@ function api_image_stores(req::HTTP.Request)
                 entry["separator"]  = c.separator
             end
             isdir(zp) && (entry["ngffVersion"] = ngff_version(zp))
+            # Per-level shape + chunks, so the modal can show the pyramid layout: how many levels,
+            # what each downsamples to, whether a level's chunk grid collapsed to 1×1. A corrected
+            # store defaulting to nscales=1 reads as a single-row table here — the point is exactly
+            # that the modal makes that state visible instead of hiding it behind an L0 chunk fact.
+            if isdir(zp)
+                lvls = store_pyramid_levels(zp)
+                isnothing(lvls) ||
+                    (entry["levels"] = [Dict("path" => l.path, "shape" => l.shape,
+                                             "chunks" => l.chunks) for l in lvls])
+            end
             out[vn] = entry
         end
     end

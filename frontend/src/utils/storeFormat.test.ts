@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatShape, storeFormatFacts, storeFormatTitle } from './storeFormat'
+import { formatShape, storeFormatFacts, storeFormatTitle, storeLevelRows } from './storeFormat'
 
 /** `[{k, v}]` → `{k: v}`, so an expectation reads as the facts and not as array indices. */
 const asMap = (s: Parameters<typeof storeFormatFacts>[0]) =>
@@ -95,5 +95,59 @@ describe('storeFormatFacts', () => {
     expect(storeFormatFacts({})).toEqual([])
     // a store row that only carries a size (missing/unreadable store) contributes no facts
     expect(storeFormatFacts({ chunks: null, shard: null })).toEqual([])
+  })
+})
+
+describe('storeLevelRows', () => {
+  // A real bf2raw import of FtGoJO — four levels, chunks capped to the frame from L1 onward,
+  // so L1..L3 grid to 1×1. This is exactly the state the pyramid section is here to make visible.
+  const bf2rawFtGoJO = {
+    levels: [
+      { path: '0', shape: [1, 6, 26, 2024, 2024], chunks: [1, 1, 1, 1024, 1024] },
+      { path: '1', shape: [1, 6, 26, 1012, 1012], chunks: [1, 1, 1, 1012, 1012] },
+      { path: '2', shape: [1, 6, 26,  506,  506], chunks: [1, 1, 1,  506,  506] },
+      { path: '3', shape: [1, 6, 26,  253,  253], chunks: [1, 1, 1,  253,  253] },
+    ],
+  }
+
+  it('is XY-only — T/C/Z live in the modal Dimensions section and do not vary across levels', () => {
+    const rows = storeLevelRows(bf2rawFtGoJO)
+    expect(rows.map(r => r.xy)).toEqual(['2024×2024', '1012×1012', '506×506', '253×253'])
+    expect(rows.map(r => r.chunk)).toEqual(['1024×1024', '1012×1012', '506×506', '253×253'])
+  })
+
+  it('shows the tile grid at each level — the "capped to frame" collapse reads as 1×1', () => {
+    // L0 has 2×2 real tiles; L1..L3 collapse to 1×1 because the level shrank below the chunk.
+    // This is what makes the section worth having: the collapse is otherwise invisible next to
+    // "1×1×1×1012×1012" — it looks like a chunk shape, not like a broken pyramid.
+    expect(storeLevelRows(bf2rawFtGoJO).map(r => r.grid)).toEqual(['2×2', '1×1', '1×1', '1×1'])
+  })
+
+  it('numbers levels L0.. in the multiscales order — level 0 is the highest resolution', () => {
+    expect(storeLevelRows(bf2rawFtGoJO).map(r => r.level)).toEqual(['L0', 'L1', 'L2', 'L3'])
+  })
+
+  it('accepts a single-level store as a valid answer, not a degenerate one', () => {
+    // create_multiscales(nscales=1) — the default for drift / AF / cellpose corrections. The whole
+    // point of surfacing this: a store with no pyramid is exactly what the modal must make visible.
+    const rows = storeLevelRows({
+      levels: [{ path: '0', shape: [1, 6, 26, 2024, 2024], chunks: [1, 1, 1, 512, 512] }],
+    })
+    expect(rows).toEqual([{ level: 'L0', xy: '2024×2024', chunk: '512×512', grid: '4×4' }])
+  })
+
+  it('returns [] when no levels were reported, so the caller can collapse the section entirely', () => {
+    expect(storeLevelRows(null)).toEqual([])
+    expect(storeLevelRows(undefined)).toEqual([])
+    expect(storeLevelRows({})).toEqual([])
+    expect(storeLevelRows({ levels: [] })).toEqual([])
+    expect(storeLevelRows({ levels: null })).toEqual([])
+  })
+
+  it('reports — rather than a silent 1 when a shape or chunk axis is missing', () => {
+    // an unreadable .zarray is real, and reporting `grid 1×1` in that case would say "this level is
+    // one tile" whether it is or isn't
+    const rows = storeLevelRows({ levels: [{ path: '0', shape: [], chunks: [] }] })
+    expect(rows[0]).toEqual({ level: 'L0', xy: '—', chunk: '—', grid: '—' })
   })
 })
