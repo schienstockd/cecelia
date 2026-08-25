@@ -57,37 +57,35 @@ logic.
 
 ## Phases
 
-### Phase A — 2D "auto-fit" level (`pickPlaneLevel`)
+### Phase A — 2D "auto-fit" level (`pickPlaneLevel`) — SUPERSEDED
 
-**One PR** that unblocks 2D on big-XY images without any tile work. The 2D view still
-fetches a WHOLE plane, but at a level whose whole-plane bytes fit under a byte budget.
-Small, complete, incremental — proves the level plumbing works in the 2D path.
+Originally shipped in PR #660: a static byte-budget picker that chose the finest level
+whose whole-plane fetch fit under `PLANE_LEVEL_BUDGET_BYTES = 200 MB`. Dominik pushed
+back: "why does it load l1 for 2d? that should depend on the zoom level of the camera —
+that's the whole point of the pyramids." He was right — a static per-session level
+ignores what the pyramid exists for. `pickPlaneLevel` + `PLANE_LEVEL_BUDGET_BYTES` were
+deleted with their tests in the same PR; Phase B replaces it.
 
-- Add `pickPlaneLevel(meta, budgetBytes, override?)`: finest level where
-  `nX[l] * nY[l] * bpv * nC ≤ budgetBytes`, else deepest.
-- In `ViewerWindow`, `slabLevel` in plane mode uses `pickPlaneLevel`; the 2D sidebar gets a
-  "Level" dropdown mirroring the 3D one (auto = pickPlaneLevel, or force a level).
-- No zoom-triggered LOD switching yet. Zoom in past the auto level's native resolution and
-  the renderer upscales.
+### Phase B — Zoom-triggered LOD swap (whole plane) — SHIPPED (PR #660)
 
-**Fails if**: a small-XY intravital image (~1024×1024) picks a coarser-than-L0 level and
-loses detail people are used to. Budget must be sized so L0 always fits for intravital
-data (~4 MB/channel u16 is fine; the budget only kicks in for whole-slide sizes).
+`slabLevel` in plane mode is now `pickTileLevel(camZoom, meta)`. `camZoom` = L0 pixels
+per device pixel, derived from `cam.dist`, `VIEW_HALF_ANGLE`, `voxelUm[1]`, and the
+canvas' device-pixel height. A watch on `slabLevel` schedules a debounced (150 ms)
+`reallocate(false)` when the level drifts from `loadedLevel` (the level the current
+textures were allocated for). A wheel gesture that crosses two thresholds refetches
+once at the settled level.
 
-### Phase B — Zoom-triggered LOD swap (whole plane)
+The whole-plane fetch pattern is unchanged: at level L, one texture per channel holds
+the entire XY plane at that level's dims. What changed is which L is picked and when.
 
-Keep the whole-plane fetch but re-fetch at a new level when the user zooms across a
-threshold. The renderer's texture is always "current level's whole plane"; the shader's
-`panX`/`panY`/`dist` sample within it as before.
+**Ceiling this hits**: at zoom=1 (magnified to 1:1) on a whole-slide image, L0 still
+doesn't fit (687 MB > 256 MB adapter buffer cap). Phase C (per-viewport tiles) is the
+answer to zoom-all-the-way-in on whole-slide data. Phase B ships if the user zooms
+INTO an image far enough to want detail, gets the level below fit, and doesn't ask
+for L0 at 1:1 on a `f8gzA2`-sized store. That's the current envelope.
 
-- On zoom, compute `level = pickTileLevel(zoom, meta)`; if it differs from the current
-  level, cancel in-flight, refetch, reallocate the texture.
-- Debounce zoom so a single wheel gesture doesn't fire N refetches — `debouncedLatest` on
-  the fetch, not the zoom itself.
-
-**Fails if**: at zoom=1 on a whole-slide image, L0 still doesn't fit (687 MB > 256 MB
-buffer). This is the ceiling that pushes us to Phase C. Phase B ships if the largest
-INTRAVITAL case works at zoom=1; whole-slide 1:1 needs tiles.
+**Test coverage**: `pickTileLevel` is unit-tested; the wire-up in `ViewerWindow.vue`
+is not (extracting a component-mounting testable shape is a follow-up).
 
 ### Phase C — Per-viewport TILE fetching
 
