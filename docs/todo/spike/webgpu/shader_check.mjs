@@ -489,13 +489,20 @@ try {
         await rb.mapAsync(GPUMapMode.READ)
         const px = new Uint8Array(rb.getMappedRange().slice(0))
         rb.unmap(); rb.destroy()
-        let best = -1, bx = -1, by = -1
+        // The marker's CENTROID, weighted by brightness — not the brightest pixel. A filled marker has
+        // a saturated plateau, and 'sum > best' keeps the FIRST tie it meets scanning top-left first,
+        // so it reports the plateau's up-left edge: a constant (-3,-9) bias on both cameras, which
+        // forced a 14 px tolerance on a 12 px marker. A real basis error smaller than the marker would
+        // have fitted inside that. The centroid has no such bias, so the tolerance can be tight enough
+        // to mean something.
+        let best = -1, wsum = 0, wx = 0, wy = 0
         for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
           const o = y*bpr + x*4
           const sum = px[o] + px[o+1] + px[o+2]
-          if (sum > best) { best = sum; bx = x; by = y }
+          if (sum > best) best = sum
+          if (sum > 30) { wsum += sum; wx += sum * x; wy += sum * y }
         }
-        return {best: best, x: bx, y: by}
+        return {best: best, x: wsum > 0 ? wx / wsum : -1, y: wsum > 0 ? wy / wsum : -1}
       }
 
       const aspect = cv.width / cv.height
@@ -511,10 +518,10 @@ try {
         // ...and it must not be at the screen centre, or this check has quietly gone back to being
         // one that any camera passes.
         const fromCentre = Math.hypot(ex - cv.width / 2, ey - cv.height / 2)
-        const okp = got.best > 100 && off <= 14 && fromCentre > 40
+        const okp = got.best > 100 && off <= 4 && fromCentre > 40
         if (!okp) bad++
-        say('overlay ' + cse.name + ' → point at (' + got.x + ',' + got.y + '), JS says (' +
-            ex + ',' + ey + '), off by ' + off.toFixed(1) + 'px  ' +
+        say('overlay ' + cse.name + ' → point at (' + got.x.toFixed(1) + ',' + got.y.toFixed(1) +
+            '), JS says (' + ex + ',' + ey + '), off by ' + off.toFixed(1) + 'px  ' +
             (okp ? 'OK' : got.best > 100 ? (fromCentre > 40 ? 'WRONG PLACE — right/up swapped, or a y flip'
                                                             : 'VACUOUS — the point projects to the screen centre')
                                          : 'NOTHING DREW'), okp ? 'ok' : 'bad')
