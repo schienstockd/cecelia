@@ -239,7 +239,20 @@ export function lutFromHex(hex: string): number[][] {
 // needs the ray origin, not a projection). Pitch is clamped just short of the poles: at exactly ±π/2
 // the up vector is parallel to the view direction and `cross` returns zero, which blanks the frame.
 
-export interface OrbitCamera { yaw: number; pitch: number; dist: number }
+export interface OrbitCamera {
+  yaw: number
+  pitch: number
+  dist: number
+  /**
+   * Where the camera is pointed, in µm across the SCREEN's own axes — right and up, not world x and y.
+   *
+   * Screen axes rather than world ones because that is what a drag means: the image must follow the
+   * pointer at any orientation, and at yaw 90° world x runs into the screen. The shader adds this to
+   * the ray origin, so the overlays pan with the pixels for free — they invert the same basis.
+   */
+  panX: number
+  panY: number
+}
 
 const PITCH_LIMIT = Math.PI / 2 - 0.01
 
@@ -303,7 +316,7 @@ export function fitCamera(
   const halfH = Math.max(ey / 2, ex / 2 / Math.max(aspect, 1e-6))
   const toNearFace = perspective ? Math.max(ez, 0) / 2 : 0
   //                            2% of breathing room ↓
-  return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace }
+  return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace, panX: 0, panY: 0 }
 }
 
 /**
@@ -336,6 +349,23 @@ export function orbitDrag(cam: OrbitCamera, dx: number, dy: number, width: numbe
     yaw: cam.yaw + dx * k,
     pitch: Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, cam.pitch + dy * k)),
   }
+}
+
+/**
+ * Drag in canvas px → a pan, in µm across the screen's axes.
+ *
+ * `height` is the canvas height, and the conversion is exact rather than a feel constant: the visible
+ * height is `2 · dist · VIEW_HALF_ANGLE` µm (see `visibleExtentUm`), so one pixel of drag is that over
+ * the canvas height. The image therefore tracks the pointer at every zoom — a fixed µm-per-pixel would
+ * crawl when zoomed in and fly when zoomed out, which is the tell of a pan that was tuned rather than
+ * derived.
+ *
+ * The signs are the ones that make content FOLLOW the pointer, which is the whole point of a drag: the
+ * camera moves the other way. Drag right and the eye moves left, so the image comes with you.
+ */
+export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number): OrbitCamera {
+  const umPerPx = (2 * Math.max(cam.dist, 0) * VIEW_HALF_ANGLE) / Math.max(height, 1)
+  return { ...cam, panX: cam.panX - dx * umPerPx, panY: cam.panY + dy * umPerPx }
 }
 
 /** Wheel → dolly. Multiplicative, so a notch feels the same at every distance; clamped to a band

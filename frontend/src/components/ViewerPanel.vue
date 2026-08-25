@@ -682,6 +682,10 @@ function openWebViewer() {
   const proj = projectMeta.current?.uid
   if (!uid || !proj) return
   const q = new URLSearchParams({ project: proj, image: uid })
+  // The SET, so the popup can read the same per-set viewer prefs this panel writes — point size,
+  // colour-by, which population type is shown. They are set-scoped, and a popup is a fresh app
+  // instance with no project open, so the uid has to travel in the query like everything else.
+  currentSetUid.value && q.set('set', currentSetUid.value)
   selectedValueName.value && q.set('valueName', selectedValueName.value)
   napariImage.value?.name && q.set('name', napariImage.value.name)
   openPopoutWindow('/viewer-window', 1200, 800, '?' + q.toString())

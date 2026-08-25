@@ -54,6 +54,7 @@ struct P {
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
   lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, unused
+  pan:  vec4<f32>,                       // pan across the SCREEN's axes, in um: right, up; z/w unused
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;
@@ -64,11 +65,15 @@ fn camera() -> Cam {
   let cp = cos(p.cam.y); let sp = sin(p.cam.y);
   var c: Cam;
   c.fwd = vec3(cp * sy, sp, cp * cy);
-  c.ro = c.fwd * p.cam.z;
   c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
   // screen up is -y in world: see the note above. Written as the cross product in the other order
   // rather than as a negation, so there is no minus sign for someone to 'tidy away'.
   c.up = cross(c.right, c.fwd);
+  // PAN moves the eye across the screen's own axes. Here rather than at the ray, because project()
+  // inverts this same origin — so the overlays pan with the pixels and cannot drift apart. Moving the
+  // eye rather than the box is also what keeps the pan correct once the view is rotated: 'right' is
+  // wherever right currently is, which at yaw 90 degrees runs along world z.
+  c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y;
   return c;
 }
 

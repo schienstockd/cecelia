@@ -35,7 +35,7 @@ import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import { createVolumeRenderer, WebGpuUnavailable, type VolumeRenderer } from '../lib/webgpu/volumeRenderer'
 import {
-  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, orbitZoom, contrastFromSlab,
+  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
   MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
@@ -59,6 +59,8 @@ import CcToggle from '../components/CcToggle.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
+import TeleportPopover from '../components/TeleportPopover.vue'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -66,6 +68,16 @@ const settings = useSettingsStore()
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
 const valueName = String(route.query.valueName ?? '') || undefined
+/**
+ * The image's SET, seeded by the viewer panel that opened this window.
+ *
+ * It exists so the two viewers agree. Point size, colour-by and which population type is shown are
+ * per-SET preferences the napari viewer panel already owns (`settings.getPointSize` and friends), and
+ * a second copy of them here would mean the same image looks different depending on which eye you
+ * opened it in — the exact duplication this codebase keeps paying for. Absent (an older link, or a
+ * window opened some other way) falls back to the window-local defaults rather than failing.
+ */
+const setUid = String(route.query.set ?? '')
 const imageName = String(route.query.name ?? '')
 
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -114,6 +126,17 @@ const hiddenPops = ref<Set<string>>(new Set())
  *  the values come from the server, so changing it refetches. */
 const colourBy = ref('')
 /**
+ * Point size and colour-by, SHARED with the napari viewer panel when the set is known.
+ *
+ * A `computed` with a setter rather than a plain ref, so every read and write goes to the one store
+ * the other panel already uses — the same image cannot then look different depending on which eye
+ * opened it. Falls back to the window's own setting when there is no set uid to key on.
+ */
+const pointSize = computed({
+  get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
+  set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
+})
+/**
  * Which segmentation's MASK is drawn, '' for none (P4).
  *
  * A REQUEST, and the most expensive kind: the mask rides each timepoint's slab and lives in that
@@ -140,7 +163,7 @@ const rampStyle = computed(() => {
   return { background: `linear-gradient(to right, ${stops.join(', ')})` }
 })
 
-const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1 })
+const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 })
 const fitDist = ref(1)
 /**
  * `plane` shows ONE z plane, `volume` the whole stack as a MIP. Plane is the default for anything with
@@ -245,8 +268,13 @@ const frame = usePlotResize(canvas, () => {
   const [pLo, pHi] = mode.value === 'plane'
     ? [zPlane.value, zPlane.value]
     : [zRange.value[0], zRange.value[1]]
+  // Widened by the z tolerance: a cell spans several planes, so drawing a marker only on the plane its
+  // CENTROID falls on shows a handful of points against a mask layer full of cells — which reads as the
+  // points being random rather than as a strict slice (Dominik, 2026-08-25). 0 is the strict reading and
+  // is still available.
+  const tol = Math.max(0, settings.viewerPointZTol)
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
-                   settings.viewerPointSize, pLo, pHi)
+                   pointSize.value, pLo - tol, pHi + tol)
   // A tail of N frames ENDING at the frame on screen. Contiguous in the segment buffer by construction,
   // so this is two array reads rather than a per-frame filter.
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0
@@ -293,7 +321,13 @@ async function loadOverlays() {
                             { cache: 'no-store' })
     const body = await res.json()
     if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
-    overlays.value = body as OverlayPayload
+    const p = body as OverlayPayload
+    // The gating `show` flag SEEDS the viewer's visibility; it does not lock it. It used to disable the
+    // toggle outright, so a population hidden in the population manager could not be looked at here at
+    // all (Dominik, 2026-08-25) — and the viewer is where you go to look. Seeded once per fetch rather
+    // than merged, because a re-fetch is a new answer about which populations exist.
+    hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
+    overlays.value = p
     rebuildOverlays()
   } catch (e) {
     // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
@@ -542,6 +576,16 @@ function togglePlay() {
 }
 
 // ── Pointer ──────────────────────────────────────────────────────────────────────
+/**
+ * Drag ROTATES in 3D and PANS in 2D, and shift always pans.
+ *
+ * Rotation in the plane view is not a lesser feature, it is a wrong one: the 2D view is one z plane
+ * seen face-on under an orthographic projection, and tilting it shows that plane edge-on — a black
+ * frame, from a control that looks like it should work. So the plane view spends its drag on the thing
+ * it does have, which is where in the image you are looking. Without a pan there was no way to move
+ * around at all once zoomed in (Dominik, 2026-08-25).
+ */
+const pans = (e: PointerEvent | MouseEvent) => mode.value === 'plane' || e.shiftKey
 let dragFrom: { x: number; y: number } | null = null
 function onDown(e: PointerEvent) {
   dragFrom = { x: e.clientX, y: e.clientY }
@@ -551,15 +595,53 @@ function onMove(e: PointerEvent) {
   if (!dragFrom || !canvas.value) return
   const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y
   dragFrom = { x: e.clientX, y: e.clientY }
-  cam.value = orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
+  cam.value = pans(e)
+    ? panDrag(cam.value, dx, dy, canvas.value.clientHeight)
+    : orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
   frame.redraw()
 }
 function onUp() { dragFrom = null }
+/**
+ * Wheel zooms; SHIFT+wheel steps the z plane in the 2D view.
+ *
+ * Stepping z is the one control the plane view has that the wheel was not already spending, and it is
+ * the natural pair to shift+drag panning. Not in the 3D view: there the wheel's job is the dolly and
+ * the depth RANGE is a two-ended thing a single wheel cannot express.
+ *
+ * The plane change is scheduled, not applied per notch. Changing z drops every cached texture and
+ * refetches — the same reason the z slider commits on `@change` rather than per pointer move — and a
+ * wheel has no release to commit on. So the number moves immediately (the readout must track the
+ * pointer) and the refetch collapses to the last position through `debouncedLatest`, the canonical
+ * scheduler for exactly this.
+ */
+const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
 function onWheel(e: WheelEvent) {
   e.preventDefault()
+  const m = meta.value
+  if (e.shiftKey && mode.value === 'plane' && m && m.nZ > 1) {
+    const step = e.deltaY > 0 ? 1 : -1
+    const next = Math.max(0, Math.min(m.nZ - 1, zPlane.value + step))
+    if (next === zPlane.value) return
+    zPlane.value = next
+    zPump.schedule(next)
+    return
+  }
   cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value)
   frame.redraw()
 }
+
+/** What the canvas responds to. One list, rendered in the popover AND nowhere else — a shortcut that
+ *  only exists in someone's memory is a shortcut nobody uses. */
+const SHORTCUTS: { keys: string; what: string }[] = [
+  { keys: 'Drag', what: '2D: pan · 3D: rotate' },
+  { keys: 'Shift + drag', what: 'Pan, in both views' },
+  { keys: 'Wheel', what: 'Zoom' },
+  { keys: 'Shift + wheel', what: '2D: step through z planes' },
+  { keys: 'Space', what: 'Play / pause the timecourse' },
+  { keys: '← / →', what: 'Previous / next timepoint' },
+]
+const keysOpen = ref(false)
+const keysBtn = ref<HTMLElement | null>(null)
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
  * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — napari draws both, and a fourth
@@ -690,9 +772,29 @@ onMounted(async () => {
   }
 })
 
+/**
+ * Keyboard, on the WINDOW rather than the canvas: this is a bare popup whose whole content is the
+ * viewer, so demanding that the canvas be focused first would make the shortcuts feel broken. Skipped
+ * while a field or a slider has focus, or space would type into a text box and the arrows would fight
+ * the slider they are meant to be an alternative to.
+ */
+function onKey(e: KeyboardEvent) {
+  const el = e.target as HTMLElement | null
+  if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); return }
+  const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+  if (step === 0 || nT.value <= 1) return
+  e.preventDefault()
+  stopPlay()
+  gotoT(Math.max(0, Math.min(nT.value - 1, t.value + step)))
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
   stopPlay()
   pump.cancel()
+  zPump.cancel()
   for (const ac of aborts.values()) ac.abort()
   renderer.value?.destroy()
 })
@@ -726,7 +828,20 @@ onUnmounted(() => {
     </div>
 
     <aside class="vw-side">
-      <div class="vw-title cc-fs-sm">{{ imageName || imageUid }}</div>
+      <div class="cc-row cc-row-tight">
+        <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
+        <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
+                v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
+          <i class="pi pi-question-circle" />
+        </button>
+      </div>
+      <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
+        <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
+        <div v-for="s in SHORTCUTS" :key="s.keys" class="cc-row cc-row-tight vw-key">
+          <kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd>
+          <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
+        </div>
+      </TeleportPopover>
       <div v-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
 
       <div v-if="renderer && !renderer.adapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
@@ -805,226 +920,247 @@ onUnmounted(() => {
           <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
         </div>
 
-        <div class="cc-eyebrow cc-fs-2xs">Channels</div>
-        <div v-for="(ch, c) in meta.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
-          <div class="cc-row cc-row-tight">
-            <span class="vw-ch-name cc-fs-xs"
-                  v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
-            <ColourPicker
-              :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
-              @update:model-value="v => setChannelColour(c, v)"
-            />
-            <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
-                    v-tooltip.left="'Window this channel on the loaded voxels'">
-              <i class="pi pi-sliders-h" />
-            </button>
-          </div>
-          <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
-               column it collapses to no height and its absolutely-positioned thumbs escape the card.
-               Every other consumer wraps it in a row with a readout beside it; so does this one. -->
-          <div class="cc-row cc-row-tight">
-            <RangeSlider
-              v-tooltip.top="'Contrast window — values outside it clip'"
-              :lo="ch.lo" :hi="ch.hi" :min="0" :max="chMax[c] ?? Math.max(ch.hi, 1)" :step="1"
-              @update:lo="v => { ch.lo = v; pushChannels() }"
-              @update:hi="v => { ch.hi = v; pushChannels() }"
-            />
-            <span class="cc-readout cc-fs-3xs vw-ch-val">{{ ch.lo }}–{{ ch.hi }}</span>
-          </div>
-        </div>
-        <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
-          Showing {{ MAX_CHANNELS }} of {{ meta.nC }} channels
-        </div>
-
-        <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
-             directory check, not the label registry, so an imported track set with a table and no mask
-             does not offer an empty option. -->
-        <template v-if="meta.labelNames?.length">
-          <div class="cc-eyebrow cc-fs-2xs">Segmentation</div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-            <select
-              class="cc-select cc-fs-2xs vw-grow" :value="labelName"
-              v-tooltip.bottom="'Draw a segmentation over the image — reloads the timecourse'"
-              @change="e => { labelName = (e.target as HTMLSelectElement).value; reallocate() }"
-            >
-              <option value="">none</option>
-              <option v-for="n in meta.labelNames" :key="n" :value="n">{{ n }}</option>
-            </select>
-          </div>
-          <div v-if="labelName" class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
-            <input
-              type="range" class="vw-grow" :min="0" :max="1" :step="0.05"
-              v-model.number="settings.viewerLabelOpacity" @input="frame.redraw()"
-              v-tooltip.bottom="'How strongly the mask covers the signal'"
-            >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelOpacity.toFixed(2) }}</span>
-          </div>
-          <div v-if="labelName" class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Outline</span>
-            <input
-              type="range" class="vw-grow" :min="0" :max="5" :step="1"
-              v-model.number="settings.viewerLabelContour" @input="frame.redraw()"
-              v-tooltip.bottom="'Outline width in voxels — 0 fills each cell'"
-            >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
-          </div>
-          <div v-if="labelName && mode === 'volume'" class="cc-muted cc-fs-3xs">
-            3D shows the nearest mask surface
-          </div>
-        </template>
-
-        <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
-             no populations, and an empty group would read as a broken feature rather than as an image
-             that has not been through segmentation yet. -->
-        <template v-if="summary.cells > 0 || overlaysErr">
-          <div class="cc-eyebrow cc-fs-2xs">Overlays</div>
-          <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
-          <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
-               on the canvas — so the panel names which one it is. -->
-          <div v-else-if="summary.pops === 0" class="cc-muted cc-fs-2xs">
-            {{ summary.cells }} cells, no populations gated
-          </div>
-          <template v-else>
-            <div v-for="pop in overlays!.pops" :key="pop.path" class="cc-row cc-row-tight">
-              <span class="vw-swatch" :style="{ background: pop.colour }" />
-              <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
-              <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
-              <CcToggle
-                :model-value="pop.show && !hiddenPops.has(pop.path)" :disabled="!pop.show"
-                :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
-              />
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-              <select
-                class="cc-select cc-fs-2xs vw-grow" :value="colourBy"
-                v-tooltip.bottom="'Shade the points by a per-cell measure'"
-                @change="e => { colourBy = (e.target as HTMLSelectElement).value; void loadOverlays() }"
-              >
-                <option value="">population</option>
-                <option v-for="c in overlays!.colourColumns" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </div>
-            <!-- The legend says which SCALE is in use, because that is the server's decision (the same
-                 rule the plots use) and the two kinds look nothing alike. -->
-            <div v-if="overlays!.colourBy && overlays!.valueKind === 'numeric'"
-                 class="cc-row cc-row-tight cc-fs-3xs">
-              <span class="cc-muted">{{ (overlays!.valueRange?.[0] ?? 0).toPrecision(3) }}</span>
-              <span class="vw-ramp" :style="rampStyle" />
-              <span class="cc-muted">{{ (overlays!.valueRange?.[1] ?? 1).toPrecision(3) }}</span>
-            </div>
-            <div v-else-if="overlays!.colourBy && overlays!.valueKind === 'categorical'"
-                 class="cc-muted cc-fs-3xs">
-              {{ overlays!.valueLevels?.length ?? 0 }} levels
-            </div>
-
-            <div v-if="segCount > 0" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="60" :step="1"
-                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
-                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
-            </div>
-            <div v-if="segCount > 0 && settings.viewerTailLength > 0" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
-              <input
-                type="range" class="vw-grow" :min="1" :max="12" :step="1"
-                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                v-tooltip.bottom="'Tail thickness on screen, not in µm'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
-              <input
-                type="range" class="vw-grow" :min="2" :max="24" :step="1"
-                v-model.number="settings.viewerPointSize" @input="frame.redraw()"
-                v-tooltip.bottom="'Marker size on screen, not in µm'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerPointSize }}</span>
-            </div>
-            <div class="cc-muted cc-fs-3xs">
-              <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
-              {{ pointCount }} drawn · {{ summary.cells }} cells
-              <template v-if="summary.tracked">· {{ summary.tracked }} tracked</template>
-              <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
-              <template v-if="mode === 'plane'">· this plane only</template>
-            </div>
-          </template>
-        </template>
-
-        <div class="cc-eyebrow cc-fs-2xs">Render</div>
-        <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
-        <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Steps</span>
-          <input
-            type="range" class="vw-grow" :min="64" :max="512" :step="64"
-            v-model.number="settings.viewerSteps" @input="frame.redraw()"
-            v-tooltip.bottom="'Ray steps per pixel — higher is sharper and slower'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerSteps }}</span>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Keep</span>
-          <input
-            type="range" class="vw-grow" :min="0" :max="Math.max(nT, 1)" :step="1"
-            v-model.number="settings.viewerCacheFrames" @change="reallocate()"
-            v-tooltip.bottom="'How many timepoints stay instant — 0 keeps as many as fit'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">
-            {{ settings.viewerCacheFrames || 'all' }}
-          </span>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Compress slabs on the wire — a win remotely, a cost locally'">Compress</span>
-          <CcToggle v-model="settings.viewerCompress" aria-label="Compress slabs on the wire" />
-        </div>
-        <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
-             in front of you, and a separate row for each would double the group's height. -->
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
-          <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-          <input
-            type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-            :disabled="!settings.viewerScaleBar" v-model.number="settings.viewerScaleBarPx"
-            v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-          >
-          <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
-          <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-          <input
-            type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-            :disabled="!settings.viewerTimestamp" v-model.number="settings.viewerTimestampPx"
-            v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
-          >
-          <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
-        </div>
-        <div class="cc-row cc-row-tight">
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
 
-        <div class="cc-eyebrow cc-fs-2xs">Image</div>
-        <div class="cc-muted cc-fs-3xs">
-          {{ meta.nX }} × {{ meta.nY }} × {{ meta.nZ }} · {{ meta.nT }} t · {{ meta.nC }} ch<br>
-          {{ (meta.slabBytes / 1e6 / (meta.nZ / gpu.zDepth)).toFixed(1) }} MB / channel ·
-          contrast {{ meta.contrastSource }}<br>
-          cache {{ resident.length }} / {{ gpu.capacity }}
-          <template v-if="gpu.capped">(GPU limit)</template>
-          <template v-else-if="gpu.capacity >= nT && nT > 0">(whole movie fits)</template><br>
-          {{ hits }} hit / {{ misses }} miss<template v-if="lastMissMs"> · last miss {{ lastMissMs }} ms</template><br>
-          <template v-if="timing">
-            fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
+        <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
+                            storage-key="cc.vw.channels" :default-open="true" max-height="none">
+          <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
+            <div class="cc-row cc-row-tight">
+              <span class="vw-ch-name cc-fs-xs"
+                    v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
+              <ColourPicker
+                :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
+                @update:model-value="v => setChannelColour(c, v)"
+              />
+              <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
+                      v-tooltip.left="'Window this channel on the loaded voxels'">
+                <i class="pi pi-sliders-h" />
+              </button>
+            </div>
+            <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
+                 column it collapses to no height and its absolutely-positioned thumbs escape the card.
+                 Every other consumer wraps it in a row with a readout beside it; so does this one. -->
+            <div class="cc-row cc-row-tight">
+              <RangeSlider
+                v-tooltip.top="'Contrast window — values outside it clip'"
+                :lo="ch.lo" :hi="ch.hi" :min="0" :max="chMax[c] ?? Math.max(ch.hi, 1)" :step="1"
+                @update:lo="v => { ch.lo = v; pushChannels() }"
+                @update:hi="v => { ch.hi = v; pushChannels() }"
+              />
+              <span class="cc-readout cc-fs-3xs vw-ch-val">{{ ch.lo }}–{{ ch.hi }}</span>
+            </div>
+          </div>
+          <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
+            Showing {{ MAX_CHANNELS }} of {{ meta!.nC }} channels
+          </div>
+
+        </CollapsibleSection>
+        <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
+                            storage-key="cc.vw.seg" :default-open="true" max-height="none">
+          <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
+               directory check, not the label registry, so an imported track set with a table and no mask
+               does not offer an empty option. -->
+          <template v-if="meta!.labelNames?.length">
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
+              <select
+                class="cc-select cc-fs-2xs vw-grow" :value="labelName"
+                v-tooltip.bottom="'Draw a segmentation over the image — reloads the timecourse'"
+                @change="e => { labelName = (e.target as HTMLSelectElement).value; reallocate() }"
+              >
+                <option value="">none</option>
+                <option v-for="n in meta!.labelNames" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </div>
+            <div v-if="labelName" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="1" :step="0.05"
+                v-model.number="settings.viewerLabelOpacity" @input="frame.redraw()"
+                v-tooltip.bottom="'How strongly the mask covers the signal'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelOpacity.toFixed(2) }}</span>
+            </div>
+            <div v-if="labelName" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Outline</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="5" :step="1"
+                v-model.number="settings.viewerLabelContour" @input="frame.redraw()"
+                v-tooltip.bottom="'Outline width in voxels — 0 fills each cell'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
+            </div>
+            <div v-if="labelName && mode === 'volume'" class="cc-muted cc-fs-3xs">
+              3D shows the nearest mask surface
+            </div>
+          </template>
+
+        </CollapsibleSection>
+        <CollapsibleSection label="Overlays" tip="Cell populations and track tails"
+                            storage-key="cc.vw.ovl" :default-open="true" max-height="none">
+          <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
+               no populations, and an empty group would read as a broken feature rather than as an image
+               that has not been through segmentation yet. -->
+          <template v-if="summary.cells > 0 || overlaysErr">
+            <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
+            <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
+                 on the canvas — so the panel names which one it is. -->
+            <div v-else-if="summary.pops === 0" class="cc-muted cc-fs-2xs">
+              {{ summary.cells }} cells, no populations gated
+            </div>
+            <template v-else>
+              <div v-for="pop in overlays!.pops" :key="pop.path" class="cc-row cc-row-tight">
+                <span class="vw-swatch" :style="{ background: pop.colour }" />
+                <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+                <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
+                <CcToggle
+                  :model-value="!hiddenPops.has(pop.path)"
+                  v-tooltip.bottom="'Draw this population over the image'"
+                  :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
+                />
+              </div>
+              <div class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
+                <select
+                  class="cc-select cc-fs-2xs vw-grow" :value="colourBy"
+                  v-tooltip.bottom="'Shade the points by a per-cell measure'"
+                  @change="e => { colourBy = (e.target as HTMLSelectElement).value; void loadOverlays() }"
+                >
+                  <option value="">population</option>
+                  <option v-for="c in overlays!.colourColumns" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+              <!-- The legend says which SCALE is in use, because that is the server's decision (the same
+                   rule the plots use) and the two kinds look nothing alike. -->
+              <div v-if="overlays!.colourBy && overlays!.valueKind === 'numeric'"
+                   class="cc-row cc-row-tight cc-fs-3xs">
+                <span class="cc-muted">{{ (overlays!.valueRange?.[0] ?? 0).toPrecision(3) }}</span>
+                <span class="vw-ramp" :style="rampStyle" />
+                <span class="cc-muted">{{ (overlays!.valueRange?.[1] ?? 1).toPrecision(3) }}</span>
+              </div>
+              <div v-else-if="overlays!.colourBy && overlays!.valueKind === 'categorical'"
+                   class="cc-muted cc-fs-3xs">
+                {{ overlays!.valueLevels?.length ?? 0 }} levels
+              </div>
+
+              <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
+                <input
+                  type="range" class="vw-grow" :min="0" :max="10" :step="1"
+                  v-model.number="settings.viewerPointZTol" @input="frame.redraw()"
+                  v-tooltip.bottom="'Planes either side that still show a cell — 0 is the exact plane'"
+                >
+                <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerPointZTol }}</span>
+              </div>
+              <div v-if="segCount > 0" class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
+                <input
+                  type="range" class="vw-grow" :min="0" :max="60" :step="1"
+                  v-model.number="settings.viewerTailLength" @input="frame.redraw()"
+                  v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
+                >
+                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
+              </div>
+              <div v-if="segCount > 0 && settings.viewerTailLength > 0" class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
+                <input
+                  type="range" class="vw-grow" :min="1" :max="12" :step="1"
+                  v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
+                  v-tooltip.bottom="'Tail thickness on screen, not in µm'"
+                >
+                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
+              </div>
+              <div class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
+                <input
+                  type="range" class="vw-grow" :min="2" :max="24" :step="1"
+                  v-model.number="pointSize" @input="frame.redraw()"
+                  v-tooltip.bottom="'Marker size on screen, not in µm'"
+                >
+                <span class="cc-readout cc-fs-2xs vw-num">{{ pointSize }}</span>
+              </div>
+              <div class="cc-muted cc-fs-3xs">
+                <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
+                {{ pointCount }} drawn · {{ summary.cells }} cells
+                <template v-if="summary.tracked">· {{ summary.tracked }} tracked</template>
+                <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
+                <template v-if="mode === 'plane'">· this plane only</template>
+              </div>
+            </template>
+          </template>
+
+        </CollapsibleSection>
+        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
+                            storage-key="cc.vw.ann" :default-open="false" max-height="none">
+          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
+               in front of you, and a separate row for each would double the group's height. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
+            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
+            <input
+              type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+              :disabled="!settings.viewerScaleBar" v-model.number="settings.viewerScaleBarPx"
+              v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+            >
+            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
+            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
+            <input
+              type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+              :disabled="!settings.viewerTimestamp" v-model.number="settings.viewerTimestampPx"
+              v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+            >
+            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+          </div>
+          <div class="cc-row cc-row-tight">
+        </CollapsibleSection>
+        <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
+                            storage-key="cc.vw.debug" :default-open="false" max-height="none">
+          <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
+          <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Steps</span>
+            <input
+              type="range" class="vw-grow" :min="64" :max="512" :step="64"
+              v-model.number="settings.viewerSteps" @input="frame.redraw()"
+              v-tooltip.bottom="'Ray steps per pixel — higher is sharper and slower'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerSteps }}</span>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Keep</span>
+            <input
+              type="range" class="vw-grow" :min="0" :max="Math.max(nT, 1)" :step="1"
+              v-model.number="settings.viewerCacheFrames" @change="reallocate()"
+              v-tooltip.bottom="'How many timepoints stay instant — 0 keeps as many as fit'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">
+              {{ settings.viewerCacheFrames || 'all' }}
+            </span>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Compress slabs on the wire — a win remotely, a cost locally'">Compress</span>
+            <CcToggle v-model="settings.viewerCompress" aria-label="Compress slabs on the wire" />
+          </div>
+          <div class="cc-eyebrow cc-fs-2xs">Image</div>
+          <div class="cc-muted cc-fs-3xs">
+            {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
+            {{ (meta!.slabBytes / 1e6 / (meta!.nZ / gpu.zDepth)).toFixed(1) }} MB / channel ·
+            contrast {{ meta!.contrastSource }}<br>
+            cache {{ resident.length }} / {{ gpu.capacity }}
+            <template v-if="gpu.capped">(GPU limit)</template>
+            <template v-else-if="gpu.capacity >= nT && nT > 0">(whole movie fits)</template><br>
+            {{ hits }} hit / {{ misses }} miss<template v-if="lastMissMs"> · last miss {{ lastMissMs }} ms</template><br>
+            <template v-if="timing">
+              fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
+        </CollapsibleSection>
           </template>
         </div>
       </template>
@@ -1043,6 +1179,9 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-key { white-space: nowrap; }
+.vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */

@@ -37,11 +37,11 @@ import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 
-/** Bytes in the uniform struct: 6 leading vec4s + one vec4 per channel slot. */
-const UNIFORM_BYTES = 6 * 16 + MAX_CHANNELS * 16
-/** Float index of channel slot 0 — six vec4s in. Written out because getting it wrong shifts every
+/** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
+const UNIFORM_BYTES = 7 * 16 + MAX_CHANNELS * 16
+/** Float index of channel slot 0 — seven vec4s in. Written out because getting it wrong shifts every
  *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
-const CH0 = 24
+const CH0 = 28
 /** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
  *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
 const LABEL_BPV = 4
@@ -498,6 +498,9 @@ export async function createVolumeRenderer(canvas: HTMLCanvasElement): Promise<V
 
     setCamera(cam: OrbitCamera) {
       u[0] = cam.yaw; u[1] = cam.pitch; u[2] = cam.dist
+      // The pan rides the camera rather than being a separate setter: it IS camera state, and a second
+      // entry point is a second thing to forget on the frame path.
+      u[24] = cam.panX || 0; u[25] = cam.panY || 0
     },
 
     setChannels,

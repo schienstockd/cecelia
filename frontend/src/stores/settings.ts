@@ -130,6 +130,14 @@ export const useSettingsStore = defineStore('settings', () => {
   // Not `|| 0.7`: a deliberate 0 is a valid opacity and would otherwise spring back.
   const viewerLabelOpacity = ref(Number(localStorage.getItem('cc.viewerLabelOpacity') ?? '0.7'))
   const viewerLabelContour = ref(Number(localStorage.getItem('cc.viewerLabelContour') ?? '0') || 0)
+  // How many z planes either side of the one on screen still draw their cell's marker.
+  //
+  // 0 is the strict reading — a marker appears only on the plane its centroid falls on — and it is what
+  // napari does. On real data it reads as RANDOM (Dominik, 2026-08-25): the mask layer draws every cell
+  // that INTERSECTS the plane, while the points draw only the few centred on it, so the two look
+  // unrelated. A cell spans several planes, so a small tolerance is the honest default; it is a setting
+  // rather than a constant because the right number is the cell diameter, which is per experiment.
+  const viewerPointZTol = ref(Number(localStorage.getItem('cc.viewerPointZTol') ?? '2'))
   const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
   const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
@@ -442,6 +450,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerTailWidth,          v => localStorage.setItem('cc.viewerTailWidth',          String(v)))
   watch(viewerLabelOpacity,       v => localStorage.setItem('cc.viewerLabelOpacity',       String(v)))
   watch(viewerLabelContour,       v => localStorage.setItem('cc.viewerLabelContour',       String(v)))
+  watch(viewerPointZTol,          v => localStorage.setItem('cc.viewerPointZTol',          String(v)))
   watch(viewerScaleBarPx,         v => localStorage.setItem('cc.viewerScaleBarPx',         String(v)))
   watch(viewerTimestampPx,        v => localStorage.setItem('cc.viewerTimestampPx',        String(v)))
   watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
@@ -465,7 +474,7 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

@@ -109,7 +109,10 @@ export function buildPointBuffer(
   const rows: number[] = []
   const cols: number[] = []
   for (const pop of payload.pops) {
-    if (!pop.show || hidden.has(pop.path)) continue
+    // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
+    // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
+    // user switched on in the viewer still drew nothing, with a toggle that says it is on.
+    if (hidden.has(pop.path)) continue
     const popRgb = hexToUnit(pop.colour)
     for (const l of pop.labels) {
       const r = row.get(l)
