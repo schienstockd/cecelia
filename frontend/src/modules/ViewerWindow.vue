@@ -941,13 +941,17 @@ async function start() {
       error.value = 'GPU: ' + msg
       vlog('error', 'GPU error: ' + msg)
     })
-    // The adapter, said out loud. `looksDiscrete` is a guess from a limit and the console is where a
-    // guess belongs next to the evidence for it.
+    // The adapter, said out loud. `looksDiscrete` is now a classifier over name-then-limit, so this
+    // line is the evidence a future reader needs to check the classification when the tag looks wrong.
+    // Also emitted to `console.info` so it's visible in the pop-out's own DevTools (the app's log rail
+    // lives in the shell window, not here — vlog alone would only surface there).
     const named = adapterNameText(r.adapter.name)
-    vlog(r.adapter.looksDiscrete ? 'info' : 'warn',
-         'Viewer GPU: ' + (named || (r.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated')),
-         `maxTextureDimension3D=${r.adapter.maxTextureDimension3D}, ` +
-         `timestamp-query=${r.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name'))
+    const gpuDetail = `maxTextureDimension3D=${r.adapter.maxTextureDimension3D}, `
+      + `timestamp-query=${r.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name')
+    const gpuLine = 'Viewer GPU: ' + (named
+      || (r.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated'))
+    vlog(r.adapter.looksDiscrete ? 'info' : 'warn', gpuLine, gpuDetail)
+    console.info(gpuLine, gpuDetail)
     renderer.value = r
     void r.lost.then(info => {
       stopPlay()

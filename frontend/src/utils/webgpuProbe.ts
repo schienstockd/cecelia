@@ -1,9 +1,11 @@
 // WebGPU adapter probe shared by the volume renderer and the Settings diagnostic.
 //
 // THE ADAPTER TRAP — see lib/webgpu/volumeRenderer.ts comment for the full rationale. `requestAdapter({})`
-// returns the INTEGRATED GPU on hybrid machines, and Firefox blanks every `adapter.info` field, so there
-// is nothing to read back. `maxTextureDimension3D > 2048` is the practical proxy: discrete cards report
-// 16384, integrated 2048. Same tell used by WEB_VIEWER_PLAN.md decision 3.
+// returns the INTEGRATED GPU on hybrid machines. Classifying which side we landed on takes both signals:
+// `adapter.info.vendor` is normalized by Chromium to `"nvidia"`/`"amd"`/`"intel"`/`"apple"` and is the
+// first-class tell when it's non-empty; `maxTextureDimension3D > 2048` is the fallback for browsers
+// that blank the name (Firefox has historically blanked every info field, and Dawn on Linux Vulkan
+// can also report 2048 on an NVIDIA discrete adapter — the case that made this refactor).
 //
 // TWO ENTRY POINTS. `acquireGpuDevice()` is for the renderers — it asks for a device and throws
 // `WebGpuUnavailable` when there is nothing to give back. `probeWebGpu()` is for the Settings diagnostic
@@ -29,10 +31,10 @@ export interface AdapterReport {
   /**
    * Whether this looks like the discrete GPU. False means the browser handed us the integrated one.
    *
-   * A PROXY, and a weak one on Linux: Mesa's `iris` reports `maxTextureDimension3D` 16384 for Intel
-   * integrated, the same as a discrete card, so this reads "discrete" on a hybrid Linux laptop that is
-   * actually running on the iGPU — where Mesa then segfaulted opening an image (Dominik, 2026-08-25).
-   * Prefer `name` wherever it says anything.
+   * Set by `classifyAdapter(name, maxTextureDimension3D)` — the adapter NAME first (Chromium normalises
+   * vendor to `"nvidia"`/`"amd"`/`"intel"`/`"apple"` for us), the LIMIT as a fallback when the browser
+   * blanks the name. Mesa's `iris` reports 16384 for Intel iGPU and Dawn/Linux reports 2048 for NVIDIA
+   * discrete — either alone gets this wrong.
    */
   looksDiscrete: boolean
   maxTextureDimension3D: number
@@ -57,6 +59,25 @@ export function adapterNameText(n: GpuAdapterName): string {
   return [n.vendor, n.architecture, n.device, n.description].filter(Boolean).join(' ')
 }
 
+/**
+ * Classify the adapter as discrete or integrated from its NAME first, then the limit as a fallback.
+ *
+ * `maxTextureDimension3D` alone is a weak proxy: Mesa's `iris` reports 16384 for Intel iGPU, and Dawn
+ * on Linux Vulkan can report 2048 (the WebGPU spec default) even on an NVIDIA discrete card — the case
+ * that flagged this bug. `adapter.info.vendor` is normalized by Chromium to a short slug ("nvidia",
+ * "amd", "intel", "apple") without needing the developer-features flag, and Firefox has historically
+ * blanked it entirely — hence the fallback.
+ *
+ * `apple` is intentionally NOT tagged integrated: M-series Apple GPUs are on-die but strong, and their
+ * limits typically hit 16384 anyway. Fall through to the limit check for them.
+ */
+export function classifyAdapter(name: GpuAdapterName, maxTextureDimension3D: number): boolean {
+  const text = adapterNameText(name).toLowerCase()
+  if (/nvidia|geforce|quadro|\brtx\b|\bgtx\b|radeon|\bamd\b|rdna/.test(text)) return true
+  if (/\bintel\b|iris|llvmpipe|swiftshader|microsoft basic|software rasterizer/.test(text)) return false
+  return maxTextureDimension3D > 2048
+}
+
 export interface GpuLimitsDump {
   maxTextureDimension3D: number
   maxBufferSize: number
@@ -68,8 +89,8 @@ export interface GpuProbeReport {
   supported: boolean
   /** `requestAdapter({powerPreference:'high-performance'})` returned an adapter. */
   adapterFound: boolean
-  /** `maxTextureDimension3D > 2048` — the adapter-trap proxy for discrete silicon. Weak on Linux:
-   *  Mesa's `iris` reports 16384 for Intel integrated too, so read `name` first. */
+  /** Discrete-vs-integrated verdict from `classifyAdapter(name, limit)` — name-first, limit as
+   *  fallback. See `classifyAdapter` for the details of both signals. */
   looksDiscrete: boolean
   hasTimestamps: boolean
   /** What the adapter says it is. Empty strings when the browser gives nothing, which is the state
@@ -103,11 +124,12 @@ export async function acquireGpuDevice(): Promise<{
   if (!adapter) throw new WebGpuUnavailable('No WebGPU adapter available')
 
   const maxDim3D = adapter.limits.maxTextureDimension3D
+  const name = adapterName(adapter)
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
-    looksDiscrete: maxDim3D > 2048,
+    looksDiscrete: classifyAdapter(name, maxDim3D),
     hasTimestamps: adapter.features.has('timestamp-query'),
-    name: adapterName(adapter),
+    name,
   }
   const device = await adapter.requestDevice()
   return { adapter, device, report }
@@ -141,7 +163,8 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
     }
   }
   const maxDim3D = adapter.limits.maxTextureDimension3D
-  const looksDiscrete = maxDim3D > 2048
+  const name = adapterName(adapter)
+  const looksDiscrete = classifyAdapter(name, maxDim3D)
   const hasTimestamps = adapter.features.has('timestamp-query')
   const limits: GpuLimitsDump = {
     maxTextureDimension3D: maxDim3D,
@@ -175,7 +198,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   })
   return {
     supported: true, adapterFound: true, looksDiscrete, hasTimestamps,
-    name: adapterName(adapter),
+    name,
     limits, hasR16Uint, verdict, reason,
   }
 }
