@@ -70,6 +70,17 @@ function fmt(n: number | undefined | null): string {
         </button>
       </div>
 
+      <!-- Baseline note. Shown when the browser exposes only the WebGPU-spec-default 3D texture axis
+           (2048), which is the ceiling on many platforms and hard-capped by Chromium/Dawn on Linux
+           Vulkan even where the driver reports 16384. Phase B's LOD picker already handles it; this row
+           just names the constraint so a user can see why large images stop getting sharper. -->
+      <div v-if="report.limits && report.limits.maxTextureDimension3D <= 2048"
+           class="note"
+           :style="{ color: SEVERITY.warn.color }">
+        <i :class="['pi', SEVERITY.warn.icon]" />
+        <span>Large images render at coarser detail — GPU 3D texture cap 2048</span>
+      </div>
+
       <div v-if="report.limits" class="kv">
         <!-- The adapter's own name first, where it gives one. The row below is a proxy off a texture
              limit, and on Linux it is wrong: Mesa's `iris` reports 16384 for Intel integrated, so it
@@ -124,13 +135,9 @@ function fmt(n: number | undefined | null): string {
           tip="Adapter limits and features as reported">
         <div class="kv kv-mono">
           <span>maxTextureDimension3D</span>
-          <span>
-            {{ report.limits.maxTextureDimension3D }}<span
-              v-if="report.limits.maxTextureDimension3D <= 2048"
-              class="cc-muted"
-              v-tooltip.top="'WebGPU baseline — large images use coarser LOD by design'">
-              (baseline)</span>
-          </span>
+          <span>{{ report.limits.maxTextureDimension3D
+            }}<span v-if="report.limits.maxTextureDimension3D <= 2048"
+                    class="cc-muted"> (baseline)</span></span>
           <span>maxBufferSize</span>
           <span>{{ fmt(report.limits.maxBufferSize) }}</span>
           <span>maxStorageBufferBindingSize</span>
@@ -166,6 +173,7 @@ function fmt(n: number | undefined | null): string {
 .kv > span:nth-child(odd) { color: var(--cc-text-dim); }
 .kv-mono > span { font-family: var(--cc-mono); word-break: break-all; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.note { display: flex; align-items: center; gap: 0.4rem; font-size: var(--cc-fs-xs); }
 
 .os-guide { padding: 0.5rem 1rem; }
 .os-guide code { background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); }
