@@ -86,6 +86,28 @@ const valueName = String(route.query.valueName ?? '') || undefined
 const setUid = String(route.query.set ?? '')
 const imageName = String(route.query.name ?? '')
 
+/**
+ * Read a fetch response as JSON, but tell you WHICH request went wrong when the body is empty or not
+ * JSON. `await res.json()` on a 500 with an empty body throws "Failed to execute 'json' on 'Response':
+ * Unexpected end of JSON input", which reads as a client bug and hides the real status. Read as text
+ * first, then try `JSON.parse` in a try/catch — a non-2xx becomes `Meta 500: <first 120 chars>`, an
+ * empty 2xx becomes `Meta 200: empty body`.
+ */
+async function readJson<T = unknown>(res: Response, label: string): Promise<T> {
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = `${label} ${res.status}`
+    if (text) {
+      try { msg += `: ${(JSON.parse(text) as { error?: string }).error ?? text.slice(0, 120)}` }
+      catch { msg += `: ${text.slice(0, 120)}` }
+    }
+    throw new Error(msg)
+  }
+  if (!text) throw new Error(`${label} ${res.status}: empty body`)
+  try { return JSON.parse(text) as T }
+  catch { throw new Error(`${label} ${res.status}: not JSON (${text.slice(0, 120)})`) }
+}
+
 const canvas = ref<HTMLCanvasElement | null>(null)
 const renderer = shallowRef<VolumeRenderer | null>(null)
 const meta = ref<ViewerMeta | null>(null)
@@ -434,9 +456,7 @@ async function loadOverlays() {
     // the next step — see the plan.
     const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value }),
                             { cache: 'no-store' })
-    const body = await res.json()
-    if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
-    const p = body as OverlayPayload
+    const p = await readJson<OverlayPayload>(res, 'Overlays')
     // The gating `show` flag SEEDS the viewer's visibility; it does not lock it. It used to disable the
     // toggle outright, so a population hidden in the population manager could not be looked at here at
     // all (Dominik, 2026-08-25) — and the viewer is where you go to look. Seeded once per fetch rather
@@ -942,10 +962,14 @@ async function start() {
 
     starting.value = 'Reading image'
     const res = await fetch(metaUrl({ projectUid, imageUid, valueName }))
-    if (!res.ok) throw new Error((await res.json()).error ?? `Metadata failed: ${res.status}`)
-    const m: ViewerMeta = await res.json()
+    const m = await readJson<ViewerMeta>(res, 'Metadata')
     meta.value = m
-    mode.value = m.nZ > 1 ? 'plane' : 'volume'
+    // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
+    // was wired for. `nZ === 1` used to default to `volume` on the theory "no stack, no plane to pick",
+    // but the plane path already handles nZ=1 (the z-plane control just hides itself) and the volume
+    // path costs a MIP shader through a one-plane box for the same visual result. 3D is opt-in via the
+    // View chip — the honest cost (~90 s to load an f8gzA2-shape volume) belongs behind a click.
+    mode.value = 'plane'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
     zRange.value = [0, Math.max(m.nZ - 1, 0)]
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, false,
