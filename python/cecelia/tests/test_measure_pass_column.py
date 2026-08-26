@@ -98,6 +98,20 @@ class PassColumnTest(unittest.TestCase):
         self.assertNotIn('t', list(a.var.index))
         self.assertEqual([c for c in a.var.index if c.startswith('centroid')], [])
 
+    def test_the_index_lands_at_obs_underscore_index(self):
+        """`label_props.jl:n_obs` reads `obs/_index` as a DATASET, not the `_index` attribute pointer
+        that AnnData writes when the index is named. A named `label` index puts the values at
+        `obs/label` with `_index` = 'label' in the group attrs — Julia reads that as an empty table
+        and reports zero cells, so gating shows nothing. Strip the name before writing."""
+        import h5py
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seg = _Stub(tmp)
+            path = seg._to_anndata(_frame(), is_3d=False, n_t=1)
+            with h5py.File(path, 'r') as f:
+                self.assertIn('_index', f['obs'], 'obs/_index must be a dataset for the Julia reader')
+                self.assertEqual(list(f['obs/_index'][:5].astype(str)), ['1', '2', '3', '4'])
+
 
 class MeasureFromZarrStampsThePassTest(unittest.TestCase):
     """The middle link: `measure_from_zarr` must stamp the pass while the label index still exists.

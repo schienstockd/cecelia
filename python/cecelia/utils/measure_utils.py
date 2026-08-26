@@ -423,7 +423,10 @@ class MeasureUtils:
                         and c not in obs_src]
         X = df[feature_cols].values.astype(np.float32)
 
-        obs = pd.DataFrame(index=df.index.astype(str))
+        # Strip the index name: AnnData stores an unnamed index at `obs/_index` (the readers'
+        # convention). A named index writes to `obs/<name>` with the name in an `_index` attribute,
+        # which `label_props.jl` doesn't follow and reads as an empty obs table.
+        obs = pd.DataFrame(index=df.index.rename(None).astype(str))
         for c in obs_src:
             # str, and NaN spelt as a real category: an id no range covers means the store predates
             # pass recording, so "unknown" is the honest value and dropping the row would be a lie.
