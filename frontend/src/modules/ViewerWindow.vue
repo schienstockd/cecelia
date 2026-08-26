@@ -42,7 +42,7 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
+  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel,
   MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -239,6 +239,25 @@ const nT = computed(() => meta.value?.nT ?? 0)
 const zRange = ref<[number, number]>([0, 0])
 const zDepth = computed(() =>
   mode.value === 'plane' ? 1 : Math.max(1, zRange.value[1] - zRange.value[0] + 1))
+/**
+ * Pyramid level the current view fetches at. napari renders 3D at the coarsest level, and a full-res
+ * volume of a wide-XY image exceeds WebGPU's `maxBufferSize` (`f8gzA2` needs 1.28 GB against a 256 MB
+ * cap) — so the 3D view picks the deepest level by default, user-overridable via
+ * `settings.viewerVolumeLevel`. The 2D plane view stays on L0 today; tile-per-viewport LOD for pan/zoom
+ * is Phase 2's work (spatial audit).
+ */
+const slabLevel = computed(() => {
+  const m = meta.value
+  if (!m) return 0
+  if (mode.value === 'plane') return 0
+  const override = settings.viewerVolumeLevel
+  return pickVolumeLevel(m, override < 0 ? undefined : override)
+})
+/** The XY dims actually being fetched — level-0's `meta.nX`/`nY`, or the coarser level's dims. */
+const renderNX = computed(() =>
+  meta.value?.levels?.[slabLevel.value]?.nX ?? meta.value?.nX ?? 0)
+const renderNY = computed(() =>
+  meta.value?.levels?.[slabLevel.value]?.nY ?? meta.value?.nY ?? 0)
 /**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
@@ -444,6 +463,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // second say in what is fetched.
     const zd = r.cache.zDepth
     const zq = slabZ(zd, m.nZ, zPlane.value, zRange.value[0])
+    const lvl = slabLevel.value
+    const expectNX = renderNX.value, expectNY = renderNY.value
     // The MASK goes with the channels, in the same round trip and into the same texture slot. Fetching
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
@@ -451,12 +472,16 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const res = await fetch(slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc }),
-                                { cache: 'no-store', signal: ac.signal })
+        const res = await fetch(
+          slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc, level: lvl }),
+          { cache: 'no-store', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
-        // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing.
-        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd)
+        // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing. At a
+        // coarser level the server returns a smaller frame, so the shape assertion needs the LEVEL's
+        // dims (`renderNX`/`renderNY`), not L0's — otherwise every coarse-level fetch fails the guard.
+        const bad = slabShapeError(
+          res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, m.bytesPerVoxel, expectNX, expectNY)
         if (bad) throw new Error(bad)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return buf
@@ -464,7 +489,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       (async () => {
         if (!vn) return null
         const res = await fetch(
-          slabUrl({ projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn }),
+          slabUrl({ projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl }),
           { cache: 'no-store', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -472,7 +497,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
         // width it would render as a plausible mask of something else.
         const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
-        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv)
+        const bad = slabShapeError(
+          res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
         if (bad) throw new Error('Mask: ' + bad)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return widenLabelSlab(buf, bpv)
@@ -790,7 +816,8 @@ function reallocate(refit = false) {
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
   r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-             mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value)
+             mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+             renderNX.value, renderNY.value)
   r.setCapacity(settings.viewerCacheFrames || m.nT)
   r.setOrthographic(mode.value === 'plane')
   r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
@@ -869,7 +896,8 @@ async function start() {
     mode.value = m.nZ > 1 ? 'plane' : 'volume'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
     zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value)
+    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, false,
+               renderNX.value, renderNY.value)
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
     const c = fitNow(m)
@@ -1008,6 +1036,21 @@ onUnmounted(() => {
             @change="reallocate()"
           />
           <span class="cc-readout cc-fs-2xs vw-num">{{ zRange[0] }}–{{ zRange[1] }}</span>
+        </div>
+        <!-- 3D pyramid level. napari also renders 3D at the coarsest resolution, and a full-res volume
+             of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
+             So auto = the deepest level; the dropdown lets a user step finer if their card can hold it.
+             `@change` (not `@update:*`) so it commits on release, same discipline as Depth. -->
+        <div v-if="mode === 'volume' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
+          <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
+                  v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
+                  @change="reallocate()">
+            <option :value="-1">Auto ({{ (meta.levels?.length ?? 1) - 1 }} — coarsest)</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
         </div>
         <div v-if="mode === 'plane' && meta.nZ > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
@@ -1305,7 +1348,8 @@ onUnmounted(() => {
           <div class="cc-eyebrow cc-fs-2xs">Image</div>
           <div class="cc-muted cc-fs-3xs">
             {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
-            {{ (meta!.slabBytes / 1e6 / (meta!.nZ / gpu.zDepth)).toFixed(1) }} MB / channel ·
+            <template v-if="slabLevel > 0">L{{ slabLevel }} @ {{ renderNX }}×{{ renderNY }} ·</template>
+            {{ (renderNX * renderNY * gpu.zDepth * meta!.bytesPerVoxel / 1e6).toFixed(1) }} MB / channel ·
             contrast {{ meta!.contrastSource }}<br>
             cache {{ resident.length }} / {{ gpu.capacity }}
             <template v-if="gpu.capped">(GPU limit)</template>

@@ -63,7 +63,7 @@ export interface VolumeRenderer {
    * lands a slab's worth of z away from its cell.
    */
   setImage(meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number,
-           withLabels?: boolean): void
+           withLabels?: boolean, renderNX?: number, renderNY?: number): void
   /**
    * Upload one timepoint — one raw little-endian slab per channel, each exactly
    * `nX*nY*nZ*bytesPerVoxel` long — and hold it. Resolves once the bytes are actually on the GPU, so
@@ -337,6 +337,12 @@ export async function createVolumeRenderer(
   const recap = () => { capacity = Math.max(2, Math.min(byteCap, requested, allowed)) }
   /** z planes per timepoint actually loaded — `meta.nZ` in 3D, 1 in the 2D plane view. */
   let depth = 1
+  /** XY dimensions actually loaded — `meta.nX`/`meta.nY` at level 0, else the coarser pyramid level's
+   *  dimensions. Set by `setImage`, used by `uploadTimepoint`'s texture allocation and by the u12/u13
+   *  shader uniform (dims.x/y). Level does NOT change the physical extent — a level-1 volume of a 3.3
+   *  mm image is still 3.3 mm across, just half the voxels — so camera fitting stays on `meta.nX`. */
+  let renderNX = 0
+  let renderNY = 0
   /** Whether a mask rides along in each timepoint's slot. Set by `setImage`, because it changes what a
    *  timepoint COSTS and therefore how many fit — a mask is 4 bytes a voxel against the image's 2. */
   let labels = false
@@ -419,7 +425,8 @@ export async function createVolumeRenderer(
     adapter: report,
     lost: device.lost,
 
-    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0, withLabels = false) {
+    setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0, withLabels = false,
+             nxRender = m.nX, nyRender = m.nY) {
       // NOT gated on the device being alive, deliberately. Nothing here touches the GPU except
       // `dropAll()` and `setChannels`, which guard themselves — while what it DOES set is the geometry
       // every later decision is derived from. A `!usable()` early return left the renderer describing a
@@ -430,15 +437,22 @@ export async function createVolumeRenderer(
       bindGroup = null
       meta = m
       depth = Math.max(1, Math.min(zd, m.nZ))
+      renderNX = Math.max(1, nxRender)
+      renderNY = Math.max(1, nyRender)
       const nch = Math.min(m.nC, MAX_CHANNELS)
       labels = withLabels
       // The mask is part of what a timepoint costs, so it is part of what decides how many fit. Leaving
       // it out would let the cache promise a capacity it cannot hold, and the frame that discovers that
-      // is an out-of-memory scope firing mid-scrub rather than a smaller cache.
-      bytesPerTimepoint = m.nX * m.nY * depth * (m.bytesPerVoxel * nch + (withLabels ? LABEL_BPV : 0))
+      // is an out-of-memory scope firing mid-scrub rather than a smaller cache. Sized in RENDER voxels,
+      // so a coarser pyramid level shrinks the cost quadratically — the whole reason the 3D view can
+      // load a big-XY image at all (`pickVolumeLevel` picks the deepest by default).
+      bytesPerTimepoint = renderNX * renderNY * depth *
+        (m.bytesPerVoxel * nch + (withLabels ? LABEL_BPV : 0))
       allowed = Infinity                       // a new shape gets a fresh chance at the limit
       byteCap = cacheCapacity(budgetBytes, bytesPerTimepoint)
       recap()
+      // Extent is the PHYSICAL box (µm), not the pixel grid — a coarser level is the SAME 3.3 mm image
+      // at fewer voxels, so `extentUm` stays on `m.nX`/`m.nY`. Only the texture dimensions shrink.
       const [ex, ey, ez] = extentUm(m, depth)
       u[8] = ex; u[9] = ey; u[10] = ez
       // ext.w — where the loaded slab STARTS up the stack, in µm. Overlay coordinates are absolute, so
@@ -447,7 +461,7 @@ export async function createVolumeRenderer(
       // dims.z is ONE channel's own depth, not the stacked height: the ray marches one channel's box
       // and the shader offsets by `c * zpc` to reach the others. Using the stacked height here squashes
       // every channel into 1/nch of the volume — a render that looks like a thin slab of real data.
-      u[12] = m.nX; u[13] = m.nY; u[14] = depth; u[15] = depth
+      u[12] = renderNX; u[13] = renderNY; u[14] = depth; u[15] = depth
       u[4] = nch
       setChannels(m.channels)
     },
@@ -465,15 +479,18 @@ export async function createVolumeRenderer(
       // and setting it too high lost the device. `out-of-memory` is a scoped, recoverable error: the
       // texture comes back invalid instead, and the cache simply holds at whatever did fit.
       device.pushErrorScope('out-of-memory')
+      // Textures are sized in RENDER voxels — a level-1 volume of a 3.3 mm image is half the width of
+      // level-0, so the buffer is 1/4 the bytes, which is the whole reason the 3D view can load big-XY
+      // images at all (the client picks the coarsest level by default via `pickVolumeLevel`).
       const texture = device.createTexture({
-        size: [m.nX, m.nY, depth * nch], dimension: '3d', format: 'r16uint',
+        size: [renderNX, renderNY, depth * nch], dimension: '3d', format: 'r16uint',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
       // The mask goes in the SAME error scope and the same slot as the image it annotates. One
       // allocation failing has to take the pair down together: a slot holding a volume and no mask
       // would render the image with the outlines silently missing.
       const labelTexture = (labels && labelBytes) ? device.createTexture({
-        size: [m.nX, m.nY, depth], dimension: '3d', format: 'r32uint',
+        size: [renderNX, renderNY, depth], dimension: '3d', format: 'r32uint',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       }) : null
       const oom = await device.popErrorScope()
@@ -489,15 +506,16 @@ export async function createVolumeRenderer(
       if (labelTexture && labelBytes) {
         device.queue.writeTexture(
           { texture: labelTexture }, labelBytes,
-          { bytesPerRow: m.nX * LABEL_BPV, rowsPerImage: m.nY }, [m.nX, m.nY, depth],
+          { bytesPerRow: renderNX * LABEL_BPV, rowsPerImage: renderNY },
+          [renderNX, renderNY, depth],
         )
       }
       for (let c = 0; c < Math.min(channelBytes.length, nch); c++) {
         device.queue.writeTexture(
           { texture, origin: [0, 0, c * depth] },
           channelBytes[c],
-          { bytesPerRow: m.nX * m.bytesPerVoxel, rowsPerImage: m.nY },
-          [m.nX, m.nY, depth],
+          { bytesPerRow: renderNX * m.bytesPerVoxel, rowsPerImage: renderNY },
+          [renderNX, renderNY, depth],
         )
       }
       // `writeTexture` returns once the bytes are STAGED, so without this the caller times the CPU-side

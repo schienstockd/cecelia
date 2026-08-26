@@ -31,7 +31,7 @@ using ChunkCodecCore: encode
 # ── Reading one volume ────────────────────────────────────────────────────────────
 
 """
-    read_slab(zarr_path, t, c; z = nothing) -> (vol, nx, ny, nz)
+    read_slab(zarr_path, t, c; z = nothing, x = nothing, y = nothing, level = 0) -> (vol, nx, ny, nz)
 
 Voxels of timepoint `t`, channel `c` (both 0-based) as an `(x, y, z)` column-major array — i.e. one
 whose linear memory is x-fastest, which is what a WebGPU 3D texture takes. Missing axes count as 1, so
@@ -53,20 +53,36 @@ here is linear in the number of planes, so 8 of 37 is 70 MB rather than 326 MB �
 of ~1 s — and four times as many timepoints fit the same VRAM budget. Structure is usually in a few
 planes, so a full-depth MIP is mostly paying for empty stack.
 
+`x`/`y` (0-based `UnitRange`, or `nothing` for the whole axis) carve an XY TILE out of the plane, which
+is what makes a big-XY tilescan pan/zoom viewer answerable at all — L0 of `f8gzA2` is 20329×16898 and
+687 MB per channel as a whole slab, but a single 1024² chunk is 2 MB. Same shape as `z`'s range: the axis
+is KEPT (it is a rectangle, not a column). Clamped to the store, so a viewport that hangs off the edge
+of a frame gets a smaller tile back rather than a 500. Combined with `level`, this is the whole
+"slippy-map" access pattern the temporal work never needed (spatial audit Phase 2, 2026-08-25).
+
+`level` (0-based) selects the pyramid resolution. Level 0 is the highest resolution (what every caller
+before the tile route used, so it stays the default). The client picks the level from the meta route's
+per-level shapes — server-side does not know the viewport zoom.
+
 Pixels go through `read_native`, never `arr[...]`: a raw `bioformats2raw` store is big-endian and
 Zarr.jl does not swap it (see `image_geometry.jl`).
 
 The `(arr, caxes)` form is for a caller that reads MANY slabs out of one store — a movie sweep asks for
 `nT * nC` of them, and re-opening per read is `nT * nC` metadata round trips for a store whose geometry
-cannot change mid-sweep. The path form is the one an HTTP request wants, since there the open IS the
-lookup.
+cannot change mid-sweep. It does not take `level` because the caller has already opened a specific
+level; passing a different one would silently disagree with the array in hand.
 """
 read_slab(zarr_path::AbstractString, t::Int, c::Int;
-          z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing) =
-    read_slab(open_level0(zarr_path)..., t, c; z = z)
+          z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
+          x::Union{AbstractUnitRange{Int},Nothing} = nothing,
+          y::Union{AbstractUnitRange{Int},Nothing} = nothing,
+          level::Int = 0) =
+    read_slab(open_level(zarr_path, level)..., t, c; z = z, x = x, y = y)
 
 function read_slab(arr, caxes, t::Int, c::Int;
-                   z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing)
+                   z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
+                   x::Union{AbstractUnitRange{Int},Nothing} = nothing,
+                   y::Union{AbstractUnitRange{Int},Nothing} = nothing)
     nd    = ndims(arr)
     dims  = axis_dims(caxes, nd)
     names = caxes_or_fallback(caxes, nd)
@@ -76,23 +92,25 @@ function read_slab(arr, caxes, t::Int, c::Int;
     haskey(dims, "c") && (idx[dims["c"]] = c + 1)
     # A scalar z drops the z dim exactly as t and c do, so `kept` below excludes it and `nz` answers 1
     # — one code path serves a plane, a sub-slab and a whole volume rather than three that can disagree.
-    # Both forms are clamped to the store rather than trusted: these come off a query string, and an
-    # out-of-range index is a 500 from deep inside Zarr.jl instead of an answer.
+    # Ranges (x, y, and z-as-range) are CLAMPED to the store rather than trusted: these come off a query
+    # string, and an out-of-range index is a 500 from deep inside Zarr.jl instead of an answer. An empty
+    # range reads as the single plane/column at its start — that state cannot come from a caller asking
+    # for nothing (Julia's `UnitRange` constructor normalises `2:0` to the empty `2:1`), so it is always
+    # a lo/hi pair that arrived backwards and the ordering is fixed where the two numbers are still
+    # separate (`try_serve_slab`). A zero-thickness slab would render BLACK: entry and exit coincide.
+    _clamp_range(v::AbstractUnitRange{Int}, len::Int) = begin
+        cl(i) = clamp(i, 0, len - 1) + 1
+        lo = cl(first(v))
+        lo:max(cl(isempty(v) ? first(v) : last(v)), lo)
+    end
     if z !== nothing && haskey(dims, "z")
         nz_all = size(arr, dims["z"])
-        cl(v) = clamp(v, 0, nz_all - 1) + 1
-        # An EMPTY range reads as the single plane at its start rather than as nothing. It cannot be a
-        # caller asking for zero planes — `2:0` never survives `UnitRange`'s constructor, which
-        # normalises it to `2:1` — so it is always a lo/hi pair that arrived the wrong way round, and
-        # the ordering has to be fixed where the two numbers are still separate (`try_serve_slab`).
-        # A zero-thickness slab would render BLACK: the ray's entry and exit distances coincide.
-        idx[dims["z"]] = if z isa Int
-            cl(z)
-        else
-            lo = cl(first(z))
-            lo:max(cl(isempty(z) ? first(z) : last(z)), lo)
-        end
+        idx[dims["z"]] = z isa Int ? clamp(z, 0, nz_all - 1) + 1 : _clamp_range(z, nz_all)
     end
+    y === nothing || !haskey(dims, "y") ||
+        (idx[dims["y"]] = _clamp_range(y, size(arr, dims["y"])))
+    x === nothing || !haskey(dims, "x") ||
+        (idx[dims["x"]] = _clamp_range(x, size(arr, dims["x"])))
     sub = read_native(arr, idx...)
 
     # Julia dim j carries the C-order axis at position nd-j+1. Scalar indexing dropped t and c, so
@@ -224,10 +242,29 @@ function api_viewer_meta(req::HTTP.Request)
         catch
             String[]
         end
+        # Per-level shape + chunk shape, so the client can pick a pyramid LEVEL from its own viewport
+        # zoom without asking the server. `store_pyramid_levels` is the same reader the metadata modal
+        # uses (`api_image_stores`), so the two surfaces cannot disagree about what is on disk. `nothing`
+        # means the store is not multiscales-shaped or its group metadata is unreadable — the client
+        # sees an empty `levels` and falls back to L0 only, which is what a caller before the tile route
+        # already did. Shape uses store row-major: `shape[-2]` is nY, `shape[-1]` is nX; a per-level XY
+        # pair keeps the client from having to know the store's axis order.
+        # Client LOD formula (spatial audit Phase 3): `level = clamp(floor(log2(zoom)), 0, nLevels-1)`,
+        # where `zoom = imagePxPerDevicePx`. That formula assumes clean 2× steps — TRUE for every store
+        # bioformats2raw or `create_multiscales` writes today — but the SHAPES are also carried here so a
+        # non-2× pyramid (a future stitching writer) can be handled without re-encoding this contract:
+        # the client computes the actual factor as `L0.nX / L[n].nX` and selects against that instead.
+        lvls = try store_pyramid_levels(zp) catch; nothing end
+        levels = lvls === nothing ? Any[] :
+            [(; level = i - 1, nY = get(l.shape, length(l.shape) - 1, 0),
+                nX = get(l.shape, length(l.shape),     0),
+                chunkY = get(l.chunks, length(l.chunks) - 1, 0),
+                chunkX = get(l.chunks, length(l.chunks),     0))
+             for (i, l) in enumerate(lvls)]
         200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny, labelNames = label_names,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
                             contrastSource = src, voxelUm = vox, spaceUnit = unit,
-                            frameIntervalMin = tmin, calibrated = cal, channels))
+                            frameIntervalMin = tmin, calibrated = cal, channels, levels))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end
@@ -238,11 +275,19 @@ end
 # `Content-Encoding` and the shape guard. Same idiom as `try_serve_movie`. Returns false when this is
 # not a slab request or the image cannot be resolved, and the caller falls through to the 404 path.
 #
-# ?projectUid=&imageUid=&valueName=&t=&c=&z=&zTo=&enc=identity|zstd → raw little-endian voxels.
+# ?projectUid=&imageUid=&valueName=&t=&c=&z=&zTo=&x=&xTo=&y=&yTo=&level=&enc=identity|zstd
+#     → raw little-endian voxels.
 #
 # `z` omitted → the whole stack. `z=N` → that ONE plane (the 2D view), which is what makes a timecourse
 # playable: 8.8 MB and ~13 ms against 326 MB and ~400 ms on `Dml3RG`. `z=N&zTo=M` → the planes N..M
 # inclusive, which is what makes the 3D view usable — every cost is linear in the count.
+#
+# `x`/`xTo` and `y`/`yTo` carve out an XY TILE at 0-based inclusive `[lo,hi]`, omitted axes stay whole.
+# Same pairing as `z`/`zTo` — a range in each field (`x=100:200`) is where "5:5" and "5" quietly diverge,
+# so the two ends are separate. `level` (default 0) picks a pyramid resolution: the client asks the meta
+# route for the per-level shapes and picks its LOD from those, so the server does not know the
+# viewport zoom. All four are clamped to the store, so a viewport hanging off the edge of a frame gets
+# a smaller tile back rather than a 500 from deep inside Zarr.jl. (Spatial audit Phase 2, 2026-08-25.)
 #
 # `zTo` is a separate parameter rather than a `z=lo:hi` string on purpose: the client already had a
 # scalar `z`, the two cases mean different RANKS of answer, and parsing a range out of one field is a
@@ -277,6 +322,25 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # becomes a range at all.
     z = z0 === nothing ? nothing :
         (z1 === nothing ? z0 : min(z0, z1):max(z0, z1))
+    # x/y always PROMOTE to a range — a single-column tile is not a shape the pan/zoom viewer asks for
+    # and `read_slab` for x/y only takes ranges. Absent lo → 0; absent hi → typemax(Int), which
+    # `read_slab` clamps to the axis length. Ordered here for the same reason `z` is (a backwards
+    # `UnitRange` normalises to empty, so a swapped pair has to be caught before it becomes a range).
+    xy_range(lo_key, hi_key) = begin
+        lo = haskey(q, lo_key) ? tryparse(Int, q[lo_key]) : nothing
+        hi = haskey(q, hi_key) ? tryparse(Int, q[hi_key]) : nothing
+        lo === nothing && hi === nothing && return nothing
+        lo_i = lo === nothing ? 0            : lo
+        hi_i = hi === nothing ? typemax(Int) : hi
+        min(lo_i, hi_i):max(lo_i, hi_i)
+    end
+    xr = xy_range("x", "xTo"); yr = xy_range("y", "yTo")
+    # Level defaults to 0 (the highest resolution — every caller before the tile route asks for this).
+    # Clamped against the multiscales datasets list so a hand-edited URL cannot reach `open_level`'s
+    # KeyError path. `store_pyramid_levels` is metadata-only (JSON on disk); the read is cheap.
+    lvl_req = something(tryparse(Int, get(q, "level", "0")), 0)
+    nlvl    = something(let l = store_pyramid_levels(zp); l === nothing ? nothing : length(l) end, 1)
+    level   = clamp(lvl_req, 0, nlvl - 1)
     enc = get(q, "enc", "identity")
 
     # A read failure has to arrive as a STATUS, not as an exception. This runs before `startwrite`, so
@@ -286,7 +350,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     local body, nx, ny, nz, bpv, read_ms, comp_ms
     try
         t0 = time()
-        vol, nx, ny, nz = read_slab(zp, t, c; z = z)
+        vol, nx, ny, nz = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
         body = slab_bytes(vol)
         bpv  = sizeof(eltype(vol))
         read_ms = round(1000 * (time() - t0); digits = 1)
@@ -313,11 +377,14 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # fails LOUDLY. Silently transposed voxels still render; they just render the wrong thing.
     HTTP.setheader(stream, "X-Slab-Shape"   => "$nz,$ny,$nx")
     HTTP.setheader(stream, "X-Slab-Bpv"     => string(bpv))
+    # The level actually served after clamping. A hand-edited URL asking level=99 gets the deepest
+    # existing level, and the client's cache key needs to match what came back, not what it asked for.
+    HTTP.setheader(stream, "X-Slab-Level"   => string(level))
     HTTP.setheader(stream, "X-Server-Read-Ms"     => string(read_ms))
     HTTP.setheader(stream, "X-Server-Compress-Ms" => string(comp_ms))
     HTTP.setheader(stream, "Access-Control-Allow-Origin"   => "*")
     HTTP.setheader(stream, "Access-Control-Expose-Headers" =>
-                   "X-Slab-Shape, X-Slab-Bpv, X-Server-Read-Ms, X-Server-Compress-Ms")
+                   "X-Slab-Shape, X-Slab-Bpv, X-Slab-Level, X-Server-Read-Ms, X-Server-Compress-Ms")
     enc == "zstd" && HTTP.setheader(stream, "Content-Encoding" => "zstd")
     HTTP.setheader(stream, "Content-Length" => string(length(body)))
     HTTP.setstatus(stream, 200)

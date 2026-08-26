@@ -22,22 +22,36 @@
 # image reader.
 
 """
-    open_level0(zarr_path) -> (array, c_order_axis_names)
+    open_level(zarr_path, level_idx = 0) -> (array, c_order_axis_names)
 
-Level-0 array of a cecelia OME-ZARR plus its NGFF axis names (C-order, e.g. `["t","c","z","y","x"]`).
-Handles both on-disk layouts: flat (root group, array at `"0"`) and the bioformats2raw series (group
-at `"0"`, array at `"0/0"`). Axes come from the multiscales `.zattrs` on whichever group carries it.
+The array at level `level_idx` of a cecelia OME-ZARR pyramid, plus its NGFF axis names (C-order, e.g.
+`["t","c","z","y","x"]`). Handles both on-disk layouts: flat (root group, arrays at `"0"`, `"1"`, …)
+and the bioformats2raw series (group at `"0"`, arrays under `"0/0"`, `"0/1"`, …). Axes come from the
+multiscales `.zattrs` on whichever group carries it, so they don't need re-reading per level.
+
+`level_idx = 0` is the highest-resolution level (the one every read went to before the tile route
+existed). A missing level throws `KeyError` — the caller (`try_serve_slab`) clamps against the store's
+level count before the open, so this is the internal-invariants case only.
 """
-function open_level0(zarr_path::AbstractString)
-    g = zopen(zarr_path)
-    node = g["0"]
-    if node isa Zarr.ZArray                    # flat: root .zattrs has the multiscales; array is "0"
-        arr, attrs_dir = node, zarr_path
-    else                                       # series: "0" is a group, level-0 array is "0/0"
-        arr, attrs_dir = node["0"], joinpath(zarr_path, "0")
+function open_level(zarr_path::AbstractString, level_idx::Int = 0)
+    g     = zopen(zarr_path)
+    node0 = g["0"]
+    if node0 isa Zarr.ZArray                   # flat: root .zattrs has the multiscales; arrays "0","1",…
+        arr, attrs_dir = level_idx == 0 ? node0 : g[string(level_idx)], zarr_path
+    else                                       # series: "0" is a group, arrays under "0/0","0/1",…
+        arr, attrs_dir = node0[string(level_idx)], joinpath(zarr_path, "0")
     end
     arr, read_ngff_axes(attrs_dir)
 end
+
+"""
+    open_level0(zarr_path) -> (array, c_order_axis_names)
+
+Sugar for `open_level(zarr_path, 0)`. Every caller that pre-dates the tile route (movie sweeps, the
+volume renderer, meta) opens level 0 — this stays as a one-argument name so those callsites don't
+have to say `, 0` for the case they always want.
+"""
+open_level0(zarr_path::AbstractString) = open_level(zarr_path, 0)
 
 """
     read_native(arr, idx...) -> Array
