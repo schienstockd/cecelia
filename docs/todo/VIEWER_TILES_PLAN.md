@@ -1,6 +1,6 @@
 # The 2D viewer: pan/zoom, per-viewport tiles, cache + prefetch
 
-Status: OPEN — Phases B, C, D and E (halo) shipped in PR #660; only the velocity-prefetch stretch remains.
+Status: OPEN — Phases B, C, D and E (halo) shipped in PR #660; Phase F (timecourse × tiles) is next; velocity-prefetch stretch not scheduled.
 
 Follow-up to the spatial-buffering audit (`docs/archive/spatial-buffering-pyramid-prompt.md`).
 The audit's Phase 1 (measurements) and Phase 2 server surface shipped in PR #659
@@ -132,6 +132,77 @@ so negligible.
 
 **Fails if**: halo cost dominates the fetch stream on slow networks. Fine on loopback;
 remote/HPC setups may want a "halo=0" setting.
+
+### Phase F — Timecourse × tiles
+
+Big intravital timelapses (multi-timepoint, planes over the tile threshold — e.g. a wide-XY movie
+where each timepoint's plane alone exceeds 200 MB) currently hit the volume path and OOM: the
+tile pipeline is gated `nT ≤ 1` because the tile key has no time dimension, and caching tiles
+across timepoints would fight for slots with no ordering signal. This phase adds `t` to the tile
+key + a cross-time distance penalty in the eviction ranker, and drops the gate.
+
+**Locked decisions**
+
+1. **Add `t` to `TileKey`.** String form becomes `T${t}/L${level}/x${tx}/y${ty}` — one namespace,
+   no ambiguity with the level's own `tx`. Every downstream ranker/pump entry gains the same
+   field.
+2. **`TileEntry` gains `t`.** The atlas doesn't care about time — slots hold whatever the pump
+   uploads — but the ranker needs `t` on every resident tile to compute the time penalty.
+3. **`tileEvictions` gets a cross-time distance penalty.** Same shape as the level penalty
+   already there, but LARGER: a wrong timepoint is worse than a wrong resolution. Suggested
+   value: `10_000_000 * |e.t - centre.t|` on top of the level and Chebyshev terms. Confirmed by
+   measurement — if too aggressive, cross-t caching disappears; if too weak, scrubbing feels
+   like a full refetch. Tuning is a one-shot after the wire-up.
+4. **Prefetch is current-t only in MVP.** No cross-t halo. Reason: the atlas is capacity-bound
+   (≈ 30 slots on the whole-slide shape) and multiplying by a t-halo of 2 would leave no room
+   for the spatial halo. If scrubbing feels bad, add cross-t after measuring.
+5. **`useTiles` gate drops `nT ≤ 1`.** New gate: `mode === 'plane' && needsTiling`.
+6. **The timepoint slider schedules the tile pump in tile mode.** `gotoT` currently calls
+   `schedulePump` (the timepoint pump) unconditionally. In tile mode, it schedules the tile
+   pump instead; `showT` becomes a no-op (there's no per-timepoint texture to bind — the atlas
+   holds mixed-t tiles and the ranker filters for draw). `shownT` still flips on the first
+   tile that lands for the current `t`, driving the still-overlay gate.
+7. **No cross-t auto-window recompute.** `autoWin` stays first-tile-only. A new timepoint
+   doesn't rebase it; consecutive Auto presses land at the same place, same discipline as the
+   still image.
+8. **Atlas capacity is unchanged.** Same per-slot budget. Timepoint churn happens at the
+   ranker level, not the atlas level.
+
+**What ships**
+
+- `utils/tileViewer.ts`: `TileKey.t` added, `tileKeyStr` includes it, `tileEvictions` takes
+  `centre.t` and applies the time penalty. Its unit tests gain a cross-t case (a same-position
+  wrong-t tile ranks farther than a same-t neighbour).
+- `lib/webgpu/tileRenderer.ts`: `TileEntry.t` added; `uploadTile` records `key.t`.
+- `modules/ViewerWindow.vue`:
+  - `useTiles` drops `nT ≤ 1`.
+  - `missingTiles`, `evictionKeepSet`, `fetchTile` thread current `t.value` into keys and
+    slab URLs (currently hardcoded `t: 0`).
+  - `gotoT` schedules the tile pump when `useTiles` is true; `schedulePump` (timepoint) is
+    tile-mode-skipped.
+  - Timepoint scrub cancels stale-t tile fetches (already the shape `scheduleTilePump`
+    aborts non-keep — extend the keep set to current-t only).
+
+**What does NOT ship**
+
+- Cross-t prefetch window. Ship only if scrubbing feels bad after Phase F lands.
+- Autoplay through tile mode. Scrub first; play later — a play tick simply advances `t` and
+  the same tile pump handles the rest, but the fetch-vs-frame-rate discipline needs
+  measurement first.
+- Reference-frame caching (freeze one t as background under the current). Would need atlas
+  slots reserved outside the ranker's control — not for this phase.
+
+**Fails if**: atlas capacity forces cross-t thrashing on scrub. At f8gzA2 shape
+(`nch = 24 → cap ≈ 30 slots`) with viewport + halo ≈ 20 tiles, a t-swap fills the atlas with
+new-t tiles and evicts all old-t within one round. The fix is measured: a wider atlas
+(higher `SAFE_CACHE_BYTES` or lower `nch`) or multi-tile batching on the server (already
+reserved in the plan) buys headroom. Do not preemptively expand.
+
+**Test coverage**
+
+- Unit tests for the extended `TileKey`, `tileKeyStr`, and `tileEvictions` cross-t ranking.
+- A wire-up smoke test would want a mountable `ViewerWindow` — that's the extract-for-tests
+  follow-up already flagged. Not gated on this phase.
 
 ## Server surface — already shipped in #659
 
