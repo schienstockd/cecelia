@@ -333,7 +333,7 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  * have solid color for all tracks. to distinguish them when multiple track sources are shown".
  */
 export function buildMultiTrackBuffer(
-  payloads: readonly { vn: string; payload: OverlayPayload }[],
+  payloads: readonly { vn: string; payload: OverlayPayload; colour?: string }[],
   meta: ViewerMeta | null, palette: readonly string[], mode: TrackColorMode = 'track',
 ): MultiTrackResult {
   if (!payloads.length || !meta) return EMPTY_MULTI
@@ -397,8 +397,11 @@ export function buildMultiTrackBuffer(
     ? [Math.sqrt(sMin), Math.sqrt(sMax)] : null
   const speedSpan = speedRange ? (speedRange[1] - speedRange[0]) : 0
 
-  const solidRgb = (src: number): [number, number, number] =>
-    hexToUnit(palette.length ? palette[src % palette.length] : '#ffffff')
+  // Per-source solid colour: the caller's override wins (user picked one in the Tracks legend);
+  // otherwise cycle the palette by source index. Cached in an array so `solidRgb` is O(1) per hit.
+  const solidCache: [number, number, number][] = payloads.map((p, i) =>
+    hexToUnit(p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
+  const solidRgb = (src: number): [number, number, number] => solidCache[src] ?? [0.9, 0.9, 0.9]
   const trackRgb = (id: number): [number, number, number] =>
     hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
   const speedRgb = (speedSq: number): [number, number, number] => {
@@ -438,7 +441,10 @@ export function buildMultiTrackBuffer(
 
   const sources = payloads.map((p, i) => ({
     vn: p.vn,
-    hex: palette.length ? palette[i % palette.length] : '#ffffff',
+    // Legend hex mirrors what solid mode draws — the override if the caller supplied one, otherwise
+    // the same palette cycle solidRgb uses. Track/speed modes don't paint by source, so the legend
+    // is only consulted when the mode UI actually shows it.
+    hex: p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff'),
     count: perSource[i],
   })).filter(s => s.count > 0)
 

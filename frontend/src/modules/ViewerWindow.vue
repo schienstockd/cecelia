@@ -271,6 +271,13 @@ const trackColorMode = computed<'track' | 'speed' | 'solid'>({
   get: () => setUid ? settings.getTrackColorMode(setUid) : 'track',
   set: (v) => { if (setUid) settings.setTrackColorMode(setUid, v); rebuildOverlays() },
 })
+/** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
+ *  override is per set — a rare viewer opened without one just keeps the palette default. */
+function setTrackSourceColour(vn: string, hex: string) {
+  if (!setUid) return
+  settings.setTrackSourceColour(setUid, vn, hex)
+  rebuildOverlays()
+}
 /**
  * The pop manager's CURRENT (valueName, popType) for THIS image. Published to `cc.gatingCurrent`
  * by the gating store (main window) on selectImage + on any (valueName, popType) change, and
@@ -557,7 +564,10 @@ function rebuildOverlays() {
   // several vns at once — matching napari's one-Tracks-layer-per-segmentation model. P7 of
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
   if (trackPayloads.value.size) {
-    const payloadsWithVn = [...trackPayloads.value.entries()].map(([vn, payload]) => ({ vn, payload }))
+    // Per-vn overrides from Tracks legend picker. Absent = fall back to the palette cycle.
+    const overrides = setUid ? settings.getTrackSourceColours(setUid) : {}
+    const payloadsWithVn = [...trackPayloads.value.entries()].map(([vn, payload]) =>
+      ({ vn, payload, colour: overrides[vn] }))
     const result = buildMultiTrackBuffer(payloadsWithVn, meta.value, PALETTES.cecelia,
                                           trackColorMode.value)
     segments = result.segments
@@ -1643,11 +1653,17 @@ onUnmounted(() => {
               <span class="vw-ramp" :style="rampStyle" />
               <span class="cc-muted">{{ trackSpeedRange[1].toPrecision(3) }} µm/frame</span>
             </div>
-            <!-- Per-source legend for solid mode — one row per ticked vn, showing its swatch + count.
-                 Doubles as a diagnostic: a vn with count 0 is ticked but has no tracked cells. -->
+            <!-- Per-source legend for solid mode — one row per ticked vn, showing a clickable
+                 swatch (the shared ColourPicker) + count. Same picker + palette as the population
+                 manager, so a source's colour authored here matches the visual language elsewhere.
+                 Doubles as a diagnostic: a vn with count 0 would be ticked but have no tracked
+                 cells; buildMultiTrackBuffer filters those out already, so the legend only lists
+                 sources that actually drew. -->
             <template v-if="trackColorMode === 'solid' && trackSources.length">
               <div v-for="src in trackSources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
-                <span class="vw-swatch" :style="{ background: src.hex }" />
+                <ColourPicker :model-value="src.hex"
+                              @update:model-value="hex => setTrackSourceColour(src.vn, hex)"
+                              :tip="'Colour for ' + src.vn" />
                 <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>
                 <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
               </div>

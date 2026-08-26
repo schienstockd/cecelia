@@ -300,6 +300,10 @@ export const useSettingsStore = defineStore('settings', () => {
     // per-hop distance), 'solid' (one palette colour per source vn, so multiple track sources are
     // visually separable). Per-set: mirrors `colourBy` above.
     trackColorMode?: 'track' | 'speed' | 'solid'
+    // Per-source hex overrides for the SOLID track colour mode: {[vn]: '#rrggbb'}. Absent = the
+    // default from the palette. Dominik, 2026-08-26: "can we make that the source color can be
+    // changed. same color picker as for the channels just with the cecelia palette".
+    trackSourceColour?: Record<string, string>
     // user recolouring of a categorical colour-by, keyed by column then category value → hex. For
     // categories with no population (HMM states, raw clusters) there's no colour defined anywhere, so
     // the user can override the default palette; these win over pop/default when colouring. Per-column
@@ -362,6 +366,12 @@ export const useSettingsStore = defineStore('settings', () => {
     _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
   const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid') =>
     _patchSet(setUid, { trackColorMode: mode })
+  const getTrackSourceColours = (setUid: string): Record<string, string> =>
+    _setPrefs.value[setUid]?.trackSourceColour ?? {}
+  function setTrackSourceColour(setUid: string, vn: string, hex: string) {
+    const cur = _setPrefs.value[setUid]?.trackSourceColour ?? {}
+    _patchSet(setUid, { trackSourceColour: { ...cur, [vn]: hex } })
+  }
   const getPopVisible = (setUid: string, popType: string): boolean =>
     _setPrefs.value[setUid]?.popVis?.[popType] ?? false                                       // default hidden
   function setPopVisible(setUid: string, popType: string, v: boolean) {
@@ -519,7 +529,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
