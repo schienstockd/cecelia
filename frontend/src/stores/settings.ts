@@ -297,6 +297,23 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('cc.napariBranchVisibility', JSON.stringify(_branchVisStore.value))
   }
 
+  // Per-image active version: { [imageUid]: valueName }. Written by the ViewerPanel's version
+  // <select> (main window) and mirrored into the popup viewer via the storage-event bridge, so the
+  // two windows never disagree about which version is on screen (VIEWER_CONTROLS_SPLIT_PLAN.md P3
+  // extended to the version picker, Dominik 2026-08-26). Empty entry = no user pick, fall back to
+  // the URL query / active-in-project default; DO NOT default to the first name here — that would
+  // decide the version silently before the user has expressed one.
+  const _imageVersionStore = ref<Record<string, string>>(
+    JSON.parse(localStorage.getItem('cc.viewerImageVersion') ?? '{}')
+  )
+  function getImageVersion(imageUid: string): string {
+    return _imageVersionStore.value[imageUid] ?? ''
+  }
+  function setImageVersion(imageUid: string, valueName: string) {
+    _imageVersionStore.value = { ..._imageVersionStore.value, [imageUid]: valueName }
+    localStorage.setItem('cc.viewerImageVersion', JSON.stringify(_imageVersionStore.value))
+  }
+
   // ── Per-SET napari viewer preferences, keyed by set uid: { [setUid]: {...} } ──────────────────
   // These are the viewer-level DISPLAY toggles (colour-by, show-3D, point size, per-popType overlay
   // visibility, show-gated-tracks). They were always MEANT to be per-set (one experiment = consistent
@@ -539,15 +556,16 @@ export const useSettingsStore = defineStore('settings', () => {
       const ev = decodeViewerBagEvent(e.key, e.newValue)
       if (!ev) return
       switch (ev.kind) {
-        case 'labelVis':  _labelVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
-        case 'trackVis':  _trackVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
-        case 'branchVis': _branchVisStore.value = ev.value as Record<string, Record<string, boolean>>; break
-        case 'setPrefs':  _setPrefs.value       = ev.value as Record<string, NapariSetPrefs>; break
+        case 'labelVis':     _labelVisStore.value     = ev.value as Record<string, Record<string, boolean>>; break
+        case 'trackVis':     _trackVisStore.value     = ev.value as Record<string, Record<string, boolean>>; break
+        case 'branchVis':    _branchVisStore.value    = ev.value as Record<string, Record<string, boolean>>; break
+        case 'setPrefs':     _setPrefs.value          = ev.value as Record<string, NapariSetPrefs>; break
+        case 'imageVersion': _imageVersionStore.value = ev.value as Record<string, string>; break
       }
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

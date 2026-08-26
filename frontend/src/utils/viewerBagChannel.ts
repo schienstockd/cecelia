@@ -11,7 +11,7 @@
 // is not shimmed — pure-logic rule, no jsdom). Extracting the switch out is the pattern
 // `lib/openProjectChannel.ts` already establishes for the same reason.
 
-export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs'
+export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion'
 
 export interface ViewerBagEvent {
   kind: ViewerBagKind
@@ -37,10 +37,11 @@ export function decodeViewerBagEvent(
   let value: unknown
   try { value = JSON.parse(newValue) } catch { return null }
   switch (key) {
-    case 'cc.napariLabelVisibility':  return { kind: 'labelVis',  value }
-    case 'cc.napariTrackVisibility':  return { kind: 'trackVis',  value }
-    case 'cc.napariBranchVisibility': return { kind: 'branchVis', value }
-    case 'cc.napariSetPrefs':         return { kind: 'setPrefs',  value }
+    case 'cc.napariLabelVisibility':  return { kind: 'labelVis',     value }
+    case 'cc.napariTrackVisibility':  return { kind: 'trackVis',     value }
+    case 'cc.napariBranchVisibility': return { kind: 'branchVis',    value }
+    case 'cc.napariSetPrefs':         return { kind: 'setPrefs',     value }
+    case 'cc.viewerImageVersion':     return { kind: 'imageVersion', value }
     default:                          return null
   }
 }

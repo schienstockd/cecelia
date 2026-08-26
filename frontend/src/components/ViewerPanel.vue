@@ -20,6 +20,7 @@ import MovieOutputControls from './MovieOutputControls.vue'
 import MovieTimeRange from './MovieTimeRange.vue'
 import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
+import InlineNote from './InlineNote.vue'
 import { movieSizeParams } from '../utils/movieSize'
 import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -593,11 +594,37 @@ const legendItems = computed(() => {
   return items
 })
 
+/**
+ * "Active version" advisory, same shape and severity split as tasks' `paramAdvisors`. Moved out of
+ * the popup viewer window (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended, Dominik 2026-08-26): the panel
+ * is the single control now, so the advisory sits next to the control that changes it.
+ *
+ * `null` when there is only one version, or `activeValueName` isn't reported — an absent answer
+ * must read as no claim, not as a pass.
+ */
+const versionNote = computed(() => {
+  const img = napariImage.value
+  const active = img?.activeValueName
+  const vn = selectedValueName.value
+  if (!active || !vn || valueNames.value.length < 2) return null
+  return vn === active
+    ? { severity: 'ok' as const, short: 'Active version',
+        detail: 'The version every task on this image reads.' }
+    : { severity: 'warn' as const, short: 'Not the active version',
+        detail: `Tasks on this image read "${active}". This view is of "${vn}".` }
+})
+
 function onValueNameChange(e: Event) {
   const name = (e.target as HTMLSelectElement).value
   selectedValueName.value = name
   loadObsCols()
   openInNapari(name)
+  // Broadcast to the popup viewer — the panel is the single source of truth for the version now
+  // (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). The popup's storage-event bridge (P2) picks this
+  // up via settings.setImageVersion → `cc.viewerImageVersion` and calls its `changeVersion`
+  // internally, so the two windows never disagree about the version on screen.
+  const openUid = projectStore.openImageUid
+  if (openUid) settings.setImageVersion(openUid, name)
 }
 
 // Fire the WebGPU-viewer overlays-refetch ping. Every panel toggle that changes what the viewer
@@ -772,11 +799,18 @@ onUnmounted(() => {
           class="viewer-select"
           :value="selectedValueName"
           @change="onValueNameChange"
-          v-tooltip.bottom="`Which image version to show in Napari`"
+          v-tooltip.bottom="`Which image version to show`"
         >
           <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
         </select>
         <span v-else class="viewer-hint cc-muted">No versions registered.</span>
+        <!-- Whether what is on screen is the version every task runs against. Through `InlineNote`,
+             the same shape a task param's advisory uses — same statement, we checked and here is
+             what we found. Moved from the popup viewer (P3 extended). -->
+        <InlineNote
+          v-if="versionNote" :severity="versionNote.severity"
+          :short="versionNote.short" :detail="versionNote.detail"
+        />
 
         <!-- segmentation label sets: show labels / tracks, delete -->
         <div v-if="shownLabelRows.length" class="viewer-labels-list"

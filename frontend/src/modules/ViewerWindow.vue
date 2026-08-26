@@ -44,7 +44,6 @@ import {
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import InlineNote from '../components/InlineNote.vue'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -85,13 +84,16 @@ const settings = useSettingsStore()
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
 /**
- * Which VERSION of the image is on screen — a ref, because it is now a control rather than a seed.
+ * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
+ * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
+ * the URL was frozen when the popup opened; the bag is what the panel has said since.
  *
  * Empty means "whatever the server resolves", which is the ACTIVE version (what a task would run
- * against). The meta response says which one that was, so the picker fills in from the answer rather
- * than from a second copy of the active-version rule living in the browser.
+ * against). The meta response says which one that was.
  */
-const valueName = ref(String(route.query.valueName ?? ''))
+const valueName = ref(
+  settings.getImageVersion(imageUid) || String(route.query.valueName ?? ''),
+)
 /**
  * The image's SET, seeded by the viewer panel that opened this window.
  *
@@ -208,22 +210,6 @@ const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | nul
  * the camera is not looking at it".
  */
 const shader = ref<UniformState | null>(null)
-/**
- * Is the version on screen the ACTIVE one — the zarr every task reads?
- *
- * Worth stating rather than leaving to be inferred from two names that often differ by one word
- * ("smoothed" vs "driftCorrected"). Null when the image has only one version, or the server is old
- * enough not to report which is active: an absent answer must read as no claim, not as a pass.
- */
-const versionNote = computed(() => {
-  const active = meta.value?.activeValueName
-  if (!active || !valueName.value || (meta.value?.valueNames?.length ?? 0) < 2) return null
-  return valueName.value === active
-    ? { severity: 'ok' as const, short: 'Active version',
-        detail: 'The version every task on this image reads.' }
-    : { severity: 'warn' as const, short: 'Not the active version',
-        detail: `Tasks on this image read "${active}". This view is of "${valueName.value}".` }
-})
 
 /**
  * Clear the canvas to magenta and draw nothing — Debug only, off by default.
@@ -2047,6 +2033,15 @@ watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
 
+// The panel is now the single version picker (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). Its
+// `<select>` writes `cc.viewerImageVersion` via `settings.setImageVersion`; the popup's own copy
+// of the settings ref rehydrates through the storage bridge (P2). Watch the getter so a panel
+// change here calls `changeVersion` internally — no picker in this window, but the version still
+// updates. Skip when the value matches (initial rehydrate on mount, echo from our own writes).
+watch(() => settings.getImageVersion(imageUid), vn => {
+  if (vn && vn !== valueName.value) void changeVersion(vn)
+})
+
 /**
  * Switch version. Everything in flight is for the OLD pixels, so it is abandoned rather than allowed
  * to land in the new textures — a slab that arrives after the switch has the right shape and the
@@ -2282,24 +2277,12 @@ onUnmounted(() => {
           <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
         </div>
       </TeleportPopover>
-      <!-- Which VERSION of the image. A select rather than chips: the names are user-invented and can
-           be long ("driftCorrected"), and chips would wrap this narrow panel to three rows. -->
-      <select
-        v-if="(meta?.valueNames?.length ?? 0) > 1"
-        class="cc-input-xs vw-version" :value="valueName"
-        @change="changeVersion(($event.target as HTMLSelectElement).value)"
-        v-tooltip.bottom="'Which version of the image to show'" aria-label="Image version"
-      >
-        <option v-for="vn in meta!.valueNames" :key="vn" :value="vn">{{ vn }}</option>
-      </select>
-      <!-- Whether what is on screen is the version every task runs against. Through `InlineNote`, the
-           same shape a task param's advisory uses, because it is the same statement: we checked your
-           data and here is what we found. `ok` is a real verdict here, not guidance. -->
-      <InlineNote
-        v-if="versionNote" :severity="versionNote.severity"
-        :short="versionNote.short" :detail="versionNote.detail"
-      />
-      <div v-else-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
+      <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
+           ViewerPanel now (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches this
+           window via the storage bridge and calls `changeVersion` internally. -->
+      <div v-if="valueName" class="cc-muted cc-fs-2xs vw-version-name"
+           v-tooltip.bottom="'Set the version in the Viewer panel of the main window'"
+           :title="valueName">{{ valueName }}</div>
 
       <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
@@ -2830,7 +2813,7 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vw-version { width: 100%; }
+.vw-version-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-key { white-space: nowrap; }
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }

@@ -26,6 +26,12 @@ describe('decodeViewerBagEvent', () => {
       .toEqual({ kind: 'setPrefs', value: v })
   })
 
+  it('decodes per-image active version — the panel is the single picker (P3-shaped)', () => {
+    const v = { 'img-A': 'driftCorrected', 'img-B': 'default' }
+    expect(decodeViewerBagEvent('cc.viewerImageVersion', JSON.stringify(v)))
+      .toEqual({ kind: 'imageVersion', value: v })
+  })
+
   it('returns null for unrelated keys', () => {
     expect(decodeViewerBagEvent('cc.tasksShowHistory', 'true')).toBeNull()
     expect(decodeViewerBagEvent('cc.someOtherKey', '"whatever"')).toBeNull()
