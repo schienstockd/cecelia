@@ -1577,7 +1577,7 @@ onUnmounted(() => {
                (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
                controls is off"). -->
           <template v-if="!popsPanelOn">
-            <div class="cc-muted cc-fs-2xs">No pops selected</div>
+            <div class="cc-muted cc-fs-2xs">No populations selected</div>
           </template>
           <template v-else-if="summary.cells > 0 || overlaysErr">
             <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
