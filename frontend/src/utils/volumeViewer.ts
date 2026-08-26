@@ -19,6 +19,15 @@ export interface ViewerChannel {
   lut: number[][]
 }
 
+export interface ViewerLevel {
+  /** 0-based pyramid level. 0 is the highest resolution — same as `open_level0`'s L0. */
+  level: number
+  nX: number
+  nY: number
+  chunkX: number
+  chunkY: number
+}
+
 export interface ViewerMeta {
   nT: number
   nC: number
@@ -27,6 +36,15 @@ export interface ViewerMeta {
   nY: number
   bytesPerVoxel: number
   slabBytes: number
+  /**
+   * Per-level shape + chunk shape, from the store's `multiscales` metadata. The 2D pan/zoom viewer
+   * picks a level from these against its viewport zoom (`pickTileLevel`); the 3D volume renderer picks
+   * one whose whole-slab BYTES fit under a VRAM cap (`pickVolumeLevel`) — the audit's answer to the
+   * `maxBufferSize` error a full-res volume request hit. An empty list means the store is single-level
+   * or its multiscales metadata is unreadable — the client falls back to L0 only, same shape as a
+   * caller before the tile route.
+   */
+  levels?: ViewerLevel[]
   contrastSource: 'viewer' | 'sampled'
   /** µm per voxel, [x, y, z]. 1.0 for an axis the image was never calibrated on. */
   voxelUm: number[]
@@ -62,8 +80,12 @@ export interface ViewerMeta {
 }
 
 /** Channels the shader can composite in one pass. Beyond this the viewer shows the first MAX_CHANNELS
- *  and says so — a silent truncation would read as "that channel is empty". */
-export const MAX_CHANNELS = 8
+ *  and says so — a silent truncation would read as "that channel is empty". Sized for 25-ch CODEX-style
+ *  stacks and multi-marker IF; the cost is one row in the LUT texture and one vec4 in the uniform block
+ *  per slot. In 3D mode this also multiplies the vol texture's z-layer count (nZ * nT * MAX_CHANNELS),
+ *  which can bump into `maxTextureDimension3D` (2048 on integrated) for deep z-stacks — but 2D and
+ *  moderate 3D fit fine. */
+export const MAX_CHANNELS = 32
 /** Stops per channel in the LUT texture. Matches the bridge's `_LUT_MAX_STOPS`, which is what caps the
  *  stops the props file can carry in the first place. */
 export const LUT_STOPS = 64
@@ -97,6 +119,20 @@ export interface SlabQuery {
    * what makes it one parameter rather than a second route. The dtype differs and `X-Slab-Bpv` says so.
    */
   labels?: string
+  /**
+   * XY tile bounds, 0-based inclusive `[lo, hi]` in the LEVEL's coordinate space (a level=1 tile at
+   * x=100..199 is a different region on disk from level=0 at the same numbers). Absent means the whole
+   * axis — same shape as `z`. Together with `level` this is the pan/zoom viewer's access pattern.
+   */
+  x?: number
+  xTo?: number
+  y?: number
+  yTo?: number
+  /**
+   * 0-based pyramid level, defaults to 0. The client picks it — the server does not know the viewport
+   * zoom. `pickTileLevel` for the 2D pan/zoom view, `pickVolumeLevel` for the 3D raycaster.
+   */
+  level?: number
 }
 
 export function slabUrl(q: SlabQuery): string {
@@ -111,6 +147,13 @@ export function slabUrl(q: SlabQuery): string {
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
   // server keeps the z dim). Never sent without `z`.
   if (q.z !== undefined && q.zTo !== undefined) p.set('zTo', String(q.zTo))
+  // XY tile bounds — omit `xTo`/`yTo` when absent, same shape as `z`/`zTo`. `level` is only sent when
+  // non-zero, so the timecourse callers (which always want L0) produce byte-identical URLs.
+  if (q.x !== undefined) p.set('x', String(q.x))
+  if (q.x !== undefined && q.xTo !== undefined) p.set('xTo', String(q.xTo))
+  if (q.y !== undefined) p.set('y', String(q.y))
+  if (q.y !== undefined && q.yTo !== undefined) p.set('yTo', String(q.yTo))
+  if (q.level !== undefined && q.level !== 0) p.set('level', String(q.level))
   return '/api/viewer/slab?' + p.toString()
 }
 
@@ -118,6 +161,46 @@ export function metaUrl(q: { projectUid: string; imageUid: string; valueName?: s
   const p = new URLSearchParams({ projectUid: q.projectUid, imageUid: q.imageUid })
   if (q.valueName) p.set('valueName', q.valueName)
   return '/api/viewer/meta?' + p.toString()
+}
+
+/**
+ * 2D pan/zoom LOD: the level whose native pixel is closest to (without going finer than) one device
+ * pixel, given the viewport zoom. `zoom` is L0 pixels per DEVICE pixel — 1 means 1:1, 2 means one
+ * device pixel shows two L0 pixels, 0.5 means magnified past 1:1.
+ *
+ * Formula: `level = clamp(floor(log2(zoom)), 0, nLevels-1)`. Level `n`'s native pixel is `2^n` L0
+ * pixels wide, so this is the coarsest level whose pixel is still ≤ one device pixel — don't ship
+ * pixels the screen can't show. At `zoom < 1` (magnified past 1:1) we stay on L0; nothing finer
+ * exists and the renderer upscales.
+ *
+ * ASSUMES CLEAN 2× STEPS — true for every store `bioformats2raw` or `create_multiscales` writes today.
+ * If a future writer ships a non-2× pyramid, this needs to consult `levels[n].nX` for the actual
+ * per-level factor. The meta payload already carries the shapes, so the change is here rather than in
+ * the server contract. (Spatial audit Phase 3, 2026-08-25.)
+ */
+export function pickTileLevel(zoom: number, meta: ViewerMeta): number {
+  const n = meta.levels?.length ?? 1
+  if (n <= 1 || !Number.isFinite(zoom) || zoom <= 1) return 0
+  const raw = Math.floor(Math.log2(zoom))
+  return Math.max(0, Math.min(n - 1, raw))
+}
+
+/**
+ * 3D volume LOD: the pyramid level to load a whole (t, c) volume from.
+ *
+ * napari also renders 3D at the coarsest level; Imaris-style octree LOD was on the wishlist but never
+ * shipped. Default to the DEEPEST level so a big-XY volume request can never exceed WebGPU's
+ * `maxBufferSize` (256 MB on a Dawn adapter, and a full-res f8gzA2-shape volume is 687 MB per
+ * channel — the error the audit's user hit).
+ *
+ * `override` (0-based) is the user's choice from the level dropdown; clamped to `[0, nLevels-1]`.
+ * `undefined` picks the deepest.
+ */
+export function pickVolumeLevel(meta: ViewerMeta, override?: number): number {
+  const n = meta.levels?.length ?? 1
+  if (n <= 1) return 0
+  if (override === undefined || !Number.isFinite(override)) return n - 1
+  return Math.max(0, Math.min(n - 1, Math.floor(override)))
 }
 
 /** `X-Slab-Shape` (`nz,ny,nx`) → the three numbers, or null if the header is absent/unparseable. */
@@ -142,12 +225,13 @@ export function parseSlabShape(header: string | null): [number, number, number] 
 export function slabShapeError(
   header: string | null, byteLength: number, meta: ViewerMeta, zDepth = meta.nZ,
   bytesPerVoxel = meta.bytesPerVoxel,
+  expectNX = meta.nX, expectNY = meta.nY,
 ): string | null {
   const shape = parseSlabShape(header)
   if (!shape) return 'Slab response carried no X-Slab-Shape header'
   const [nz, ny, nx] = shape
-  if (nx !== meta.nX || ny !== meta.nY || nz !== zDepth) {
-    return `Slab is ${nz}x${ny}x${nx} (z,y,x) but ${zDepth}x${meta.nY}x${meta.nX} was asked for`
+  if (nx !== expectNX || ny !== expectNY || nz !== zDepth) {
+    return `Slab is ${nz}x${ny}x${nx} (z,y,x) but ${zDepth}x${expectNY}x${expectNX} was asked for`
   }
   const want = nx * ny * nz * bytesPerVoxel
   if (byteLength !== want) return `Slab is ${byteLength} bytes, expected ${want}`
@@ -382,10 +466,20 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
 }
 
 /** Wheel → dolly. Multiplicative, so a notch feels the same at every distance; clamped to a band
- *  around the fit distance so the volume can never be lost off-screen. */
-export function orbitZoom(cam: OrbitCamera, deltaY: number, fitDist: number): OrbitCamera {
+ *  around the fit distance so the volume can never be lost off-screen.
+ *
+ *  `band` scales the fit distance. The default `{min: 0.15, max: 6}` is tuned for the 3D volume view,
+ *  where a wider band lets the user rotate a rotated volume out of frame. The 2D plane view of a
+ *  whole slide is a bounded rectangle — it cannot be lost — so it passes a much smaller `min` so the
+ *  user can zoom to actual pixels (`camZoom ≤ 1`) and `pickTileLevel` reaches L0. At 0.15 on a
+ *  20k×17k slide, max zoom-in is `camZoom ≈ 2` — L1 is the finest level `pickTileLevel` ever picks
+ *  (Dominik, 2026-08-26). */
+export function orbitZoom(
+  cam: OrbitCamera, deltaY: number, fitDist: number,
+  band: { min: number; max: number } = { min: 0.15, max: 6 },
+): OrbitCamera {
   const d = cam.dist * Math.exp(deltaY * 0.001)
-  return { ...cam, dist: Math.max(fitDist * 0.15, Math.min(fitDist * 6, d)) }
+  return { ...cam, dist: Math.max(fitDist * band.min, Math.min(fitDist * band.max, d)) }
 }
 
 // ── Contrast from the data the client already holds ───────────────────────────────

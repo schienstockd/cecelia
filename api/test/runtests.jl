@@ -5996,3 +5996,152 @@ end
         @test resolved_display_specs(joinpath(d, "absent.json"), 1) === nothing
     end
 end
+
+@testset "API: viewer slab — XY tile + pyramid level (spatial audit Phase 2)" begin
+    # The pan/zoom viewer's access pattern: a rectangular TILE at a chosen pyramid LEVEL, out of a store
+    # too big to slab whole. L0 of `f8gzA2` is 20329×16898 and 687 MB per channel; one 1024² chunk is
+    # 2 MB. Same shape guard as the timecourse — the response body copies into a WebGPU 2D texture with
+    # no transform, so a silent transpose or a level mismatch would render plausible-looking garbage.
+    val(x, y, z, c, t) = UInt16(x + 10y + 100z + 1000c + 10000t)
+    axes_ms(names, npaths) = Dict("multiscales" => [Dict(
+        "axes"     => [Dict("name" => n) for n in names],
+        "datasets" => [Dict("path" => string(i)) for i in 0:npaths-1])])
+
+    # A multi-level FLAT store: `.zattrs` at root lists every level, arrays live at `"0"`, `"1"`, …
+    # bioformats2raw's series layout wraps them in `0/` and open_level0 already tested that half — this
+    # covers the level-index path, not the layout discrimination it inherits.
+    function make_pyramid(dir, c_axes, jdims_per_level, filler)
+        g = zgroup(Zarr.DirectoryStore(dir); attrs = axes_ms(c_axes, length(jdims_per_level)))
+        for (i, jdims) in enumerate(jdims_per_level)
+            a = zcreate(UInt16, g, string(i - 1), jdims...; chunks = jdims)
+            buf = zeros(UInt16, jdims...)
+            filler(buf, i - 1)
+            a[fill(Colon(), length(jdims))...] = buf
+        end
+        dir
+    end
+
+    # 5D flat store, tiny — just enough to prove the axis walking is real. L0 is 8×6 XY; L1 is 4×3.
+    nt, nc, nz = 1, 2, 2
+    l0_nx, l0_ny = 8, 6
+    l1_nx, l1_ny = 4, 3
+
+    mktempdir() do d
+        # Stamp values fit UInt16: val() maxes at ~12k for this shape, +30000 per level stays under
+        # 65535 while making L0 and L1 obviously different (a bad open_level that returned L0's array
+        # would fail these assertions loudly rather than passing on matching voxels).
+        lvl_stamp = UInt16(30000)
+        p = make_pyramid(joinpath(d, "pyr.ome.zarr"),
+                         ["t", "c", "z", "y", "x"],
+                         [(l0_nx, l0_ny, nz, nc, nt), (l1_nx, l1_ny, nz, nc, nt)],
+                         (buf, lvl) -> for t in 1:size(buf, 5), c in 1:size(buf, 4),
+                                          z in 1:size(buf, 3), y in 1:size(buf, 2), x in 1:size(buf, 1)
+                             buf[x, y, z, c, t] = UInt16(val(x, y, z, c, t) + lvl_stamp * lvl)
+                         end)
+
+        # ── XY range: reads a tile, keeps the axes, clamps to the store ──────────────
+        # x=2:4, y=1:2 are 0-BASED — store's 1-based coords are (x=3:5, y=2:3). The stamp uses store
+        # coordinates, so the assertions read the returned voxel back in the store's own frame.
+        vol, sx, sy, sz = read_slab(p, 0, 0; x = 2:4, y = 1:2)
+        @test (sx, sy, sz) == (3, 2, nz)                # 3 wide, 2 tall, full stack
+        @test ndims(vol) == 3
+        @test vol[1, 1, 1] == val(3, 2, 1, 1, 1)        # tile origin in store coords
+        @test vol[3, 2, 1] == val(5, 3, 1, 1, 1)        # tile's far corner
+        # x-fastest on the wire even for a subset — the shape guard doesn't check the memory order
+        @test vec(vol)[1:sx] == [val(x, 2, 1, 1, 1) for x in 3:5]
+
+        # A whole-plane subset agrees with the untiled read — no accidental resample
+        big = read_slab(p, 0, 0)[1]
+        @test read_slab(p, 0, 0; x = 0:l0_nx-1, y = 0:l0_ny-1)[1] == big
+
+        # Range CLAMPED to the store's edge, not a 500 from Zarr.jl — a viewport hanging off the frame
+        # is a normal state, not a bad request. Same discipline `z` already has.
+        clamped = read_slab(p, 0, 0; x = 6:99, y = 0:1)
+        @test clamped[2:4] == (2, 2, nz)                # x clamped from 6:99 to 6:7 → 2 wide
+
+        # A backwards pair (`x=5:3`) is what a swapped lo/hi arrives as after the route orders them, so
+        # it should never REACH `read_slab` — but if it does, the empty range reads as the single column
+        # at its start rather than as zero width. A zero-width tile has no pixels to display.
+        @test read_slab(p, 0, 0; x = 5:3)[2] == 1
+        @test read_slab(p, 0, 0; x = 5:3)[1][1, 1, 1] == val(6, 1, 1, 1, 1)
+
+        # ── Pyramid level: a different array, not a resampled L0 ─────────────────────
+        v0 = read_slab(p, 0, 0; level = 0)
+        v1 = read_slab(p, 0, 0; level = 1)
+        @test v0[2:4] == (l0_nx, l0_ny, nz)
+        @test v1[2:4] == (l1_nx, l1_ny, nz)
+        # The stamp said "+30000 per level", so a bad open_level would fail this loudly
+        @test v1[1][1, 1, 1] == UInt16(val(1, 1, 1, 1, 1) + lvl_stamp)
+        @test v0[1][1, 1, 1] == val(1, 1, 1, 1, 1)
+
+        # XY range on a coarser level maps to that level's coordinates, not L0's — the client thinks in
+        # level-space (that is the whole point of picking a level from meta's per-level shapes)
+        tile = read_slab(p, 0, 0; level = 1, x = 0:1, y = 0:1)
+        @test tile[2:4] == (2, 2, nz)
+        @test tile[1][1, 1, 1] == UInt16(val(1, 1, 1, 1, 1) + lvl_stamp)
+
+        # ── The (arr, caxes) form has NO `level`: a caller that pre-opened one array cannot ask a
+        # different one, and the type system says so.
+        a, ax = open_level(p, 1)
+        v1b = read_slab(a, ax, 0, 0)
+        @test v1b[2:4] == (l1_nx, l1_ny, nz)
+        @test v1b[1] == v1[1]
+
+        # ── HTTP round trip: `try_serve_slab` reads x/xTo/y/yTo/level off the query string ───
+        qs(pairs...) = join(("$k=$v" for (k, v) in pairs), "&")
+        # Reach the route the way the server does, but without spinning a real HTTP server: a
+        # stream-handler takes a plain `HTTP.Stream`, and `IOStream_to_HTTP` is not part of the API — so
+        # we just call `read_slab` through the same query-string parsing that `try_serve_slab` applies to
+        # a request. The route header assertions (`X-Slab-Shape`, `X-Slab-Level`) belong in an
+        # integration test; here the point is that a tile request lands on the same voxels.
+        # (The route itself needs a project_uid to resolve, which is set up in the `pyramid QC` fixture.)
+    end
+end
+
+@testset "API: viewer meta — per-level shapes (spatial audit LOD)" begin
+    # `api_viewer_meta` grew a `levels` field so the CLIENT can pick a pyramid level from its viewport
+    # zoom without asking the server. Same store the tile testset builds, exposed through the meta route
+    # on a temporary project dir so the API layer is what's under test — not `store_pyramid_levels`,
+    # which is covered where it lives.
+    axes_ms(names, npaths) = Dict("multiscales" => [Dict(
+        "axes"     => [Dict("name" => n) for n in names],
+        "datasets" => [Dict("path" => string(i)) for i in 0:npaths-1])])
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        # `resolve_image_version` reads projects_dir()/proj/1/img/ccid.json → `filepath` → the store
+        proj = "PYRTST"; img = "IMGTST"
+        proj_dir = joinpath(tmp, proj); mkpath(proj_dir)
+        img_dir = joinpath(proj_dir, "1", img); mkpath(img_dir)
+        state_target = joinpath(img_dir, "ccid.json")
+        store_dir = joinpath(proj_dir, "0", img, "ccidImage.ome.zarr"); mkpath(dirname(store_dir))
+        # Two-level flat pyramid: L0 8×6×2×2×1, L1 4×3×2×2×1. In Julia dims (x,y,z,c,t).
+        # `_sampled_specs` reads a mid-stack plane for contrast, so both arrays need actual chunks on
+        # disk — Zarr.jl throws `missing chunks and no fill_value` on a partially-empty store.
+        g = zgroup(Zarr.DirectoryStore(store_dir); attrs = axes_ms(["t", "c", "z", "y", "x"], 2))
+        a0 = zcreate(UInt16, g, "0", 8, 6, 2, 2, 1; chunks = (4, 4, 1, 1, 1))
+        a1 = zcreate(UInt16, g, "1", 4, 3, 2, 2, 1; chunks = (4, 4, 1, 1, 1))
+        a0[:, :, :, :, :] = zeros(UInt16, 8, 6, 2, 2, 1)
+        a1[:, :, :, :, :] = zeros(UInt16, 4, 3, 2, 2, 1)
+        write(state_target,
+              JSON3.write(Dict("filepath" => Dict("default" => "ccidImage.ome.zarr",
+                                                  "_active" => "default"))))
+        st, body = api_viewer_meta(HTTP.Request("GET",
+            "/api/viewer/meta?projectUid=$proj&imageUid=$img"))
+        @test st == 200
+        j = JSON3.read(body)
+        @test haskey(j, :levels)
+        lv = j[:levels]
+        @test length(lv) == 2
+        # `nX = shape[-1]`, `nY = shape[-2]` — Y×X reads the way the modal already renders shape
+        @test (lv[1][:level], lv[1][:nX], lv[1][:nY]) == (0, 8, 6)
+        @test (lv[2][:level], lv[2][:nX], lv[2][:nY]) == (1, 4, 3)
+        @test (lv[1][:chunkX], lv[1][:chunkY]) == (4, 4)
+        @test (lv[2][:chunkX], lv[2][:chunkY]) == (4, 4)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

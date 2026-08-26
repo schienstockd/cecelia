@@ -37,6 +37,11 @@ import {
   createVolumeRenderer, WebGpuUnavailable,
   type VolumeRenderer, type UniformState, type FrameSample,
 } from '../lib/webgpu/volumeRenderer'
+import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
+import {
+  tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
+  type TileKey, type ViewportL0,
+} from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import InlineNote from '../components/InlineNote.vue'
@@ -44,8 +49,8 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex,
-  MAX_CHANNELS, SAFE_CACHE_BYTES,
+  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
@@ -63,7 +68,8 @@ import {
 import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import { toHex as rgbHex } from '../utils/colour'
-import { PALETTES } from '../plots/plot'
+import { PALETTES, distinctColors } from '../plots/plot'
+import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -98,8 +104,43 @@ const valueName = ref(String(route.query.valueName ?? ''))
 const setUid = String(route.query.set ?? '')
 const imageName = String(route.query.name ?? '')
 
+/**
+ * Read a fetch response as JSON, but tell you WHICH request went wrong when the body is empty or not
+ * JSON. `await res.json()` on a 500 with an empty body throws "Failed to execute 'json' on 'Response':
+ * Unexpected end of JSON input", which reads as a client bug and hides the real status. Read as text
+ * first, then try `JSON.parse` in a try/catch — a non-2xx becomes `Meta 500: <first 120 chars>`, an
+ * empty 2xx becomes `Meta 200: empty body`.
+ */
+async function readJson<T = unknown>(res: Response, label: string): Promise<T> {
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = `${label} ${res.status}`
+    if (text) {
+      try { msg += `: ${(JSON.parse(text) as { error?: string }).error ?? text.slice(0, 120)}` }
+      catch { msg += `: ${text.slice(0, 120)}` }
+    }
+    throw new Error(msg)
+  }
+  if (!text) throw new Error(`${label} ${res.status}: empty body`)
+  try { return JSON.parse(text) as T }
+  catch { throw new Error(`${label} ${res.status}: not JSON (${text.slice(0, 120)})`) }
+}
+
 const canvas = ref<HTMLCanvasElement | null>(null)
 const renderer = shallowRef<VolumeRenderer | null>(null)
+/**
+ * The 2D pan/zoom viewer for whole-slide images (`docs/todo/VIEWER_TILES_PLAN.md` → Phase C).
+ *
+ * Lives alongside the volume renderer, NOT instead of it: swapping every code path over would break
+ * the timecourse view that already works. Instead the tile pipeline turns on for the case it exists
+ * to serve — a large plane whose whole-fetch does not fit — and the whole-plane MIP shader keeps the
+ * timecourse and small-image cases untouched.
+ *
+ * A pop-out canvas has ONE WebGPU context, so `renderer` and `tileRenderer` are alternates: whichever
+ * mode is active owns the canvas, and swapping mode destroys one before creating the other. Same cost
+ * as a `reallocate` today — mode swap is already a full refetch.
+ */
+const tileRenderer = shallowRef<TileRenderer | null>(null)
 const meta = ref<ViewerMeta | null>(null)
 const error = ref('')
 const starting = ref('')
@@ -126,6 +167,37 @@ const chMax = computed(() =>
  *  per image, like the server's: recomputed per timepoint, playback flickers as the window chases each
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
 const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
+/** The channels' `lo`/`hi` as the SERVER shipped them (napari-saved or first-load percentile) — the
+ *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
+ *  restoring these gets the user back to a picture they know worked. */
+const initialContrast = ref<{ lo: number; hi: number }[]>([])
+/** Same snapshot for the per-channel LUT (the colour), so the "Distinct colours" toggle can be
+ *  turned OFF and put every channel back to the server default. Deep-copied — the toggle mutates
+ *  `channels[c].lut` in place. */
+const initialLUTs = ref<number[][][]>([])
+/**
+ * Assign each channel a hue from `distinctColors` — the house "N visually distinct colours"
+ *  helper (`plots/plot.ts`, golden-angle rotation). Same idiom as `randomcoloR::distinctColorPalette`
+ *  in the old R viewer. Toggle off restores the server-shipped colours.
+ */
+const distinctChannelColours = ref(false)
+watch(distinctChannelColours, on => {
+  const m = meta.value
+  if (!m) return
+  if (on) {
+    const nch = Math.min(m.nC, MAX_CHANNELS)
+    distinctColors(nch).forEach((hsl, c) => {
+      const [r, g, b] = hslCssToRgb(hsl)
+      m.channels[c].lut = lutFromHex(toHex([r, g, b]))
+    })
+  } else {
+    m.channels.forEach((ch, c) => {
+      const init = initialLUTs.value[c]
+      if (init) ch.lut = init.map(stop => [...stop])
+    })
+  }
+  pushChannels()
+})
 const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | null>(null)
 /**
  * The uniform block as the shader last received it — Debug only.
@@ -386,6 +458,13 @@ const rampStyle = computed(() => {
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 })
 const fitDist = ref(1)
 /**
+ * The level the current textures were ALLOCATED for. `slabLevel` is a derived value that reacts to
+ * camera zoom; when the two disagree the level watch fires `reallocate(false)` (debounced), so a wheel
+ * gesture that crosses two thresholds refetches once. Set inside `reallocate()` right after `setImage`
+ * so the watch cannot chase a level that has already been picked up.
+ */
+const loadedLevel = ref(-1)
+/**
  * `plane` shows ONE z plane, `volume` the whole stack as a MIP. Plane is the default for anything with
  * a z axis, because it is what a timecourse is actually watched in — and it is the only one that plays:
  * on `Dml3RG` a plane timepoint is 8.8 MB against 326 MB, so the whole 181-frame movie is 1.59 GB and
@@ -417,6 +496,81 @@ const nT = computed(() => meta.value?.nT ?? 0)
 const zRange = ref<[number, number]>([0, 0])
 const zDepth = computed(() =>
   mode.value === 'plane' ? 1 : Math.max(1, zRange.value[1] - zRange.value[0] + 1))
+/**
+ * L0 image pixels per DEVICE pixel — the zoom the LOD picker takes. Derived from `cam.dist`: the
+ * plane view is orthographic with visible height = `2 · dist · VIEW_HALF_ANGLE` µm at every depth
+ * (`visibleExtentUm`), which converts to L0 pixels via `voxelUm[1]` and divides by device-pixel canvas
+ * height. `zoom > 1` = one device pixel shows multiple L0 pixels (zoomed out — coarser level cheaper
+ * and no detail lost); `zoom ≤ 1` = magnified past 1:1 (stay on L0).
+ */
+const camZoom = computed(() => {
+  const c = canvas.value
+  const m = meta.value
+  if (!c || !m) return 1
+  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleL0Y = visibleHeightUm / (m.voxelUm[1] || 1)
+  const devicePxY = Math.max(c.clientHeight * (window.devicePixelRatio || 1), 1)
+  return visibleL0Y / devicePxY
+})
+/**
+ * Pyramid level the current view fetches at. napari renders 3D at the coarsest level, and a full-res
+ * volume of a wide-XY image exceeds WebGPU's `maxBufferSize` (`f8gzA2` needs 1.28 GB against a 256 MB
+ * cap) — so the 3D view picks the deepest level by default, user-overridable via
+ * `settings.viewerVolumeLevel`.
+ *
+ * The 2D plane view is ZOOM-DRIVEN — `pickTileLevel(camZoom, meta)` at every camera dist. That is the
+ * whole point of the pyramid: at fit-to-window on a 20k×17k image, one device pixel already covers
+ * ~20 L0 pixels, so fetching L0 ships pixels the screen cannot show — L4 is the coarsest level whose
+ * native pixel is still ≤ one device pixel and it is 256× cheaper on the wire. As the user zooms in
+ * past a `floor(log2(zoom))` threshold, `slabLevel` drops and the level watch reallocates. Level swaps
+ * are debounced through `levelPump` so a wheel gesture that crosses two thresholds refetches once.
+ * Still a whole-plane-per-level fetch (Phase B of `docs/todo/VIEWER_TILES_PLAN.md`); per-viewport tiles
+ * come next.
+ */
+const slabLevel = computed(() => {
+  const m = meta.value
+  if (!m) return 0
+  if (mode.value === 'plane') {
+    const o = settings.viewerPlaneLevel
+    if (o >= 0) return Math.max(0, Math.min((m.levels?.length ?? 1) - 1, Math.floor(o)))
+    return pickTileLevel(camZoom.value, m)
+  }
+  const override = settings.viewerVolumeLevel
+  return pickVolumeLevel(m, override < 0 ? undefined : override)
+})
+/** The XY dims actually being fetched — level-0's `meta.nX`/`nY`, or the coarser level's dims. */
+const renderNX = computed(() =>
+  meta.value?.levels?.[slabLevel.value]?.nX ?? meta.value?.nX ?? 0)
+const renderNY = computed(() =>
+  meta.value?.levels?.[slabLevel.value]?.nY ?? meta.value?.nY ?? 0)
+/**
+ * The tile pipeline turns on for the case it exists to serve — a plane whose L0 whole-fetch doesn't
+ * fit in a comfortable single slab (VIEWER_TILES_PLAN.md → Phase C). Below the threshold, the volume
+ * renderer's whole-plane path already works: a channel is a few MB, the plan movie plays, and the tile
+ * atlas would add pipeline plumbing for no visible win. Above it — the `f8gzA2`-shape whole slide — a
+ * whole plane cannot fit period, and the tile pipeline is the only way to interact.
+ *
+ * Timecourse whole-slide is a case we do not have (no store in the dev projects has both nT > 1 and a
+ * plane over the threshold), so the tile path is gated on `nT ≤ 1` — the eviction ranker does not yet
+ * penalise cross-timepoint distance, so caching tiles from several timepoints would fight for slots
+ * without ordering them. Ship the whole-slide case first; if a timecourse tilescan turns up, add `t` to
+ * the key.
+ *
+ * Threshold: 200 MB per channel-plane, chosen against Chromium/Dawn's 256 MB `maxBufferSize` — a whole
+ * plane above this genuinely CANNOT be uploaded in one texture write. Not tuned.
+ */
+const PLANE_TILE_THRESHOLD_BYTES = 200e6
+const needsTiling = computed(() => {
+  const m = meta.value
+  if (!m) return false
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  return m.nX * m.nY * m.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
+})
+const useTiles = computed(() =>
+  mode.value === 'plane' && needsTiling.value && (meta.value?.nT ?? 0) <= 1)
+/** Whichever renderer is currently alive — for template reads that don't care which one. */
+const activeAdapter = computed(() =>
+  renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
 /**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
@@ -472,6 +626,10 @@ const cells = computed(() => stripCells(
 // ResizeObserver. `redraw()` is the camera/contrast/timepoint path (the box is identical but the frame
 // is not); `schedule()` is the resize path, which the size guard owns.
 const frame = usePlotResize(canvas, () => {
+  // Tile mode owns the canvas when a whole-slide plane is active — see `useTiles`. Dispatched HERE
+  // rather than upstream because every camera/pointer path funnels through this closure; a second
+  // dispatch site would drift from this one.
+  if (useTiles.value) { drawTiles(); return }
   const r = renderer.value
   if (!r) return
   r.resize()
@@ -656,9 +814,7 @@ async function loadOverlays() {
     const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
                                           valueName: gc.valueName, popType: gc.popType }),
                             { cache: 'no-store' })
-    const body = await res.json()
-    if (!res.ok) throw new Error(body?.error ?? `Overlays failed: ${res.status}`)
-    const p = body as OverlayPayload
+    const p = await readJson<OverlayPayload>(res, 'Overlays')
     // Two layers of ground truth act on the pops in the payload:
     //   1. The panel's per-pop-TYPE gate ("Populations & tracks" icon row). If the popType the pop
     //      manager is currently on (flow / clust / …) is toggled off in the panel, the whole family
@@ -754,9 +910,29 @@ async function loadTracks() {
 }
 
 function pushChannels() {
-  if (meta.value) renderer.value?.setChannels(meta.value.channels)
+  const m = meta.value
+  if (!m) return
+  renderer.value?.setChannels(m.channels)
+  tileRenderer.value?.setChannels(m.channels)
   frame.redraw()
+  // Same LUT + contrast on the thumbnail so it moves with the main view — a background image the
+  // main viewer disagrees with reads as broken.
+  renderOverview()
 }
+
+/** Flip every channel's visibility in one go — a 24-channel image would otherwise want 23 toggle
+ *  clicks to hide-then-solo a marker. */
+function setAllChannels(visible: boolean) {
+  const m = meta.value
+  if (!m) return
+  for (const ch of m.channels) ch.visible = visible
+  pushChannels()
+}
+/** True when every channel is on. False when any is off — a mixed state reads as "not all on" so
+ *  the toggle's next click will flip everything ON, not OFF. Same discipline as select-all
+ *  checkboxes elsewhere. */
+const allChannelsVisible = computed(() =>
+  (meta.value?.channels ?? []).every(ch => ch.visible))
 
 // ── Fetching a timepoint ─────────────────────────────────────────────────────────
 // One entry per in-flight timepoint, so a prefetch already running is joined rather than started
@@ -793,6 +969,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // second say in what is fetched.
     const zd = r.cache.zDepth
     const zq = slabZ(zd, m.nZ, zPlane.value, zRange.value[0])
+    const lvl = slabLevel.value
+    const expectNX = renderNX.value, expectNY = renderNY.value
     // The MASK goes with the channels, in the same round trip and into the same texture slot. Fetching
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
@@ -800,28 +978,33 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const res = await fetch(slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc }),
-                                { cache: 'no-store', signal: ac.signal })
+        const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
+        const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
-        // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing.
-        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd)
+        // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing. At a
+        // coarser level the server returns a smaller frame, so the shape assertion needs the LEVEL's
+        // dims (`renderNX`/`renderNY`), not L0's — otherwise every coarse-level fetch fails the guard.
+        const bad = slabShapeError(
+          res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, m.bytesPerVoxel, expectNX, expectNY)
         if (bad) throw new Error(bad)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return buf
       })),
       (async () => {
         if (!vn) return null
-        const res = await fetch(
-          slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn }),
-          { cache: 'no-store', signal: ac.signal })
+        const url = slabUrl({
+          projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+        })
+        const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
         const buf = await res.arrayBuffer()
         // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
         // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
         // width it would render as a plausible mask of something else.
         const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
-        const bad = slabShapeError(res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv)
+        const bad = slabShapeError(
+          res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
         if (bad) throw new Error('Mask: ' + bad)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return widenLabelSlab(buf, bpv)
@@ -947,6 +1130,279 @@ function gotoT(tp: number) {
   schedulePump(tp)
 }
 
+// ── Tile mode: per-viewport fetching with a halo prefetch ────────────────────────
+//
+// The 2D whole-slide code path (Phase C). Parallel to the timepoint pump above — visible tiles
+// first, then a ring around them so a small pan is instant — one request at a time through the same
+// `debouncedLatest` scheduler that runs the timepoint pump, so a fast wheel gesture across level
+// thresholds cannot pile up requests. Same reason the timepoint pump exists.
+//
+// Load discipline mirrors the timepoint work: the visible tiles LOAD first (row-major inside the
+// viewport), then one halo ring outward at Chebyshev distance 1. The atlas holds all channels of one
+// tile atomically — a channel toggle costs zero and neither redraws nor refetches — so a fetch turns
+// into one HTTP per channel and one `uploadTile(key, channelBytes[])` per tile.
+
+/** One outward ring of tiles beyond the viewport is prefetched. Two rings quadruples the fetch
+ *  count for a marginal gain — an outward pan is asymmetric like a scrub, but pans in every
+ *  direction are equally likely so there is no direction to bias for. Halo 1 turns a small pan into
+ *  a paint of resident bytes; anything more is a bet on the user's next gesture. */
+const HALO_RINGS = 1
+
+/**
+ * Aborts for tile fetches in flight, keyed by tile-key string. A zoom/pan mid-fetch cancels tiles the
+ * new viewport has no use for. Separate from `aborts` so the timepoint path is untouched.
+ */
+const tileAborts = new Map<string, AbortController>()
+
+/**
+ * Viewport in L0 pixels — the input `tilesInHalo` and `viewportTiles` take. Derived from the camera,
+ * the canvas size and the image's µm-per-voxel. Null when the layout has not settled — asking the
+ * server for L0 of a 20k×17k image before the client knows its own size is exactly the 687 MB request
+ * this exists to avoid.
+ */
+function computeViewportL0(): ViewportL0 | null {
+  const m = meta.value
+  const el = canvas.value
+  if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
+  const asp = canvasAspect()
+  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
+  const halfWUm = halfHUm * asp
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  // Image origin (top-left) sits at (-ex/2, -ey/2) in world µm (matches the volume renderer's box).
+  // The camera centre in image µm is (panX + ex/2, -panY + ey/2) — screen up is -y world, so a
+  // positive panY points the camera at a SMALLER image_y (i.e. higher rows).
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  const cxImg = cam.value.panX + ex / 2
+  const cyImg = -cam.value.panY + ey / 2
+  return {
+    x0: Math.floor((cxImg - halfWUm) / vx),
+    y0: Math.floor((cyImg - halfHUm) / vy),
+    x1: Math.ceil((cxImg + halfWUm) / vx),
+    y1: Math.ceil((cyImg + halfHUm) / vy),
+  }
+}
+
+/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo. */
+function missingTiles(): TileKey[] {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return []
+  const level = slabLevel.value
+  const lvl = levelMeta(m, level)
+  const vp = computeViewportL0()
+  if (!lvl || !vp) return []
+  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  const out: TileKey[] = []
+  for (const [tx, ty] of coords) {
+    const key: TileKey = { level, tx, ty }
+    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    out.push(key)
+  }
+  return out
+}
+
+/** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
+ *  round cannot take a tile that is either on screen or being drawn NEXT. Both, because during a pan
+ *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. */
+function evictionKeepSet(): Set<string> {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return new Set()
+  const level = slabLevel.value
+  const lvl = levelMeta(m, level)
+  const vp = computeViewportL0()
+  if (!lvl || !vp) return new Set()
+  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ level, tx, ty })))
+}
+
+/** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
+ *  viewport moves; a re-scheduled pump then queues the same tile again if it is still needed. */
+async function fetchTile(key: TileKey): Promise<boolean> {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return false
+  const lvl = levelMeta(m, key.level)
+  if (!lvl) return false
+  const kStr = tileKeyStr(key)
+  const existing = tileAborts.get(kStr)
+  if (existing) return false                 // already in flight; the pump joins rather than races
+  const ac = new AbortController()
+  tileAborts.set(kStr, ac)
+  const enc = settings.viewerCompress ? 'zstd' : 'identity'
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  const rect = tileFetchRect(key.tx, key.ty, lvl)
+  try {
+    // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
+    // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
+    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const url = slabUrl({
+        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: key.level,
+        // 2D view is one plane; server drops z from the response. Follows the plane control (only
+        // reachable at nZ > 1) — the tile path is nT ≤ 1 by construction, so there is no timepoint
+        // to select and t stays at 0.
+        z: zPlane.value,
+        x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
+      })
+      const res = await fetch(url, { cache: 'default', signal: ac.signal })
+      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
+      const buf = await res.arrayBuffer()
+      return buf
+    }))
+    // Grow `seenMax` from the tile's own bytes — same discipline as `fetchTimepoint`. Without this
+    // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
+    // the slider until it collapsed to 0-1 with no way back (Dominik, 2026-08-26). Only ever grows —
+    // a ceiling that shrinks re-scales the slider under a value the user set.
+    seenMax.value = bufs.map((b, c) =>
+      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rect.xTo - rect.x + 1)))
+    // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
+    // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
+    // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
+    // before a fresh finer-level neighbour.
+    //
+    // `slotCapacity - 1` — NOT `slotCapacity` — so the ranker leaves one slot free for the tile we
+    // are about to upload. Passing the full capacity meant `tileEvictions` returned nothing whenever
+    // the atlas was full (its threshold is `entries.length <= capacity`); `uploadTile` then found no
+    // free slot and returned -1, and the ring of tiles the new zoom needed never landed — the "right
+    // half never resolves" case Dominik saw at L1 on f8gzA2 (2026-08-26).
+    const vp = computeViewportL0()
+    const centre = vp && lvl ? viewportCentreTile(vp, key.level, lvl) : { tx: key.tx, ty: key.ty }
+    const keep = evictionKeepSet()
+    const evictions = tileEvictions(
+      tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
+      { level: key.level, tx: centre.tx, ty: centre.ty },
+    )
+    const slot = await tr.uploadTile(key, bufs, keep, evictions)
+    return slot >= 0
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return false
+    error.value = e instanceof Error ? e.message : String(e)
+    vlog('error', 'Viewer tile ' + kStr + ': ' + error.value)
+    return false
+  } finally {
+    tileAborts.delete(kStr)
+    syncTileCacheState()
+  }
+}
+
+/** Per-tile cache readout for Debug, and the counterpart to `syncCacheState` for the timepoint path.
+ *  Kept simple: tile count + slot capacity, no per-cell strip (a strip would need a tile-grid
+ *  overlay, which is Phase D territory). */
+const tileResidentCount = ref(0)
+const tileSlotCap = ref(0)
+const tileInflight = ref(0)
+function syncTileCacheState() {
+  const tr = tileRenderer.value
+  tileResidentCount.value = tr?.residentTiles().length ?? 0
+  tileSlotCap.value = tr?.slotCapacity() ?? 0
+  tileInflight.value = tileAborts.size
+}
+
+/**
+ * Fill the atlas around the current viewport — visible + halo, ALL IN PARALLEL. The browser's per-
+ * origin concurrency cap (typically 6) throttles the HTTP fanout naturally, and tiles arriving in
+ * different orders is not a correctness issue — the atlas caches by key. Serialising was a mistake
+ * for the whole-slide case: 12 halo tiles × ~200 ms is ~2.4 s instead of ~500 ms, and Dominik
+ * called it out ("takes ages to load. this should take a few seconds"). A stale pump's fetches are
+ * aborted by `scheduleTilePump` via `tileAborts` — the abort has to happen at the mid-flight fetch,
+ * not at a serial checkpoint, and this shape makes that its ONLY point of cancellation.
+ */
+const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
+  const tr = tileRenderer.value
+  if (!tr) return
+  const want = missingTiles()
+  await Promise.allSettled(want.map(async key => {
+    if (!isCurrent()) return
+    if (tr.hasTile(key)) { tr.touchTile(key); return }
+    const ok = await fetchTile(key)
+    if (!ok) return
+    // NO `isCurrent()` guard here — the tile is in the atlas either way, and painting it against
+    // the CURRENT viewport is always correct (drawTiles filters by residency). Previously the
+    // `drawTiles → scheduleTilePump` rescheduler made the pump supersede itself: `isCurrent` went
+    // false mid-run, so tiles that landed after did NOT flip `shownT` and did NOT call
+    // `frame.redraw`. Result: the chip stayed on "Loading image…" while the atlas was full, and
+    // the canvas was blank until the user panned (Dominik, 2026-08-26). The gate came from the
+    // timepoint pump where painting the wrong frame matters — here it never matters.
+    if (shownT.value < 0) shownT.value = 0
+    frame.redraw()
+  }))
+}, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
+
+/**
+ * Cancel tile fetches the new viewport has no use for, then reschedule the pump. Same shape as
+ * `schedulePump` — the abort has to happen HERE and not inside the walk, because the walk is
+ * `await`-ing the fetch by the time it reaches its next checkpoint.
+ */
+function scheduleTilePump() {
+  const keep = evictionKeepSet()
+  for (const [k, ac] of [...tileAborts]) if (!keep.has(k)) ac.abort()
+  tilePump.schedule(null)
+}
+
+/**
+ * Draw whatever tiles are resident, at the current camera. Never blanks — a level swap keeps the old
+ * level's tiles resident while the new level's tiles stream in, so the frame is progressive rather
+ * than empty-then-fresh. (The current MVP flushes the atlas on level swap, so this is aspirational
+ * until Phase D — but the draw call already accepts a mixed-level list.)
+ */
+function drawTiles() {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return
+  const resized = tr.resize()
+  seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
+  tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
+  // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
+  // pointer input. Same trigger for both dimensions of size change.
+  if (resized) scheduleTilePump()
+  // Anything still missing → schedule the pump. Covers the initial-mount race where the first
+  // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
+  // was fetched) — after which the atlas stayed empty until the user moved the mouse (Dominik,
+  // 2026-08-26). Debounced through `tilePump`, so a redraw per pointer notch does not spam.
+  if (missingTiles().length > 0) scheduleTilePump()
+  // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
+  // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
+  // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
+  // landed, and vanishes seamlessly the moment they do.
+  const entries = tr.residentTiles().slice().sort((a, b) => b.level - a.level)
+  const draws: TileDraw[] = []
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  for (const e of entries) {
+    const lvl = levelMeta(m, e.level)
+    if (!lvl) continue
+    const rect = tileFetchRect(e.tx, e.ty, lvl)
+    const w = rect.xTo - rect.x + 1
+    const h = rect.yTo - rect.y + 1
+    // Level → L0 pixel scale is 2^level (clean-2× pyramid, same assumption `pickTileLevel` makes).
+    const scale = 1 << Math.max(0, e.level)
+    const l0X = rect.x * scale
+    const l0Y = rect.y * scale
+    const l0W = w * scale
+    const l0H = h * scale
+    draws.push({
+      slot: e.slot,
+      worldX: l0X * vx - ex / 2,
+      worldY: l0Y * vy - ey / 2,
+      worldW: l0W * vx,
+      worldH: l0H * vy,
+      sampledX: w,
+      sampledY: h,
+    })
+  }
+  tr.draw(draws)
+  // The still overlay's `shownT >= 0` gate flips on when the first tile lands (`tilePump` handler).
+  if (announce.value && shownT.value >= 0) {
+    announce.value = false
+    vlog('info',
+         `Viewer drawing ${m.nX}×${m.nY} plane (tile mode)`,
+         `${entries.length} tile(s) resident of ${tileSlotCap.value} slots · ` +
+         `L${slabLevel.value} · pan ${cam.value.panX.toFixed(0)},${cam.value.panY.toFixed(0)} · ` +
+         `dist ${cam.value.dist.toFixed(0)} µm`)
+  }
+  if (shownT.value >= 0) clearViewerAttempt()
+}
+
 // ── Playback ─────────────────────────────────────────────────────────────────────
 // A timer rather than rAF: the rate is a chosen frame rate, not the display's. It WAITS for an
 // uncached frame instead of skipping ahead — see `playbackAdvance` for why that is the honest choice.
@@ -1010,6 +1466,10 @@ function onMove(e: PointerEvent) {
     ? panDrag(cam.value, dx, dy, canvas.value.clientHeight)
     : orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
   frame.redraw()
+  // Pan in tile mode changes what tiles the viewport needs — schedule the fetch. The frame just
+  // painted uses whatever is already resident (which is why the pan feels instant); missing tiles
+  // stream in behind it. `scheduleTilePump` cancels fetches the new viewport does not want first.
+  if (useTiles.value) scheduleTilePump()
 }
 function onUp() { dragFrom = null }
 /**
@@ -1026,6 +1486,21 @@ function onUp() { dragFrom = null }
  * scheduler for exactly this.
  */
 const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
+/**
+ * 2D pyramid LOD swap on zoom. A wheel gesture crossing a `floor(log2(zoom))` threshold changes the
+ * `slabLevel` computed, and the watch pumps a reallocate at that new level. Debounced (150 ms) because
+ * a single gesture emits an event per pixel of travel — the smallest wait that lets a fast wheel scroll
+ * settle before we refetch. Same discipline as the z pump: value moves immediately (the readout tracks
+ * the pointer), refetch collapses to the last position through `debouncedLatest`.
+ *
+ * `loadedLevel` gates against the initial mount: a first `reallocate(true)` sets `loadedLevel` to the
+ * fit-appropriate level; only DRIFT from that level fires a second reallocate.
+ */
+const levelPump = debouncedLatest<number>(async () => reallocate(false), { wait: 150 })
+watch(slabLevel, (newLvl) => {
+  if (!meta.value || mode.value !== 'plane') return
+  if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
+})
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const m = meta.value
@@ -1037,8 +1512,18 @@ function onWheel(e: WheelEvent) {
     zPump.schedule(next)
     return
   }
-  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value)
+  // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
+  // and `pickTileLevel` gets down to L0. 3D volume keeps the tighter default (rotation can lose it
+  // off-screen). Reset view is always one click away either way.
+  const band = mode.value === 'plane'
+    ? { min: 0.005, max: 6 }
+    : { min: 0.15, max: 6 }
+  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value, band)
   frame.redraw()
+  // Zoom exposes/hides tiles (extent changes and level may swap). Level swap is handled by the
+  // `slabLevel` watcher → `levelPump` → reallocate; the tile pump handles the same-level case where
+  // a smaller field of view drops some tiles and a larger one gains new ones.
+  if (useTiles.value) scheduleTilePump()
 }
 
 /** What the canvas responds to. One list, rendered in the popover AND nowhere else — a shortcut that
@@ -1086,6 +1571,158 @@ const setSection = (key: string, v: boolean) => { openSection.value = v ? key : 
  * no-op here because the visible extent has the canvas's own aspect — the bar lands where it is drawn.
  */
 const seen = ref<[number, number]>([0, 0])
+
+/**
+ * QuPath-style overview minimap in the top-right of the canvas.
+ *
+ * A schematic: the whole image as a bordered rect, the current viewport as an inner rect. No tissue
+ * thumbnail yet — the whole-slide coarsest level for f8gzA2 is still ~1300×1000 × 24 ch × 2 B ≈ 60 MB,
+ * which is a lot of bytes to fetch for a corner overlay. The rectangle alone answers "where in the
+ * slide am I" and "where do I want to be next", which is the ask (Dominik, 2026-08-26).
+ *
+ * Click or drag anywhere on the minimap → re-center the camera at that image point. Persists like
+ * every other user-settable option; only rendered when there is a real slide to navigate (tile mode).
+ */
+const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
+watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+/** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
+ *  it re-derives every time either changes without a separate signal. Empty when the viewport is
+ *  degenerate — the SVG then draws just the outer frame. */
+const overviewRect = computed(() => {
+  const m = meta.value
+  const el = canvas.value
+  if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
+  const asp = canvasAspect()
+  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
+  const halfWUm = halfHUm * asp
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  const cxImg = cam.value.panX + ex / 2
+  const cyImg = -cam.value.panY + ey / 2
+  return {
+    x: Math.max(0, Math.min(1, (cxImg - halfWUm) / ex)),
+    y: Math.max(0, Math.min(1, (cyImg - halfHUm) / ey)),
+    w: Math.max(0, Math.min(1, (halfWUm * 2) / ex)),
+    h: Math.max(0, Math.min(1, (halfHUm * 2) / ey)),
+  }
+})
+/** Fixed height in CSS px; the width follows the image aspect so the fractional rect maps 1:1. */
+const OVERVIEW_H = 110
+const overviewSize = computed(() => {
+  const m = meta.value
+  if (!m) return { w: 0, h: 0 }
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const asp = (m.nX * vx) / Math.max(m.nY * vy, 1)
+  return { w: Math.min(220, Math.round(OVERVIEW_H * asp)), h: OVERVIEW_H }
+})
+/**
+ * Tissue thumbnail behind the minimap rect. Fetched ONCE per image — the deepest pyramid level's
+ * whole slab, all channels — and composited on the CPU using the same LUTs the shader uses. Small
+ * enough to be cheap: for a 20k×17k slide with 5 levels, the deepest is ~635×528 × 24 ch × 2 B ≈
+ * 16 MB, one-off, and the composite is ~350k pixels × 24 ch ≈ 8M multiplies (~10-30 ms). Redrawn on
+ * every channel change (visibility, contrast, colour) because pushChannels calls `renderOverview`.
+ */
+const overviewCanvas = ref<HTMLCanvasElement | null>(null)
+const overviewChans = shallowRef<Uint16Array[] | null>(null)
+const overviewDims = ref<{ nX: number; nY: number } | null>(null)
+async function loadOverviewThumbnail() {
+  const m = meta.value
+  if (!m || !m.levels || m.levels.length === 0) return
+  const lvl = m.levels[m.levels.length - 1]
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  const enc = settings.viewerCompress ? 'zstd' : 'identity'
+  try {
+    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const url = slabUrl({
+        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: lvl.level,
+        z: zPlane.value,
+        x: 0, xTo: lvl.nX - 1, y: 0, yTo: lvl.nY - 1,
+      })
+      const res = await fetch(url, { cache: 'default' })
+      if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
+      return new Uint16Array(await res.arrayBuffer())
+    }))
+    overviewChans.value = bufs
+    overviewDims.value = { nX: lvl.nX, nY: lvl.nY }
+    renderOverview()
+  } catch (e) {
+    vlog('warn', 'Overview thumbnail unavailable', e instanceof Error ? e.message : String(e))
+  }
+}
+function renderOverview() {
+  const cv = overviewCanvas.value
+  const dims = overviewDims.value
+  const chans = overviewChans.value
+  const m = meta.value
+  if (!cv || !dims || !chans || !m) return
+  const w = dims.nX, h = dims.nY
+  if (cv.width !== w) cv.width = w
+  if (cv.height !== h) cv.height = h
+  const ctx = cv.getContext('2d')
+  if (!ctx) return
+  const img = ctx.createImageData(w, h)
+  const px = img.data
+  const nch = chans.length
+  const specs = m.channels.slice(0, nch).map(ch => {
+    const top = ch.lut[ch.lut.length - 1] ?? [1, 1, 1]
+    return {
+      visible: ch.visible, lo: ch.lo, span: Math.max(ch.hi - ch.lo, 1),
+      r: top[0], g: top[1], b: top[2],
+    }
+  })
+  const N = w * h
+  for (let i = 0; i < N; i++) {
+    let r = 0, g = 0, b = 0
+    for (let c = 0; c < nch; c++) {
+      const s = specs[c]
+      if (!s.visible) continue
+      const v = Math.max(0, Math.min(1, (chans[c][i] - s.lo) / s.span))
+      r += v * s.r; g += v * s.g; b += v * s.b
+    }
+    const pi = i * 4
+    px[pi] = Math.min(255, r * 255) | 0
+    px[pi + 1] = Math.min(255, g * 255) | 0
+    px[pi + 2] = Math.min(255, b * 255) | 0
+    px[pi + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+}
+let overviewDragging = false
+function overviewNavigate(e: PointerEvent) {
+  const m = meta.value
+  const el = e.currentTarget as HTMLElement | null
+  if (!m || !el) return
+  const rect = el.getBoundingClientRect()
+  const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  // Center the camera on the clicked image point. Reverses the panY sign convention (see
+  // computeViewportL0): positive panY looks at SMALLER image_y.
+  cam.value = { ...cam.value, panX: fx * ex - ex / 2, panY: -(fy * ey - ey / 2) }
+  frame.redraw()
+  if (useTiles.value) scheduleTilePump()
+}
+function onOverviewDown(e: PointerEvent) {
+  overviewDragging = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  overviewNavigate(e)
+  e.stopPropagation()          // do not bubble to the canvas pan/orbit handlers
+}
+function onOverviewMove(e: PointerEvent) {
+  if (!overviewDragging) return
+  overviewNavigate(e)
+  e.stopPropagation()
+}
+function onOverviewUp(e: PointerEvent) {
+  overviewDragging = false
+  ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+}
 const overlayExtent = computed(() => {
   const m = meta.value
   if (!m || !m.calibrated.xy) return null          // uncalibrated: voxels, so there is no bar to draw
@@ -1122,42 +1759,148 @@ function resetView() {
 }
 
 /**
+ * Ensure the RIGHT renderer for the current mode+image is alive. The canvas has one WebGPU context,
+ * so the two renderers are alternates — swapping mode destroys one before creating the other.
+ *
+ * **Serialised against itself.** `start()` awaits it, `reallocate()` awaits it — but the level watch
+ * fires `levelPump` which calls `reallocate` on a debounce, and if that fires DURING the first
+ * `ensureRenderer` (a real race — the tile atlas allocation takes ~100 ms and the level watch fires
+ * within 150 ms of the first `slabLevel` change), two `createTileRenderer` calls execute concurrently.
+ * That is the source of the `TextureView … cannot be used with [Device]` error (Dominik, 2026-08-26):
+ * D1 configures the canvas, then D2 reconfigures it, and D1's draws now hit D2's canvas texture.
+ * The guard turns the second call into an await on the first, and only ever creates one device.
+ */
+let _rendererCreating: Promise<void> | null = null
+async function ensureRenderer() {
+  if (_rendererCreating) return _rendererCreating
+  _rendererCreating = (async () => {
+    if (useTiles.value) {
+      if (tileRenderer.value) return
+      if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+      const tr = await createTileRenderer(canvas.value!, msg => {
+        error.value = 'GPU: ' + msg
+        vlog('error', 'Tile GPU error: ' + msg)
+      })
+      tileRenderer.value = tr
+      void tr.lost.then(info => {
+        tilePump.cancel()
+        for (const ac of tileAborts.values()) ac.abort()
+        lostDevice.value = true
+        error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+        vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+      })
+    } else {
+      if (renderer.value) return
+      if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
+      const r = await createVolumeRenderer(canvas.value!, msg => {
+        error.value = 'GPU: ' + msg
+        vlog('error', 'GPU error: ' + msg)
+      })
+      renderer.value = r
+      void r.lost.then(info => {
+        stopPlay()
+        pump.cancel()
+        for (const ac of aborts.values()) ac.abort()
+        lostDevice.value = true
+        error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+        vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+      })
+    }
+  })()
+  try { await _rendererCreating } finally { _rendererCreating = null }
+}
+
+/**
  * Re-allocate for the current mode and z, then reload. Every cached texture goes: at a different depth
  * they are a different shape, and at a different z they hold different pixels. That is a full refetch —
  * ~4 s for a 181-frame plane movie, ~90 s for the volume — which is the honest cost of the switch and
  * the reason the plane view is the default rather than something you opt into.
+ *
+ * Handles both renderer types. Async because a mode swap can involve destroying the old device and
+ * acquiring a new one; every caller either awaits or is fire-and-forget (the debounced pumps and the
+ * chip/range handlers, all of which just want the effect to happen eventually).
  */
-function reallocate(refit = false) {
-  const r = renderer.value, m = meta.value
-  if (!r || !m) return
+async function reallocate(refit = false) {
+  const m = meta.value
+  if (!m) return
+  // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
+  // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
+  // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
+  // new viewport — `scheduleTilePump` selectively aborts what the new viewport does NOT want), and
+  // keeps `shownT` so the overlay does not flash "Loading timepoint 0…" on every wheel notch. Without
+  // this split, a burst of level swaps aborted every fetch mid-air and the pump got stuck retrying
+  // aborted work — reported (Dominik, 2026-08-26) as "the loading got stuck and never returned".
   pump.cancel()
-  for (const ac of aborts.values()) ac.abort()
-  aborts.clear(); inflight.clear()
-  shownT.value = -1
+  tilePump.cancel()
+  if (!useTiles.value) {
+    for (const ac of aborts.values()) ac.abort()
+    aborts.clear(); inflight.clear()
+    shownT.value = -1
+    hits.value = 0; misses.value = 0
+    autoWin.value = []                     // Auto windows on what is loaded, so re-derive per plane
+    waitingFor.value = -1
+  }
   announce.value = true
-  hits.value = 0; misses.value = 0
-  autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
-  waitingFor.value = -1
-  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-             mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value)
-  r.setCapacity(settings.viewerCacheFrames || m.nT)
-  r.setOrthographic(mode.value === 'plane')
-  r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
-  // Only re-frame when the BOX changed (a 2D/3D switch). Looking at a different plane of the same
-  // image is not a reason to throw away a rotation or a zoom — that reads as the view jumping.
+  // Refit BEFORE `setImage`: `slabLevel` and `useTiles` react to `cam.dist`, so a stale distance
+  // would allocate the pipeline for the wrong level (or the wrong pipeline entirely).
   const c = fitNow(m)
   fitDist.value = c.dist
-  refit && (cam.value = c)
-  syncCacheState()
-  gotoT(t.value)
+  if (refit) cam.value = c
+
+  await ensureRenderer()
+
+  if (useTiles.value) {
+    const tr = tileRenderer.value
+    if (!tr) return
+    const lvl = levelMeta(m, slabLevel.value)
+    const nch = Math.min(m.nC, MAX_CHANNELS)
+    tr.setImage(m, slabLevel.value, SAFE_CACHE_BYTES,
+                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch)
+    tr.setChannels(m.channels)
+    tr.resize()
+    loadedLevel.value = slabLevel.value
+    syncTileCacheState()
+    scheduleTilePump()
+    frame.redraw()
+  } else {
+    const r = renderer.value
+    if (!r) return
+    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
+               mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+               renderNX.value, renderNY.value)
+    loadedLevel.value = slabLevel.value
+    r.setCapacity(settings.viewerCacheFrames || m.nT)
+    r.setOrthographic(mode.value === 'plane')
+    r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
+    syncCacheState()
+    gotoT(t.value)
+  }
 }
 
-/** Window a channel on the percentiles of the first timepoint loaded — free, no refetch. */
-function autoContrast(c: number) {
-  const w = autoWin.value[c], m = meta.value
-  if (!w || !m) return
-  m.channels[c].lo = w.lo
-  m.channels[c].hi = w.hi
+/**
+ * Reset the channel's contrast to the values the server shipped (napari-saved, or first-load
+ * percentile). NOT an auto-window from data anymore: user's expectation is "put it back the way it
+ * was" (Dominik, 2026-08-26), and `autoWin` was a volume-mode-only helper that never fired for
+ * whole-slide tiles, so the button did nothing there.
+ */
+function resetContrast(c: number) {
+  const init = initialContrast.value[c], m = meta.value
+  if (!init || !m) return
+  m.channels[c].lo = init.lo
+  m.channels[c].hi = init.hi
+  pushChannels()
+}
+/** Reset every channel's contrast in one click — the master pair to the per-channel button. Only
+ *  the CONTRAST, not the visibility or colour: those have their own controls above. */
+function resetAllContrast() {
+  const m = meta.value
+  if (!m) return
+  for (let i = 0; i < m.channels.length; i++) {
+    const init = initialContrast.value[i]
+    if (!init) continue
+    m.channels[i].lo = init.lo
+    m.channels[i].hi = init.hi
+  }
   pushChannels()
 }
 
@@ -1180,37 +1923,46 @@ const propsSink = debouncedSave(async () => {
 }, { wait: 800 })
 
 /**
- * Read the metadata for the current VERSION and put its first frame on screen.
- *
- * Separate from `start()` because switching version is not a restart: the device, the pipelines and
- * the palette all survive it — only the pixels and their geometry change. A different version can be
- * a different shape and a different channel count, so every cached texture goes (that is `setImage`)
- * and the auto contrast window is re-derived rather than carried across.
+ * Fetch meta for the current VERSION, allocate the right renderer (tile vs volume), and put the
+ * first frame on screen. Called from `start()` (fresh window) AND from `changeVersion` (picker), so
+ * every path through the viewer initialisation goes through here — one place that knows about tile
+ * routing + PY restore + overlay/tracks kickoff. `refit` is true from `start` (no prior camera) and
+ * false from `changeVersion` (the user's pose was for a related image and is worth carrying over).
  */
-async function loadVersion(r: VolumeRenderer) {
+async function loadVersion(refit: boolean) {
   starting.value = 'Reading image'
   const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
-  if (!res.ok) throw new Error((await res.json()).error ?? `Metadata failed: ${res.status}`)
-  const m: ViewerMeta = await res.json()
+  const m = await readJson<ViewerMeta>(res, 'Metadata')
   meta.value = m
   // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
   // when we asked for nothing in particular — otherwise this is already what we asked for.
   valueName.value ||= m.valueName ?? ''
-  mode.value = m.nZ > 1 ? 'plane' : 'volume'
+  // Snapshot the server's contrast + LUTs so Reset Contrast has a target that survives every drag.
+  initialContrast.value = m.channels.map(ch => ({ lo: ch.lo, hi: ch.hi }))
+  initialLUTs.value = m.channels.map(ch => ch.lut.map(stop => [...stop]))
+  // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
+  // was wired for. 3D is opt-in via the View chip — the honest cost belongs behind a click.
+  mode.value = 'plane'
   zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
   zRange.value = [0, Math.max(m.nZ - 1, 0)]
   autoWin.value = []                     // a different version has its own distribution
   seenMax.value = []
-  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, !!labelName.value)
-  r.setCapacity(settings.viewerCacheFrames || m.nT)
-  r.setOrthographic(mode.value === 'plane')
-  // Fit the camera first, THEN restore any saved props. Fit is unconditional because it also seeds
-  // `fitDist` — the reset-to-fit button uses it — and a saved `cam` overrides fit's `cam`. Restore
-  // goes through `duringRestore` so the autosave watchers below do not immediately echo it back.
+  // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
+  // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
+  // works even if a saved camera pose is later restored on top.
   const fit = fitNow(m)
   cam.value = fit
   fitDist.value = fit.dist
-  if (settings.napariAutoSaveLayerProps) {
+  // `reallocate(false)` creates the right renderer (tile vs volume via `ensureRenderer`), sets
+  // image, sets channels, and kicks off the first fetch. Same code the mode-swap path uses, so the
+  // two entry points cannot drift apart.
+  await reallocate(false)
+  // PY — restore autosaved viewer props for THIS image on top of the fresh allocation. Only applies
+  // to the volume renderer's channel/camera path today; tile mode has no camera pose or per-channel
+  // contrast surface hooked in yet (VIEWER_TILES_PLAN.md → open). Wrapped in `duringRestore` so the
+  // autosave watchers below don't immediately echo the load back to disk.
+  const r = renderer.value
+  if (r && settings.napariAutoSaveLayerProps) {
     const saved = await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
     if (saved) {
       propsSink.duringRestore(() => {
@@ -1231,13 +1983,13 @@ async function loadVersion(r: VolumeRenderer) {
       pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
     }
   }
-  r.resize()
+  if (refit) { /* nothing more — fitDist already seeded, cam already fit */ }
   starting.value = ''
-  gotoT(t.value < m.nT ? t.value : 0)
-  // After the first frame is on its way: the overlays are a separate, small request and must not
-  // delay the pixels. Tracks fetch alongside — one per ticked track eye, cached.
+  // After the first frame is on its way: overlays + track ribbons are separate, small requests and
+  // must not delay the pixels. Tissue thumbnail for whole-slide (tile) view is the same idea.
   void loadOverlays()
   void loadTracks()
+  if (useTiles.value) void loadOverviewThumbnail()
 }
 
 // Autosave triggers — every watcher settles into one write per debounce window. `deep` on channels
@@ -1256,17 +2008,19 @@ watch(valueName, () => propsSink.schedule())
  * wrong content, which renders as a plausible image of something else.
  */
 async function changeVersion(vn: string) {
-  const r = renderer.value
-  if (!r || vn === valueName.value) return
+  if (vn === valueName.value) return
   pump.cancel()
+  tilePump.cancel()
   for (const ac of aborts.values()) ac.abort()
   aborts.clear(); inflight.clear()
+  for (const ac of tileAborts.values()) ac.abort()
+  tileAborts.clear()
   shownT.value = -1
   announce.value = true
   hits.value = 0; misses.value = 0
   waitingFor.value = -1
   valueName.value = vn
-  try { await loadVersion(r) }
+  try { await loadVersion(false) }
   catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     vlog('error', 'Viewer version ' + vn + ': ' + error.value)
@@ -1295,33 +2049,20 @@ async function start() {
     // The breadcrumb goes down BEFORE the device is created, because that is the line the driver dies
     // on. Cleared when a frame is on screen, not here.
     markViewerAttempt(imageUid)
-    starting.value = 'Starting GPU'
-    // A GPU error after setup is console-only by default, and its only visible symptom is a canvas
-    // with nothing on it — which reads as an empty channel or a bad contrast window. Show it.
-    const r = await createVolumeRenderer(canvas.value!, msg => {
-      error.value = 'GPU: ' + msg
-      vlog('error', 'GPU error: ' + msg)
-    })
-    // The adapter, said out loud. `looksDiscrete` is a guess from a limit and the console is where a
-    // guess belongs next to the evidence for it.
-    const named = adapterNameText(r.adapter.name)
-    vlog(r.adapter.looksDiscrete ? 'info' : 'warn',
-         'Viewer GPU: ' + (named || (r.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated')),
-         `maxTextureDimension3D=${r.adapter.maxTextureDimension3D}, ` +
-         `timestamp-query=${r.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name'))
-    renderer.value = r
-    void r.lost.then(info => {
-      stopPlay()
-      // A lost device cannot be recovered in place — the canvas context goes with it — so the honest
-      // offer is a reload rather than a setting to go and adjust.
-      pump.cancel()
-      for (const ac of aborts.values()) ac.abort()
-      lostDevice.value = true
-      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
-      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
-    })
-
-    await loadVersion(r)
+    // `loadVersion(true)` does the whole "meta → renderer → setImage → PY restore → first fetch"
+    // sequence. It logs the adapter (via `reallocate` → `ensureRenderer`) and kicks off overlays,
+    // tracks and (for whole-slide) the overview thumbnail. Same code the picker's version-swap uses.
+    await loadVersion(true)
+    const active = renderer.value ?? tileRenderer.value
+    if (active) {
+      const named = adapterNameText(active.adapter.name)
+      const gpuDetail = `maxTextureDimension3D=${active.adapter.maxTextureDimension3D}, `
+        + `timestamp-query=${active.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name')
+      const gpuLine = 'Viewer GPU: ' + (named
+        || (active.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated'))
+      vlog(active.adapter.looksDiscrete ? 'info' : 'warn', gpuLine, gpuDetail)
+      console.info(gpuLine, gpuDetail)
+    }
   } catch (e) {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
@@ -1403,8 +2144,11 @@ onUnmounted(() => {
   stopPlay()
   pump.cancel()
   zPump.cancel()
+  tilePump.cancel()
   for (const ac of aborts.values()) ac.abort()
+  for (const ac of tileAborts.values()) ac.abort()
   renderer.value?.destroy()
+  tileRenderer.value?.destroy()
 })
 </script>
 
@@ -1423,8 +2167,8 @@ onUnmounted(() => {
         :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
         :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
       />
-      <!-- Held after a crash. Offered rather than refused: the breadcrumb cannot tell a driver crash
-           from a force-quit, so the honest statement is what it saw, not a diagnosis. -->
+      <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
+           cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
         The last attempt to show this image did not finish
         <span v-if="heldProbe" class="cc-muted cc-fs-2xs">{{ heldProbe }}</span>
@@ -1438,16 +2182,44 @@ onUnmounted(() => {
         <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
         <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
       </div>
-      <div v-else-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
-      <div v-else-if="error" class="cc-empty cc-empty-overlay cc-muted-error">
-        {{ error }}
-        <button v-if="lostDevice" class="cc-btn cc-btn-ghost" @click="reload"
-                v-tooltip.top="'Reopen the viewer'">Reload</button>
+      <!-- Startup, mid-load, and errors ALL go in a bottom-left chip: white-on-black stays legible
+           against any tile content, and out of the way of the pointer. The error variant carries the
+           canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
+           against a bright whole-slide render, and a centred error left the app looking dead when it
+           was still holding the previous frame (Dominik, 2026-08-26). -->
+      <div v-else-if="error" class="vw-status-chip vw-status-chip-error">
+        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <span>{{ error }}</span>
+        <button v-if="lostDevice" class="cc-btn cc-btn-ghost cc-btn-micro vw-status-chip-btn"
+                @click="reload" v-tooltip.top="'Reopen the viewer'">Reload</button>
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
            hardcoded 0 there said the wrong thing (Dominik, 2026-08-24). -->
-      <div v-else-if="shownT < 0" class="cc-empty cc-empty-overlay">Loading timepoint {{ t }}…</div>
+      <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
+      <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
+      <div v-else-if="shownT < 0" class="vw-status-chip">
+        {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
+      </div>
+      <!-- Overview minimap. Only when there is a real slide to navigate: for a small image the
+           viewport already IS the whole frame and a minimap adds nothing. Canvas holds the tissue
+           thumbnail (fetched once); SVG on top holds the viewport rect and takes all the pointer
+           events (click/drag to reposition). -->
+      <div v-if="overviewShown && useTiles && overviewRect" class="vw-overview-wrap"
+           :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
+        <canvas ref="overviewCanvas" class="vw-overview-tissue" />
+        <svg class="vw-overview-svg"
+             :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
+             preserveAspectRatio="none"
+             @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
+             @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
+          <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
+          <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
+                :width="Math.max(2, overviewRect.w * overviewSize.w)"
+                :height="Math.max(2, overviewRect.h * overviewSize.h)"
+                class="vw-overview-vp" />
+        </svg>
+      </div>
     </div>
 
     <aside class="vw-side">
@@ -1484,7 +2256,7 @@ onUnmounted(() => {
       />
       <div v-else-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
 
-      <div v-if="renderer && !renderer.adapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
+      <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
         Integrated GPU
       </div>
@@ -1508,6 +2280,38 @@ onUnmounted(() => {
           />
           <span class="cc-readout cc-fs-2xs vw-num">{{ zRange[0] }}–{{ zRange[1] }}</span>
         </div>
+        <!-- 3D pyramid level. napari also renders 3D at the coarsest resolution, and a full-res volume
+             of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
+             So auto = the deepest level; the dropdown lets a user step finer if their card can hold it.
+             `@change` (not `@update:*`) so it commits on release, same discipline as Depth. -->
+        <div v-if="mode === 'volume' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
+          <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
+                  v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
+                  @change="reallocate()">
+            <option :value="-1">Auto ({{ (meta.levels?.length ?? 1) - 1 }} — coarsest)</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
+        </div>
+        <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
+             pixel is closest to (without going finer than) one device pixel, so we never ship pixels
+             the screen cannot show. At fit-to-window on a 20k×17k image that is L4 or L5; as the user
+             zooms in past a `floor(log2)` threshold the level drops and the textures reallocate. The
+             dropdown lets a user pin a specific level, same as the 3D control. Phase B of
+             VIEWER_TILES_PLAN.md. Only shown when there IS a pyramid to pick from. -->
+        <div v-if="mode === 'plane' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
+          <select v-model.number="settings.viewerPlaneLevel" class="vw-grow"
+                  v-tooltip.top="'Pyramid resolution — auto picks by camera zoom'"
+                  @change="reallocate()">
+            <option :value="-1">Auto (L{{ slabLevel }} — zoom-driven)</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
+        </div>
         <div v-if="mode === 'plane' && meta.nZ > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
           <input
@@ -1518,51 +2322,63 @@ onUnmounted(() => {
           <span class="cc-readout cc-fs-2xs vw-num">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
         </div>
 
-        <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
-        <div class="cc-row cc-row-tight">
-          <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="nT <= 1" @click="togglePlay"
-                  v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
-            <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-          </button>
-          <input
-            type="range" class="vw-grow" :min="0" :max="Math.max(nT - 1, 0)" :step="1"
-            :value="t" @pointerdown="stopPlay()"
-            @input="gotoT(Number(($event.target as HTMLInputElement).value))"
-            v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ t }} / {{ Math.max(nT - 1, 0) }}</span>
-        </div>
-
-        <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
-             so a long movie does not put one element per frame in the DOM.
-             The dot shares this row rather than earning its own: playback holds rather than skip an
-             uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
-             but a line that appears and disappears above the strip shoves it up and down every tick,
-             which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
-        <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
-          <span class="vw-dot" :class="{ 'is-waiting': busy }" />
-          <div class="vw-strip">
-            <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
+        <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
+             `nT == 1` slider stuck at "0 / 0" looks broken. -->
+        <template v-if="nT > 1">
+          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
+          <div class="cc-row cc-row-tight">
+            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
+                    v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
+              <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
+            </button>
+            <input
+              type="range" class="vw-grow" :min="0" :max="nT - 1" :step="1"
+              :value="t" @pointerdown="stopPlay()"
+              @input="gotoT(Number(($event.target as HTMLInputElement).value))"
+              v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ t }} / {{ nT - 1 }}</span>
           </div>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Fps</span>
-          <input
-            type="range" class="vw-grow" :min="1" :max="30" :step="1"
-            v-model.number="settings.viewerFps"
-            v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
-          <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
-        </div>
+
+          <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
+               so a long movie does not put one element per frame in the DOM.
+               The dot shares this row rather than earning its own: playback holds rather than skip an
+               uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
+               but a line that appears and disappears above the strip shoves it up and down every tick,
+               which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
+          <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
+            <span class="vw-dot" :class="{ 'is-waiting': busy }" />
+            <div class="vw-strip">
+              <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
+            </div>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Fps</span>
+            <input
+              type="range" class="vw-grow" :min="1" :max="30" :step="1"
+              v-model.number="settings.viewerFps"
+              v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
+            <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
+          </div>
+        </template>
 
         <div class="cc-row cc-row-tight">
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
+        </div>
+        <!-- Overview minimap, only offered where it earns its space: for whole-slide tile mode where
+             the viewport is a small fraction of the image. Small-image plane view already shows the
+             whole frame. -->
+        <div v-if="useTiles" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
+          <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
         </div>
 
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
@@ -1606,9 +2422,39 @@ onUnmounted(() => {
           </div>
         </CollapsibleSection>
 
+        <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
+             image has 24+ channels and the sidebar's own scroll never engages, so the section body was
+             flooding off the bottom of the panel with no way to reach the controls below (Dominik,
+             2026-08-26). All-on/all-off buttons at the top so a 24-channel image can be soloed to one
+             marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
-                            @update:open="v => setSection('channels', v)" max-height="none">
+                            @update:open="v => setSection('channels', v)">
+          <!-- One canonical toggle (docs/ui/PRIMITIVES.md → CcToggle), same idiom as every other
+               on/off in the app — a pair of buttons was a second variant of a decision that already
+               has one right way to render it. A little breathing room below so the master row does
+               not run into the first channel card (Dominik, 2026-08-26). -->
+          <div class="cc-row cc-row-tight vw-ch-master">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
+            <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
+                      aria-label="Toggle every channel" />
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetAllContrast"
+                    v-tooltip.left="'Reset every channel to the server default'"
+                    aria-label="Reset every channel contrast">
+              <i class="pi pi-history" />
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight vw-ch-master">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Golden-angle hue rotation — quick visual separation of every marker'">
+              Distinct
+            </span>
+            <CcToggle v-model="distinctChannelColours"
+                      aria-label="Assign a distinct colour to each channel" />
+            <!-- Spacer that occupies the same slot as the reset button in the row above, so the two
+                 toggles line up in the same column. Non-interactive, hidden from a11y. -->
+            <span class="vw-ch-master-slot" aria-hidden="true" />
+          </div>
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
@@ -1618,9 +2464,9 @@ onUnmounted(() => {
                 @update:model-value="v => setChannelColour(c, v)"
               />
               <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
-                      v-tooltip.left="'Window this channel on the loaded voxels'">
-                <i class="pi pi-sliders-h" />
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
+                      v-tooltip.left="'Reset contrast to the server default'">
+                <i class="pi pi-history" />
               </button>
             </div>
             <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
@@ -1885,7 +2731,8 @@ onUnmounted(() => {
           <div class="cc-eyebrow cc-fs-2xs">Image</div>
           <div class="cc-muted cc-fs-3xs">
             {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
-            {{ (meta!.slabBytes / 1e6 / (meta!.nZ / gpu.zDepth)).toFixed(1) }} MB / channel ·
+            <template v-if="slabLevel > 0">L{{ slabLevel }} @ {{ renderNX }}×{{ renderNY }} ·</template>
+            {{ (renderNX * renderNY * gpu.zDepth * meta!.bytesPerVoxel / 1e6).toFixed(1) }} MB / channel ·
             contrast {{ meta!.contrastSource }}<br>
             cache {{ resident.length }} / {{ gpu.capacity }}
             <template v-if="gpu.capped">(GPU limit)</template>
@@ -1936,6 +2783,40 @@ onUnmounted(() => {
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
+/* Bottom-left status chip: white-on-black so it stays legible against a bright tile composite. Same
+   role as the centred `cc-empty-overlay` but out of the way of what the user is trying to look at.
+   Error variant uses the canonical severity colour + icon (`lib/severity.ts` → `fail`), and re-enables
+   `pointer-events` so the Reload button (device-lost case) is clickable. */
+.vw-status-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: none;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+.vw-status-chip-icon { font-size: 1em; }
+.vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
+/* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
+   translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
+   navigation, not a select. */
+.vw-overview-wrap {
+  position: absolute; top: 0.75rem; right: 0.75rem;
+  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); overflow: hidden;
+  cursor: crosshair; touch-action: none;
+}
+.vw-overview-tissue {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* Downscaled from the deepest pyramid level; smoothing looks fine at tissue scale. */
+  image-rendering: auto;
+  pointer-events: none;
+}
+.vw-overview-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Faint tint over the (possibly empty) canvas so the frame stays visible before the thumbnail
+   arrives. Once tissue is drawn behind, it shows through. */
+.vw-overview-bg { fill: rgba(255, 255, 255, 0.04); }
+.vw-overview-vp { fill: rgba(255, 255, 255, 0.10); stroke: var(--cc-accent); stroke-width: 1.5; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
@@ -1949,6 +2830,18 @@ onUnmounted(() => {
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
+.vw-ch-master { margin-bottom: 0.35rem; }
+/* Force EXACT label width in the master rows, so a longer word ("Distinct colours") does not push
+   its toggle further right than the row above ("All channels"). Base `.cc-lbl-col` is a min-width
+   that lets the label grow; the whole point of these master rows is that the toggles stack. */
+.vw-ch-master > .cc-lbl-col {
+  width: var(--cc-lbl-col); min-width: var(--cc-lbl-col);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Same footprint as `cc-btn-micro` icon (`i.pi` inside a bare button, ~1.1rem square). Reserves the
+   trailing slot in a row that has no icon, so the toggle in that row lines up with the toggle in the
+   row that DOES carry an icon. */
+.vw-ch-master-slot { flex: none; width: 1.1rem; height: 1.1rem; }
 .vw-ch-val { flex: none; white-space: nowrap; }
 .vw-grow { flex: 1; min-width: 0; }
 /* The numbers beside a slider change width as they count up (9 → 10 → 100), and the slider is `flex: 1`

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, contrastCeiling,
-  slabZ, visibleExtentUm,
+  slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE,
   type ViewerMeta,
 } from './volumeViewer'
@@ -307,6 +307,85 @@ describe('the request is sized by the TEXTURE, not the view mode', () => {
     // range that runs off the end would come back SHORT — a shape the texture is not holding.
     expect(slabZ(8, 41, 0, 40)).toEqual({ z: 33, zTo: 40 })
     expect(slabZ(8, 41, 0, -5)).toEqual({ z: 0, zTo: 7 })
+  })
+})
+
+describe('spatial audit — slab URL carries level/x/y, guard is level-aware', () => {
+  it('omits level=0, x/y — a timecourse caller produces byte-identical URLs to before the tile route', () => {
+    const before = slabUrl({ projectUid: 'P', imageUid: 'I', t: 3, c: 1 })
+    const withZero = slabUrl({ projectUid: 'P', imageUid: 'I', t: 3, c: 1, level: 0 })
+    expect(withZero).toBe(before)
+    expect(before).not.toContain('level')
+    expect(before).not.toContain('x=')
+  })
+  it('carries an explicit level when non-zero', () => {
+    const u = slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, level: 2 })
+    expect(u).toContain('level=2')
+  })
+  it('carries an XY tile — same pairing as z/zTo', () => {
+    const u = slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, x: 100, xTo: 199, y: 200, yTo: 299 })
+    expect(u).toContain('x=100'); expect(u).toContain('xTo=199')
+    expect(u).toContain('y=200'); expect(u).toContain('yTo=299')
+    // xTo without x makes no sense — the server would treat lo as 0, but the URL wouldn't say so
+    const partial = slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, xTo: 199 })
+    expect(partial).not.toContain('xTo')
+  })
+  it('checks the slab against the LEVEL dims, not L0', () => {
+    // L0 is 5x3x4; the client picked L1 = 2x1 XY. A slab that matches L1 must pass, and a slab that
+    // matches L0 must FAIL — otherwise the coarse-level fetch renders L1 data into an L0 texture.
+    const m = meta()
+    const l1nx = 2, l1ny = 1
+    const okBytes = l1nx * l1ny * m.nZ * m.bytesPerVoxel
+    expect(slabShapeError(`4,${l1ny},${l1nx}`, okBytes, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny)).toBeNull()
+    expect(slabShapeError('4,3,5', 5 * 3 * 4 * 2, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny))
+      .toMatch(/was asked for/)
+  })
+})
+
+describe('pickTileLevel — 2D pan/zoom LOD', () => {
+  const withLevels = (levels: Array<{ nX: number; nY: number }>) => meta({
+    levels: levels.map((lv, i) => ({ level: i, nX: lv.nX, nY: lv.nY, chunkX: 1024, chunkY: 1024 })),
+  })
+  it('stays on L0 when there is no pyramid or only one level', () => {
+    expect(pickTileLevel(1, meta())).toBe(0)
+    expect(pickTileLevel(8, meta())).toBe(0)
+    expect(pickTileLevel(8, withLevels([{ nX: 100, nY: 100 }]))).toBe(0)
+  })
+  it('picks the coarsest level whose native pixel is still <= one device pixel', () => {
+    const m = withLevels([{ nX: 800, nY: 800 }, { nX: 400, nY: 400 }, { nX: 200, nY: 200 }])
+    expect(pickTileLevel(1, m)).toBe(0)         // 1:1 — full res
+    expect(pickTileLevel(1.5, m)).toBe(0)       // slightly zoomed out — still L0
+    expect(pickTileLevel(2, m)).toBe(1)         // 2× zoomed out → L1 (2× downsample)
+    expect(pickTileLevel(3.9, m)).toBe(1)
+    expect(pickTileLevel(4, m)).toBe(2)
+    expect(pickTileLevel(16, m)).toBe(2)        // capped at deepest
+  })
+  it('stays on L0 for zoom < 1 — magnified past 1:1, nothing finer exists', () => {
+    const m = withLevels([{ nX: 800, nY: 800 }, { nX: 400, nY: 400 }])
+    expect(pickTileLevel(0.5, m)).toBe(0)
+    expect(pickTileLevel(0, m)).toBe(0)
+  })
+})
+
+describe('pickVolumeLevel — 3D LOD (napari-parity: coarsest by default)', () => {
+  const withLevels = (n: number) => meta({
+    levels: Array.from({ length: n }, (_, i) => ({ level: i, nX: 1000 / (1 << i), nY: 1000 / (1 << i),
+                                                    chunkX: 1024, chunkY: 1024 })),
+  })
+  it('defaults to the DEEPEST level — the answer to the maxBufferSize crash', () => {
+    // The user hit "Buffer size (1278131712) exceeds max buffer size limit (268435456)" from a full-res
+    // volume of `f8gzA2`. napari also renders 3D at the coarsest level; Imaris-style octree LOD was
+    // wishlisted but never shipped. Deepest by default is the always-correct floor.
+    expect(pickVolumeLevel(withLevels(6))).toBe(5)
+    expect(pickVolumeLevel(withLevels(1))).toBe(0)
+    expect(pickVolumeLevel(meta())).toBe(0)     // no levels array at all → L0
+  })
+  it('honours an override and clamps it', () => {
+    const m = withLevels(4)
+    expect(pickVolumeLevel(m, 0)).toBe(0)
+    expect(pickVolumeLevel(m, 2)).toBe(2)
+    expect(pickVolumeLevel(m, 99)).toBe(3)      // clamped to deepest
+    expect(pickVolumeLevel(m, -5)).toBe(0)      // clamped to L0
   })
 })
 
