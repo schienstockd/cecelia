@@ -120,6 +120,13 @@ app.config.errorHandler = (err, _instance, info) => {
   console.error(err)                                       // keep the devtools behaviour we replaced
 }
 window.addEventListener('error', e => {
+  // Suppress the benign ResizeObserver loop message — the browser fires it as a bare ErrorEvent
+  // when an observer callback resizes something the observer sees, and it means the browser skipped
+  // ONE notification tick (it'll fire again next frame). Nothing actionable to log; without this,
+  // it fills the rail during ordinary layout work (Dominik, 2026-08-26). In dev the
+  // `installRoLoopTrace` hook below still lands one attributed warn per observer creation site,
+  // which is the useful signal.
+  if (e.message && /ResizeObserver loop/.test(e.message)) return
   bootLog.error(`Script error: ${e.message}`,
                 { source: 'frontend', detail: e.error instanceof Error ? e.error.stack : `${e.filename}:${e.lineno}` })
 })
