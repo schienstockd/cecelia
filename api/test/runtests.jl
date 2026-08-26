@@ -4505,6 +4505,7 @@ end
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/meta",
         "/api/viewer/overlays",
+        "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -4603,6 +4604,7 @@ end
         "/api/tasks/custom-modules/reload",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
+        "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4644,7 +4646,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 117
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 118
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5496,6 +5498,59 @@ end
     end
 end
 
+@testset "API: viewer meta names the versions and which one it resolved" begin
+    # The viewer window is a pop-out with no project open, so it cannot look up either the list of
+    # image versions or which one it is showing. Without the SECOND field a version picker opens on an
+    # empty box and the first change is a no-op; without the first there is nothing to pick from.
+    #
+    # "Active" here must be the ccid's `_active` — the version a task would run against — and NOT
+    # "default", which is merely one of the names. The two differ on every image that has been through
+    # a correction step, which is most of them.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-meta")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        img.filepath = Dict("default"    => "ccidImage.ome.zarr",
+                            "smoothed"   => "ccidSmoothed.ome.zarr",
+                            "_active"    => "smoothed")
+        save!(img)
+
+        # A minimal (t,c,z,y,x) store per version, so `open_level0` has something real to measure.
+        proj_dir = dirname(dirname(img._dir))
+        for fn in ["ccidImage.ome.zarr", "ccidSmoothed.ome.zarr"]
+            dir = joinpath(proj_dir, "0", img.uid, fn)
+            g = zgroup(Zarr.DirectoryStore(dir);
+                       attrs = Dict("multiscales" => [Dict("axes" =>
+                           [Dict("name" => n) for n in ["t", "c", "z", "y", "x"]])]))
+            a = zcreate(UInt16, g, "0", 5, 4, 3, 1, 2; chunks = (5, 4, 3, 1, 2))
+            a[:, :, :, :, :] = zeros(UInt16, 5, 4, 3, 1, 2)
+        end
+
+        ask(q) = JSON3.read(api_viewer_meta(HTTP.Request("GET", "/api/viewer/meta?" * q))[2])
+
+        # No version asked for → the ACTIVE one, named back.
+        m = ask("projectUid=$(proj.uid)&imageUid=$(img.uid)")
+        @test m.valueName == "smoothed"
+        @test Set(m.valueNames) == Set(["default", "smoothed"])
+        # `_active` is bookkeeping, not a version anyone can pick.
+        @test !("_active" in m.valueNames)
+
+        @test m.activeValueName == "smoothed"
+
+        # A version asked for → that one, echoed rather than re-resolved. `activeValueName` must NOT
+        # follow it: the whole point is that a picker can then say "this is not the active version",
+        # which is impossible if the only field echoes the request.
+        m2 = ask("projectUid=$(proj.uid)&imageUid=$(img.uid)&valueName=default")
+        @test m2.valueName == "default"
+        @test m2.activeValueName == "smoothed"
+        @test Set(m2.valueNames) == Set(["default", "smoothed"])
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
 @testset "API: viewer overlays on an image with no cell table" begin
     # An unsegmented image is the FIRST thing the viewer opens for most users. It must answer an empty
     # overlay, not a 500 — the panel asks unconditionally.
@@ -5512,6 +5567,46 @@ end
         @test st == 200
         @test d.nCells == 0 && isempty(d.pops) && d.values === nothing
         @test d.note == "not segmented"        # the reason, so the panel can say so rather than guess
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer props round-trip (save then load)" begin
+    # PY — the WebGPU viewer autosaves per-image view state (contrast/colormap/T-Z/camera) to the
+    # SAME on-disk file napari's autosave uses, so an animation-card snapshot is portable across
+    # viewers. Missing file answers 404 (a normal state — the image was never saved), a saved file
+    # comes back exactly.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-props")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        img.filepath = Dict("default" => "ccidImage.ome.zarr", "_active" => "default")
+        save!(img)
+        # A minimal store, so `resolve_image_version` finds a directory that exists.
+        mkpath(joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr"))
+
+        base = "projectUid=$(proj.uid)&imageUid=$(img.uid)"
+
+        # No file yet → 404 with a message (a normal state, not a failure).
+        st, _ = api_viewer_props_get(HTTP.Request("GET", "/api/viewer/props?" * base))
+        @test st == 404
+
+        vs = Dict("webgpu" => Dict("channels" => [Dict("hex"=>"#ff0000","lo"=>1,"hi"=>2,"visible"=>true)],
+                                    "cam" => Dict("yaw"=>0.1,"pitch"=>0.2,"dist"=>3.0,"panX"=>0.0,"panY"=>0.0),
+                                    "mode"=>"plane","zPlane"=>0,"zRange"=>[0,0],"t"=>0,"valueName"=>""),
+                  "layers" => Dict("Channel 0" => Dict("contrast_limits"=>[1,2], "visible"=>true)))
+        body = JSON3.write(Dict("projectUid" => proj.uid, "imageUid" => img.uid, "viewState" => vs))
+        st, _ = api_viewer_props_post(Vector{UInt8}(body))
+        @test st == 200
+
+        st, out = api_viewer_props_get(HTTP.Request("GET", "/api/viewer/props?" * base))
+        @test st == 200
+        d = JSON3.read(out)
+        @test d.webgpu.channels[1].hex == "#ff0000"
+        @test d.webgpu.mode == "plane"
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end

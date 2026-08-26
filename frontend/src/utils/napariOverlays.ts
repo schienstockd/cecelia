@@ -165,7 +165,6 @@ export interface PushLabelsOpts {
   labels?: Record<string, string[]>         // {valueName → label files} → labels/ store
   branchLabels?: Record<string, string[]>   // {valueName → label files} → branchLabels/ store
   show: boolean
-  cache: boolean
   // `labels` names stores a task is still WRITING → show them in their own `(vn) Labels (live)` layer
   // (level 0 only, caching forced off bridge-side). Never applies to branchLabels: those are written
   // once, at the end of segment.branching, so there is no partial store to watch.
@@ -184,7 +183,9 @@ export function labelsRequestBody(o: PushLabelsOpts): Record<string, unknown> {
   return {
     ...(o.labels       && Object.keys(o.labels).length       ? { allLabels: o.labels }             : {}),
     ...(o.branchLabels && Object.keys(o.branchLabels).length ? { allBranchLabels: o.branchLabels } : {}),
-    showLabels: o.show, labelsCache: o.cache,
+    // labelsCache hardcoded true: matches the pre-P6 default in `settings.napariLabelsCache`. That
+    // toggle went away in P6 (napari-specific concept); the bridge itself is deleted in P9.
+    showLabels: o.show, labelsCache: true,
     ...(o.preview ? { preview: true } : {}),
     ...(o.labelContour === undefined ? {} : { labelContour: o.labelContour }),
   }

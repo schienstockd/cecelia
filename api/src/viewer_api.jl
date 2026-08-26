@@ -242,6 +242,18 @@ function api_viewer_meta(req::HTTP.Request)
         catch
             String[]
         end
+        # Which VERSIONS this image has, and which one these numbers describe. The viewer window is a
+        # pop-out with no project open, so it can look up neither — and without the second field a
+        # version picker cannot show what it is already on. `resolve_image_version(.., nothing)` picks
+        # the ACTIVE version, the one a task would run against, so this reports that rule's answer
+        # rather than introducing a second notion of "active".
+        value_names, active_vn = try
+            raw = read_ccid_raw(state_file(joinpath(projects_dir(), pu), iu))
+            fp  = get(raw, "filepath", nothing)
+            fp isa AbstractDict ? (versioned_keys(fp), versioned_active(fp)) : (String[], "")
+        catch
+            (String[], "")
+        end
         # Per-level shape + chunk shape, so the client can pick a pyramid LEVEL from its own viewport
         # zoom without asking the server. `store_pyramid_levels` is the same reader the metadata modal
         # uses (`api_image_stores`), so the two surfaces cannot disagree about what is on disk. `nothing`
@@ -262,6 +274,13 @@ function api_viewer_meta(req::HTTP.Request)
                 chunkX = get(l.chunks, length(l.chunks),     0))
              for (i, l) in enumerate(lvls)]
         200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny, labelNames = label_names,
+                            valueNames = value_names,
+                            valueName = vnn === nothing ? active_vn : vn,
+                            # The ACTIVE one regardless of what was asked for, so a picker can say
+                            # whether the version on screen is the one every task runs against. With
+                            # only `valueName` an explicit request echoes itself and the comparison is
+                            # impossible.
+                            activeValueName = active_vn,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
                             contrastSource = src, voxelUm = vox, spaceUnit = unit,
                             frameIntervalMin = tmin, calibrated = cal, channels, levels))
@@ -558,6 +577,59 @@ function api_viewer_overlays(req::HTTP.Request)
                             colourColumns = obs, colourBy = used, valueKind = kind,
                             valueLevels = levels, valueRange = range_,
                             values = vals, valueName = vn, popType = pt))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── Per-image viewer layer props (PY) ─────────────────────────────────────────────
+# The WebGPU viewer's autosaved per-image view state: contrast/colormap per channel, camera, T/Z.
+# Written to the SAME file napari's autosave writes to (`<task_dir>/data/<basename(zarr)>.json`), so
+# animation-card snapshots stay portable across the two viewers. Format is a superset of napari's
+# schema: `camera`/`dims`/`layers` mirror what `capture_view_state` writes (so a movie recorder that
+# reads the file keeps working), and a `webgpu` sub-block carries the round-trippable native state
+# (channel index, orbit-camera pose, mode, zPlane, zRange) that napari's schema cannot represent.
+#
+# See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+_viewer_props_path(task_dir::AbstractString, zarr_path::AbstractString) =
+    joinpath(task_dir, "data", basename(zarr_path) * ".json")
+
+# ── GET /api/viewer/props ─────────────────────────────────────────────────────────
+# Returns the saved viewState JSON for this image version, or 404 when nothing was saved yet.
+function api_viewer_props_get(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    pu = get(q, "projectUid", ""); iu = get(q, "imageUid", "")
+    vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
+    zp, td, err = resolve_image_version(pu, iu, vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    p = _viewer_props_path(td, zp)
+    isfile(p) || return 404, JSON3.write((; error = "No saved viewer props"))
+    try
+        200, read(p)
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── POST /api/viewer/props ────────────────────────────────────────────────────────
+# Body: `{projectUid, imageUid, valueName?, viewState}`. Written atomically so a crash mid-write
+# leaves the previous save intact (not a truncated file). Called on any relevant viewer state change
+# through the frontend's debouncedSave scheduler — one write per settle, not per input event.
+function api_viewer_props_post(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu = String(get(body, "projectUid", ""))
+    iu = String(get(body, "imageUid", ""))
+    vnr = get(body, "valueName", nothing)
+    vnn = (vnr === nothing || (vnr isa AbstractString && isempty(vnr))) ? nothing : String(vnr)
+    zp, td, err = resolve_image_version(pu, iu, vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    vs = get(body, "viewState", nothing)
+    vs === nothing && return 400, JSON3.write((; error = "viewState missing"))
+    try
+        p = _viewer_props_path(td, zp)
+        mkpath(dirname(p))
+        write_json_atomic(p, vs)
+        200, JSON3.write((; ok = true, path = p))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end

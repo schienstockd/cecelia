@@ -23,12 +23,12 @@ export const recordMovieGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'images.viewerBtn',
+      anchor: 'images.napariBtn',
       placement: 'right',
       title: 'Set the shot up first',
       text: 'A recording captures exactly what napari is showing — so get the view right before you record.',
       bullets: [
-        'Open the image with the eye.',
+        'Open the image with the ↗ beside it.',
         'Channels, contrast, masks, tracks, populations: all of it is recorded as shown.',
       ],
       when: c => c.napariImageUid !== null,

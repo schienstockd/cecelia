@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
+  filterPayloadByLabels,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -167,6 +168,37 @@ describe('overlaySummary', () => {
   })
 })
 
+describe('filterPayloadByLabels', () => {
+  it('keeps only the cells whose label is in the set — every cells.* array in step', () => {
+    const p = filterPayloadByLabels(payload(), new Set([11, 13]))
+    expect(p.nCells).toBe(2)
+    expect(p.cells.label).toEqual([11, 13])
+    expect(p.cells.t).toEqual([1, 1])
+    expect(p.cells.x).toEqual([2, 4])
+    expect(p.cells.track).toEqual([1, 2])
+  })
+  it('empty label set → empty payload (a pop that contributed no rows contributes no ribbons)', () => {
+    const p = filterPayloadByLabels(payload(), new Set())
+    expect(p.nCells).toBe(0)
+    expect(p.cells.label).toEqual([])
+  })
+  it('picks per-row `values` when present', () => {
+    const p = filterPayloadByLabels(payload({ values: ['a', 'b', 'c', 'd'] }), new Set([10, 12]))
+    expect(p.values).toEqual(['a', 'c'])
+  })
+  it('a payload with no label column cannot be filtered → empty answer', () => {
+    const p = filterPayloadByLabels(payload({ cells: {} }), new Set([1, 2, 3]))
+    expect(p.nCells).toBe(0)
+  })
+  it('carries pops + colourColumns + flags across unchanged (only the row axis narrows)', () => {
+    const src = payload()
+    const p = filterPayloadByLabels(src, new Set([10]))
+    expect(p.pops).toBe(src.pops)
+    expect(p.colourColumns).toBe(src.colourColumns)
+    expect(p.hasT).toBe(src.hasT)
+  })
+})
+
 describe('buildTrackBuffer', () => {
   const PAL = ['#ff0000', '#00ff00', '#0000ff']
   /** Two tracks over four timepoints, plus one untracked cell and one single-detection track. */
@@ -211,19 +243,25 @@ describe('buildTrackBuffer', () => {
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
     const full = tailRange(buf, 3, 60)!
     expect(full).toEqual([0, 6])                  // every segment, in one range
-    // L frames means L segments per track — the ends fall in [t-L+1, t]. At L=1 the other convention
-    // draws two hops, which reads as the slider ignoring you.
-    const short = tailRange(buf, 3, 1)!
-    expect(short[1]).toBe(2)                      // only the segments arriving at t=3 (two tracks)
-    const two = tailRange(buf, 3, 2)!
-    expect(two[1]).toBe(4)                        // arriving at t=2 and t=3
+    // L frames means L segments per track — the ends fall in [t-L+1, t+1] (the +1 folds in the
+    // current-hop segment [t, t+1] so t=0 isn't a visually broken tail). At L=1 the other
+    // convention draws two hops, which reads as the slider ignoring you.
+    const short = tailRange(buf, 2, 1)!
+    expect(short[1]).toBe(2)                      // only the segments arriving at t=3 (two tracks) — hi=3
+    const two = tailRange(buf, 2, 2)!
+    expect(two[1]).toBe(4)                        // arriving at t=2 and t=3 — hi=3, lo=1
     // and the ranges nest rather than overlap, which is what "contiguous" has to mean here
     expect(short[0]).toBeGreaterThanOrEqual(two[0])
   })
 
-  it('gives no tail before anything has happened, and none for a zero-length request', () => {
+  it('shows the "current hop" segment at t=0 so a tracked movie is not empty on open', () => {
+    // t=0 used to give null (window [-L+1, 0] and every segment ends at ≥ 1). That reads as broken
+    // because tracked cells are on screen but no ribbons — Dominik, 2026-08-26. The new window is
+    // [t-L+1, t+1], so at t=0 you see the segments ending at t=1 (the hop from 0 to 1). Napari's
+    // scrub behaviour matches.
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
-    expect(tailRange(buf, 0, 30)).toBeNull()      // nothing has ARRIVED at t=0 yet
+    const atZero = tailRange(buf, 0, 30)!
+    expect(atZero[1]).toBe(2)                     // two tracks × one hop each ending at t=1
     expect(tailRange(buf, 3, 0)).toBeNull()       // 0 = hidden, which is what the slider's low end says
     expect(tailRange({ ...buf, count: 0 }, 3, 30)).toBeNull()
   })

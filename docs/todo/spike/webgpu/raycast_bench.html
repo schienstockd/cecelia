@@ -131,8 +131,17 @@ async function main() {
 
   // G0: requestAdapter({}) returns the INTEGRATED GPU here, and Firefox blanks adapter.info, so the
   // device is identified from its limits.
-  const adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
+  // Chromium 151 returns the OpenGLES/ANGLE Compatibility-Mode adapter (Intel iGPU here) unless
+  // `featureLevel: 'core'` is asked for explicitly, even with `powerPreference: 'high-performance'`.
+  // Try core first; fall back to the old call for browsers that don't accept featureLevel yet.
+  let adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance', featureLevel: 'core'}).catch(() => null);
+  if (!adapter) adapter = await navigator.gpu.requestAdapter({powerPreference: 'high-performance'});
   if (!adapter) { say('no adapter', 'bad'); return; }
+  try {
+    const i = adapter.info || {};
+    diag('adapter.info: vendor=' + (i.vendor || '?') + ' arch=' + (i.architecture || '?') +
+         ' device=' + (i.device || '?') + ' desc=' + (i.description || '?'));
+  } catch {}
   const discrete = adapter.limits.maxTextureDimension3D > 2048;
   results.adapter = {maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
                      minUniformBufferOffsetAlignment: adapter.limits.minUniformBufferOffsetAlignment,
@@ -141,14 +150,50 @@ async function main() {
        (discrete ? ' (discrete)' : ' (INTEGRATED — wrong GPU)'));
 
   const wantTS = adapter.features.has('timestamp-query');
-  const device = await adapter.requestDevice({requiredFeatures: wantTS ? ['timestamp-query'] : []});
+  // Chromium reports the WebGPU spec DEFAULT limits at `adapter.limits` (maxBufferSize=256 MB,
+  // maxStorageBufferBindingSize=128 MB) even when the underlying adapter supports far more; the
+  // higher hardware limit becomes visible only after you ask for it in `requiredLimits`.
+  // For this bench the volume upload stages ~350 MB through one buffer — without asking for a
+  // higher cap, `writeTexture` silently fails and the shader samples an empty volume, which is
+  // why every config timed at ~0 ms with Infinity fps. Ask for 1 GiB (Chromium's error message
+  // says this adapter supports it) and 512 MB storage bindings; Firefox already reports the raw
+  // hardware max so this call is a no-op there.
+  const wantLim = {
+    maxBufferSize: 1024 * 1024 * 1024,
+    maxStorageBufferBindingSize: 512 * 1024 * 1024,
+    maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+  };
+  const device = await adapter.requestDevice({
+    requiredFeatures: wantTS ? ['timestamp-query'] : [],
+    requiredLimits: wantLim,
+  });
+  diag('device limits: maxBufferSize=' + device.limits.maxBufferSize +
+       ' maxStorageBufferBindingSize=' + device.limits.maxStorageBufferBindingSize +
+       ' maxTextureDimension3D=' + device.limits.maxTextureDimension3D);
   device.addEventListener('uncapturederror', e => diag('!! uncaptured: ' + e.error.message));
   device.lost.then(i => say('DEVICE LOST: ' + i.reason + ' ' + i.message, 'bad'));
 
   const cv = el('cv');
   const ctx = cv.getContext('webgpu');
   const fmt = navigator.gpu.getPreferredCanvasFormat();
+  // `premultiplied`, not `opaque`. The shader writes alpha 1, so the pixels are identical — but the
+  // two take different compositor paths, and on this machine (Firefox 154, Wayland, Mesa iris) the
+  // `opaque` path showed nothing at all, in this page and in the app (Dominik, 2026-08-25). This page
+  // is the independent check: it shares no code with the app except this line.
   ctx.configure({device, format: fmt, alphaMode: 'opaque'});
+
+  // EARLIEST-POSSIBLE bare-clear on OPAQUE (the mode that worked before today's uncommitted flip).
+  {
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({colorAttachments: [{view: ctx.getCurrentTexture().createView(),
+      clearValue: {r: 0, g: 0, b: 1, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+    pass.end();
+    diag('trace(EARLY bare-clear, OPAQUE): about to submit');
+    device.queue.submit([enc.finish()]);
+    diag('trace(EARLY bare-clear, OPAQUE): submit returned, awaiting');
+    await device.queue.onSubmittedWorkDone();
+    diag('trace(EARLY bare-clear, OPAQUE): DONE — canvas should be BLUE');
+  }
 
   const mod = device.createShaderModule({code: WGSL});
   const ci = await mod.getCompilationInfo();
@@ -205,14 +250,36 @@ async function main() {
     device.queue.writeBuffer(ubuf, 0, slots);
   }
 
-  // ── draw to the canvas FIRST so blank-vs-crashed is never ambiguous
-  fillSlots(256, NCH, cv.width, cv.height, 0.7);
+  // Bare-clear probe: no pipeline, no bind group, no shader. If THIS hangs, any submit hangs and the
+  // pipeline is a red herring. If it completes, the shader/pipeline/bind-group is what upsets the driver.
   {
     const enc = device.createCommandEncoder();
     const pass = enc.beginRenderPass({colorAttachments: [{view: ctx.getCurrentTexture().createView(),
+      clearValue: {r: 1, g: 0, b: 1, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
+    pass.end();
+    diag('trace(bare-clear): about to submit');
+    device.queue.submit([enc.finish()]);
+    diag('trace(bare-clear): submit returned, awaiting onSubmittedWorkDone');
+    await device.queue.onSubmittedWorkDone();
+    diag('trace(bare-clear): DONE — canvas should be magenta');
+  }
+
+  // ── draw to the canvas FIRST so blank-vs-crashed is never ambiguous
+  fillSlots(256, NCH, cv.width, cv.height, 0.7);
+  diag('trace: fillSlots done');
+  {
+    const enc = device.createCommandEncoder();
+    diag('trace: encoder made');
+    let view;
+    try { view = ctx.getCurrentTexture().createView(); }
+    catch (e) { diag('trace: getCurrentTexture THREW: ' + e); throw e; }
+    diag('trace: swap-chain view acquired');
+    const pass = enc.beginRenderPass({colorAttachments: [{view,
       clearValue: {r: 0, g: 0, b: 0, a: 1}, loadOp: 'clear', storeOp: 'store'}]});
     pass.setPipeline(pipeCanvas); pass.setBindGroup(0, bind, [0]); pass.draw(3); pass.end();
+    diag('trace: pass encoded, about to submit');
     device.queue.submit([enc.finish()]);
+    diag('trace: submit returned, awaiting onSubmittedWorkDone');
     await device.queue.onSubmittedWorkDone();
     diag('first canvas draw OK (volume still empty — background only)');
   }

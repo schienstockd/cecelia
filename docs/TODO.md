@@ -43,6 +43,26 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### WebGPU per-image layer props — animation snapshot source (P9 blocker)
+
+**Blocks** [`docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md`](todo/VIEWER_CONTROLS_SPLIT_PLAN.md) → P9
+(delete the napari bridge) and lets `settings.napariAutoSaveLayerProps` finally go away.
+
+Today the animation card banks a keyframe's viewState via `POST /api/napari/screenshot`, which returns
+`{assetId, viewState, imageUid}`. That viewState is the CONTRAST/COLORMAP/T-Z/camera the movie
+recorder reads to reproduce a "look" (`MOVIE_MANAGEMENT_PLAN.md` Decision 8: contrast is image state,
+not movie-config state). Deleting napari without a replacement leaves the animation page with no
+source of truth for that state, and recorded movies stop being reproducible.
+
+The WebGPU viewer must (a) persist per-image layer props atomically as the user changes them,
+(b) expose `captureViewState(imageUid) → viewState` for the animation card with NO bridge round-trip,
+and (c) write to the SAME on-disk file napari autosaves to so keyframes stay portable across viewers
+during the P6→P9 transition window. Full design + acceptance in the plan doc → PY.
+
+Dominik, 2026-08-26: "as long as the layer autosave props lands at some point. that is ok. because it
+is essential."
+
+
 ### Track pair diagnostics — grid the O(tracks²) scan
 
 `analyze_cell_pairs` computes, for every pair of tracks, the minimum distance over their shared

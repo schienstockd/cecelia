@@ -215,6 +215,12 @@ export const useGatingStore = defineStore('gating', () => {
         }).catch(() => undefined)))
       if (data.tree) setTree(data.tree)
       _setHistory(data)
+      // Any pop mutation (add/delete/rename/setGate/updatePop) changes what the viewer draws — the
+      // /viewer-window popup has its own store, so it needs the localStorage ping to refetch its
+      // overlays. Silent + cheap; a matching-imageUid viewer will loadOverlays() on receive.
+      if (typeof localStorage !== 'undefined' && imageUid.value) {
+        localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+      }
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -365,12 +371,61 @@ export const useGatingStore = defineStore('gating', () => {
       return false
     }
   }
-  // re-push populations to napari after a per-pop visibility change (silent if napari is down)
-  const refreshNapariPops = () => _napari('/api/napari/show-populations', true)
+  // Publish the pop manager's CURRENT selection so the WebGPU viewer can follow it. The overlays
+  // route resolves valueName+popType server-side when the client sends nothing (which is what the
+  // viewer used to do, defaulting to the ACTIVE segmentation + popType=flow) — but the pop manager
+  // is the authoring surface. If the user is gating in `(coastalSm15, clust)`, that is what the
+  // viewer should draw, not the active `default` `flow` (Dominik, 2026-08-26: "it should switch
+  // depending on the pop manager not depending on the segmentation being shown on the image").
+  //
+  // Bag keyed by imageUid — one open pop-manager tab per image is the normal shape, and a viewer
+  // on image B should not follow a selection change on image A. Written on every selectImage +
+  // popType/valueName ref change; the popup window reads it on mount + on storage event.
+  const _publishGatingCurrent = () => {
+    if (typeof localStorage === 'undefined' || !imageUid.value) return
+    const raw = localStorage.getItem('cc.gatingCurrent') ?? '{}'
+    let bag: Record<string, { valueName: string; popType: string }> = {}
+    try { bag = JSON.parse(raw) } catch { bag = {} }
+    bag[imageUid.value] = { valueName: valueName.value, popType: popType.value }
+    localStorage.setItem('cc.gatingCurrent', JSON.stringify(bag))
+  }
+  watch([imageUid, valueName, popType], _publishGatingCurrent, { immediate: true })
+  // A change in the pop manager's (imageUid, valueName, popType) with no other mutation still
+  // means the viewer should redraw — the OTHER ping-firing sites (`_post`, `refreshNapari*`) only
+  // fire on pop mutations or explicit refresh, not on tab switches. Without this the viewer keeps
+  // drawing yesterday's popType until the user gates something.
+  watch([imageUid, valueName, popType], () => {
+    if (typeof localStorage !== 'undefined' && imageUid.value) {
+      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+    }
+  })
+
+  // Ping the browser volume viewer via localStorage — /viewer-window is a popup with its own store
+  // (P2), so a `pop.show` change here needs a channel to reach it. The tick's VALUE carries the
+  // imageUid so a popup on image A doesn't refetch on a change to image B (broadcasts are cheap
+  // but noisy). See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
+  const _pingViewer = () => {
+    if (typeof localStorage !== 'undefined' && imageUid.value) {
+      // Publish the current (valueName, popType) BEFORE the tick, so a viewer that refetches on the
+      // storage event reads the up-to-date selection rather than a stale one.
+      _publishGatingCurrent()
+      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+    }
+  }
+  // re-push populations after a per-pop visibility change (silent if napari is down). Pings the
+  // browser viewer too — PopulationManager's per-pop checkbox is the primary surface, so a change
+  // here MUST reach the WebGPU window even when napari is not running.
+  const refreshNapariPops = () => {
+    _pingViewer()
+    return _napari('/api/napari/show-populations', true)
+  }
   // unified re-push used by the manager's per-pop visibility toggle — routes to the right overlay
   // for the current popType (track → Tracks layers, else → population Points), silent.
-  const refreshNapari = () => popType.value === 'track'
-    ? _napari('/api/napari/show-tracks', true) : _napari('/api/napari/show-populations', true)
+  const refreshNapari = () => {
+    _pingViewer()
+    return popType.value === 'track'
+      ? _napari('/api/napari/show-tracks', true) : _napari('/api/napari/show-populations', true)
+  }
   // add a Shapes layer in napari; drawing on it selects cells → highlighted here. The z scope
   // (whole stack vs ± slices around the live z) is captured now and applied when the polygon closes.
   // a blank/garbage dial value (v-model.number can yield NaN) → 0; never negative

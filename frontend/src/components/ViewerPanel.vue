@@ -27,7 +27,6 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { useNapariStatus } from '../composables/useNapariStatus'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
-import { openPopoutWindow } from '../lib/popout'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -40,18 +39,6 @@ const settings     = useSettingsStore()
 const ws           = useWsStore()
 const log          = useLogStore()
 const taskStore    = useTaskStore()
-
-// Hint gate: cache-on serves stale labels when the user re-runs seg to the same output name
-// (see settings.napariLabelsCache docstring). Fire only when the cache IS on AND a segment
-// task is queued/running on the currently-open image — otherwise the hint is noise.
-const segCacheWarn = computed(() => {
-  if (!settings.napariLabelsCache) return false
-  const uid = projectStore.napariImageUid
-  if (!uid) return false
-  return taskStore.tasks.some(t =>
-    t.module === 'segment' && t.imageUid === uid && (t.status === 'queued' || t.status === 'running')
-  )
-})
 
 // Is a recording in flight? The napari viewer is UI-serial — one render at a time — so the Record
 // button reflects the TASK, not a local flag: the render outlives this component's request and its
@@ -93,8 +80,11 @@ const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
 
+// The image the user is focused on — napari OR the browser viewer. This computed name is a legacy
+// (P6 renames it). The read is now `openImageUid`: the panel gates its content on ANY viewer being
+// open, not just napari. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
 const napariImage = computed(() => {
-  const uid = projectStore.napariImageUid
+  const uid = projectStore.openImageUid
   if (!uid) return null
   for (const set of projectStore.sets) {
     const img = set.images.find(i => i.uid === uid)
@@ -155,7 +145,7 @@ const foldedLabelCount = computed(() => labelRows.value.length - activeLabelRows
 // the set the open image belongs to — the key for per-set napari viewer prefs (colour-by, show-3D,
 // point size, overlay toggles). These are experiment-level: set once, hold across the set's images.
 const currentSetUid = computed(() =>
-  projectStore.napariImageUid ? projectStore.setUidOfImage(projectStore.napariImageUid) : null)
+  projectStore.openImageUid ? projectStore.setUidOfImage(projectStore.openImageUid) : null)
 // per-set option accessors bound to the open image's set (write-throughs persist to the settings store)
 // Deliberately the SAME stored value the viewer's 3D button reads and the movie's z control writes —
 // one setting with two entry points, not two settings that can disagree about what is on screen.
@@ -330,14 +320,12 @@ async function openInNapari(valueName: string) {
     autoSaveProps: autoProps,
     autoLoadProps: autoProps,
     show3D:        show3D.value,
-    asDask:        settings.napariAsDask,
   }
   // Labels/branches/tracks/populations are deliberately NOT sent here. Every open broadcasts
   // `napari:opened`, and the app-level autoshow (composables/useNapariAutoShow) restores all overlay
   // kinds from the remembered toggles in one sequential pass. Sending labels in the open body too
   // would load the same label pyramid twice and put two overlay pushes in flight at once — which the
   // bridge's one-command-at-a-time layer reconciliation does not tolerate.
-  body.labelsCache = settings.napariLabelsCache
   try {
     const res = await fetch('/api/napari/open', {
       method:  'POST',
@@ -452,10 +440,15 @@ async function recordTimelapse() {
 // per-pop default for older senders; blank is fine.
 const pushPopulations = pushPopulationsNow
 
-// Per-pop-type visibility toggle; the choice is remembered (persisted) so it carries across opens.
+// Per-pop-type visibility toggle. Persists FIRST (so a hidden panel state survives a napari-down
+// window) and pings the WebGPU viewer to re-derive its hidden-pop set; the napari push is a silent
+// shadow. Previously this only persisted on a successful push, so a napari-down window read every
+// popType as ticked while none of them actually reached the viewer.
 async function togglePopType(popType: string) {
   const next = !popVisible(popType)
-  if (await pushPopulations(popType, next)) setPopVisible(popType, next)
+  setPopVisible(popType, next)
+  pingViewerOverlays()
+  try { await pushPopulations(popType, next) } catch { /* napari down — the WebGPU viewer already knows */ }
 }
 
 // Push the tracks for the currently-toggled-on segmentations (one Tracks layer per segmentation,
@@ -467,11 +460,19 @@ const onTrackVns = computed(() => Object.keys(trackVns.value).filter(vn => track
 const pushTracks = pushTracksNow
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, re-push the on-set.
+// Pings the WebGPU viewer too — the tracks path is P7-shadowed today (the viewer draws ribbons for
+// every gated track), but persisting + pinging keeps this ready for the P7 rewire.
 async function toggleTrack(vn: string) {
-  const uid = projectStore.napariImageUid
+  // `openImageUid`, not `napariImageUid`: this write must land whether or not napari is running.
+  // Before P6 it was napari-only and `napariImageUid=null` short-circuited the persist — which then
+  // meant the WebGPU viewer never saw the write and kept drawing (or not drawing) tracks by default
+  // (Dominik, 2026-08-26: "i can toggle. but nothing happens"). The napari-only push below still
+  // reads its own uid; that path stays a silent shadow.
+  const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // Per-segmentation toggle: flip this segmentation's branch (skeleton) label overlay. Uses
@@ -486,8 +487,7 @@ async function toggleBranch(vn: string) {
   }
   const wasVisible = branchVns.value[vn] ?? true
   try {
-    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible,
-                                      cache: settings.napariLabelsCache })
+    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible })
     if (res?.ok) {
       branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
       if (uid) settings.setBranchVisibility(uid, branchVns.value)
@@ -506,14 +506,16 @@ async function toggleGatedTracks() {
   const next = !gatedTracksShown.value
   gatedTracksShown.value = next
   if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, next)
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // Master toggle for the trackclust (track-cluster) populations as ribbons. Persisted per pop type
 // (per-set popVis['trackclust']); re-pushes the track overlays (one call covers all ribbons).
 async function toggleTrackclust() {
   setPopVisible('trackclust', !popVisible('trackclust'))
-  await pushTracks()
+  pingViewerOverlays()
+  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // ── Colour-by an obs column (tracks + labels) ──────────────────────────────────
@@ -598,39 +600,65 @@ function onValueNameChange(e: Event) {
   openInNapari(name)
 }
 
+// Fire the WebGPU-viewer overlays-refetch ping. Every panel toggle that changes what the viewer
+// should draw calls this after persisting settings, so a popup viewer with its own store re-reads
+// its inputs (label bag, pop-type bag, track bag) via the `storage` bridge. See P5 of
+// VIEWER_CONTROLS_SPLIT_PLAN.md.
+function pingViewerOverlays() {
+  const openUid = projectStore.openImageUid
+  if (!openUid || typeof localStorage === 'undefined') return
+  localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
+}
+
 async function toggleLabel(valueName: string) {
-  const uid = projectStore.napariImageUid
+  // Write the settings bag FIRST — the WebGPU viewer reads it via `storage` events and is the primary
+  // sink now. The napari push runs after as a shadow (silent on failure): if napari isn't running,
+  // that's expected in the WebGPU era, not an error. See VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+  //
+  // Radio-like: the WebGPU viewer draws one label mask at a time (r32uint, single-slot bind group;
+  // multi-mask is deferred to PX). Ticking a segmentation UNticks the others so what you see in the
+  // panel matches what you see in the viewer, instead of the viewer silently picking one of several
+  // ticked (Dominik, 2026-08-25: "dont just show the last one clicked").
+  const uid = projectStore.openImageUid
   const files = napariImage.value?.labels?.[valueName] ?? []
   const wasVisible = visibleLabels.value[valueName] ?? false
-  if (!files.length) {
-    log.error(`No label files registered for "${valueName}"`, { source: 'napari' })
-    return
-  }
+  const next = !wasVisible
+  // Every label name gets an EXPLICIT boolean — `settings.getLabelVisibility` defaults unknown
+  // names to true (so a fresh image shows all masks), which means omitting a name leaves it
+  // reading as visible in the viewer. Radio-like: only `valueName` is true when enabling; all
+  // false when disabling. Build the full name set from the panel + the store's current view so
+  // no name gets orphaned.
+  const allNames = new Set<string>([
+    ...Object.keys(napariImage.value?.labels ?? {}),
+    ...Object.keys(visibleLabels.value),
+  ])
+  const bag: Record<string, boolean> = {}
+  for (const n of allNames) bag[n] = next && n === valueName
+  visibleLabels.value = bag
+  if (uid) settings.setLabelVisibility(uid, bag)
+  if (!files.length) return   // nothing on disk to push to napari; the bag write above is enough
   try {
-    // the outline rides the push: this rebuilds the layer, so omitting it refills the mask
-    const res = await apiPushLabels({ labels: { [valueName]: files }, show: !wasVisible,
-                                      cache: settings.napariLabelsCache,
-                                      labelContour: labelContour.value })
-    if (res?.ok) {
-      visibleLabels.value = { ...visibleLabels.value, [valueName]: !wasVisible }
-      if (uid) settings.setLabelVisibility(uid, visibleLabels.value)
-    } else {
-      log.error(`Show labels "${valueName}" failed: ${res ? await _resError(res) : 'network error'}`,
-                { source: 'napari' })
-    }
-  } catch (e) {
-    log.error(`Show labels "${valueName}" failed: ${e instanceof Error ? e.message : String(e)}`,
-              { source: 'napari' })
-  }
+    // legacy shadow: keep napari in sync if it happens to be up (P9 removes this)
+    await apiPushLabels({ labels: { [valueName]: files }, show: next,
+                          labelContour: labelContour.value })
+  } catch { /* napari down — expected; the WebGPU viewer already got the update */ }
 }
 
 function onTaskStatus(data: Record<string, unknown>) {
   const status = String(data.status ?? '')
-  if (!settings.napariUpdateImage) return
+  if (!settings.viewerAutoUpdate) return
   if (status !== 'done') return
-  const napariUid = projectStore.napariImageUid
-  if (!napariUid || String(data.imageUid ?? '') !== napariUid) return
+  const openUid = projectStore.openImageUid
+  const taskUid = String(data.imageUid ?? '')
+  if (!openUid || taskUid !== openUid) return
   reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
+  // Ping the WebGPU popup so it refetches overlays (pop counts / colours may have changed after a
+  // seg or gating task). Slabs are NOT re-invalidated from here — a mask-writing task rewrites the
+  // label store on disk, and the popup keeps its cached mask until `labelName` changes. That gap
+  // is spelled out in VIEWER_CONTROLS_SPLIT_PLAN.md → Audit § refresh-labels.
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
+  }
 }
 
 // Refresh the SHOWN image. Data-only by default (re-push overlays, re-read from disk — the pyramid and
@@ -642,71 +670,49 @@ function onTaskStatus(data: Record<string, unknown>) {
 // mounted app-level, because this panel is `v-if`'d in App.vue and so cannot be relied on to exist
 // when an image opens. Read the rules in that file before adding another overlay kind here.
 function reloadViewer() {
-  if (settings.napariResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
+  if (settings.viewerResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
   else void pushAllOverlays()
 }
 
 function onTaskResult(data: Record<string, unknown>) {
   const imageUid = String(data.imageUid ?? '')
-  if (!imageUid || imageUid !== projectStore.napariImageUid) return
+  if (!imageUid || imageUid !== projectStore.openImageUid) return
   const meta = (data.meta ?? {}) as Record<string, unknown>
 
   const addedValueName = meta.valueName as string | undefined
   if (addedValueName) {
     selectedValueName.value = addedValueName
-    if (settings.napariUpdateImage) reloadViewer()   // data-only unless reset
+    if (settings.viewerAutoUpdate) reloadViewer()   // data-only unless reset
   }
 
   const labelValueName = meta.labelValueName as string | undefined
-  if (labelValueName && settings.napariUpdateImage) {
+  // A task that wrote a label store — the popup's cached mask pixels for THIS vn are stale. Ping
+  // the popup so it invalidates its slabs. The listener on the other side matches on `imageUid`
+  // AND `valueName`, so only the popup showing the affected mask reallocates.
+  if (labelValueName && typeof localStorage !== 'undefined') {
+    localStorage.setItem('cc.viewerSlabsTick',
+                          `${imageUid}:${labelValueName}:${Date.now()}`)
+  }
+  if (labelValueName && settings.viewerAutoUpdate) {
     // Mark newly added label as visible and show it in napari
     visibleLabels.value = { ...visibleLabels.value, [labelValueName]: true }
     nextTick(() => {
       const files = napariImage.value?.labels?.[labelValueName] ?? []
       if (files.length) {
-        void apiPushLabels({ labels: { [labelValueName]: files }, show: true,
-                             cache: settings.napariLabelsCache })
+        void apiPushLabels({ labels: { [labelValueName]: files }, show: true })
       }
     })
   }
 }
 
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
-watch(() => projectStore.napariReloadTick, () => reloadViewer())
+watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 
-// Bridge status (shared poll — see useNapariStatus): `bridgeStale` warns that napari is running older
-// code than the checkout (it's a separate process that survives a backend restart), and the canvas size
-// is what a movie records at when no size is asked for, shown as the size fields' placeholder.
-const { bridgeStale, canvasSizeX, canvasSizeY, multiscaleLevels, poll: pollBridge } = useNapariStatus()
-async function restartNapari() {
-  try {
-    const res = await fetch('/api/napari/restart', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-    if (res.ok) log.info('Napari restarting — reopen the image to reload it.', { source: 'napari' })
-    else log.error(`Napari restart failed: ${await _resError(res)}`, { source: 'napari' })
-  } catch (e) {
-    log.error(`Napari restart failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
-  }
-  setTimeout(pollBridge, 1500)
-}
-
-// Open the SAME image in the browser volume viewer, in its own window — the "web eye" beside napari,
-// so the two can be compared while the browser side catches up (docs/todo/WEB_VIEWER_PLAN.md). A popup
-// is a fresh app instance with no project open, so the image travels in the query; the URL, the window
-// name and the re-focus come from lib/popout.ts.
-function openWebViewer() {
-  const uid = projectStore.napariImageUid
-  const proj = projectMeta.current?.uid
-  if (!uid || !proj) return
-  const q = new URLSearchParams({ project: proj, image: uid })
-  // The SET, so the popup can read the same per-set viewer prefs this panel writes — point size,
-  // colour-by, which population type is shown. They are set-scoped, and a popup is a fresh app
-  // instance with no project open, so the uid has to travel in the query like everything else.
-  currentSetUid.value && q.set('set', currentSetUid.value)
-  selectedValueName.value && q.set('valueName', selectedValueName.value)
-  napariImage.value?.name && q.set('name', napariImage.value.name)
-  openPopoutWindow('/viewer-window', 1200, 800, '?' + q.toString())
-}
+// Bridge status (shared poll — see useNapariStatus): the canvas size is what a movie records at when
+// no size is asked for, shown as the size fields' placeholder. The `bridgeStale` warning + Restart
+// button were removed in P6 — the bridge is a legacy sink now, and users should not be nudged to
+// respawn a process that goes away in P9.
+const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
@@ -720,14 +726,6 @@ onUnmounted(() => {
 
 <template>
   <div class="viewer-panel">
-    <!-- stale-bridge warning: napari started before the latest napari-code changes (it survives a
-         backend restart). Brief here; the action is the Restart button + the tooltip. -->
-    <div v-if="bridgeStale" class="viewer-stale"
-         v-tooltip.bottom="'Napari started before your latest changes — restart it, then reopen the image'">
-      <i class="pi pi-exclamation-triangle" />
-      <span class="viewer-stale-txt">Napari running old code</span>
-      <button class="viewer-stale-btn" @click="restartNapari">Restart</button>
-    </div>
     <!-- ── View: viewer behaviour toggles (global prefs; apply on next open) ──
          Top of the panel — these are always available, even before an image is open. -->
     <!-- Convention: append new toggles at the END of the row. -->
@@ -735,22 +733,16 @@ onUnmounted(() => {
       <div class="viewer-section-title cc-eyebrow cc-fs-2xs">View</div>
       <div class="viewer-opts cc-row cc-row-tight">
         <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariUpdateImage }"
-          @click="settings.napariUpdateImage = !settings.napariUpdateImage"
-          v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerAutoUpdate }"
+          @click="settings.viewerAutoUpdate = !settings.viewerAutoUpdate"
+          v-tooltip.bottom="'Auto-update: refresh the viewer whenever a task finishes on that image'"
         ><i class="pi pi-refresh" /></button>
 
         <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariResetOnReload }"
-          @click="settings.napariResetOnReload = !settings.napariResetOnReload"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerResetOnReload }"
+          @click="settings.viewerResetOnReload = !settings.viewerResetOnReload"
           v-tooltip.bottom="'Reopen the whole image, not just data — needed after pixels change'"
         ><i class="pi pi-image" /></button>
-
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariLabelsCache }"
-          @click="settings.napariLabelsCache = !settings.napariLabelsCache"
-          v-tooltip.bottom="'Cache label chunks — faster scrubbing, but stale after seg re-runs'"
-        ><i class="pi pi-bolt" /></button>
 
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAutoSaveLayerProps }"
@@ -764,27 +756,6 @@ onUnmounted(() => {
           v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
         ><span class="opt-text">3D</span></button>
 
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAsDask }"
-          @click="settings.napariAsDask = !settings.napariAsDask"
-          v-tooltip.bottom="'Fast open, slices on demand; untick for smoother viewing'"
-        ><i class="pi pi-database" /></button>
-
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="!projectStore.napariImageUid"
-          @click="openWebViewer"
-          v-tooltip.bottom="'Open this image in the browser volume viewer, in its own window'"
-        ><i class="pi pi-external-link" /></button>
-      </div>
-
-      <!-- Segment-running warning: cache-on serves stale label bytes on re-run (dask task-name
-           collision → napari's opportunistic cache HIT). Only surface when the cache IS on and
-           a segment task is actually queued/running on the open image; one-click fix. Reuses
-           the .viewer-stale amber strip so the two warnings share the same visual language. -->
-      <div v-if="segCacheWarn" class="viewer-stale">
-        <i class="pi pi-exclamation-triangle" />
-        <span class="viewer-stale-txt">Segmentation running — cache may hide new labels</span>
-        <button class="viewer-stale-btn" @click="settings.napariLabelsCache = false">Cache off</button>
       </div>
     </div>
 
@@ -956,7 +927,7 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
-    <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open in Napari.</span></div>
+    <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open.</span></div>
   </div>
 </template>
 

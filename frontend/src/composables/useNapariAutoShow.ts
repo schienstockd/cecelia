@@ -163,12 +163,12 @@ export async function pushAllOverlays(): Promise<void> {
 
   const hasLabels = Object.keys(plan.labels).length > 0
   if (hasLabels) {
-    const res = await pushLabels({ labels: plan.labels, show: true, cache: settings.napariLabelsCache,
+    const res = await pushLabels({ labels: plan.labels, show: true,
                                    labelContour: _labelContour(c.uid) })
     if (!res?.ok) log.error('Show labels on open failed.', { source: 'napari' })
   }
   if (Object.keys(plan.branchLabels).length) {
-    const res = await pushLabels({ branchLabels: plan.branchLabels, show: true, cache: settings.napariLabelsCache })
+    const res = await pushLabels({ branchLabels: plan.branchLabels, show: true })
     if (!res?.ok) log.error('Show branches on open failed.', { source: 'napari' })
   }
   // Apply the remembered colour-by ONLY if this segmentation actually has that column — the preference
@@ -267,7 +267,7 @@ export async function refreshLivePreviews(): Promise<void> {
   // this runs the successful run is already registered. A cancelled or failed run never registers, so
   // it correctly falls through to the plain hide.
   //
-  // The promotion deliberately does NOT check `napariUpdateImage`: that setting exists to stop
+  // The promotion deliberately does NOT check `viewerAutoUpdate`: that setting exists to stop
   // expensive IMAGE-pyramid reloads on task completion, and this is the cheap labels-layer path for a
   // store the user explicitly asked to watch. Leaving them staring at a layer that just disappeared
   // would be the surprising behaviour.
@@ -277,7 +277,6 @@ export async function refreshLivePreviews(): Promise<void> {
     if (finished?.length) {
       // one request, and the bridge evicts the `(live)` layer as it adds the finished one
       const res = await pushLabels({ labels: { [vn]: finished }, show: true,
-                                     cache: useSettingsStore().napariLabelsCache,
                                      labelContour: _labelContour(imageUid) })
       if (res?.ok) {
         const settings = useSettingsStore()
@@ -288,7 +287,7 @@ export async function refreshLivePreviews(): Promise<void> {
       }
     }
     const files = _previewFiles(vn)
-    if (files.length) void pushLabels({ labels: { [vn]: files }, show: false, cache: false, preview: true })
+    if (files.length) void pushLabels({ labels: { [vn]: files }, show: false, preview: true })
   }
   previewShown.value = Object.fromEntries(
     Object.entries(previewShown.value).filter(([vn, on]) => on && live.has(vn)))
@@ -300,7 +299,7 @@ export async function togglePreview(valueName: string): Promise<boolean> {
   const files = _previewFiles(valueName)
   if (!files.length) return false
   const want = !previewShown.value[valueName]
-  const res = await pushLabels({ labels: { [valueName]: files }, show: want, cache: false, preview: true,
+  const res = await pushLabels({ labels: { [valueName]: files }, show: want, preview: true,
                                  labelContour: _labelContour(useProjectStore().napariImageUid) })
   if (!res?.ok) {
     useLogStore().error(`Could not ${want ? 'show' : 'hide'} the live preview for ${valueName}.`,

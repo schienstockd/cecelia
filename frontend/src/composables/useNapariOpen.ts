@@ -18,7 +18,7 @@ export function useNapariOpen() {
     if (!projectUid) return
     // clicking on the ALREADY-open image = reload it. Delegate to ViewerPanel (it owns the overlay
     // logic), which reloads DATA only unless the user ticked reset — no needless pyramid reopen.
-    if (project.napariImageUid === imageUid) { project.requestNapariReload(); return }
+    if (project.napariImageUid === imageUid) { project.requestViewerReload(); return }
     const autoProps = settings.napariAutoSaveLayerProps
     try {
       const res = await fetch('/api/napari/open', {
@@ -30,8 +30,6 @@ export function useNapariOpen() {
           autoSaveProps: autoProps,
           autoLoadProps: autoProps,
           show3D:        settings.getShow3D(setUid),   // per-set (only applied where a z-axis exists)
-          asDask:        settings.napariAsDask,
-          labelsCache:   settings.napariLabelsCache,
         }),
       })
       const body = await res.json().catch(() => ({})) as

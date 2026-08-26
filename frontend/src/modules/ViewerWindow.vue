@@ -35,7 +35,7 @@ import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
   createVolumeRenderer, WebGpuUnavailable,
-  type VolumeRenderer, type UniformState,
+  type VolumeRenderer, type UniformState, type FrameSample,
 } from '../lib/webgpu/volumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
@@ -43,6 +43,8 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
+import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
+import InlineNote from '../components/InlineNote.vue'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -56,8 +58,11 @@ import {
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
+import { debouncedSave } from '../utils/debouncedSave'
 import {
-  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary, buildTrackBuffer, tailRange,
+  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
+  buildMultiTrackBuffer, tailRange, filterPayloadByLabels,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
@@ -79,7 +84,14 @@ const settings = useSettingsStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
-const valueName = String(route.query.valueName ?? '') || undefined
+/**
+ * Which VERSION of the image is on screen — a ref, because it is now a control rather than a seed.
+ *
+ * Empty means "whatever the server resolves", which is the ACTIVE version (what a task would run
+ * against). The meta response says which one that was, so the picker fills in from the answer rather
+ * than from a second copy of the active-version rule living in the browser.
+ */
+const valueName = ref(String(route.query.valueName ?? ''))
 /**
  * The image's SET, seeded by the viewer panel that opened this window.
  *
@@ -197,6 +209,88 @@ const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | nul
  */
 const shader = ref<UniformState | null>(null)
 /**
+ * Is the version on screen the ACTIVE one — the zarr every task reads?
+ *
+ * Worth stating rather than leaving to be inferred from two names that often differ by one word
+ * ("smoothed" vs "driftCorrected"). Null when the image has only one version, or the server is old
+ * enough not to report which is active: an absent answer must read as no claim, not as a pass.
+ */
+const versionNote = computed(() => {
+  const active = meta.value?.activeValueName
+  if (!active || !valueName.value || (meta.value?.valueNames?.length ?? 0) < 2) return null
+  return valueName.value === active
+    ? { severity: 'ok' as const, short: 'Active version',
+        detail: 'The version every task on this image reads.' }
+    : { severity: 'warn' as const, short: 'Not the active version',
+        detail: `Tasks on this image read "${active}". This view is of "${valueName.value}".` }
+})
+
+/**
+ * Clear the canvas to magenta and draw nothing — Debug only, off by default.
+ *
+ * The one question the offscreen probe cannot answer: it renders into its own texture, so it proves
+ * the shader works without proving anything reaches the SCREEN. This uses the real swap chain and the
+ * simplest operation on it. Magenta appears → the canvas composites, and the fault is between the
+ * draw and the swap-chain texture. Magenta does not appear → nothing this canvas draws is ever shown,
+ * and the fault is below us: the browser, the compositor, or something filtering the page.
+ */
+const testPattern = ref(false)
+/**
+ * Composite the canvas as `opaque` instead of `premultiplied` — Debug only, off by default.
+ *
+ * The shader writes alpha 1 on every path, so the two are pixel-identical; they differ only in which
+ * compositor path the browser takes. `opaque` is the mode that can be refused or mishandled, and on
+ * this machine it showed nothing at all — including a magenta clear with no shader involved, and in a
+ * standalone WebGPU page sharing only that one line. Kept as a switch so the comparison stays
+ * available rather than becoming folklore.
+ */
+const opaqueCanvas = ref(false)
+
+/**
+ * With the test fill on, read the CANVAS ELEMENT back and say what it holds.
+ *
+ * This is the end of the line for the blank-viewer diagnosis. The fill clears the real swap-chain
+ * texture to magenta with no pipeline, no bind group and no shader — the simplest thing WebGPU can be
+ * asked to do. If the element then reads magenta while the screen is black, the canvas holds the
+ * colour and is not being composited: nothing in this repo can fix that. If the element reads black
+ * too, the clear never reached the swap chain, which IS ours.
+ */
+async function checkFill() {
+  if (!canvas.value) return
+  // Two frames of grace: the clear is submitted from a rAF and the snapshot must see the result of it,
+  // not of the frame before.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const c = await sampleCanvas(canvas.value)
+  const pct = (v: number) => (v * 100).toFixed(1) + '%'
+  vlog('warn',
+       testPattern.value
+         ? `Test fill ON — canvas element holds ${c ? `${pct(c.lit)} lit / max ${pct(c.max)}` : 'nothing readable'}`
+         : `Test fill OFF — canvas element holds ${c ? `${pct(c.lit)} lit / max ${pct(c.max)}` : 'nothing readable'}`,
+       testPattern.value
+         ? 'The fill clears the swap-chain texture to magenta with no shader involved. Lit here + a ' +
+           'black screen = the canvas is not being composited, which is below this app. Black here = ' +
+           'the clear never reached the swap chain, which is ours.'
+         : 'Baseline, for comparison with the fill.')
+}
+
+/**
+ * The browser renders but does not DISPLAY — set when the shader produced an image and the canvas
+ * element came back black.
+ *
+ * Not a debug field: it is the difference between a viewer that looks broken and one that says what is
+ * wrong. This state is unfixable from here — the pixels exist, the canvas holds nothing, and no shader,
+ * uniform or pipeline change moves it (Firefox 154 / Wayland / Mesa iris, both `alphaMode` paths, and a
+ * standalone WebGPU page sharing none of this code: all black, 2026-08-25). What it needs is a
+ * sentence, because a black rectangle reads as "this image is empty".
+ */
+const displayFault = ref(false)
+
+/** What the shader last actually produced — see `sampleFrame`. Debug only. */
+const probe = ref<FrameSample | null>(null)
+/** What the CANVAS ELEMENT holds after that draw — see `utils/canvasSample.ts`. The pair is the whole
+ *  diagnosis: shader lit + canvas black is a swap-chain problem, both lit is a compositing one. */
+const canvasProbe = ref<CanvasSample | null>(null)
+/**
  * Say it in the app's console, not just in this window.
  *
  * This is a pop-out — a second app instance with its own store and NO console rail (App.vue renders one
@@ -229,43 +323,127 @@ const heldProbe = ref('')
  */
 const overlays = ref<OverlayPayload | null>(null)
 const overlaysErr = ref('')
+/**
+ * Track ribbons are drawn from PER-SEGMENTATION payloads, one per vn the panel's track eye has
+ * ticked — so a user can see coastalFg's tracks AND coastalSm15's tracks at the same time, even
+ * while the pop manager (which drives the main `overlays` fetch) is on a third, un-tracked vn like
+ * `default`. Cached across renders so a repeat toggle is instant; refreshed when trackVisibility
+ * changes or the viewer is pinged for an overlay update. Napari draws one Tracks layer per vn;
+ * this is the WebGPU analogue.
+ */
+const trackPayloads = ref<Map<string, OverlayPayload>>(new Map())
+/** Trackclust pops payload per ticked vn — a SECOND cache, keyed on the same vns but fetched with
+ *  `popType=trackclust` so `pops` carries the track-cluster populations for that vn. Populated on
+ *  loadTracks when the panel's Trackclust master toggle is on; used by rebuildOverlays to add one
+ *  filtered-by-pop-labels source per trackclust pop with `pop.colour`. See
+ *  VIEWER_CONTROLS_SPLIT_PLAN.md → P7 tail. */
+const trackclustPayloads = ref<Map<string, OverlayPayload>>(new Map())
+/** Per-source (per-vn) counts + palette hex from the last `buildMultiTrackBuffer` result. Feeds the
+ *  Tracks legend so a viewer with several ticked eyes shows a swatch key rather than a rainbow with
+ *  no reading. */
+const trackSources = ref<{ vn: string; hex: string; count: number }[]>([])
+/** Speed range in µm per hop (Δt = 1 frame), or null when the mode isn't speed. Feeds the ramp
+ *  legend under the Tracks control block, same shape as the point colour-by numeric scale. */
+const trackSpeedRange = ref<[number, number] | null>(null)
+/** Whether the panel has this vn's popType turned on. Mirrors the same read `loadOverlays` uses
+ *  when it decides whether to clear the payload's pops, so the summary line and the pop list agree.
+ *  Reactive: `gatingCurrent` changes when the pop manager switches popType, `_setPrefs` updates via
+ *  the storage bridge whenever the panel toggles the icon. */
+const popsPanelOn = computed(() => {
+  const pt = gatingCurrent.value.popType || 'flow'
+  return setUid ? settings.getPopVisible(setUid, pt) : true
+})
+/** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
+ *  (rare); falls back to the default 'track'. */
+const trackColorMode = computed<'track' | 'speed' | 'solid'>({
+  get: () => setUid ? settings.getTrackColorMode(setUid) : 'track',
+  set: (v) => { if (setUid) settings.setTrackColorMode(setUid, v); rebuildOverlays() },
+})
+/** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
+ *  override is per set — a rare viewer opened without one just keeps the palette default. */
+function setTrackSourceColour(vn: string, hex: string) {
+  if (!setUid) return
+  settings.setTrackSourceColour(setUid, vn, hex)
+  rebuildOverlays()
+}
+/**
+ * The pop manager's CURRENT (valueName, popType) for THIS image. Published to `cc.gatingCurrent`
+ * by the gating store (main window) on selectImage + on any (valueName, popType) change, and
+ * refreshed here on `storage` events. Read by `loadOverlays` so the viewer draws the pops the
+ * user is authoring, not the pops of the "active segmentation" resolved server-side. Empty
+ * strings = fall back to the server default (`_resolve_vn` + popType=flow) — the previous
+ * behaviour, preserved for a viewer opened before the pop manager has selected anything.
+ * Dominik, 2026-08-26: "why do you have flowtom as the only pop source for fXgbTl. it should
+ * switch depending on the pop manager not depending on the segmentation being shown on the image".
+ */
+function readGatingCurrent(): { valueName: string; popType: string } {
+  if (typeof localStorage === 'undefined' || !imageUid) return { valueName: '', popType: '' }
+  try {
+    const bag = JSON.parse(localStorage.getItem('cc.gatingCurrent') ?? '{}') as
+                Record<string, { valueName?: string; popType?: string }>
+    const e = bag[imageUid] ?? {}
+    return { valueName: String(e.valueName ?? ''), popType: String(e.popType ?? '') }
+  } catch { return { valueName: '', popType: '' } }
+}
+const gatingCurrent = ref(readGatingCurrent())
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
-/** Which obs column shades the points, '' for the population colour. A REQUEST, not a display toggle:
- *  the values come from the server, so changing it refetches. */
-const colourByLocal = ref('')
 /**
- * Point size and colour-by, SHARED with the napari viewer panel when the set is known.
- *
- * A `computed` with a setter rather than a plain ref, so every read and write goes to the one store
- * the other panel already uses — the same image cannot then look different depending on which eye
- * opened it. Falls back to the window's own setting when there is no set uid to key on.
+ * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
+ * and write goes to the one store the panel already uses — the same image cannot then look different
+ * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
  */
 const pointSize = computed({
   get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
   set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
 })
-const colourBy = computed({
-  get: () => (setUid ? settings.getColourBy(setUid) : colourByLocal.value),
-  set: (v: string) => setUid ? settings.setColourBy(setUid, v) : (colourByLocal.value = v),
-})
 /**
- * Which segmentation's MASK is drawn, '' for none (P4).
- *
- * A REQUEST, and the most expensive kind: the mask rides each timepoint's slab and lives in that
- * timepoint's texture slot, so switching it reallocates and refetches the whole cache. That is the
- * price of the guarantee — a mask cached on its own can be a frame behind the pixels it outlines, and
- * an outline that is one frame stale still looks like an answer.
- *
- * ONE AT A TIME, where napari shows every segmentation at once as its own layer. A panel narrow enough
- * for one population list will not hold three, and the 2D view is the one people gate on.
+ * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
+ * locked decision 3: the viewer has no selectors. The CHOICE lives in `ViewerPanel`, keyed per set
+ * in `settings.setColourBy`, and reaches this window via the P2 storage-event bridge. A change here
+ * is a request for the server (the values come from disk), so a watch refetches the overlays.
+ * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
-const labelName = ref('')
+const colourBy = computed(() => setUid ? settings.getColourBy(setUid) : '')
+watch(colourBy, () => { void loadOverlays() })
+/**
+ * Which segmentation's MASK is drawn, '' for none.
+ *
+ * Not a selector any more — the CHOICE lives in `ViewerPanel`, keyed per image in
+ * `settings.getLabelVisibility` (P3, docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md). Locked decision 3:
+ * the viewer has no selectors. Here we read whichever vn the panel has ticked on and render it;
+ * the panel's write hits localStorage and reaches this window via the P2 storage-event bridge.
+ *
+ * STILL ONE AT A TIME. Multi-mask rendering (multi-texture bind group) is a later phase; if the
+ * panel has more than one ticked, the first one wins deterministically. This is the visible
+ * limitation the row hint below spells out.
+ */
+const labelName = computed(() => {
+  const names = meta.value?.labelNames ?? []
+  if (!imageUid || !names.length) return ''
+  // `imageUid` is the const from route.query set at setup. In the popup this is the ONLY viewer;
+  // the popup's settings store rehydrates from localStorage on change (P2), so a tick in the
+  // panel reaches here without touching the popup's `openImageUid`.
+  const vis = settings.getLabelVisibility(imageUid, names)
+  return names.find(n => vis[n]) ?? ''
+})
+// A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
+// — so a change here has to `reallocate()` for the same reason a `<select>` did.
+watch(labelName, () => reallocate())
+/** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
+ *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
+const shownLabelCount = computed(() => {
+  const names = meta.value?.labelNames ?? []
+  if (!imageUid || !names.length) return 0
+  const vis = settings.getLabelVisibility(imageUid, names)
+  return names.filter(n => vis[n]).length
+})
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
-let segments: SegmentBuffer = {
+const EMPTY_SEGMENTS: SegmentBuffer = {
   data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
 }
+let segments: SegmentBuffer = EMPTY_SEGMENTS
 const pointCount = ref(0)
 const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
@@ -479,12 +657,18 @@ const frame = usePlotResize(canvas, () => {
   // so this is two array reads rather than a per-frame filter.
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0
     ? tailRange(segments, shownT.value, settings.viewerTailLength) : null
-  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth)
+  // Track ribbons carry their OWN Z reach — usually wider than the points' (a track spans several
+  // planes and reads best with slack). Same "negative lo = no filter" convention as the points.
+  const trackTol = Math.max(0, settings.viewerTrackZTol)
+  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth,
+                          pLo - trackTol, pHi + trackTol)
   // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
   // has to be complete.
   r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
+  r.setTestPattern(testPattern.value)
   r.draw()
   // Read back AFTER the draw, so Debug shows the numbers the frame on screen was rendered from rather
   // than the ones the next frame will use.
@@ -503,7 +687,42 @@ const frame = usePlotResize(canvas, () => {
          `${st.nch} ch, ${mode.value === 'plane' ? 'plane ' + zPlane.value : '3D'}`,
          `box ${st.ext.map(v => v.toFixed(1)).join(' × ')} µm · camera ${st.dist.toFixed(0)} µm · ` +
          `pan ${st.pan[0].toFixed(0)},${st.pan[1].toFixed(0)} · ${st.steps} step(s) · ` +
-         (st.ortho ? 'orthographic' : 'perspective'))
+         (st.ortho ? 'orthographic' : 'perspective') +
+         ` · canvas ${st.canvas[0]}×${st.canvas[1]}`)
+    // And what it actually PRODUCED. A blank viewer has two completely different causes — the shader
+    // drew black, or it drew an image the screen never got — and nothing else told them apart: the
+    // fetch reports bytes, the cache reports residency, the uniforms read back correct, and the canvas
+    // is black either way.
+    // THREE measurements, because there are three places the pixels can be lost and each pair of them
+    // is ambiguous on its own: the volume alone, the volume WITH the overlays (which share the render
+    // pass and can invalidate all of it), and the canvas element itself.
+    void Promise.all([r.sampleFrame(false), r.sampleFrame(true), sampleCanvas(canvas.value!)])
+      .then(([vol, full, el]) => {
+        probe.value = full ?? vol
+        canvasProbe.value = el
+        const pct = (v: number) => (v * 100).toFixed(1) + '%'
+        const say = (f: FrameSample | CanvasSample | null) =>
+          f ? `${pct(f.lit)} lit / max ${pct(f.max)}` : 'not sampled'
+        const [pts, tails] = r.overlayCounts()
+        // The one reading that names a cause outright: the volume draws, and adding the overlays to
+        // the same pass loses it. An invalid overlay pipeline or an instanced draw past the end of its
+        // buffer discards the whole pass, including what was already in it.
+        const overlaysKill = !!vol && vol.max > 0 && !!full && full.max === 0
+        // Rendered but not displayed. Only claimed when BOTH probes answered: a null canvas read means
+        // the browser would not snapshot the canvas, which is not the same as the canvas being black.
+        displayFault.value = !!full && full.max > 0 && !!el && el.max === 0
+        vlog(overlaysKill || (!!full && full.max > 0 && !!el && el.max === 0) ? 'warn' : 'info',
+             `Viewer pixels — volume: ${say(vol)} · +overlays: ${say(full)} · canvas: ${say(el)}`,
+             `${pts} point + ${tails} tail instances` +
+             (overlaysKill
+               ? ' — THE OVERLAYS ARE DISCARDING THE PASS: the volume renders and adding them to the' +
+                 ' same pass loses everything in it.'
+               : !!full && full.max > 0 && !!el && el.max === 0
+                 ? ' — the draw is not reaching the swap-chain texture.'
+                 : !!el && el.max > 0
+                   ? ' — the canvas element holds the image, so anything blank on screen is below us.'
+                   : ''))
+      })
   }
 })
 
@@ -517,10 +736,62 @@ function rebuildOverlays() {
   points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
-  // Tails are coloured per TRACK, not per population, so they do not depend on which pops are visible —
-  // but they are rebuilt together because both come from one payload and one rebuild is cheaper to
-  // reason about than two lifetimes.
-  segments = buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
+  // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
+  // main `overlays` fetch. That way a user with the pop manager on a non-tracked vn (e.g. `default`)
+  // still sees ribbons for whichever tracked vns they have the "directions" eye on, and can show
+  // several vns at once — matching napari's one-Tracks-layer-per-segmentation model. P7 of
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  // Source list mixes THREE track kinds, in this order:
+  //   1. Per-vn base tracks — from `trackPayloads`, the panel's "directions" eye per segmentation.
+  //      Colour-cycled by track id (or per-source solid, or heat by speed — the mode picker).
+  //   2. Gated-track pop ribbons — one filtered payload per gated track pop with pop.show &&
+  //      pop.isTrack, from the POP MANAGER's active payload (`overlays.value`), not the per-vn
+  //      track eye. That is the authoring surface for populations, so a viewer with the pop
+  //      manager on vn A and no per-vn eye ticked still shows A's gated tracks. Gated by
+  //      `settings.getShowGatedTracks(setUid)`.
+  //   3. Trackclust ribbons — from `trackclustPayloads[popManagerVn]`, gated by
+  //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
+  //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
+  const gatedOn = setUid ? settings.getShowGatedTracks(setUid) : false
+  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
+  const overrides = setUid ? settings.getTrackSourceColours(setUid) : {}
+  const sources: { vn: string; payload: OverlayPayload; colour?: string }[] = []
+  for (const [vn, payload] of trackPayloads.value.entries()) {
+    sources.push({ vn, payload, colour: overrides[vn] })
+  }
+  const popMgrPayload = overlays.value
+  const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
+  if (gatedOn && popMgrPayload && popMgrVn) {
+    for (const pop of popMgrPayload.pops ?? []) {
+      if (!pop.isTrack || !pop.show || !pop.labels?.length) continue
+      const filtered = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
+      if (!filtered.nCells) continue
+      const key = `${popMgrVn}::${pop.path}`
+      sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour })
+    }
+  }
+  if (trackclustOn) {
+    const tcPayload = popMgrVn ? trackclustPayloads.value.get(popMgrVn) : undefined
+    if (tcPayload) {
+      for (const pop of tcPayload.pops ?? []) {
+        if (!pop.show || !pop.labels?.length) continue
+        const filtered = filterPayloadByLabels(tcPayload, new Set(pop.labels))
+        if (!filtered.nCells) continue
+        const key = `${popMgrVn}::trackclust::${pop.path}`
+        sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour })
+      }
+    }
+  }
+  if (sources.length) {
+    const result = buildMultiTrackBuffer(sources, meta.value, PALETTES.cecelia, trackColorMode.value)
+    segments = result.segments
+    trackSources.value = result.sources
+    trackSpeedRange.value = result.speedRange
+  } else {
+    segments = EMPTY_SEGMENTS
+    trackSources.value = []
+    trackSpeedRange.value = null
+  }
   segCount.value = segments.count
   r?.setOverlaySegments(segments.data)
   frame.redraw()
@@ -536,13 +807,31 @@ async function loadOverlays() {
     // other resolves to the active segmentation by luck rather than by intent. The server picks the
     // active one and says which in `valueName`, so the panel can report it. A segmentation PICKER is
     // the next step — see the plan.
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value }),
+    // Follow the pop manager's selection when it has published one. Empty strings fall back to the
+    // server defaults (`_resolve_vn` + popType=flow) — matches the pre-P5 behaviour for a viewer
+    // opened before the pop manager writes anything.
+    const gc = gatingCurrent.value
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
+                                          valueName: gc.valueName, popType: gc.popType }),
                             { cache: 'no-store' })
     const p = await readJson<OverlayPayload>(res, 'Overlays')
-    // The gating `show` flag SEEDS the viewer's visibility; it does not lock it. It used to disable the
-    // toggle outright, so a population hidden in the population manager could not be looked at here at
-    // all (Dominik, 2026-08-25) — and the viewer is where you go to look. Seeded once per fetch rather
-    // than merged, because a re-fetch is a new answer about which populations exist.
+    // Two layers of ground truth act on the pops in the payload:
+    //   1. The panel's per-pop-TYPE gate ("Populations & tracks" icon row). If the popType the pop
+    //      manager is currently on (flow / clust / …) is toggled off in the panel, the whole family
+    //      is DROPPED from the overlays payload — not just hidden. The overlays panel then reads as
+    //      "no populations gated" (Dominik, 2026-08-26: "there should be no pops in the overlays").
+    //      That is what the panel toggle promises: no pops at all, not "pops listed but invisible".
+    //   2. Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON.
+    //      The viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs.
+    //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
+    //      on every write, so the override would be clobbered within a second anyway (Dominik,
+    //      2026-08-25: "the toggles for pops and tracks dont do anything").
+    // Empty `setUid` = a viewer opened without a set context (rare — export path); default to shown.
+    // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
+    // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
+    const currentPopType = gatingCurrent.value.popType || 'flow'
+    const popTypeOn = setUid ? settings.getPopVisible(setUid, currentPopType) : true
+    if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
     rebuildOverlays()
@@ -557,6 +846,66 @@ function togglePop(path: string) {
   const next = new Set(hiddenPops.value)
   next.has(path) ? next.delete(path) : next.add(path)
   hiddenPops.value = next
+  rebuildOverlays()
+}
+
+/**
+ * Fetch one overlays payload per ticked track vn — the panel's per-segmentation "directions" eye.
+ * Cached across renders (`trackPayloads` map): a repeat toggle needs no refetch, and an un-ticked
+ * vn drops from the map so a follow-up rebuild draws only what is still on. Fires alongside
+ * `loadOverlays` and again whenever the panel writes trackVisibility (see the storage listener).
+ *
+ * The endpoint reuses `/api/viewer/overlays`; only `cells.{t,x,y,z,track}` is read here, so the
+ * popType is a don't-care and the pops on that payload are ignored — this is a tracks-only path.
+ * If the server payload has no `track` array (the vn has no tracked segmentation), we still cache
+ * the payload so ticking that eye repeatedly doesn't retry the fetch every time.
+ */
+async function loadTracks() {
+  if (!projectUid || !imageUid) return
+  const names = meta.value?.labelNames ?? []
+  const vis = settings.getTrackVisibility(imageUid, names)
+  const wantVns = names.filter(vn => vis[vn])
+  // Drop cached vns no longer ticked
+  const next = new Map<string, OverlayPayload>()
+  for (const vn of wantVns) {
+    const cached = trackPayloads.value.get(vn)
+    if (cached) next.set(vn, cached)
+  }
+  // Fetch newly-ticked vns in parallel — typically 1-3 at once
+  const missing = wantVns.filter(vn => !next.has(vn))
+  await Promise.all(missing.map(async vn => {
+    try {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }),
+                              { cache: 'no-store' })
+      if (res.ok) next.set(vn, await res.json())
+    } catch { /* one vn's failure must not take the others down */ }
+  }))
+  trackPayloads.value = next
+  // Trackclust payload for the POP MANAGER's active vn — a SECOND fetch (different popType) only
+  // when the panel's Trackclust master toggle is on. The pop manager's vn is where those pops are
+  // authored, so a viewer with the pop manager on "A" and per-vn eyes elsewhere still lands the
+  // trackclust ribbons on A. Cached in a Map<vn, payload> so switching vns keeps prior fetches.
+  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
+  const popMgrVn = gatingCurrent.value.valueName
+  if (trackclustOn && popMgrVn) {
+    // Refetch every call — `loadTracks` fires on `cc.viewerOverlaysTick`, which the pop manager
+    // pings on ANY gating edit, so a cached-only path would draw stale ribbons after the user
+    // changes a trackclust pop. The payload is small; the round trip is cheaper than deciding
+    // which mutations are safe to skip.
+    try {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: popMgrVn, popType: 'trackclust' }),
+                              { cache: 'no-store' })
+      if (res.ok) {
+        const next = new Map(trackclustPayloads.value)
+        next.set(popMgrVn, await res.json())
+        trackclustPayloads.value = next
+      }
+    } catch { /* trackclust unavailable — leave cache untouched */ }
+  } else if (!trackclustOn && trackclustPayloads.value.size) {
+    // toggle-off drops the cache so a re-toggle-on refetches (a stale payload after a gating edit
+    // would draw the wrong ribbons; the cost of the refetch is one small request per vn).
+    trackclustPayloads.value = new Map()
+  }
   rebuildOverlays()
 }
 
@@ -629,7 +978,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const url = slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc, level: lvl })
+        const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -645,7 +994,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       (async () => {
         if (!vn) return null
         const url = slabUrl({
-          projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+          projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
@@ -887,7 +1236,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
       const url = slabUrl({
-        projectUid, imageUid, valueName, t: 0, c, enc, level: key.level,
+        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: key.level,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
         // reachable at nZ > 1) — the tile path is nT ≤ 1 by construction, so there is no timepoint
         // to select and t stays at 0.
@@ -1288,7 +1637,7 @@ async function loadOverviewThumbnail() {
   try {
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
       const url = slabUrl({
-        projectUid, imageUid, valueName, t: 0, c, enc, level: lvl.level,
+        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: lvl.level,
         z: zPlane.value,
         x: 0, xTo: lvl.nX - 1, y: 0, yTo: lvl.nY - 1,
       })
@@ -1557,6 +1906,144 @@ function resetAllContrast() {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
+// PY — per-image viewer props autosave. Same on-disk file napari's autosave writes to
+// (`<task_dir>/data/<basename(zarr)>.json`), so an animation-card snapshot stays portable across
+// viewers. The debounce is trailing so a slider/wheel gesture writes ONCE per settle, not per input
+// event. `duringRestore` suppresses the echo when a load applies mutations that would otherwise
+// trip these same watchers. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+const propsSink = debouncedSave(async () => {
+  const m = meta.value
+  if (!m || !settings.napariAutoSaveLayerProps) return
+  const vs = captureViewState({
+    meta: m, channels: m.channels, cam: cam.value,
+    mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
+    t: t.value, valueName: valueName.value,
+  })
+  await saveViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined }, vs)
+}, { wait: 800 })
+
+/**
+ * Fetch meta for the current VERSION, allocate the right renderer (tile vs volume), and put the
+ * first frame on screen. Called from `start()` (fresh window) AND from `changeVersion` (picker), so
+ * every path through the viewer initialisation goes through here — one place that knows about tile
+ * routing + PY restore + overlay/tracks kickoff. `refit` is true from `start` (no prior camera) and
+ * false from `changeVersion` (the user's pose was for a related image and is worth carrying over).
+ */
+async function loadVersion(refit: boolean) {
+  starting.value = 'Reading image'
+  const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+  const m = await readJson<ViewerMeta>(res, 'Metadata')
+  meta.value = m
+  // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
+  // when we asked for nothing in particular — otherwise this is already what we asked for.
+  valueName.value ||= m.valueName ?? ''
+  // Snapshot the server's contrast + LUTs so Reset Contrast has a target that survives every drag.
+  initialContrast.value = m.channels.map(ch => ({ lo: ch.lo, hi: ch.hi }))
+  initialLUTs.value = m.channels.map(ch => ch.lut.map(stop => [...stop]))
+  // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
+  // was wired for. 3D is opt-in via the View chip — the honest cost belongs behind a click.
+  mode.value = 'plane'
+  zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
+  zRange.value = [0, Math.max(m.nZ - 1, 0)]
+  autoWin.value = []                     // a different version has its own distribution
+  seenMax.value = []
+  // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
+  // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
+  // works even if a saved camera pose is later restored on top.
+  const fit = fitNow(m)
+  cam.value = fit
+  fitDist.value = fit.dist
+  // PY — read saved viewer props BEFORE the reallocate, so pipeline-selecting fields (mode, zPlane,
+  // zRange) are the RESTORED ones by the time `ensureRenderer` picks tile vs volume. If we let
+  // reallocate run first on defaults and then applied a restored `mode = 'volume'`, the tile
+  // pipeline picked for a whole-slide plane would be wrong and would need a second reallocate.
+  // Post-alloc bits (channels, camera pose, T) go through `duringRestore` AFTER, since they don't
+  // change which renderer gets built. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+  const saved = settings.napariAutoSaveLayerProps
+    ? await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
+    : null
+  if (saved) {
+    propsSink.duringRestore(() => {
+      applyViewState(saved, m, {
+        applyChannel: () => { /* deferred to the post-alloc apply below */ },
+        applyCamera:  () => { /* deferred */ },
+        applyMode:    md => { mode.value = md },
+        applyZ:       (zp, zr) => { zPlane.value = zp; zRange.value = zr },
+        applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
+      })
+    })
+  }
+  // `reallocate(false)` creates the right renderer (tile vs volume via `ensureRenderer`), sets
+  // image, sets channels, and kicks off the first fetch. Same code the mode-swap path uses, so the
+  // two entry points cannot drift apart.
+  await reallocate(false)
+  // Post-alloc restore: channels + camera + T. Only applies to volume mode — tile mode has no
+  // per-channel contrast surface or camera pose hooked into the sink today (VIEWER_TILES_PLAN.md →
+  // open). Wrapped in `duringRestore` again so the autosave watchers below don't echo it back.
+  const r = renderer.value
+  if (r && saved) {
+    propsSink.duringRestore(() => {
+      applyViewState(saved, m, {
+        applyChannel: (c, patch) => {
+          const ch = m.channels[c]; if (!ch) return
+          if (patch.lo !== undefined) ch.lo = patch.lo
+          if (patch.hi !== undefined) ch.hi = patch.hi
+          if (patch.visible !== undefined) ch.visible = patch.visible
+          if (patch.hex) ch.lut = lutFromHex(patch.hex)
+        },
+        applyCamera: c => { cam.value = { ...c } },
+        applyMode:   () => { /* handled pre-alloc */ },
+        applyZ:      () => { /* handled pre-alloc */ },
+        applyT:      tp => { if (tp < m.nT) t.value = Math.max(0, Math.floor(tp)) },
+      })
+    })
+    pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
+  }
+  if (refit) { /* nothing more — fitDist already seeded, cam already fit */ }
+  starting.value = ''
+  // After the first frame is on its way: overlays + track ribbons are separate, small requests and
+  // must not delay the pixels. Tissue thumbnail for whole-slide (tile) view is the same idea.
+  void loadOverlays()
+  void loadTracks()
+  if (useTiles.value) void loadOverviewThumbnail()
+}
+
+// Autosave triggers — every watcher settles into one write per debounce window. `deep` on channels
+// because `pushChannels` mutates `meta.value.channels[c].{lo,hi,visible,lut}` in place.
+watch(() => meta.value?.channels, () => propsSink.schedule(), { deep: true })
+watch(cam,       () => propsSink.schedule(), { deep: true })
+watch(mode,      () => propsSink.schedule())
+watch(zPlane,    () => propsSink.schedule())
+watch(zRange,    () => propsSink.schedule())
+watch(t,         () => propsSink.schedule())
+watch(valueName, () => propsSink.schedule())
+
+/**
+ * Switch version. Everything in flight is for the OLD pixels, so it is abandoned rather than allowed
+ * to land in the new textures — a slab that arrives after the switch has the right shape and the
+ * wrong content, which renders as a plausible image of something else.
+ */
+async function changeVersion(vn: string) {
+  if (vn === valueName.value) return
+  pump.cancel()
+  tilePump.cancel()
+  for (const ac of aborts.values()) ac.abort()
+  aborts.clear(); inflight.clear()
+  for (const ac of tileAborts.values()) ac.abort()
+  tileAborts.clear()
+  shownT.value = -1
+  announce.value = true
+  hits.value = 0; misses.value = 0
+  waitingFor.value = -1
+  valueName.value = vn
+  try { await loadVersion(false) }
+  catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+    vlog('error', 'Viewer version ' + vn + ': ' + error.value)
+    starting.value = ''
+  }
+}
+
 async function start() {
   heldAfterCrash.value = false
   error.value = ''
@@ -1578,32 +2065,10 @@ async function start() {
     // The breadcrumb goes down BEFORE the device is created, because that is the line the driver dies
     // on. Cleared when a frame is on screen, not here.
     markViewerAttempt(imageUid)
-    starting.value = 'Reading image'
-    // Fetch meta BEFORE creating a renderer — the tile pipeline needs to know if it's the right one to
-    // create, and that depends on the image dims.
-    const res = await fetch(metaUrl({ projectUid, imageUid, valueName }))
-    const m = await readJson<ViewerMeta>(res, 'Metadata')
-    meta.value = m
-    // Snapshot the server's contrast so the reset button has a target that survives every drag.
-    initialContrast.value = m.channels.map(ch => ({ lo: ch.lo, hi: ch.hi }))
-    initialLUTs.value = m.channels.map(ch => ch.lut.map(stop => [...stop]))
-    // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
-    // was wired for. `nZ === 1` used to default to `volume` on the theory "no stack, no plane to pick",
-    // but the plane path already handles nZ=1 (the z-plane control just hides itself) and the volume
-    // path costs a MIP shader through a one-plane box for the same visual result. 3D is opt-in via the
-    // View chip — the honest cost (~90 s to load an f8gzA2-shape volume) belongs behind a click.
-    mode.value = 'plane'
-    zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
-    zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    // Fit the camera BEFORE creating the renderer: `useTiles` and `slabLevel` derive from `cam.dist`,
-    // so a stale dist=1 would allocate the wrong pipeline for a big image.
-    const c = fitNow(m)
-    cam.value = c
-    fitDist.value = c.dist
-    starting.value = 'Starting GPU'
-    // `ensureRenderer` creates whichever renderer `useTiles` calls for, so a whole-slide plane lands
-    // on the tile pipeline from the first frame — no wasted volume-renderer allocation.
-    await ensureRenderer()
+    // `loadVersion(true)` does the whole "meta → renderer → setImage → PY restore → first fetch"
+    // sequence. It logs the adapter (via `reallocate` → `ensureRenderer`) and kicks off overlays,
+    // tracks and (for whole-slide) the overview thumbnail. Same code the picker's version-swap uses.
+    await loadVersion(true)
     const active = renderer.value ?? tileRenderer.value
     if (active) {
       const named = adapterNameText(active.adapter.name)
@@ -1614,15 +2079,6 @@ async function start() {
       vlog(active.adapter.looksDiscrete ? 'info' : 'warn', gpuLine, gpuDetail)
       console.info(gpuLine, gpuDetail)
     }
-    starting.value = ''
-    // Let `reallocate(false)` run the pipeline-specific setImage + first-fetch — same code the mode
-    // swap uses, so the two paths cannot drift apart.
-    await reallocate(false)
-    // After the first frame is on its way: the overlays are a separate, small request and must not
-    // delay the pixels.
-    void loadOverlays()
-    // Same idea for the tissue thumbnail — deepest level is small, one-off, no pixel path dependency.
-    if (useTiles.value) void loadOverviewThumbnail()
   } catch (e) {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
@@ -1665,8 +2121,42 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 
+// The pop manager (in the main window) writes `pop.show` to the server and pings a localStorage
+// key; this listener is the popup's side of the P5 bridge. The tick's value is `<imageUid>:<ts>`,
+// so this window only refetches on changes to the image IT shows — a viewer on image A stays
+// still when the user gates image B in the main window. See
+// docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
+function onOverlaysTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerOverlaysTick' || !e.newValue) return
+  const [uid] = e.newValue.split(':')
+  if (uid !== imageUid) return
+  // The gating store writes `cc.gatingCurrent` BEFORE the tick, so re-read the current selection
+  // here rather than in a separate storage listener — one storage event, one refetch.
+  gatingCurrent.value = readGatingCurrent()
+  void loadOverlays()
+  // The panel's track eye also fires this ping (see ViewerPanel.vue `toggleTrack`), so refetching
+  // per-vn track payloads here is what actually gets ribbons on screen after a toggle. Cheap when
+  // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
+  void loadTracks()
+}
+// A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
+// cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
+// fires. Payload: `<imageUid>:<valueName>:<ts>`. Guards on both uid AND valueName so an unrelated
+// segmentation's task doesn't refetch this window's pixels.
+function onSlabsTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerSlabsTick' || !e.newValue) return
+  const [uid, vn] = e.newValue.split(':')
+  if (uid === imageUid && vn === labelName.value) reallocate()
+}
+onMounted(() => {
+  window.addEventListener('storage', onOverlaysTick)
+  window.addEventListener('storage', onSlabsTick)
+})
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('storage', onOverlaysTick)
+  window.removeEventListener('storage', onSlabsTick)
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -1700,6 +2190,13 @@ onUnmounted(() => {
         <span v-if="heldProbe" class="cc-muted cc-fs-2xs">{{ heldProbe }}</span>
         <button class="cc-btn cc-btn-primary" @click="start"
                 v-tooltip.top="'Open this image again'">Try again</button>
+      </div>
+      <!-- Rendered, not displayed. Above `starting`/`error` because it outlives both: the load
+           succeeded, nothing threw, and the canvas is still blank. -->
+      <div v-else-if="displayFault" class="cc-empty cc-empty-overlay cc-muted-warn">
+        This browser is drawing the image but not displaying it
+        <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
+        <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
       </div>
       <!-- Startup, mid-load, and errors ALL go in a bottom-left chip: white-on-black stays legible
            against any tile content, and out of the way of the pointer. The error variant carries the
@@ -1756,7 +2253,24 @@ onUnmounted(() => {
           <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
         </div>
       </TeleportPopover>
-      <div v-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
+      <!-- Which VERSION of the image. A select rather than chips: the names are user-invented and can
+           be long ("driftCorrected"), and chips would wrap this narrow panel to three rows. -->
+      <select
+        v-if="(meta?.valueNames?.length ?? 0) > 1"
+        class="cc-input-xs vw-version" :value="valueName"
+        @change="changeVersion(($event.target as HTMLSelectElement).value)"
+        v-tooltip.bottom="'Which version of the image to show'" aria-label="Image version"
+      >
+        <option v-for="vn in meta!.valueNames" :key="vn" :value="vn">{{ vn }}</option>
+      </select>
+      <!-- Whether what is on screen is the version every task runs against. Through `InlineNote`, the
+           same shape a task param's advisory uses, because it is the same statement: we checked your
+           data and here is what we found. `ok` is a real verdict here, not guidance. -->
+      <InlineNote
+        v-if="versionNote" :severity="versionNote.severity"
+        :short="versionNote.short" :detail="versionNote.detail"
+      />
+      <div v-else-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
 
       <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
@@ -1883,6 +2397,47 @@ onUnmounted(() => {
           <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
         </div>
 
+        <!-- Annotations sits with the viewport controls above rather than beside the layer sections
+             below: scale bar + timestamp are burnt into the render, they are not a layer whose
+             visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
+             is what changes while you look; Annotations is set once. See
+             docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
+        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
+                            :open="openSection === 'ann'"
+                            @update:open="v => setSection('ann', v)" max-height="none">
+          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
+               in front of you, and a separate row for each would double the group's height. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
+            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
+            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
+                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
+                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
+            <template v-if="settings.viewerScaleBar">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerScaleBarPx"
+                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+            </template>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
+            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
+            <template v-if="settings.viewerTimestamp">
+              <input
+                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+                v-model.number="settings.viewerTimestampPx"
+                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+              >
+              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+            </template>
+          </div>
+        </CollapsibleSection>
+
         <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
              image has 24+ channels and the sidebar's own scroll never engages, so the section body was
              flooding off the bottom of the panel with no way to reach the controls below (Dominik,
@@ -1951,20 +2506,23 @@ onUnmounted(() => {
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                             :open="openSection === 'seg'"
                             @update:open="v => setSection('seg', v)" max-height="none">
-          <!-- Segmentation mask. Only when a mask is actually ON DISK — `labelNames` is the server's
-               directory check, not the label registry, so an imported track set with a table and no mask
-               does not offer an empty option. -->
+          <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
+               is decided in the ViewerPanel per image and reaches this window via the P2
+               storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
+               for it. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+               `labelNames` is the server's directory check, not the label registry, so an imported
+               track set with a table and no mask does not offer a phantom row. -->
           <template v-if="meta!.labelNames?.length">
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <select
-                class="cc-select cc-fs-2xs vw-grow" :value="labelName"
-                v-tooltip.bottom="'Draw a segmentation over the image — reloads the timecourse'"
-                @change="e => { labelName = (e.target as HTMLSelectElement).value; reallocate() }"
-              >
-                <option value="">none</option>
-                <option v-for="n in meta!.labelNames" :key="n" :value="n">{{ n }}</option>
-              </select>
+              <span v-if="labelName" class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
+              <span v-else class="cc-muted cc-fs-2xs vw-grow">none — tick one in the viewer panel</span>
+            </div>
+            <!-- More than one ticked: only the first renders because the compositor's bind group has
+                 one label slot. Multi-mask rendering is a later phase; naming the limit here is the
+                 alternative to silently dropping the others. -->
+            <div v-if="shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
+              {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
             </div>
             <div v-if="labelName" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
@@ -1990,13 +2548,19 @@ onUnmounted(() => {
           </template>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Overlays" tip="Cell populations and track tails"
-                            :open="openSection === 'ovl'"
-                            @update:open="v => setSection('ovl', v)" max-height="none">
-          <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
-               no populations, and an empty group would read as a broken feature rather than as an image
-               that has not been through segmentation yet. -->
-          <template v-if="summary.cells > 0 || overlaysErr">
+        <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
+                            :open="openSection === 'pops'"
+                            @update:open="v => setSection('pops', v)" max-height="none">
+          <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
+               and no populations, and an empty group would read as a broken feature rather than as an
+               image that has not been through segmentation yet.
+               Panel gate off = the whole section reads as inactive rather than as a cell-count summary
+               (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
+               controls is off"). -->
+          <template v-if="!popsPanelOn">
+            <div class="cc-muted cc-fs-2xs">No populations selected</div>
+          </template>
+          <template v-else-if="summary.cells > 0 || overlaysErr">
             <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
             <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
                  on the canvas — so the panel names which one it is. -->
@@ -2014,16 +2578,14 @@ onUnmounted(() => {
                   :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
                 />
               </div>
+              <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
+                   section, keyed per set. This row shows what it resolved to; the legend below shows
+                   its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
               <div class="cc-row cc-row-tight">
                 <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-                <select
-                  class="cc-select cc-fs-2xs vw-grow" :value="colourBy"
-                  v-tooltip.bottom="'Shade the points by a per-cell measure'"
-                  @change="e => { colourBy = (e.target as HTMLSelectElement).value; void loadOverlays() }"
-                >
-                  <option value="">population</option>
-                  <option v-for="c in overlays!.colourColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <span class="cc-fs-2xs vw-grow" :title="colourBy || 'population'">
+                  {{ colourBy || 'population' }}
+                </span>
               </div>
               <!-- The legend says which SCALE is in use, because that is the server's decision (the same
                    rule the plots use) and the two kinds look nothing alike. -->
@@ -2047,24 +2609,6 @@ onUnmounted(() => {
                 >
                 <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerPointZTol }}</span>
               </div>
-              <div v-if="segCount > 0" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="60" :step="1"
-                  v-model.number="settings.viewerTailLength" @input="frame.redraw()"
-                  v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
-              </div>
-              <div v-if="segCount > 0 && settings.viewerTailLength > 0" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
-                <input
-                  type="range" class="vw-grow" :min="1" :max="12" :step="1"
-                  v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                  v-tooltip.bottom="'Tail thickness on screen, not in µm'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
-              </div>
               <div class="cc-row cc-row-tight">
                 <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
                 <input
@@ -2077,7 +2621,6 @@ onUnmounted(() => {
               <div class="cc-muted cc-fs-3xs">
                 <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
                 {{ pointCount }} drawn · {{ summary.cells }} cells
-                <template v-if="summary.tracked">· {{ summary.tracked }} tracked</template>
                 <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
                 <template v-if="mode === 'plane'">· this plane only</template>
               </div>
@@ -2085,40 +2628,80 @@ onUnmounted(() => {
           </template>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
-                            :open="openSection === 'ann'"
-                            @update:open="v => setSection('ann', v)" max-height="none">
-          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
-               in front of you, and a separate row for each would double the group's height. -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
-            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
-                 a panel this dense (Dominik, 2026-08-25) — it says "there is something here" and then
-                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
-            <template v-if="settings.viewerScaleBar">
-              <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerScaleBarPx"
-                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
+        <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
+                            :open="openSection === 'tracks'"
+                            @update:open="v => setSection('tracks', v)" max-height="none">
+          <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
+               section colours + shapes the ribbons. Empty state names both the "nothing ticked" case
+               and the "ticked but no tracked cells" case rather than showing an empty block. -->
+          <template v-if="segCount > 0">
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
+              <select v-model="trackColorMode" class="cc-fs-2xs vw-grow"
+                      v-tooltip.bottom="'How ribbons are coloured'">
+                <option value="track">track</option>
+                <option value="speed">speed</option>
+                <option value="solid">source</option>
+              </select>
+            </div>
+            <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading
+                 stays consistent across overlay kinds. µm per frame (Δt = 1 hop). -->
+            <div v-if="trackColorMode === 'speed' && trackSpeedRange"
+                 class="cc-row cc-row-tight cc-fs-3xs">
+              <span class="cc-muted">{{ trackSpeedRange[0].toPrecision(3) }}</span>
+              <span class="vw-ramp" :style="rampStyle" />
+              <span class="cc-muted">{{ trackSpeedRange[1].toPrecision(3) }} µm/frame</span>
+            </div>
+            <!-- Per-source legend for solid mode — one row per ticked vn, showing a clickable
+                 swatch (the shared ColourPicker) + count. Same picker + palette as the population
+                 manager, so a source's colour authored here matches the visual language elsewhere.
+                 Doubles as a diagnostic: a vn with count 0 would be ticked but have no tracked
+                 cells; buildMultiTrackBuffer filters those out already, so the legend only lists
+                 sources that actually drew. -->
+            <template v-if="trackColorMode === 'solid' && trackSources.length">
+              <div v-for="src in trackSources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
+                <ColourPicker :model-value="src.hex"
+                              @update:model-value="hex => setTrackSourceColour(src.vn, hex)"
+                              :tip="'Colour for ' + src.vn" />
+                <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>
+                <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
+              </div>
             </template>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
-            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-            <template v-if="settings.viewerTimestamp">
+            <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
               <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerTimestampPx"
-                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+                type="range" class="vw-grow" :min="0" :max="10" :step="1"
+                v-model.number="settings.viewerTrackZTol" @input="frame.redraw()"
+                v-tooltip.bottom="'Planes either side that still show a tail'"
               >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
-            </template>
+              <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerTrackZTol }}</span>
+            </div>
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="60" :step="1"
+                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
+                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
+            </div>
+            <div v-if="settings.viewerTailLength > 0" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
+              <input
+                type="range" class="vw-grow" :min="1" :max="12" :step="1"
+                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
+                v-tooltip.bottom="'Tail thickness on screen, not in µm'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
+            </div>
+            <div class="cc-muted cc-fs-3xs">
+              {{ segCount }} segments · {{ trackSources.length }} source{{ trackSources.length === 1 ? '' : 's' }}
+            </div>
+          </template>
+          <div v-else class="cc-muted cc-fs-2xs">
+            No tracks — tick a segmentation's "directions" eye in the viewer panel
           </div>
+
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
                             :open="openSection === 'debug'"
@@ -2149,6 +2732,18 @@ onUnmounted(() => {
                   v-tooltip.right="'Compress slabs on the wire — a win remotely, a cost locally'">Compress</span>
             <CcToggle v-model="settings.viewerCompress" aria-label="Compress slabs on the wire" />
           </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Composite the canvas as opaque — same pixels, different browser path'">Opaque</span>
+            <CcToggle :model-value="opaqueCanvas" aria-label="Composite the canvas as opaque"
+                      @update:modelValue="v => { opaqueCanvas = v; frame.redraw(); void checkFill() }" />
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Fill the canvas with one colour and draw nothing — is the canvas shown at all?'">Test fill</span>
+            <CcToggle :model-value="testPattern" aria-label="Fill the canvas with a test colour"
+                      @update:modelValue="v => { testPattern = v; frame.redraw(); void checkFill() }" />
+          </div>
           <div class="cc-eyebrow cc-fs-2xs">Image</div>
           <div class="cc-muted cc-fs-3xs">
             {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
@@ -2171,7 +2766,15 @@ onUnmounted(() => {
             {{ shader.ext[2].toFixed(1) }} µm · {{ shader.nch }} ch<br>
             camera {{ shader.dist.toFixed(0) }} µm · pan {{ shader.pan[0].toFixed(0) }},
             {{ shader.pan[1].toFixed(0) }} · {{ shader.steps }} step{{ shader.steps === 1 ? '' : 's' }}
-            · {{ shader.ortho ? 'ortho' : 'perspective' }}
+            · {{ shader.ortho ? 'ortho' : 'perspective' }}<br>
+            canvas {{ shader.canvas[0] }} × {{ shader.canvas[1] }}
+            <template v-if="probe"><br>
+              shader {{ (probe.lit * 100).toFixed(1) }}% lit / {{ (probe.max * 100).toFixed(1) }}%
+            </template>
+            <template v-if="canvasProbe"><br>
+              canvas {{ (canvasProbe.lit * 100).toFixed(1) }}% lit /
+              {{ (canvasProbe.max * 100).toFixed(1) }}%
+            </template>
           </div>
         </CollapsibleSection>
       </template>
@@ -2190,6 +2793,7 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-version { width: 100%; }
 .vw-key { white-space: nowrap; }
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }

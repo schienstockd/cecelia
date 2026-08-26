@@ -4,6 +4,7 @@ import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../ut
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
+import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -37,8 +38,10 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.autoRefreshOnTask') !== 'false'   // default true
   )
 
-  const napariUpdateImage = ref(
-    localStorage.getItem('cc.napariUpdateImage') === 'true'    // default false
+  // Auto-refresh the viewer when a task finishes for the open image (labels + overlays re-read
+  // from disk). Off by default — heavy on large images (Dominik has 20k+ frame timelapses).
+  const viewerAutoUpdate = ref(
+    localStorage.getItem('cc.viewerAutoUpdate') === 'true'    // default false
   )
 
   // Animation page: selecting a keyframe pushes its saved view into napari, so you SEE the snapshot
@@ -58,18 +61,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
   // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
   // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
-  const napariResetOnReload = ref(
-    localStorage.getItem('cc.napariResetOnReload') === 'true'  // default false
-  )
-
-  // Dask opportunistic cache for label layers (napari's `resize_dask_cache`). Default ON — the
-  // common case is browsing, where cache-on gives noticeably smoother slice scrubbing. The
-  // dangerous case is running segmentation to the same output name: `da.from_zarr(same_path)`
-  // produces the same dask task name across opens, so cached results serve STALE bytes after
-  // a re-run (see `python/cecelia/utils/napari_utils.add_labels` docstring). The Viewer panel
-  // surfaces a hint recommending the user flip it off when a segment task is running.
-  const napariLabelsCache = ref(
-    localStorage.getItem('cc.napariLabelsCache') !== 'false'  // default true
+  const viewerResetOnReload = ref(
+    localStorage.getItem('cc.viewerResetOnReload') === 'true'  // default false
   )
 
   // Contrast/colormap/T-Z, autosaved per image the moment they change and reloaded on open. Default ON
@@ -77,12 +70,18 @@ export const useSettingsStore = defineStore('settings', () => {
   // copy inside every movie config, and the movie path force-loads it (`autoLoadProps = true` in
   // `_apply_movie_config!`). With this off nothing was ever written, so that load found no file and
   // napari auto-contrasted per image — a recorded look was not reproducible.
+  //
+  // Kept during P6 even though `asDask` / `labelsCache` were deleted: the animation page banks per-
+  // keyframe napari view state (POST /api/napari/screenshot → {viewState}), so the persisted per-image
+  // props ARE the reference for those snapshots. Deleting this before the WebGPU viewer grows its own
+  // per-image props sink would leave the animation page with no source of truth (Dominik, 2026-08-26).
+  //
+  // **The replacement is a hard P9 blocker.** VIEWER_CONTROLS_SPLIT_PLAN.md → PY defines the WebGPU
+  // per-image layer-props sink; this ref is deletable only when that lands and the animation card
+  // reads viewState from the WebGPU viewer with no bridge round-trip (Dominik, 2026-08-26: "as long
+  // as the layer autosave props lands at some point. that is ok. because it is essential").
   const napariAutoSaveLayerProps = ref(
     localStorage.getItem('cc.napariAutoSaveLayerProps') !== 'false'  // default true
-  )
-
-  const napariAsDask = ref(
-    localStorage.getItem('cc.napariAsDask') !== 'false'  // default true
   )
 
   // Render napari on the discrete GPU (hybrid-graphics machines, Linux only). Persisted here and
@@ -138,6 +137,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // unrelated. A cell spans several planes, so a small tolerance is the honest default; it is a setting
   // rather than a constant because the right number is the cell diameter, which is per experiment.
   const viewerPointZTol = ref(Number(localStorage.getItem('cc.viewerPointZTol') ?? '2'))
+  // Track ribbon Z reach — same idea as viewerPointZTol but for the tail path. A track spans several
+  // planes and often reads best with more slack than a centroid dot, so the two are decoupled.
+  const viewerTrackZTol = ref(Number(localStorage.getItem('cc.viewerTrackZTol') ?? '2'))
   const viewerScaleBarPx = ref(Number(localStorage.getItem('cc.viewerScaleBarPx') ?? '20') || 20)
   const viewerTimestampPx = ref(Number(localStorage.getItem('cc.viewerTimestampPx') ?? '20') || 20)
   const viewerCacheFrames = ref(Number(localStorage.getItem('cc.viewerCacheFrames') ?? '0') || 0)
@@ -224,14 +226,37 @@ export const useSettingsStore = defineStore('settings', () => {
   const labLogUnseenLevel = ref<'' | 'warn' | 'fail'>('')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
-  // unknown labels default to true; persisted across sessions
+  // The WebGPU viewer renders ONE segmentation at a time (single-slot bind group), so the panel
+  // is radio-like: exactly one label ticked. The default therefore picks the FIRST name, not
+  // "everything true" — the napari-era default made every fresh image read as all-ticked while
+  // only the first one actually drew, and adding a segmentation later reintroduced the same lie
+  // because `?? true` treated every unknown name as visible.
+  // Persisted across sessions.
   const _labelVisStore = ref<Record<string, Record<string, boolean>>>(
     JSON.parse(localStorage.getItem('cc.napariLabelVisibility') ?? '{}')
   )
   function getLabelVisibility(imageUid: string, labelNames: string[]): Record<string, boolean> {
-    const stored = _labelVisStore.value[imageUid] ?? {}
+    const stored = _labelVisStore.value[imageUid]
     const out: Record<string, boolean> = {}
-    for (const vn of labelNames) out[vn] = stored[vn] ?? true   // default visible
+    if (stored) {
+      // Existing selection: honour every stored flag; new names arriving after a persist stay off
+      // rather than silently flipping the visible one (radio-like invariant).
+      for (const vn of labelNames) out[vn] = stored[vn] ?? false
+      // Legacy napari-era bags carry every name true (napari layered them all); on the WebGPU
+      // viewer that would read as "all ticked but only one draws". Collapse to the FIRST true one.
+      const firstTrue = labelNames.find(n => out[n])
+      if (firstTrue) for (const vn of labelNames) if (vn !== firstTrue) out[vn] = false
+      // If the stored bag has no true entries, HONOUR IT — the user explicitly unticked the last
+      // segmentation to hide the mask (Dominik, 2026-08-26: "when i turn off the segmentation
+      // toggle. the last segmentation is still showing on the image. it never disappears"). An
+      // earlier revision re-ticked the first here on the theory that "nothing rendering reads
+      // worse than a default", but it makes the untick a no-op — the mask stays on because the
+      // read still returns true for the same first name.
+    } else {
+      // First open on this image: pick the first name, not "everything true".
+      for (const vn of labelNames) out[vn] = false
+      if (labelNames.length) out[labelNames[0]] = true
+    }
     return out
   }
   function setLabelVisibility(imageUid: string, vis: Record<string, boolean>) {
@@ -286,6 +311,14 @@ export const useSettingsStore = defineStore('settings', () => {
     showGatedTracks?: boolean               // overlay gated track populations
     pointSize?: number                      // population centroid point size in napari
     popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
+    // How the viewer colours track ribbons — 'track' (palette by track id), 'speed' (heat ramp by
+    // per-hop distance), 'solid' (one palette colour per source vn, so multiple track sources are
+    // visually separable). Per-set: mirrors `colourBy` above.
+    trackColorMode?: 'track' | 'speed' | 'solid'
+    // Per-source hex overrides for the SOLID track colour mode: {[vn]: '#rrggbb'}. Absent = the
+    // default from the palette. Dominik, 2026-08-26: "can we make that the source color can be
+    // changed. same color picker as for the channels just with the cecelia palette".
+    trackSourceColour?: Record<string, string>
     // user recolouring of a categorical colour-by, keyed by column then category value → hex. For
     // categories with no population (HMM states, raw clusters) there's no colour defined anywhere, so
     // the user can override the default palette; these win over pop/default when colouring. Per-column
@@ -344,6 +377,16 @@ export const useSettingsStore = defineStore('settings', () => {
   const setShowGatedTracks = (setUid: string, v: boolean) => _patchSet(setUid, { showGatedTracks: v })
   const getPointSize = (setUid: string): number => _setPrefs.value[setUid]?.pointSize ?? 6   // old GUI default 6
   const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
+  const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' =>
+    _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
+  const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid') =>
+    _patchSet(setUid, { trackColorMode: mode })
+  const getTrackSourceColours = (setUid: string): Record<string, string> =>
+    _setPrefs.value[setUid]?.trackSourceColour ?? {}
+  function setTrackSourceColour(setUid: string, vn: string, hex: string) {
+    const cur = _setPrefs.value[setUid]?.trackSourceColour ?? {}
+    _patchSet(setUid, { trackSourceColour: { ...cur, [vn]: hex } })
+  }
   const getPopVisible = (setUid: string, popType: string): boolean =>
     _setPrefs.value[setUid]?.popVis?.[popType] ?? false                                       // default hidden
   function setPopVisible(setUid: string, popType: string, v: boolean) {
@@ -442,13 +485,11 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
-  watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
+  watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
-  watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
-  watch(napariLabelsCache,        v => localStorage.setItem('cc.napariLabelsCache',        String(v)))
+  watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
-  watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
   watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
   watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
@@ -465,6 +506,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerLabelOpacity,       v => localStorage.setItem('cc.viewerLabelOpacity',       String(v)))
   watch(viewerLabelContour,       v => localStorage.setItem('cc.viewerLabelContour',       String(v)))
   watch(viewerPointZTol,          v => localStorage.setItem('cc.viewerPointZTol',          String(v)))
+  watch(viewerTrackZTol,          v => localStorage.setItem('cc.viewerTrackZTol',          String(v)))
   watch(viewerScaleBarPx,         v => localStorage.setItem('cc.viewerScaleBarPx',         String(v)))
   watch(viewerTimestampPx,        v => localStorage.setItem('cc.viewerTimestampPx',        String(v)))
   watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
@@ -488,7 +530,24 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  // Cross-window sync for the per-image / per-set viewer state bags. The volume viewer runs in a
+  // popup with its OWN Pinia store; localStorage `storage` events are the bridge. Decoder + full
+  // rationale in utils/viewerBagChannel.ts (pure, tested); this file's job is to dispatch. See
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P2.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', e => {
+      const ev = decodeViewerBagEvent(e.key, e.newValue)
+      if (!ev) return
+      switch (ev.kind) {
+        case 'labelVis':  _labelVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
+        case 'trackVis':  _trackVisStore.value  = ev.value as Record<string, Record<string, boolean>>; break
+        case 'branchVis': _branchVisStore.value = ev.value as Record<string, Record<string, boolean>>; break
+        case 'setPrefs':  _setPrefs.value       = ev.value as Record<string, NapariSetPrefs>; break
+      }
+    })
+  }
+
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
