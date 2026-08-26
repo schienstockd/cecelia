@@ -2674,12 +2674,14 @@ onUnmounted(() => {
                storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
                for it. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P3.
                `labelNames` is the server's directory check, not the label registry, so an imported
-               track set with a table and no mask does not offer a phantom row. -->
-          <template v-if="meta!.labelNames?.length">
+               track set with a table and no mask does not offer a phantom row.
+               Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
+               the viewer panel" using .cc-empty-inline, so the three sections read coherently
+               (Dominik, 2026-08-26). -->
+          <template v-if="labelName">
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <span v-if="labelName" class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
-              <span v-else class="cc-muted cc-fs-2xs vw-grow">none — tick one in the viewer panel</span>
+              <span class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
             </div>
             <!-- More than one ticked: only the first renders because the compositor's bind group has
                  one label slot. Multi-mask rendering is a later phase; naming the limit here is the
@@ -2687,7 +2689,7 @@ onUnmounted(() => {
             <div v-if="shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
               {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
             </div>
-            <div v-if="labelName" class="cc-row cc-row-tight">
+            <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
               <input
                 type="range" class="vw-grow" :min="0" :max="1" :step="0.05"
@@ -2696,7 +2698,7 @@ onUnmounted(() => {
               >
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelOpacity.toFixed(2) }}</span>
             </div>
-            <div v-if="labelName" class="cc-row cc-row-tight">
+            <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Outline</span>
               <input
                 type="range" class="vw-grow" :min="0" :max="5" :step="1"
@@ -2705,10 +2707,13 @@ onUnmounted(() => {
               >
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
             </div>
-            <div v-if="labelName && mode === 'volume'" class="cc-muted cc-fs-3xs">
+            <div v-if="mode === 'volume'" class="cc-muted cc-fs-3xs">
               3D shows the nearest mask surface
             </div>
           </template>
+          <div v-else class="cc-empty-inline cc-fs-2xs">
+            No mask shown — tick one in the viewer panel
+          </div>
 
         </CollapsibleSection>
         <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
@@ -2719,9 +2724,12 @@ onUnmounted(() => {
                image that has not been through segmentation yet.
                Panel gate off = the whole section reads as inactive rather than as a cell-count summary
                (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
-               controls is off"). -->
+               controls is off").
+               Empty-state phrasing lines up with Segmentation and Tracks (Dominik, 2026-08-26). -->
           <template v-if="!popsPanelOn">
-            <div class="cc-muted cc-fs-2xs">No populations selected</div>
+            <div class="cc-empty-inline cc-fs-2xs">
+              No populations shown — enable in the viewer panel
+            </div>
           </template>
           <template v-else-if="summary.cells > 0 || overlaysErr">
             <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
@@ -2861,8 +2869,8 @@ onUnmounted(() => {
               {{ segCount }} segments · {{ trackSources.length }} source{{ trackSources.length === 1 ? '' : 's' }}
             </div>
           </template>
-          <div v-else class="cc-muted cc-fs-2xs">
-            No tracks — tick a segmentation's "directions" eye in the viewer panel
+          <div v-else class="cc-empty-inline cc-fs-2xs">
+            No tracks shown — tick a segmentation in the viewer panel
           </div>
 
         </CollapsibleSection>
