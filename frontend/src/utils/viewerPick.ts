@@ -59,16 +59,14 @@ export function screenToImagePx(
   const worldX = -cam.panX + ndcX * halfW
   const worldY = -cam.panY + ndcY * halfH
   // Image is centred on the world origin; add `ext/2` to get absolute image µm from the top-left
-  // corner. Y sign: screen top (`ndcY = +1`, worldY = +halfH) corresponds to worldY = +extY/2,
-  // which lands at absY_um = 0 (image row 0) once the shader's V-flip puts row 0 at screen top.
-  // The formula is `-worldY + extY/2` — no output-space reflection. A previous version added one to
-  // fix a reported mirror; browser numbers on Dominik's f8gzA2 image confirmed the reflection was
-  // reading the mirror strip instead of fixing it (2026-08-26). Both single-click and rectangle
-  // picks now agree with what's visually on the image.
+  // corner. Y needs a REFLECTION at the end: the shader / display / mask-read pipeline shows the
+  // mask store's row 0 at the BOTTOM of the canvas — a click at the visual TOP of the image
+  // corresponds to the store's LAST row, not row 0. Verified twice against a real image (Dominik,
+  // 2026-08-26): dropping the reflection makes every pick land on the mirror strip.
   const absX_um = worldX + extX / 2
   const absY_um = -worldY + extY / 2
   const x = Math.floor(absX_um / vx)
-  const y = Math.floor(absY_um / vy)
+  const y = meta.nY - 1 - Math.floor(absY_um / vy)
   const inside = x >= 0 && y >= 0 && x < meta.nX && y < meta.nY
   return { x, y, in: inside }
 }
