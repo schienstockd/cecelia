@@ -1252,8 +1252,15 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
     // the slider until it collapsed to 0-1 with no way back (Dominik, 2026-08-26). Only ever grows —
     // a ceiling that shrinks re-scales the slider under a value the user set.
+    const rowLen = rect.xTo - rect.x + 1
     seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rect.xTo - rect.x + 1)))
+      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rowLen)))
+    // Seed the auto-window off the first tile that lands — same p01/p999 percentile pass as the
+    // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
+    // each tile's own distribution and the auto button would land somewhere new every time.
+    if (autoWin.value.length === 0) {
+      autoWin.value = bufs.map(b => contrastFromSlab(new Uint16Array(b), rowLen))
+    }
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
@@ -1903,6 +1910,26 @@ function resetAllContrast() {
   }
   pushChannels()
 }
+/** Auto-window a channel on the percentiles of the first frame/tile loaded — the ImageJ-style
+ *  quick adjust. Feeds off `autoWin`, which is a one-shot per image (see `fetchTile` /
+ *  `fetchTimepoint`) so consecutive presses land at the same place. Free — no refetch. */
+function autoContrast(c: number) {
+  const w = autoWin.value[c], m = meta.value
+  if (!w || !m) return
+  m.channels[c].lo = w.lo
+  m.channels[c].hi = w.hi
+  pushChannels()
+}
+function autoAllContrast() {
+  const m = meta.value
+  if (!m) return
+  autoWin.value.forEach((w, c) => {
+    if (!w || !m.channels[c]) return
+    m.channels[c].lo = w.lo
+    m.channels[c].hi = w.hi
+  })
+  pushChannels()
+}
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
@@ -2005,7 +2032,9 @@ async function loadVersion(refit: boolean) {
   // must not delay the pixels. Tissue thumbnail for whole-slide (tile) view is the same idea.
   void loadOverlays()
   void loadTracks()
-  if (useTiles.value) void loadOverviewThumbnail()
+  // Fetched for any plane view; if the user never opens the minimap, the bytes stay in the HTTP
+  // cache and the canvas just isn't drawn.
+  if (mode.value === 'plane') void loadOverviewThumbnail()
 }
 
 // Autosave triggers — every watcher settles into one write per debounce window. `deep` on channels
@@ -2217,11 +2246,11 @@ onUnmounted(() => {
       <div v-else-if="shownT < 0" class="vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
       </div>
-      <!-- Overview minimap. Only when there is a real slide to navigate: for a small image the
-           viewport already IS the whole frame and a minimap adds nothing. Canvas holds the tissue
-           thumbnail (fetched once); SVG on top holds the viewport rect and takes all the pointer
-           events (click/drag to reposition). -->
-      <div v-if="overviewShown && useTiles && overviewRect" class="vw-overview-wrap"
+      <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
+           a small image still benefits from a corner reference while zoomed in (Dominik, 2026-08-26).
+           Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
+           takes all the pointer events (click/drag to reposition). -->
+      <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
            :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
         <canvas ref="overviewCanvas" class="vw-overview-tissue" />
         <svg class="vw-overview-svg"
@@ -2388,10 +2417,9 @@ onUnmounted(() => {
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
-        <!-- Overview minimap, only offered where it earns its space: for whole-slide tile mode where
-             the viewport is a small fraction of the image. Small-image plane view already shows the
-             whole frame. -->
-        <div v-if="useTiles" class="cc-row cc-row-tight">
+        <!-- Overview minimap, offered for any 2D plane view — small images benefit too once you
+             zoom in. Volume mode has no minimap: a rotated MIP has no useful "where am I" answer. -->
+        <div v-if="mode === 'plane'" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col"
                 v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
           <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
@@ -2454,6 +2482,11 @@ onUnmounted(() => {
             <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
             <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
                       aria-label="Toggle every channel" />
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoAllContrast"
+                    v-tooltip.left="'Auto contrast on every channel'"
+                    aria-label="Auto contrast every channel">
+              <i class="pi pi-sliders-h" />
+            </button>
             <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetAllContrast"
                     v-tooltip.left="'Reset every channel to the server default'"
                     aria-label="Reset every channel contrast">
@@ -2480,6 +2513,10 @@ onUnmounted(() => {
                 @update:model-value="v => setChannelColour(c, v)"
               />
               <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
+                      v-tooltip.left="'Auto contrast — window on the loaded pixels (ImageJ-style)'">
+                <i class="pi pi-sliders-h" />
+              </button>
               <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
                       v-tooltip.left="'Reset contrast to the server default'">
                 <i class="pi pi-history" />
@@ -2837,11 +2874,25 @@ onUnmounted(() => {
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
 .vw-side {
-  width: 15rem; flex: none; padding: 0.6rem; overflow-y: auto;
+  width: 15rem; flex: none; padding: 0.6rem;
+  /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
+     and any tight row visually escape past the sidebar's right edge (Dominik, 2026-08-26). Only
+     the vertical axis needs to scroll. */
+  overflow: hidden auto;
   border-left: 1px solid var(--cc-border); display: flex; flex-direction: column; gap: 0.35rem;
 }
 .vw-title { font-weight: 600; word-break: break-word; }
-.vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
+  /* Clip anything that outgrows the card. Belt to the `.rs` margin's braces. */
+  min-width: 0; overflow: clip; }
+/* RangeSlider's HI thumb sits at `left: 100%` with `translateX(-50%)` — half the 11px thumb (5.5px)
+   overhangs its own `.rs` box. Left as-is, that half pokes into the readout beside it and past the
+   sidebar edge (Dominik, 2026-08-26). Give `.rs` symmetric horizontal margin equal to the half-thumb
+   so the overhang lands in empty margin space instead of on top of the next flex item. `:deep()` so
+   the parent's scoped style reaches into the RangeSlider's own scope. */
+.vw-ch :deep(.rs) { margin: 0 5.5px; min-width: 0; }
+/* Extra gap between slider container and readout for good measure. */
+.vw-ch .cc-row-tight > .vw-ch-val { margin-left: 0.4rem; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
@@ -2857,7 +2908,9 @@ onUnmounted(() => {
 /* Same footprint as `cc-btn-micro` icon (`i.pi` inside a bare button, ~1.1rem square). Reserves the
    trailing slot in a row that has no icon, so the toggle in that row lines up with the toggle in the
    row that DOES carry an icon. */
-.vw-ch-master-slot { flex: none; width: 1.1rem; height: 1.1rem; }
+/* TWO icon slots (auto + reset) worth of space, plus the gap between them. Keeps the toggle in the
+   Distinct row lined up with the toggle in the All-channels row where two buttons follow it. */
+.vw-ch-master-slot { flex: none; width: calc(2 * 1.1rem + 0.35rem); height: 1.1rem; }
 .vw-ch-val { flex: none; white-space: nowrap; }
 .vw-grow { flex: 1; min-width: 0; }
 /* The numbers beside a slider change width as they count up (9 → 10 → 100), and the slider is `flex: 1`
