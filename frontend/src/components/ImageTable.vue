@@ -637,11 +637,14 @@ const unselectableUids = computed(() =>
         <button
           class="viewer-btn cc-btn cc-btn-bare cc-btn-icon"
           data-guide="images.viewerBtn"
+          :class="{ 'viewer-active': project.openImageUid === img.uid }"
           :disabled="!isImported(img)"
           @click.stop="openViewer(img)"
           v-tooltip.right="!isImported(img)
             ? 'Import this image first'
-            : 'Open this image in the viewer'"
+            : project.openImageUid === img.uid
+              ? 'Currently shown in the viewer — click to reopen'
+              : 'Open this image in the viewer'"
         ><i class="pi pi-eye" /></button>
         <!-- Napari SECOND, and `pi-external-link` because that is what it is: a separate desktop
              process, outside the app. The eye is the one that opens something here. -->
