@@ -177,7 +177,11 @@ class MeasureUtils:
             log.log('[WARN] No cells found — no output written')
             return None
 
-        full_df = pd.concat(all_dfs, ignore_index=True)
+        # Carry the label index through the concat — otherwise `_to_anndata` writes a 0..N-1 row
+        # index which `label_props.jl` then reads AS the label id, silently shifting every row.
+        for d in all_dfs:
+            d['label'] = d.index
+        full_df = pd.concat(all_dfs, ignore_index=True).set_index('label')
         out_path = self._to_anndata(full_df, is_3d, n_t)
         log.log(f'>> wrote {out_path}')
         return out_path

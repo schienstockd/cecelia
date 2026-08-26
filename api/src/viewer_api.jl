@@ -667,8 +667,15 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     zint = _to_int(get(body, "z", 0))
     xint = _to_int(get(body, "x", 0))
     yint = _to_int(get(body, "y", 0))
+    # `level` matches the LOD the viewer is DISPLAYING (client sends `slabLevel.value`). Label
+    # downsampling is nearest, so reading L0 while the user sees L1 picks a NEIGHBOUR of the visible
+    # cell — reads as "the wrong cell was highlighted". Clamped against the store's pyramid depth so a
+    # stale client cannot reach `open_level`'s KeyError path (mirrors `try_serve_slab`).
+    lvl_req = _to_int(get(body, "level", 0))
+    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
+    lvl     = clamp(lvl_req, 0, nlvl - 1)
     label = try
-        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xint:xint, y = yint:yint)
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xint:xint, y = yint:yint, level = lvl)
         Int(first(vol))
     catch e
         return 500, JSON3.write((; error = "pick read failed: " * sprint(showerror, e)))
@@ -724,8 +731,12 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     # store read that returned zero rows).
     xlo = min(x1, x2); xhi = max(x1, x2)
     ylo = min(y1, y2); yhi = max(y1, y2)
+    # `level` matches the LOD the viewer is DISPLAYING — see the pick-cell endpoint's note.
+    lvl_req = _to_int(get(body, "level", 0))
+    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
+    lvl     = clamp(lvl_req, 0, nlvl - 1)
     labels_uniq = try
-        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xlo:xhi, y = ylo:yhi)
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xlo:xhi, y = ylo:yhi, level = lvl)
         # `vol` is `(x, y, z)` column-major, one voxel per pixel of the rect (z drops because zint
         # is an Int). Flatten + unique + drop 0 (background). Keep as Int for JSON.
         Int[Int(l) for l in unique(vec(vol)) if l != 0]

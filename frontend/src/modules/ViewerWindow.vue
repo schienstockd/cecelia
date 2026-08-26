@@ -434,9 +434,6 @@ watch(colourBy, () => { void loadOverlays() })
 const labelName = computed(() => {
   const names = meta.value?.labelNames ?? []
   if (!imageUid || !names.length) return ''
-  // `imageUid` is the const from route.query set at setup. In the popup this is the ONLY viewer;
-  // the popup's settings store rehydrates from localStorage on change (P2), so a tick in the
-  // panel reaches here without touching the popup's `openImageUid`.
   const vis = settings.getLabelVisibility(imageUid, names)
   return names.find(n => vis[n]) ?? ''
 })
@@ -1643,18 +1640,15 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
   const rect = c.getBoundingClientRect()
   const cx = e.clientX - rect.left
   const cy = e.clientY - rect.top
-  const p = screenToImagePx(cx, cy, c.clientWidth, c.clientHeight, cam.value, m)
-  // TEMP DEBUG — kept until the y-flip is verified end-to-end on a real image (Dominik reported
-  // a rectangle drag near two cells picking three cells spread across the plot's Y range, which
-  // is consistent with the reflection reading a mirrored strip). Delete when the y-reflection is
-  // pinned down by browser testing on a real image.
-  console.debug('[pick-cell]', { cx, cy, cw: c.clientWidth, ch: c.clientHeight,
-    cam: { ...cam.value }, nX: m.nX, nY: m.nY, vx: m.voxelUm[0], vy: m.voxelUm[1],
-    imgX: p.x, imgY: p.y, in: p.in })
+  const lvl = slabLevel.value
+  const p = screenToImagePx(cx, cy, c.clientWidth, c.clientHeight, cam.value, m,
+                            renderNX.value, renderNY.value)
   if (!p.in) return   // black margin around a zoomed-out image — nothing to pick
   const gc = gatingCurrent.value
-  // Follow the pop manager's active (valueName, popType) if published — same rule as `loadOverlays`
-  // — so the transient pop lands on the segmentation the user is authoring. Empty gc = server default.
+  // `valueName` follows the pop manager's active segmentation — pick and plot must read the same
+  // label store, else two different label number spaces yield unrelated cells on the plot.
+  // `level` matches the display's LOD so nearest-neighbour label downsampling doesn't pick a
+  // neighbour of the visible cell.
   const body = {
     projectUid, imageUid,
     valueName: gc.valueName || undefined,
@@ -1662,6 +1656,7 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
     t: Math.max(0, Math.round(t.value)),
     z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
     x: p.x, y: p.y,
+    level: lvl,
     mode: pickMode,
   }
   try {
@@ -1689,15 +1684,13 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
                           pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
-  const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m)
-  const p2 = screenToImagePx(rect.x + rect.w, rect.y + rect.h, c.clientWidth, c.clientHeight, cam.value, m)
-  // TEMP DEBUG — same rationale as pick-cell.
-  console.debug('[pick-rect]', { canvasRect: rect, p1, p2,
-    cw: c.clientWidth, ch: c.clientHeight, nX: m.nX, nY: m.nY })
+  const lvl = slabLevel.value
+  const nx = renderNX.value, ny = renderNY.value
+  const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
+  const p2 = screenToImagePx(rect.x + rect.w, rect.y + rect.h, c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
   // Clamp inside the image and normalise order — a rect drawn from lower-right to upper-left
   // arrives with p2 < p1, and the server expects the low/high pair. Bail on an empty rect after
   // clamping (a drag entirely on the black margin around a zoomed-out image).
-  const nx = m.nX, ny = m.nY
   const cl = (v: number, hi: number) => Math.max(0, Math.min(hi - 1, v))
   const x1 = Math.min(cl(p1.x, nx), cl(p2.x, nx))
   const x2 = Math.max(cl(p1.x, nx), cl(p2.x, nx))
@@ -1705,6 +1698,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
   const y2 = Math.max(cl(p1.y, ny), cl(p2.y, ny))
   if (x1 === x2 && y1 === y2) return
   const gc = gatingCurrent.value
+  // `valueName` = the pop manager's seg (which IS the plot's seg) — see the note in `pickCellAt`.
   const body = {
     projectUid, imageUid,
     valueName: gc.valueName || undefined,
@@ -1712,6 +1706,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
     t: Math.max(0, Math.round(t.value)),
     z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
     x1, y1, x2, y2,
+    level: lvl,
     mode: pickMode,
   }
   try {

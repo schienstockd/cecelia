@@ -19,32 +19,27 @@ const fittedCam = (m: ViewerMeta, canvasW: number, canvasH: number): OrbitCamera
 
 describe('screenToImagePx', () => {
   it('centre of the canvas → centre pixel of the image', () => {
-    // Y stays at the mid-row under the reflection: nY-1 - (nY/2 - 1) = nY/2. The reflection is
-    // symmetric across the midline, so the center is a fixed point of the flip.
     const m = meta()
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
     const p = screenToImagePx(W / 2, H / 2, W, H, cam, m)
     expect(p.in).toBe(true)
     expect(p.x).toBe(50)
-    // The exact centre lands between rows 39 and 40 for nY=80 — the reflection may floor either
-    // way depending on the 2%-padding round-off. Both are correct at the pixel level; assert the
-    // pair rather than a single row.
+    // The exact centre lands between rows 39 and 40 for nY=80 — floor(H/2 * vy) can round either
+    // way with the 2% padding round-off.
     expect([39, 40]).toContain(p.y)
   })
 
-  it('screen top → high row index; screen bottom → low row index (the display flip)', () => {
-    // The shader / display / mask-read pipeline shows the mask store's row 0 at the BOTTOM of the
-    // canvas — a click at the visual TOP of the image corresponds to the store's LAST row, not
-    // row 0. Verified twice on Dominik's real image (2026-08-26): without the reflection every
-    // pick landed on the mirror strip.
+  it('screen top → row 0; screen bottom → last row (mask store row 0 at canvas top)', () => {
+    // Mask store's row 0 is at the TOP of the canvas — see the shader orientation check in
+    // `docs/todo/spike/webgpu/shader_check.mjs`.
     const m = meta({ nX: 100, nY: 100 })
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
     const top    = screenToImagePx(W / 2, 2,      W, H, cam, m)
     const bottom = screenToImagePx(W / 2, H - 2,  W, H, cam, m)
-    expect(top.y).toBeGreaterThanOrEqual(m.nY - 5)    // near nY-1
-    expect(bottom.y).toBeLessThanOrEqual(5)           // near 0
+    expect(top.y).toBeLessThanOrEqual(5)              // near 0
+    expect(bottom.y).toBeGreaterThanOrEqual(m.nY - 5) // near nY-1
   })
 
   it('pan shifts what is under the pointer, opposite direction to the eye', () => {
@@ -89,5 +84,19 @@ describe('screenToImagePx', () => {
     const p = screenToImagePx(W / 2, H / 2, W, H, cam, m)
     expect(Number.isFinite(p.x)).toBe(true)
     expect(Number.isFinite(p.y)).toBe(true)
+  })
+
+  it('nX/nY override returns level-N pixel indices (physical extent is level-invariant)', () => {
+    // L0 = 100 x 100; L1 = 50 x 50 at the same physical extent. The centre pixel of L0 (~50) becomes
+    // the centre pixel of L1 (~25) at the same click. Prevents "picked wrong cell" when the display
+    // is at LOD > 0 and the pick reads a different level than the mask on screen.
+    const m = meta({ nX: 100, nY: 100 })
+    const W = 200, H = 200
+    const cam = fittedCam(m, W, H)
+    const p0 = screenToImagePx(W / 2, H / 2, W, H, cam, m)
+    const p1 = screenToImagePx(W / 2, H / 2, W, H, cam, m, 50, 50)
+    expect(p0.x).toBeGreaterThanOrEqual(49); expect(p0.x).toBeLessThanOrEqual(50)
+    expect(p1.x).toBeGreaterThanOrEqual(24); expect(p1.x).toBeLessThanOrEqual(25)
+    expect(p1.in).toBe(true)
   })
 })

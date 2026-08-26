@@ -34,16 +34,23 @@ export interface PickCoord {
  * `cx`, `cy` are pointer coords RELATIVE to the canvas top-left (i.e. `e.offsetX/Y`, or
  * `clientX - rect.left`). `canvasW`, `canvasH` are the canvas CSS pixel dims. `voxelUm` is the meta's
  * `[vx, vy, vz]` — the `vz` half is ignored here (2D view is one plane).
+ *
+ * `nX`/`nY` override the axis lengths used for the final pixel-index step, so a caller looking at a
+ * pyramid level N returns indices into THAT level's grid (physical extent is level-invariant, so it
+ * stays taken from `meta`). Default = `meta.nX`/`meta.nY` (level 0). The pick endpoint must then read
+ * the mask at the SAME level — else the click reads a neighbour of the cell that was visible.
  */
 export function screenToImagePx(
   cx: number, cy: number,
   canvasW: number, canvasH: number,
   cam: OrbitCamera, meta: ViewerMeta,
+  nX: number = meta.nX, nY: number = meta.nY,
 ): PickCoord {
-  const vx = meta.voxelUm[0] || 1
-  const vy = meta.voxelUm[1] || 1
-  const extX = meta.nX * vx
-  const extY = meta.nY * vy
+  const extX = meta.nX * (meta.voxelUm[0] || 1)
+  const extY = meta.nY * (meta.voxelUm[1] || 1)
+  // Level-N voxel size: `ext / nLevel`. Reduces to `meta.voxelUm[..]` at level 0.
+  const vxL = extX / Math.max(nX, 1)
+  const vyL = extY / Math.max(nY, 1)
   // Visible extent in world µm at the current zoom. Half-height = dist * VIEW_HALF_ANGLE (from
   // `visibleExtentUm`) — same formula the shader inverts to build the ray origin.
   const aspect = Math.max(canvasW, 1) / Math.max(canvasH, 1)
@@ -59,14 +66,13 @@ export function screenToImagePx(
   const worldX = -cam.panX + ndcX * halfW
   const worldY = -cam.panY + ndcY * halfH
   // Image is centred on the world origin; add `ext/2` to get absolute image µm from the top-left
-  // corner. Y needs a REFLECTION at the end: the shader / display / mask-read pipeline shows the
-  // mask store's row 0 at the BOTTOM of the canvas — a click at the visual TOP of the image
-  // corresponds to the store's LAST row, not row 0. Verified twice against a real image (Dominik,
-  // 2026-08-26): dropping the reflection makes every pick land on the mirror strip.
+  // corner. The mask store's row 0 lands at the TOP of the canvas — see
+  // `docs/todo/spike/webgpu/shader_check.mjs` for the orientation check. So no y-reflection here:
+  // `1 - 2*cy/H` already inverts canvas-y once and one negation of `worldY` puts it back.
   const absX_um = worldX + extX / 2
   const absY_um = -worldY + extY / 2
-  const x = Math.floor(absX_um / vx)
-  const y = meta.nY - 1 - Math.floor(absY_um / vy)
-  const inside = x >= 0 && y >= 0 && x < meta.nX && y < meta.nY
+  const x = Math.floor(absX_um / vxL)
+  const y = Math.floor(absY_um / vyL)
+  const inside = x >= 0 && y >= 0 && x < nX && y < nY
   return { x, y, in: inside }
 }
