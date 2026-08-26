@@ -200,6 +200,43 @@ export function overlaySummary(p: OverlayPayload | null): {
   }
 }
 
+// ── Filtering ────────────────────────────────────────────────────────────────────
+// Given a payload and a population's cell labels, return a NEW payload whose `cells.*` arrays only
+// carry rows whose `label` is in the set. The pops list, colour-by columns and the flags are
+// carried across unchanged — this only narrows the row axis. Used for gated-track-pop ribbons and
+// track-cluster ribbons (VIEWER_CONTROLS_SPLIT_PLAN.md → P7 tail): each pop feeds a filtered
+// payload to `buildMultiTrackBuffer` as its own source, so a pop's tracks draw in the pop's colour
+// rather than the palette cycle.
+//
+// A payload with no `cells.label` array cannot be filtered (nothing to match against). We return
+// an empty payload rather than the original — the pop's job here is to REDUCE, and if the reducer
+// cannot match rows the pop contributes nothing rather than everything.
+export function filterPayloadByLabels(payload: OverlayPayload, labels: ReadonlySet<number>)
+  : OverlayPayload {
+  const labs = payload.cells.label
+  if (!labs || !labels.size) {
+    return { ...payload, nCells: 0, cells: { label: [], t: [], x: [], y: [], z: [], track: [] } }
+  }
+  const keep: number[] = []
+  for (let i = 0; i < labs.length; i++) if (labels.has(labs[i])) keep.push(i)
+  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
+    arr ? keep.map(i => arr[i]) : undefined
+  return {
+    ...payload,
+    nCells: keep.length,
+    cells: {
+      label: pick(payload.cells.label),
+      t:     pick(payload.cells.t),
+      x:     pick(payload.cells.x),
+      y:     pick(payload.cells.y),
+      z:     pick(payload.cells.z),
+      track: pick(payload.cells.track),
+    },
+    // values are per-row (like cells.*), so they must be picked too when present.
+    values: payload.values ? keep.map(i => payload.values![i]) : payload.values,
+  }
+}
+
 // ── Track tails ──────────────────────────────────────────────────────────────────
 
 /** Floats per segment instance: ax, ay, az, bx, by, bz, r, g, b, plane. */

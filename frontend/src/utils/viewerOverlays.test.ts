@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
+  filterPayloadByLabels,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -164,6 +165,37 @@ describe('overlaySummary', () => {
     // 0 would be a legitimate track id if the server used it; it does not, and -1 is the one sentinel.
     const p = payload({ cells: { ...payload().cells, track: [-1, -1, 5, 6] } })
     expect(overlaySummary(p).tracked).toBe(2)
+  })
+})
+
+describe('filterPayloadByLabels', () => {
+  it('keeps only the cells whose label is in the set — every cells.* array in step', () => {
+    const p = filterPayloadByLabels(payload(), new Set([11, 13]))
+    expect(p.nCells).toBe(2)
+    expect(p.cells.label).toEqual([11, 13])
+    expect(p.cells.t).toEqual([1, 1])
+    expect(p.cells.x).toEqual([2, 4])
+    expect(p.cells.track).toEqual([1, 2])
+  })
+  it('empty label set → empty payload (a pop that contributed no rows contributes no ribbons)', () => {
+    const p = filterPayloadByLabels(payload(), new Set())
+    expect(p.nCells).toBe(0)
+    expect(p.cells.label).toEqual([])
+  })
+  it('picks per-row `values` when present', () => {
+    const p = filterPayloadByLabels(payload({ values: ['a', 'b', 'c', 'd'] }), new Set([10, 12]))
+    expect(p.values).toEqual(['a', 'c'])
+  })
+  it('a payload with no label column cannot be filtered → empty answer', () => {
+    const p = filterPayloadByLabels(payload({ cells: {} }), new Set([1, 2, 3]))
+    expect(p.nCells).toBe(0)
+  })
+  it('carries pops + colourColumns + flags across unchanged (only the row axis narrows)', () => {
+    const src = payload()
+    const p = filterPayloadByLabels(src, new Set([10]))
+    expect(p.pops).toBe(src.pops)
+    expect(p.colourColumns).toBe(src.colourColumns)
+    expect(p.hasT).toBe(src.hasT)
   })
 })
 
