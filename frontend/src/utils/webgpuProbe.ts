@@ -38,6 +38,10 @@ export interface AdapterReport {
    */
   looksDiscrete: boolean
   maxTextureDimension3D: number
+  /** The DEVICE's own `maxBufferSize` after we asked the adapter for its max. Dawn/Linux defaults it
+   *  to 256 MB even on cards that can do 4 GB, and the tile atlas needs the higher figure — one
+   *  1024² × slots × nC × 2 texture is a 800 MB buffer on a whole slide. */
+  maxBufferSize: number
   hasTimestamps: boolean
   /** The adapter's own identification, reported rather than interpreted — the point is to put the real
    *  answer beside the proxy above instead of replacing one guess with another. */
@@ -125,13 +129,26 @@ export async function acquireGpuDevice(): Promise<{
 
   const maxDim3D = adapter.limits.maxTextureDimension3D
   const name = adapterName(adapter)
+  // Ask the adapter for its FULL limits, not the WebGPU defaults. Dawn on Linux Vulkan defaults
+  // `maxBufferSize` to 256 MB even on cards that support 4 GB — the tile atlas is a single 800 MB
+  // buffer for a whole slide, so leaving it at the default is exactly the "Buffer size exceeds max
+  // buffer size limit" error the first f8gzA2 mount hit (Dominik, 2026-08-25). The adapter reports
+  // what it can actually give us; asking for that is not asking for anything the adapter did not
+  // already offer, so this is safe on every card.
+  const requiredLimits: Record<string, number> = {
+    maxBufferSize: adapter.limits.maxBufferSize,
+    maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
+    maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+  }
+  const device = await adapter.requestDevice({ requiredLimits })
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
+    maxBufferSize: device.limits.maxBufferSize,
     looksDiscrete: classifyAdapter(name, maxDim3D),
     hasTimestamps: adapter.features.has('timestamp-query'),
     name,
   }
-  const device = await adapter.requestDevice()
   return { adapter, device, report }
 }
 

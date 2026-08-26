@@ -197,9 +197,15 @@ export async function createTileRenderer(
 
   const u = new Float32Array(TILE_UNIFORM_BYTES / 4)
 
-  /** Atlas state — reallocated on every `setImage`. Null before first setImage. */
+  /** Atlas state. The atlas is a 3D texture whose ONE dimension that ever changes is `capacity * nC`
+   *  along z — chunks are always the same 1024² per level (server convention), so a `setImage` for a
+   *  new level does NOT need to reallocate the atlas. That is the whole shape of progressive
+   *  refinement: the old level's tiles stay resident under the new level's, the eviction ranker
+   *  drops coarse tiles when zoomed in, and the frame is never blank across a zoom threshold. */
   let atlas: GPUTexture | null = null
   let bindGroup: GPUBindGroup | null = null
+  let atlasChunkX = 0
+  let atlasChunkY = 0
   let atlasNC = 0
   let capacity = 0
   let currentLevel = -1
@@ -252,6 +258,8 @@ export async function createTileRenderer(
     bindGroup = null
     tiles.clear()
     freeSlots.length = 0
+    atlasChunkX = 0
+    atlasChunkY = 0
     atlasNC = 0
     capacity = 0
     currentLevel = -1
@@ -259,16 +267,18 @@ export async function createTileRenderer(
 
   function computeCapacity(budgetBytes: number, chunkX: number, chunkY: number, nC: number): number {
     if (!(chunkX > 0 && chunkY > 0 && nC > 0)) return 0
-    // Every candidate cap. The tightest wins; each is measured, not tuned. `adapter.maxTextureDim3D`
-    // is not exposed on the report, so we fall back to the spec floor (2048) minus a slack channel
-    // row to be safe under a strict validator.
+    // Every candidate cap. The tightest wins; each is measured against a real error, not tuned.
     const perSlot = chunkX * chunkY * nC * BPV
     const fromBudget = Math.max(1, Math.floor(budgetBytes / Math.max(perSlot, 1)))
-    // If the report ever grows a 3D dim field, use it. Falling back to the WebGPU spec baseline (2048)
-    // is safe on every adapter — a discrete card will just cap at 128 (MAX_SLOTS) instead.
     const dim3D = report.maxTextureDimension3D ?? 2048
     const fromAdapter = Math.max(1, Math.floor(dim3D / nC))
-    return Math.min(MAX_SLOTS, fromBudget, fromAdapter)
+    // `maxBufferSize` bites even for TEXTURES on Dawn: a 3D texture's staging buffer must fit under it,
+    // and the atlas is one big buffer's worth. The first f8gzA2 mount tripped this exact validation
+    // ("Buffer size (1468006400) exceeds the max buffer size limit (268435456)"). Fixed by raising the
+    // device's limit to the adapter's max in `acquireGpuDevice`; the cap here is the belt to its braces
+    // so a card that genuinely cannot go higher lands at a smaller slot count instead of a broken atlas.
+    const fromBuffer = Math.max(1, Math.floor(report.maxBufferSize / Math.max(perSlot, 1)))
+    return Math.min(MAX_SLOTS, fromBudget, fromAdapter, fromBuffer)
   }
 
   return {
@@ -276,12 +286,27 @@ export async function createTileRenderer(
     lost: device.lost,
 
     setImage(m, level, budgetBytes, chunkX, chunkY, nC) {
-      // NOT gated on `usable()` — the geometry is what later fetches derive from and a `!usable()`
-      // early return would leave the pipeline describing one level while the client fetched another.
-      // Same reasoning as `volumeRenderer.setImage`.
-      dropAtlas()
       metaRef = m
       const nch = Math.min(nC, MAX_CHANNELS)
+      // Progressive refinement: an atlas allocated for the CURRENT (chunkX, chunkY, nC) shape is a
+      // valid atlas for ANY level — chunks are 1024² at every level (server convention) — so a level
+      // swap should reuse it. Old-level tiles stay resident, get drawn UNDER the new-level ones as
+      // they stream in (drawTiles sorts coarsest-first), and the eviction ranker drops the coarse
+      // tiles under memory pressure. Reallocating on every level swap is what caused the "black
+      // tiles between levels" that Dominik reported (2026-08-26).
+      const reuse = atlas
+        && atlasChunkX === chunkX
+        && atlasChunkY === chunkY
+        && atlasNC === nch
+      currentLevel = level
+      // Publish the geometry the shader reads — always, whether we reuse or reallocate.
+      const [ex, ey] = [m.nX * (m.voxelUm[0] || 1), m.nY * (m.voxelUm[1] || 1)]
+      u[8] = ex; u[9] = ey; u[10] = 0; u[11] = 0
+      u[12] = nch; u[13] = 0; u[14] = 0; u[15] = 0
+      u[4] = nch                                        // vp.x = channel count
+      if (reuse) return
+      // Different shape → fresh atlas.
+      dropAtlas()
       const cap = computeCapacity(budgetBytes, chunkX, chunkY, nch)
       if (cap <= 0) return
       // Same OOM discipline as the volume renderer — a big atlas can legitimately fail to allocate,
@@ -299,17 +324,14 @@ export async function createTileRenderer(
         if (err) onError?.('Tile atlas: ' + err.message)
       })
       atlas = tex
+      atlasChunkX = chunkX
+      atlasChunkY = chunkY
       atlasNC = nch
       capacity = cap
       currentLevel = level
       // Fill the free list top-down so the first tiles land at slot 0 — makes a debug read of the
       // atlas start with the visible viewport rather than with holes.
       for (let s = cap - 1; s >= 0; s--) freeSlots.push(s)
-      // Publish the geometry the shader reads.
-      const [ex, ey] = [m.nX * (m.voxelUm[0] || 1), m.nY * (m.voxelUm[1] || 1)]
-      u[8] = ex; u[9] = ey; u[10] = 0; u[11] = 0
-      u[12] = nch; u[13] = 0; u[14] = 0; u[15] = 0
-      u[4] = nch                                        // vp.x = channel count
       setChannelsImpl(m.channels)
       rebuildBindGroup()
     },
@@ -339,11 +361,19 @@ export async function createTileRenderer(
       }
       if (slot < 0) return -1                     // atlas full and nothing droppable — caller retries
 
-      const lvl = metaRef?.levels?.find(v => v.level === currentLevel)
+      // Use `key.level` — NOT `currentLevel`. The tile's bytes were fetched at its own level, and the
+      // rect that describes them must match. `currentLevel` may have moved on since this fetch started
+      // (a wheel notch during a slow fetch); a tile whose (tx, ty) is valid at key.level can be past
+      // the smaller level's extent, and `tileFetchRect` then returns `xTo < x`, giving a negative
+      // `rowsPerImage` — the "Value is outside the 'unsigned long' value range" writeTexture failure
+      // Dominik hit (2026-08-26). The atlas is level-agnostic (same chunk shape at every level), so
+      // uploading a coarser-level tile into it is correct.
+      const lvl = metaRef?.levels?.find(v => v.level === key.level)
       if (!lvl) return -1
       const rect = tileFetchRect(key.tx, key.ty, lvl)
       const w = rect.xTo - rect.x + 1
       const h = rect.yTo - rect.y + 1
+      if (w <= 0 || h <= 0) return -1
       // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
       // STAGED — the caller can then read `hasTile` synchronously.
       for (let c = 0; c < Math.min(channelBytes.length, atlasNC); c++) {

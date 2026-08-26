@@ -536,6 +536,20 @@ function pushChannels() {
   frame.redraw()
 }
 
+/** Flip every channel's visibility in one go — a 24-channel image would otherwise want 23 toggle
+ *  clicks to hide-then-solo a marker. */
+function setAllChannels(visible: boolean) {
+  const m = meta.value
+  if (!m) return
+  for (const ch of m.channels) ch.visible = visible
+  pushChannels()
+}
+/** True when every channel is on. False when any is off — a mixed state reads as "not all on" so
+ *  the toggle's next click will flip everything ON, not OFF. Same discipline as select-all
+ *  checkboxes elsewhere. */
+const allChannelsVisible = computed(() =>
+  (meta.value?.channels ?? []).every(ch => ch.visible))
+
 // ── Fetching a timepoint ─────────────────────────────────────────────────────────
 // One entry per in-flight timepoint, so a prefetch already running is joined rather than started
 // again, and one that falls outside the window is aborted rather than left to finish into a cache that
@@ -580,9 +594,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const res = await fetch(
-          slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc, level: lvl }),
-          { cache: 'no-store', signal: ac.signal })
+        const url = slabUrl({ projectUid, imageUid, valueName, t: tp, c, ...zq, enc, level: lvl })
+        const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
         // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing. At a
@@ -596,9 +609,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       })),
       (async () => {
         if (!vn) return null
-        const res = await fetch(
-          slabUrl({ projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl }),
-          { cache: 'no-store', signal: ac.signal })
+        const url = slabUrl({
+          projectUid, imageUid, valueName, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+        })
+        const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
         const buf = await res.arrayBuffer()
         // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
@@ -845,9 +859,10 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         z: zPlane.value,
         x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
       })
-      const res = await fetch(url, { cache: 'no-store', signal: ac.signal })
+      const res = await fetch(url, { cache: 'default', signal: ac.signal })
       if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
-      return res.arrayBuffer()
+      const buf = await res.arrayBuffer()
+      return buf
     }))
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
@@ -887,27 +902,28 @@ function syncTileCacheState() {
 }
 
 /**
- * Fill the atlas around the current viewport — visible tiles first, then the halo — one fetch at a
- * time through the canonical `debouncedLatest` pump. Same discipline as the timepoint pump: a burst
- * from a fast pan or wheel gesture collapses to the last position, and a superseded walk stops at
- * its next checkpoint rather than filling an atlas around a viewport the user has left.
+ * Fill the atlas around the current viewport — visible + halo, ALL IN PARALLEL. The browser's per-
+ * origin concurrency cap (typically 6) throttles the HTTP fanout naturally, and tiles arriving in
+ * different orders is not a correctness issue — the atlas caches by key. Serialising was a mistake
+ * for the whole-slide case: 12 halo tiles × ~200 ms is ~2.4 s instead of ~500 ms, and Dominik
+ * called it out ("takes ages to load. this should take a few seconds"). A stale pump's fetches are
+ * aborted by `scheduleTilePump` via `tileAborts` — the abort has to happen at the mid-flight fetch,
+ * not at a serial checkpoint, and this shape makes that its ONLY point of cancellation.
  */
 const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
   const tr = tileRenderer.value
   if (!tr) return
   const want = missingTiles()
-  for (const key of want) {
+  await Promise.allSettled(want.map(async key => {
     if (!isCurrent()) return
-    // Skip if the tile arrived between the enumeration and here (a parallel pump run, in principle).
-    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    if (tr.hasTile(key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
     if (!ok || !isCurrent()) return
-    // Paint the current best composite as soon as a tile lands, so the user sees the viewport fill
-    // in tile by tile rather than jumping from empty to complete.
+    // First tile land also flips the still-overlay gate (`shownT >= 0`) so the scale bar shows up
+    // when there is actually something under it — not before, which would draw a bar over black.
+    if (shownT.value < 0) shownT.value = 0
     frame.redraw()
-  }
-  // A frame is on screen once the visible set is complete; the still overlay reads `shownT >= 0`.
-  if (shownT.value < 0) shownT.value = 0
+  }))
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
 /**
@@ -936,7 +952,11 @@ function drawTiles() {
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
   if (resized) scheduleTilePump()
-  const entries = tr.residentTiles()
+  // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
+  // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
+  // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
+  // landed, and vanishes seamlessly the moment they do.
+  const entries = tr.residentTiles().slice().sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
   const vy = m.voxelUm[1] || 1
@@ -1177,42 +1197,53 @@ function resetView() {
 /**
  * Ensure the RIGHT renderer for the current mode+image is alive. The canvas has one WebGPU context,
  * so the two renderers are alternates — swapping mode destroys one before creating the other.
- * Idempotent: called before every reallocate, but only actually allocates when `useTiles` has
- * changed, which is once per mode swap.
+ *
+ * **Serialised against itself.** `start()` awaits it, `reallocate()` awaits it — but the level watch
+ * fires `levelPump` which calls `reallocate` on a debounce, and if that fires DURING the first
+ * `ensureRenderer` (a real race — the tile atlas allocation takes ~100 ms and the level watch fires
+ * within 150 ms of the first `slabLevel` change), two `createTileRenderer` calls execute concurrently.
+ * That is the source of the `TextureView … cannot be used with [Device]` error (Dominik, 2026-08-26):
+ * D1 configures the canvas, then D2 reconfigures it, and D1's draws now hit D2's canvas texture.
+ * The guard turns the second call into an await on the first, and only ever creates one device.
  */
+let _rendererCreating: Promise<void> | null = null
 async function ensureRenderer() {
-  if (useTiles.value) {
-    if (tileRenderer.value) return
-    if (renderer.value) { renderer.value.destroy(); renderer.value = null }
-    const tr = await createTileRenderer(canvas.value!, msg => {
-      error.value = 'GPU: ' + msg
-      vlog('error', 'Tile GPU error: ' + msg)
-    })
-    tileRenderer.value = tr
-    void tr.lost.then(info => {
-      tilePump.cancel()
-      for (const ac of tileAborts.values()) ac.abort()
-      lostDevice.value = true
-      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
-      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
-    })
-  } else {
-    if (renderer.value) return
-    if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
-    const r = await createVolumeRenderer(canvas.value!, msg => {
-      error.value = 'GPU: ' + msg
-      vlog('error', 'GPU error: ' + msg)
-    })
-    renderer.value = r
-    void r.lost.then(info => {
-      stopPlay()
-      pump.cancel()
-      for (const ac of aborts.values()) ac.abort()
-      lostDevice.value = true
-      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
-      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
-    })
-  }
+  if (_rendererCreating) return _rendererCreating
+  _rendererCreating = (async () => {
+    if (useTiles.value) {
+      if (tileRenderer.value) return
+      if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+      const tr = await createTileRenderer(canvas.value!, msg => {
+        error.value = 'GPU: ' + msg
+        vlog('error', 'Tile GPU error: ' + msg)
+      })
+      tileRenderer.value = tr
+      void tr.lost.then(info => {
+        tilePump.cancel()
+        for (const ac of tileAborts.values()) ac.abort()
+        lostDevice.value = true
+        error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+        vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+      })
+    } else {
+      if (renderer.value) return
+      if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
+      const r = await createVolumeRenderer(canvas.value!, msg => {
+        error.value = 'GPU: ' + msg
+        vlog('error', 'GPU error: ' + msg)
+      })
+      renderer.value = r
+      void r.lost.then(info => {
+        stopPlay()
+        pump.cancel()
+        for (const ac of aborts.values()) ac.abort()
+        lostDevice.value = true
+        error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+        vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+      })
+    }
+  })()
+  try { await _rendererCreating } finally { _rendererCreating = null }
 }
 
 /**
@@ -1228,19 +1259,24 @@ async function ensureRenderer() {
 async function reallocate(refit = false) {
   const m = meta.value
   if (!m) return
-  // Both flows cancel; only the active one has anything to cancel, but the other's cache is being
-  // torn down anyway and it costs nothing to be sure.
+  // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
+  // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
+  // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
+  // new viewport — `scheduleTilePump` selectively aborts what the new viewport does NOT want), and
+  // keeps `shownT` so the overlay does not flash "Loading timepoint 0…" on every wheel notch. Without
+  // this split, a burst of level swaps aborted every fetch mid-air and the pump got stuck retrying
+  // aborted work — reported (Dominik, 2026-08-26) as "the loading got stuck and never returned".
   pump.cancel()
   tilePump.cancel()
-  for (const ac of aborts.values()) ac.abort()
-  for (const ac of tileAborts.values()) ac.abort()
-  aborts.clear(); inflight.clear()
-  tileAborts.clear()
-  shownT.value = -1
+  if (!useTiles.value) {
+    for (const ac of aborts.values()) ac.abort()
+    aborts.clear(); inflight.clear()
+    shownT.value = -1
+    hits.value = 0; misses.value = 0
+    autoWin.value = []                     // Auto windows on what is loaded, so re-derive per plane
+    waitingFor.value = -1
+  }
   announce.value = true
-  hits.value = 0; misses.value = 0
-  autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
-  waitingFor.value = -1
   // Refit BEFORE `setImage`: `slabLevel` and `useTiles` react to `cam.dist`, so a stale distance
   // would allocate the pipeline for the wrong level (or the wrong pipeline entirely).
   const c = fitNow(m)
@@ -1419,24 +1455,30 @@ onUnmounted(() => {
         :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
         :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
       />
-      <!-- Held after a crash. Offered rather than refused: the breadcrumb cannot tell a driver crash
-           from a force-quit, so the honest statement is what it saw, not a diagnosis. -->
+      <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
+           cannot tell a driver crash from a force-quit, so the honest statement is what it saw. -->
       <div v-if="heldAfterCrash" class="cc-empty cc-empty-overlay cc-muted-warn">
         The last attempt to show this image did not finish
         <span v-if="heldProbe" class="cc-muted cc-fs-2xs">{{ heldProbe }}</span>
         <button class="cc-btn cc-btn-primary" @click="start"
                 v-tooltip.top="'Open this image again'">Try again</button>
       </div>
-      <div v-else-if="starting" class="cc-empty cc-empty-overlay">{{ starting }}…</div>
-      <div v-else-if="error" class="cc-empty cc-empty-overlay cc-muted-error">
-        {{ error }}
-        <button v-if="lostDevice" class="cc-btn cc-btn-ghost" @click="reload"
-                v-tooltip.top="'Reopen the viewer'">Reload</button>
+      <!-- Startup, mid-load, and errors ALL go in a bottom-left chip: white-on-black stays legible
+           against any tile content, and out of the way of the pointer. The error variant carries the
+           canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
+           against a bright whole-slide render, and a centred error left the app looking dead when it
+           was still holding the previous frame (Dominik, 2026-08-26). -->
+      <div v-else-if="error" class="vw-status-chip vw-status-chip-error">
+        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <span>{{ error }}</span>
+        <button v-if="lostDevice" class="cc-btn cc-btn-ghost cc-btn-micro vw-status-chip-btn"
+                @click="reload" v-tooltip.top="'Reopen the viewer'">Reload</button>
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
            hardcoded 0 there said the wrong thing (Dominik, 2026-08-24). -->
-      <div v-else-if="shownT < 0" class="cc-empty cc-empty-overlay">Loading timepoint {{ t }}…</div>
+      <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
+      <div v-else-if="shownT < 0" class="vw-status-chip">Loading timepoint {{ t }}…</div>
     </div>
 
     <aside class="vw-side">
@@ -1573,9 +1615,22 @@ onUnmounted(() => {
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
 
+        <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
+             image has 24+ channels and the sidebar's own scroll never engages, so the section body was
+             flooding off the bottom of the panel with no way to reach the controls below (Dominik,
+             2026-08-26). All-on/all-off buttons at the top so a 24-channel image can be soloed to one
+             marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
-                            @update:open="v => setSection('channels', v)" max-height="none">
+                            @update:open="v => setSection('channels', v)">
+          <!-- One canonical toggle (docs/ui/PRIMITIVES.md → CcToggle), same idiom as every other
+               on/off in the app — a pair of buttons was a second variant of a decision that already
+               has one right way to render it. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
+            <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
+                      aria-label="Toggle every channel" />
+          </div>
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
@@ -1855,6 +1910,20 @@ onUnmounted(() => {
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
 .vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
+/* Bottom-left status chip: white-on-black so it stays legible against a bright tile composite. Same
+   role as the centred `cc-empty-overlay` but out of the way of what the user is trying to look at.
+   Error variant uses the canonical severity colour + icon (`lib/severity.ts` → `fail`), and re-enables
+   `pointer-events` so the Reload button (device-lost case) is clickable. */
+.vw-status-chip {
+  position: absolute; left: 0.75rem; bottom: 0.75rem;
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: rgba(0, 0, 0, 0.78); color: #fff;
+  font-size: var(--cc-fs-xs); pointer-events: none;
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+}
+.vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+.vw-status-chip-icon { font-size: 1em; }
+.vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
