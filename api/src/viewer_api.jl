@@ -634,3 +634,60 @@ function api_viewer_props_post(body_bytes::Vector{UInt8})
         500, JSON3.write((; error = sprint(showerror, e)))
     end
 end
+
+# ── POST /api/viewer/pick-cell (P8) ───────────────────────────────────────────────
+# Click a cell in the WebGPU viewer → transient population highlighted on the gating plots.
+# Reuses the same _set_napari_selection! / _inject_napari_pop! bridge napari's shape selection
+# uses (`gating_api.jl` → *Napari cell-selection registry*) so this behaves identically to the
+# existing linked-brushing pop — same JSON tree, same broadcast, same colour, no client-side
+# gating store changes needed.
+#
+# Body: {projectUid, imageUid, valueName, popType, t, z, x, y, mode?}
+#   x, y are IMAGE PIXEL indices (0-based), computed client-side by `screenToImagePx`.
+#   z is the plane the click landed on; t is the current timepoint.
+#   mode = 'replace' (default) — the new label REPLACES the current selection. Ergonomic default
+#          for pointer picking: click a cell to see it, click another to swap. Multi-select is a
+#          shift-click follow-up (`mode='add'` / `mode='toggle'`), not shipped in this pass.
+#
+# Response: {label, cellUid?, nSelected}. `label = 0` when the click landed on background — the
+# response is still 200; the selection is unchanged.
+function api_viewer_pick_cell(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    # Which mask on disk. `label_store_path` answers the base mask for that segmentation — the
+    # same one shown as "(vn) Labels" in napari and rendered by the WebGPU viewer's mask slot.
+    zp, lerr = label_store_path(pu, iu, vn)
+    zp === nothing && return 404, JSON3.write((; error = lerr))
+    tint = _to_int(get(body, "t", 0))
+    zint = _to_int(get(body, "z", 0))
+    xint = _to_int(get(body, "x", 0))
+    yint = _to_int(get(body, "y", 0))
+    label = try
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xint:xint, y = yint:yint)
+        Int(first(vol))
+    catch e
+        return 500, JSON3.write((; error = "pick read failed: " * sprint(showerror, e)))
+    end
+    # Label 0 is background. Report and leave the selection alone — resetting on a background
+    # click would surprise the user who missed a cell by one pixel.
+    label == 0 && return 200, JSON3.write((; label = 0, nSelected = 0))
+    mode = String(get(body, "mode", "replace"))
+    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    labs = if mode == "add"
+        label in cur ? cur : vcat(cur, label)
+    elseif mode == "toggle"
+        label in cur ? filter(!=(label), cur) : vcat(cur, label)
+    else
+        Int[label]
+    end
+    _set_napari_selection!(img._dir, vn, labs)
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_napari_pop!(m, img)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; label, nSelected = length(labs)))
+end

@@ -326,6 +326,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/app/restart" => (req, body_bytes) -> (api_app_restart(body_bytes)),
     "/api/app/switch-worktree" => (req, body_bytes) -> (api_app_switch_worktree(body_bytes)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_post(body_bytes)),
+    "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/napari/open" => (req, body_bytes) -> (api_napari_open(body_bytes)),
     "/api/napari/close" => (req, body_bytes) -> (api_napari_close(body_bytes)),
     "/api/napari/screenshot" => (req, body_bytes) -> (api_napari_screenshot(body_bytes)),

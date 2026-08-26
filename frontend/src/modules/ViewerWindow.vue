@@ -59,6 +59,7 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
+import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
@@ -1541,9 +1542,18 @@ function togglePlay() {
  * around at all once zoomed in (Dominik, 2026-08-25).
  */
 const pans = (e: PointerEvent | MouseEvent) => mode.value === 'plane' || e.shiftKey
-let dragFrom: { x: number; y: number } | null = null
+// `dragFrom` is the pointer's LAST position (updated per move so `onMove` computes per-event delta).
+// `dragStart` is where the gesture began — untouched by move, used by `onUp` to decide click vs drag.
+// The two are separate because collapsing them would need `onMove` to re-derive the total from a
+// running sum, and a pan that started with a tap would then never register as a click.
+let dragFrom:  { x: number; y: number } | null = null
+let dragStart: { x: number; y: number } | null = null
+/** Pointer-travel threshold below which a mouseup is a CLICK (px, cursor space). Tuned to match
+ *  the OS's own drag-vs-click deadband — cursors jitter a pixel or two on click. */
+const CLICK_MAX_TRAVEL_PX = 4
 function onDown(e: PointerEvent) {
-  dragFrom = { x: e.clientX, y: e.clientY }
+  dragFrom  = { x: e.clientX, y: e.clientY }
+  dragStart = { x: e.clientX, y: e.clientY }
   ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
 }
 function onMove(e: PointerEvent) {
@@ -1559,7 +1569,61 @@ function onMove(e: PointerEvent) {
   // stream in behind it. `scheduleTilePump` cancels fetches the new viewport does not want first.
   if (useTiles.value) scheduleTilePump()
 }
-function onUp() { dragFrom = null }
+function onUp(e: PointerEvent) {
+  // A click is a mouseup that did not travel — the pick fires here rather than on `onDown` so a
+  // pan gesture that started with the same button is not misread as a pick. `dragStart` was
+  // captured on `onDown` in canvas space; a small travel (see `CLICK_MAX_TRAVEL_PX`) IS a click.
+  const start = dragStart
+  dragFrom = null; dragStart = null
+  if (!start) return
+  const dx = e.clientX - start.x, dy = e.clientY - start.y
+  const travelled = Math.hypot(dx, dy)
+  // Picking is a 2D-plane feature. MIP picking is ambiguous — a ray hits many labels — so the
+  // 3D view leaves the click as a pointer-up with no side effects (P8 open question in the plan).
+  if (travelled <= CLICK_MAX_TRAVEL_PX && mode.value === 'plane' && !e.shiftKey) {
+    void pickCellAt(e)
+  }
+}
+
+/**
+ * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
+ * broadcast lights up the transient pop on the plots — this window never touches the gating store
+ * directly. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
+ */
+async function pickCellAt(e: PointerEvent) {
+  const c = canvas.value, m = meta.value
+  if (!c || !m) return
+  const rect = c.getBoundingClientRect()
+  const cx = e.clientX - rect.left
+  const cy = e.clientY - rect.top
+  const p = screenToImagePx(cx, cy, c.clientWidth, c.clientHeight, cam.value, m)
+  if (!p.in) return   // black margin around a zoomed-out image — nothing to pick
+  const gc = gatingCurrent.value
+  // Follow the pop manager's active (valueName, popType) if published — same rule as `loadOverlays`
+  // — so the transient pop lands on the segmentation the user is authoring. Empty gc = server default.
+  const body = {
+    projectUid, imageUid,
+    valueName: gc.valueName || undefined,
+    popType:   gc.popType   || 'flow',
+    t: Math.max(0, Math.round(t.value)),
+    z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
+    x: p.x, y: p.y,
+    mode: 'replace',
+  }
+  try {
+    const res = await fetch('/api/viewer/pick-cell', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
+    // Nothing to do on the response — the popmap broadcast updates the plots. Log a background
+    // click quietly so the user can tell the click landed off any cell.
+    const j = await res.json() as { label?: number; nSelected?: number }
+    if (!j.label) vlog('info', 'Pick: background (no cell)')
+  } catch (err) {
+    vlog('warn', 'Pick error: ' + (err instanceof Error ? err.message : String(err)))
+  }
+}
 /**
  * Wheel zooms; SHIFT+wheel steps the z plane in the 2D view.
  *
