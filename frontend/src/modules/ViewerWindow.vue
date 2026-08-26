@@ -108,6 +108,18 @@ const setUid = String(route.query.set ?? '')
 const imageName = String(route.query.name ?? '')
 
 /**
+ * A second click on a DIFFERENT image's eye — the main window opens the viewer with the same window
+ * NAME, so the browser reuses this popup and only updates its hash. `projectUid`/`imageUid` above are
+ * `const`s captured at setup, so a hash change on its own leaves the viewer painting the FIRST image
+ * for ever. We already have a full re-init pipeline — mounting — so hard-reload the popup when the
+ * query names a new image and let it run.
+ */
+watch(() => route.query.image, next => {
+  const nextUid = String(next ?? '')
+  if (nextUid && nextUid !== imageUid) window.location.reload()
+})
+
+/**
  * Read a fetch response as JSON, but tell you WHICH request went wrong when the body is empty or not
  * JSON. `await res.json()` on a 500 with an empty body throws "Failed to execute 'json' on 'Response':
  * Unexpected end of JSON input", which reads as a client bug and hides the real status. Read as text

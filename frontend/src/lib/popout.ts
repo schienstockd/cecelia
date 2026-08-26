@@ -62,11 +62,21 @@ export function popoutRouteOfWindow(windowName: string = window.name): PopoutRou
 export function openPopoutWindow(
   route: PopoutRoute, width: number, height: number, query = '',
 ): Window | null {
-  const w = window.open(popoutUrl(route + query), POPOUT_WINDOW_NAMES[route],
-                        `width=${width},height=${height}`)
+  const url = popoutUrl(route + query)
+  const w = window.open(url, POPOUT_WINDOW_NAMES[route], `width=${width},height=${height}`)
   // A blocked popup returns null, and a cross-origin window would throw on focus() — neither can
   // happen here (same origin, user gesture), but a failed re-focus must not take the click with it.
   try { w?.focus() } catch { /* the window is open; focusing it is a nicety */ }
+  // Second click on a DIFFERENT target — the eye on another image, or the ↗ on another set — reuses
+  // the named window. `window.open` on an existing window is spec'd to load the new URL into it, but
+  // browsers differ on hash-only navigations and on whether the third `features` argument suppresses
+  // the load; the viewer popup once stayed on the first image forever because the `imageUid` was
+  // captured at setup. Assign `href` explicitly: the viewer's own watch on `route.query.image`
+  // takes it from there and hard-reloads for a clean re-init. Guarded on same-origin (a cross-origin
+  // read throws) and on URL difference (avoids a spurious reload of the same target).
+  try {
+    if (w && w.location.href !== url) w.location.href = url
+  } catch { /* cross-origin — impossible for our own popouts */ }
   return w
 }
 
