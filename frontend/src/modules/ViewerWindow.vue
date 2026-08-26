@@ -546,6 +546,9 @@ function rebuildOverlays() {
   segments = trackPayloads.value.size
     ? buildMultiTrackBuffer([...trackPayloads.value.values()], meta.value, PALETTES.cecelia)
     : EMPTY_SEGMENTS
+  // eslint-disable-next-line no-console
+  console.log('[viewer.rebuildOverlays] trackPayloads=', trackPayloads.value.size,
+              'segCount=', segments.count)
   segCount.value = segments.count
   r?.setOverlaySegments(segments.data)
   frame.redraw()
@@ -621,6 +624,8 @@ async function loadTracks() {
   const names = meta.value?.labelNames ?? []
   const vis = settings.getTrackVisibility(imageUid, names)
   const wantVns = names.filter(vn => vis[vn])
+  // eslint-disable-next-line no-console
+  console.log('[viewer.loadTracks] names=', names, 'vis=', vis, 'wantVns=', wantVns)
   // Drop cached vns no longer ticked
   const next = new Map<string, OverlayPayload>()
   for (const vn of wantVns) {
@@ -633,10 +638,26 @@ async function loadTracks() {
     try {
       const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }),
                               { cache: 'no-store' })
-      if (res.ok) next.set(vn, await res.json())
-    } catch { /* one vn's failure must not take the others down */ }
+      if (res.ok) {
+        const payload = await res.json() as OverlayPayload
+        // eslint-disable-next-line no-console
+        console.log('[viewer.loadTracks] fetched vn=', vn,
+                    'nCells=', payload.nCells,
+                    'hasTrack=', !!payload.cells?.track?.length,
+                    'trackSample=', payload.cells?.track?.slice(0, 5))
+        next.set(vn, payload)
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[viewer.loadTracks] fetch !ok vn=', vn, 'status=', res.status)
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[viewer.loadTracks] fetch threw vn=', vn, e)
+    }
   }))
   trackPayloads.value = next
+  // eslint-disable-next-line no-console
+  console.log('[viewer.loadTracks] trackPayloads size=', trackPayloads.value.size)
   rebuildOverlays()
 }
 
