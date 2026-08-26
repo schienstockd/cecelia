@@ -19,6 +19,7 @@ import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
+import CellSelectionTools from '../../components/CellSelectionTools.vue'
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
@@ -425,28 +426,10 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <option value="">+ Track…</option>
           <option v-for="v in trackOptions" :key="v.key" :value="v.key">{{ v.label }}</option>
         </select>
-        <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
-        <div v-if="!isTrack" class="cc-btn-group">
-          <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
-               here we only offer the spatial cell-selection brush. -->
-          <button class="cc-btn cc-btn-bare cc-btn-icon"
-                  v-tooltip.bottom="'Draw a region on the napari image to highlight those cells here'"
-                  @click="g.startCellSelection"><i class="pi pi-pencil" /></button>
-          <!-- z scope: whole stack (default) vs only the current z-slice (± window). Changing this
-               re-evaluates any active selection live (and applies to the next one). -->
-          <button class="cc-btn cc-btn-bare"
-                  :class="{ 'cc-btn-on cc-btn-on-tint': g.napariZMode === 'slice' }"
-                  v-tooltip.bottom="g.napariZMode === 'slice'
-                    ? `Selecting cells from the current z-slice ±${g.napariZWindow} — click for the whole stack`
-                    : 'Selecting cells across the whole z-stack — click to restrict to the current z-slice'"
-                  @click="g.napariZMode = g.napariZMode === 'slice' ? 'stack' : 'slice'">
-            <i class="pi pi-clone" /> Z
-          </button>
-        </div>
-        <label v-if="!isTrack && g.napariZMode === 'slice'" class="zwin"
-               v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
-          ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
-        </label>
+        <!-- Spatial cell-selection tools — pencil (mode), clear, z-scope. Shared across every
+             gating-capable module page via `CellSelectionTools`. Track pops have no spatial
+             selection, so hide the whole cluster. Dominik, 2026-08-26. -->
+        <CellSelectionTools :show="!isTrack" />
         <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">

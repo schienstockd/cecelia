@@ -374,6 +374,30 @@ function readGatingCurrent(): { valueName: string; popType: string } {
   } catch { return { valueName: '', popType: '' } }
 }
 const gatingCurrent = ref(readGatingCurrent())
+
+/**
+ * `settings.viewerSelectMode` reactivity ACROSS windows. The popup viewer is its own Pinia
+ * instance, so a change to `viewerSelectMode` in the main window's settings store does NOT
+ * propagate — a localStorage `storage` event does. Same idiom as `cc.gatingCurrent` above and
+ * `cc.viewerOverlaysTick` below. Kept as a local ref rather than reading `settings.viewerSelectMode`
+ * so the storage listener has a single obvious target.
+ */
+const selectModeActive = ref<boolean>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem('cc.viewerSelectMode') === 'select')
+  || settings.viewerSelectMode === 'select',
+)
+function readSelectMode(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem('cc.viewerSelectMode') === 'select'
+}
+/** Flip the mode from the viewer itself — mirrors what the gating toolbar's pencil does, so a user
+ *  can stay in the viewer window without reaching back to the module page. Writes both the local
+ *  ref (immediate) AND localStorage (the main-window's settings store watches this key). */
+function toggleSelectMode() {
+  const next = !selectModeActive.value
+  selectModeActive.value = next
+  try { localStorage.setItem('cc.viewerSelectMode', next ? 'select' : 'off') } catch { /* noop */ }
+}
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
@@ -1578,11 +1602,14 @@ function onUp(e: PointerEvent) {
   if (!start) return
   const dx = e.clientX - start.x, dy = e.clientY - start.y
   const travelled = Math.hypot(dx, dy)
-  // Picking is a 2D-plane feature. MIP picking is ambiguous — a ray hits many labels — so the
-  // 3D view leaves the click as a pointer-up with no side effects (P8 open question in the plan).
-  // Modifier keys route to the endpoint's multi-select modes: shift = add, alt = toggle. Plain
-  // click = replace. Shift+DRAG is the 3D pan gesture; the travel deadband above catches that.
-  if (travelled <= CLICK_MAX_TRAVEL_PX && mode.value === 'plane') {
+  // Picking only fires in SELECT MODE. Off by default so a click never picks accidentally while a
+  // user is panning around (Dominik, 2026-08-26). Toggled from the pop-manager's pencil via
+  // `settings.viewerSelectMode` — shared component `CellSelectionTools`, cross-window through
+  // localStorage. Plane view only — MIP picking is ambiguous in 3D. Shift+DRAG is the 3D pan
+  // gesture; the travel deadband above catches that.
+  if (travelled <= CLICK_MAX_TRAVEL_PX
+      && mode.value === 'plane'
+      && selectModeActive.value) {
     const pickMode: 'replace' | 'add' | 'toggle' =
       e.altKey ? 'toggle' : e.shiftKey ? 'add' : 'replace'
     void pickCellAt(e, pickMode)
@@ -1689,9 +1716,10 @@ const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: 'Shift + drag', what: 'Pan, in both views' },
   { keys: 'Wheel', what: 'Zoom' },
   { keys: 'Shift + wheel', what: '2D: step through z planes' },
-  { keys: 'Click', what: '2D: pick the cell under the pointer (replaces selection)' },
-  { keys: 'Shift + click', what: '2D: add the cell to the selection' },
-  { keys: 'Alt + click', what: '2D: toggle the cell in the selection' },
+  { keys: 'Click', what: 'Selection mode: pick the cell under the pointer (replaces selection)' },
+  { keys: 'Shift + click', what: 'Selection mode: add the cell to the selection' },
+  { keys: 'Alt + click', what: 'Selection mode: toggle the cell in the selection' },
+  { keys: 'Mode icon', what: 'Toggle pan / selection mode (top-right)' },
   { keys: 'Space', what: 'Play / pause the timecourse' },
   { keys: '← / →', what: 'Previous / next timepoint' },
 ]
@@ -2339,6 +2367,13 @@ function onOverlaysTick(e: StorageEvent) {
   // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
   void loadTracks()
 }
+// Cross-window mode sync — the gating toolbar's pencil writes `cc.viewerSelectMode`; here we
+// mirror it into the local ref so the pointer path sees the update without a Pinia round trip.
+function onSelectModeTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerSelectMode') return
+  selectModeActive.value = readSelectMode()
+}
+
 // A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
 // cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
 // fires. Payload: `<imageUid>:<valueName>:<ts>`. Guards on both uid AND valueName so an unrelated
@@ -2351,12 +2386,14 @@ function onSlabsTick(e: StorageEvent) {
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSlabsTick)
+  window.addEventListener('storage', onSelectModeTick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('storage', onOverlaysTick)
   window.removeEventListener('storage', onSlabsTick)
+  window.removeEventListener('storage', onSelectModeTick)
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -2441,6 +2478,20 @@ onUnmounted(() => {
     <aside class="vw-side">
       <div class="cc-row cc-row-tight">
         <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
+        <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
+             (click does nothing, drag pans/rotates). One click flips it — same knob the pop-manager
+             pencil writes, so the user can stay in the viewer without reaching back to the module
+             page (Dominik, 2026-08-26). Icon shows the CURRENT mode, not the ACTION — reading is
+             what the user needs from a glance. -->
+        <button class="cc-btn cc-btn-ghost cc-btn-icon"
+                :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
+                @click="toggleSelectMode"
+                v-tooltip.left="selectModeActive
+                  ? 'Selection mode — click for pan mode'
+                  : 'Pan mode — click for selection mode'"
+                aria-label="Toggle selection mode">
+          <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
+        </button>
         <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
                 v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
           <i class="pi pi-question-circle" />
