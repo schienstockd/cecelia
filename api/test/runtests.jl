@@ -4505,6 +4505,7 @@ end
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/meta",
         "/api/viewer/overlays",
+        "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/membership",
@@ -4603,6 +4604,7 @@ end
         "/api/tasks/custom-modules/reload",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
+        "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4644,7 +4646,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 117
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 118
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5565,6 +5567,46 @@ end
         @test st == 200
         @test d.nCells == 0 && isempty(d.pops) && d.values === nothing
         @test d.note == "not segmented"        # the reason, so the panel can say so rather than guess
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer props round-trip (save then load)" begin
+    # PY — the WebGPU viewer autosaves per-image view state (contrast/colormap/T-Z/camera) to the
+    # SAME on-disk file napari's autosave uses, so an animation-card snapshot is portable across
+    # viewers. Missing file answers 404 (a normal state — the image was never saved), a saved file
+    # comes back exactly.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-props")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        img.filepath = Dict("default" => "ccidImage.ome.zarr", "_active" => "default")
+        save!(img)
+        # A minimal store, so `resolve_image_version` finds a directory that exists.
+        mkpath(joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr"))
+
+        base = "projectUid=$(proj.uid)&imageUid=$(img.uid)"
+
+        # No file yet → 404 with a message (a normal state, not a failure).
+        st, _ = api_viewer_props_get(HTTP.Request("GET", "/api/viewer/props?" * base))
+        @test st == 404
+
+        vs = Dict("webgpu" => Dict("channels" => [Dict("hex"=>"#ff0000","lo"=>1,"hi"=>2,"visible"=>true)],
+                                    "cam" => Dict("yaw"=>0.1,"pitch"=>0.2,"dist"=>3.0,"panX"=>0.0,"panY"=>0.0),
+                                    "mode"=>"plane","zPlane"=>0,"zRange"=>[0,0],"t"=>0,"valueName"=>""),
+                  "layers" => Dict("Channel 0" => Dict("contrast_limits"=>[1,2], "visible"=>true)))
+        body = JSON3.write(Dict("projectUid" => proj.uid, "imageUid" => img.uid, "viewState" => vs))
+        st, _ = api_viewer_props_post(Vector{UInt8}(body))
+        @test st == 200
+
+        st, out = api_viewer_props_get(HTTP.Request("GET", "/api/viewer/props?" * base))
+        @test st == 200
+        d = JSON3.read(out)
+        @test d.webgpu.channels[1].hex == "#ff0000"
+        @test d.webgpu.mode == "plane"
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end

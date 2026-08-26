@@ -53,6 +53,8 @@ import {
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
+import { debouncedSave } from '../utils/debouncedSave'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
   buildMultiTrackBuffer, tailRange,
@@ -1094,6 +1096,22 @@ function autoContrast(c: number) {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
+// PY — per-image viewer props autosave. Same on-disk file napari's autosave writes to
+// (`<task_dir>/data/<basename(zarr)>.json`), so an animation-card snapshot stays portable across
+// viewers. The debounce is trailing so a slider/wheel gesture writes ONCE per settle, not per input
+// event. `duringRestore` suppresses the echo when a load applies mutations that would otherwise
+// trip these same watchers. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+const propsSink = debouncedSave(async () => {
+  const m = meta.value
+  if (!m || !settings.napariAutoSaveLayerProps) return
+  const vs = captureViewState({
+    meta: m, channels: m.channels, cam: cam.value,
+    mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
+    t: t.value, valueName: valueName.value,
+  })
+  await saveViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined }, vs)
+}, { wait: 800 })
+
 /**
  * Read the metadata for the current VERSION and put its first frame on screen.
  *
@@ -1119,9 +1137,33 @@ async function loadVersion(r: VolumeRenderer) {
   r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, !!labelName.value)
   r.setCapacity(settings.viewerCacheFrames || m.nT)
   r.setOrthographic(mode.value === 'plane')
-  const c = fitNow(m)
-  cam.value = c
-  fitDist.value = c.dist
+  // Fit the camera first, THEN restore any saved props. Fit is unconditional because it also seeds
+  // `fitDist` — the reset-to-fit button uses it — and a saved `cam` overrides fit's `cam`. Restore
+  // goes through `duringRestore` so the autosave watchers below do not immediately echo it back.
+  const fit = fitNow(m)
+  cam.value = fit
+  fitDist.value = fit.dist
+  if (settings.napariAutoSaveLayerProps) {
+    const saved = await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
+    if (saved) {
+      propsSink.duringRestore(() => {
+        applyViewState(saved, m, {
+          applyChannel: (c, patch) => {
+            const ch = m.channels[c]; if (!ch) return
+            if (patch.lo !== undefined) ch.lo = patch.lo
+            if (patch.hi !== undefined) ch.hi = patch.hi
+            if (patch.visible !== undefined) ch.visible = patch.visible
+            if (patch.hex) ch.lut = lutFromHex(patch.hex)
+          },
+          applyCamera: c => { cam.value = { ...c } },
+          applyMode:   md => { mode.value = md; r.setOrthographic(md === 'plane') },
+          applyZ:      (zp, zr) => { zPlane.value = zp; zRange.value = zr },
+          applyT:      tp => { if (tp < m.nT) t.value = Math.max(0, Math.floor(tp)) },
+        })
+      })
+      pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
+    }
+  }
   r.resize()
   starting.value = ''
   gotoT(t.value < m.nT ? t.value : 0)
@@ -1130,6 +1172,16 @@ async function loadVersion(r: VolumeRenderer) {
   void loadOverlays()
   void loadTracks()
 }
+
+// Autosave triggers — every watcher settles into one write per debounce window. `deep` on channels
+// because `pushChannels` mutates `meta.value.channels[c].{lo,hi,visible,lut}` in place.
+watch(() => meta.value?.channels, () => propsSink.schedule(), { deep: true })
+watch(cam,       () => propsSink.schedule(), { deep: true })
+watch(mode,      () => propsSink.schedule())
+watch(zPlane,    () => propsSink.schedule())
+watch(zRange,    () => propsSink.schedule())
+watch(t,         () => propsSink.schedule())
+watch(valueName, () => propsSink.schedule())
 
 /**
  * Switch version. Everything in flight is for the OLD pixels, so it is abandoned rather than allowed
