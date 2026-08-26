@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
-  tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta,
+  tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -208,6 +208,40 @@ describe('viewportCentreTile', () => {
     // Viewport of 2048×2048 starting at (512, 512) — centre at (1536, 1536) → tile (1, 1) at L0.
     expect(viewportCentreTile({ x0: 512, y0: 512, x1: 2559, y1: 2559 }, 0, L0))
       .toEqual({ tx: 1, ty: 1 })
+  })
+})
+
+describe('tileGridDims', () => {
+  it('rounds UP so an edge chunk is counted (a 1271-wide L4 has 2 tiles at 1024 chunks)', () => {
+    expect(tileGridDims(L4)).toEqual({ nTx: 2, nTy: 2 })
+    expect(tileGridDims(L0)).toEqual({ nTx: 20, nTy: 17 })
+  })
+})
+
+describe('tileMapCells', () => {
+  it('one absent cell per tile in the grid', () => {
+    const cells = tileMapCells(L4, 0, 4, new Set(), new Set())
+    expect(cells).toHaveLength(4)
+    expect(cells.every(c => c.state === 'absent')).toBe(true)
+  })
+  it('marks resident tiles by their (t, level) key', () => {
+    const resident = new Set([tileKeyStr({ t: 0, level: 4, tx: 0, ty: 0 })])
+    const cells = tileMapCells(L4, 0, 4, resident, new Set())
+    expect(cells.find(c => c.tx === 0 && c.ty === 0)!.state).toBe('resident')
+    expect(cells.find(c => c.tx === 1 && c.ty === 0)!.state).toBe('absent')
+  })
+  it('ignores residency at a DIFFERENT (t, level) — the map is one slice', () => {
+    const resident = new Set([
+      tileKeyStr({ t: 5, level: 4, tx: 0, ty: 0 }),  // wrong t
+      tileKeyStr({ t: 0, level: 0, tx: 0, ty: 0 }),  // wrong level
+    ])
+    const cells = tileMapCells(L4, 0, 4, resident, new Set())
+    expect(cells.every(c => c.state === 'absent')).toBe(true)
+  })
+  it('loading wins over resident when a tile is both', () => {
+    const k = tileKeyStr({ t: 0, level: 4, tx: 1, ty: 1 })
+    const cells = tileMapCells(L4, 0, 4, new Set([k]), new Set([k]))
+    expect(cells.find(c => c.tx === 1 && c.ty === 1)!.state).toBe('loading')
   })
 })
 

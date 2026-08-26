@@ -223,3 +223,44 @@ export function levelMeta(meta: ViewerMeta, level: number | undefined): ViewerLe
   const L = Math.max(0, Math.floor(level ?? 0))
   return meta.levels?.find(v => v.level === L) ?? null
 }
+
+/** How many tiles a level's plane splits into. Same math the pump uses to bound the halo; extracted so
+ *  the mini tile-map widget agrees with the pump's grid. */
+export function tileGridDims(lvl: ViewerLevel): { nTx: number; nTy: number } {
+  return {
+    nTx: Math.max(0, Math.ceil(lvl.nX / lvl.chunkX)),
+    nTy: Math.max(0, Math.ceil(lvl.nY / lvl.chunkY)),
+  }
+}
+
+/** State per tile at ONE level and ONE timepoint — the input the tile-residency mini map paints. Same
+ *  three states the timecourse strip uses (`stripCells`), minus "current" (a viewport rect drawn on
+ *  top does that job spatially — a highlight per cell would compete with the tile grid itself). */
+export type TileCellState = 'absent' | 'loading' | 'resident'
+
+/**
+ * Per-tile residency at `currentLevel + currentT`, in row-major order — the widget iterates and
+ * paints one dot per cell. `resident` and `loading` are pre-filtered by the caller to the current
+ * `(t, level)` slice; they can be the FULL sets (this filters again by `tileKeyStr`) or already-sliced
+ * sets, either works. Loading beats resident when a tile is both — the same "most interesting state
+ * wins" rule the timecourse strip uses.
+ */
+export function tileMapCells(
+  lvl: ViewerLevel,
+  currentT: number,
+  currentLevel: number,
+  resident: ReadonlySet<string>,
+  loading: ReadonlySet<string>,
+): { tx: number; ty: number; state: TileCellState }[] {
+  const { nTx, nTy } = tileGridDims(lvl)
+  const out: { tx: number; ty: number; state: TileCellState }[] = []
+  for (let ty = 0; ty < nTy; ty++) {
+    for (let tx = 0; tx < nTx; tx++) {
+      const k = tileKeyStr({ t: currentT, level: currentLevel, tx, ty })
+      const state: TileCellState = loading.has(k) ? 'loading'
+        : resident.has(k) ? 'resident' : 'absent'
+      out.push({ tx, ty, state })
+    }
+  }
+  return out
+}
