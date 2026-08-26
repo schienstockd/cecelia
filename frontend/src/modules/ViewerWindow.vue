@@ -1164,47 +1164,51 @@ onUnmounted(() => {
           <span class="cc-readout cc-fs-2xs vw-num">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
         </div>
 
-        <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
-        <div class="cc-row cc-row-tight">
-          <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="nT <= 1" @click="togglePlay"
-                  v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
-            <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-          </button>
-          <input
-            type="range" class="vw-grow" :min="0" :max="Math.max(nT - 1, 0)" :step="1"
-            :value="t" @pointerdown="stopPlay()"
-            @input="gotoT(Number(($event.target as HTMLInputElement).value))"
-            v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ t }} / {{ Math.max(nT - 1, 0) }}</span>
-        </div>
-
-        <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
-             so a long movie does not put one element per frame in the DOM.
-             The dot shares this row rather than earning its own: playback holds rather than skip an
-             uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
-             but a line that appears and disappears above the strip shoves it up and down every tick,
-             which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
-        <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
-          <span class="vw-dot" :class="{ 'is-waiting': busy }" />
-          <div class="vw-strip">
-            <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
+        <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
+             `nT == 1` slider stuck at "0 / 0" looks broken. -->
+        <template v-if="nT > 1">
+          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
+          <div class="cc-row cc-row-tight">
+            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
+                    v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
+              <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
+            </button>
+            <input
+              type="range" class="vw-grow" :min="0" :max="nT - 1" :step="1"
+              :value="t" @pointerdown="stopPlay()"
+              @input="gotoT(Number(($event.target as HTMLInputElement).value))"
+              v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ t }} / {{ nT - 1 }}</span>
           </div>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Fps</span>
-          <input
-            type="range" class="vw-grow" :min="1" :max="30" :step="1"
-            v-model.number="settings.viewerFps"
-            v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
-          >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
-        </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
-          <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
-        </div>
+
+          <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
+               so a long movie does not put one element per frame in the DOM.
+               The dot shares this row rather than earning its own: playback holds rather than skip an
+               uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
+               but a line that appears and disappears above the strip shoves it up and down every tick,
+               which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
+          <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
+            <span class="vw-dot" :class="{ 'is-waiting': busy }" />
+            <div class="vw-strip">
+              <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
+            </div>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Fps</span>
+            <input
+              type="range" class="vw-grow" :min="1" :max="30" :step="1"
+              v-model.number="settings.viewerFps"
+              v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
+            >
+            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
+            <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
+          </div>
+        </template>
 
         <div class="cc-row cc-row-tight">
           <button class="cc-btn cc-btn-ghost" @click="resetView"
