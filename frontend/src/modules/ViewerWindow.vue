@@ -258,6 +258,19 @@ const overlaysErr = ref('')
  * this is the WebGPU analogue.
  */
 const trackPayloads = ref<Map<string, OverlayPayload>>(new Map())
+/** Per-source (per-vn) counts + palette hex from the last `buildMultiTrackBuffer` result. Feeds the
+ *  Tracks legend so a viewer with several ticked eyes shows a swatch key rather than a rainbow with
+ *  no reading. */
+const trackSources = ref<{ vn: string; hex: string; count: number }[]>([])
+/** Speed range in µm per hop (Δt = 1 frame), or null when the mode isn't speed. Feeds the ramp
+ *  legend under the Tracks control block, same shape as the point colour-by numeric scale. */
+const trackSpeedRange = ref<[number, number] | null>(null)
+/** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
+ *  (rare); falls back to the default 'track'. */
+const trackColorMode = computed<'track' | 'speed' | 'solid'>({
+  get: () => setUid ? settings.getTrackColorMode(setUid) : 'track',
+  set: (v) => { if (setUid) settings.setTrackColorMode(setUid, v); rebuildOverlays() },
+})
 /**
  * The pop manager's CURRENT (valueName, popType) for THIS image. Published to `cc.gatingCurrent`
  * by the gating store (main window) on selectImage + on any (valueName, popType) change, and
@@ -543,9 +556,18 @@ function rebuildOverlays() {
   // still sees ribbons for whichever tracked vns they have the "directions" eye on, and can show
   // several vns at once — matching napari's one-Tracks-layer-per-segmentation model. P7 of
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
-  segments = trackPayloads.value.size
-    ? buildMultiTrackBuffer([...trackPayloads.value.values()], meta.value, PALETTES.cecelia)
-    : EMPTY_SEGMENTS
+  if (trackPayloads.value.size) {
+    const payloadsWithVn = [...trackPayloads.value.entries()].map(([vn, payload]) => ({ vn, payload }))
+    const result = buildMultiTrackBuffer(payloadsWithVn, meta.value, PALETTES.cecelia,
+                                          trackColorMode.value)
+    segments = result.segments
+    trackSources.value = result.sources
+    trackSpeedRange.value = result.speedRange
+  } else {
+    segments = EMPTY_SEGMENTS
+    trackSources.value = []
+    trackSpeedRange.value = null
+  }
   segCount.value = segments.count
   r?.setOverlaySegments(segments.data)
   frame.redraw()
@@ -1523,12 +1545,12 @@ onUnmounted(() => {
           </template>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Overlays" tip="Cell populations and track tails"
-                            :open="openSection === 'ovl'"
-                            @update:open="v => setSection('ovl', v)" max-height="none">
-          <!-- Overlays. Only when there is something to say: an unsegmented image has no cell table and
-               no populations, and an empty group would read as a broken feature rather than as an image
-               that has not been through segmentation yet. -->
+        <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
+                            :open="openSection === 'pops'"
+                            @update:open="v => setSection('pops', v)" max-height="none">
+          <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
+               and no populations, and an empty group would read as a broken feature rather than as an
+               image that has not been through segmentation yet. -->
           <template v-if="summary.cells > 0 || overlaysErr">
             <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
             <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
@@ -1578,24 +1600,6 @@ onUnmounted(() => {
                 >
                 <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerPointZTol }}</span>
               </div>
-              <div v-if="segCount > 0" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="60" :step="1"
-                  v-model.number="settings.viewerTailLength" @input="frame.redraw()"
-                  v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
-              </div>
-              <div v-if="segCount > 0 && settings.viewerTailLength > 0" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
-                <input
-                  type="range" class="vw-grow" :min="1" :max="12" :step="1"
-                  v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                  v-tooltip.bottom="'Tail thickness on screen, not in µm'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
-              </div>
               <div class="cc-row cc-row-tight">
                 <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
                 <input
@@ -1608,12 +1612,71 @@ onUnmounted(() => {
               <div class="cc-muted cc-fs-3xs">
                 <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
                 {{ pointCount }} drawn · {{ summary.cells }} cells
-                <template v-if="summary.tracked">· {{ summary.tracked }} tracked</template>
                 <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
                 <template v-if="mode === 'plane'">· this plane only</template>
               </div>
             </template>
           </template>
+
+        </CollapsibleSection>
+        <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
+                            :open="openSection === 'tracks'"
+                            @update:open="v => setSection('tracks', v)" max-height="none">
+          <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
+               section colours + shapes the ribbons. Empty state names both the "nothing ticked" case
+               and the "ticked but no tracked cells" case rather than showing an empty block. -->
+          <template v-if="segCount > 0">
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
+              <select v-model="trackColorMode" class="cc-fs-2xs vw-grow"
+                      v-tooltip.bottom="'How ribbons are coloured'">
+                <option value="track">track</option>
+                <option value="speed">speed</option>
+                <option value="solid">source</option>
+              </select>
+            </div>
+            <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading
+                 stays consistent across overlay kinds. µm per frame (Δt = 1 hop). -->
+            <div v-if="trackColorMode === 'speed' && trackSpeedRange"
+                 class="cc-row cc-row-tight cc-fs-3xs">
+              <span class="cc-muted">{{ trackSpeedRange[0].toPrecision(3) }}</span>
+              <span class="vw-ramp" :style="rampStyle" />
+              <span class="cc-muted">{{ trackSpeedRange[1].toPrecision(3) }} µm/frame</span>
+            </div>
+            <!-- Per-source legend for solid mode — one row per ticked vn, showing its swatch + count.
+                 Doubles as a diagnostic: a vn with count 0 is ticked but has no tracked cells. -->
+            <template v-if="trackColorMode === 'solid' && trackSources.length">
+              <div v-for="src in trackSources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
+                <span class="vw-swatch" :style="{ background: src.hex }" />
+                <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>
+                <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
+              </div>
+            </template>
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="60" :step="1"
+                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
+                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
+            </div>
+            <div v-if="settings.viewerTailLength > 0" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
+              <input
+                type="range" class="vw-grow" :min="1" :max="12" :step="1"
+                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
+                v-tooltip.bottom="'Tail thickness on screen, not in µm'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
+            </div>
+            <div class="cc-muted cc-fs-3xs">
+              {{ segCount }} segments · {{ trackSources.length }} source{{ trackSources.length === 1 ? '' : 's' }}
+            </div>
+          </template>
+          <div v-else class="cc-muted cc-fs-2xs">
+            No tracks — tick a segmentation's "directions" eye in the viewer panel
+          </div>
 
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"

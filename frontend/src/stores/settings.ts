@@ -296,6 +296,10 @@ export const useSettingsStore = defineStore('settings', () => {
     showGatedTracks?: boolean               // overlay gated track populations
     pointSize?: number                      // population centroid point size in napari
     popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
+    // How the viewer colours track ribbons — 'track' (palette by track id), 'speed' (heat ramp by
+    // per-hop distance), 'solid' (one palette colour per source vn, so multiple track sources are
+    // visually separable). Per-set: mirrors `colourBy` above.
+    trackColorMode?: 'track' | 'speed' | 'solid'
     // user recolouring of a categorical colour-by, keyed by column then category value → hex. For
     // categories with no population (HMM states, raw clusters) there's no colour defined anywhere, so
     // the user can override the default palette; these win over pop/default when colouring. Per-column
@@ -354,6 +358,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const setShowGatedTracks = (setUid: string, v: boolean) => _patchSet(setUid, { showGatedTracks: v })
   const getPointSize = (setUid: string): number => _setPrefs.value[setUid]?.pointSize ?? 6   // old GUI default 6
   const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
+  const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' =>
+    _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
+  const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid') =>
+    _patchSet(setUid, { trackColorMode: mode })
   const getPopVisible = (setUid: string, popType: string): boolean =>
     _setPrefs.value[setUid]?.popVis?.[popType] ?? false                                       // default hidden
   function setPopVisible(setUid: string, popType: string, v: boolean) {
@@ -511,7 +519,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

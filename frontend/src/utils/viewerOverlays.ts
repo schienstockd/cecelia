@@ -299,42 +299,154 @@ export function buildTrackBuffer(
   return { data, firstAt, endAt, count: segs.length }
 }
 
+/** How track ribbons are coloured. Set per set in the viewer (settings.getTrackColorMode). */
+export type TrackColorMode = 'track' | 'speed' | 'solid'
+
+/** What the viewer needs to draw ribbons AND label the legend. `sources` mirrors the ticked track
+ *  eyes (one entry per input payload that actually contributed segments), so the panel can print a
+ *  vn → colour swatch key. `speedRange` is µm per hop (Δt = 1 frame), or null when the mode is not
+ *  speed or nothing has speed. */
+export interface MultiTrackResult {
+  segments: SegmentBuffer
+  sources: { vn: string; hex: string; count: number }[]
+  speedRange: [number, number] | null
+}
+
+const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedRange: null }
+
 /**
- * Merge multiple overlays payloads into ONE segment buffer for tracks. Every payload contributes its
- * own cell tracks; ids are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in
- * payload A's track 1 never gets linked to a cell in payload B's track 1 — a naive concat would draw
- * a phantom segment between them. Colour still cycles the palette by the namespaced id, so adjacent
- * tracks from either vn stay visually distinct.
+ * Merge multiple overlays payloads into ONE segment buffer for tracks, colouring by MODE:
  *
- * This is the multi-vn P7 path: the panel's per-segmentation "directions" eye ticks any set of vns,
- * one payload per ticked vn arrives here, and every ribbon draws at once (matches napari's model of
- * one Tracks layer per segmentation, all simultaneously visible).
+ * - `'track'`: cycle the palette by (payload, track id) — telling adjacent tracks apart is the
+ *   job, which is what napari does.
+ * - `'speed'`: heat-ramp by segment speed (µm per frame; Δt = 1 for consecutive hops). Fast tracks
+ *   are hot, slow tracks are cool. Same ramp as the point colour-by numeric scale, so the reading
+ *   is consistent across overlay kinds.
+ * - `'solid'`: one palette colour per SOURCE vn — so a viewer showing `default` + `coastalFg` at
+ *   once shows two clearly distinguishable "colour swarms" rather than a rainbow that hides which
+ *   vn a ribbon came from. This is what the user asked for when multiple track sources are shown.
+ *
+ * IDs are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in payload A's track
+ * 1 never links to a cell in payload B's track 1 — a naive concat would draw a phantom segment.
+ *
+ * Dominik, 2026-08-26: "the tracks ribbons should be configurable to show speed. or track id. or
+ * have solid color for all tracks. to distinguish them when multiple track sources are shown".
  */
 export function buildMultiTrackBuffer(
-  payloads: readonly OverlayPayload[], meta: ViewerMeta | null, palette: readonly string[],
-): SegmentBuffer {
-  if (!payloads.length || !meta) return EMPTY_SEG
-  if (payloads.length === 1) return buildTrackBuffer(payloads[0], meta, palette)
+  payloads: readonly { vn: string; payload: OverlayPayload }[],
+  meta: ViewerMeta | null, palette: readonly string[], mode: TrackColorMode = 'track',
+): MultiTrackResult {
+  if (!payloads.length || !meta) return EMPTY_MULTI
+  const vz = meta.voxelUm[2] || 1
+  const nT = Math.max(1, meta.nT)
   const OFFSET = 10_000_000
-  const t: number[] = [], x: number[] = [], y: number[] = [], z: number[] = [], track: number[] = []
+
+  // Per-payload row grouping: (namespaced track id) → row indices. Group first so the O(N log N)
+  // per-track sort stays inside a track. Rows are stored as flat records so the segment build below
+  // is one linear pass over all payloads, not one per vn.
+  interface Row { t: number; x: number; y: number; z: number; id: number; source: number }
+  const rows: Row[] = []
+  const perSource = payloads.map(() => 0)
   for (let i = 0; i < payloads.length; i++) {
-    const p = payloads[i]
-    const c = p?.cells; if (!c) continue
+    const c = payloads[i]?.payload?.cells; if (!c) continue
     const ct = c.t ?? [], cx = c.x ?? [], cy = c.y ?? [], cz = c.z ?? [], ctr = c.track ?? []
     const n = Math.min(ct.length, cx.length, cy.length, ctr.length)
     for (let j = 0; j < n; j++) {
-      const id = ctr[j]; if (id <= 0) continue
-      t.push(ct[j]); x.push(cx[j]); y.push(cy[j])
-      z.push(cz.length ? cz[j] : 0)
-      track.push(id + (i + 1) * OFFSET)   // namespace per payload → tracks never cross-link
+      const raw = ctr[j]; if (raw <= 0) continue
+      rows.push({ t: ct[j], x: cx[j], y: cy[j], z: cz.length ? cz[j] : 0,
+                  id: raw + (i + 1) * OFFSET, source: i })
     }
   }
-  if (!track.length) return EMPTY_SEG
-  const synthetic: OverlayPayload = {
-    ...payloads[0],
-    cells: { t, x, y, z, track },
+  if (!rows.length) return EMPTY_MULTI
+
+  const byTrack = new Map<number, number[]>()
+  for (let i = 0; i < rows.length; i++) {
+    const id = rows[i].id
+    const g = byTrack.get(id)
+    g ? g.push(i) : byTrack.set(id, [i])
   }
-  return buildTrackBuffer(synthetic, meta, palette)
+
+  // Interim segment records — carry `source` and `speedSq` so the colour pass below (which needs
+  // the whole-set min/max for the speed mode) can run after the segments are enumerated.
+  interface Seg { ai: number; bi: number; end: number; source: number; speedSq: number }
+  const segs: Seg[] = []
+  for (const idxs of byTrack.values()) {
+    if (idxs.length < 2) continue
+    idxs.sort((p, q) => rows[p].t - rows[q].t)
+    for (let k = 1; k < idxs.length; k++) {
+      const a = idxs[k - 1], b = idxs[k]
+      const ta = Math.round(rows[a].t), tb = Math.round(rows[b].t)
+      if (tb - ta !== 1) continue     // a gap the tracker bridged; don't draw across it
+      const dx = rows[b].x - rows[a].x, dy = rows[b].y - rows[a].y
+      const dz = rows[b].z - rows[a].z
+      segs.push({ ai: a, bi: b, end: tb, source: rows[b].source, speedSq: dx * dx + dy * dy + dz * dz })
+    }
+  }
+  if (!segs.length) return EMPTY_MULTI
+
+  segs.sort((p, q) => p.end - q.end)
+
+  // Speed range (µm per hop, Δt = 1 → distance == speed). Read once here so the colour pass gets a
+  // stable normalisation — sorting by end doesn't disturb the (ai, bi) references.
+  let sMin = Infinity, sMax = -Infinity
+  for (const s of segs) {
+    if (s.speedSq < sMin) sMin = s.speedSq
+    if (s.speedSq > sMax) sMax = s.speedSq
+  }
+  const speedRange: [number, number] | null = (mode === 'speed' && segs.length && sMax > 0)
+    ? [Math.sqrt(sMin), Math.sqrt(sMax)] : null
+  const speedSpan = speedRange ? (speedRange[1] - speedRange[0]) : 0
+
+  const solidRgb = (src: number): [number, number, number] =>
+    hexToUnit(palette.length ? palette[src % palette.length] : '#ffffff')
+  const trackRgb = (id: number): [number, number, number] =>
+    hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
+  const speedRgb = (speedSq: number): [number, number, number] => {
+    if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
+    const s = Math.sqrt(speedSq)
+    const u = Math.min(1, Math.max(0, (s - speedRange[0]) / speedSpan))
+    return heatUnit(u)
+  }
+
+  const data = new Float32Array(segs.length * SEG_STRIDE)
+  const sourceCounts: number[] = payloads.map(() => 0)
+  for (let n = 0; n < segs.length; n++) {
+    const s = segs[n], a = rows[s.ai], b = rows[s.bi]
+    const rgb = mode === 'speed' ? speedRgb(s.speedSq)
+              : mode === 'solid' ? solidRgb(s.source)
+              : trackRgb(a.id)
+    const o = n * SEG_STRIDE
+    data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
+    data[o + 3] = b.x; data[o + 4] = b.y; data[o + 5] = b.z
+    data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
+    data[o + 9] = Math.floor(b.z / vz)   // plane of segment END — the tail arrives on the plane you see
+    sourceCounts[s.source]++
+    perSource[s.source]++
+  }
+
+  // Prefix indexes over timepoints (see buildTrackBuffer for the shape) — built once, two reads per
+  // frame afterwards through `tailRange`.
+  const firstAt = new Int32Array(nT + 2)
+  const endAt = new Int32Array(nT + 2)
+  let si = 0, ei = 0
+  for (let k = 0; k <= nT + 1; k++) {
+    while (si < segs.length && segs[si].end < k) si++
+    firstAt[k] = si
+    while (ei < segs.length && segs[ei].end <= k) ei++
+    endAt[k] = ei
+  }
+
+  const sources = payloads.map((p, i) => ({
+    vn: p.vn,
+    hex: palette.length ? palette[i % palette.length] : '#ffffff',
+    count: perSource[i],
+  })).filter(s => s.count > 0)
+
+  return {
+    segments: { data, firstAt, endAt, count: segs.length },
+    sources,
+    speedRange,
+  }
 }
 
 /**
