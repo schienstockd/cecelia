@@ -567,7 +567,7 @@ const needsTiling = computed(() => {
   return m.nX * m.nY * m.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
 })
 const useTiles = computed(() =>
-  mode.value === 'plane' && needsTiling.value && (meta.value?.nT ?? 0) <= 1)
+  mode.value === 'plane' && needsTiling.value)
 /** Whichever renderer is currently alive — for template reads that don't care which one. */
 const activeAdapter = computed(() =>
   renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
@@ -1124,8 +1124,21 @@ function schedulePump(tp: number) {
 }
 
 /** Paint immediately, fetch on the scheduler — the documented split: a paint is coalesced per frame,
- *  a request is collapsed and serialised. */
+ *  a request is collapsed and serialised.
+ *
+ *  Tile mode is different: there is no per-timepoint texture to bind, because the atlas holds
+ *  mixed-t tiles and `drawTiles` filters resident tiles by `t.value`. So `gotoT` just moves `t`,
+ *  blanks `shownT` (so the still-overlay chip reappears while the current-t tiles come in), and
+ *  schedules the tile pump — which fetches for the new `t` and aborts stale-t fetches via
+ *  `evictionKeepSet` (Phase F, decision 6). */
 function gotoT(tp: number) {
+  if (useTiles.value) {
+    t.value = tp
+    shownT.value = -1
+    scheduleTilePump()
+    frame.redraw()
+    return
+  }
   showT(tp)
   schedulePump(tp)
 }
@@ -1184,7 +1197,10 @@ function computeViewportL0(): ViewportL0 | null {
   }
 }
 
-/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo. */
+/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo.
+ *  Keys bind `t.value` — a scrub past a resident (wrong-t) tile does NOT count as a hit; the pump
+ *  fetches the current-t version and the ranker keeps the near-t entry around for a scrub back
+ *  (see `docs/todo/VIEWER_TILES_PLAN.md` Phase F). */
 function missingTiles(): TileKey[] {
   const tr = tileRenderer.value, m = meta.value
   if (!tr || !m) return []
@@ -1193,9 +1209,10 @@ function missingTiles(): TileKey[] {
   const vp = computeViewportL0()
   if (!lvl || !vp) return []
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  const tp = t.value
   const out: TileKey[] = []
   for (const [tx, ty] of coords) {
-    const key: TileKey = { level, tx, ty }
+    const key: TileKey = { t: tp, level, tx, ty }
     if (tr.hasTile(key)) { tr.touchTile(key); continue }
     out.push(key)
   }
@@ -1204,7 +1221,8 @@ function missingTiles(): TileKey[] {
 
 /** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
  *  round cannot take a tile that is either on screen or being drawn NEXT. Both, because during a pan
- *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. */
+ *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. Current-t only
+ *  by design (Phase F, decision 4 — no cross-t halo in MVP). */
 function evictionKeepSet(): Set<string> {
   const tr = tileRenderer.value, m = meta.value
   if (!tr || !m) return new Set()
@@ -1213,7 +1231,8 @@ function evictionKeepSet(): Set<string> {
   const vp = computeViewportL0()
   if (!lvl || !vp) return new Set()
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
-  return new Set(coords.map(([tx, ty]) => tileKeyStr({ level, tx, ty })))
+  const tp = t.value
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, level, tx, ty })))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -1236,10 +1255,10 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
       const url = slabUrl({
-        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: key.level,
+        projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
-        // reachable at nZ > 1) — the tile path is nT ≤ 1 by construction, so there is no timepoint
-        // to select and t stays at 0.
+        // reachable at nZ > 1). `t` comes from the tile key so a scrub past a resident tile fetches
+        // the current-t version — the atlas caches across timepoints (Phase F).
         z: zPlane.value,
         x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
       })
@@ -1276,7 +1295,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     const keep = evictionKeepSet()
     const evictions = tileEvictions(
       tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
-      { level: key.level, tx: centre.tx, ty: centre.ty },
+      { t: key.t, level: key.level, tx: centre.tx, ty: centre.ty },
     )
     const slot = await tr.uploadTile(key, bufs, keep, evictions)
     return slot >= 0
@@ -1329,7 +1348,10 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     // `frame.redraw`. Result: the chip stayed on "Loading image…" while the atlas was full, and
     // the canvas was blank until the user panned (Dominik, 2026-08-26). The gate came from the
     // timepoint pump where painting the wrong frame matters — here it never matters.
-    if (shownT.value < 0) shownT.value = 0
+    // Flip on the first CURRENT-t tile to land — a stale-t fetch racing in after the user scrubbed
+    // must not clear the loading chip. `t.value` at fetch time was baked into `key.t`; if they still
+    // agree, the tile is fresh for what the user is looking at (Phase F, decision 6).
+    if (key.t === t.value && shownT.value !== key.t) shownT.value = key.t
     frame.redraw()
   }))
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
@@ -1369,7 +1391,14 @@ function drawTiles() {
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
   // landed, and vanishes seamlessly the moment they do.
-  const entries = tr.residentTiles().slice().sort((a, b) => b.level - a.level)
+  //
+  // Filter to CURRENT-t entries: the atlas caches across timepoints (Phase F) so the ranker can
+  // prefer near-t tiles on a scrub back, but painting a stale-t tile would show wrong content
+  // under the loading chip. The loading chip is `shownT < 0` — flipped by the tile pump only on a
+  // current-t landing — so scrubbing to a new t naturally shows the chip until fresh tiles arrive.
+  const tp = t.value
+  const entries = tr.residentTiles().filter(e => e.t === tp).slice()
+    .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
   const vy = m.voxelUm[1] || 1

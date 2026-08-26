@@ -20,7 +20,10 @@ const META: ViewerMeta = {
 
 describe('tileKeyStr', () => {
   it('formats deterministically so it can be a Map key', () => {
-    expect(tileKeyStr({ level: 0, tx: 3, ty: 5 })).toBe('L0/t3/5')
+    expect(tileKeyStr({ t: 0, level: 0, tx: 3, ty: 5 })).toBe('T0/L0/x3/y5')
+  })
+  it('encodes the timepoint so tiles from different t are distinct cache entries', () => {
+    expect(tileKeyStr({ t: 7, level: 0, tx: 3, ty: 5 })).toBe('T7/L0/x3/y5')
   })
 })
 
@@ -128,12 +131,12 @@ describe('tileCacheCapacity', () => {
 })
 
 describe('tileEvictions', () => {
-  const entry = (tx: number, ty: number, lastUsed: number, level = 0) =>
-    ({ key: `L${level}/t${tx}/${ty}`, level, tx, ty, lastUsed })
+  const entry = (tx: number, ty: number, lastUsed: number, level = 0, t = 0) =>
+    ({ key: `T${t}/L${level}/x${tx}/y${ty}`, t, level, tx, ty, lastUsed })
 
   it('drops nothing when the cache is under capacity', () => {
     const es = [entry(0, 0, 1), entry(1, 0, 2)]
-    expect(tileEvictions(es, 4, new Set(), { level: 0, tx: 0, ty: 0 })).toEqual([])
+    expect(tileEvictions(es, 4, new Set(), { t: 0, level: 0, tx: 0, ty: 0 })).toEqual([])
   })
 
   it('drops the tile FARTHEST from the viewport centre before a closer stale one', () => {
@@ -141,7 +144,7 @@ describe('tileEvictions', () => {
     const near = entry(0, 0, 1)      // right next to centre, oldest
     const far = entry(10, 10, 999)   // recently touched but three viewports away
     const centre = entry(0, 1, 5)
-    const drops = tileEvictions([near, far, centre], 2, new Set(), { level: 0, tx: 0, ty: 0 })
+    const drops = tileEvictions([near, far, centre], 2, new Set(), { t: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([far.key])
   })
 
@@ -151,7 +154,7 @@ describe('tileEvictions', () => {
     const nearStale = entry(0, 0, 1)
     const farProtected = entry(20, 20, 2)
     const drops = tileEvictions([nearStale, farProtected], 1, new Set([farProtected.key]),
-                                { level: 0, tx: 0, ty: 0 })
+                                { t: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([nearStale.key])
   })
 
@@ -161,7 +164,7 @@ describe('tileEvictions', () => {
     const l0Neighbour = entry(1, 0, 1, 0)      // one tile east at L0, fresh
     const l4CoLocated = entry(0, 0, 999, 4)    // deeper level, most-recently used
     const drops = tileEvictions([l0Neighbour, l4CoLocated], 1, new Set(),
-                                { level: 0, tx: 0, ty: 0 })
+                                { t: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([l4CoLocated.key])
   })
 
@@ -169,8 +172,30 @@ describe('tileEvictions', () => {
     const older = entry(1, 0, 1)
     const newer = entry(0, 1, 2)   // same Chebyshev distance to (0, 0)
     const drops = tileEvictions([older, newer], 1, new Set(),
-                                { level: 0, tx: 0, ty: 0 })
+                                { t: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([older.key])
+  })
+
+  it('a same-position wrong-t tile ranks FARTHER than a same-t viewport neighbour', () => {
+    // The invariant Phase F is about: on a scrub back to t=3, the current-t spatial neighbour
+    // must survive over a co-located tile at a distant timepoint. Cross-t coefficient (1e7) is
+    // larger than the level coefficient (1e6) so a wrong-t tile always loses to any same-t one
+    // in the resident set, no matter how much cheaper the wrong-t tile was to fetch.
+    const sameTNeighbour = entry(5, 5, 999, 0, 3) // one tile away, MRU, same t
+    const wrongTCoLocated = entry(0, 0, 999, 0, 4) // co-located, MRU, but t off by 1
+    const drops = tileEvictions([sameTNeighbour, wrongTCoLocated], 1, new Set(),
+                                { t: 3, level: 0, tx: 0, ty: 0 })
+    expect(drops).toEqual([wrongTCoLocated.key])
+  })
+
+  it('cross-t penalty dominates level penalty — a wrong-t co-located tile loses to a wrong-level same-t one', () => {
+    // Level and time are both structural, but time is more expensive to be wrong about.
+    // A stale deeper-level same-t tile still ranks closer than a MRU wrong-t same-level tile.
+    const wrongLevelSameT = entry(0, 0, 1, 4, 3)  // 4 levels away, oldest, same t
+    const sameLevelWrongT = entry(0, 0, 999, 0, 4) // same level, MRU, t off by 1
+    const drops = tileEvictions([wrongLevelSameT, sameLevelWrongT], 1, new Set(),
+                                { t: 3, level: 0, tx: 0, ty: 0 })
+    expect(drops).toEqual([sameLevelWrongT.key])
   })
 })
 

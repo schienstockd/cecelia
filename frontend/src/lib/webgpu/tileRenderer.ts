@@ -47,6 +47,7 @@ const MAX_SLOTS = 128
  *  viewport centre plus recency, see `tileEvictions`). */
 export interface TileEntry {
   key: string
+  t: number
   level: number
   tx: number
   ty: number
@@ -394,7 +395,7 @@ export async function createTileRenderer(
       await device.queue.onSubmittedWorkDone()
       if (!usable()) return -1
       tiles.set(kStr, {
-        key: kStr, level: key.level, tx: key.tx, ty: key.ty,
+        key: kStr, t: key.t, level: key.level, tx: key.tx, ty: key.ty,
         lastUsed: ++touchCounter, slot,
       })
       return slot
