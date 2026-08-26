@@ -20,7 +20,7 @@ const META: ViewerMeta = {
 
 describe('tileKeyStr', () => {
   it('formats deterministically so it can be a Map key', () => {
-    expect(tileKeyStr({ level: 0, tx: 3, ty: 5, c: 2 })).toBe('L0/t3/5/c2')
+    expect(tileKeyStr({ level: 0, tx: 3, ty: 5 })).toBe('L0/t3/5')
   })
 })
 
@@ -129,7 +129,7 @@ describe('tileCacheCapacity', () => {
 
 describe('tileEvictions', () => {
   const entry = (tx: number, ty: number, lastUsed: number, level = 0) =>
-    ({ key: `L${level}/t${tx}/${ty}/c0`, level, tx, ty, lastUsed })
+    ({ key: `L${level}/t${tx}/${ty}`, level, tx, ty, lastUsed })
 
   it('drops nothing when the cache is under capacity', () => {
     const es = [entry(0, 0, 1), entry(1, 0, 2)]

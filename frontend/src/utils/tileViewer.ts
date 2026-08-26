@@ -7,10 +7,12 @@
 // (`levels[L].chunkX × chunkY`) — no bespoke retile server-side, the slab route already crops arbitrary
 // rects at a level and its cost is dominated by IO not by cropping (audit's Phase 2).
 //
-// TILES ARE PER-CHANNEL, not "one tile with all channels stacked". Each channel is a separate slab
-// request and a separate GPU texture — same shape as the timecourse work, where a timepoint's channels
-// are also separate — so a channel toggle costs zero and only what is on screen is fetched. The
-// per-tile channel array is assembled by the renderer at draw time.
+// A TILE HOLDS ALL CHANNELS TOGETHER, in one atlas slot. Same shape as `volumeRenderer`'s stacked-
+// channel texture: one binding for the shader, one atomic upload for the caller — same guarantee the
+// volume renderer relies on ("a mask cached on its own can be a frame behind the pixels it outlines"),
+// and one slot per (level, tx, ty) rather than per (level, tx, ty, c). Toggling a channel off is a
+// display toggle in the shader — the bytes are already on the wire, so the fetch cost is a small
+// premium against a large saving in slot count and bind-group traffic.
 //
 // PREFETCH HALO mirrors the timecourse's `prefetchWindow`: a ring of tiles around the visible viewport
 // so a small pan is instant. Same load discipline — visible first, then the halo, one request at a time
@@ -18,20 +20,20 @@
 
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
-/** A tile at level `level`, tile-grid coordinates `(tx, ty)`, one channel `c`. `(t, z)` are viewer
- *  state, not per-tile — the cache is flushed when they change (a whole scene). */
+/** A tile at level `level`, tile-grid coordinates `(tx, ty)`. Channels are stacked inside the slot,
+ *  so there is no per-channel key; `(t, z)` are viewer state, not per-tile — the cache is flushed
+ *  when they change (a whole scene). */
 export interface TileKey {
   level: number
   tx: number
   ty: number
-  c: number
 }
 
-/** Canonical string form for `Map` keys — `L{level}/t{tx}/{ty}/c{c}`. `t{tx}` not `x{tx}` so a grep for
+/** Canonical string form for `Map` keys — `L{level}/t{tx}/{ty}`. `t{tx}` not `x{tx}` so a grep for
  *  a leading letter never lands on the store's `t` axis (which does not appear here — that is scene
  *  state). */
 export function tileKeyStr(k: TileKey): string {
-  return `L${k.level}/t${k.tx}/${k.ty}/c${k.c}`
+  return `L${k.level}/t${k.tx}/${k.ty}`
 }
 
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in

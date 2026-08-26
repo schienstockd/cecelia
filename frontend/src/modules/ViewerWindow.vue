@@ -37,6 +37,11 @@ import {
   createVolumeRenderer, WebGpuUnavailable,
   type VolumeRenderer, type UniformState,
 } from '../lib/webgpu/volumeRenderer'
+import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
+import {
+  tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
+  type TileKey, type ViewportL0,
+} from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
@@ -110,6 +115,19 @@ async function readJson<T = unknown>(res: Response, label: string): Promise<T> {
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const renderer = shallowRef<VolumeRenderer | null>(null)
+/**
+ * The 2D pan/zoom viewer for whole-slide images (`docs/todo/VIEWER_TILES_PLAN.md` → Phase C).
+ *
+ * Lives alongside the volume renderer, NOT instead of it: swapping every code path over would break
+ * the timecourse view that already works. Instead the tile pipeline turns on for the case it exists
+ * to serve — a large plane whose whole-fetch does not fit — and the whole-plane MIP shader keeps the
+ * timecourse and small-image cases untouched.
+ *
+ * A pop-out canvas has ONE WebGPU context, so `renderer` and `tileRenderer` are alternates: whichever
+ * mode is active owns the canvas, and swapping mode destroys one before creating the other. Same cost
+ * as a `reallocate` today — mode swap is already a full refetch.
+ */
+const tileRenderer = shallowRef<TileRenderer | null>(null)
 const meta = ref<ViewerMeta | null>(null)
 const error = ref('')
 const starting = ref('')
@@ -316,6 +334,34 @@ const renderNX = computed(() =>
 const renderNY = computed(() =>
   meta.value?.levels?.[slabLevel.value]?.nY ?? meta.value?.nY ?? 0)
 /**
+ * The tile pipeline turns on for the case it exists to serve — a plane whose L0 whole-fetch doesn't
+ * fit in a comfortable single slab (VIEWER_TILES_PLAN.md → Phase C). Below the threshold, the volume
+ * renderer's whole-plane path already works: a channel is a few MB, the plan movie plays, and the tile
+ * atlas would add pipeline plumbing for no visible win. Above it — the `f8gzA2`-shape whole slide — a
+ * whole plane cannot fit period, and the tile pipeline is the only way to interact.
+ *
+ * Timecourse whole-slide is a case we do not have (no store in the dev projects has both nT > 1 and a
+ * plane over the threshold), so the tile path is gated on `nT ≤ 1` — the eviction ranker does not yet
+ * penalise cross-timepoint distance, so caching tiles from several timepoints would fight for slots
+ * without ordering them. Ship the whole-slide case first; if a timecourse tilescan turns up, add `t` to
+ * the key.
+ *
+ * Threshold: 200 MB per channel-plane, chosen against Chromium/Dawn's 256 MB `maxBufferSize` — a whole
+ * plane above this genuinely CANNOT be uploaded in one texture write. Not tuned.
+ */
+const PLANE_TILE_THRESHOLD_BYTES = 200e6
+const needsTiling = computed(() => {
+  const m = meta.value
+  if (!m) return false
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  return m.nX * m.nY * m.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
+})
+const useTiles = computed(() =>
+  mode.value === 'plane' && needsTiling.value && (meta.value?.nT ?? 0) <= 1)
+/** Whichever renderer is currently alive — for template reads that don't care which one. */
+const activeAdapter = computed(() =>
+  renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
+/**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
  * names to one character each) with the CHANNEL colours rather than the population palette. Both halves
@@ -370,6 +416,10 @@ const cells = computed(() => stripCells(
 // ResizeObserver. `redraw()` is the camera/contrast/timepoint path (the box is identical but the frame
 // is not); `schedule()` is the resize path, which the size guard owns.
 const frame = usePlotResize(canvas, () => {
+  // Tile mode owns the canvas when a whole-slide plane is active — see `useTiles`. Dispatched HERE
+  // rather than upstream because every camera/pointer path funnels through this closure; a second
+  // dispatch site would drift from this one.
+  if (useTiles.value) { drawTiles(); return }
   const r = renderer.value
   if (!r) return
   r.resize()
@@ -479,7 +529,10 @@ function togglePop(path: string) {
 }
 
 function pushChannels() {
-  if (meta.value) renderer.value?.setChannels(meta.value.channels)
+  const m = meta.value
+  if (!m) return
+  renderer.value?.setChannels(m.channels)
+  tileRenderer.value?.setChannels(m.channels)
   frame.redraw()
 }
 
@@ -679,6 +732,251 @@ function gotoT(tp: number) {
   schedulePump(tp)
 }
 
+// ── Tile mode: per-viewport fetching with a halo prefetch ────────────────────────
+//
+// The 2D whole-slide code path (Phase C). Parallel to the timepoint pump above — visible tiles
+// first, then a ring around them so a small pan is instant — one request at a time through the same
+// `debouncedLatest` scheduler that runs the timepoint pump, so a fast wheel gesture across level
+// thresholds cannot pile up requests. Same reason the timepoint pump exists.
+//
+// Load discipline mirrors the timepoint work: the visible tiles LOAD first (row-major inside the
+// viewport), then one halo ring outward at Chebyshev distance 1. The atlas holds all channels of one
+// tile atomically — a channel toggle costs zero and neither redraws nor refetches — so a fetch turns
+// into one HTTP per channel and one `uploadTile(key, channelBytes[])` per tile.
+
+/** One outward ring of tiles beyond the viewport is prefetched. Two rings quadruples the fetch
+ *  count for a marginal gain — an outward pan is asymmetric like a scrub, but pans in every
+ *  direction are equally likely so there is no direction to bias for. Halo 1 turns a small pan into
+ *  a paint of resident bytes; anything more is a bet on the user's next gesture. */
+const HALO_RINGS = 1
+
+/**
+ * Aborts for tile fetches in flight, keyed by tile-key string. A zoom/pan mid-fetch cancels tiles the
+ * new viewport has no use for. Separate from `aborts` so the timepoint path is untouched.
+ */
+const tileAborts = new Map<string, AbortController>()
+
+/**
+ * Viewport in L0 pixels — the input `tilesInHalo` and `viewportTiles` take. Derived from the camera,
+ * the canvas size and the image's µm-per-voxel. Null when the layout has not settled — asking the
+ * server for L0 of a 20k×17k image before the client knows its own size is exactly the 687 MB request
+ * this exists to avoid.
+ */
+function computeViewportL0(): ViewportL0 | null {
+  const m = meta.value
+  const el = canvas.value
+  if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
+  const asp = canvasAspect()
+  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
+  const halfWUm = halfHUm * asp
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  // Image origin (top-left) sits at (-ex/2, -ey/2) in world µm (matches the volume renderer's box).
+  // The camera centre in image µm is (panX + ex/2, -panY + ey/2) — screen up is -y world, so a
+  // positive panY points the camera at a SMALLER image_y (i.e. higher rows).
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  const cxImg = cam.value.panX + ex / 2
+  const cyImg = -cam.value.panY + ey / 2
+  return {
+    x0: Math.floor((cxImg - halfWUm) / vx),
+    y0: Math.floor((cyImg - halfHUm) / vy),
+    x1: Math.ceil((cxImg + halfWUm) / vx),
+    y1: Math.ceil((cyImg + halfHUm) / vy),
+  }
+}
+
+/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo. */
+function missingTiles(): TileKey[] {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return []
+  const level = slabLevel.value
+  const lvl = levelMeta(m, level)
+  const vp = computeViewportL0()
+  if (!lvl || !vp) return []
+  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  const out: TileKey[] = []
+  for (const [tx, ty] of coords) {
+    const key: TileKey = { level, tx, ty }
+    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    out.push(key)
+  }
+  return out
+}
+
+/** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
+ *  round cannot take a tile that is either on screen or being drawn NEXT. Both, because during a pan
+ *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. */
+function evictionKeepSet(): Set<string> {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return new Set()
+  const level = slabLevel.value
+  const lvl = levelMeta(m, level)
+  const vp = computeViewportL0()
+  if (!lvl || !vp) return new Set()
+  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ level, tx, ty })))
+}
+
+/** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
+ *  viewport moves; a re-scheduled pump then queues the same tile again if it is still needed. */
+async function fetchTile(key: TileKey): Promise<boolean> {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return false
+  const lvl = levelMeta(m, key.level)
+  if (!lvl) return false
+  const kStr = tileKeyStr(key)
+  const existing = tileAborts.get(kStr)
+  if (existing) return false                 // already in flight; the pump joins rather than races
+  const ac = new AbortController()
+  tileAborts.set(kStr, ac)
+  const enc = settings.viewerCompress ? 'zstd' : 'identity'
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  const rect = tileFetchRect(key.tx, key.ty, lvl)
+  try {
+    // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
+    // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
+    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const url = slabUrl({
+        projectUid, imageUid, valueName, t: 0, c, enc, level: key.level,
+        // 2D view is one plane; server drops z from the response. Follows the plane control (only
+        // reachable at nZ > 1) — the tile path is nT ≤ 1 by construction, so there is no timepoint
+        // to select and t stays at 0.
+        z: zPlane.value,
+        x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
+      })
+      const res = await fetch(url, { cache: 'no-store', signal: ac.signal })
+      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
+      return res.arrayBuffer()
+    }))
+    // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
+    // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
+    // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
+    // before a fresh finer-level neighbour.
+    const vp = computeViewportL0()
+    const centre = vp && lvl ? viewportCentreTile(vp, key.level, lvl) : { tx: key.tx, ty: key.ty }
+    const keep = evictionKeepSet()
+    const evictions = tileEvictions(
+      tr.residentTiles(), tr.slotCapacity(), keep,
+      { level: key.level, tx: centre.tx, ty: centre.ty },
+    )
+    const slot = await tr.uploadTile(key, bufs, keep, evictions)
+    return slot >= 0
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return false
+    error.value = e instanceof Error ? e.message : String(e)
+    vlog('error', 'Viewer tile ' + kStr + ': ' + error.value)
+    return false
+  } finally {
+    tileAborts.delete(kStr)
+    syncTileCacheState()
+  }
+}
+
+/** Per-tile cache readout for Debug, and the counterpart to `syncCacheState` for the timepoint path.
+ *  Kept simple: tile count + slot capacity, no per-cell strip (a strip would need a tile-grid
+ *  overlay, which is Phase D territory). */
+const tileResidentCount = ref(0)
+const tileSlotCap = ref(0)
+const tileInflight = ref(0)
+function syncTileCacheState() {
+  const tr = tileRenderer.value
+  tileResidentCount.value = tr?.residentTiles().length ?? 0
+  tileSlotCap.value = tr?.slotCapacity() ?? 0
+  tileInflight.value = tileAborts.size
+}
+
+/**
+ * Fill the atlas around the current viewport — visible tiles first, then the halo — one fetch at a
+ * time through the canonical `debouncedLatest` pump. Same discipline as the timepoint pump: a burst
+ * from a fast pan or wheel gesture collapses to the last position, and a superseded walk stops at
+ * its next checkpoint rather than filling an atlas around a viewport the user has left.
+ */
+const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
+  const tr = tileRenderer.value
+  if (!tr) return
+  const want = missingTiles()
+  for (const key of want) {
+    if (!isCurrent()) return
+    // Skip if the tile arrived between the enumeration and here (a parallel pump run, in principle).
+    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    const ok = await fetchTile(key)
+    if (!ok || !isCurrent()) return
+    // Paint the current best composite as soon as a tile lands, so the user sees the viewport fill
+    // in tile by tile rather than jumping from empty to complete.
+    frame.redraw()
+  }
+  // A frame is on screen once the visible set is complete; the still overlay reads `shownT >= 0`.
+  if (shownT.value < 0) shownT.value = 0
+}, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
+
+/**
+ * Cancel tile fetches the new viewport has no use for, then reschedule the pump. Same shape as
+ * `schedulePump` — the abort has to happen HERE and not inside the walk, because the walk is
+ * `await`-ing the fetch by the time it reaches its next checkpoint.
+ */
+function scheduleTilePump() {
+  const keep = evictionKeepSet()
+  for (const [k, ac] of [...tileAborts]) if (!keep.has(k)) ac.abort()
+  tilePump.schedule(null)
+}
+
+/**
+ * Draw whatever tiles are resident, at the current camera. Never blanks — a level swap keeps the old
+ * level's tiles resident while the new level's tiles stream in, so the frame is progressive rather
+ * than empty-then-fresh. (The current MVP flushes the atlas on level swap, so this is aspirational
+ * until Phase D — but the draw call already accepts a mixed-level list.)
+ */
+function drawTiles() {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return
+  const resized = tr.resize()
+  seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
+  tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
+  // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
+  // pointer input. Same trigger for both dimensions of size change.
+  if (resized) scheduleTilePump()
+  const entries = tr.residentTiles()
+  const draws: TileDraw[] = []
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  for (const e of entries) {
+    const lvl = levelMeta(m, e.level)
+    if (!lvl) continue
+    const rect = tileFetchRect(e.tx, e.ty, lvl)
+    const w = rect.xTo - rect.x + 1
+    const h = rect.yTo - rect.y + 1
+    // Level → L0 pixel scale is 2^level (clean-2× pyramid, same assumption `pickTileLevel` makes).
+    const scale = 1 << Math.max(0, e.level)
+    const l0X = rect.x * scale
+    const l0Y = rect.y * scale
+    const l0W = w * scale
+    const l0H = h * scale
+    draws.push({
+      slot: e.slot,
+      worldX: l0X * vx - ex / 2,
+      worldY: l0Y * vy - ey / 2,
+      worldW: l0W * vx,
+      worldH: l0H * vy,
+      sampledX: w,
+      sampledY: h,
+    })
+  }
+  tr.draw(draws)
+  // The still overlay's `shownT >= 0` gate flips on when the first tile lands (`tilePump` handler).
+  if (announce.value && shownT.value >= 0) {
+    announce.value = false
+    vlog('info',
+         `Viewer drawing ${m.nX}×${m.nY} plane (tile mode)`,
+         `${entries.length} tile(s) resident of ${tileSlotCap.value} slots · ` +
+         `L${slabLevel.value} · pan ${cam.value.panX.toFixed(0)},${cam.value.panY.toFixed(0)} · ` +
+         `dist ${cam.value.dist.toFixed(0)} µm`)
+  }
+  if (shownT.value >= 0) clearViewerAttempt()
+}
+
 // ── Playback ─────────────────────────────────────────────────────────────────────
 // A timer rather than rAF: the rate is a chosen frame rate, not the display's. It WAITS for an
 // uncached frame instead of skipping ahead — see `playbackAdvance` for why that is the honest choice.
@@ -742,6 +1040,10 @@ function onMove(e: PointerEvent) {
     ? panDrag(cam.value, dx, dy, canvas.value.clientHeight)
     : orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
   frame.redraw()
+  // Pan in tile mode changes what tiles the viewport needs — schedule the fetch. The frame just
+  // painted uses whatever is already resident (which is why the pan feels instant); missing tiles
+  // stream in behind it. `scheduleTilePump` cancels fetches the new viewport does not want first.
+  if (useTiles.value) scheduleTilePump()
 }
 function onUp() { dragFrom = null }
 /**
@@ -786,6 +1088,10 @@ function onWheel(e: WheelEvent) {
   }
   cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value)
   frame.redraw()
+  // Zoom exposes/hides tiles (extent changes and level may swap). Level swap is handled by the
+  // `slabLevel` watcher → `levelPump` → reallocate; the tile pump handles the same-level case where
+  // a smaller field of view drops some tiles and a larger one gains new ones.
+  if (useTiles.value) scheduleTilePump()
 }
 
 /** What the canvas responds to. One list, rendered in the popover AND nowhere else — a shortcut that
@@ -869,37 +1175,106 @@ function resetView() {
 }
 
 /**
+ * Ensure the RIGHT renderer for the current mode+image is alive. The canvas has one WebGPU context,
+ * so the two renderers are alternates — swapping mode destroys one before creating the other.
+ * Idempotent: called before every reallocate, but only actually allocates when `useTiles` has
+ * changed, which is once per mode swap.
+ */
+async function ensureRenderer() {
+  if (useTiles.value) {
+    if (tileRenderer.value) return
+    if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+    const tr = await createTileRenderer(canvas.value!, msg => {
+      error.value = 'GPU: ' + msg
+      vlog('error', 'Tile GPU error: ' + msg)
+    })
+    tileRenderer.value = tr
+    void tr.lost.then(info => {
+      tilePump.cancel()
+      for (const ac of tileAborts.values()) ac.abort()
+      lostDevice.value = true
+      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+    })
+  } else {
+    if (renderer.value) return
+    if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
+    const r = await createVolumeRenderer(canvas.value!, msg => {
+      error.value = 'GPU: ' + msg
+      vlog('error', 'GPU error: ' + msg)
+    })
+    renderer.value = r
+    void r.lost.then(info => {
+      stopPlay()
+      pump.cancel()
+      for (const ac of aborts.values()) ac.abort()
+      lostDevice.value = true
+      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
+      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
+    })
+  }
+}
+
+/**
  * Re-allocate for the current mode and z, then reload. Every cached texture goes: at a different depth
  * they are a different shape, and at a different z they hold different pixels. That is a full refetch —
  * ~4 s for a 181-frame plane movie, ~90 s for the volume — which is the honest cost of the switch and
  * the reason the plane view is the default rather than something you opt into.
+ *
+ * Handles both renderer types. Async because a mode swap can involve destroying the old device and
+ * acquiring a new one; every caller either awaits or is fire-and-forget (the debounced pumps and the
+ * chip/range handlers, all of which just want the effect to happen eventually).
  */
-function reallocate(refit = false) {
-  const r = renderer.value, m = meta.value
-  if (!r || !m) return
+async function reallocate(refit = false) {
+  const m = meta.value
+  if (!m) return
+  // Both flows cancel; only the active one has anything to cancel, but the other's cache is being
+  // torn down anyway and it costs nothing to be sure.
   pump.cancel()
+  tilePump.cancel()
   for (const ac of aborts.values()) ac.abort()
+  for (const ac of tileAborts.values()) ac.abort()
   aborts.clear(); inflight.clear()
+  tileAborts.clear()
   shownT.value = -1
   announce.value = true
   hits.value = 0; misses.value = 0
   autoWin.value = []                       // Auto windows on what is loaded, so re-derive per plane
   waitingFor.value = -1
-  // Refit BEFORE `setImage`: `slabLevel` reacts to `cam.dist` (2D pan/zoom LOD), so a mode switch that
-  // reads `renderNX`/`renderNY` from the stale dist=1 default would allocate a level-0 texture for
-  // a big image (687 MB per channel for `f8gzA2`), then immediately refetch on the level watch fire.
+  // Refit BEFORE `setImage`: `slabLevel` and `useTiles` react to `cam.dist`, so a stale distance
+  // would allocate the pipeline for the wrong level (or the wrong pipeline entirely).
   const c = fitNow(m)
   fitDist.value = c.dist
   if (refit) cam.value = c
-  r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-             mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
-             renderNX.value, renderNY.value)
-  loadedLevel.value = slabLevel.value
-  r.setCapacity(settings.viewerCacheFrames || m.nT)
-  r.setOrthographic(mode.value === 'plane')
-  r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
-  syncCacheState()
-  gotoT(t.value)
+
+  await ensureRenderer()
+
+  if (useTiles.value) {
+    const tr = tileRenderer.value
+    if (!tr) return
+    const lvl = levelMeta(m, slabLevel.value)
+    const nch = Math.min(m.nC, MAX_CHANNELS)
+    tr.setImage(m, slabLevel.value, SAFE_CACHE_BYTES,
+                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch)
+    tr.setChannels(m.channels)
+    tr.resize()
+    loadedLevel.value = slabLevel.value
+    syncTileCacheState()
+    scheduleTilePump()
+    frame.redraw()
+  } else {
+    const r = renderer.value
+    if (!r) return
+    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
+               mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+               renderNX.value, renderNY.value)
+    loadedLevel.value = slabLevel.value
+    r.setCapacity(settings.viewerCacheFrames || m.nT)
+    r.setOrthographic(mode.value === 'plane')
+    r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
+    syncCacheState()
+    gotoT(t.value)
+  }
 }
 
 /** Window a channel on the percentiles of the first timepoint loaded — free, no refetch. */
@@ -934,37 +1309,9 @@ async function start() {
     // The breadcrumb goes down BEFORE the device is created, because that is the line the driver dies
     // on. Cleared when a frame is on screen, not here.
     markViewerAttempt(imageUid)
-    starting.value = 'Starting GPU'
-    // A GPU error after setup is console-only by default, and its only visible symptom is a canvas
-    // with nothing on it — which reads as an empty channel or a bad contrast window. Show it.
-    const r = await createVolumeRenderer(canvas.value!, msg => {
-      error.value = 'GPU: ' + msg
-      vlog('error', 'GPU error: ' + msg)
-    })
-    // The adapter, said out loud. `looksDiscrete` is now a classifier over name-then-limit, so this
-    // line is the evidence a future reader needs to check the classification when the tag looks wrong.
-    // Also emitted to `console.info` so it's visible in the pop-out's own DevTools (the app's log rail
-    // lives in the shell window, not here — vlog alone would only surface there).
-    const named = adapterNameText(r.adapter.name)
-    const gpuDetail = `maxTextureDimension3D=${r.adapter.maxTextureDimension3D}, `
-      + `timestamp-query=${r.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name')
-    const gpuLine = 'Viewer GPU: ' + (named
-      || (r.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated'))
-    vlog(r.adapter.looksDiscrete ? 'info' : 'warn', gpuLine, gpuDetail)
-    console.info(gpuLine, gpuDetail)
-    renderer.value = r
-    void r.lost.then(info => {
-      stopPlay()
-      // A lost device cannot be recovered in place — the canvas context goes with it — so the honest
-      // offer is a reload rather than a setting to go and adjust.
-      pump.cancel()
-      for (const ac of aborts.values()) ac.abort()
-      lostDevice.value = true
-      error.value = 'The GPU dropped the connection: ' + (info?.message || 'unknown')
-      vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
-    })
-
     starting.value = 'Reading image'
+    // Fetch meta BEFORE creating a renderer — the tile pipeline needs to know if it's the right one to
+    // create, and that depends on the image dims.
     const res = await fetch(metaUrl({ projectUid, imageUid, valueName }))
     const m = await readJson<ViewerMeta>(res, 'Metadata')
     meta.value = m
@@ -976,21 +1323,29 @@ async function start() {
     mode.value = 'plane'
     zPlane.value = Math.floor(Math.max(m.nZ - 1, 0) / 2)
     zRange.value = [0, Math.max(m.nZ - 1, 0)]
-    // Fit the camera BEFORE `setImage`: `slabLevel` is zoom-driven off `cam.dist`, so setImage
-    // reading `renderNX`/`renderNY` from the stale dist=1 default would pick L0 for a big image
-    // (687 MB per channel for `f8gzA2`) and allocate that texture — the reason 3D once crashed
-    // maxBufferSize. Same reorder as `reallocate(true)`.
+    // Fit the camera BEFORE creating the renderer: `useTiles` and `slabLevel` derive from `cam.dist`,
+    // so a stale dist=1 would allocate the wrong pipeline for a big image.
     const c = fitNow(m)
     cam.value = c
     fitDist.value = c.dist
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value, zPlane.value, false,
-               renderNX.value, renderNY.value)
-    loadedLevel.value = slabLevel.value
-    r.setCapacity(settings.viewerCacheFrames || m.nT)
-    r.setOrthographic(mode.value === 'plane')
-    r.resize()
+    starting.value = 'Starting GPU'
+    // `ensureRenderer` creates whichever renderer `useTiles` calls for, so a whole-slide plane lands
+    // on the tile pipeline from the first frame — no wasted volume-renderer allocation.
+    await ensureRenderer()
+    const active = renderer.value ?? tileRenderer.value
+    if (active) {
+      const named = adapterNameText(active.adapter.name)
+      const gpuDetail = `maxTextureDimension3D=${active.adapter.maxTextureDimension3D}, `
+        + `timestamp-query=${active.adapter.hasTimestamps}` + (named ? '' : ', adapter reports no name')
+      const gpuLine = 'Viewer GPU: ' + (named
+        || (active.adapter.looksDiscrete ? 'looks discrete' : 'looks integrated'))
+      vlog(active.adapter.looksDiscrete ? 'info' : 'warn', gpuLine, gpuDetail)
+      console.info(gpuLine, gpuDetail)
+    }
     starting.value = ''
-    gotoT(0)
+    // Let `reallocate(false)` run the pipeline-specific setImage + first-fetch — same code the mode
+    // swap uses, so the two paths cannot drift apart.
+    await reallocate(false)
     // After the first frame is on its way: the overlays are a separate, small request and must not
     // delay the pixels.
     void loadOverlays()
@@ -1041,8 +1396,11 @@ onUnmounted(() => {
   stopPlay()
   pump.cancel()
   zPump.cancel()
+  tilePump.cancel()
   for (const ac of aborts.values()) ac.abort()
+  for (const ac of tileAborts.values()) ac.abort()
   renderer.value?.destroy()
+  tileRenderer.value?.destroy()
 })
 </script>
 
@@ -1098,7 +1456,7 @@ onUnmounted(() => {
       </TeleportPopover>
       <div v-if="valueName" class="cc-muted cc-fs-2xs">{{ valueName }}</div>
 
-      <div v-if="renderer && !renderer.adapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
+      <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
         Integrated GPU
       </div>
