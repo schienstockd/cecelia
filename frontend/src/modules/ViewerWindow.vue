@@ -63,7 +63,8 @@ import {
 import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import { toHex as rgbHex } from '../utils/colour'
-import { PALETTES } from '../plots/plot'
+import { PALETTES, distinctColors } from '../plots/plot'
+import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
@@ -154,6 +155,37 @@ const chMax = computed(() =>
  *  per image, like the server's: recomputed per timepoint, playback flickers as the window chases each
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
 const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
+/** The channels' `lo`/`hi` as the SERVER shipped them (napari-saved or first-load percentile) — the
+ *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
+ *  restoring these gets the user back to a picture they know worked. */
+const initialContrast = ref<{ lo: number; hi: number }[]>([])
+/** Same snapshot for the per-channel LUT (the colour), so the "Distinct colours" toggle can be
+ *  turned OFF and put every channel back to the server default. Deep-copied — the toggle mutates
+ *  `channels[c].lut` in place. */
+const initialLUTs = ref<number[][][]>([])
+/**
+ * Assign each channel a hue from `distinctColors` — the house "N visually distinct colours"
+ *  helper (`plots/plot.ts`, golden-angle rotation). Same idiom as `randomcoloR::distinctColorPalette`
+ *  in the old R viewer. Toggle off restores the server-shipped colours.
+ */
+const distinctChannelColours = ref(false)
+watch(distinctChannelColours, on => {
+  const m = meta.value
+  if (!m) return
+  if (on) {
+    const nch = Math.min(m.nC, MAX_CHANNELS)
+    distinctColors(nch).forEach((hsl, c) => {
+      const [r, g, b] = hslCssToRgb(hsl)
+      m.channels[c].lut = lutFromHex(toHex([r, g, b]))
+    })
+  } else {
+    m.channels.forEach((ch, c) => {
+      const init = initialLUTs.value[c]
+      if (init) ch.lut = init.map(stop => [...stop])
+    })
+  }
+  pushChannels()
+})
 const timing = ref<{ fetchMs: number; uploadMs: number; serverMs: number } | null>(null)
 /**
  * The uniform block as the shader last received it — Debug only.
@@ -534,6 +566,9 @@ function pushChannels() {
   renderer.value?.setChannels(m.channels)
   tileRenderer.value?.setChannels(m.channels)
   frame.redraw()
+  // Same LUT + contrast on the thumbnail so it moves with the main view — a background image the
+  // main viewer disagrees with reads as broken.
+  renderOverview()
 }
 
 /** Flip every channel's visibility in one go — a 24-channel image would otherwise want 23 toggle
@@ -864,6 +899,12 @@ async function fetchTile(key: TileKey): Promise<boolean> {
       const buf = await res.arrayBuffer()
       return buf
     }))
+    // Grow `seenMax` from the tile's own bytes — same discipline as `fetchTimepoint`. Without this
+    // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
+    // the slider until it collapsed to 0-1 with no way back (Dominik, 2026-08-26). Only ever grows —
+    // a ceiling that shrinks re-scales the slider under a value the user set.
+    seenMax.value = bufs.map((b, c) =>
+      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rect.xTo - rect.x + 1)))
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
@@ -1181,6 +1222,158 @@ const setSection = (key: string, v: boolean) => { openSection.value = v ? key : 
  * no-op here because the visible extent has the canvas's own aspect — the bar lands where it is drawn.
  */
 const seen = ref<[number, number]>([0, 0])
+
+/**
+ * QuPath-style overview minimap in the top-right of the canvas.
+ *
+ * A schematic: the whole image as a bordered rect, the current viewport as an inner rect. No tissue
+ * thumbnail yet — the whole-slide coarsest level for f8gzA2 is still ~1300×1000 × 24 ch × 2 B ≈ 60 MB,
+ * which is a lot of bytes to fetch for a corner overlay. The rectangle alone answers "where in the
+ * slide am I" and "where do I want to be next", which is the ask (Dominik, 2026-08-26).
+ *
+ * Click or drag anywhere on the minimap → re-center the camera at that image point. Persists like
+ * every other user-settable option; only rendered when there is a real slide to navigate (tile mode).
+ */
+const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
+watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+/** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
+ *  it re-derives every time either changes without a separate signal. Empty when the viewport is
+ *  degenerate — the SVG then draws just the outer frame. */
+const overviewRect = computed(() => {
+  const m = meta.value
+  const el = canvas.value
+  if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
+  const asp = canvasAspect()
+  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
+  const halfWUm = halfHUm * asp
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  const cxImg = cam.value.panX + ex / 2
+  const cyImg = -cam.value.panY + ey / 2
+  return {
+    x: Math.max(0, Math.min(1, (cxImg - halfWUm) / ex)),
+    y: Math.max(0, Math.min(1, (cyImg - halfHUm) / ey)),
+    w: Math.max(0, Math.min(1, (halfWUm * 2) / ex)),
+    h: Math.max(0, Math.min(1, (halfHUm * 2) / ey)),
+  }
+})
+/** Fixed height in CSS px; the width follows the image aspect so the fractional rect maps 1:1. */
+const OVERVIEW_H = 110
+const overviewSize = computed(() => {
+  const m = meta.value
+  if (!m) return { w: 0, h: 0 }
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const asp = (m.nX * vx) / Math.max(m.nY * vy, 1)
+  return { w: Math.min(220, Math.round(OVERVIEW_H * asp)), h: OVERVIEW_H }
+})
+/**
+ * Tissue thumbnail behind the minimap rect. Fetched ONCE per image — the deepest pyramid level's
+ * whole slab, all channels — and composited on the CPU using the same LUTs the shader uses. Small
+ * enough to be cheap: for a 20k×17k slide with 5 levels, the deepest is ~635×528 × 24 ch × 2 B ≈
+ * 16 MB, one-off, and the composite is ~350k pixels × 24 ch ≈ 8M multiplies (~10-30 ms). Redrawn on
+ * every channel change (visibility, contrast, colour) because pushChannels calls `renderOverview`.
+ */
+const overviewCanvas = ref<HTMLCanvasElement | null>(null)
+const overviewChans = shallowRef<Uint16Array[] | null>(null)
+const overviewDims = ref<{ nX: number; nY: number } | null>(null)
+async function loadOverviewThumbnail() {
+  const m = meta.value
+  if (!m || !m.levels || m.levels.length === 0) return
+  const lvl = m.levels[m.levels.length - 1]
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  const enc = settings.viewerCompress ? 'zstd' : 'identity'
+  try {
+    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const url = slabUrl({
+        projectUid, imageUid, valueName, t: 0, c, enc, level: lvl.level,
+        z: zPlane.value,
+        x: 0, xTo: lvl.nX - 1, y: 0, yTo: lvl.nY - 1,
+      })
+      const res = await fetch(url, { cache: 'default' })
+      if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
+      return new Uint16Array(await res.arrayBuffer())
+    }))
+    overviewChans.value = bufs
+    overviewDims.value = { nX: lvl.nX, nY: lvl.nY }
+    renderOverview()
+  } catch (e) {
+    vlog('warn', 'Overview thumbnail unavailable', e instanceof Error ? e.message : String(e))
+  }
+}
+function renderOverview() {
+  const cv = overviewCanvas.value
+  const dims = overviewDims.value
+  const chans = overviewChans.value
+  const m = meta.value
+  if (!cv || !dims || !chans || !m) return
+  const w = dims.nX, h = dims.nY
+  if (cv.width !== w) cv.width = w
+  if (cv.height !== h) cv.height = h
+  const ctx = cv.getContext('2d')
+  if (!ctx) return
+  const img = ctx.createImageData(w, h)
+  const px = img.data
+  const nch = chans.length
+  const specs = m.channels.slice(0, nch).map(ch => {
+    const top = ch.lut[ch.lut.length - 1] ?? [1, 1, 1]
+    return {
+      visible: ch.visible, lo: ch.lo, span: Math.max(ch.hi - ch.lo, 1),
+      r: top[0], g: top[1], b: top[2],
+    }
+  })
+  const N = w * h
+  for (let i = 0; i < N; i++) {
+    let r = 0, g = 0, b = 0
+    for (let c = 0; c < nch; c++) {
+      const s = specs[c]
+      if (!s.visible) continue
+      const v = Math.max(0, Math.min(1, (chans[c][i] - s.lo) / s.span))
+      r += v * s.r; g += v * s.g; b += v * s.b
+    }
+    const pi = i * 4
+    px[pi] = Math.min(255, r * 255) | 0
+    px[pi + 1] = Math.min(255, g * 255) | 0
+    px[pi + 2] = Math.min(255, b * 255) | 0
+    px[pi + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+}
+let overviewDragging = false
+function overviewNavigate(e: PointerEvent) {
+  const m = meta.value
+  const el = e.currentTarget as HTMLElement | null
+  if (!m || !el) return
+  const rect = el.getBoundingClientRect()
+  const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+  const vx = m.voxelUm[0] || 1
+  const vy = m.voxelUm[1] || 1
+  const ex = m.nX * vx
+  const ey = m.nY * vy
+  // Center the camera on the clicked image point. Reverses the panY sign convention (see
+  // computeViewportL0): positive panY looks at SMALLER image_y.
+  cam.value = { ...cam.value, panX: fx * ex - ex / 2, panY: -(fy * ey - ey / 2) }
+  frame.redraw()
+  if (useTiles.value) scheduleTilePump()
+}
+function onOverviewDown(e: PointerEvent) {
+  overviewDragging = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  overviewNavigate(e)
+  e.stopPropagation()          // do not bubble to the canvas pan/orbit handlers
+}
+function onOverviewMove(e: PointerEvent) {
+  if (!overviewDragging) return
+  overviewNavigate(e)
+  e.stopPropagation()
+}
+function onOverviewUp(e: PointerEvent) {
+  overviewDragging = false
+  ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+}
 const overlayExtent = computed(() => {
   const m = meta.value
   if (!m || !m.calibrated.xy) return null          // uncalibrated: voxels, so there is no bar to draw
@@ -1335,12 +1528,30 @@ async function reallocate(refit = false) {
   }
 }
 
-/** Window a channel on the percentiles of the first timepoint loaded — free, no refetch. */
-function autoContrast(c: number) {
-  const w = autoWin.value[c], m = meta.value
-  if (!w || !m) return
-  m.channels[c].lo = w.lo
-  m.channels[c].hi = w.hi
+/**
+ * Reset the channel's contrast to the values the server shipped (napari-saved, or first-load
+ * percentile). NOT an auto-window from data anymore: user's expectation is "put it back the way it
+ * was" (Dominik, 2026-08-26), and `autoWin` was a volume-mode-only helper that never fired for
+ * whole-slide tiles, so the button did nothing there.
+ */
+function resetContrast(c: number) {
+  const init = initialContrast.value[c], m = meta.value
+  if (!init || !m) return
+  m.channels[c].lo = init.lo
+  m.channels[c].hi = init.hi
+  pushChannels()
+}
+/** Reset every channel's contrast in one click — the master pair to the per-channel button. Only
+ *  the CONTRAST, not the visibility or colour: those have their own controls above. */
+function resetAllContrast() {
+  const m = meta.value
+  if (!m) return
+  for (let i = 0; i < m.channels.length; i++) {
+    const init = initialContrast.value[i]
+    if (!init) continue
+    m.channels[i].lo = init.lo
+    m.channels[i].hi = init.hi
+  }
   pushChannels()
 }
 
@@ -1373,6 +1584,9 @@ async function start() {
     const res = await fetch(metaUrl({ projectUid, imageUid, valueName }))
     const m = await readJson<ViewerMeta>(res, 'Metadata')
     meta.value = m
+    // Snapshot the server's contrast so the reset button has a target that survives every drag.
+    initialContrast.value = m.channels.map(ch => ({ lo: ch.lo, hi: ch.hi }))
+    initialLUTs.value = m.channels.map(ch => ch.lut.map(stop => [...stop]))
     // Plane is the default in EVERY case. It's what plays, it's cheaper, and it's the view the pyramid
     // was wired for. `nZ === 1` used to default to `volume` on the theory "no stack, no plane to pick",
     // but the plane path already handles nZ=1 (the z-plane control just hides itself) and the volume
@@ -1407,6 +1621,8 @@ async function start() {
     // After the first frame is on its way: the overlays are a separate, small request and must not
     // delay the pixels.
     void loadOverlays()
+    // Same idea for the tissue thumbnail — deepest level is small, one-off, no pixel path dependency.
+    if (useTiles.value) void loadOverviewThumbnail()
   } catch (e) {
     error.value = e instanceof WebGpuUnavailable
       ? e.message + ' — the viewer needs WebGPU'
@@ -1503,6 +1719,25 @@ onUnmounted(() => {
       <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
       <div v-else-if="shownT < 0" class="vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
+      </div>
+      <!-- Overview minimap. Only when there is a real slide to navigate: for a small image the
+           viewport already IS the whole frame and a minimap adds nothing. Canvas holds the tissue
+           thumbnail (fetched once); SVG on top holds the viewport rect and takes all the pointer
+           events (click/drag to reposition). -->
+      <div v-if="overviewShown && useTiles && overviewRect" class="vw-overview-wrap"
+           :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
+        <canvas ref="overviewCanvas" class="vw-overview-tissue" />
+        <svg class="vw-overview-svg"
+             :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
+             preserveAspectRatio="none"
+             @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
+             @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
+          <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
+          <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
+                :width="Math.max(2, overviewRect.w * overviewSize.w)"
+                :height="Math.max(2, overviewRect.h * overviewSize.h)"
+                class="vw-overview-vp" />
+        </svg>
       </div>
     </div>
 
@@ -1639,6 +1874,14 @@ onUnmounted(() => {
           <button class="cc-btn cc-btn-ghost" @click="resetView"
                   v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
         </div>
+        <!-- Overview minimap, only offered where it earns its space: for whole-slide tile mode where
+             the viewport is a small fraction of the image. Small-image plane view already shows the
+             whole frame. -->
+        <div v-if="useTiles" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
+          <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
+        </div>
 
         <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
              image has 24+ channels and the sidebar's own scroll never engages, so the section body was
@@ -1650,11 +1893,28 @@ onUnmounted(() => {
                             @update:open="v => setSection('channels', v)">
           <!-- One canonical toggle (docs/ui/PRIMITIVES.md → CcToggle), same idiom as every other
                on/off in the app — a pair of buttons was a second variant of a decision that already
-               has one right way to render it. -->
-          <div class="cc-row cc-row-tight">
+               has one right way to render it. A little breathing room below so the master row does
+               not run into the first channel card (Dominik, 2026-08-26). -->
+          <div class="cc-row cc-row-tight vw-ch-master">
             <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
             <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
                       aria-label="Toggle every channel" />
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetAllContrast"
+                    v-tooltip.left="'Reset every channel to the server default'"
+                    aria-label="Reset every channel contrast">
+              <i class="pi pi-history" />
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight vw-ch-master">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Golden-angle hue rotation — quick visual separation of every marker'">
+              Distinct
+            </span>
+            <CcToggle v-model="distinctChannelColours"
+                      aria-label="Assign a distinct colour to each channel" />
+            <!-- Spacer that occupies the same slot as the reset button in the row above, so the two
+                 toggles line up in the same column. Non-interactive, hidden from a11y. -->
+            <span class="vw-ch-master-slot" aria-hidden="true" />
           </div>
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
             <div class="cc-row cc-row-tight">
@@ -1665,9 +1925,9 @@ onUnmounted(() => {
                 @update:model-value="v => setChannelColour(c, v)"
               />
               <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
-                      v-tooltip.left="'Window this channel on the loaded voxels'">
-                <i class="pi pi-sliders-h" />
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
+                      v-tooltip.left="'Reset contrast to the server default'">
+                <i class="pi pi-history" />
               </button>
             </div>
             <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
@@ -1949,6 +2209,26 @@ onUnmounted(() => {
 .vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
 .vw-status-chip-icon { font-size: 1em; }
 .vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
+/* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
+   translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
+   navigation, not a select. */
+.vw-overview-wrap {
+  position: absolute; top: 0.75rem; right: 0.75rem;
+  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); overflow: hidden;
+  cursor: crosshair; touch-action: none;
+}
+.vw-overview-tissue {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* Downscaled from the deepest pyramid level; smoothing looks fine at tissue scale. */
+  image-rendering: auto;
+  pointer-events: none;
+}
+.vw-overview-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Faint tint over the (possibly empty) canvas so the frame stays visible before the thumbnail
+   arrives. Once tissue is drawn behind, it shows through. */
+.vw-overview-bg { fill: rgba(255, 255, 255, 0.04); }
+.vw-overview-vp { fill: rgba(255, 255, 255, 0.10); stroke: var(--cc-accent); stroke-width: 1.5; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
@@ -1962,6 +2242,18 @@ onUnmounted(() => {
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
+.vw-ch-master { margin-bottom: 0.35rem; }
+/* Force EXACT label width in the master rows, so a longer word ("Distinct colours") does not push
+   its toggle further right than the row above ("All channels"). Base `.cc-lbl-col` is a min-width
+   that lets the label grow; the whole point of these master rows is that the toggles stack. */
+.vw-ch-master > .cc-lbl-col {
+  width: var(--cc-lbl-col); min-width: var(--cc-lbl-col);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Same footprint as `cc-btn-micro` icon (`i.pi` inside a bare button, ~1.1rem square). Reserves the
+   trailing slot in a row that has no icon, so the toggle in that row lines up with the toggle in the
+   row that DOES carry an icon. */
+.vw-ch-master-slot { flex: none; width: 1.1rem; height: 1.1rem; }
 .vw-ch-val { flex: none; white-space: nowrap; }
 .vw-grow { flex: 1; min-width: 0; }
 /* The numbers beside a slider change width as they count up (9 → 10 → 100), and the slider is `flex: 1`

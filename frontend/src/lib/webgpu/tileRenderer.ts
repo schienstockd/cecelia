@@ -374,6 +374,12 @@ export async function createTileRenderer(
       const w = rect.xTo - rect.x + 1
       const h = rect.yTo - rect.y + 1
       if (w <= 0 || h <= 0) return -1
+      // The atlas is sized for its OWN level's chunks. A tile in flight from before a zoom-out —
+      // when the atlas gets reallocated to a coarser level with smaller chunks — can arrive with
+      // dims LARGER than the atlas can hold, and `writeTexture` then throws "Texture copy range
+      // touches outside …". Reject cleanly; the tile pump will re-request at the current level
+      // (Dominik, 2026-08-26).
+      if (w > atlasChunkX || h > atlasChunkY) return -1
       // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
       // STAGED — the caller can then read `hasTile` synchronously.
       for (let c = 0; c < Math.min(channelBytes.length, atlasNC); c++) {

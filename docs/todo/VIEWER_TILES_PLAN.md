@@ -1,6 +1,6 @@
 # The 2D viewer: pan/zoom, per-viewport tiles, cache + prefetch
 
-Status: OPEN — Phase B (zoom-driven whole-plane LOD) shipping in PR #660; Phase C (per-viewport tiles) is next.
+Status: OPEN — Phases B, C, D and E (halo) shipped in PR #660; only the velocity-prefetch stretch remains.
 
 Follow-up to the spatial-buffering audit (`docs/archive/spatial-buffering-pyramid-prompt.md`).
 The audit's Phase 1 (measurements) and Phase 2 server surface shipped in PR #659
@@ -87,7 +87,7 @@ for L0 at 1:1 on a `f8gzA2`-sized store. That's the current envelope.
 **Test coverage**: `pickTileLevel` is unit-tested; the wire-up in `ViewerWindow.vue`
 is not (extracting a component-mounting testable shape is a follow-up).
 
-### Phase C — Per-viewport TILE fetching
+### Phase C — Per-viewport TILE fetching — SHIPPED (PR #660)
 
 The actual slippy-map: fetch only the tiles the viewport intersects, at the LOD picked
 from zoom. The single-texture design is replaced with a tile atlas (or one texture per
@@ -106,7 +106,7 @@ tile — decision C1).
 viewport. Estimate: 1080p at L0 with 1024² tiles is 2×2 = 4 tiles per channel × 8 channels
 = 32 bind entries — well under any adapter's cap. Should be safe.
 
-### Phase D — 2D-aware LRU + progressive refinement
+### Phase D — 2D-aware LRU + progressive refinement — SHIPPED (PR #660)
 
 The cache from Phase C shipped with a naive recency LRU. This tightens it:
 
@@ -122,7 +122,7 @@ zoomed-out views. Measure worst-case (deepest level's whole tile set + current l
 viewport tiles) — expected: `deepest level ≤ 1 tile × nC` (that's what "deepest" means),
 so negligible.
 
-### Phase E — Prefetch
+### Phase E — Prefetch — HALO SHIPPED (PR #660); velocity-based is stretch and NOT scheduled
 
 - **Halo**: fetch the tiles one ring beyond the current viewport, so a small pan into
   freshly-visible tiles is instant.
