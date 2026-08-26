@@ -1453,6 +1453,26 @@ function stopPlay() {
 function tick() {
   playTimer = setTimeout(() => {
     if (!playing.value) return
+    if (useTiles.value) {
+      // Tile-mode playback: advance at the requested fps regardless of tile residency. The tile
+      // pump chases behind `gotoT` — the loading chip appears while a fresh-t frame's tiles arrive
+      // and clears the moment they do. Fetch-vs-frame-rate discipline (volume mode's residency
+      // probe + wait-for-cached-frame path) needs measurement on real timelapses before it lands
+      // here — see `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision "autoplay does NOT ship".
+      const n = nT.value
+      if (n <= 0) { stopPlay(); return }
+      const next = t.value + 1
+      if (next >= n) {
+        if (!settings.viewerLoop) { stopPlay(); return }
+        waitingFor.value = -1
+        gotoT(0)
+      } else {
+        waitingFor.value = -1
+        gotoT(next)
+      }
+      tick()
+      return
+    }
     const r = renderer.value
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop,
                                  u => r?.hasTimepoint(u) ?? false)
