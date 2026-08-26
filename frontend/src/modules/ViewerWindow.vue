@@ -322,9 +322,10 @@ const shownLabelCount = computed(() => {
   return names.filter(n => vis[n]).length
 })
 let points: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count: 0 }
-let segments: SegmentBuffer = {
+const EMPTY_SEGMENTS: SegmentBuffer = {
   data: new Float32Array(0), firstAt: new Int32Array(1), endAt: new Int32Array(1), count: 0,
 }
+let segments: SegmentBuffer = EMPTY_SEGMENTS
 const pointCount = ref(0)
 const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
@@ -527,10 +528,17 @@ function rebuildOverlays() {
   points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
-  // Tails are coloured per TRACK, not per population, so they do not depend on which pops are visible —
-  // but they are rebuilt together because both come from one payload and one rebuild is cheaper to
-  // reason about than two lifetimes.
-  segments = buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
+  // Track ribbons are gated on the panel's PER-SEGMENTATION track eye — the "directions" icon
+  // in the Segmentations list. Default OFF (see `settings.getTrackVisibility`), so a fresh image
+  // draws no tracks until the user ticks their segmentation on. Which vn owns the tracks in this
+  // payload is `overlays.value.valueName` (the server-resolved segmentation for this fetch); if
+  // the panel has that vn's eye off, we skip the build and hand an empty buffer to the renderer.
+  // P7 of docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  const trackVn = overlays.value?.valueName ?? ''
+  const tracksOn = !!(trackVn && imageUid &&
+                      settings.getTrackVisibility(imageUid, [trackVn])[trackVn])
+  segments = tracksOn ? buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
+                      : EMPTY_SEGMENTS
   segCount.value = segments.count
   r?.setOverlaySegments(segments.data)
   frame.redraw()
