@@ -75,6 +75,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // keyframe napari view state (POST /api/napari/screenshot → {viewState}), so the persisted per-image
   // props ARE the reference for those snapshots. Deleting this before the WebGPU viewer grows its own
   // per-image props sink would leave the animation page with no source of truth (Dominik, 2026-08-26).
+  //
+  // **The replacement is a hard P9 blocker.** VIEWER_CONTROLS_SPLIT_PLAN.md → PY defines the WebGPU
+  // per-image layer-props sink; this ref is deletable only when that lands and the animation card
+  // reads viewState from the WebGPU viewer with no bridge round-trip (Dominik, 2026-08-26: "as long
+  // as the layer autosave props lands at some point. that is ok. because it is essential").
   const napariAutoSaveLayerProps = ref(
     localStorage.getItem('cc.napariAutoSaveLayerProps') !== 'false'  // default true
   )
