@@ -7,27 +7,30 @@ import { unionViewSnapshot, pushZView, pushLabelContour, labelsRequestBody } fro
 // restore. These pin the outline onto the wire.
 describe('labelsRequestBody', () => {
   it('carries labelContour when given, including 0 (an explicit "filled")', () => {
-    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false, labelContour: 3 }))
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, labelContour: 3 }))
       .toMatchObject({ allLabels: { A: ['a.zarr'] }, showLabels: true, labelContour: 3 })
-    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false, labelContour: 0 }))
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, labelContour: 0 }))
       .toHaveProperty('labelContour', 0)
   })
 
   it('omits labelContour entirely when the caller has no set to read it from', () => {
     // absent ≠ 0 on the wire: the backend still defaults it, but the request must not ASSERT "filled"
-    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false }))
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true }))
       .not.toHaveProperty('labelContour')
   })
 
-  it('keeps the rest of the shape (both payloads, the shared show flag, preview)', () => {
+  it('keeps the rest of the shape (both payloads, the shared show flag, preview) with labelsCache pinned true', () => {
+    // `labelsCache` is now hardcoded in the request body — the caller no longer decides it. The bridge
+    // default matches; keeping `true` on the wire preserves the pre-P6 behaviour until the bridge is
+    // deleted in P9.
     const b = labelsRequestBody({ labels: { A: ['a'] }, branchLabels: { A: ['b'] },
-                                  show: false, cache: true, preview: true, labelContour: 2 })
+                                  show: false, preview: true, labelContour: 2 })
     expect(b).toEqual({ allLabels: { A: ['a'] }, allBranchLabels: { A: ['b'] },
                         showLabels: false, labelsCache: true, preview: true, labelContour: 2 })
   })
 
   it('drops an empty payload rather than sending an empty map', () => {
-    const b = labelsRequestBody({ labels: {}, branchLabels: { A: ['b'] }, show: true, cache: false })
+    const b = labelsRequestBody({ labels: {}, branchLabels: { A: ['b'] }, show: true })
     expect(b).not.toHaveProperty('allLabels')
     expect(b).toHaveProperty('allBranchLabels')
   })

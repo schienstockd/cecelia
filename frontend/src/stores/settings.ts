@@ -65,27 +65,18 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.viewerResetOnReload') === 'true'  // default false
   )
 
-  // Dask opportunistic cache for label layers (napari's `resize_dask_cache`). Default ON — the
-  // common case is browsing, where cache-on gives noticeably smoother slice scrubbing. The
-  // dangerous case is running segmentation to the same output name: `da.from_zarr(same_path)`
-  // produces the same dask task name across opens, so cached results serve STALE bytes after
-  // a re-run (see `python/cecelia/utils/napari_utils.add_labels` docstring). The Viewer panel
-  // surfaces a hint recommending the user flip it off when a segment task is running.
-  const napariLabelsCache = ref(
-    localStorage.getItem('cc.napariLabelsCache') !== 'false'  // default true
-  )
-
   // Contrast/colormap/T-Z, autosaved per image the moment they change and reloaded on open. Default ON
   // (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 8): contrast is deliberately image state rather than a
   // copy inside every movie config, and the movie path force-loads it (`autoLoadProps = true` in
   // `_apply_movie_config!`). With this off nothing was ever written, so that load found no file and
   // napari auto-contrasted per image — a recorded look was not reproducible.
+  //
+  // Kept during P6 even though `asDask` / `labelsCache` were deleted: the animation page banks per-
+  // keyframe napari view state (POST /api/napari/screenshot → {viewState}), so the persisted per-image
+  // props ARE the reference for those snapshots. Deleting this before the WebGPU viewer grows its own
+  // per-image props sink would leave the animation page with no source of truth (Dominik, 2026-08-26).
   const napariAutoSaveLayerProps = ref(
     localStorage.getItem('cc.napariAutoSaveLayerProps') !== 'false'  // default true
-  )
-
-  const napariAsDask = ref(
-    localStorage.getItem('cc.napariAsDask') !== 'false'  // default true
   )
 
   // Render napari on the discrete GPU (hybrid-graphics machines, Linux only). Persisted here and
@@ -457,9 +448,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
-  watch(napariLabelsCache,        v => localStorage.setItem('cc.napariLabelsCache',        String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
-  watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
   watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
   watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
@@ -514,7 +503,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

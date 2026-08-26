@@ -40,18 +40,6 @@ const ws           = useWsStore()
 const log          = useLogStore()
 const taskStore    = useTaskStore()
 
-// Hint gate: cache-on serves stale labels when the user re-runs seg to the same output name
-// (see settings.napariLabelsCache docstring). Fire only when the cache IS on AND a segment
-// task is queued/running on the currently-open image — otherwise the hint is noise.
-const segCacheWarn = computed(() => {
-  if (!settings.napariLabelsCache) return false
-  const uid = projectStore.openImageUid
-  if (!uid) return false
-  return taskStore.tasks.some(t =>
-    t.module === 'segment' && t.imageUid === uid && (t.status === 'queued' || t.status === 'running')
-  )
-})
-
 // Is a recording in flight? The napari viewer is UI-serial — one render at a time — so the Record
 // button reflects the TASK, not a local flag: the render outlives this component's request and its
 // progress/Cancel live in the task list. Covers the batch too, which drives the same viewer.
@@ -332,14 +320,12 @@ async function openInNapari(valueName: string) {
     autoSaveProps: autoProps,
     autoLoadProps: autoProps,
     show3D:        show3D.value,
-    asDask:        settings.napariAsDask,
   }
   // Labels/branches/tracks/populations are deliberately NOT sent here. Every open broadcasts
   // `napari:opened`, and the app-level autoshow (composables/useNapariAutoShow) restores all overlay
   // kinds from the remembered toggles in one sequential pass. Sending labels in the open body too
   // would load the same label pyramid twice and put two overlay pushes in flight at once — which the
   // bridge's one-command-at-a-time layer reconciliation does not tolerate.
-  body.labelsCache = settings.napariLabelsCache
   try {
     const res = await fetch('/api/napari/open', {
       method:  'POST',
@@ -496,8 +482,7 @@ async function toggleBranch(vn: string) {
   }
   const wasVisible = branchVns.value[vn] ?? true
   try {
-    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible,
-                                      cache: settings.napariLabelsCache })
+    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible })
     if (res?.ok) {
       branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
       if (uid) settings.setBranchVisibility(uid, branchVns.value)
@@ -650,7 +635,6 @@ async function toggleLabel(valueName: string) {
   try {
     // legacy shadow: keep napari in sync if it happens to be up (P9 removes this)
     await apiPushLabels({ labels: { [valueName]: files }, show: next,
-                          cache: settings.napariLabelsCache,
                           labelContour: labelContour.value })
   } catch { /* napari down — expected; the WebGPU viewer already got the update */ }
 }
@@ -710,8 +694,7 @@ function onTaskResult(data: Record<string, unknown>) {
     nextTick(() => {
       const files = napariImage.value?.labels?.[labelValueName] ?? []
       if (files.length) {
-        void apiPushLabels({ labels: { [labelValueName]: files }, show: true,
-                             cache: settings.napariLabelsCache })
+        void apiPushLabels({ labels: { [labelValueName]: files }, show: true })
       }
     })
   }
@@ -720,21 +703,11 @@ function onTaskResult(data: Record<string, unknown>) {
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
 watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 
-// Bridge status (shared poll — see useNapariStatus): `bridgeStale` warns that napari is running older
-// code than the checkout (it's a separate process that survives a backend restart), and the canvas size
-// is what a movie records at when no size is asked for, shown as the size fields' placeholder.
-const { bridgeStale, canvasSizeX, canvasSizeY, multiscaleLevels, poll: pollBridge } = useNapariStatus()
-async function restartNapari() {
-  try {
-    const res = await fetch('/api/napari/restart', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-    if (res.ok) log.info('Napari restarting — reopen the image to reload it.', { source: 'napari' })
-    else log.error(`Napari restart failed: ${await _resError(res)}`, { source: 'napari' })
-  } catch (e) {
-    log.error(`Napari restart failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
-  }
-  setTimeout(pollBridge, 1500)
-}
+// Bridge status (shared poll — see useNapariStatus): the canvas size is what a movie records at when
+// no size is asked for, shown as the size fields' placeholder. The `bridgeStale` warning + Restart
+// button were removed in P6 — the bridge is a legacy sink now, and users should not be nudged to
+// respawn a process that goes away in P9.
+const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
@@ -748,14 +721,6 @@ onUnmounted(() => {
 
 <template>
   <div class="viewer-panel">
-    <!-- stale-bridge warning: napari started before the latest napari-code changes (it survives a
-         backend restart). Brief here; the action is the Restart button + the tooltip. -->
-    <div v-if="bridgeStale" class="viewer-stale"
-         v-tooltip.bottom="'Napari started before your latest changes — restart it, then reopen the image'">
-      <i class="pi pi-exclamation-triangle" />
-      <span class="viewer-stale-txt">Napari running old code</span>
-      <button class="viewer-stale-btn" @click="restartNapari">Restart</button>
-    </div>
     <!-- ── View: viewer behaviour toggles (global prefs; apply on next open) ──
          Top of the panel — these are always available, even before an image is open. -->
     <!-- Convention: append new toggles at the END of the row. -->
@@ -765,7 +730,7 @@ onUnmounted(() => {
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerAutoUpdate }"
           @click="settings.viewerAutoUpdate = !settings.viewerAutoUpdate"
-          v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
+          v-tooltip.bottom="'Auto-update: refresh the viewer whenever a task finishes on that image'"
         ><i class="pi pi-refresh" /></button>
 
         <button
@@ -773,12 +738,6 @@ onUnmounted(() => {
           @click="settings.viewerResetOnReload = !settings.viewerResetOnReload"
           v-tooltip.bottom="'Reopen the whole image, not just data — needed after pixels change'"
         ><i class="pi pi-image" /></button>
-
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariLabelsCache }"
-          @click="settings.napariLabelsCache = !settings.napariLabelsCache"
-          v-tooltip.bottom="'Cache label chunks — faster scrubbing, but stale after seg re-runs'"
-        ><i class="pi pi-bolt" /></button>
 
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAutoSaveLayerProps }"
@@ -792,21 +751,6 @@ onUnmounted(() => {
           v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
         ><span class="opt-text">3D</span></button>
 
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAsDask }"
-          @click="settings.napariAsDask = !settings.napariAsDask"
-          v-tooltip.bottom="'Fast open, slices on demand; untick for smoother viewing'"
-        ><i class="pi pi-database" /></button>
-      </div>
-
-      <!-- Segment-running warning: cache-on serves stale label bytes on re-run (dask task-name
-           collision → napari's opportunistic cache HIT). Only surface when the cache IS on and
-           a segment task is actually queued/running on the open image; one-click fix. Reuses
-           the .viewer-stale amber strip so the two warnings share the same visual language. -->
-      <div v-if="segCacheWarn" class="viewer-stale">
-        <i class="pi pi-exclamation-triangle" />
-        <span class="viewer-stale-txt">Segmentation running — cache may hide new labels</span>
-        <button class="viewer-stale-btn" @click="settings.napariLabelsCache = false">Cache off</button>
       </div>
     </div>
 
