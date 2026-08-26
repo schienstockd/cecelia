@@ -211,19 +211,25 @@ describe('buildTrackBuffer', () => {
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
     const full = tailRange(buf, 3, 60)!
     expect(full).toEqual([0, 6])                  // every segment, in one range
-    // L frames means L segments per track — the ends fall in [t-L+1, t]. At L=1 the other convention
-    // draws two hops, which reads as the slider ignoring you.
-    const short = tailRange(buf, 3, 1)!
-    expect(short[1]).toBe(2)                      // only the segments arriving at t=3 (two tracks)
-    const two = tailRange(buf, 3, 2)!
-    expect(two[1]).toBe(4)                        // arriving at t=2 and t=3
+    // L frames means L segments per track — the ends fall in [t-L+1, t+1] (the +1 folds in the
+    // current-hop segment [t, t+1] so t=0 isn't a visually broken tail). At L=1 the other
+    // convention draws two hops, which reads as the slider ignoring you.
+    const short = tailRange(buf, 2, 1)!
+    expect(short[1]).toBe(2)                      // only the segments arriving at t=3 (two tracks) — hi=3
+    const two = tailRange(buf, 2, 2)!
+    expect(two[1]).toBe(4)                        // arriving at t=2 and t=3 — hi=3, lo=1
     // and the ranges nest rather than overlap, which is what "contiguous" has to mean here
     expect(short[0]).toBeGreaterThanOrEqual(two[0])
   })
 
-  it('gives no tail before anything has happened, and none for a zero-length request', () => {
+  it('shows the "current hop" segment at t=0 so a tracked movie is not empty on open', () => {
+    // t=0 used to give null (window [-L+1, 0] and every segment ends at ≥ 1). That reads as broken
+    // because tracked cells are on screen but no ribbons — Dominik, 2026-08-26. The new window is
+    // [t-L+1, t+1], so at t=0 you see the segments ending at t=1 (the hop from 0 to 1). Napari's
+    // scrub behaviour matches.
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
-    expect(tailRange(buf, 0, 30)).toBeNull()      // nothing has ARRIVED at t=0 yet
+    const atZero = tailRange(buf, 0, 30)!
+    expect(atZero[1]).toBe(2)                     // two tracks × one hop each ending at t=1
     expect(tailRange(buf, 3, 0)).toBeNull()       // 0 = hidden, which is what the slider's low end says
     expect(tailRange({ ...buf, count: 0 }, 3, 30)).toBeNull()
   })

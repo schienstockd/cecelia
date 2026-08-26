@@ -350,7 +350,14 @@ export function tailRange(
 ): [number, number] | null {
   const L = Math.max(0, Math.round(tailFrames))
   if (buf.count === 0 || L === 0) return null
-  const hi = Math.max(0, Math.round(t))
+  // `hi = t + 1` rather than `hi = t` — a segment's END is the timepoint it ARRIVES at, so the
+  // segment [t, t+1] is the "current" hop and is included in the visible tail. Napari's tail_length
+  // model does the same on scrub; the old `hi = t` read as broken at t = 0 (window collapsed to
+  // [0, 0] and every segment ends at t ≥ 1 → nothing to draw, even though tracks were built).
+  // Dominik, 2026-08-26: "still no ribbons ... there are tracks in 'default' segmentation".
+  const hi = Math.max(0, Math.round(t)) + 1
+  // L frames means L hops visible. `hi - L + 1` keeps the tail's LENGTH at L when hi is shifted:
+  // L=1 → [t+1, t+1] = the current hop only; L=2 → [t, t+1] = current + one back.
   const lo = Math.max(0, hi - L + 1)
   const clamp = (k: number) => Math.min(Math.max(k, 0), buf.firstAt.length - 1)
   const first = buf.firstAt[clamp(lo)]
