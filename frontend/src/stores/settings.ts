@@ -231,9 +231,12 @@ export const useSettingsStore = defineStore('settings', () => {
       // viewer that would read as "all ticked but only one draws". Collapse to the FIRST true one.
       const firstTrue = labelNames.find(n => out[n])
       if (firstTrue) for (const vn of labelNames) if (vn !== firstTrue) out[vn] = false
-      // A persisted bag with no name currently true (e.g. every stored one was renamed) falls back
-      // to the first — nothing rendering after opening the viewer is a worse read than a default.
-      if (labelNames.length && !firstTrue) out[labelNames[0]] = true
+      // If the stored bag has no true entries, HONOUR IT — the user explicitly unticked the last
+      // segmentation to hide the mask (Dominik, 2026-08-26: "when i turn off the segmentation
+      // toggle. the last segmentation is still showing on the image. it never disappears"). An
+      // earlier revision re-ticked the first here on the theory that "nothing rendering reads
+      // worse than a default", but it makes the untick a no-op — the mask stays on because the
+      // read still returns true for the same first name.
     } else {
       // First open on this image: pick the first name, not "everything true".
       for (const vn of labelNames) out[vn] = false

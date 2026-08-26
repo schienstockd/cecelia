@@ -463,7 +463,12 @@ const pushTracks = pushTracksNow
 // Pings the WebGPU viewer too — the tracks path is P7-shadowed today (the viewer draws ribbons for
 // every gated track), but persisting + pinging keeps this ready for the P7 rewire.
 async function toggleTrack(vn: string) {
-  const uid = projectStore.napariImageUid
+  // `openImageUid`, not `napariImageUid`: this write must land whether or not napari is running.
+  // Before P6 it was napari-only and `napariImageUid=null` short-circuited the persist — which then
+  // meant the WebGPU viewer never saw the write and kept drawing (or not drawing) tracks by default
+  // (Dominik, 2026-08-26: "i can toggle. but nothing happens"). The napari-only push below still
+  // reads its own uid; that path stays a silent shadow.
+  const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
   pingViewerOverlays()
