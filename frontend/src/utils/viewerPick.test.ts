@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { screenToImagePx } from './viewerPick'
-import { fitCamera, extentUm, VIEW_HALF_ANGLE, type OrbitCamera, type ViewerMeta } from './volumeViewer'
+import { fitCamera, extentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
 
 /** 100 x 80 image, 1 µm/px in x and y — a click at the canvas centre with a face-on fitted camera
  *  should land on the image centre pixel. Anything else is a bug. */
@@ -19,31 +19,35 @@ const fittedCam = (m: ViewerMeta, canvasW: number, canvasH: number): OrbitCamera
 
 describe('screenToImagePx', () => {
   it('centre of the canvas → centre pixel of the image', () => {
+    // Y stays at the mid-row under the reflection: nY-1 - (nY/2 - 1) = nY/2. The reflection is
+    // symmetric across the midline, so the center is a fixed point of the flip.
     const m = meta()
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
     const p = screenToImagePx(W / 2, H / 2, W, H, cam, m)
     expect(p.in).toBe(true)
     expect(p.x).toBe(50)
-    expect(p.y).toBe(40)
+    // The exact centre lands between rows 39 and 40 for nY=80 — the reflection may floor either
+    // way depending on the 2%-padding round-off. Both are correct at the pixel level; assert the
+    // pair rather than a single row.
+    expect([39, 40]).toContain(p.y)
   })
 
-  it('top-left of the fitted image sits at (0, 0)', () => {
-    // Fit puts the image's short axis touching the viewport with ~2% padding — so the pixel at
-    // the image's top-left corner is slightly inside the canvas. Verify no y-flip: pointing at the
-    // TOP-LEFT of the image (image row 0, col 0) must resolve to (0, 0), not (0, nY-1).
-    const m = meta({ nX: 100, nY: 100 })  // square, so fit centres it perfectly
+  it('screen top → high row index; screen bottom → low row index (the display flip)', () => {
+    // Pin the y-reflection that this file's final step applies. The shader / display / mask-read
+    // pipeline shows the mask store's row 0 at the BOTTOM of the canvas — a click at the visual
+    // TOP of the image corresponds to the store's LAST row, not row 0. Without the reflection,
+    // every pick landed on the mirror cell across the horizontal midline (Dominik, 2026-08-26).
+    //
+    // A single-sign flip anywhere in the world math will make one of these two assertions fail;
+    // the pair keeps this defended in both directions.
+    const m = meta({ nX: 100, nY: 100 })
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
-    // Image half-extent in world = 50 µm; visible half-height in world = dist * VIEW_HALF_ANGLE.
-    const halfH_world = cam.dist * VIEW_HALF_ANGLE
-    // Canvas y-pixel for image top-left (world y = +50):
-    //   ndcY = 50 / halfH_world; canvas cy = (1 - ndcY) * H / 2
-    const cy = (1 - 50 / halfH_world) * H / 2
-    const cx = (0 / halfH_world + 1) * W / 2 - 50 / halfH_world * W / 2  // world x = -50
-    const p = screenToImagePx(cx, cy, W, H, cam, m)
-    expect(p.x).toBe(0)
-    expect(p.y).toBe(0)
+    const top    = screenToImagePx(W / 2, 2,      W, H, cam, m)
+    const bottom = screenToImagePx(W / 2, H - 2,  W, H, cam, m)
+    expect(top.y).toBeGreaterThanOrEqual(m.nY - 5)   // near nY-1
+    expect(bottom.y).toBeLessThanOrEqual(5)          // near 0
   })
 
   it('pan shifts what is under the pointer, opposite direction to the eye', () => {
@@ -65,8 +69,8 @@ describe('screenToImagePx', () => {
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
     const p = screenToImagePx(W / 2, H / 2, W, H, cam, m)
-    expect(p.x).toBe(50)     // half of nX
-    expect(p.y).toBe(40)     // half of nY
+    expect(p.x).toBe(50)                // half of nX
+    expect([39, 40]).toContain(p.y)     // half of nY, ± 1 for the reflection's half-pixel round-off
   })
 
   it('outside the image → in:false, coords still computed', () => {

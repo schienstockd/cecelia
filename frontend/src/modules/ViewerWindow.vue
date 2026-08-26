@@ -1580,8 +1580,12 @@ function onUp(e: PointerEvent) {
   const travelled = Math.hypot(dx, dy)
   // Picking is a 2D-plane feature. MIP picking is ambiguous — a ray hits many labels — so the
   // 3D view leaves the click as a pointer-up with no side effects (P8 open question in the plan).
-  if (travelled <= CLICK_MAX_TRAVEL_PX && mode.value === 'plane' && !e.shiftKey) {
-    void pickCellAt(e)
+  // Modifier keys route to the endpoint's multi-select modes: shift = add, alt = toggle. Plain
+  // click = replace. Shift+DRAG is the 3D pan gesture; the travel deadband above catches that.
+  if (travelled <= CLICK_MAX_TRAVEL_PX && mode.value === 'plane') {
+    const pickMode: 'replace' | 'add' | 'toggle' =
+      e.altKey ? 'toggle' : e.shiftKey ? 'add' : 'replace'
+    void pickCellAt(e, pickMode)
   }
 }
 
@@ -1590,7 +1594,7 @@ function onUp(e: PointerEvent) {
  * broadcast lights up the transient pop on the plots — this window never touches the gating store
  * directly. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
  */
-async function pickCellAt(e: PointerEvent) {
+async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
   const rect = c.getBoundingClientRect()
@@ -1608,7 +1612,7 @@ async function pickCellAt(e: PointerEvent) {
     t: Math.max(0, Math.round(t.value)),
     z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
     x: p.x, y: p.y,
-    mode: 'replace',
+    mode: pickMode,
   }
   try {
     const res = await fetch('/api/viewer/pick-cell', {
@@ -1685,6 +1689,9 @@ const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: 'Shift + drag', what: 'Pan, in both views' },
   { keys: 'Wheel', what: 'Zoom' },
   { keys: 'Shift + wheel', what: '2D: step through z planes' },
+  { keys: 'Click', what: '2D: pick the cell under the pointer (replaces selection)' },
+  { keys: 'Shift + click', what: '2D: add the cell to the selection' },
+  { keys: 'Alt + click', what: '2D: toggle the cell in the selection' },
   { keys: 'Space', what: 'Play / pause the timecourse' },
   { keys: '← / →', what: 'Previous / next timepoint' },
 ]

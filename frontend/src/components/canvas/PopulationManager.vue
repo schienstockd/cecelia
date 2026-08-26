@@ -403,22 +403,25 @@ function moveTo(target: string) {
         </button>
       </div>
 
-      <!-- filter-population form (Decision 15): a pop defined by an AND-ed filter on any obs measure.
-           Same form creates AND edits (fpEditPath) — editing is not a special path. -->
+      <!-- Filter + Combine + history in one row, `+[icon]` compact form — matches `+ Plot` / `+ Pairs`
+           in the gating toolbar (Dominik, 2026-08-26). Two labelled rows was a whole extra bar of
+           height for a control the user reaches for once per pop, and the icons are what a repeat
+           user reads for anyway (pi-filter = filter pop, pi-link = combined pop).
+           Decision 15: filter pop = AND-ed filter on any obs measure. Same form creates AND edits.
+           Decision 16: combined pop = "nuc-GFP OR mem-TOM", which no single 2D gate can draw.  -->
       <div v-if="!readonly && !clusterMode" class="pm-add cc-row cc-row-tight">
-        <button class="pm-add-btn" @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
-                v-tooltip.bottom="'Define a population by filtering on obs measures'">
-          <i class="pi pi-filter" /> New filter population
+        <button class="pm-add-icon cc-btn cc-btn-primary"
+                @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
+                v-tooltip.bottom="'New filter population'" aria-label="New filter population">
+          <i class="pi pi-plus" /><i class="pi pi-filter" />
         </button>
-        <!-- combined population (Decision 16): the answer to "cells positive for nuc-GFP OR mem-TOM",
-             which no single 2D gate can draw. Sits next to the filter form — both define a population
-             by a rule rather than a shape. -->
-        <button class="pm-add-btn" @click="showBoolForm ? (showBoolForm = false) : openCreateBool()"
-                v-tooltip.bottom="'Define a population by combining existing ones'">
-          <i class="pi pi-link" /> Combine populations
+        <button class="pm-add-icon cc-btn cc-btn-primary"
+                @click="showBoolForm ? (showBoolForm = false) : openCreateBool()"
+                v-tooltip.bottom="'Combine populations'" aria-label="Combine populations">
+          <i class="pi pi-plus" /><i class="pi pi-link" />
         </button>
         <!-- Undo/redo for hand-drawn gating. In this bar rather than a bar of their own: the panel is
-             the document these act on, and a third stacked row costs more than two icons do. -->
+             the document these act on. -->
         <template v-if="historyMode">
           <span class="pm-add-spacer" />
           <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canUndo"
@@ -773,6 +776,11 @@ function moveTo(target: string) {
   color: var(--cc-text); cursor: pointer; }
 .pm-add-btn:hover { border-color: var(--cc-accent-strong); color: var(--cc-accent-soft); }
 .pm-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* `+[icon]` compact add buttons (Dominik, 2026-08-26). Two icons in one primary button — same
+   idiom as `+ Plot` / `+ Pairs` in the gating toolbar, minus the label. Sized to fit both glyphs
+   comfortably (default `.cc-btn-icon` is a 1.5rem square built for ONE glyph and clipped these). */
+.pm-add-icon { padding: 3px 8px; font-size: var(--cc-fs-xs); }
+.pm-add-icon i + i { margin-left: 3px; }
 /* filter-population form (Decision 15) */
 .pm-ff { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-1); }

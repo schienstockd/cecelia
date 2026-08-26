@@ -58,14 +58,19 @@ export function screenToImagePx(
   // panX>0 lands to the RIGHT of the image centre in world space.
   const worldX = -cam.panX + ndcX * halfW
   const worldY = -cam.panY + ndcY * halfH
-  // Image is centred on the world origin from `-ext/2` to `+ext/2`; add `ext/2` to get absolute
-  // image µm from the top-left corner. Image row 0 is at world y = -ext/2 (top of screen after the
-  // NDC flip above), so the y translation is `-worldY + extY/2`. Getting the sign wrong here puts
-  // the pick at the mirrored row — see the header comment.
+  // Image is centred on the world origin; add `ext/2` to get absolute image µm from the top-left
+  // corner. The Y AXIS needs a reflection at the end — the shader / display / mask-read pipeline
+  // shows image row 0 at screen top by convention (`fitCamera` + the raycast + a V-flip somewhere
+  // downstream), but the mask reader receives the row index and reads directly, so the ROW WE SEND
+  // has to be the row the user actually clicked on. Without the reflection every pick landed on
+  // the mirror row across the horizontal midline (Dominik, 2026-08-26). The reflection is a single
+  // pixel-space flip at the very end — cheaper to reason about than juggling the sign inside the
+  // world-µm math.
   const absX_um = worldX + extX / 2
   const absY_um = -worldY + extY / 2
   const x = Math.floor(absX_um / vx)
-  const y = Math.floor(absY_um / vy)
+  const y0 = Math.floor(absY_um / vy)
+  const y = meta.nY - 1 - y0
   const inside = x >= 0 && y >= 0 && x < meta.nX && y < meta.nY
   return { x, y, in: inside }
 }
