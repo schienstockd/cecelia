@@ -67,8 +67,12 @@ export interface ViewerMeta {
 }
 
 /** Channels the shader can composite in one pass. Beyond this the viewer shows the first MAX_CHANNELS
- *  and says so — a silent truncation would read as "that channel is empty". */
-export const MAX_CHANNELS = 8
+ *  and says so — a silent truncation would read as "that channel is empty". Sized for 25-ch CODEX-style
+ *  stacks and multi-marker IF; the cost is one row in the LUT texture and one vec4 in the uniform block
+ *  per slot. In 3D mode this also multiplies the vol texture's z-layer count (nZ * nT * MAX_CHANNELS),
+ *  which can bump into `maxTextureDimension3D` (2048 on integrated) for deep z-stacks — but 2D and
+ *  moderate 3D fit fine. */
+export const MAX_CHANNELS = 32
 /** Stops per channel in the LUT texture. Matches the bridge's `_LUT_MAX_STOPS`, which is what caps the
  *  stops the props file can carry in the first place. */
 export const LUT_STOPS = 64
@@ -449,10 +453,20 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
 }
 
 /** Wheel → dolly. Multiplicative, so a notch feels the same at every distance; clamped to a band
- *  around the fit distance so the volume can never be lost off-screen. */
-export function orbitZoom(cam: OrbitCamera, deltaY: number, fitDist: number): OrbitCamera {
+ *  around the fit distance so the volume can never be lost off-screen.
+ *
+ *  `band` scales the fit distance. The default `{min: 0.15, max: 6}` is tuned for the 3D volume view,
+ *  where a wider band lets the user rotate a rotated volume out of frame. The 2D plane view of a
+ *  whole slide is a bounded rectangle — it cannot be lost — so it passes a much smaller `min` so the
+ *  user can zoom to actual pixels (`camZoom ≤ 1`) and `pickTileLevel` reaches L0. At 0.15 on a
+ *  20k×17k slide, max zoom-in is `camZoom ≈ 2` — L1 is the finest level `pickTileLevel` ever picks
+ *  (Dominik, 2026-08-26). */
+export function orbitZoom(
+  cam: OrbitCamera, deltaY: number, fitDist: number,
+  band: { min: number; max: number } = { min: 0.15, max: 6 },
+): OrbitCamera {
   const d = cam.dist * Math.exp(deltaY * 0.001)
-  return { ...cam, dist: Math.max(fitDist * 0.15, Math.min(fitDist * 6, d)) }
+  return { ...cam, dist: Math.max(fitDist * band.min, Math.min(fitDist * band.max, d)) }
 }
 
 // ── Contrast from the data the client already holds ───────────────────────────────

@@ -385,6 +385,13 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     HTTP.setheader(stream, "Access-Control-Allow-Origin"   => "*")
     HTTP.setheader(stream, "Access-Control-Expose-Headers" =>
                    "X-Slab-Shape, X-Slab-Bpv, X-Slab-Level, X-Server-Read-Ms, X-Server-Compress-Ms")
+    # Slab URLs are content-addressed: every parameter that changes the bytes (t, c, z, zTo, x, xTo,
+    # y, yTo, level, enc, labels, valueName) is in the query string, so the same URL always returns the
+    # same bytes UNTIL the source store is reprocessed. `max-age=3600` lets the browser serve a slab a
+    # second time without a round trip — the whole point of a plane switch that returns to a plane you
+    # already loaded. Deliberately short: a reprocess would otherwise leave stale bytes cached for the
+    # rest of the session (a hard reload clears it either way). Not `immutable` for the same reason.
+    HTTP.setheader(stream, "Cache-Control"                 => "private, max-age=3600")
     enc == "zstd" && HTTP.setheader(stream, "Content-Encoding" => "zstd")
     HTTP.setheader(stream, "Content-Length" => string(length(body)))
     HTTP.setstatus(stream, 200)
