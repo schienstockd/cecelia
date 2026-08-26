@@ -54,7 +54,8 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
 import {
-  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary, buildTrackBuffer, tailRange,
+  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
+  buildMultiTrackBuffer, tailRange,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
@@ -248,6 +249,15 @@ const heldProbe = ref('')
  */
 const overlays = ref<OverlayPayload | null>(null)
 const overlaysErr = ref('')
+/**
+ * Track ribbons are drawn from PER-SEGMENTATION payloads, one per vn the panel's track eye has
+ * ticked — so a user can see coastalFg's tracks AND coastalSm15's tracks at the same time, even
+ * while the pop manager (which drives the main `overlays` fetch) is on a third, un-tracked vn like
+ * `default`. Cached across renders so a repeat toggle is instant; refreshed when trackVisibility
+ * changes or the viewer is pinged for an overlay update. Napari draws one Tracks layer per vn;
+ * this is the WebGPU analogue.
+ */
+const trackPayloads = ref<Map<string, OverlayPayload>>(new Map())
 /**
  * The pop manager's CURRENT (valueName, popType) for THIS image. Published to `cc.gatingCurrent`
  * by the gating store (main window) on selectImage + on any (valueName, popType) change, and
@@ -528,21 +538,14 @@ function rebuildOverlays() {
   points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
-  // Track ribbons are gated on the panel's PER-SEGMENTATION track eye — the "directions" icon
-  // in the Segmentations list. Default OFF (see `settings.getTrackVisibility`), so a fresh image
-  // draws no tracks until the user ticks at least one segmentation on.
-  //
-  // Gate: "ANY track eye ticked" — not "the eye for `payload.valueName` is ticked". The overlays
-  // fetch is single-vn today (whatever the pop manager published), so the payload only ever carries
-  // one vn's tracks; a stricter per-vn match would refuse to draw them when the user ticks a
-  // DIFFERENT segmentation's eye than the one the pop manager is currently on (Dominik, 2026-08-26:
-  // "i still can't see the actual track ribbons"). Fetching per-vn tracks — so ticking vn A while
-  // the manager is on vn B actually swaps the ribbons — is a follow-up. P7 of the plan.
-  const trackVis = imageUid ? settings.getTrackVisibility(imageUid,
-                                                          meta.value?.labelNames ?? []) : {}
-  const tracksOn = Object.values(trackVis).some(Boolean)
-  segments = tracksOn ? buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
-                      : EMPTY_SEGMENTS
+  // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
+  // main `overlays` fetch. That way a user with the pop manager on a non-tracked vn (e.g. `default`)
+  // still sees ribbons for whichever tracked vns they have the "directions" eye on, and can show
+  // several vns at once — matching napari's one-Tracks-layer-per-segmentation model. P7 of
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  segments = trackPayloads.value.size
+    ? buildMultiTrackBuffer([...trackPayloads.value.values()], meta.value, PALETTES.cecelia)
+    : EMPTY_SEGMENTS
   segCount.value = segments.count
   r?.setOverlaySegments(segments.data)
   frame.redraw()
@@ -599,6 +602,41 @@ function togglePop(path: string) {
   const next = new Set(hiddenPops.value)
   next.has(path) ? next.delete(path) : next.add(path)
   hiddenPops.value = next
+  rebuildOverlays()
+}
+
+/**
+ * Fetch one overlays payload per ticked track vn — the panel's per-segmentation "directions" eye.
+ * Cached across renders (`trackPayloads` map): a repeat toggle needs no refetch, and an un-ticked
+ * vn drops from the map so a follow-up rebuild draws only what is still on. Fires alongside
+ * `loadOverlays` and again whenever the panel writes trackVisibility (see the storage listener).
+ *
+ * The endpoint reuses `/api/viewer/overlays`; only `cells.{t,x,y,z,track}` is read here, so the
+ * popType is a don't-care and the pops on that payload are ignored — this is a tracks-only path.
+ * If the server payload has no `track` array (the vn has no tracked segmentation), we still cache
+ * the payload so ticking that eye repeatedly doesn't retry the fetch every time.
+ */
+async function loadTracks() {
+  if (!projectUid || !imageUid) return
+  const names = meta.value?.labelNames ?? []
+  const vis = settings.getTrackVisibility(imageUid, names)
+  const wantVns = names.filter(vn => vis[vn])
+  // Drop cached vns no longer ticked
+  const next = new Map<string, OverlayPayload>()
+  for (const vn of wantVns) {
+    const cached = trackPayloads.value.get(vn)
+    if (cached) next.set(vn, cached)
+  }
+  // Fetch newly-ticked vns in parallel — typically 1-3 at once
+  const missing = wantVns.filter(vn => !next.has(vn))
+  await Promise.all(missing.map(async vn => {
+    try {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }),
+                              { cache: 'no-store' })
+      if (res.ok) next.set(vn, await res.json())
+    } catch { /* one vn's failure must not take the others down */ }
+  }))
+  trackPayloads.value = next
   rebuildOverlays()
 }
 
@@ -1044,8 +1082,9 @@ async function loadVersion(r: VolumeRenderer) {
   starting.value = ''
   gotoT(t.value < m.nT ? t.value : 0)
   // After the first frame is on its way: the overlays are a separate, small request and must not
-  // delay the pixels.
+  // delay the pixels. Tracks fetch alongside — one per ticked track eye, cached.
   void loadOverlays()
+  void loadTracks()
 }
 
 /**
@@ -1175,6 +1214,10 @@ function onOverlaysTick(e: StorageEvent) {
   // here rather than in a separate storage listener — one storage event, one refetch.
   gatingCurrent.value = readGatingCurrent()
   void loadOverlays()
+  // The panel's track eye also fires this ping (see ViewerPanel.vue `toggleTrack`), so refetching
+  // per-vn track payloads here is what actually gets ribbons on screen after a toggle. Cheap when
+  // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
+  void loadTracks()
 }
 // A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
 // cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never

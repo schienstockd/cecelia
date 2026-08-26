@@ -300,6 +300,44 @@ export function buildTrackBuffer(
 }
 
 /**
+ * Merge multiple overlays payloads into ONE segment buffer for tracks. Every payload contributes its
+ * own cell tracks; ids are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in
+ * payload A's track 1 never gets linked to a cell in payload B's track 1 — a naive concat would draw
+ * a phantom segment between them. Colour still cycles the palette by the namespaced id, so adjacent
+ * tracks from either vn stay visually distinct.
+ *
+ * This is the multi-vn P7 path: the panel's per-segmentation "directions" eye ticks any set of vns,
+ * one payload per ticked vn arrives here, and every ribbon draws at once (matches napari's model of
+ * one Tracks layer per segmentation, all simultaneously visible).
+ */
+export function buildMultiTrackBuffer(
+  payloads: readonly OverlayPayload[], meta: ViewerMeta | null, palette: readonly string[],
+): SegmentBuffer {
+  if (!payloads.length || !meta) return EMPTY_SEG
+  if (payloads.length === 1) return buildTrackBuffer(payloads[0], meta, palette)
+  const OFFSET = 10_000_000
+  const t: number[] = [], x: number[] = [], y: number[] = [], z: number[] = [], track: number[] = []
+  for (let i = 0; i < payloads.length; i++) {
+    const p = payloads[i]
+    const c = p?.cells; if (!c) continue
+    const ct = c.t ?? [], cx = c.x ?? [], cy = c.y ?? [], cz = c.z ?? [], ctr = c.track ?? []
+    const n = Math.min(ct.length, cx.length, cy.length, ctr.length)
+    for (let j = 0; j < n; j++) {
+      const id = ctr[j]; if (id <= 0) continue
+      t.push(ct[j]); x.push(cx[j]); y.push(cy[j])
+      z.push(cz.length ? cz[j] : 0)
+      track.push(id + (i + 1) * OFFSET)   // namespace per payload → tracks never cross-link
+    }
+  }
+  if (!track.length) return EMPTY_SEG
+  const synthetic: OverlayPayload = {
+    ...payloads[0],
+    cells: { t, x, y, z, track },
+  }
+  return buildTrackBuffer(synthetic, meta, palette)
+}
+
+/**
  * `[first, count]` for a tail of `tailFrames` ending at `t`, or `null` when it is empty.
  *
  * `tailFrames` is a count of FRAMES, as napari's `tail_length` is, so L gives L segments per track —
