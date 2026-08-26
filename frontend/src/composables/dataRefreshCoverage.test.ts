@@ -49,7 +49,7 @@ const EXEMPT: Record<string, string> = {
   'stores/gating.ts':
     'live-updates from the `gating:popmap` broadcast, which is finer-grained than task completion',
   'components/ViewerPanel.vue':
-    'napari viewer reload is a SEPARATE opt-in toggle (napariUpdateImage, default off) — expensive on large images',
+    'viewer reload is a SEPARATE opt-in toggle (viewerAutoUpdate, default off) — expensive on large images',
   'composables/useNapariAutoShow.ts': 'napari overlay state, not a plot',
   'tasks/ParamRenderer.vue': 'a form; its options come from image metadata, not from task output',
   'modules/ChainModule.vue': 'whiteboard wiring, not a plot surface',

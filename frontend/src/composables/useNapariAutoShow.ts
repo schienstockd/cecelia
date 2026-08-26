@@ -267,7 +267,7 @@ export async function refreshLivePreviews(): Promise<void> {
   // this runs the successful run is already registered. A cancelled or failed run never registers, so
   // it correctly falls through to the plain hide.
   //
-  // The promotion deliberately does NOT check `napariUpdateImage`: that setting exists to stop
+  // The promotion deliberately does NOT check `viewerAutoUpdate`: that setting exists to stop
   // expensive IMAGE-pyramid reloads on task completion, and this is the cheap labels-layer path for a
   // store the user explicitly asked to watch. Leaving them staring at a layer that just disappeared
   // would be the surprising behaviour.

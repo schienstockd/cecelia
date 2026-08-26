@@ -657,7 +657,7 @@ async function toggleLabel(valueName: string) {
 
 function onTaskStatus(data: Record<string, unknown>) {
   const status = String(data.status ?? '')
-  if (!settings.napariUpdateImage) return
+  if (!settings.viewerAutoUpdate) return
   if (status !== 'done') return
   const openUid = projectStore.openImageUid
   const taskUid = String(data.imageUid ?? '')
@@ -681,7 +681,7 @@ function onTaskStatus(data: Record<string, unknown>) {
 // mounted app-level, because this panel is `v-if`'d in App.vue and so cannot be relied on to exist
 // when an image opens. Read the rules in that file before adding another overlay kind here.
 function reloadViewer() {
-  if (settings.napariResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
+  if (settings.viewerResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
   else void pushAllOverlays()
 }
 
@@ -693,7 +693,7 @@ function onTaskResult(data: Record<string, unknown>) {
   const addedValueName = meta.valueName as string | undefined
   if (addedValueName) {
     selectedValueName.value = addedValueName
-    if (settings.napariUpdateImage) reloadViewer()   // data-only unless reset
+    if (settings.viewerAutoUpdate) reloadViewer()   // data-only unless reset
   }
 
   const labelValueName = meta.labelValueName as string | undefined
@@ -704,7 +704,7 @@ function onTaskResult(data: Record<string, unknown>) {
     localStorage.setItem('cc.viewerSlabsTick',
                           `${imageUid}:${labelValueName}:${Date.now()}`)
   }
-  if (labelValueName && settings.napariUpdateImage) {
+  if (labelValueName && settings.viewerAutoUpdate) {
     // Mark newly added label as visible and show it in napari
     visibleLabels.value = { ...visibleLabels.value, [labelValueName]: true }
     nextTick(() => {
@@ -718,7 +718,7 @@ function onTaskResult(data: Record<string, unknown>) {
 }
 
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
-watch(() => projectStore.napariReloadTick, () => reloadViewer())
+watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 
 // Bridge status (shared poll — see useNapariStatus): `bridgeStale` warns that napari is running older
 // code than the checkout (it's a separate process that survives a backend restart), and the canvas size
@@ -763,14 +763,14 @@ onUnmounted(() => {
       <div class="viewer-section-title cc-eyebrow cc-fs-2xs">View</div>
       <div class="viewer-opts cc-row cc-row-tight">
         <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariUpdateImage }"
-          @click="settings.napariUpdateImage = !settings.napariUpdateImage"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerAutoUpdate }"
+          @click="settings.viewerAutoUpdate = !settings.viewerAutoUpdate"
           v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
         ><i class="pi pi-refresh" /></button>
 
         <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariResetOnReload }"
-          @click="settings.napariResetOnReload = !settings.napariResetOnReload"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerResetOnReload }"
+          @click="settings.viewerResetOnReload = !settings.viewerResetOnReload"
           v-tooltip.bottom="'Reopen the whole image, not just data — needed after pixels change'"
         ><i class="pi pi-image" /></button>
 

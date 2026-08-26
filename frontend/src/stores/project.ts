@@ -82,11 +82,11 @@ export const useProjectStore = defineStore('project', () => {
   // Writers: the napari WS `open` event (setting both fields — napari opened X, that IS the current
   // focus) and the ImageTable eye click that opens the browser viewer (setting this one only).
   const openImageUid = ref<string | null>(null)
-  // Reload signal for the napari viewer: bumped by anything asking to refresh the SHOWN image (the
+  // Reload signal for the browser viewer: bumped by anything asking to refresh the SHOWN image (the
   // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic, so it
-  // watches this tick and decides data-only vs full reopen (see settings.napariResetOnReload).
-  const napariReloadTick = ref(0)
-  const requestNapariReload = () => { napariReloadTick.value++ }
+  // watches this tick and decides data-only vs full reopen (see settings.viewerResetOnReload).
+  const viewerReloadTick = ref(0)
+  const requestViewerReload = () => { viewerReloadTick.value++ }
   // Data freshness — TARGETED per-image invalidation. A finished task (ws `task:status` == 'done')
   // bumps only the image(s) it touched; a plot watches `dataVersionFor(itsImages)` and refetches ONLY
   // when one of the images IT shows changed — not on every task in the project. This replaces the
@@ -352,7 +352,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, openImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

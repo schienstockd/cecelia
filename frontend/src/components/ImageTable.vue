@@ -425,7 +425,7 @@ function openViewer(img: CciaImage) {
 const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
 async function openInNapari(imageUid: string) {
   // reload short-circuits inside the composable too; skip the loading spinner for a reload
-  if (project.napariImageUid === imageUid) { project.requestNapariReload(); return }
+  if (project.napariImageUid === imageUid) { project.requestViewerReload(); return }
   napariLoading.value = new Set([...napariLoading.value, imageUid])
   try {
     await napariOpen(imageUid, props.setUid)

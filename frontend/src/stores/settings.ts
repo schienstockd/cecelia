@@ -38,8 +38,10 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.autoRefreshOnTask') !== 'false'   // default true
   )
 
-  const napariUpdateImage = ref(
-    localStorage.getItem('cc.napariUpdateImage') === 'true'    // default false
+  // Auto-refresh the viewer when a task finishes for the open image (labels + overlays re-read
+  // from disk). Off by default — heavy on large images (Dominik has 20k+ frame timelapses).
+  const viewerAutoUpdate = ref(
+    localStorage.getItem('cc.viewerAutoUpdate') === 'true'    // default false
   )
 
   // Animation page: selecting a keyframe pushes its saved view into napari, so you SEE the snapshot
@@ -59,8 +61,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
   // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
   // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
-  const napariResetOnReload = ref(
-    localStorage.getItem('cc.napariResetOnReload') === 'true'  // default false
+  const viewerResetOnReload = ref(
+    localStorage.getItem('cc.viewerResetOnReload') === 'true'  // default false
   )
 
   // Dask opportunistic cache for label layers (napari's `resize_dask_cache`). Default ON — the
@@ -451,10 +453,10 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
-  watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
+  watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
-  watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
+  watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
   watch(napariLabelsCache,        v => localStorage.setItem('cc.napariLabelsCache',        String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
@@ -512,7 +514,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
