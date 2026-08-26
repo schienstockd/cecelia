@@ -1953,35 +1953,51 @@ async function loadVersion(refit: boolean) {
   const fit = fitNow(m)
   cam.value = fit
   fitDist.value = fit.dist
+  // PY — read saved viewer props BEFORE the reallocate, so pipeline-selecting fields (mode, zPlane,
+  // zRange) are the RESTORED ones by the time `ensureRenderer` picks tile vs volume. If we let
+  // reallocate run first on defaults and then applied a restored `mode = 'volume'`, the tile
+  // pipeline picked for a whole-slide plane would be wrong and would need a second reallocate.
+  // Post-alloc bits (channels, camera pose, T) go through `duringRestore` AFTER, since they don't
+  // change which renderer gets built. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+  const saved = settings.napariAutoSaveLayerProps
+    ? await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
+    : null
+  if (saved) {
+    propsSink.duringRestore(() => {
+      applyViewState(saved, m, {
+        applyChannel: () => { /* deferred to the post-alloc apply below */ },
+        applyCamera:  () => { /* deferred */ },
+        applyMode:    md => { mode.value = md },
+        applyZ:       (zp, zr) => { zPlane.value = zp; zRange.value = zr },
+        applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
+      })
+    })
+  }
   // `reallocate(false)` creates the right renderer (tile vs volume via `ensureRenderer`), sets
   // image, sets channels, and kicks off the first fetch. Same code the mode-swap path uses, so the
   // two entry points cannot drift apart.
   await reallocate(false)
-  // PY — restore autosaved viewer props for THIS image on top of the fresh allocation. Only applies
-  // to the volume renderer's channel/camera path today; tile mode has no camera pose or per-channel
-  // contrast surface hooked in yet (VIEWER_TILES_PLAN.md → open). Wrapped in `duringRestore` so the
-  // autosave watchers below don't immediately echo the load back to disk.
+  // Post-alloc restore: channels + camera + T. Only applies to volume mode — tile mode has no
+  // per-channel contrast surface or camera pose hooked into the sink today (VIEWER_TILES_PLAN.md →
+  // open). Wrapped in `duringRestore` again so the autosave watchers below don't echo it back.
   const r = renderer.value
-  if (r && settings.napariAutoSaveLayerProps) {
-    const saved = await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
-    if (saved) {
-      propsSink.duringRestore(() => {
-        applyViewState(saved, m, {
-          applyChannel: (c, patch) => {
-            const ch = m.channels[c]; if (!ch) return
-            if (patch.lo !== undefined) ch.lo = patch.lo
-            if (patch.hi !== undefined) ch.hi = patch.hi
-            if (patch.visible !== undefined) ch.visible = patch.visible
-            if (patch.hex) ch.lut = lutFromHex(patch.hex)
-          },
-          applyCamera: c => { cam.value = { ...c } },
-          applyMode:   md => { mode.value = md; r.setOrthographic(md === 'plane') },
-          applyZ:      (zp, zr) => { zPlane.value = zp; zRange.value = zr },
-          applyT:      tp => { if (tp < m.nT) t.value = Math.max(0, Math.floor(tp)) },
-        })
+  if (r && saved) {
+    propsSink.duringRestore(() => {
+      applyViewState(saved, m, {
+        applyChannel: (c, patch) => {
+          const ch = m.channels[c]; if (!ch) return
+          if (patch.lo !== undefined) ch.lo = patch.lo
+          if (patch.hi !== undefined) ch.hi = patch.hi
+          if (patch.visible !== undefined) ch.visible = patch.visible
+          if (patch.hex) ch.lut = lutFromHex(patch.hex)
+        },
+        applyCamera: c => { cam.value = { ...c } },
+        applyMode:   () => { /* handled pre-alloc */ },
+        applyZ:      () => { /* handled pre-alloc */ },
+        applyT:      tp => { if (tp < m.nT) t.value = Math.max(0, Math.floor(tp)) },
       })
-      pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
-    }
+    })
+    pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
   }
   if (refit) { /* nothing more — fitDist already seeded, cam already fit */ }
   starting.value = ''
