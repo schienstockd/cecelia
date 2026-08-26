@@ -265,6 +265,14 @@ const trackSources = ref<{ vn: string; hex: string; count: number }[]>([])
 /** Speed range in µm per hop (Δt = 1 frame), or null when the mode isn't speed. Feeds the ramp
  *  legend under the Tracks control block, same shape as the point colour-by numeric scale. */
 const trackSpeedRange = ref<[number, number] | null>(null)
+/** Whether the panel has this vn's popType turned on. Mirrors the same read `loadOverlays` uses
+ *  when it decides whether to clear the payload's pops, so the summary line and the pop list agree.
+ *  Reactive: `gatingCurrent` changes when the pop manager switches popType, `_setPrefs` updates via
+ *  the storage bridge whenever the panel toggles the icon. */
+const popsPanelOn = computed(() => {
+  const pt = gatingCurrent.value.popType || 'flow'
+  return setUid ? settings.getPopVisible(setUid, pt) : true
+})
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
 const trackColorMode = computed<'track' | 'speed' | 'solid'>({
@@ -1564,8 +1572,14 @@ onUnmounted(() => {
                             @update:open="v => setSection('pops', v)" max-height="none">
           <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
                and no populations, and an empty group would read as a broken feature rather than as an
-               image that has not been through segmentation yet. -->
-          <template v-if="summary.cells > 0 || overlaysErr">
+               image that has not been through segmentation yet.
+               Panel gate off = the whole section reads as inactive rather than as a cell-count summary
+               (Dominik, 2026-08-26: "how you can show a pops stats when the pops toggle in the viewer
+               controls is off"). -->
+          <template v-if="!popsPanelOn">
+            <div class="cc-muted cc-fs-2xs">Hidden</div>
+          </template>
+          <template v-else-if="summary.cells > 0 || overlaysErr">
             <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
             <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
                  on the canvas — so the panel names which one it is. -->
