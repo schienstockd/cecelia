@@ -530,13 +530,17 @@ function rebuildOverlays() {
   r?.setOverlayPoints(points.data)
   // Track ribbons are gated on the panel's PER-SEGMENTATION track eye — the "directions" icon
   // in the Segmentations list. Default OFF (see `settings.getTrackVisibility`), so a fresh image
-  // draws no tracks until the user ticks their segmentation on. Which vn owns the tracks in this
-  // payload is `overlays.value.valueName` (the server-resolved segmentation for this fetch); if
-  // the panel has that vn's eye off, we skip the build and hand an empty buffer to the renderer.
-  // P7 of docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
-  const trackVn = overlays.value?.valueName ?? ''
-  const tracksOn = !!(trackVn && imageUid &&
-                      settings.getTrackVisibility(imageUid, [trackVn])[trackVn])
+  // draws no tracks until the user ticks at least one segmentation on.
+  //
+  // Gate: "ANY track eye ticked" — not "the eye for `payload.valueName` is ticked". The overlays
+  // fetch is single-vn today (whatever the pop manager published), so the payload only ever carries
+  // one vn's tracks; a stricter per-vn match would refuse to draw them when the user ticks a
+  // DIFFERENT segmentation's eye than the one the pop manager is currently on (Dominik, 2026-08-26:
+  // "i still can't see the actual track ribbons"). Fetching per-vn tracks — so ticking vn A while
+  // the manager is on vn B actually swaps the ribbons — is a follow-up. P7 of the plan.
+  const trackVis = imageUid ? settings.getTrackVisibility(imageUid,
+                                                          meta.value?.labelNames ?? []) : {}
+  const tracksOn = Object.values(trackVis).some(Boolean)
   segments = tracksOn ? buildTrackBuffer(overlays.value, meta.value, PALETTES.cecelia)
                       : EMPTY_SEGMENTS
   segCount.value = segments.count
