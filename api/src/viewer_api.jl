@@ -634,3 +634,128 @@ function api_viewer_props_post(body_bytes::Vector{UInt8})
         500, JSON3.write((; error = sprint(showerror, e)))
     end
 end
+
+# ── POST /api/viewer/pick-cell (P8) ───────────────────────────────────────────────
+# Click a cell in the WebGPU viewer → transient population highlighted on the gating plots.
+# Reuses the same _set_napari_selection! / _inject_napari_pop! bridge napari's shape selection
+# uses (`gating_api.jl` → *Napari cell-selection registry*) so this behaves identically to the
+# existing linked-brushing pop — same JSON tree, same broadcast, same colour, no client-side
+# gating store changes needed.
+#
+# Body: {projectUid, imageUid, valueName, popType, t, z, x, y, mode?}
+#   x, y are IMAGE PIXEL indices (0-based), computed client-side by `screenToImagePx`.
+#   z is the plane the click landed on; t is the current timepoint.
+#   mode = 'replace' (default) — the new label REPLACES the current selection. Ergonomic default
+#          for pointer picking: click a cell to see it, click another to swap. Multi-select is a
+#          shift-click follow-up (`mode='add'` / `mode='toggle'`), not shipped in this pass.
+#
+# Response: {label, cellUid?, nSelected}. `label = 0` when the click landed on background — the
+# response is still 200; the selection is unchanged.
+function api_viewer_pick_cell(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    # Which mask on disk. `label_store_path` answers the base mask for that segmentation — the
+    # same one shown as "(vn) Labels" in napari and rendered by the WebGPU viewer's mask slot.
+    zp, lerr = label_store_path(pu, iu, vn)
+    zp === nothing && return 404, JSON3.write((; error = lerr))
+    tint = _to_int(get(body, "t", 0))
+    zint = _to_int(get(body, "z", 0))
+    xint = _to_int(get(body, "x", 0))
+    yint = _to_int(get(body, "y", 0))
+    # `level` matches the LOD the viewer is DISPLAYING (client sends `slabLevel.value`). Label
+    # downsampling is nearest, so reading L0 while the user sees L1 picks a NEIGHBOUR of the visible
+    # cell — reads as "the wrong cell was highlighted". Clamped against the store's pyramid depth so a
+    # stale client cannot reach `open_level`'s KeyError path (mirrors `try_serve_slab`).
+    lvl_req = _to_int(get(body, "level", 0))
+    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
+    lvl     = clamp(lvl_req, 0, nlvl - 1)
+    label = try
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xint:xint, y = yint:yint, level = lvl)
+        Int(first(vol))
+    catch e
+        return 500, JSON3.write((; error = "pick read failed: " * sprint(showerror, e)))
+    end
+    # Label 0 is background. Report and leave the selection alone — resetting on a background
+    # click would surprise the user who missed a cell by one pixel.
+    label == 0 && return 200, JSON3.write((; label = 0, nSelected = 0))
+    mode = String(get(body, "mode", "replace"))
+    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    labs = if mode == "add"
+        label in cur ? cur : vcat(cur, label)
+    elseif mode == "toggle"
+        label in cur ? filter(!=(label), cur) : vcat(cur, label)
+    else
+        Int[label]
+    end
+    _set_napari_selection!(img._dir, vn, labs)
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_napari_pop!(m, img)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; label, nSelected = length(labs)))
+end
+
+# ── POST /api/viewer/pick-rect (P8 rectangle drag) ────────────────────────────────
+# Drag a rectangle in the viewer → all cells whose mask intersects that XY box at (t, z) become the
+# transient population. Same registry / broadcast path as `api_viewer_pick_cell`, so the two share
+# the linked-brushing pop and can compose (a rect drag then a shift+click adds one more cell).
+#
+# Body: {projectUid, imageUid, valueName, popType, t, z, x1, y1, x2, y2, mode?}
+#   (x1, y1) / (x2, y2) are the low/high corners in IMAGE PIXEL coords (client normalises before
+#   POST). z is the plane the rect was drawn on; a future z-window feature will multi-plane it.
+#   mode = 'replace' | 'add' | 'toggle' (as pick-cell).
+#
+# Reads the mask over the rect in ONE `read_slab` call — same reader the pixel path uses, so the
+# rect obeys the same axis + level conventions. Labels are dedup'd server-side (a cell straddling
+# many voxels contributes one label).
+function api_viewer_pick_rect(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    zp, lerr = label_store_path(pu, iu, vn)
+    zp === nothing && return 404, JSON3.write((; error = lerr))
+    tint = _to_int(get(body, "t", 0))
+    zint = _to_int(get(body, "z", 0))
+    x1   = _to_int(get(body, "x1", 0));  x2 = _to_int(get(body, "x2", 0))
+    y1   = _to_int(get(body, "y1", 0));  y2 = _to_int(get(body, "y2", 0))
+    # Normalise (client should already have done this, but a rect drawn from lower-right can arrive
+    # inverted through JSON coercion / a client bug — one dedupe here is cheaper than debugging a
+    # store read that returned zero rows).
+    xlo = min(x1, x2); xhi = max(x1, x2)
+    ylo = min(y1, y2); yhi = max(y1, y2)
+    # `level` matches the LOD the viewer is DISPLAYING — see the pick-cell endpoint's note.
+    lvl_req = _to_int(get(body, "level", 0))
+    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
+    lvl     = clamp(lvl_req, 0, nlvl - 1)
+    labels_uniq = try
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xlo:xhi, y = ylo:yhi, level = lvl)
+        # `vol` is `(x, y, z)` column-major, one voxel per pixel of the rect (z drops because zint
+        # is an Int). Flatten + unique + drop 0 (background). Keep as Int for JSON.
+        Int[Int(l) for l in unique(vec(vol)) if l != 0]
+    catch e
+        return 500, JSON3.write((; error = "rect read failed: " * sprint(showerror, e)))
+    end
+    mode = String(get(body, "mode", "replace"))
+    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    labs = if mode == "add"
+        collect(union(Set(cur), Set(labels_uniq)))
+    elseif mode == "toggle"
+        s = Set(cur); for l in labels_uniq; l in s ? delete!(s, l) : push!(s, l); end
+        collect(s)
+    else
+        labels_uniq
+    end
+    _set_napari_selection!(img._dir, vn, labs)
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_napari_pop!(m, img)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
+end

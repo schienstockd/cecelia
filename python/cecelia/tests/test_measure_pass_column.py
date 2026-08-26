@@ -98,6 +98,20 @@ class PassColumnTest(unittest.TestCase):
         self.assertNotIn('t', list(a.var.index))
         self.assertEqual([c for c in a.var.index if c.startswith('centroid')], [])
 
+    def test_the_index_lands_at_obs_underscore_index(self):
+        """`label_props.jl:n_obs` reads `obs/_index` as a DATASET, not the `_index` attribute pointer
+        that AnnData writes when the index is named. A named `label` index puts the values at
+        `obs/label` with `_index` = 'label' in the group attrs — Julia reads that as an empty table
+        and reports zero cells, so gating shows nothing. Strip the name before writing."""
+        import h5py
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seg = _Stub(tmp)
+            path = seg._to_anndata(_frame(), is_3d=False, n_t=1)
+            with h5py.File(path, 'r') as f:
+                self.assertIn('_index', f['obs'], 'obs/_index must be a dataset for the Julia reader')
+                self.assertEqual(list(f['obs/_index'][:5].astype(str)), ['1', '2', '3', '4'])
+
 
 class MeasureFromZarrStampsThePassTest(unittest.TestCase):
     """The middle link: `measure_from_zarr` must stamp the pass while the label index still exists.
@@ -167,6 +181,46 @@ class MeasureFromZarrStampsThePassTest(unittest.TestCase):
                          "— one-based, not the wire key's 0 and 1")
         self.assertLess(by_pass['1'], by_pass['2'],
                         'pass 1 owns label 1, the object nearer the origin')
+
+
+class ThreadedMeasureMatchesSerialTest(unittest.TestCase):
+    """`measure_from_zarr(n_threads>1)` runs each timepoint on a worker; the concat then reorders by
+    submission index, and every per-timepoint helper mutates only its own local df. If any of that
+    drifts, the threaded output stops matching the serial one. The whole thing has to be reproducible
+    against the fixture, cell-for-cell — a threaded run is not "usually" the same as a serial one."""
+
+    def test_threaded_output_equals_serial_output(self):
+        import anndata as ad
+        import tempfile
+
+        class _Log:
+            def log(self, *_a, **_k): pass
+            def progress(self, *_a, **_k): pass
+
+        labels = np.zeros((3, 10, 8), dtype=np.uint32)
+        labels[0, 1:3, 1:3] = 1
+        labels[0, 6:8, 5:7] = 2
+        labels[1, 2:4, 2:4] = 3
+        labels[2, 4:6, 3:5] = 4
+        image = np.random.default_rng(0).integers(10, 200, size=(3, 2, 10, 8), dtype=np.uint16)
+
+        du = MeasureFromZarrStampsThePassTest._dim_utils((3, 1, 2, 10, 8))
+
+        def _run(n_threads):
+            with tempfile.TemporaryDirectory() as tmp:
+                mu = MeasureUtils({'taskDir': tmp, 'outputValueName': 'thr'}, du)
+                out = mu.measure_from_zarr({'base': [labels]}, [image], _Log(),
+                                           n_threads=n_threads)
+                return ad.read_h5ad(out)
+
+        serial = _run(1)
+        threaded = _run(4)
+
+        # Same rows, same order (concat is by submission t-index, not completion order).
+        self.assertEqual(list(serial.obs.index), list(threaded.obs.index))
+        self.assertTrue(np.allclose(serial.X, threaded.X, equal_nan=True))
+        self.assertTrue(np.allclose(serial.obsm['spatial'], threaded.obsm['spatial']))
+        self.assertTrue(np.allclose(serial.obsm['temporal'], threaded.obsm['temporal']))
 
 
 class PassNumberingMatchesEverySurfaceTest(unittest.TestCase):

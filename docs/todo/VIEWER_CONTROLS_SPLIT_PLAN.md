@@ -274,8 +274,9 @@ anchors in that phase → the referenced source. Do not re-derive the architectu
 | P5 | Populations from module-page pop managers | **DONE** 2026-08-26 | Pop manager pings `cc.viewerOverlaysTick`; viewer refetches overlays and derives `hiddenPops` from `pop.show`. Follow-up 2026-08-26: overlays follow the manager's `(valueName, popType)` via `cc.gatingCurrent`; panel per-pop-type gate empties the overlays list when off. |
 | P6 | Rename `napari*` → viewer-oriented names | **DONE (mostly)** 2026-08-26 | Renamed: `napariUpdateImage → viewerAutoUpdate`, `napariResetOnReload → viewerResetOnReload`, `project.napariReloadTick → viewerReloadTick`, `project.requestNapariReload → requestViewerReload` (+ matching localStorage keys). Deleted: `settings.napariAsDask`, `settings.napariLabelsCache`, "Restart napari" button, `bridgeStale` panel warning, segment-cache-running warning. **KEPT**: `settings.napariAutoSaveLayerProps` — the animation page banks per-image napari view state via `POST /api/napari/screenshot`; deleting before the WebGPU equivalent exists breaks the animation-snapshot pipeline (Dominik, 2026-08-26). File renames (`napariAutoShow.ts`/`napariColormap.ts`/`napariOverlays.ts`) deferred to P9 (they get deleted anyway). |
 | P7 | WebGPU-native tracks (per-vn selection + ribbons) | **shipped** 2026-08-26 | Per-vn cell-track ribbons: `rebuildOverlays` gates `buildTrackBuffer` on `settings.getTrackVisibility(imageUid, [payload.valueName])`, so the panel's per-segmentation "directions" eye hides tracks in the WebGPU viewer instead of only touching napari. Default OFF preserved. Gated-track pop ribbons + trackclust ribbons: `filterPayloadByLabels` (new util in `viewerOverlays.ts`) narrows the pop-manager's payload to a pop's own cells, and `rebuildOverlays` adds those filtered payloads to `buildMultiTrackBuffer` as extra sources coloured by `pop.colour`. Trackclust needs a distinct `popType=trackclust` fetch — `loadTracks` does it for the pop-manager's active vn only, cached per vn, dropped on toggle-off. Reuses the existing colour picker (no new renderer primitive). |
-| P8 | WebGPU-native picking (click → gating plot highlight) | not started | Click round-trip currently goes through napari. `WEB_VIEWER_PLAN.md` P6. |
-| P9 | Delete the bridge and everything napari | not started (**unblocked by PY** 2026-08-26) | Napari push helpers, `napariOverlays.ts`, `napariAutoShow.ts`, `napariColormap.ts`, `viewerLabels.ts`, WS handlers for napari events, `/api/napari/*` routes, `api/src/napari.jl`, `app/src/napari.jl`, python napari reader, tests. Grep-clean pass; nothing named `napari*` survives outside `docs/archive/`. Rename `napariAutoSaveLayerProps` → `viewerAutoSaveLayerProps` in the same pass. |
+| P8 | WebGPU-native picking (click → gating plot highlight) | **shipped 2026-08-26** — `frontend/src/utils/viewerPick.ts` (pure `screenToImagePx`: canvas click → image pixel via `cam`/`meta`; tested for centre + top-left + pan direction + anisotropic voxels + out-of-image), `ViewerWindow.vue` splits pointerdown/up into click-vs-drag via `CLICK_MAX_TRAVEL_PX = 4` and `pickCellAt` POSTs `/api/viewer/pick-cell`; `api/src/viewer_api.jl` reads one voxel via `read_slab`, updates the transient selection through the existing `_set_napari_selection!` / `_inject_napari_pop!` / `_broadcast_popmap` bridge (so linked-brushing highlights work with zero gating-store changes). Plane view only — MIP picking is ambiguous (see `WEB_VIEWER_PLAN.md` P6). `mode: 'replace'` default; `'add'` / `'toggle'` supported by the endpoint, not wired to the UI yet. |
+| PZ | WebGPU-era movie recording (server-side renderer C cutover) | not started (**P9 BLOCKER**) | `render_view_frame` + `record_view_movie` + `interpolate_keyframes` already built (`api/src/image_render.jl` + `movie_render.jl`, WEB_VIEWER_PLAN.md P5). Missing: (1) `handle_movie_record` rewire from `run_single_movie` (napari) to `record_view_movie`, (2) title-card port off napari's PIL path, (3) CPU overlay compositing on movie frames (points/tracks/masks), (4) batch-movie config off napari, (5) animation-card thumbnail via WebGPU canvas `toBlob()`. Direction locked 2026-08-26: recording stays server-side (headless, batch-friendly, task-rail integrated) — NOT in-browser. Can start in parallel with P8/PX; step (1) must land before P9. |
+| P9 | Delete the bridge and everything napari | not started (**unblocked by PY** 2026-08-26; **blocked by PZ**) | Napari push helpers, `napariOverlays.ts`, `napariAutoShow.ts`, `napariColormap.ts`, `viewerLabels.ts`, WS handlers for napari events, `/api/napari/*` routes, `api/src/napari.jl`, `app/src/napari.jl`, python napari reader, tests. Grep-clean pass; nothing named `napari*` survives outside `docs/archive/`. Rename `napariAutoSaveLayerProps` → `viewerAutoSaveLayerProps` in the same pass. |
 | PX | Multi-mask rendering (N-slot bind group + `viewerMaxSegmentations` setting) | not started | Bitmask ruled out (would lose per-cell contours + IDs). N-slot with a user-owned cap clamped to `adapter.limits.maxSampledTexturesPerShaderStage`. Per-cell contours + palette colouring per mask preserved. Independent of the panel-split; can land at any point after P3. |
 | PY | WebGPU per-image layer props (contrast / colormap / T-Z) — animation-snapshot source | **shipped 2026-08-26** — `frontend/src/utils/viewerProps.ts` (pure capture/apply + fetch wrappers), `ViewerWindow.vue` wires a `debouncedSave` sink (800 ms) gated by `settings.napariAutoSaveLayerProps`, `api_viewer_props_get`/`api_viewer_props_post` in `api/src/viewer_api.jl` write to the SAME on-disk file napari's autosave uses (`<task_dir>/data/<basename(zarr)>.json`) with `write_json_atomic`, format is a napari-shaped superset with a `webgpu` sub-block for round-trippable native state (channel LUT hex, orbit camera, mode = plane/volume, zPlane, zRange). Deletion of `napariAutoSaveLayerProps` deferred to P9 with the rest of the bridge — the flag reads as "autosave viewer props" now, only the name still says napari. Animation card still reads napari's format for now; the WebGPU sink writes both layouts so a future recorder can switch source without a data migration. |
 
@@ -528,10 +529,62 @@ worth, ~5.6 GB just for masks. That's why the cap is user-owned — the setting 
    "up to K on this GPU" beside it.
 8. Bench and update `WEB_VIEWER_PLAN.md` with the numbers.
 
+### PZ — WebGPU-era movie recording (server-side renderer C)
+
+**P9 blocker (with PY).** `handle_movie_record` still calls napari's `record_timelapse!` today.
+Deleting the bridge before this cuts over kills every recording surface: the single-image record
+button, the animation card, and batch movies.
+
+**Direction settled 2026-08-26 (Dominik).** Movie encoding does NOT move into the browser tab.
+Reasons: (a) batch movies iterate images headless with no tab per image; (b) CI / scripted
+regeneration must run without a browser; (c) a tab-blocked encode with no cancel is worse UX than
+the existing task rail. The `WEB_VIEWER_PLAN.md` B/C split holds — B is interactive display only,
+C draws movie frames offline.
+
+**Already built** (`WEB_VIEWER_PLAN.md` P5):
+- `render_view_frame` (`api/src/image_render.jl:231`) — one movie-grade frame at (t, z, contrast,
+  channels), matching the browser's plane/range/projection semantics off the same `read_slab`.
+- `record_view_movie` (`api/src/movie_render.jl:33`) — full T-sweep with jobs.jl progress + cancel,
+  frames cross to Python as one raw-RGB24 file, ffmpeg via `run_py`. No PNG round trip. Verified
+  end-to-end against a fixture store; byte-order is asserted (`write_raw_frames` test).
+- `interpolate_keyframes` (`api/src/movie_render.jl:147`) — numbers tween, categorical fields step
+  (guards the `Bool <: Integer` trap, which would flip visibility to 0.5 → `true` for every frame
+  after the first).
+
+**Missing before the cutover:**
+1. `handle_movie_record` (`api/src/sockets.jl:113`) → `run_single_movie` (`api/src/napari_api.jl:1513`)
+   currently spawns napari and calls `record_timelapse!`. Rewire to `record_view_movie`. Same task
+   frame contract (progress/cancel through `jobs.jl`), same output path, same broadcast — just a
+   different renderer under the hood.
+2. **Title cards.** Today the pre-roll slide is composed by Python via napari's PIL path. Port to a
+   Julia builder (`api/src/movie_title.jl` — Colors.jl + `FreeTypeAbstraction` or drop-in through
+   `run_py` with pure PIL, no napari). Reads the movie's banked view state for the channel legend.
+3. **Overlays on movie frames** — points, tracks, masks. Renderer C already draws pixels; extend
+   `render_view_frame` to composite the same overlay content the WebGPU viewer draws, using the
+   shared payloads (`api_viewer_overlays`, `filterPayloadByLabels`) so a movie of a gated pop stays
+   the pop the user was authoring. CPU-side is fine at 117 ms/frame budget.
+4. **Batch movies** (`BatchMoviesPanel`, `apply-movie-config`) — currently push a movie config to
+   napari before each record. Move to reading the WebGPU-shape view state directly; the config
+   itself is already server-native (`utils/batchMovie.ts`).
+5. **Animation page snapshots** — the animation card banks `{assetId, viewState, imageUid}` on
+   record (`ImageStripView.vue`). PY already writes the view state to the same on-disk file
+   napari's autosave used, so the animation card and the recorder read the same source once the
+   frontend is switched from `/api/napari/screenshot` to a WebGPU canvas `toBlob()` for the
+   thumbnail asset. See PY.
+
+**Acceptance:**
+- Single-image record button → mp4 with no napari process spawned.
+- Batch movies → N mp4s, same file names + suffixes, no napari.
+- Animation card records a keyframe; the resulting mp4 replays with contrast/camera/T matching what
+  the WebGPU viewer showed at capture.
+- `WEB_VIEWER_PLAN.md` P5 marked shipped end-to-end.
+
+**Sequencing.** PZ can start in parallel with P8/PX; the cutover step (1) must land before P9.
+
 ### P9 — delete the bridge and everything napari
 
-**Do this LAST.** P1-P8 have to be fully covered first, verified in-browser, and the code paths that
-routed through the bridge must be dead.
+**Do this LAST.** P1-P8 + PY + PZ have to be fully covered first, verified in-browser, and the code
+paths that routed through the bridge must be dead.
 
 **Steps.**
 1. Grep the codebase for `napari` (case-insensitive) — every hit gets an intended fate: delete /

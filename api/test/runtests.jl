@@ -4605,6 +4605,8 @@ end
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
+        "/api/viewer/pick-cell",
+        "/api/viewer/pick-rect",
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4646,7 +4648,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 118
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 120
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5607,6 +5609,30 @@ end
         d = JSON3.read(out)
         @test d.webgpu.channels[1].hex == "#ff0000"
         @test d.webgpu.mode == "plane"
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer pick-cell — 404 when the mask store is missing" begin
+    # P8 — the click endpoint reuses `label_store_path`, so the same "not on disk" answer that
+    # `api_viewer_meta`'s labelNames would omit surfaces here as a 404 rather than a 500 mid-read.
+    # A viewer that opens on an unsegmented image sends no picks, but the guard belongs at the
+    # boundary anyway (an unsegmented image is a normal state, not an error).
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-pick")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        save!(img)
+        body = JSON3.write(Dict("projectUid" => proj.uid, "imageUid" => img.uid,
+                                "valueName" => "nope", "popType" => "flow",
+                                "t" => 0, "z" => 0, "x" => 0, "y" => 0))
+        st, out = api_viewer_pick_cell(Vector{UInt8}(body))
+        @test st == 404
+        d = JSON3.read(out)
+        @test occursin("no label store", d.error)
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end

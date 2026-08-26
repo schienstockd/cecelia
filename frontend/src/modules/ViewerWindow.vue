@@ -59,6 +59,7 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
+import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
@@ -385,6 +386,30 @@ function readGatingCurrent(): { valueName: string; popType: string } {
   } catch { return { valueName: '', popType: '' } }
 }
 const gatingCurrent = ref(readGatingCurrent())
+
+/**
+ * `settings.viewerSelectMode` reactivity ACROSS windows. The popup viewer is its own Pinia
+ * instance, so a change to `viewerSelectMode` in the main window's settings store does NOT
+ * propagate — a localStorage `storage` event does. Same idiom as `cc.gatingCurrent` above and
+ * `cc.viewerOverlaysTick` below. Kept as a local ref rather than reading `settings.viewerSelectMode`
+ * so the storage listener has a single obvious target.
+ */
+const selectModeActive = ref<boolean>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem('cc.viewerSelectMode') === 'select')
+  || settings.viewerSelectMode === 'select',
+)
+function readSelectMode(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem('cc.viewerSelectMode') === 'select'
+}
+/** Flip the mode from the viewer itself — mirrors what the gating toolbar's pencil does, so a user
+ *  can stay in the viewer window without reaching back to the module page. Writes both the local
+ *  ref (immediate) AND localStorage (the main-window's settings store watches this key). */
+function toggleSelectMode() {
+  const next = !selectModeActive.value
+  selectModeActive.value = next
+  try { localStorage.setItem('cc.viewerSelectMode', next ? 'select' : 'off') } catch { /* noop */ }
+}
 /** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
@@ -421,9 +446,6 @@ watch(colourBy, () => { void loadOverlays() })
 const labelName = computed(() => {
   const names = meta.value?.labelNames ?? []
   if (!imageUid || !names.length) return ''
-  // `imageUid` is the const from route.query set at setup. In the popup this is the ONLY viewer;
-  // the popup's settings store rehydrates from localStorage on change (P2), so a tick in the
-  // panel reaches here without touching the popup's `openImageUid`.
   const vis = settings.getLabelVisibility(imageUid, names)
   return names.find(n => vis[n]) ?? ''
 })
@@ -1553,15 +1575,38 @@ function togglePlay() {
  * around at all once zoomed in (Dominik, 2026-08-25).
  */
 const pans = (e: PointerEvent | MouseEvent) => mode.value === 'plane' || e.shiftKey
-let dragFrom: { x: number; y: number } | null = null
+// `dragFrom` is the pointer's LAST position (updated per move so `onMove` computes per-event delta).
+// `dragStart` is where the gesture began — untouched by move, used by `onUp` to decide click vs drag.
+// The two are separate because collapsing them would need `onMove` to re-derive the total from a
+// running sum, and a pan that started with a tap would then never register as a click.
+let dragFrom:  { x: number; y: number } | null = null
+let dragStart: { x: number; y: number } | null = null
+/** Pointer-travel threshold below which a mouseup is a CLICK (px, cursor space). Tuned to match
+ *  the OS's own drag-vs-click deadband — cursors jitter a pixel or two on click. */
+const CLICK_MAX_TRAVEL_PX = 4
+/** Visible rectangle overlay while a select-mode drag is in flight, in CANVAS pixel space.
+ *  Null while nothing is being drawn; set on the first move that crosses the click deadband. */
+const dragRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 function onDown(e: PointerEvent) {
-  dragFrom = { x: e.clientX, y: e.clientY }
+  dragFrom  = { x: e.clientX, y: e.clientY }
+  dragStart = { x: e.clientX, y: e.clientY }
   ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
 }
 function onMove(e: PointerEvent) {
   if (!dragFrom || !canvas.value) return
   const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y
   dragFrom = { x: e.clientX, y: e.clientY }
+  // Select-mode + plain drag = RECTANGLE selection. Shift+drag stays a pan (the escape hatch when
+  // you need to reposition while a selection tool is active). Anything else = the old pan / rotate
+  // path. Two separate gestures on the same button, disambiguated by the mode and the modifier.
+  if (selectModeActive.value && mode.value === 'plane' && !e.shiftKey && dragStart && canvas.value) {
+    const rect = canvas.value.getBoundingClientRect()
+    const x0 = dragStart.x - rect.left, y0 = dragStart.y - rect.top
+    const x1 = e.clientX   - rect.left, y1 = e.clientY   - rect.top
+    dragRect.value = { x: Math.min(x0, x1), y: Math.min(y0, y1),
+                       w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) }
+    return
+  }
   cam.value = pans(e)
     ? panDrag(cam.value, dx, dy, canvas.value.clientHeight)
     : orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
@@ -1571,7 +1616,124 @@ function onMove(e: PointerEvent) {
   // stream in behind it. `scheduleTilePump` cancels fetches the new viewport does not want first.
   if (useTiles.value) scheduleTilePump()
 }
-function onUp() { dragFrom = null }
+function onUp(e: PointerEvent) {
+  // A click is a mouseup that did not travel — the pick fires here rather than on `onDown` so a
+  // pan gesture that started with the same button is not misread as a pick. `dragStart` was
+  // captured on `onDown` in canvas space; a small travel (see `CLICK_MAX_TRAVEL_PX`) IS a click.
+  const start = dragStart
+  dragFrom = null; dragStart = null
+  if (!start) return
+  const dx = e.clientX - start.x, dy = e.clientY - start.y
+  const travelled = Math.hypot(dx, dy)
+  // Two release paths in SELECT mode: a small-travel release is a CLICK → single-cell pick,
+  // anything larger with a live `dragRect` is a RECTANGLE release → all labels in the rect.
+  // Both route to the same endpoint (single-cell as a rect degenerates to one voxel); keeping
+  // them separate here means a jittery click cannot accidentally become an empty rect fetch.
+  const rect = dragRect.value
+  dragRect.value = null
+  if (mode.value !== 'plane' || !selectModeActive.value) return
+  const pickMode: 'replace' | 'add' | 'toggle' =
+    e.altKey ? 'toggle' : e.shiftKey ? 'add' : 'replace'
+  if (travelled <= CLICK_MAX_TRAVEL_PX) {
+    void pickCellAt(e, pickMode)
+  } else if (rect && rect.w >= 4 && rect.h >= 4) {
+    void pickRectAt(rect, pickMode)
+  }
+}
+
+/**
+ * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
+ * broadcast lights up the transient pop on the plots — this window never touches the gating store
+ * directly. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
+ */
+async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
+  const c = canvas.value, m = meta.value
+  if (!c || !m) return
+  const rect = c.getBoundingClientRect()
+  const cx = e.clientX - rect.left
+  const cy = e.clientY - rect.top
+  const lvl = slabLevel.value
+  const p = screenToImagePx(cx, cy, c.clientWidth, c.clientHeight, cam.value, m,
+                            renderNX.value, renderNY.value)
+  if (!p.in) return   // black margin around a zoomed-out image — nothing to pick
+  const gc = gatingCurrent.value
+  // `valueName` follows the pop manager's active segmentation — pick and plot must read the same
+  // label store, else two different label number spaces yield unrelated cells on the plot.
+  // `level` matches the display's LOD so nearest-neighbour label downsampling doesn't pick a
+  // neighbour of the visible cell.
+  const body = {
+    projectUid, imageUid,
+    valueName: gc.valueName || undefined,
+    popType:   gc.popType   || 'flow',
+    t: Math.max(0, Math.round(t.value)),
+    z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
+    x: p.x, y: p.y,
+    level: lvl,
+    mode: pickMode,
+  }
+  try {
+    const res = await fetch('/api/viewer/pick-cell', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
+    // Nothing to do on the response — the popmap broadcast updates the plots. Log a background
+    // click quietly so the user can tell the click landed off any cell.
+    const j = await res.json() as { label?: number; nSelected?: number }
+    if (!j.label) vlog('info', 'Pick: background (no cell)')
+  } catch (err) {
+    vlog('warn', 'Pick error: ' + (err instanceof Error ? err.message : String(err)))
+  }
+}
+
+/**
+ * Rectangle-drag pick: POST /api/viewer/pick-rect with the image-pixel rect the user drew.
+ * `rect` is in CANVAS pixel space (from `onMove`); converted to image px through the same
+ * `screenToImagePx` the click path uses so a rect and a click on the same cell agree. The server
+ * reads the mask over the rect at the current (t, z) and extracts unique labels.
+ */
+async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
+                          pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
+  const c = canvas.value, m = meta.value
+  if (!c || !m) return
+  const lvl = slabLevel.value
+  const nx = renderNX.value, ny = renderNY.value
+  const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
+  const p2 = screenToImagePx(rect.x + rect.w, rect.y + rect.h, c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
+  // Clamp inside the image and normalise order — a rect drawn from lower-right to upper-left
+  // arrives with p2 < p1, and the server expects the low/high pair. Bail on an empty rect after
+  // clamping (a drag entirely on the black margin around a zoomed-out image).
+  const cl = (v: number, hi: number) => Math.max(0, Math.min(hi - 1, v))
+  const x1 = Math.min(cl(p1.x, nx), cl(p2.x, nx))
+  const x2 = Math.max(cl(p1.x, nx), cl(p2.x, nx))
+  const y1 = Math.min(cl(p1.y, ny), cl(p2.y, ny))
+  const y2 = Math.max(cl(p1.y, ny), cl(p2.y, ny))
+  if (x1 === x2 && y1 === y2) return
+  const gc = gatingCurrent.value
+  // `valueName` = the pop manager's seg (which IS the plot's seg) — see the note in `pickCellAt`.
+  const body = {
+    projectUid, imageUid,
+    valueName: gc.valueName || undefined,
+    popType:   gc.popType   || 'flow',
+    t: Math.max(0, Math.round(t.value)),
+    z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
+    x1, y1, x2, y2,
+    level: lvl,
+    mode: pickMode,
+  }
+  try {
+    const res = await fetch('/api/viewer/pick-rect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
+    const j = await res.json() as { nLabels?: number; nSelected?: number }
+    vlog('info', `Rect picked ${j.nLabels ?? 0} cells (${j.nSelected ?? 0} in selection)`)
+  } catch (err) {
+    vlog('warn', 'Rect pick error: ' + (err instanceof Error ? err.message : String(err)))
+  }
+}
+
 /**
  * Wheel zooms; SHIFT+wheel steps the z plane in the 2D view.
  *
@@ -1628,13 +1790,20 @@ function onWheel(e: WheelEvent) {
 
 /** What the canvas responds to. One list, rendered in the popover AND nowhere else — a shortcut that
  *  only exists in someone's memory is a shortcut nobody uses. */
-const SHORTCUTS: { keys: string; what: string }[] = [
-  { keys: 'Drag', what: '2D: pan · 3D: rotate' },
-  { keys: 'Shift + drag', what: 'Pan, in both views' },
-  { keys: 'Wheel', what: 'Zoom' },
-  { keys: 'Shift + wheel', what: '2D: step through z planes' },
-  { keys: 'Space', what: 'Play / pause the timecourse' },
-  { keys: '← / →', what: 'Previous / next timepoint' },
+/** Per-mode table so the popover can be read as "in mode X, what does gesture Y do". The same
+ *  gesture (Drag, Click) means different things depending on pan vs select mode AND 2D vs 3D, so a
+ *  flat list of `keys → what` conflated four contexts. `—` = a no-op in that context. */
+const SHORTCUTS: { keys: string; pan: string; select: string }[] = [
+  { keys: 'Drag',          pan: '2D: pan · 3D: rotate',   select: 'Rectangle (2D)' },
+  { keys: 'Shift + drag',  pan: 'Pan',                    select: 'Pan (escape hatch)' },
+  { keys: 'Wheel',         pan: 'Zoom',                   select: 'Zoom' },
+  { keys: 'Shift + wheel', pan: '2D: step through z',     select: '2D: step through z' },
+  { keys: 'Click',         pan: '—',                      select: 'Pick cell (replace)' },
+  { keys: 'Shift + click', pan: '—',                      select: 'Add cell to selection' },
+  { keys: 'Alt + click',   pan: '—',                      select: 'Toggle cell in selection' },
+  { keys: 'Space',         pan: 'Play / pause',           select: 'Play / pause' },
+  { keys: '← / →',         pan: 'Prev / next frame',      select: 'Prev / next frame' },
+  { keys: 'Mode icon',     pan: 'Switch to select',       select: 'Switch to pan' },
 ]
 const keysOpen = ref(false)
 const keysBtn = ref<HTMLElement | null>(null)
@@ -2280,6 +2449,13 @@ function onOverlaysTick(e: StorageEvent) {
   // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
   void loadTracks()
 }
+// Cross-window mode sync — the gating toolbar's pencil writes `cc.viewerSelectMode`; here we
+// mirror it into the local ref so the pointer path sees the update without a Pinia round trip.
+function onSelectModeTick(e: StorageEvent) {
+  if (e.key !== 'cc.viewerSelectMode') return
+  selectModeActive.value = readSelectMode()
+}
+
 // A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
 // cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
 // fires. Payload: `<imageUid>:<valueName>:<ts>`. Guards on both uid AND valueName so an unrelated
@@ -2292,12 +2468,14 @@ function onSlabsTick(e: StorageEvent) {
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSlabsTick)
+  window.addEventListener('storage', onSelectModeTick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('storage', onOverlaysTick)
   window.removeEventListener('storage', onSlabsTick)
+  window.removeEventListener('storage', onSelectModeTick)
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -2313,10 +2491,16 @@ onUnmounted(() => {
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
-        ref="canvas" class="vw-canvas"
+        ref="canvas" class="vw-canvas" :class="{ 'vw-canvas-select': selectModeActive }"
         @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
         @wheel="onWheel"
       />
+      <!-- Rubber-band selection rectangle in select mode. Absolute-positioned inside the canvas
+           wrap so its coordinates are in the same space as the pointer events. Non-interactive so
+           it doesn't intercept the pointerup that ends the drag. -->
+      <div v-if="dragRect" class="vw-select-rect"
+           :style="{ left: dragRect.x + 'px', top: dragRect.y + 'px',
+                     width: dragRect.w + 'px', height: dragRect.h + 'px' }" />
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
@@ -2382,6 +2566,20 @@ onUnmounted(() => {
     <aside class="vw-side">
       <div class="cc-row cc-row-tight">
         <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
+        <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
+             (click does nothing, drag pans/rotates). One click flips it — same knob the pop-manager
+             pencil writes, so the user can stay in the viewer without reaching back to the module
+             page (Dominik, 2026-08-26). Icon shows the CURRENT mode, not the ACTION — reading is
+             what the user needs from a glance. -->
+        <button class="cc-btn cc-btn-ghost cc-btn-icon"
+                :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
+                @click="toggleSelectMode"
+                v-tooltip.left="selectModeActive
+                  ? 'Selection mode — click for pan mode'
+                  : 'Pan mode — click for selection mode'"
+                aria-label="Toggle selection mode">
+          <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
+        </button>
         <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
                 v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
           <i class="pi pi-question-circle" />
@@ -2389,10 +2587,25 @@ onUnmounted(() => {
       </div>
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
-        <div v-for="s in SHORTCUTS" :key="s.keys" class="cc-row cc-row-tight vw-key">
-          <kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd>
-          <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
-        </div>
+        <!-- Table with a column per mode: same gesture does different things in pan vs select
+             (Dominik, 2026-08-26). The current row's active-mode column is highlighted so a user
+             can read "what does drag do RIGHT NOW" in one glance. -->
+        <table class="vw-keys">
+          <thead>
+            <tr class="cc-muted cc-fs-3xs">
+              <th></th>
+              <th :class="{ 'vw-keys-active': !selectModeActive }">Pan</th>
+              <th :class="{ 'vw-keys-active': selectModeActive }">Select</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in SHORTCUTS" :key="s.keys">
+              <td><kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd></td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': !selectModeActive }">{{ s.pan }}</td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': selectModeActive }">{{ s.select }}</td>
+            </tr>
+          </tbody>
+        </table>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
            ViewerPanel now (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches this
@@ -2961,6 +3174,13 @@ onUnmounted(() => {
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-version-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-key { white-space: nowrap; }
+/* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
+   reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
+.vw-keys { border-collapse: collapse; margin-top: 4px; }
+.vw-keys th, .vw-keys td { padding: 3px 8px 3px 0; text-align: left; vertical-align: middle; white-space: nowrap; }
+.vw-keys th { font-weight: normal; }
+.vw-keys .vw-keys-active { color: var(--cc-text); font-weight: 500; }
+.vw-keys th.vw-keys-active { color: var(--cc-accent-strong); }
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
@@ -3002,6 +3222,19 @@ onUnmounted(() => {
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
+/* Crosshair when the viewer is in selection mode — the cursor is the honest indicator that a click
+   will pick a cell rather than pan. Same intent as the mode icon in the sidebar, right at the
+   pointer where the user is looking. */
+.vw-canvas-select { cursor: crosshair; }
+.vw-canvas-select:active { cursor: crosshair; }
+/* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
+   but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
+   the pointerup that ends the gesture (that would strand the drag). */
+.vw-select-rect {
+  position: absolute; pointer-events: none;
+  border: 1px solid var(--cc-accent-strong);
+  background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
+}
 .vw-side {
   width: 15rem; flex: none; padding: 0.6rem;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
