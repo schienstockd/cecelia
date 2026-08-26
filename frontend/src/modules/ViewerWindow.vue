@@ -40,6 +40,7 @@ import {
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
+  tileGridDims,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -567,7 +568,7 @@ const needsTiling = computed(() => {
   return m.nX * m.nY * m.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
 })
 const useTiles = computed(() =>
-  mode.value === 'plane' && needsTiling.value && (meta.value?.nT ?? 0) <= 1)
+  mode.value === 'plane' && needsTiling.value)
 /** Whichever renderer is currently alive — for template reads that don't care which one. */
 const activeAdapter = computed(() =>
   renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
@@ -1124,8 +1125,21 @@ function schedulePump(tp: number) {
 }
 
 /** Paint immediately, fetch on the scheduler — the documented split: a paint is coalesced per frame,
- *  a request is collapsed and serialised. */
+ *  a request is collapsed and serialised.
+ *
+ *  Tile mode is different: there is no per-timepoint texture to bind, because the atlas holds
+ *  mixed-t tiles and `drawTiles` filters resident tiles by `t.value`. So `gotoT` just moves `t`,
+ *  blanks `shownT` (so the still-overlay chip reappears while the current-t tiles come in), and
+ *  schedules the tile pump — which fetches for the new `t` and aborts stale-t fetches via
+ *  `evictionKeepSet` (Phase F, decision 6). */
 function gotoT(tp: number) {
+  if (useTiles.value) {
+    t.value = tp
+    shownT.value = -1
+    scheduleTilePump()
+    frame.redraw()
+    return
+  }
   showT(tp)
   schedulePump(tp)
 }
@@ -1184,7 +1198,10 @@ function computeViewportL0(): ViewportL0 | null {
   }
 }
 
-/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo. */
+/** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo.
+ *  Keys bind `t.value` — a scrub past a resident (wrong-t) tile does NOT count as a hit; the pump
+ *  fetches the current-t version and the ranker keeps the near-t entry around for a scrub back
+ *  (see `docs/todo/VIEWER_TILES_PLAN.md` Phase F). */
 function missingTiles(): TileKey[] {
   const tr = tileRenderer.value, m = meta.value
   if (!tr || !m) return []
@@ -1193,9 +1210,10 @@ function missingTiles(): TileKey[] {
   const vp = computeViewportL0()
   if (!lvl || !vp) return []
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  const tp = t.value
   const out: TileKey[] = []
   for (const [tx, ty] of coords) {
-    const key: TileKey = { level, tx, ty }
+    const key: TileKey = { t: tp, level, tx, ty }
     if (tr.hasTile(key)) { tr.touchTile(key); continue }
     out.push(key)
   }
@@ -1204,7 +1222,8 @@ function missingTiles(): TileKey[] {
 
 /** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
  *  round cannot take a tile that is either on screen or being drawn NEXT. Both, because during a pan
- *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. */
+ *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. Current-t only
+ *  by design (Phase F, decision 4 — no cross-t halo in MVP). */
 function evictionKeepSet(): Set<string> {
   const tr = tileRenderer.value, m = meta.value
   if (!tr || !m) return new Set()
@@ -1213,7 +1232,8 @@ function evictionKeepSet(): Set<string> {
   const vp = computeViewportL0()
   if (!lvl || !vp) return new Set()
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
-  return new Set(coords.map(([tx, ty]) => tileKeyStr({ level, tx, ty })))
+  const tp = t.value
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, level, tx, ty })))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -1228,6 +1248,9 @@ async function fetchTile(key: TileKey): Promise<boolean> {
   if (existing) return false                 // already in flight; the pump joins rather than races
   const ac = new AbortController()
   tileAborts.set(kStr, ac)
+  // Sync AT fetch start (not just at fetch end) so the mini tile-map's amber cells appear the moment
+  // a request goes out, not after it lands. Cheap: one shallow copy of a bounded key set.
+  syncTileCacheState()
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
   const nch = Math.min(m.nC, MAX_CHANNELS)
   const rect = tileFetchRect(key.tx, key.ty, lvl)
@@ -1236,10 +1259,10 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
       const url = slabUrl({
-        projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: key.level,
+        projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
-        // reachable at nZ > 1) — the tile path is nT ≤ 1 by construction, so there is no timepoint
-        // to select and t stays at 0.
+        // reachable at nZ > 1). `t` comes from the tile key so a scrub past a resident tile fetches
+        // the current-t version — the atlas caches across timepoints (Phase F).
         z: zPlane.value,
         x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
       })
@@ -1276,7 +1299,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     const keep = evictionKeepSet()
     const evictions = tileEvictions(
       tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
-      { level: key.level, tx: centre.tx, ty: centre.ty },
+      { t: key.t, level: key.level, tx: centre.tx, ty: centre.ty },
     )
     const slot = await tr.uploadTile(key, bufs, keep, evictions)
     return slot >= 0
@@ -1291,18 +1314,60 @@ async function fetchTile(key: TileKey): Promise<boolean> {
   }
 }
 
-/** Per-tile cache readout for Debug, and the counterpart to `syncCacheState` for the timepoint path.
- *  Kept simple: tile count + slot capacity, no per-cell strip (a strip would need a tile-grid
- *  overlay, which is Phase D territory). */
+/** Per-tile cache readout for Debug + the mini tile map (the spatial analog of the timecourse strip).
+ *  `tileResidents` is a snapshot of the atlas entries — the mini map filters it by `t + slabLevel` at
+ *  paint time. `tileLoadingKeys` is a snapshot of the in-flight abort map, used the same way.
+ *  Snapshotting rather than sharing the live structures so Vue reactivity fires on set. */
 const tileResidentCount = ref(0)
 const tileSlotCap = ref(0)
 const tileInflight = ref(0)
+const tileResidents = shallowRef<{ t: number; level: number; tx: number; ty: number }[]>([])
+const tileLoadingKeys = shallowRef<Set<string>>(new Set())
 function syncTileCacheState() {
   const tr = tileRenderer.value
-  tileResidentCount.value = tr?.residentTiles().length ?? 0
+  const res = tr?.residentTiles() ?? []
+  tileResidentCount.value = res.length
   tileSlotCap.value = tr?.slotCapacity() ?? 0
   tileInflight.value = tileAborts.size
+  tileResidents.value = res.map(e => ({ t: e.t, level: e.level, tx: e.tx, ty: e.ty }))
+  tileLoadingKeys.value = new Set(tileAborts.keys())
 }
+
+/** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
+ *  mode is off or the meta hasn't loaded yet, which the template checks with `v-if`. */
+const tileMapGrid = computed(() => {
+  const m = meta.value
+  if (!m || !useTiles.value) return null
+  const lvl = levelMeta(m, slabLevel.value)
+  if (!lvl) return null
+  const { nTx, nTy } = tileGridDims(lvl)
+  if (nTx <= 0 || nTy <= 0) return null
+  return { nTx, nTy, level: slabLevel.value }
+})
+
+/** Per-cell state at the current level + timepoint — one entry per tile in row-major order. Filters
+ *  the resident and loading snapshots by `t + level` inline (cheaper than computing a Set of
+ *  strings per cell). */
+const tileMapCellsView = computed(() => {
+  const g = tileMapGrid.value
+  if (!g) return []
+  const tp = t.value, lv = g.level
+  const residentAtHere = new Set<string>()
+  for (const e of tileResidents.value) {
+    if (e.t === tp && e.level === lv) residentAtHere.add(`${e.tx},${e.ty}`)
+  }
+  const loading = tileLoadingKeys.value
+  const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
+  for (let ty = 0; ty < g.nTy; ty++) {
+    for (let tx = 0; tx < g.nTx; tx++) {
+      const kL = tileKeyStr({ t: tp, level: lv, tx, ty })
+      const state = loading.has(kL) ? 'loading'
+        : residentAtHere.has(`${tx},${ty}`) ? 'resident' : 'absent'
+      cells.push({ key: `${tx},${ty}`, state })
+    }
+  }
+  return cells
+})
 
 /**
  * Fill the atlas around the current viewport — visible + halo, ALL IN PARALLEL. The browser's per-
@@ -1329,7 +1394,10 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     // `frame.redraw`. Result: the chip stayed on "Loading image…" while the atlas was full, and
     // the canvas was blank until the user panned (Dominik, 2026-08-26). The gate came from the
     // timepoint pump where painting the wrong frame matters — here it never matters.
-    if (shownT.value < 0) shownT.value = 0
+    // Flip on the first CURRENT-t tile to land — a stale-t fetch racing in after the user scrubbed
+    // must not clear the loading chip. `t.value` at fetch time was baked into `key.t`; if they still
+    // agree, the tile is fresh for what the user is looking at (Phase F, decision 6).
+    if (key.t === t.value && shownT.value !== key.t) shownT.value = key.t
     frame.redraw()
   }))
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
@@ -1369,7 +1437,14 @@ function drawTiles() {
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
   // landed, and vanishes seamlessly the moment they do.
-  const entries = tr.residentTiles().slice().sort((a, b) => b.level - a.level)
+  //
+  // Filter to CURRENT-t entries: the atlas caches across timepoints (Phase F) so the ranker can
+  // prefer near-t tiles on a scrub back, but painting a stale-t tile would show wrong content
+  // under the loading chip. The loading chip is `shownT < 0` — flipped by the tile pump only on a
+  // current-t landing — so scrubbing to a new t naturally shows the chip until fresh tiles arrive.
+  const tp = t.value
+  const entries = tr.residentTiles().filter(e => e.t === tp).slice()
+    .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
   const vy = m.voxelUm[1] || 1
@@ -1424,6 +1499,26 @@ function stopPlay() {
 function tick() {
   playTimer = setTimeout(() => {
     if (!playing.value) return
+    if (useTiles.value) {
+      // Tile-mode playback: advance at the requested fps regardless of tile residency. The tile
+      // pump chases behind `gotoT` — the loading chip appears while a fresh-t frame's tiles arrive
+      // and clears the moment they do. Fetch-vs-frame-rate discipline (volume mode's residency
+      // probe + wait-for-cached-frame path) needs measurement on real timelapses before it lands
+      // here — see `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision "autoplay does NOT ship".
+      const n = nT.value
+      if (n <= 0) { stopPlay(); return }
+      const next = t.value + 1
+      if (next >= n) {
+        if (!settings.viewerLoop) { stopPlay(); return }
+        waitingFor.value = -1
+        gotoT(0)
+      } else {
+        waitingFor.value = -1
+        gotoT(next)
+      }
+      tick()
+      return
+    }
     const r = renderer.value
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop,
                                  u => r?.hasTimepoint(u) ?? false)
@@ -1592,6 +1687,11 @@ const seen = ref<[number, number]>([0, 0])
  */
 const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
 watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+/** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
+ *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
+ *  who never scrubs won't want it. */
+const tilesMapShown = ref(localStorage.getItem('cc.vw.tilemap') !== 'false')
+watch(tilesMapShown, v => localStorage.setItem('cc.vw.tilemap', String(v)))
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -1659,6 +1759,11 @@ async function loadOverviewThumbnail() {
     vlog('warn', 'Overview thumbnail unavailable', e instanceof Error ? e.message : String(e))
   }
 }
+// The canvas is `v-if`'d off when Overview toggles off, so its ref goes null. A fresh canvas mounts
+// blank when the user toggles back on — nothing repaints it until the next channel change, so the
+// thumbnail stays black (Dominik, 2026-08-26). Watch the ref: whenever it mounts (null → element),
+// repaint. Cheap — one full pass per toggle.
+watch(overviewCanvas, cv => { if (cv) renderOverview() })
 function renderOverview() {
   const cv = overviewCanvas.value
   const dims = overviewDims.value
@@ -2425,6 +2530,27 @@ onUnmounted(() => {
           <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
         </div>
 
+        <!-- Tile residency mini map: the spatial analog of the timecourse strip above. One cell per
+             tile at the current level; blue = in the atlas, amber = fetching, empty = absent. Only
+             offered in tile mode — the volume path has no per-tile cache. Collapsible because tile-
+             heavy views make it visually busy; state persisted in localStorage. -->
+        <template v-if="tileMapGrid">
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
+            <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
+          </div>
+          <div v-if="tilesMapShown" class="vw-tilemaprow">
+            <div class="vw-tilemap"
+                 :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
+                           gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
+                           aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}` }">
+              <span v-for="c in tileMapCellsView" :key="c.key"
+                    class="vw-tilemap-cell" :class="'is-' + c.state" />
+            </div>
+          </div>
+        </template>
+
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar + timestamp are burnt into the render, they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
@@ -2931,4 +3057,17 @@ onUnmounted(() => {
 .vw-cell.is-resident { background: var(--cc-accent); }
 .vw-cell.is-loading { background: var(--cc-accent-tint); }
 .vw-cell.is-current { background: var(--cc-text); }
+/* Tile residency mini map — spatial analog of the timecourse strip. Same visual language: cells on
+   `--cc-surface-2`, filled `--cc-accent` when resident. Loading is amber (`--cc-sev-warn`) rather
+   than the strip's `--cc-accent-tint`, per Dominik: "just blue dots and amber for loading"
+   (2026-08-26) — a loading tile in flight has a different meaning from a queued next timepoint. */
+.vw-tilemaprow { display: flex; align-items: flex-start; gap: 0.3rem; }
+.vw-tilemap {
+  display: grid; gap: 1px; flex: 1; min-width: 0;
+  max-height: 6rem; background: var(--cc-surface-2);
+  padding: 1px; border-radius: var(--cc-radius-xs);
+}
+.vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
+.vw-tilemap-cell.is-resident { background: var(--cc-accent); }
+.vw-tilemap-cell.is-loading { background: var(--cc-sev-warn); }
 </style>
