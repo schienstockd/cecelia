@@ -2528,7 +2528,7 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="chMax[c] ?? Math.max(ch.hi, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />
@@ -2883,16 +2883,11 @@ onUnmounted(() => {
 }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
-  /* Clip anything that outgrows the card. Belt to the `.rs` margin's braces. */
+  /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
+     card (a stray-wide readout, a wrapping row) is clipped rather than poking past the card border
+     (Dominik, 2026-08-26). */
   min-width: 0; overflow: clip; }
-/* RangeSlider's HI thumb sits at `left: 100%` with `translateX(-50%)` — half the 11px thumb (5.5px)
-   overhangs its own `.rs` box. Left as-is, that half pokes into the readout beside it and past the
-   sidebar edge (Dominik, 2026-08-26). Give `.rs` symmetric horizontal margin equal to the half-thumb
-   so the overhang lands in empty margin space instead of on top of the next flex item. `:deep()` so
-   the parent's scoped style reaches into the RangeSlider's own scope. */
-.vw-ch :deep(.rs) { margin: 0 5.5px; min-width: 0; }
-/* Extra gap between slider container and readout for good measure. */
-.vw-ch .cc-row-tight > .vw-ch-val { margin-left: 0.4rem; }
+.vw-ch :deep(.rs) { min-width: 0; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
