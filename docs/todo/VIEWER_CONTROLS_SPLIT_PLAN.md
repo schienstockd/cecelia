@@ -1,9 +1,12 @@
 # Viewer controls — split between window and panel
 
-Status: **in progress** (Dominik, 2026-08-25). P0-P5 landed on branch `feat/viewer-masks-movies`;
-follow-up wiring fixes (pop.show ground truth, radio-like labels, task-done ping) landed
-2026-08-25 after user testing exposed gaps. P6 (rename `napari*`) next. Full endpoint audit
-below in § Napari endpoint audit.
+Status: **in progress** (Dominik, 2026-08-26). P0-P5 landed on branch `feat/viewer-masks-movies`.
+Post-P5 wiring fixes from user testing (2026-08-25 → 2026-08-26): pop.show as ground truth every
+fetch, radio-like segmentation ticks with explicit-false persistence, task-done + slab-invalidation
+pings, panel per-pop-type gate reaches the viewer + empties the overlays list when off, and the
+viewer's pop source now follows the pop manager's `(valueName, popType)` rather than the active
+segmentation via a `cc.gatingCurrent` bag. P6 (rename `napari*` + delete napari-only settings)
+next. Full endpoint audit below in § Napari endpoint audit.
 
 Companion to [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). That plan replaced napari's *canvas* with a
 WebGPU one; this plan settles where the *controls* live now that napari's own layer list is going
