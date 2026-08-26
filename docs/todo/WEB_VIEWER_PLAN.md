@@ -449,14 +449,26 @@ Julia, so lerping it gives 0.5 and then `true` for every frame after the first.
 napari), title cards, and the overlays (points, tracks, masks) on the CPU frame — which are P3/P4's
 content drawn by renderer C rather than new capability.
 
-### P6 — the selection round-trip
+### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
-path into the app (`napari_bridge.py:1564`). Select in the image, get a transient population, see it
-highlighted on the plots (`project_napari_linked_brushing`). This was missing from the plan's first
-draft and is real parity, not an addition.
-**Fails if:** picking a cell from a MIP is too ambiguous to be useful — a ray hits many labels, and
-napari answers with the one under the cursor at a given z. Likely needs the P4 label texture first, so
-the pick can read the label id rather than infer it.
+path into the app. Select in the image, get a transient population, see it highlighted on the plots
+(`project_napari_linked_brushing`). This was missing from the plan's first draft and is real parity,
+not an addition.
+
+**Built** (2026-08-26). Click-to-pick and rectangle-drag both go through `/api/viewer/pick-cell` and
+`/api/viewer/pick-rect`; they read the mask store the viewer is displaying via `read_slab`, register
+the picked labels in `_napari_sel` under the same key `_inject_napari_pop!` reads from, and rebroadcast
+the pop map so the plots highlight the "Napari selection" pop straight away. The pick endpoints take
+the viewer's displayed LOD as `level` so nearest-neighbour label downsampling doesn't return a
+neighbour of the visible cell. Fed the P4 label texture — the pick reads the label id directly rather
+than inferring it from a ray hit, so a MIP is unambiguous.
+
+**Fixed in the same PR: an off-by-one in the h5ad writer.** `measure_utils.MeasureUtils._write_anndata`
+was doing `pd.concat(all_dfs, ignore_index=True)` which discarded each per-frame `morph_df`'s label
+index, and `_to_anndata` then wrote a 0..N-1 row index that `label_props.jl` reads AS the label id.
+Every row's data was off by one label vs the mask store, so a picked mask label N landed at h5ad row
+N-1 — the highlighted cell showed at whatever centroid label N+1 has, i.e. at a random position.
+**Existing h5ads still have the buggy index** — re-run `segment.measureLabels/<vn>` to regenerate.
 
 ### P7 — task preview overlays
 `show_task_preview` + `preview_region` — the previews `api/src/preview_api.jl` pushes into napari so a
@@ -465,9 +477,9 @@ primitives (points, shapes, labels).
 
 ### P8 — decommission
 Delete the bridge, the protocol version and the adoption/relaunch machinery. Decide there where
-contrast/colormap state lives once napari no longer writes `save_layer_props`. Already dead and
-deletable sooner: `crop_start` / `crop_box` / `crop_apply` / `crop_clear` in `app/src/napari.jl:258-264`
-have no dispatch branch left in the bridge.
+contrast/colormap state lives once napari no longer writes `save_layer_props`. **Dead crop_* helpers
+(`start_crop!` / `apply_crop!` / `clear_crop!` / `crop_box`) removed 2026-08-26** — the bridge had no
+dispatch left and no Julia callers, and the 3D-crop replacement is in `docs/todo/CROP_PANEL_PLAN.md`.
 
 ## Deferred
 
