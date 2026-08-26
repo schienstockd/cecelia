@@ -33,21 +33,19 @@ describe('screenToImagePx', () => {
     expect([39, 40]).toContain(p.y)
   })
 
-  it('screen top → high row index; screen bottom → low row index (the display flip)', () => {
-    // Pin the y-reflection that this file's final step applies. The shader / display / mask-read
-    // pipeline shows the mask store's row 0 at the BOTTOM of the canvas — a click at the visual
-    // TOP of the image corresponds to the store's LAST row, not row 0. Without the reflection,
-    // every pick landed on the mirror cell across the horizontal midline (Dominik, 2026-08-26).
-    //
-    // A single-sign flip anywhere in the world math will make one of these two assertions fail;
-    // the pair keeps this defended in both directions.
+  it('screen top → low row index; screen bottom → high row index', () => {
+    // Canvas y grows down, image row 0 is at the top of the display (standard raster). Verified
+    // against Dominik's f8gzA2 numbers on 2026-08-26: a rectangle drawn at canvas y = 85–226 came
+    // back with image y = 18–150 (top-mid strip) once the mistaken output-space reflection was
+    // dropped — matching the visually-clicked cells on the plot. A previous version returned the
+    // mirror strip (269–401) and picked the wrong cells.
     const m = meta({ nX: 100, nY: 100 })
     const W = 200, H = 200
     const cam = fittedCam(m, W, H)
     const top    = screenToImagePx(W / 2, 2,      W, H, cam, m)
     const bottom = screenToImagePx(W / 2, H - 2,  W, H, cam, m)
-    expect(top.y).toBeGreaterThanOrEqual(m.nY - 5)   // near nY-1
-    expect(bottom.y).toBeLessThanOrEqual(5)          // near 0
+    expect(top.y).toBeLessThanOrEqual(5)              // near 0
+    expect(bottom.y).toBeGreaterThanOrEqual(m.nY - 5) // near nY-1
   })
 
   it('pan shifts what is under the pointer, opposite direction to the eye', () => {

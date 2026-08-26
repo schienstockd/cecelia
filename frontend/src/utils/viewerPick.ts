@@ -59,18 +59,16 @@ export function screenToImagePx(
   const worldX = -cam.panX + ndcX * halfW
   const worldY = -cam.panY + ndcY * halfH
   // Image is centred on the world origin; add `ext/2` to get absolute image µm from the top-left
-  // corner. The Y AXIS needs a reflection at the end — the shader / display / mask-read pipeline
-  // shows image row 0 at screen top by convention (`fitCamera` + the raycast + a V-flip somewhere
-  // downstream), but the mask reader receives the row index and reads directly, so the ROW WE SEND
-  // has to be the row the user actually clicked on. Without the reflection every pick landed on
-  // the mirror row across the horizontal midline (Dominik, 2026-08-26). The reflection is a single
-  // pixel-space flip at the very end — cheaper to reason about than juggling the sign inside the
-  // world-µm math.
+  // corner. Y sign: screen top (`ndcY = +1`, worldY = +halfH) corresponds to worldY = +extY/2,
+  // which lands at absY_um = 0 (image row 0) once the shader's V-flip puts row 0 at screen top.
+  // The formula is `-worldY + extY/2` — no output-space reflection. A previous version added one to
+  // fix a reported mirror; browser numbers on Dominik's f8gzA2 image confirmed the reflection was
+  // reading the mirror strip instead of fixing it (2026-08-26). Both single-click and rectangle
+  // picks now agree with what's visually on the image.
   const absX_um = worldX + extX / 2
   const absY_um = -worldY + extY / 2
   const x = Math.floor(absX_um / vx)
-  const y0 = Math.floor(absY_um / vy)
-  const y = meta.nY - 1 - y0
+  const y = Math.floor(absY_um / vy)
   const inside = x >= 0 && y >= 0 && x < meta.nX && y < meta.nY
   return { x, y, in: inside }
 }
