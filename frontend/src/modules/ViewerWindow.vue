@@ -1644,6 +1644,13 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
   const cx = e.clientX - rect.left
   const cy = e.clientY - rect.top
   const p = screenToImagePx(cx, cy, c.clientWidth, c.clientHeight, cam.value, m)
+  // TEMP DEBUG — kept until the y-flip is verified end-to-end on a real image (Dominik reported
+  // a rectangle drag near two cells picking three cells spread across the plot's Y range, which
+  // is consistent with the reflection reading a mirrored strip). Delete when the y-reflection is
+  // pinned down by browser testing on a real image.
+  console.debug('[pick-cell]', { cx, cy, cw: c.clientWidth, ch: c.clientHeight,
+    cam: { ...cam.value }, nX: m.nX, nY: m.nY, vx: m.voxelUm[0], vy: m.voxelUm[1],
+    imgX: p.x, imgY: p.y, in: p.in })
   if (!p.in) return   // black margin around a zoomed-out image — nothing to pick
   const gc = gatingCurrent.value
   // Follow the pop manager's active (valueName, popType) if published — same rule as `loadOverlays`
@@ -1684,6 +1691,9 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
   if (!c || !m) return
   const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m)
   const p2 = screenToImagePx(rect.x + rect.w, rect.y + rect.h, c.clientWidth, c.clientHeight, cam.value, m)
+  // TEMP DEBUG — same rationale as pick-cell.
+  console.debug('[pick-rect]', { canvasRect: rect, p1, p2,
+    cw: c.clientWidth, ch: c.clientHeight, nX: m.nX, nY: m.nY })
   // Clamp inside the image and normalise order — a rect drawn from lower-right to upper-left
   // arrives with p2 < p1, and the server expects the low/high pair. Bail on an empty rect after
   // clamping (a drag entirely on the black margin around a zoomed-out image).
