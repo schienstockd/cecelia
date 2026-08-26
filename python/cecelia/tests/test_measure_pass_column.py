@@ -183,6 +183,46 @@ class MeasureFromZarrStampsThePassTest(unittest.TestCase):
                         'pass 1 owns label 1, the object nearer the origin')
 
 
+class ThreadedMeasureMatchesSerialTest(unittest.TestCase):
+    """`measure_from_zarr(n_threads>1)` runs each timepoint on a worker; the concat then reorders by
+    submission index, and every per-timepoint helper mutates only its own local df. If any of that
+    drifts, the threaded output stops matching the serial one. The whole thing has to be reproducible
+    against the fixture, cell-for-cell — a threaded run is not "usually" the same as a serial one."""
+
+    def test_threaded_output_equals_serial_output(self):
+        import anndata as ad
+        import tempfile
+
+        class _Log:
+            def log(self, *_a, **_k): pass
+            def progress(self, *_a, **_k): pass
+
+        labels = np.zeros((3, 10, 8), dtype=np.uint32)
+        labels[0, 1:3, 1:3] = 1
+        labels[0, 6:8, 5:7] = 2
+        labels[1, 2:4, 2:4] = 3
+        labels[2, 4:6, 3:5] = 4
+        image = np.random.default_rng(0).integers(10, 200, size=(3, 2, 10, 8), dtype=np.uint16)
+
+        du = MeasureFromZarrStampsThePassTest._dim_utils((3, 1, 2, 10, 8))
+
+        def _run(n_threads):
+            with tempfile.TemporaryDirectory() as tmp:
+                mu = MeasureUtils({'taskDir': tmp, 'outputValueName': 'thr'}, du)
+                out = mu.measure_from_zarr({'base': [labels]}, [image], _Log(),
+                                           n_threads=n_threads)
+                return ad.read_h5ad(out)
+
+        serial = _run(1)
+        threaded = _run(4)
+
+        # Same rows, same order (concat is by submission t-index, not completion order).
+        self.assertEqual(list(serial.obs.index), list(threaded.obs.index))
+        self.assertTrue(np.allclose(serial.X, threaded.X, equal_nan=True))
+        self.assertTrue(np.allclose(serial.obsm['spatial'], threaded.obsm['spatial']))
+        self.assertTrue(np.allclose(serial.obsm['temporal'], threaded.obsm['temporal']))
+
+
 class PassNumberingMatchesEverySurfaceTest(unittest.TestCase):
     """One pass has ONE number, wherever it is printed.
 

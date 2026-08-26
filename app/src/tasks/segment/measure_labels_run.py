@@ -94,8 +94,14 @@ def run(params: dict):
         log.log('[ERROR] No base label file found — cannot measure')
         raise SystemExit(1)
 
+    # `nThreads` comes from the Julia handler, sized to the CPU pool's current headroom (and capped
+    # at 8). Fall back to serial only if the handler didn't send one — the per-timepoint work is
+    # GIL-releasing so threads give a real speedup here.
+    n_threads = max(1, int(params.get('nThreads', 1)))
+
     mu = MeasureUtils(params, dim_utils)
-    out_path = mu.measure_from_zarr(label_zarrs, im_dat, log, label_passes=label_passes)
+    out_path = mu.measure_from_zarr(label_zarrs, im_dat, log, label_passes=label_passes,
+                                    n_threads=n_threads)
 
     if out_path is None:
         log.log('[ERROR] Measurement returned no output')

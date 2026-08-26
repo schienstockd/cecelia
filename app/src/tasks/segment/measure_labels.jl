@@ -40,6 +40,17 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Image:  $im_path")
     on_log("[INFO] Output: $(joinpath(task_dir, "labelProps", out_value_name)).h5ad")
 
+    # Intra-task threading capped at the CPU pool's current headroom. `in_flight` already includes
+    # this task, so `limit - in_flight + 1` is the total worker budget it can safely spend. Racy
+    # (a peer may submit between here and thread spawn), but the cap moves down when the user
+    # tightens the PoolThrottle. Also capped at 8: the per-timepoint work is disk-bound beyond that
+    # on the typical zarr, and running more threads would just steal from peers for no wall-clock.
+    pool_headroom = try
+        cpu = filter(x -> x.name == "cpu", pool_status())
+        isempty(cpu) ? 1 : max(1, cpu[1].limit - cpu[1].running + 1)
+    catch; 1 end
+    n_threads = min(pool_headroom, 8)
+
     ok = run_py("tasks/segment/measure_labels_run.py",
         (; imPath            = im_path,
            taskDir           = task_dir,
@@ -52,7 +63,8 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
            blockSize         = Int(get(params, "blockSize",           512)),
            overlap           = Int(get(params, "overlap",             64)),
            blockSizeZ        = Int(get(params, "blockSizeZ",          0)),
-           overlapZ          = Int(get(params, "overlapZ",            0))),
+           overlapZ          = Int(get(params, "overlapZ",            0)),
+           nThreads          = n_threads),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

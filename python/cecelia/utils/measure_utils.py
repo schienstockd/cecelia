@@ -14,7 +14,9 @@ on the fly from label masks (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11)
 
 from __future__ import annotations
 
+import concurrent.futures as cf
 import os
+import threading
 import warnings
 from pathlib import Path
 
@@ -69,7 +71,8 @@ class MeasureUtils:
 
     # ── public entry point ────────────────────────────────────────────────────
 
-    def measure_from_zarr(self, label_zarrs: dict, im_dat, log, label_passes=None):
+    def measure_from_zarr(self, label_zarrs: dict, im_dat, log, label_passes=None,
+                          n_threads: int = 1):
         """
         label_zarrs : {'base': [level0, level1, …], 'nuc': […], …}  – multiscale level lists
                       (as returned by zarr_utils.open_as_zarr; level 0 is full-res)
@@ -132,46 +135,62 @@ class MeasureUtils:
             log.log(f'>> label passes: {len(label_passes)} ranges over '
                     f'{len(names)} passes ({", ".join(names)})')
 
-        all_dfs: list[pd.DataFrame] = []
-
-        for t_idx in range(n_t):
-            log.log(f'>> measuring timepoint {t_idx + 1}/{n_t}')
-
+        # Per-timepoint measurement. Reads (zarr), skimage regionprops and numpy aggregations all
+        # release the GIL, so a ThreadPoolExecutor gives real speedup here — near-linear up to disk
+        # bandwidth (~4-8 workers on the typical zarr).
+        def _measure_one(t_idx: int):
             base_vol = self._extract_t(base_arr, l_la_t, t_idx)
             if base_vol.max() == 0:
-                log.log('   (no labels – skipping)')
-                log.progress(t_idx + 1, n_t)
-                continue
-
+                return None, 'no labels'
             im_vol = self._extract_t(im_arr, la_t, t_idx).astype(np.float32)
-
             if self.gaussian_filter > 0.0:
                 im_vol = self._gaussian_smooth(im_vol, la_c, la_t, n_c)
-
             morph_df = self._measure_morphology(base_vol, is_3d, log)
             if morph_df is None or len(morph_df) == 0:
-                log.progress(t_idx + 1, n_t)
-                continue
-
+                return None, 'no morphology'
             morph_df = self._measure_intensities(
                 morph_df, base_vol, im_vol, la_c, la_t, n_c)
-
-            # Non-base label types contribute per-type intensity columns
             for ltype, lzarr in label_zarrs.items():
                 if ltype == 'base':
                     continue
                 sec_vol = self._extract_t(lzarr[0], l_la_t, t_idx)
                 morph_df = self._measure_secondary_intensities(
                     morph_df, sec_vol, im_vol, la_c, la_t, n_c, ltype)
-
             if pass_of is not None:
                 # HERE, not after the concat: `pd.concat(..., ignore_index=True)` below discards the
                 # index, and the index is the label id. Stamped as a column it survives.
                 morph_df['pass'] = [pass_of(lbl) for lbl in morph_df.index]
-
             morph_df['t'] = t_idx
-            all_dfs.append(morph_df)
-            log.progress(t_idx + 1, n_t)
+            return morph_df, None
+
+        results: list = [None] * n_t
+        n_threads = max(1, int(n_threads))
+        prog_lock = threading.Lock()
+        done = 0
+
+        def _finish(t_idx: int, df, skipped: str | None):
+            nonlocal done
+            with prog_lock:
+                done += 1
+                results[t_idx] = df
+                tag = f' ({skipped})' if skipped else ''
+                log.log(f'>> t {t_idx + 1}/{n_t} done{tag}')
+                log.progress(done, n_t)
+
+        if n_threads == 1:
+            for t_idx in range(n_t):
+                df, skipped = _measure_one(t_idx)
+                _finish(t_idx, df, skipped)
+        else:
+            log.log(f'>> measuring {n_t} timepoints across {n_threads} threads')
+            with cf.ThreadPoolExecutor(max_workers=n_threads) as ex:
+                futs = {ex.submit(_measure_one, t): t for t in range(n_t)}
+                for fut in cf.as_completed(futs):
+                    t_idx = futs[fut]
+                    df, skipped = fut.result()
+                    _finish(t_idx, df, skipped)
+
+        all_dfs: list[pd.DataFrame] = [df for df in results if df is not None]
 
         if not all_dfs:
             log.log('[WARN] No cells found — no output written')
