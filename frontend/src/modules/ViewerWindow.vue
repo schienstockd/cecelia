@@ -868,11 +868,17 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
     // before a fresh finer-level neighbour.
+    //
+    // `slotCapacity - 1` — NOT `slotCapacity` — so the ranker leaves one slot free for the tile we
+    // are about to upload. Passing the full capacity meant `tileEvictions` returned nothing whenever
+    // the atlas was full (its threshold is `entries.length <= capacity`); `uploadTile` then found no
+    // free slot and returned -1, and the ring of tiles the new zoom needed never landed — the "right
+    // half never resolves" case Dominik saw at L1 on f8gzA2 (2026-08-26).
     const vp = computeViewportL0()
     const centre = vp && lvl ? viewportCentreTile(vp, key.level, lvl) : { tx: key.tx, ty: key.ty }
     const keep = evictionKeepSet()
     const evictions = tileEvictions(
-      tr.residentTiles(), tr.slotCapacity(), keep,
+      tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
       { level: key.level, tx: centre.tx, ty: centre.ty },
     )
     const slot = await tr.uploadTile(key, bufs, keep, evictions)
@@ -918,9 +924,14 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     if (!isCurrent()) return
     if (tr.hasTile(key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
-    if (!ok || !isCurrent()) return
-    // First tile land also flips the still-overlay gate (`shownT >= 0`) so the scale bar shows up
-    // when there is actually something under it — not before, which would draw a bar over black.
+    if (!ok) return
+    // NO `isCurrent()` guard here — the tile is in the atlas either way, and painting it against
+    // the CURRENT viewport is always correct (drawTiles filters by residency). Previously the
+    // `drawTiles → scheduleTilePump` rescheduler made the pump supersede itself: `isCurrent` went
+    // false mid-run, so tiles that landed after did NOT flip `shownT` and did NOT call
+    // `frame.redraw`. Result: the chip stayed on "Loading image…" while the atlas was full, and
+    // the canvas was blank until the user panned (Dominik, 2026-08-26). The gate came from the
+    // timepoint pump where painting the wrong frame matters — here it never matters.
     if (shownT.value < 0) shownT.value = 0
     frame.redraw()
   }))
@@ -952,6 +963,11 @@ function drawTiles() {
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
   if (resized) scheduleTilePump()
+  // Anything still missing → schedule the pump. Covers the initial-mount race where the first
+  // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
+  // was fetched) — after which the atlas stayed empty until the user moved the mouse (Dominik,
+  // 2026-08-26). Debounced through `tilePump`, so a redraw per pointer notch does not spam.
+  if (missingTiles().length > 0) scheduleTilePump()
   // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
@@ -1106,7 +1122,13 @@ function onWheel(e: WheelEvent) {
     zPump.schedule(next)
     return
   }
-  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value)
+  // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
+  // and `pickTileLevel` gets down to L0. 3D volume keeps the tighter default (rotation can lose it
+  // off-screen). Reset view is always one click away either way.
+  const band = mode.value === 'plane'
+    ? { min: 0.005, max: 6 }
+    : { min: 0.15, max: 6 }
+  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value, band)
   frame.redraw()
   // Zoom exposes/hides tiles (extent changes and level may swap). Level swap is handled by the
   // `slabLevel` watcher → `levelPump` → reallocate; the tile pump handles the same-level case where
@@ -1478,7 +1500,10 @@ onUnmounted(() => {
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
            hardcoded 0 there said the wrong thing (Dominik, 2026-08-24). -->
       <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
-      <div v-else-if="shownT < 0" class="vw-status-chip">Loading timepoint {{ t }}…</div>
+      <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
+      <div v-else-if="shownT < 0" class="vw-status-chip">
+        {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
+      </div>
     </div>
 
     <aside class="vw-side">
