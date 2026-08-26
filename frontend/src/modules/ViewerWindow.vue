@@ -483,7 +483,11 @@ const frame = usePlotResize(canvas, () => {
   // so this is two array reads rather than a per-frame filter.
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0
     ? tailRange(segments, shownT.value, settings.viewerTailLength) : null
-  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth)
+  // Track ribbons carry their OWN Z reach — usually wider than the points' (a track spans several
+  // planes and reads best with slack). Same "negative lo = no filter" convention as the points.
+  const trackTol = Math.max(0, settings.viewerTrackZTol)
+  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth,
+                          pLo - trackTol, pHi + trackTol)
   // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
@@ -1668,6 +1672,15 @@ onUnmounted(() => {
                 <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
               </div>
             </template>
+            <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="10" :step="1"
+                v-model.number="settings.viewerTrackZTol" @input="frame.redraw()"
+                v-tooltip.bottom="'Planes either side that still show a tail'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerTrackZTol }}</span>
+            </div>
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
               <input

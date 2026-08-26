@@ -54,7 +54,7 @@ struct P {
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
   lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, unused
-  pan:  vec4<f32>,                       // pan across the SCREEN's axes, in um: right, up; z/w unused
+  pan:  vec4<f32>,                       // pan xy (screen µm), then z/w = track ribbon planeLo/planeHi
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;
@@ -341,8 +341,12 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
 ) -> SOut {
   var o: SOut;
   o.rgb = rgb;
-  if (p.ov.y >= 0.0 && (plane < p.ov.y - 0.5 || plane > p.ov.w + 0.5)) {
-    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // outside the loaded planes: clipped away
+  // Ribbons carry their OWN plane bounds (pan.z / pan.w) so a viewer can widen the tail's z-reach
+  // independently of the points' Z reach — a track's plane is where it ends, but the tail is a
+  // continuous path and often reads best with more slack. Negative pan.z = no filter, same
+  // convention as the points path.
+  if (p.pan.z >= 0.0 && (plane < p.pan.z - 0.5 || plane > p.pan.w + 0.5)) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // outside the widened track window: clipped away
     return o;
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);

@@ -127,9 +127,11 @@ export interface VolumeRenderer {
   /** Replace the track-tail segment instances (`SEG_STRIDE` floats each). Same lifetime as the points:
    *  once per (image, populations), never per frame. */
   setOverlaySegments(data: Float32Array): void
-  /** Which slice of the segment buffer to draw, and how wide in screen px. A tail is contiguous in that
-   *  buffer by construction — see `buildTrackBuffer`. */
-  setOverlaySegmentDraw(first: number, count: number, widthPx: number): void
+  /** Which slice of the segment buffer to draw, how wide in screen px, and its OWN plane bounds
+   *  — ribbons carry their own z-reach so a viewer can widen the tails independently of the point
+   *  window. Negative `planeLo` disables the filter (3D volume view, no z-slicing). */
+  setOverlaySegmentDraw(first: number, count: number, widthPx: number,
+                        planeLo: number, planeHi?: number): void
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
    * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
@@ -696,10 +698,16 @@ export async function createVolumeRenderer(
       device.queue.writeBuffer(segBuf, 0, data)
     },
 
-    setOverlaySegmentDraw(first: number, count: number, widthPx: number) {
+    setOverlaySegmentDraw(first: number, count: number, widthPx: number,
+                          planeLo: number, planeHi = planeLo) {
       segFirst = Math.max(0, Math.floor(first))
       segCount = Math.max(0, Math.floor(count))
       u[18] = Math.max(1, widthPx)
+      // Segments' own plane bounds live in pan.z / pan.w — see SEGMENTS_WGSL. Points' bounds stay
+      // on ov.y / ov.w so widening the tail's z-reach doesn't drag the points into planes they
+      // don't belong on.
+      u[26] = planeLo
+      u[27] = Math.max(planeLo, planeHi)
     },
 
     setLabelStyle(opacity: number, contourPx: number) {
