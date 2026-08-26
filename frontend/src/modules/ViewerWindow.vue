@@ -1575,6 +1575,9 @@ let dragStart: { x: number; y: number } | null = null
 /** Pointer-travel threshold below which a mouseup is a CLICK (px, cursor space). Tuned to match
  *  the OS's own drag-vs-click deadband — cursors jitter a pixel or two on click. */
 const CLICK_MAX_TRAVEL_PX = 4
+/** Visible rectangle overlay while a select-mode drag is in flight, in CANVAS pixel space.
+ *  Null while nothing is being drawn; set on the first move that crosses the click deadband. */
+const dragRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 function onDown(e: PointerEvent) {
   dragFrom  = { x: e.clientX, y: e.clientY }
   dragStart = { x: e.clientX, y: e.clientY }
@@ -1584,6 +1587,17 @@ function onMove(e: PointerEvent) {
   if (!dragFrom || !canvas.value) return
   const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y
   dragFrom = { x: e.clientX, y: e.clientY }
+  // Select-mode + plain drag = RECTANGLE selection. Shift+drag stays a pan (the escape hatch when
+  // you need to reposition while a selection tool is active). Anything else = the old pan / rotate
+  // path. Two separate gestures on the same button, disambiguated by the mode and the modifier.
+  if (selectModeActive.value && mode.value === 'plane' && !e.shiftKey && dragStart && canvas.value) {
+    const rect = canvas.value.getBoundingClientRect()
+    const x0 = dragStart.x - rect.left, y0 = dragStart.y - rect.top
+    const x1 = e.clientX   - rect.left, y1 = e.clientY   - rect.top
+    dragRect.value = { x: Math.min(x0, x1), y: Math.min(y0, y1),
+                       w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) }
+    return
+  }
   cam.value = pans(e)
     ? panDrag(cam.value, dx, dy, canvas.value.clientHeight)
     : orbitDrag(cam.value, dx, dy, canvas.value.clientWidth)
@@ -1602,17 +1616,19 @@ function onUp(e: PointerEvent) {
   if (!start) return
   const dx = e.clientX - start.x, dy = e.clientY - start.y
   const travelled = Math.hypot(dx, dy)
-  // Picking only fires in SELECT MODE. Off by default so a click never picks accidentally while a
-  // user is panning around (Dominik, 2026-08-26). Toggled from the pop-manager's pencil via
-  // `settings.viewerSelectMode` — shared component `CellSelectionTools`, cross-window through
-  // localStorage. Plane view only — MIP picking is ambiguous in 3D. Shift+DRAG is the 3D pan
-  // gesture; the travel deadband above catches that.
-  if (travelled <= CLICK_MAX_TRAVEL_PX
-      && mode.value === 'plane'
-      && selectModeActive.value) {
-    const pickMode: 'replace' | 'add' | 'toggle' =
-      e.altKey ? 'toggle' : e.shiftKey ? 'add' : 'replace'
+  // Two release paths in SELECT mode: a small-travel release is a CLICK → single-cell pick,
+  // anything larger with a live `dragRect` is a RECTANGLE release → all labels in the rect.
+  // Both route to the same endpoint (single-cell as a rect degenerates to one voxel); keeping
+  // them separate here means a jittery click cannot accidentally become an empty rect fetch.
+  const rect = dragRect.value
+  dragRect.value = null
+  if (mode.value !== 'plane' || !selectModeActive.value) return
+  const pickMode: 'replace' | 'add' | 'toggle' =
+    e.altKey ? 'toggle' : e.shiftKey ? 'add' : 'replace'
+  if (travelled <= CLICK_MAX_TRAVEL_PX) {
     void pickCellAt(e, pickMode)
+  } else if (rect && rect.w >= 4 && rect.h >= 4) {
+    void pickRectAt(rect, pickMode)
   }
 }
 
@@ -1655,6 +1671,52 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
     vlog('warn', 'Pick error: ' + (err instanceof Error ? err.message : String(err)))
   }
 }
+
+/**
+ * Rectangle-drag pick: POST /api/viewer/pick-rect with the image-pixel rect the user drew.
+ * `rect` is in CANVAS pixel space (from `onMove`); converted to image px through the same
+ * `screenToImagePx` the click path uses so a rect and a click on the same cell agree. The server
+ * reads the mask over the rect at the current (t, z) and extracts unique labels.
+ */
+async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
+                          pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
+  const c = canvas.value, m = meta.value
+  if (!c || !m) return
+  const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m)
+  const p2 = screenToImagePx(rect.x + rect.w, rect.y + rect.h, c.clientWidth, c.clientHeight, cam.value, m)
+  // Clamp inside the image and normalise order — a rect drawn from lower-right to upper-left
+  // arrives with p2 < p1, and the server expects the low/high pair. Bail on an empty rect after
+  // clamping (a drag entirely on the black margin around a zoomed-out image).
+  const nx = m.nX, ny = m.nY
+  const cl = (v: number, hi: number) => Math.max(0, Math.min(hi - 1, v))
+  const x1 = Math.min(cl(p1.x, nx), cl(p2.x, nx))
+  const x2 = Math.max(cl(p1.x, nx), cl(p2.x, nx))
+  const y1 = Math.min(cl(p1.y, ny), cl(p2.y, ny))
+  const y2 = Math.max(cl(p1.y, ny), cl(p2.y, ny))
+  if (x1 === x2 && y1 === y2) return
+  const gc = gatingCurrent.value
+  const body = {
+    projectUid, imageUid,
+    valueName: gc.valueName || undefined,
+    popType:   gc.popType   || 'flow',
+    t: Math.max(0, Math.round(t.value)),
+    z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
+    x1, y1, x2, y2,
+    mode: pickMode,
+  }
+  try {
+    const res = await fetch('/api/viewer/pick-rect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
+    const j = await res.json() as { nLabels?: number; nSelected?: number }
+    vlog('info', `Rect picked ${j.nLabels ?? 0} cells (${j.nSelected ?? 0} in selection)`)
+  } catch (err) {
+    vlog('warn', 'Rect pick error: ' + (err instanceof Error ? err.message : String(err)))
+  }
+}
+
 /**
  * Wheel zooms; SHIFT+wheel steps the z plane in the 2D view.
  *
@@ -1711,17 +1773,20 @@ function onWheel(e: WheelEvent) {
 
 /** What the canvas responds to. One list, rendered in the popover AND nowhere else — a shortcut that
  *  only exists in someone's memory is a shortcut nobody uses. */
-const SHORTCUTS: { keys: string; what: string }[] = [
-  { keys: 'Drag', what: '2D: pan · 3D: rotate' },
-  { keys: 'Shift + drag', what: 'Pan, in both views' },
-  { keys: 'Wheel', what: 'Zoom' },
-  { keys: 'Shift + wheel', what: '2D: step through z planes' },
-  { keys: 'Click', what: 'Selection mode: pick the cell under the pointer (replaces selection)' },
-  { keys: 'Shift + click', what: 'Selection mode: add the cell to the selection' },
-  { keys: 'Alt + click', what: 'Selection mode: toggle the cell in the selection' },
-  { keys: 'Mode icon', what: 'Toggle pan / selection mode (top-right)' },
-  { keys: 'Space', what: 'Play / pause the timecourse' },
-  { keys: '← / →', what: 'Previous / next timepoint' },
+/** Per-mode table so the popover can be read as "in mode X, what does gesture Y do". The same
+ *  gesture (Drag, Click) means different things depending on pan vs select mode AND 2D vs 3D, so a
+ *  flat list of `keys → what` conflated four contexts. `—` = a no-op in that context. */
+const SHORTCUTS: { keys: string; pan: string; select: string }[] = [
+  { keys: 'Drag',          pan: '2D: pan · 3D: rotate',   select: 'Rectangle (2D)' },
+  { keys: 'Shift + drag',  pan: 'Pan',                    select: 'Pan (escape hatch)' },
+  { keys: 'Wheel',         pan: 'Zoom',                   select: 'Zoom' },
+  { keys: 'Shift + wheel', pan: '2D: step through z',     select: '2D: step through z' },
+  { keys: 'Click',         pan: '—',                      select: 'Pick cell (replace)' },
+  { keys: 'Shift + click', pan: '—',                      select: 'Add cell to selection' },
+  { keys: 'Alt + click',   pan: '—',                      select: 'Toggle cell in selection' },
+  { keys: 'Space',         pan: 'Play / pause',           select: 'Play / pause' },
+  { keys: '← / →',         pan: 'Prev / next frame',      select: 'Prev / next frame' },
+  { keys: 'Mode icon',     pan: 'Switch to select',       select: 'Switch to pan' },
 ]
 const keysOpen = ref(false)
 const keysBtn = ref<HTMLElement | null>(null)
@@ -2409,10 +2474,16 @@ onUnmounted(() => {
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
-        ref="canvas" class="vw-canvas"
+        ref="canvas" class="vw-canvas" :class="{ 'vw-canvas-select': selectModeActive }"
         @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
         @wheel="onWheel"
       />
+      <!-- Rubber-band selection rectangle in select mode. Absolute-positioned inside the canvas
+           wrap so its coordinates are in the same space as the pointer events. Non-interactive so
+           it doesn't intercept the pointerup that ends the drag. -->
+      <div v-if="dragRect" class="vw-select-rect"
+           :style="{ left: dragRect.x + 'px', top: dragRect.y + 'px',
+                     width: dragRect.w + 'px', height: dragRect.h + 'px' }" />
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
@@ -2499,10 +2570,25 @@ onUnmounted(() => {
       </div>
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
-        <div v-for="s in SHORTCUTS" :key="s.keys" class="cc-row cc-row-tight vw-key">
-          <kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd>
-          <span class="cc-muted cc-fs-2xs">{{ s.what }}</span>
-        </div>
+        <!-- Table with a column per mode: same gesture does different things in pan vs select
+             (Dominik, 2026-08-26). The current row's active-mode column is highlighted so a user
+             can read "what does drag do RIGHT NOW" in one glance. -->
+        <table class="vw-keys">
+          <thead>
+            <tr class="cc-muted cc-fs-3xs">
+              <th></th>
+              <th :class="{ 'vw-keys-active': !selectModeActive }">Pan</th>
+              <th :class="{ 'vw-keys-active': selectModeActive }">Select</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in SHORTCUTS" :key="s.keys">
+              <td><kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd></td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': !selectModeActive }">{{ s.pan }}</td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': selectModeActive }">{{ s.select }}</td>
+            </tr>
+          </tbody>
+        </table>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
            ViewerPanel now (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches this
@@ -3071,6 +3157,13 @@ onUnmounted(() => {
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-version-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-key { white-space: nowrap; }
+/* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
+   reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
+.vw-keys { border-collapse: collapse; margin-top: 4px; }
+.vw-keys th, .vw-keys td { padding: 3px 8px 3px 0; text-align: left; vertical-align: middle; white-space: nowrap; }
+.vw-keys th { font-weight: normal; }
+.vw-keys .vw-keys-active { color: var(--cc-text); font-weight: 500; }
+.vw-keys th.vw-keys-active { color: var(--cc-accent-strong); }
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
@@ -3112,6 +3205,19 @@ onUnmounted(() => {
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
+/* Crosshair when the viewer is in selection mode — the cursor is the honest indicator that a click
+   will pick a cell rather than pan. Same intent as the mode icon in the sidebar, right at the
+   pointer where the user is looking. */
+.vw-canvas-select { cursor: crosshair; }
+.vw-canvas-select:active { cursor: crosshair; }
+/* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
+   but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
+   the pointerup that ends the gesture (that would strand the drag). */
+.vw-select-rect {
+  position: absolute; pointer-events: none;
+  border: 1px solid var(--cc-accent-strong);
+  background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
+}
 .vw-side {
   width: 15rem; flex: none; padding: 0.6rem;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang

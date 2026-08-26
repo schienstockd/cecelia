@@ -4606,6 +4606,7 @@ end
         "/api/update/apply",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
         "/api/viewer/pick-cell",
+        "/api/viewer/pick-rect",
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4647,7 +4648,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 119
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 120
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

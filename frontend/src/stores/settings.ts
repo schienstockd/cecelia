@@ -572,6 +572,15 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'imageVersion': _imageVersionStore.value = ev.value as Record<string, string>; break
       }
     })
+    // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
+    // only fire in OTHER windows, so this is the path the popup viewer's mode toggle takes to
+    // reach the main window's settings store (Dominik, 2026-08-26). Without this the pop-manager
+    // pencil stayed in its old state when the viewer flipped the mode.
+    window.addEventListener('storage', e => {
+      if (e.key === 'cc.viewerSelectMode') {
+        viewerSelectMode.value = e.newValue === 'select' ? 'select' : 'off'
+      }
+    })
   }
 
   return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }

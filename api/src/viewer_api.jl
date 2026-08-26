@@ -691,3 +691,60 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; label, nSelected = length(labs)))
 end
+
+# ── POST /api/viewer/pick-rect (P8 rectangle drag) ────────────────────────────────
+# Drag a rectangle in the viewer → all cells whose mask intersects that XY box at (t, z) become the
+# transient population. Same registry / broadcast path as `api_viewer_pick_cell`, so the two share
+# the linked-brushing pop and can compose (a rect drag then a shift+click adds one more cell).
+#
+# Body: {projectUid, imageUid, valueName, popType, t, z, x1, y1, x2, y2, mode?}
+#   (x1, y1) / (x2, y2) are the low/high corners in IMAGE PIXEL coords (client normalises before
+#   POST). z is the plane the rect was drawn on; a future z-window feature will multi-plane it.
+#   mode = 'replace' | 'add' | 'toggle' (as pick-cell).
+#
+# Reads the mask over the rect in ONE `read_slab` call — same reader the pixel path uses, so the
+# rect obeys the same axis + level conventions. Labels are dedup'd server-side (a cell straddling
+# many voxels contributes one label).
+function api_viewer_pick_rect(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    zp, lerr = label_store_path(pu, iu, vn)
+    zp === nothing && return 404, JSON3.write((; error = lerr))
+    tint = _to_int(get(body, "t", 0))
+    zint = _to_int(get(body, "z", 0))
+    x1   = _to_int(get(body, "x1", 0));  x2 = _to_int(get(body, "x2", 0))
+    y1   = _to_int(get(body, "y1", 0));  y2 = _to_int(get(body, "y2", 0))
+    # Normalise (client should already have done this, but a rect drawn from lower-right can arrive
+    # inverted through JSON coercion / a client bug — one dedupe here is cheaper than debugging a
+    # store read that returned zero rows).
+    xlo = min(x1, x2); xhi = max(x1, x2)
+    ylo = min(y1, y2); yhi = max(y1, y2)
+    labels_uniq = try
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xlo:xhi, y = ylo:yhi)
+        # `vol` is `(x, y, z)` column-major, one voxel per pixel of the rect (z drops because zint
+        # is an Int). Flatten + unique + drop 0 (background). Keep as Int for JSON.
+        Int[Int(l) for l in unique(vec(vol)) if l != 0]
+    catch e
+        return 500, JSON3.write((; error = "rect read failed: " * sprint(showerror, e)))
+    end
+    mode = String(get(body, "mode", "replace"))
+    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    labs = if mode == "add"
+        collect(union(Set(cur), Set(labels_uniq)))
+    elseif mode == "toggle"
+        s = Set(cur); for l in labels_uniq; l in s ? delete!(s, l) : push!(s, l); end
+        collect(s)
+    else
+        labels_uniq
+    end
+    _set_napari_selection!(img._dir, vn, labs)
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_napari_pop!(m, img)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
+end
