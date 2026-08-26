@@ -25,7 +25,22 @@ const emit = defineEmits<{
 const track = ref<HTMLElement | null>(null)
 let active: 'lo' | 'hi' | null = null
 
-const pct = (v: number) => ((v - props.min) / (props.max - props.min || 1)) * 100
+// Half the thumb width — must match `.rs-thumb { width }` and the `.rs-rail` inset. The rail spans
+// from THUMB_HALF to width-THUMB_HALF, so value → position must map into that inset track.
+const THUMB_HALF = 5.5
+
+// Clamp `frac` to [0, 1] so a caller passing lo/hi outside `min`/`max` (e.g. the viewer's ch.hi
+// briefly exceeding a growing `chMax`) can't produce a negative `right` on the fill and paint the
+// whole rail beyond the box.
+const frac = (v: number) =>
+  Math.max(0, Math.min(1, (v - props.min) / (props.max - props.min || 1)))
+// A thumb's `left` places its CENTRE at `5.5px + frac * (100% - 11px)`, then `translateX(-50%)` in
+// CSS centres the 11px thumb on that point. Result: thumb is fully inside `.rs` for any value.
+const thumbLeft = (v: number) =>
+  `calc(${THUMB_HALF}px + (100% - ${2 * THUMB_HALF}px) * ${frac(v)})`
+const fillLeft  = (v: number) => thumbLeft(v)
+const fillRight = (v: number) =>
+  `calc(${THUMB_HALF}px + (100% - ${2 * THUMB_HALF}px) * ${1 - frac(v)})`
 
 function clampSnap(v: number): number {
   const s = props.step || 1
@@ -35,8 +50,10 @@ function valueFromEvent(e: PointerEvent): number {
   const el = track.value
   if (!el) return props.min
   const r = el.getBoundingClientRect()
-  const frac = r.width ? (e.clientX - r.left) / r.width : 0
-  return clampSnap(props.min + frac * (props.max - props.min))
+  // Pointer at the rail's left end (r.left + THUMB_HALF) is value=min, right end value=max.
+  const trackW = r.width - 2 * THUMB_HALF
+  const f = trackW > 0 ? (e.clientX - r.left - THUMB_HALF) / trackW : 0
+  return clampSnap(props.min + Math.max(0, Math.min(1, f)) * (props.max - props.min))
 }
 function onMove(e: PointerEvent) {
   if (!active) return
@@ -67,13 +84,18 @@ function onTrackDown(e: PointerEvent) {
 <template>
   <div class="rs" ref="track" @pointerdown="onTrackDown">
     <div class="rs-rail" />
-    <div class="rs-fill" :style="{ left: pct(lo) + '%', right: (100 - pct(hi)) + '%' }" />
-    <div class="rs-thumb" :style="{ left: pct(lo) + '%' }" @pointerdown.stop="grab('lo', $event)" />
-    <div class="rs-thumb" :style="{ left: pct(hi) + '%' }" @pointerdown.stop="grab('hi', $event)" />
+    <div class="rs-fill" :style="{ left: fillLeft(lo), right: fillRight(hi) }" />
+    <div class="rs-thumb" :style="{ left: thumbLeft(lo) }" @pointerdown.stop="grab('lo', $event)" />
+    <div class="rs-thumb" :style="{ left: thumbLeft(hi) }" @pointerdown.stop="grab('hi', $event)" />
   </div>
 </template>
 
 <style scoped>
+/* Thumbs are 11px round; the rail is inset by half-thumb (5.5px) each side so the thumb CENTRE at
+   value=min lands on the rail's left end and the thumb CENTRE at value=max lands on the rail's right
+   end, with the whole thumb still inside `.rs`. `translateX(-50%)` on the thumb centres it on `left`;
+   the inline `left: calc(5.5px + (100% - 11px) * frac)` positions that centre along the inset track,
+   so a hi=max thumb no longer pokes past `.rs` (Dominik, 2026-08-26). */
 .rs {
   position: relative;
   height: 1rem;
@@ -86,7 +108,7 @@ function onTrackDown(e: PointerEvent) {
 }
 .rs-rail {
   position: absolute;
-  left: 0; right: 0;
+  left: 5.5px; right: 5.5px;
   height: 3px;
   border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2);

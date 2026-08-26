@@ -94,5 +94,8 @@ const open = computed({
 .cs-body {
   overflow-y: auto;
   background: var(--cc-bg);
+  /* Breathing room so the first row's control (e.g. a CcToggle taller than its label) is not
+     flush-clipped by the section's top edge (Dominik, 2026-08-26). */
+  padding: 0.35rem 0;
 }
 </style>
