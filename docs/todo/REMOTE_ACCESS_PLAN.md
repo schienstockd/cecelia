@@ -14,12 +14,13 @@ This plan replaces it with the durable answer.
 
 ## Non-goals
 
-- **No HTTPS.** Two reasons: (a) the alternatives all cost recurring subscription (Cloudflare,
-  Tailscale) or a domain + Let's Encrypt setup we can't ship in-box; (b) TLS overhead would land on
-  the image-viewer path (per-frame slab transfers), which is already tight — see
-  [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). Users who need HTTPS can put Caddy in front (out-of-scope
-  doc pointer only). The trade-off — that the token travels in the clear on the wire — is accepted
-  and documented.
+- **No HTTPS.** The load-bearing reason is that Cecelia ships in-box — every alternative that gives
+  real HTTPS costs a subscription (Cloudflare, Tailscale), a domain, or a Let's Encrypt setup we
+  can't wire into `install.sh` without asking the user to buy something or configure DNS. Users who
+  need HTTPS put Caddy in front — one-paragraph doc pointer, no code. TLS overhead on the
+  image-viewer slab path (see [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md)) is a **secondary and
+  unmeasured** consideration; don't lean on it as the argument. **Accepted risk (see Risks
+  below): the token — and the session cookie — travel in the clear.**
 - **No third-party auth.** No Google IAP, Tailscale, Cloudflare Access. Cecelia stays self-contained.
 - **No multi-user identity.** One token per install; anyone with the token is "the user". Cecelia's
   data model is already single-tenant; this plan doesn't reshape that.
@@ -32,6 +33,18 @@ This plan replaces it with the durable answer.
   request path, tested against `_BOUND_HOST[]`. Do not build a bespoke variant.
 - `api/src/server.jl:640` — `CECELIA_HOST` env override. Kept unchanged; the plan adds the token
   layer *on top* of the existing bind logic.
+
+### Verified before designing
+
+- **Sole HTTP entrypoint on :8080 is `handle_stream`** (`api/src/server.jl:711` binds it via
+  `HTTP.listen`). Grepped every `HTTP.listen*` / `HTTP.serve*` / `WebSockets.serve*` across
+  `api/src/` and `app/src/`; the only other server is `app/src/runner/server.jl:430` (dev-only task
+  runner on port 7657, hard-coded to `127.0.0.1`, out of scope). Static/binary/WS paths inside
+  `handle_stream` all sit *inside* the same function, so one guard at the top covers them.
+- **Client-address lookup is `Sockets.getpeername(stream::HTTP.Stream)`** — HTTP.jl exposes it in
+  `HTTP/src/Streams.jl:47` (returns `(ip::IPAddr, port::UInt16)`), keyed off the underlying TCP
+  socket, not a spoofable `X-Forwarded-For`. Loopback bypass compares `ip` against
+  `Sockets.IPv4("127.0.0.1")` / `Sockets.IPv6("::1")`.
 
 ## Decisions (2026-08-27)
 
@@ -51,7 +64,7 @@ This plan replaces it with the durable answer.
 
 4. **Loopback bypass.** Skip the token check when the client address is `127.0.0.1` / `::1`. Keeps
    dev flow unchanged, keeps the pattern consistent with the existing REPL loopback gate. Detected
-   via `HTTP.Sockets.getpeername` on the underlying stream, not a spoofable header.
+   via `Sockets.getpeername(::HTTP.Stream)` (see *Verified before designing*), not a spoofable header.
 
 5. **Default bind stays `127.0.0.1`.** Laptop installs need zero new setup and are unaffected. The
    VM install path sets `CECELIA_HOST=0.0.0.0` (via `install.sh` when a VM-scope flag is passed —
@@ -87,9 +100,11 @@ Each phase is independently shippable.
 
 - **P1 — server-side token.** Adds `[server].access_token` to `custom.toml`, generator on first
   start, middleware in `handle_stream`, `/api/session/exchange` endpoint, loopback bypass, refuse-
-  to-start-without-token guard on non-loopback binds. Julia tests in `api/test/`. No frontend change
-  — `curl -H "Authorization: Bearer …"` works. Ships behind an operator-set
-  `CECELIA_HOST=0.0.0.0`; loopback installs see zero behaviour change.
+  to-start-without-token guard on non-loopback binds. Julia tests in `api/test/` — **the
+  fail-closed guard ships with its own test in the same commit**; it is the load-bearing security
+  property and lands verified, not on faith. No frontend change — `curl -H "Authorization: Bearer …"`
+  works. Ships behind an operator-set `CECELIA_HOST=0.0.0.0`; loopback installs see zero behaviour
+  change.
 
 - **P2 — frontend URL→cookie handoff.** ~30 LOC in the app shell: read `?t=`, exchange, replaceState.
   Small `/token` HTML fallback for a paste flow (rendered from Julia; not a Vue route so a token-less
@@ -123,6 +138,12 @@ end-to-end, confirm `nvidia-smi` shows GPU use.
 
 ## Risks / open questions
 
+- **Plaintext token + cookie on the wire (accepted).** HTTP means the token in the URL query on the
+  first hit and the session cookie on every subsequent request travel in cleartext. Anyone with a
+  packet-capture position between the laptop and the VM — same LAN, an intermediary router, a noisy
+  co-tenant VM sharing switching fabric — can lift either. This is the price of "no subscription,
+  no cert management" and is the reason HTTPS is a *non-goal we can document a fix for*, not a
+  *problem we deny exists*. Users on untrusted networks should Caddy-terminate.
 - **Token in URL leaks to server logs.** HTTP.jl's `@info` on requests must redact `?t=` before it
   hits `[server:log]`. One-line filter in the log builder.
 - **Token in URL leaks to referer.** First hit is same-origin; only leaks if the frontend triggers a
