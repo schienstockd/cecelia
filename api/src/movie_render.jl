@@ -33,6 +33,12 @@ behind, which is the same guarantee `movie_writer` makes on its side.
 `title_card` is the same dict shape `_title_card_content` in `napari_api.jl` produces (`title`, `note`,
 `sections`, `durationSec`) — passed through to the encoder runner and prepended to the mp4 by the
 shared `title_card.prepend_title_to_movie` helper. `nothing` = no card.
+
+`overlays_for(t::Int) -> (points, segments)` is called per frame to paint P3 content onto the CPU
+frame. Return `(nothing, nothing)` for a frame with no overlays. `points`/`segments` are the
+`frame_overlays.jl` column NamedTuples, with pixel coordinates the caller has already resolved
+against the frame's grid (post-crop / post-stride). `point_size_px` and `segment_width_px` mirror
+`render_view_frame`'s.
 """
 function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,
@@ -40,6 +46,8 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            z = nothing, channels = nothing, specs = nothing,
                            crop = nothing, max_px::Int = 0,
                            title_card = nothing,
+                           overlays_for = nothing,
+                           point_size_px::Int = 6, segment_width_px::Int = 2,
                            task_dir::AbstractString = mktempdir(),
                            on_log::Function = println,
                            on_progress::Function = (n, t) -> nothing,
@@ -62,6 +70,8 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
         open(raw, "w") do io
             W, H, written, stopped = write_raw_frames(io, arr, caxes, frames; z = z,
                 channels = channels, specs = specs, crop = crop, max_px = max_px,
+                overlays_for = overlays_for,
+                point_size_px = point_size_px, segment_width_px = segment_width_px,
                 on_progress = on_progress, cancelled = cancelled)
         end
         stopped && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
@@ -94,14 +104,23 @@ test asserts these bytes against `render_view_frame`'s own output rather than ag
 function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
                           z = nothing, channels = nothing, specs = nothing,
                           crop = nothing, max_px::Int = 0,
+                          overlays_for = nothing,
+                          point_size_px::Int = 6, segment_width_px::Int = 2,
                           on_progress::Function = (n, t) -> nothing,
                           cancelled::Function = () -> false)
     W = H = 0
     written = 0
     for (i, t) in enumerate(ts)
         cancelled() && return (W, H, written, true)
+        # `overlays_for(t)` is `(points, segments)` for this timepoint (either may be `nothing`). A
+        # callback rather than one big buffer because the caller already has the whole overlay table
+        # by t sorted, so it can slice in O(1) — pre-materialising per-t rows here would allocate
+        # every frame and defeat the browser's own contiguous-range trick.
+        pts, segs = overlays_for === nothing ? (nothing, nothing) : overlays_for(Int(t))
         img = render_view_frame(arr, caxes, Int(t); z = z, channels = channels,
-                                specs = specs, crop = crop, max_px = max_px)
+                                specs = specs, crop = crop, max_px = max_px,
+                                points = pts, point_size_px = point_size_px,
+                                segments = segs, segment_width_px = segment_width_px)
         # h264/yuv420p needs even dimensions, and nothing downstream will fix an odd frame —
         # `movie_io` says so explicitly. Cropped here rather than there so the size the encoder is
         # told is the size that was actually written.
