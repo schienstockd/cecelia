@@ -468,10 +468,41 @@ Blocking, not rail-integrated, capped at 30 frames by default; registered in `mo
 `/movies` page picks it up. Its job is to make the pipeline eyeball-able before the full
 `handle_movie_record` / `run_single_movie` migration.
 
-**Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage),
-and the overlay AUTHOR — the caller that resolves populations / tracks / colour-by into the point +
-segment columns and reads/projects the label store per t. The overlay primitives are complete; what
-remains is the request path and the h5ad-to-columns resolver.
+**Built: the overlay AUTHOR** (`api/src/overlay_author.jl`). `build_overlays_for(img; value_name,
+pop_type, transform, tail_length = 30)` reads `resolve_pops` and the label store's centroids ONCE
+and returns a per-t closure `record_view_movie(overlays_for = ...)` calls every frame. Points
+bucket by `centroid_t`; tracks bucket by arrival timepoint and the closure slices the window
+`[t + 2 - L, t + 1]` — same off-by-one as `tailRange` in `frontend/src/utils/viewerOverlays.ts`,
+so `tail_length = 1` on frame `t` shows only the current hop (arrival `t + 1`) and
+`tail_length = 0` hides tracks entirely (same as `include_tracks = false`). Default 30 matches
+napari's `tail_length` and the browser's `viewerTailLength`, so a movie recorded from a look
+reads the same as the live viewer. `pixel_transform` bakes the crop + stride `render_view_frame`
+applies into a reusable mapping so the caller stays ignorant of `_clamp_range` /
+`plane[1:step:H, 1:step:W]` — one derivation of the numbers, not two. The smoke route takes an
+optional `overlays: { popType, valueName, popPaths, pointSizePx, segmentWidthPx, tailLength,
+includeTracks }` block, so a POST can be verified end-to-end against a real project
+(`resolve_pops` cache warms on the first read).
+
+**Built: the MASK author** (`api/src/overlay_author.jl` → `build_mask_for`). Same design as
+`build_overlays_for` — build id → colour ONCE from `resolve_pops` (cell pop_types) or
+`pop_df(...; granularity = :cell)` (track pop_types), then per-t read the label store and project
+to 2D. Opens the label store ONCE via `img_labels_path` + `open_level0` so a sweep pays one
+metadata round-trip rather than `nT`. Reads `read_slab(arr, caxes, t, 0; z = z)` — the same `z`
+selection the frame render uses, so a movie of "plane 12" outlines plane 12's cells and a MIP over
+z outlines the projected cells; a mismatched z would put the outlines on a different slab than the
+pixels beneath them. Projects to the drawn frame's grid through the same `PixelTransform` the
+overlay author uses (`x_lo:x_lo + cW - 1` × `y_lo:y_lo + cH - 1`, then stride by `step`). `all_cells
+= true` paints every cell in one colour ignoring pops — the mask counterpart of `all_tracks`, for a
+tracked segmentation without gated pops (cpSAM on zolIMa/fXgbTl). An empty id → colour dict short-
+circuits to `(nothing, nothing)` so the primitive isn't asked to draw a mask with no colours.
+
+The smoke route now takes `overlays: { ..., showMask, allCells, allCellsColour, maskContourPx }`
+and returns a `mask: {...}` diagnostic block alongside `overlays: {...}`, so a POST verifies both
+authors end-to-end against a real project.
+
+**Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage).
+The overlay primitives, the point/track author and the mask author are all complete; what remains
+is the request path — off `handle_movie_record` / `run_single_movie` onto `record_view_movie`.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
