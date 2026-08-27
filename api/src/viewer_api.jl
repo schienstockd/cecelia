@@ -762,7 +762,7 @@ end
 
 # ── POST /api/viewer/record-test ──────────────────────────────────────────────────
 #
-# A SMOKE-TEST route that produces an mp4 through renderer C so the pipeline can be eyeballed before
+# A SMOKE-TEST route that produces an mp4 through the offline renderer so the pipeline can be eyeballed before
 # the movie rail (`handle_movie_record` / `run_single_movie`) is migrated off napari. Blocking, not
 # rail-integrated — the record runs on the request thread, cancellation is not offered and progress is
 # not streamed. Kept out of the parity checklist for that reason.

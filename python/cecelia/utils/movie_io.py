@@ -140,8 +140,8 @@ def movie_writer(path, fps):
 def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=None):
     """Encode a file of raw RGB24 frames to an mp4 through :func:`movie_writer`.
 
-    The frames come from Julia's compositor (``api/src/movie_render.jl``, renderer C) — the offline
-    half of the browser-viewer split. They arrive as ONE file of ``width * height * 3`` bytes per
+    The frames come from Julia's compositor (``api/src/movie_render.jl``, the offline renderer) —
+    the offline half of the browser/offline viewer split. They arrive as ONE file of ``width * height * 3`` bytes per
     frame, top row first, rather than as a PNG each: a PNG per frame pays an encode and a decode for
     bytes that were already in memory, and PNG encoding is half of that renderer's warm frame.
 

@@ -210,7 +210,7 @@ class PrependTests(unittest.TestCase):
 
 
 class EncodeRunnerTitleCardTests(unittest.TestCase):
-    """The encoder runner (`writers/encode_movie_run.py`) is what renderer C invokes via `run_py`.
+    """The encoder runner (`writers/encode_movie_run.py`) is what the offline renderer invokes via `run_py`.
     A title card in params has to reach the movie, or the browser recorder ships without a card
     the napari path already writes. Exercised through the runner rather than the helper because the
     integration is where the params handoff can go wrong."""

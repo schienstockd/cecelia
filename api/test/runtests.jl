@@ -4778,7 +4778,7 @@ end
     end
 end
 
-@testset "API: render_view_frame — renderer C's movie frame" begin
+@testset "API: render_view_frame — the offline renderer's movie frame" begin
     # The offline frame (WEB_VIEWER_PLAN.md → P5). Asserted on the committed real stores rather than a
     # phantom, because the three things that break here are all store-shaped: axis order, byte order,
     # and whether a z SELECTION means the same thing as it does on the browser's slab route.
@@ -5461,7 +5461,7 @@ end
     end
 end
 
-@testset "API: interpolate_keyframes — renderer C's tween" begin
+@testset "API: interpolate_keyframes — the offline renderer's tween" begin
     # napari-animation does this today, and it is the one part of that dependency worth keeping: a
     # keyframe is a saved view state plus the number of frames it takes to reach it. Every saved
     # animation config already means that, so C has to answer the same contract.
