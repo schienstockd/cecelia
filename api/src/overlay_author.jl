@@ -140,79 +140,179 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                             transform::PixelTransform,
                             pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                             include_tracks::Bool = true,
-                            tail_length::Int = 30)
-    pops = try
-        resolve_pops(img, String(pop_type); value_name = String(value_name))
-    catch e
-        @warn "build_overlays_for: resolve_pops failed" value_name pop_type exception = e
-        NamedTuple[]
-    end
-    if pops_filter !== nothing
-        want = Set(String(p) for p in pops_filter)
-        pops = [p for p in pops if String(p.path) in want]
-    end
+                            tail_length::Int = 30,
+                            all_tracks::Bool = false,
+                            all_tracks_colour::AbstractString = "#9ca3af")
+    pt = String(pop_type)
+    vn = String(value_name)
+    # Two paths: cell pop_types (`flow`/`live`/`clust`) route through `resolve_pops` + the cell
+    # centroid table, because their membership is one cell per row; track pop_types (`track`/
+    # `trackclust`) route through `pop_df(...; granularity = :cell)`, because their GATES live on
+    # the per-track table (`track_props`) and `resolve_pops`'s cell fetch cannot evaluate them —
+    # the gate on `live.track.speed` / `live.track.duration` for `/sdf` returned empty membership
+    # under `resolve_pops` on zolIMa/fXgbTl. `pop_df` knows to switch data sources by pop_type and
+    # returns the tracked cells' rows with `label`/`track_id`/centroids in one shape — which is
+    # what the author needs for both the point pass and the segment pass. Every track-flavoured
+    # pop is a tracks-drawing pop; the per-pop `is_track` flag is ignored here (a track_grained
+    # gate map only produces track pops).
+    is_track_pt = pt in ("track", "trackclust")
 
-    lp   = label_props(img; value_name = String(value_name))
-    # `centroid_t` lives in `uns/temporal_cols`, not `data_type=:obs` — an obs-only check is what a
-    # sibling reader (`viewer_api.jl`) does, then confirms the column via `hasproperty` on the DF.
-    # We do the same here: read the label store's own temporal declaration for `hasT`, and the
-    # `data_type=:obs` list for `track_id` (which is a real obs column).
+    lp   = label_props(img; value_name = vn)
     hasT = !isempty(temporal_columns(lp))
     obs  = col_names(lp; data_type = :obs)
     hasK = "track_id" in obs
-    # Only ask for the columns we'll use — a 300-column feature matrix is not a per-movie budget.
-    # `view_centroid_cols` already selects `centroid_t` via `temporal_columns`, so it goes with x/y.
-    view_centroid_cols(lp; order = [:x, :y])
-    hasK && select_cols(lp, ["track_id"])
-    df = as_df(lp)
-    n  = size(df, 1)
 
-    # label → row index, once. A per-label scan of the whole DataFrame per pop would be O(pops · n);
-    # this is O(n + pops).
-    row_of = Dict{Int,Int}()
-    @inbounds for i in 1:n
-        row_of[Int(df[i, :label])] = i
+    # Buckets shared by both paths.
+    pts_by_t = Dict{Int,typeof((; x = Int[], y = Int[], colour = RGB{N0f8}[]))}()
+    track_hist = Dict{Tuple{Int,RGB{N0f8}},Vector{Tuple{Int,Int,Int}}}()   # (kid, colour) → sorted (t, dx, dy)
+    _push_point!(t, xy, colour) = begin
+        bag = get!(pts_by_t, t) do
+            (; x = Int[], y = Int[], colour = RGB{N0f8}[])
+        end
+        push!(bag.x, xy[1]); push!(bag.y, xy[2]); push!(bag.colour, colour)
+    end
+    _push_track!(kid, colour, t, xy) = begin
+        hist = get!(track_hist, (kid, colour), Tuple{Int,Int,Int}[])
+        push!(hist, (t, xy[1], xy[2]))
     end
 
-    # Bucket points by t. `_EMPTY_POINTS` is the shape the primitive expects even when a frame has
-    # nothing — but we return `nothing` from the closure for that case so `record_view_movie` skips
-    # the paint call entirely.
-    pts_by_t = Dict{Int,typeof((; x = Int[], y = Int[], colour = RGB{N0f8}[]))}()
-    # Per-track history: track_id → sorted vector of (t, dx, dy, colour). Filled during the point
-    # pass so we don't walk the table twice.
-    track_hist = Dict{Int,Vector{Tuple{Int,Int,Int,RGB{N0f8}}}}()
-
-    for p in pops
-        Bool(get(p, :show, true)) || continue
-        colour = hex_to_rgb(String(p.colour))
-        is_track = Bool(get(p, :is_track, false)) && hasK
-        for L in p.labels
-            i = get(row_of, Int(L), 0)
-            i == 0 && continue
-            px = df[i, :centroid_x]
-            py = df[i, :centroid_y]
-            (px isa Real && py isa Real) || continue
-            t = hasT ? df[i, :centroid_t] : 0
-            (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
-            xy = _apply(transform, px, py)
-            xy === nothing && continue
-            ti = hasT ? Int(round(Float64(t))) : 0
-            bag = get!(pts_by_t, ti) do
-                (; x = Int[], y = Int[], colour = RGB{N0f8}[])
+    # Optional "whole-segmentation tracks" mode: paint every cell with `track_id > 0` in one
+    # default colour, ignoring pops entirely. Matches napari's `show-tracks` whole-segmentation
+    # ribbon (napari_api.jl:1888) — the answer to "just show me the tracks in this segmentation"
+    # for a segmentation that has no gated pops but IS tracked (e.g. cpSAM on zolIMa/fXgbTl).
+    if all_tracks
+        if !hasK
+            @warn "build_overlays_for: all_tracks requested but no track_id column" value_name = vn
+        else
+            view_centroid_cols(lp; order = [:x, :y])
+            select_cols(lp, ["track_id"])
+            df = as_df(lp)
+            colour = hex_to_rgb(String(all_tracks_colour))
+            @inbounds for i in 1:size(df, 1)
+                px = df[i, :centroid_x]; py = df[i, :centroid_y]
+                (px isa Real && py isa Real) || continue
+                t = hasT ? df[i, :centroid_t] : 0
+                (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
+                xy = _apply(transform, px, py)
+                xy === nothing && continue
+                ti = hasT ? Int(round(Float64(t))) : 0
+                _push_point!(ti, xy, colour)
+                if include_tracks
+                    traw = df[i, :track_id]
+                    (traw isa Real && isfinite(Float64(traw))) || continue
+                    kid = Int(round(Float64(traw)))
+                    kid > 0 || continue
+                    _push_track!(kid, colour, ti, xy)
+                end
             end
-            push!(bag.x, xy[1]); push!(bag.y, xy[2]); push!(bag.colour, colour)
+        end
+    elseif !is_track_pt
+        # Cell path — resolve_pops returns each pop's cell labels; index into the centroid table.
+        pops = try
+            resolve_pops(img, pt; value_name = vn)
+        catch e
+            @warn "build_overlays_for: resolve_pops failed" value_name pop_type exception = e
+            NamedTuple[]
+        end
+        if pops_filter !== nothing
+            want = Set(String(p) for p in pops_filter)
+            pops = [p for p in pops if String(p.path) in want]
+        end
+        # Only ask for the columns we'll use.
+        view_centroid_cols(lp; order = [:x, :y])
+        hasK && select_cols(lp, ["track_id"])
+        df = as_df(lp)
+        n  = size(df, 1)
+        row_of = Dict{Int,Int}()
+        @inbounds for i in 1:n
+            row_of[Int(df[i, :label])] = i
+        end
 
-            if include_tracks && is_track
-                # NOT every cell in a track pop has a track_id — a segmentation mixes tracked and
-                # untracked cells, and `track_id` is NaN or 0 for the untracked ones. Skip them
-                # rather than crash on `Int(NaN)` — an untracked cell in a track pop still shows
-                # up as a POINT above; only its segment is undefined.
-                traw = df[i, :track_id]
-                (traw isa Real && isfinite(Float64(traw))) || continue
-                kid = Int(round(Float64(traw)))
-                kid > 0 || continue
-                hist = get!(track_hist, kid, Tuple{Int,Int,Int,RGB{N0f8}}[])
-                push!(hist, (ti, xy[1], xy[2], colour))
+        for p in pops
+            Bool(get(p, :show, true)) || continue
+            colour = hex_to_rgb(String(p.colour))
+            is_track_pop = Bool(get(p, :is_track, false)) && hasK
+            for L in p.labels
+                i = get(row_of, Int(L), 0)
+                i == 0 && continue
+                px = df[i, :centroid_x]; py = df[i, :centroid_y]
+                (px isa Real && py isa Real) || continue
+                t = hasT ? df[i, :centroid_t] : 0
+                (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
+                xy = _apply(transform, px, py)
+                xy === nothing && continue
+                ti = hasT ? Int(round(Float64(t))) : 0
+                _push_point!(ti, xy, colour)
+
+                if include_tracks && is_track_pop
+                    traw = df[i, :track_id]
+                    (traw isa Real && isfinite(Float64(traw))) || continue
+                    kid = Int(round(Float64(traw)))
+                    kid > 0 || continue
+                    _push_track!(kid, colour, ti, xy)
+                end
+            end
+        end
+    else
+        # Track path — `pop_df` with granularity=:cell EXPANDS a gated track pop's members
+        # (track_ids) to the cell rows those tracks occupy, tagged with a `pop` column. That's
+        # exactly the shape the point + segment passes want. Load the pop map for the pop
+        # metadata (colour, show, path) so the expanded rows keep their pop's colour.
+        m = try
+            load_pop_map(img; value_name = vn, pop_type = pt)
+        catch e
+            @warn "build_overlays_for: load_pop_map failed for track pop_type" value_name pop_type exception = e
+            nothing
+        end
+        pop_meta = Dict{String,NamedTuple}()
+        want_paths = String[]
+        if m !== nothing
+            paths = String[path for path in pop_paths(m) if !pop_at(m, path).transient]
+            if pops_filter !== nothing
+                pf = Set(String(p) for p in pops_filter)
+                paths = [p for p in paths if p in pf]
+            end
+            for path in paths
+                p = pop_at(m, path)
+                Bool(get(p, :show, true)) || continue
+                pop_meta[String(path)] = (colour = hex_to_rgb(String(p.colour)),)
+                push!(want_paths, String(path))
+            end
+        end
+        if !isempty(want_paths)
+            df = try
+                pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
+                       centroids = :pixel, include_x = false, include_obs = true)
+            catch e
+                @warn "build_overlays_for: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
+                nothing
+            end
+            if df !== nothing && size(df, 1) > 0
+                # pop_df tags each row with `pop` (String) and `value_name`; guard the columns.
+                col_exists(c) = c in names(df)
+                @inbounds for i in 1:size(df, 1)
+                    (col_exists("centroid_x") && col_exists("centroid_y")) || break
+                    px = df[i, :centroid_x]; py = df[i, :centroid_y]
+                    (px isa Real && py isa Real) || continue
+                    t = col_exists("centroid_t") ? df[i, :centroid_t] : 0
+                    (col_exists("centroid_t") && !(t isa Real && isfinite(Float64(t)))) && continue
+                    xy = _apply(transform, px, py)
+                    xy === nothing && continue
+                    ti = col_exists("centroid_t") ? Int(round(Float64(t))) : 0
+                    pop_path = col_exists("pop") ? String(df[i, :pop]) : first(want_paths)
+                    meta = get(pop_meta, pop_path, nothing)
+                    meta === nothing && continue
+                    colour = meta.colour
+                    _push_point!(ti, xy, colour)
+
+                    if include_tracks && col_exists("track_id")
+                        traw = df[i, :track_id]
+                        (traw isa Real && isfinite(Float64(traw))) || continue
+                        kid = Int(round(Float64(traw)))
+                        kid > 0 || continue
+                        _push_track!(kid, colour, ti, xy)
+                    end
+                end
             end
         end
     end
@@ -226,12 +326,12 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                                       colour = RGB{N0f8}[]))}()
     tracks_active = include_tracks && hasT && tail_length > 0
     if tracks_active
-        for (kid, hist) in track_hist
+        for ((kid, col), hist) in track_hist
             length(hist) >= 2 || continue
             sort!(hist; by = first)
             for k in 1:(length(hist) - 1)
-                t0, x0, y0, col = hist[k]
-                t1, x1, y1, _   = hist[k + 1]
+                t0, x0, y0 = hist[k]
+                t1, x1, y1 = hist[k + 1]
                 # Skip repeats and non-monotonic entries — a duplicate (t, label) would draw a
                 # zero-length segment, and an unsorted t here would mean the store is inconsistent.
                 t1 > t0 || continue

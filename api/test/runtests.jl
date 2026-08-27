@@ -5188,6 +5188,22 @@ end
             n2 = l2_at0 === nothing ? 0 : length(l2_at0.x0)
             @test n1 <= n2
 
+            # `all_tracks` ignores pops and paints every cell with `track_id > 0` in one colour.
+            # This is what a movie of a tracked segmentation without gated pops wants — napari's
+            # show-tracks does the same as `/_whole`. Bug this catches: the flag ignored and the
+            # movie coming back empty because the segmentation happens to carry no pops.
+            all_for = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                          transform = tf, all_tracks = true,
+                                          all_tracks_colour = "#9ca3af")
+            pts_all, segs_all = all_for(last(ts_in_store))
+            @test pts_all !== nothing
+            # Every point uses the specified colour, not a pop-derived one.
+            grey = RGB{N0f8}(hex_to_rgb("#9ca3af"))
+            @test all(c -> c == grey, pts_all.colour)
+            # And there ARE segments on this tracked fixture — proving the flag reached the track
+            # bucket rather than only the point bucket.
+            @test segs_all !== nothing && length(segs_all.x0) > 0
+
             # `pops_filter` restricts to specific paths. A filter that matches nothing returns an
             # empty point set — the closure paints nothing, not "everything since no filter matched".
             empty_for = build_overlays_for(img; value_name = "B", pop_type = "flow",

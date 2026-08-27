@@ -846,10 +846,16 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting so a
         # movie recorded from a look and a movie recorded from record-test read the same.
         tail_length      = Int(get(ov_raw, :tailLength, 30))
+        # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring
+        # pops. `allTracks: true` is the answer to "just show me the tracks in this segmentation"
+        # for a segmentation without gated pops (napari's show-tracks whole-segmentation ribbon).
+        all_tracks       = Bool(get(ov_raw, :allTracks, false))
+        all_tracks_col   = String(get(ov_raw, :allTracksColour, "#9ca3af"))
         point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
         segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
         ov_diag["valueName"] = ov_vn
         ov_diag["popType"]   = ov_pt
+        ov_diag["allTracks"] = all_tracks
         # Build the transform against the NATIVE frame size — same H/W the sweep will see.
         # `record_view_movie` here uses default crop/max_px (no crop, no downsample); if the smoke
         # route ever grows a crop, the transform picks it up automatically.
@@ -873,7 +879,9 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
                                        transform = tf, pops_filter = ov_paths,
                                        include_tracks = include_tracks,
-                                       tail_length = tail_length)
+                                       tail_length = tail_length,
+                                       all_tracks = all_tracks,
+                                       all_tracks_colour = all_tracks_col)
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e
