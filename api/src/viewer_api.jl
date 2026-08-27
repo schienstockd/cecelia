@@ -828,6 +828,10 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     ov_raw = get(data, :overlays, nothing)
     overlays_for = nothing
     point_size_px = 6; segment_width_px = 2
+    # Diagnostics returned in the response so a smoke test can tell whether the AUTHOR engaged
+    # and whether ANY frame carried a point/segment. A movie with no overlays is otherwise
+    # indistinguishable from a movie whose overlays fell outside the drawn frame.
+    ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
     if ov_raw isa AbstractDict
         ov_vn = String(get(ov_raw, :valueName, ""))
         # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
@@ -844,24 +848,51 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         tail_length      = Int(get(ov_raw, :tailLength, 30))
         point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
         segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
+        ov_diag["valueName"] = ov_vn
+        ov_diag["popType"]   = ov_pt
         # Build the transform against the NATIVE frame size — same H/W the sweep will see.
         # `record_view_movie` here uses default crop/max_px (no crop, no downsample); if the smoke
         # route ever grows a crop, the transform picks it up automatically.
         img, gerr = _gating_image(pu, iu)
-        if gerr === nothing && !isempty(ov_vn) && _has_label_props(img)
+        if gerr !== nothing
+            ov_diag["reason"] = "gating image lookup failed"
+        elseif isempty(ov_vn)
+            ov_diag["reason"] = "no valueName resolved"
+        elseif !_has_label_props(img)
+            ov_diag["reason"] = "image has no labelProps"
+        else
             d = axis_dims(caxes, ndims(arr))
             H = haskey(d, "y") ? size(arr, d["y"]) : 0
             W = haskey(d, "x") ? size(arr, d["x"]) : 0
-            if H > 0 && W > 0
+            ov_diag["frameH"] = H; ov_diag["frameW"] = W
+            if H == 0 || W == 0
+                ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
+            else
                 tf = pixel_transform(H, W; crop = nothing, max_px = 0)
-                overlays_for = try
+                inner = try
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
                                        transform = tf, pops_filter = ov_paths,
                                        include_tracks = include_tracks,
                                        tail_length = tail_length)
                 catch e
+                    ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e
                     nothing
+                end
+                if inner !== nothing
+                    # Tally per-frame counts through a wrapper closure. The tally is cheap
+                    # (one integer per frame) and answers "did overlays fire?" without a
+                    # second inspection route.
+                    pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
+                    overlays_for = function(t::Int)
+                        p, s = inner(t)
+                        p === nothing || (pts_seen[]  += length(p.x))
+                        s === nothing || (segs_seen[] += length(s.x0))
+                        frames_touched[] += 1
+                        (p, s)
+                    end
+                    ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
+                    isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
                 end
             end
         end
@@ -886,6 +917,17 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     # write the batch/animation paths do, so `startedAt`/`imageUid` are set. No config kind: this is a
     # smoke test, not something the movie editor should try to reopen for edit.
     register_movie!(pu, filename; produced_by = "smoketest", image_uid = iu)
+    # Fold the tally back into the diagnostic block before returning — the Ref values are read
+    # AFTER the sweep completes, so a caller can see how many points/segments the author actually
+    # emitted across the whole movie.
+    if haskey(ov_diag, "_tally")
+        pts_ref, segs_ref, frames_ref = ov_diag["_tally"]
+        ov_diag["pointsDrawn"]   = pts_ref[]
+        ov_diag["segmentsDrawn"] = segs_ref[]
+        ov_diag["framesCalled"]  = frames_ref[]
+        delete!(ov_diag, "_tally")
+    end
     200, JSON3.write((; ok = true, path = result.path, filename = filename,
-                        frames = result.frames, width = result.width, height = result.height))
+                        frames = result.frames, width = result.width, height = result.height,
+                        overlays = ov_diag))
 end
