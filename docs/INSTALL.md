@@ -230,6 +230,57 @@ env (see `app/src/napari.jl`) or the renderer silently falls back to `llvmpipe`.
 
 Cecelia is designed for local desktop use and is not tested headless.
 
+### Running on a remote server (SSH tunnel)
+
+Cecelia can run on a headless Linux VM (e.g. Google Cloud Compute Engine) and be reached from a
+laptop over an SSH tunnel. The install path is the same as a local Linux install; the differences are
+sizing, one shell wrapper, and the fact that **the port must never be opened directly**.
+
+**Security up front.** The HTTP/WS server binds `127.0.0.1` by default and has **no authentication**;
+CORS is `*` and every route — projects, tasks, image data — is reachable to whoever gets a socket.
+Anything you expose on a public firewall rule is world-readable and world-writable. SSH-tunnel it.
+Do not set `CECELIA_HOST=0.0.0.0` and do not open TCP 8080 in the cloud firewall.
+
+**VM sizing.**
+- **Boot disk ≥ 50 GB SSD.** The pixi env (Julia + Python + torch/cu124) is a few GB, bioformats2raw
+  adds ~190 MB, first-run cellpose weights add ~1.2 GB. GCE's 10 GB default fails partway through
+  install.
+- **`linux-64` architecture.** `pixi.toml`'s `platforms` list is `linux-64, win-64, osx-arm64` — no
+  `linux-aarch64`, so ARM VMs (GCE `t2a-*`) will not solve the env. Use `n1-*`, `n2-*`, `e2-*`, `c3-*`.
+- **NVIDIA driver ≥ 525** for the cu124 wheels. L4/T4/V100/A100 all work. Without a GPU cellpose
+  silently falls back to CPU (see `torch.cuda.is_available()`), which is 50–100× slower — not an
+  error, just slow. Verify with `nvidia-smi` before you trust segmentation timings.
+- Start at ≥ 8 vCPU. First-run precompile on a 2-vCPU VM takes long enough to look hung.
+
+**Environment adjustments.** After `install.sh` finishes:
+- Re-source `~/.bashrc` (or open a new shell) — juliaup adds `~/.local/bin` to `PATH`, and `pixi`
+  installs its own shim there. Without this, `pixi run app` won't find `julia`.
+- `~/.cecelia/` is the default config + projects root. If the boot disk is small, mount a persistent
+  disk and set `projects_dir` in `~/.cecelia/custom.toml` (or in the first-run wizard, which you
+  reach through the tunnel).
+- Leave `CECELIA_HOST` unset — the loopback default is what makes the tunnel model safe.
+
+**Run under a persistent shell.** `pixi run app` is a foreground process supervising Julia; an SSH
+drop kills it. Use `tmux` (or a systemd unit if you set one up):
+```bash
+tmux new -s cecelia
+pixi run app        # Ctrl-b d to detach; `tmux attach -t cecelia` to come back
+```
+The startup will call `webbrowser.open()` and `xdg-open` will fail silently — that is expected on a
+headless VM; you'll open the browser on the laptop side.
+
+**Tunnel from the laptop:**
+```bash
+ssh -L 8080:localhost:8080 <vm>
+# then, in a laptop browser:
+open http://localhost:8080
+```
+
+**Napari-driven flows.** Anything that opens napari on the VM is out of scope for this setup — see
+*Napari on headless / SSH* above. The browser viewer (`docs/todo/WEB_VIEWER_PLAN.md`) is the intended
+remote path; treat a headless VM run today as a pipeline-only test (import → segment → cluster →
+analysis board / notebooks).
+
 ---
 
 ## Summary of installed versions  (initial Linux setup)
