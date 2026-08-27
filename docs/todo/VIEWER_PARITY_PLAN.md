@@ -1,6 +1,6 @@
 # Viewer parity — one decision, two renderers
 
-**Status:** Phases 1 + 2 BUILT on `feat/viewer-parity-palette-json` (2026-08-27); Phases 3–5 planning
+**Status:** Phases 1 + 2 BUILT on `feat/viewer-parity-palette-json` (2026-08-27); Phases 3–5 next
 
 ## Goal
 
