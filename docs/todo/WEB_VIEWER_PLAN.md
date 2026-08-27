@@ -462,10 +462,16 @@ below points, so a marker at a track endpoint over an outline reads as marker �
 The mask outline is TWO-PASS (detect boundary pixels, then stamp) — writing paint into the same array
 we're neighbour-testing would propagate colour into a cell's interior as a filled band.
 
-**Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently
-drive napari), including the caller that resolves populations / tracks / colour-by into the point +
-segment columns, and the caller that reads and projects the label store per t. The overlay
-PRIMITIVES are complete; what remains is the movie-request path.
+**Built: `POST /api/viewer/record-test`** — a SMOKE-TEST route that runs `record_view_movie`
+end-to-end with the saved viewer specs (sampled fallback) and, if given a `titleCard`, prepends it.
+Blocking, not rail-integrated, capped at 30 frames by default; registered in `movies.json` so the
+`/movies` page picks it up. Its job is to make the pipeline eyeball-able before the full
+`handle_movie_record` / `run_single_movie` migration.
+
+**Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage),
+and the overlay AUTHOR — the caller that resolves populations / tracks / colour-by into the point +
+segment columns and reads/projects the label store per t. The overlay primitives are complete; what
+remains is the request path and the h5ad-to-columns resolver.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
