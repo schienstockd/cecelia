@@ -780,8 +780,9 @@ end
 #
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
 # z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],
-# pointSizePx?: 6, segmentWidthPx?: 2, tailLength?: 30, includeTracks?: true } }`
-# — response: `{ ok, path, filename, frames, width, height }`.
+# pointSizePx?: 6, segmentWidthPx?: 2, tailLength?: 30, includeTracks?: true,
+# allTracks?: false, allTracksColour?: "#9ca3af", trackColorMode?: "track" } }`
+# — response: `{ ok, path, filename, frames, width, height, overlays: {...} }`.
 function api_viewer_record_test(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
@@ -851,6 +852,11 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         # for a segmentation without gated pops (napari's show-tracks whole-segmentation ribbon).
         all_tracks       = Bool(get(ov_raw, :allTracks, false))
         all_tracks_col   = String(get(ov_raw, :allTracksColour, "#9ca3af"))
+        # `trackColorMode` — same three modes the browser's viewer setting exposes
+        # (`getTrackColorMode`): "track" (palette by track_id, default), "speed" (heat ramp) or
+        # "solid" (source colour). Passed through so a recorded movie stays visually consistent
+        # with what the browser was showing.
+        track_color_mode = String(get(ov_raw, :trackColorMode, "track"))
         point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
         segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
         ov_diag["valueName"] = ov_vn
@@ -881,7 +887,8 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                                        include_tracks = include_tracks,
                                        tail_length = tail_length,
                                        all_tracks = all_tracks,
-                                       all_tracks_colour = all_tracks_col)
+                                       all_tracks_colour = all_tracks_col,
+                                       track_color_mode = track_color_mode)
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e

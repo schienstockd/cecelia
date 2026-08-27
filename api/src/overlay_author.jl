@@ -111,6 +111,46 @@ end
 const _EMPTY_POINTS = (; x = Int[], y = Int[], colour = RGB{N0f8}[])
 const _EMPTY_SEGS   = (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
 
+# The house 12-colour palette from `frontend/src/plots/plot.ts` (`PALETTES.cecelia`). Same list, so
+# a movie's tracks share colours with a look's tracks — the two views of the same experiment stay
+# recognisable. When the palette moves there, this list is the second answer; a shared source of
+# truth would need a build-time codegen step, which is more machinery than a 12-line list justifies.
+const CECELIA_TRACK_PALETTE = [
+    RGB{N0f8}(0xEB / 255, 0xD4 / 255, 0x41 / 255),
+    RGB{N0f8}(0x46 / 255, 0x82 / 255, 0xB4 / 255),
+    RGB{N0f8}(0xAA / 255, 0x1F / 255, 0x5E / 255),
+    RGB{N0f8}(0xB3 / 255, 0xBC / 255, 0xC2 / 255),
+    RGB{N0f8}(0x2F / 255, 0x4F / 255, 0x4F / 255),
+    RGB{N0f8}(0x5F / 255, 0xB0 / 255, 0xB7 / 255),
+    RGB{N0f8}(0xC7 / 255, 0x7D / 255, 0xA6 / 255),
+    RGB{N0f8}(0xD9 / 255, 0x8E / 255, 0x32 / 255),
+    RGB{N0f8}(0x3E / 255, 0x6D / 255, 0x8E / 255),
+    RGB{N0f8}(0x8E / 255, 0x45 / 255, 0x85 / 255),
+    RGB{N0f8}(0x7A / 255, 0x8B / 255, 0x99 / 255),
+    RGB{N0f8}(0xC1 / 255, 0x55 / 255, 0x3E / 255),
+]
+
+# Heat ramp (cool → hot), used by track_color_mode = "speed". Approximates the browser's
+# `heatUnit` — a five-stop viridis-ish gradient. Kept short: exact colours don't matter as much as
+# the ORDER (dark blue → cyan → yellow → red).
+_heat_stops() = (RGB{N0f8}(0.267, 0.005, 0.329),
+                 RGB{N0f8}(0.229, 0.322, 0.545),
+                 RGB{N0f8}(0.128, 0.567, 0.551),
+                 RGB{N0f8}(0.369, 0.788, 0.383),
+                 RGB{N0f8}(0.993, 0.906, 0.144))
+function _heat_ramp(u::Real)::RGB{N0f8}
+    stops = _heat_stops()
+    n = length(stops)
+    u = clamp(Float64(u), 0.0, 1.0)
+    j = u * (n - 1)
+    i = clamp(floor(Int, j) + 1, 1, n - 1)
+    f = j - (i - 1)
+    a = stops[i]; b = stops[i + 1]
+    RGB{N0f8}((1 - f) * Float64(a.r) + f * Float64(b.r),
+              (1 - f) * Float64(a.g) + f * Float64(b.g),
+              (1 - f) * Float64(a.b) + f * Float64(b.b))
+end
+
 """
     build_overlays_for(img; value_name, pop_type, transform,
                        pops_filter = nothing, include_tracks = true, tail_length = 30)
@@ -142,7 +182,8 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                             include_tracks::Bool = true,
                             tail_length::Int = 30,
                             all_tracks::Bool = false,
-                            all_tracks_colour::AbstractString = "#9ca3af")
+                            all_tracks_colour::AbstractString = "#9ca3af",
+                            track_color_mode::AbstractString = "track")
     pt = String(pop_type)
     vn = String(value_name)
     # Two paths: cell pop_types (`flow`/`live`/`clust`) route through `resolve_pops` + the cell
@@ -322,26 +363,61 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
     # the closure below can slice `[t + 2 - L, t + 1]` in one range — matching `tailRange` in
     # `frontend/src/utils/viewerOverlays.ts` (a segment's END is its arrival, and the current hop
     # ends at t+1). L = 0 short-circuits to nothing on every frame.
+    #
+    # Segment colour follows `track_color_mode` — SAME three modes the browser exposes
+    # (`frontend/src/utils/viewerOverlays.ts` → `TrackColorMode`):
+    #   * `"track"` (default) — cycle `CECELIA_TRACK_PALETTE` by `abs(kid) % length`. Telling
+    #     adjacent tracks apart is the point; napari does the same.
+    #   * `"speed"` — heat ramp over segment speed (pixel per hop, Δt = 1). Fast tracks hot, slow
+    #     cool. Range is normalised over ALL emitted segments at build time.
+    #   * `"solid"` — every segment paints in the SOURCE colour recorded during the point pass (a
+    #     pop's colour, or `all_tracks_colour` when `all_tracks = true`). Matches the browser's
+    #     per-source solid mode for a single source.
     segs_by_end = Dict{Int,typeof((; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[],
                                       colour = RGB{N0f8}[]))}()
     tracks_active = include_tracks && hasT && tail_length > 0
+    tcm = String(track_color_mode)
+    tcm in ("track", "speed", "solid") ||
+        (@warn "build_overlays_for: unknown track_color_mode, falling back to \"track\"" mode = tcm;
+         tcm = "track")
+
     if tracks_active
+        # Pass 1: collect raw segments with their per-hop speed (as speed² to avoid the sqrt during
+        # collection). The speed range is set here so the emit pass can normalise.
+        raw = Tuple{Int,Int,Int,Int,Int,Int,Float64,RGB{N0f8}}[]   # (t1, x0, y0, x1, y1, kid, speed², solid_col)
+        s_min = Inf; s_max = -Inf
         for ((kid, col), hist) in track_hist
             length(hist) >= 2 || continue
             sort!(hist; by = first)
             for k in 1:(length(hist) - 1)
                 t0, x0, y0 = hist[k]
                 t1, x1, y1 = hist[k + 1]
-                # Skip repeats and non-monotonic entries — a duplicate (t, label) would draw a
-                # zero-length segment, and an unsorted t here would mean the store is inconsistent.
                 t1 > t0 || continue
-                bag = get!(segs_by_end, t1) do
-                    (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
-                end
-                push!(bag.x0, x0); push!(bag.y0, y0)
-                push!(bag.x1, x1); push!(bag.y1, y1)
-                push!(bag.colour, col)
+                dx = x1 - x0; dy = y1 - y0
+                # Speed is µm per hop in the browser (see `speedSq` in `viewerOverlays.ts`); here
+                # it's DRAWN pixels per hop because the transform already collapsed the crop and
+                # stride. That's the same ordering (fast → hot), so the heat map is faithful.
+                sp2 = Float64(dx * dx + dy * dy) / max(1, (t1 - t0))^2
+                s_min = min(s_min, sp2); s_max = max(s_max, sp2)
+                push!(raw, (t1, x0, y0, x1, y1, kid, sp2, col))
             end
+        end
+        # Pass 2: emit into the end-t buckets with the mode's colour.
+        s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
+        for (t1, x0, y0, x1, y1, kid, sp2, col) in raw
+            colour = if tcm == "track"
+                CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
+            elseif tcm == "speed"
+                s_span > 0 ? _heat_ramp((sp2 - s_min) / s_span) : RGB{N0f8}(0.9, 0.9, 0.9)
+            else
+                col
+            end
+            bag = get!(segs_by_end, t1) do
+                (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
+            end
+            push!(bag.x0, x0); push!(bag.y0, y0)
+            push!(bag.x1, x1); push!(bag.y1, y1)
+            push!(bag.colour, colour)
         end
     end
 
