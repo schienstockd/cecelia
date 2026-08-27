@@ -445,9 +445,15 @@ angle have a meaningful half-way point; a colormap NAME and a visibility flag do
 either errors or silently picks a side a frame early. `visible` is the trap: a `Bool` is an `Integer` in
 Julia, so lerping it gives 0.5 and then `true` for every frame after the first.
 
-**Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently drive
-napari), title cards, and the overlays (points, tracks, masks) on the CPU frame — which are P3/P4's
-content drawn by renderer C rather than new capability.
+**Built: title cards through the shared helper.** `record_view_movie(...; title_card = <dict>)` passes
+the same `_title_card_content` shape napari's path builds down to `writers/encode_movie_run.py`, which
+calls `title_card.prepend_title_to_movie` after the encode. One path for both renderers — a card
+composited into the raw frames from Julia would have to duplicate `movie_io`'s even-crop rule and the
+font stack, and the helper's own suite already covers the render+prepend.
+
+**Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently
+drive napari) and the overlays (points, tracks, masks) on the CPU frame — which are P3/P4's content
+drawn by renderer C rather than new capability.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

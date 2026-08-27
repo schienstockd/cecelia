@@ -209,5 +209,63 @@ class PrependTests(unittest.TestCase):
         self.assertLess(int(first.mean()), 120)
 
 
+class EncodeRunnerTitleCardTests(unittest.TestCase):
+    """The encoder runner (`writers/encode_movie_run.py`) is what renderer C invokes via `run_py`.
+    A title card in params has to reach the movie, or the browser recorder ships without a card
+    the napari path already writes. Exercised through the runner rather than the helper because the
+    integration is where the params handoff can go wrong."""
+
+    def test_runner_prepends_when_title_card_present(self):
+        import imageio.v2 as imageio
+        from cecelia.writers import encode_movie_run
+
+        d = tempfile.mkdtemp()
+        raw = os.path.join(d, "frames.rgb24")
+        out = os.path.join(d, "clip.mp4")
+        # 4 raw frames, brightening so the ORDER can be checked past the card.
+        with open(raw, "wb") as fh:
+            for i in range(4):
+                fh.write(np.full((34, 66, 3), 20 + i * 40, dtype=np.uint8).tobytes())
+
+        params = {
+            "rawPath": raw, "outPath": out,
+            "width": 66, "height": 34, "frames": 4, "fps": 10,
+            "titleCard": {"title": "Runner test", "durationSec": 1.0},
+        }
+        encode_movie_run.run(params)
+
+        with imageio.get_reader(out) as r:
+            frames = [f for f in r]
+        # 10 card frames (10 fps × 1 s) + 4 originals, with the usual small codec fudge.
+        self.assertGreaterEqual(len(frames), 10 + 4 - 2)
+        # The first frame is the DARK card, not the (already-dark) first movie frame — the runner has
+        # to run the prepend AFTER the encode, or the card lands nowhere the reader can see it.
+        self.assertLess(int(frames[0].mean()), 120)
+
+    def test_runner_skips_when_title_card_absent(self):
+        import imageio.v2 as imageio
+        from cecelia.writers import encode_movie_run
+
+        d = tempfile.mkdtemp()
+        raw = os.path.join(d, "frames.rgb24")
+        out = os.path.join(d, "clip.mp4")
+        with open(raw, "wb") as fh:
+            for i in range(4):
+                fh.write(np.full((34, 66, 3), 80 + i * 40, dtype=np.uint8).tobytes())
+
+        # No `titleCard` — the runner is called this way by every `record_view_movie` that was invoked
+        # without one, so a stray prepend here would re-encode every movie the app records.
+        encode_movie_run.run({
+            "rawPath": raw, "outPath": out,
+            "width": 66, "height": 34, "frames": 4, "fps": 10,
+        })
+
+        with imageio.get_reader(out) as r:
+            frames = [f for f in r]
+        # 4 frames in, 4 (± codec fudge) out. No card means no leading dark frames.
+        self.assertLessEqual(len(frames), 4 + 1)
+        self.assertGreater(int(frames[0].mean()), 40)         # brighter than a card would be
+
+
 if __name__ == "__main__":
     unittest.main()

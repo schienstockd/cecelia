@@ -20,6 +20,18 @@ def run(params: dict):
         frames=params['frames'], fps=params.get('fps', 15), log=log)
     log.log(f'[INFO] encoded {n} frames to {params["outPath"]}')
 
+    # Title card is prepended AFTER the encode rather than composited into the raw frames: the card is
+    # rendered at the encoded movie's exact resolution (read back from the mp4), so a card written by
+    # Julia at write-time would need to duplicate movie_io's even-crop rule and its font stack. Reuse
+    # the same helper the napari path uses (`title_card.prepend_title_to_movie`) — one path for both
+    # renderers, and its test suite already covers the render+prepend.
+    card = params.get('titleCard')
+    if isinstance(card, dict) and card.get('enabled', True):
+        from cecelia.utils import title_card
+        duration = float(card.get('durationSec', 3.0))
+        k = title_card.prepend_title_to_movie(params['outPath'], card, duration_sec=duration)
+        log.log(f'[INFO] prepended {k} title-card frame(s)')
+
 
 def main():
     params = script_utils.script_params()
