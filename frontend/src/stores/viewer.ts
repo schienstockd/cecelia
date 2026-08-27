@@ -36,11 +36,18 @@ const K_PREVIEW_LABELS = 'cc.viewer.previewLabels'
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
  *  taskPreview) so the viewer's popup Pinia can see it through the same cross-window bridge as
- *  `openImage` — the run completes in the module page's window and the labels render in the popup. */
+ *  `openImage` — the run completes in the module page's window and the labels render in the popup.
+ *
+ *  `updateId` is a monotonic stamp per run. Two runs on the same image/vn produce identical
+ *  {valueName, imageUid, projectUid} — and per the DOM spec, `localStorage.setItem` with the exact
+ *  same string value does NOT emit a `storage` event. Without a per-run stamp, the popup viewer
+ *  never wakes up on a plane change or a param edit, and the mask on screen stays from the FIRST
+ *  run. Set by `setPreviewLabels`; callers pass just the identity. */
 export interface PreviewLabels {
   valueName: string
   imageUid: string
   projectUid: string
+  updateId: number
 }
 
 function _readJson<T>(key: string): T | null {
@@ -80,10 +87,14 @@ export const useViewerStore = defineStore('viewer', () => {
   }
 
   /** taskPreview calls this after a run: `next` non-null flips the viewer window's labels slab
-   *  request onto the preview scratch store; `null` (on stop / error / mismatch) flips it back. */
-  function setPreviewLabels(next: PreviewLabels | null) {
-    previewLabels.value = next
-    _writeJson(K_PREVIEW_LABELS, next)
+   *  request onto the preview scratch store; `null` (on stop / error / mismatch) flips it back.
+   *  A monotonic `updateId` is added here (never taken from the caller) so two runs that return
+   *  identical identity still produce a distinct localStorage value — see PreviewLabels doc. */
+  let _updateIdSeq = 0
+  function setPreviewLabels(next: Omit<PreviewLabels, 'updateId'> | null) {
+    const stamped: PreviewLabels | null = next ? { ...next, updateId: ++_updateIdSeq } : null
+    previewLabels.value = stamped
+    _writeJson(K_PREVIEW_LABELS, stamped)
   }
 
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the

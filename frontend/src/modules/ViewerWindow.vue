@@ -460,11 +460,14 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
-// P7: a task preview toggling on/off flips whether the labels texture must be allocated when the
-// picker is empty (a first-time segmentation preview). Refetch the timepoint so the mask slab arrives
-// into the same round-trip as the pixels — same reason as the labelName watch above.
-watch(() => !!viewerStore.previewLabels &&
-             viewerStore.previewLabels?.imageUid === imageUid, () => reallocate())
+// P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
+// param edit / toggle-on) replaces the object on the viewer store even when the vn/imageUid stay
+// the same, and reference change is what wakes this watcher up. A boolean-only watch stays true
+// across re-runs and misses every mask update after the first. `n` fires on a new/refreshed
+// preview; `o` catches the toggle-off case (previewLabels goes null while it was ours).
+watch(() => viewerStore.previewLabels, (n, o) => {
+  if (n?.imageUid === imageUid || o?.imageUid === imageUid) reallocate()
+})
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
