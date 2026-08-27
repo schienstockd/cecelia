@@ -5128,31 +5128,65 @@ end
                 @test nm == wantm
             end
 
-            # Segments: the fixture is tracked (see the /tracking/paths suite above), so a
-            # track-flavoured resolver ought to build a growing tail. Emit tracks by creating a
-            # `track` pop over the whole set — the flow pop is not a track pop by itself.
-            btrack = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
-                                      "valueName" => "B", "popType" => "flow")
-            # The already-added "all" pop returns is_track = false. Instead, use the deriving
-            # `_tracked` on the `live` popType — that pop_type reserves an underscore-prefixed
-            # leaf for the tracked-cells derived pop and returns `is_track = true`.
-            _, segs_late = build_overlays_for(img; value_name = "B", pop_type = "live",
-                                               transform = tf)(last(ts_in_store))
+            # Segments: the fixture IS tracked (see the /tracking/paths suite above). The "all" pop
+            # from above is is_track = false, so add a second pop with `is_track = true` — that's
+            # the flag `resolve_pops` reads to route a pop through the segment path. A synthetic
+            # flag on the same gate exercises the same code the persisted _tracked derived pop
+            # would trigger, without the fixture needing a `live/_tracked` file that isn't there.
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "tracked", "colour" => "#ff00ff",
+                                 "is_track" => true, "gate" => gate)))))
+            _, segs_late = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                               transform = tf,
+                                               tail_length = 1_000_000)(last(ts_in_store))
             # Every segment endpoint lands inside the drawn frame (the author drops off-frame
             # cells rather than clamping — coordinates outside the drawn frame are what a wrong
             # transform would produce).
-            if segs_late !== nothing
-                @test all(x -> 1 <= x <= tf.dW, segs_late.x0)
-                @test all(x -> 1 <= x <= tf.dW, segs_late.x1)
-                @test all(y -> 1 <= y <= tf.dH, segs_late.y0)
-                @test all(y -> 1 <= y <= tf.dH, segs_late.y1)
-                # `include_tracks = false` disables segment generation for a movie that wants
-                # points only. Bug this catches: the flag ignored, tracks drawn regardless.
-                _, no_segs = build_overlays_for(img; value_name = "B", pop_type = "live",
-                                                 transform = tf,
-                                                 include_tracks = false)(last(ts_in_store))
-                @test no_segs === nothing
-            end
+            @test segs_late !== nothing                         # the fixture is tracked, is_track pop added
+            @test all(x -> 1 <= x <= tf.dW, segs_late.x0)
+            @test all(x -> 1 <= x <= tf.dW, segs_late.x1)
+            @test all(y -> 1 <= y <= tf.dH, segs_late.y0)
+            @test all(y -> 1 <= y <= tf.dH, segs_late.y1)
+            # `include_tracks = false` disables segment generation for a movie that wants
+            # points only. Bug this catches: the flag ignored, tracks drawn regardless.
+            _, no_segs = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                             transform = tf,
+                                             include_tracks = false)(last(ts_in_store))
+            @test no_segs === nothing
+
+            # `tail_length` in FRAMES matches napari's `tail_length` and the browser's
+            # `viewerTailLength` — 0 hides tracks entirely (same as `include_tracks = false`).
+            # Bug this catches: a slider set to 0 in the UI still ships every hop of history.
+            _, hidden = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                            transform = tf,
+                                            tail_length = 0)(last(ts_in_store))
+            @test hidden === nothing
+
+            # A short tail is ≤ a long tail on the same frame; strictly less when history exists
+            # earlier than the window. Bug this catches: the knob wired but not consulted (constant
+            # tail regardless of L), or wired to a WRONG window that ignores tail_length.
+            _, short_tail = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                                transform = tf,
+                                                tail_length = 2)(last(ts_in_store))
+            _, long_tail  = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                                transform = tf,
+                                                tail_length = 1_000_000)(last(ts_in_store))
+            @test short_tail !== nothing && long_tail !== nothing
+            @test length(short_tail.x0) <= length(long_tail.x0)
+            # And at t = 0 with tail_length = 1 the tail collapses to the current hop only —
+            # arrivals in `[t + 2 - L, t + 1] = [2, 1]` is empty at t = 0 (nothing has arrived yet),
+            # arrivals in `[0 - 0, 0 + 1] = [0, 1]` for L = 1... wait, `hi - L + 1 = 1 - 1 + 1 = 1`
+            # so the window is `[1, 1]` — segments arriving at exactly t = 1. This is the
+            # off-by-one napari and the browser both do.
+            _, l1_at0 = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                            transform = tf, tail_length = 1)(0)
+            # At t = 0 with L = 1 only segments with t1 = 1 are visible. At t = 0 with L = 2
+            # segments with t1 ∈ {0, 1} are visible — same or MORE than L = 1 at t = 0.
+            _, l2_at0 = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                            transform = tf, tail_length = 2)(0)
+            n1 = l1_at0 === nothing ? 0 : length(l1_at0.x0)
+            n2 = l2_at0 === nothing ? 0 : length(l2_at0.x0)
+            @test n1 <= n2
 
             # `pops_filter` restricts to specific paths. A filter that matches nothing returns an
             # empty point set — the closure paints nothing, not "everything since no filter matched".

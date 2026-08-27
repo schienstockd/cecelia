@@ -780,7 +780,8 @@ end
 #
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
 # z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],
-# pointSizePx?: 6, segmentWidthPx?: 2 } }` — response: `{ ok, path, filename, frames, width, height }`.
+# pointSizePx?: 6, segmentWidthPx?: 2, tailLength?: 30, includeTracks?: true } }`
+# — response: `{ ok, path, filename, frames, width, height }`.
 function api_viewer_record_test(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
@@ -837,6 +838,10 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         ov_paths = ov_paths_raw isa AbstractVector ?
                    String[String(p) for p in ov_paths_raw] : nothing
         include_tracks = Bool(get(ov_raw, :includeTracks, true))
+        # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
+        # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting so a
+        # movie recorded from a look and a movie recorded from record-test read the same.
+        tail_length      = Int(get(ov_raw, :tailLength, 30))
         point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
         segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
         # Build the transform against the NATIVE frame size — same H/W the sweep will see.
@@ -852,7 +857,8 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                 overlays_for = try
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
                                        transform = tf, pops_filter = ov_paths,
-                                       include_tracks = include_tracks)
+                                       include_tracks = include_tracks,
+                                       tail_length = tail_length)
                 catch e
                     @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e
                     nothing

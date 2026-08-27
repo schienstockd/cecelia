@@ -113,7 +113,8 @@ const _EMPTY_SEGS   = (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour 
 
 """
     build_overlays_for(img; value_name, pop_type, transform,
-                       pops_filter = nothing, include_tracks = true) -> (t -> (points, segments))
+                       pops_filter = nothing, include_tracks = true, tail_length = 30)
+        -> (t -> (points, segments))
 
 Read `resolve_pops(img, pop_type; value_name)` and the segmentation's centroids ONCE and return a
 per-t closure that hands the primitives their columnar shape.
@@ -122,10 +123,13 @@ per-t closure that hands the primitives their columnar shape.
   still image with no `centroid_t` returns every point on frame 0). Pops iterate in `resolve_pops`
   order; a cell in two pops paints in the LATER pop's colour, matching the primitives' overlap rule
   (last drawn wins) and the browser's pop-layer stack.
-- `segments` on frame `t` are the track tail: for every track_id in a track-flavoured pop, the
-  Bresenham chain from `(t0, x0, y0)` through the cell's own `(t, x, y)` — one segment per adjacent
-  timepoint. `include_tracks = false` skips segment generation for a movie that wants points only
-  (a still image, or a debug pass without the tail).
+- `segments` on frame `t` are the last `tail_length` hops of every track_id in a track-flavoured
+  pop. A segment is a Bresenham chain between two consecutive centroids of the same track_id; it
+  is VISIBLE on frame `t` iff its ARRIVAL timepoint (the later end) falls in
+  `[t + 2 - tail_length, t + 1]` — same window as `tailRange` in the browser
+  (`frontend/src/utils/viewerOverlays.ts`), and same off-by-one that keeps `tail_length = 1` a single
+  current hop rather than two. `tail_length = 0` OR `include_tracks = false` disables segments; a
+  still image (no `centroid_t`) also produces none.
 - `pops_filter` restricts to specific pop paths (e.g. what a `look` config carries); `nothing` shows
   every pop the resolver returns.
 
@@ -135,7 +139,8 @@ around that, so an empty t costs nothing.
 function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractString,
                             transform::PixelTransform,
                             pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                            include_tracks::Bool = true)
+                            include_tracks::Bool = true,
+                            tail_length::Int = 30)
     pops = try
         resolve_pops(img, String(pop_type); value_name = String(value_name))
     catch e
@@ -198,7 +203,13 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
             push!(bag.x, xy[1]); push!(bag.y, xy[2]); push!(bag.colour, colour)
 
             if include_tracks && is_track
-                kid = Int(df[i, :track_id])
+                # NOT every cell in a track pop has a track_id — a segmentation mixes tracked and
+                # untracked cells, and `track_id` is NaN or 0 for the untracked ones. Skip them
+                # rather than crash on `Int(NaN)` — an untracked cell in a track pop still shows
+                # up as a POINT above; only its segment is undefined.
+                traw = df[i, :track_id]
+                (traw isa Real && isfinite(Float64(traw))) || continue
+                kid = Int(round(Float64(traw)))
                 kid > 0 || continue
                 hist = get!(track_hist, kid, Tuple{Int,Int,Int,RGB{N0f8}}[])
                 push!(hist, (ti, xy[1], xy[2], colour))
@@ -206,13 +217,15 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
         end
     end
 
-    # Turn per-track (t, x, y, colour) rows into (t, x0, y0, x1, y1, colour) segments — the tail
-    # between adjacent timepoints. A segment (t_i → t_{i+1}) is emitted on EVERY frame `t ≥ t_i`,
-    # so the track paints as a growing history rather than a flash at t_i alone. That matches
-    # napari's Tracks layer default (`tail_length = None` → full history).
-    segs_by_t = Dict{Int,typeof((; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[],
-                                    colour = RGB{N0f8}[]))}()
-    if include_tracks && hasT
+    # Turn per-track (t, x, y, colour) rows into (t0 → t1, x0, y0, x1, y1, colour) segments —
+    # one segment per adjacent timepoint. Bucket by the ARRIVAL timepoint t1 (the later end), so
+    # the closure below can slice `[t + 2 - L, t + 1]` in one range — matching `tailRange` in
+    # `frontend/src/utils/viewerOverlays.ts` (a segment's END is its arrival, and the current hop
+    # ends at t+1). L = 0 short-circuits to nothing on every frame.
+    segs_by_end = Dict{Int,typeof((; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[],
+                                      colour = RGB{N0f8}[]))}()
+    tracks_active = include_tracks && hasT && tail_length > 0
+    if tracks_active
         for (kid, hist) in track_hist
             length(hist) >= 2 || continue
             sort!(hist; by = first)
@@ -222,7 +235,7 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                 # Skip repeats and non-monotonic entries — a duplicate (t, label) would draw a
                 # zero-length segment, and an unsorted t here would mean the store is inconsistent.
                 t1 > t0 || continue
-                bag = get!(segs_by_t, t0) do
+                bag = get!(segs_by_end, t1) do
                     (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
                 end
                 push!(bag.x0, x0); push!(bag.y0, y0)
@@ -231,40 +244,25 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
             end
         end
     end
-    # Turn `segs_by_t` (segments STARTING at t) into segments VISIBLE at t: the tail grows, so a
-    # segment starting at t0 shows on every t ≥ t0. Materialise the cumulative view once here to
-    # keep the per-frame closure O(1).
-    all_ts = union(keys(pts_by_t), keys(segs_by_t))
-    visible_segs = Dict{Int,typeof((; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[],
-                                       colour = RGB{N0f8}[]))}()
-    if !isempty(segs_by_t)
-        starts = sort!(collect(keys(segs_by_t)))
-        acc_x0 = Int[]; acc_y0 = Int[]; acc_x1 = Int[]; acc_y1 = Int[]
-        acc_col = RGB{N0f8}[]
-        # We emit ONE frame per unique starting-t: since the tail only grows, every frame between
-        # two consecutive starts shares the same cumulative view, and the primitive draws whatever
-        # it is handed. The closure below picks the right cumulative view by binary search.
-        for s in starts
-            b = segs_by_t[s]
-            append!(acc_x0, b.x0); append!(acc_y0, b.y0)
-            append!(acc_x1, b.x1); append!(acc_y1, b.y1)
-            append!(acc_col, b.colour)
-            visible_segs[s] = (; x0 = copy(acc_x0), y0 = copy(acc_y0),
-                                 x1 = copy(acc_x1), y1 = copy(acc_y1),
-                                 colour = copy(acc_col))
-            push!(all_ts, s)
-        end
-    end
-    seg_starts_sorted = isempty(visible_segs) ? Int[] : sort!(collect(keys(visible_segs)))
 
     return function(t::Int)
         pts = get(pts_by_t, hasT ? t : 0, nothing)
-        segs = if isempty(seg_starts_sorted)
-            nothing
-        else
-            # Largest start ≤ t. `searchsortedlast` returns the position; 0 means no eligible start.
-            i = searchsortedlast(seg_starts_sorted, t)
-            i == 0 ? nothing : visible_segs[seg_starts_sorted[i]]
+        segs = nothing
+        if tracks_active && !isempty(segs_by_end)
+            hi = t + 1
+            lo = hi - tail_length + 1
+            # Empty window → no segments. Consolidate every visible bucket into ONE columnar
+            # NamedTuple; per-frame allocation is bounded by the tail length rather than the
+            # whole track history, which is what the knob is for.
+            xs0 = Int[]; ys0 = Int[]; xs1 = Int[]; ys1 = Int[]; cs = RGB{N0f8}[]
+            for e in lo:hi
+                bag = get(segs_by_end, e, nothing)
+                bag === nothing && continue
+                append!(xs0, bag.x0); append!(ys0, bag.y0)
+                append!(xs1, bag.x1); append!(ys1, bag.y1)
+                append!(cs,  bag.colour)
+            end
+            isempty(xs0) || (segs = (; x0 = xs0, y0 = ys0, x1 = xs1, y1 = ys1, colour = cs))
         end
         (pts, segs)
     end

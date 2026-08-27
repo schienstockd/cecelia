@@ -469,13 +469,17 @@ Blocking, not rail-integrated, capped at 30 frames by default; registered in `mo
 `handle_movie_record` / `run_single_movie` migration.
 
 **Built: the overlay AUTHOR** (`api/src/overlay_author.jl`). `build_overlays_for(img; value_name,
-pop_type, transform)` reads `resolve_pops` and the label store's centroids ONCE and returns a per-t
-closure `record_view_movie(overlays_for = ...)` calls every frame. Points bucket by
-`centroid_t`; tracks accumulate into a growing tail (segment appearing at t₀ stays on every frame
-t ≥ t₀ — same behaviour as napari's `tail_length=None`). `pixel_transform` bakes the crop + stride
-`render_view_frame` applies into a reusable mapping so the caller stays ignorant of
-`_clamp_range` / `plane[1:step:H, 1:step:W]` — one derivation of the numbers, not two. The smoke
-route takes an optional `overlays: { popType, valueName, popPaths, pointSizePx, segmentWidthPx,
+pop_type, transform, tail_length = 30)` reads `resolve_pops` and the label store's centroids ONCE
+and returns a per-t closure `record_view_movie(overlays_for = ...)` calls every frame. Points
+bucket by `centroid_t`; tracks bucket by arrival timepoint and the closure slices the window
+`[t + 2 - L, t + 1]` — same off-by-one as `tailRange` in `frontend/src/utils/viewerOverlays.ts`,
+so `tail_length = 1` on frame `t` shows only the current hop (arrival `t + 1`) and
+`tail_length = 0` hides tracks entirely (same as `include_tracks = false`). Default 30 matches
+napari's `tail_length` and the browser's `viewerTailLength`, so a movie recorded from a look
+reads the same as the live viewer. `pixel_transform` bakes the crop + stride `render_view_frame`
+applies into a reusable mapping so the caller stays ignorant of `_clamp_range` /
+`plane[1:step:H, 1:step:W]` — one derivation of the numbers, not two. The smoke route takes an
+optional `overlays: { popType, valueName, popPaths, pointSizePx, segmentWidthPx, tailLength,
 includeTracks }` block, so a POST can be verified end-to-end against a real project
 (`resolve_pops` cache warms on the first read).
 
