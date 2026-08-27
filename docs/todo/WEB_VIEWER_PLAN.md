@@ -445,15 +445,22 @@ angle have a meaningful half-way point; a colormap NAME and a visibility flag do
 either errors or silently picks a side a frame early. `visible` is the trap: a `Bool` is an `Integer` in
 Julia, so lerping it gives 0.5 and then `true` for every frame after the first.
 
-**Built: title cards through the shared helper.** `record_view_movie(...; title_card = <dict>)` passes
-the same `_title_card_content` shape napari's path builds down to `writers/encode_movie_run.py`, which
-calls `title_card.prepend_title_to_movie` after the encode. One path for both renderers — a card
-composited into the raw frames from Julia would have to duplicate `movie_io`'s even-crop rule and the
-font stack, and the helper's own suite already covers the render+prepend.
+**Built: title cards** (PR #671). `record_view_movie(...; title_card = <dict>)` takes the same
+`_title_card_content` shape napari's path builds and passes it to `writers/encode_movie_run.py`,
+which calls `title_card.prepend_title_to_movie` after the encode. One path for both renderers — a
+card composited into the raw frames from Julia would have to duplicate `movie_io`'s even-crop rule
+and the font stack, and the helper's own suite already covers the render+prepend.
+
+**Built: CPU-side point and segment drawing.** `frame_overlays.jl` has `draw_points!` and
+`draw_segments!` — pure primitives on `RGB{N0f8}` frames, columnar `(x, y, colour)` inputs.
+`render_view_frame(...; points, segments, point_size_px, segment_width_px)` composites them onto the
+frame after the channels; `record_view_movie(...; overlays_for)` takes a per-t callback so the sweep
+loop pays no per-frame allocation for the (already sorted by t) overlay table.
 
 **Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently
-drive napari) and the overlays (points, tracks, masks) on the CPU frame — which are P3/P4's content
-drawn by renderer C rather than new capability.
+drive napari), including the caller that resolves populations / tracks / colour-by into the point +
+segment columns; and mask outlines (P4 content on the CPU frame — a label-slab read plus a contour
+draw, same shape as the browser's outline pass).
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

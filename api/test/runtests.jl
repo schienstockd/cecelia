@@ -4838,6 +4838,119 @@ end
     end
 end
 
+@testset "API: frame_overlays — CPU point + segment drawing" begin
+    # Pure drawing on an RGB frame, no zarr / no populations / no camera. What the caller has to have
+    # done is column-oriented columns of `(x, y, colour)`; this asserts the drawing itself.
+    black = fill(RGB{N0f8}(0, 0, 0), 20, 20)
+
+    # A single red marker at (10, 5) — 1-based row/col, so column x=5 in row y=10.
+    frame = copy(black)
+    draw_points!(frame, (; x = [5], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 3)
+    @test frame[10, 5] == RGB{N0f8}(1, 0, 0)
+    # Non-marker pixels stay black — the marker is a disc, not a full-frame fill.
+    @test frame[1, 1] == RGB{N0f8}(0, 0, 0)
+    # A marker CENTRED at (5, 10) means the ROW is 10 and the COLUMN is 5. Getting the axes swapped
+    # would put every cell at the reflected pixel — a movie that reads plausibly and is a bug.
+    @test frame[5, 10] == RGB{N0f8}(0, 0, 0)
+
+    # A marker whose centre lies OFF-frame still paints the pixels of its disc that are inside.
+    edge = copy(black)
+    draw_points!(edge, (; x = [1], y = [1], colour = [RGB{N0f8}(0, 1, 0)]); size_px = 3)
+    @test edge[1, 1] == RGB{N0f8}(0, 1, 0)                     # centre inside
+    off = copy(black)
+    draw_points!(off, (; x = [0], y = [0], colour = [RGB{N0f8}(0, 1, 0)]); size_px = 3)
+    @test off[1, 1] == RGB{N0f8}(0, 1, 0)                      # nearest inside pixel painted
+
+    # Draw ORDER matters: the LAST point wins under overlap, so a caller who wants a foreground pop
+    # over a background pop lists the foreground last.
+    over = copy(black)
+    draw_points!(over,
+        (; x = [10, 10], y = [10, 10], colour = [RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 0, 1)]);
+        size_px = 3)
+    @test over[10, 10] == RGB{N0f8}(0, 0, 1)
+
+    # Length mismatch is caught early — a silently-shorter colour column paints one pop's markers in
+    # another pop's colour.
+    @test_throws ArgumentError draw_points!(black,
+        (; x = [1, 2], y = [1, 2], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 3)
+
+    # A segment paints its two endpoints and the pixels between them. Horizontal at row 10.
+    seg = copy(black)
+    draw_segments!(seg,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10], colour = [RGB{N0f8}(1, 1, 1)]);
+        width_px = 1)
+    @test seg[10, 3] == RGB{N0f8}(1, 1, 1)
+    @test seg[10, 9] == RGB{N0f8}(1, 1, 1)                     # mid
+    @test seg[10, 15] == RGB{N0f8}(1, 1, 1)
+    @test seg[10, 2] == RGB{N0f8}(0, 0, 0)                     # before start
+    @test seg[9, 9]  == RGB{N0f8}(0, 0, 0)                     # off the row
+
+    # width_px thickens perpendicularly — a width-3 horizontal line paints three rows.
+    fat = copy(black)
+    draw_segments!(fat,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10], colour = [RGB{N0f8}(1, 1, 1)]);
+        width_px = 3)
+    @test fat[9, 9]  == RGB{N0f8}(1, 1, 1)
+    @test fat[10, 9] == RGB{N0f8}(1, 1, 1)
+    @test fat[11, 9] == RGB{N0f8}(1, 1, 1)
+    @test fat[8, 9]  == RGB{N0f8}(0, 0, 0)                     # only ±1 away
+
+    # A diagonal line — asserts Bresenham reaches both endpoints, not just one.
+    diag = copy(black)
+    draw_segments!(diag,
+        (; x0 = [3], y0 = [3], x1 = [12], y1 = [12], colour = [RGB{N0f8}(1, 0, 1)]);
+        width_px = 1)
+    @test diag[3, 3]   == RGB{N0f8}(1, 0, 1)
+    @test diag[12, 12] == RGB{N0f8}(1, 0, 1)
+    @test diag[7, 7]   == RGB{N0f8}(1, 0, 1)                   # on the line
+
+    # size_px <= 0 draws nothing rather than throwing — a caller with a config that resolved to 0 gets
+    # a movie without markers, not a crash mid-render.
+    zero_px = copy(black)
+    draw_points!(zero_px, (; x = [10], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 0)
+    @test zero_px == black
+end
+
+@testset "API: render_view_frame — points and segments overlays" begin
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    if !api_have_fixture(v2)
+        @test_skip "zarr format fixture missing"
+    else
+        specs = [(0.0, 4000.0, "red", true), (0.0, 4000.0, "green", true)]
+        base  = render_view_frame(v2, 1; channels = 0:1, specs = specs)
+        H, W = size(base)
+
+        # A point marker changes the pixel — assertion is on DIFFERENCE against the un-overlayed frame,
+        # so a fixture that happens to have blue at (10, 10) still passes.
+        with_pt = render_view_frame(v2, 1; channels = 0:1, specs = specs,
+                                    points = (; x = [10], y = [10],
+                                              colour = [RGB{N0f8}(0, 0, 1)]),
+                                    point_size_px = 3)
+        @test size(with_pt) == (H, W)
+        @test with_pt[10, 10] == RGB{N0f8}(0, 0, 1)
+        @test with_pt != base
+
+        # Same for segments.
+        with_seg = render_view_frame(v2, 1; channels = 0:1, specs = specs,
+                                     segments = (; x0 = [5], y0 = [5], x1 = [40], y1 = [5],
+                                                 colour = [RGB{N0f8}(1, 1, 1)]),
+                                     segment_width_px = 1)
+        @test with_seg[5, 5]  == RGB{N0f8}(1, 1, 1)
+        @test with_seg[5, 40] == RGB{N0f8}(1, 1, 1)
+
+        # Segments draw BELOW points — a marker at a track endpoint reads as a marker, not as a
+        # fatter tail.
+        both = render_view_frame(v2, 1; channels = 0:1, specs = specs,
+                                 points   = (; x = [20], y = [20],
+                                             colour = [RGB{N0f8}(1, 0, 0)]),
+                                 segments = (; x0 = [20], y0 = [20], x1 = [30], y1 = [20],
+                                             colour = [RGB{N0f8}(0, 1, 0)]),
+                                 point_size_px = 3, segment_width_px = 1)
+        @test both[20, 20] == RGB{N0f8}(1, 0, 0)              # point wins at the shared pixel
+        @test both[20, 30] == RGB{N0f8}(0, 1, 0)              # the tail's other end is untouched
+    end
+end
+
 @testset "API: record_view_movie — the raw frame hand-off" begin
     # Julia composites, Python encodes. The ONE thing that cannot be checked downstream is the byte
     # ORDER: a transposed movie plays perfectly — right length, right size, real pixels, just on its
@@ -4887,6 +5000,26 @@ end
 
         # a t range with nothing in it is a caller error, not an empty movie
         @test_throws ArgumentError record_view_movie(v2, joinpath(mktempdir(), "x.mp4"); ts = [99])
+
+        # `overlays_for(t)` paints per-frame P3 overlays onto each raw frame — assert both that it is
+        # called for every frame and that the returned bytes carry the overlay pixel, so a wiring that
+        # silently drops points on the way to Python is caught.
+        seen = Int[]
+        oio  = IOBuffer()
+        overlays_for = function (t::Int)
+            push!(seen, t)
+            pts = (; x = [4], y = [4], colour = [RGB{N0f8}(0, 0, 1)])
+            (pts, nothing)
+        end
+        Wo2, Ho2, no2, _ = write_raw_frames(oio, a2, ax2, [0, 1, 2]; overlays_for = overlays_for,
+                                            point_size_px = 3, kw...)
+        @test seen == [0, 1, 2]
+        @test no2 == 3
+        obytes = take!(oio)
+        # Pull the (4, 4) pixel out of frame 0's RGB24 slab. Row-major, x fastest: byte offset for
+        # (row = 4, col = 4) is `((4 - 1) * W + (4 - 1)) * 3` — 1-based to match `frame[y, x]`.
+        off = ((4 - 1) * Wo2 + (4 - 1)) * 3
+        @test obytes[off + 1:off + 3] == UInt8[0, 0, 255]
     end
 end
 

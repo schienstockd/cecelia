@@ -224,6 +224,12 @@ which is per-frame and therefore FLICKERS across a timecourse: pass specs for an
 `crop` is `(x = x0:x1, y = y0:y1)` in 0-based pixels, clamped to the frame. `max_px` 0 keeps native
 resolution; anything else downsamples so the long side fits, by striding (a movie writer's own scaler
 is the better resampler when quality matters, and it has one).
+
+`points` and `segments` paint the P3 overlays onto the composited frame — same content the browser
+draws through WebGPU, so a recorded movie of a gated experiment shows the annotations that make the
+pixels a result. Coordinates are 1-based row/column and MUST be pre-resolved to the frame's pixel grid
+by the caller (µm → pixel, crop / stride honoured); this file is pure drawing. See
+`frame_overlays.jl` for the shape.
 """
 render_view_frame(zarr_path::AbstractString, t::Int; kwargs...) =
     render_view_frame(open_level0(zarr_path)..., t; kwargs...)
@@ -231,7 +237,9 @@ render_view_frame(zarr_path::AbstractString, t::Int; kwargs...) =
 function render_view_frame(arr, caxes, t::Int;
                            z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
                            channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
-                           specs = nothing, crop = nothing, max_px::Int = 0)
+                           specs = nothing, crop = nothing, max_px::Int = 0,
+                           points = nothing, point_size_px::Int = 6,
+                           segments = nothing, segment_width_px::Int = 2)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     nc   = haskey(dims, "c") ? size(arr, dims["c"]) : 1
@@ -293,7 +301,13 @@ function render_view_frame(arr, caxes, t::Int;
         specs
     length(sp) >= length(chans) ||
         throw(ArgumentError("render_view_frame: $(length(sp)) specs for $(length(chans)) channels"))
-    composite_rgb(chw, sp)
+    frame = composite_rgb(chw, sp)
+    # Overlays paint on top of the composited channels — segments below points, so a marker at a
+    # track's endpoint reads as a marker rather than a fatter tail. The caller has already resolved
+    # µm → pixel and honoured `crop`/`max_px`; this file is pure drawing.
+    segments === nothing || draw_segments!(frame, segments; width_px = segment_width_px)
+    points === nothing   || draw_points!(frame, points; size_px = point_size_px)
+    frame
 end
 
 # A 0-based inclusive pixel range → the 1-based Julia range it selects, clamped to `n`. `nothing` (or a
