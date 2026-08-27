@@ -1,6 +1,6 @@
 """Raw-frame movie encoder entry point.
 
-Called as a subprocess by renderer C's timelapse sweep (``api/src/movie_render.jl``) to turn a file of
+Called as a subprocess by the offline renderer's timelapse sweep (``api/src/movie_render.jl``) to turn a file of
 raw RGB24 frames into an mp4. Julia renders the frames — it owns the compositing, the LUTs and the z
 projection — and this owns the encode, because ``cecelia.utils.movie_io`` is the one imageio writer in
 the repo and a second one in Julia would be two answers about codec, pixel format and even-dimension

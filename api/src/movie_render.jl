@@ -1,4 +1,4 @@
-# ── movie_render.jl — renderer C's timelapse sweep (WEB_VIEWER_PLAN.md → P5) ───────
+# ── movie_render.jl — the offline renderer's timelapse sweep (WEB_VIEWER_PLAN.md → P5) ───────
 #
 # Frames come from `render_view_frame` (image_render.jl); the mp4 comes from
 # `python/cecelia/utils/movie_io.py`, the ONE imageio writer this repo has. Nothing here encodes
@@ -160,7 +160,7 @@ end
 #
 # napari-animation does this today (`napari_utils.record_keyframes`), and it is the one part of that
 # dependency worth keeping: a keyframe is a saved VIEW STATE plus a number of steps to reach it from
-# the one before, and the movie tweens between them. Renderer C has to answer the same contract,
+# the one before, and the movie tweens between them. The offline renderer has to answer the same contract,
 # because the animation page already speaks it and every saved animation config is a list of these.
 
 """

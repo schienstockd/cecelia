@@ -121,7 +121,7 @@ class TestWriterRoundTrip(unittest.TestCase):
 
 
 class TestEncodeRawFrames(unittest.TestCase):
-    """Renderer C's hand-off: a file of raw RGB24 frames in, an mp4 out.
+    """The offline renderer's hand-off: a file of raw RGB24 frames in, an mp4 out.
 
     Julia composites the frames and this encodes them, because ``movie_writer`` is the one imageio
     writer in the repo. The interesting failure is not "it did not encode" — it is a TRUNCATED render

@@ -2079,7 +2079,7 @@ end
         # bulk image-data copy (multi-GB, chunked); not state, and the import task owns cleanup
         "omezarr.jl"     => [raw"""open(dst, "w") do d"""],
         # raw RGB24 frames streamed to the run's task dir and handed straight to the encoder, then
-        # deleted (renderer C, docs/todo/WEB_VIEWER_PLAN.md P5). Multi-GB and transient: staging a
+        # deleted (the offline renderer, docs/todo/WEB_VIEWER_PLAN.md P5). Multi-GB and transient: staging a
         # copy to rename would double the disk for a file nothing ever reads back.
         "movie_render.jl" => [raw"""open(raw, "w") do io"""],
     )
