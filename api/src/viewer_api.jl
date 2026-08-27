@@ -340,15 +340,12 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
         lerr === nothing || return false
         if preview_labels
-            zp_preview = if endswith(zp, ".ome.zarr")
-                replace(zp, r"\.ome\.zarr$" => "__preview.ome.zarr")
-            elseif endswith(zp, ".zarr")
-                replace(zp, r"\.zarr$" => "__preview.zarr")
-            else
-                zp * "__preview.ome.zarr"
-            end
-            isdir(zp_preview) || return false
-            zp = zp_preview
+            # The worker's convention is fixed: `<img_labels_dir>/<vn>__preview.ome.zarr`, keyed on the
+            # value_name and NOT on the ccid.json filename. Deriving from `zp` (which for an unregistered
+            # vn is `<img_labels_dir>/<vn>.zarr` — no `.ome`) misses the store the worker wrote, so the
+            # preview mask 404s on first-time segmentations — the exact case preview is most useful for.
+            zp = joinpath(dirname(zp), "$(lbl)__preview.ome.zarr")
+            isdir(zp) || return false
         end
     else
         zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)

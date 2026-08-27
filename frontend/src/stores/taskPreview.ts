@@ -50,10 +50,6 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const runState = ref<RunState>('idle')
   const status   = ref<PreviewStatus | null>(null)
   const context  = ref<PreviewContext | null>(null)
-  /** Set from the reply's `previewLabels` block after a successful run. The ViewerWindow reads this
-   *  and appends `&preview=1` to its labels slab URL while the vn matches; a stop clears it. */
-  const previewLabelsActive = ref(false)
-  const previewLabels = ref<{ valueName: string; imageUid: string; projectUid: string } | null>(null)
   const counts   = ref<Record<string, number> | null>(null)
   // Per model group, for a multi-pass config — see `previewSummary`. Null for a single pass.
   const passes   = ref<PreviewPass[] | null>(null)
@@ -95,8 +91,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     signal.value = null
     tiling.value = null
     notPreviewed.value = []
-    previewLabelsActive.value = false
-    previewLabels.value = null
+    // Preview labels are cross-window state (bridged through localStorage; see stores/viewer.ts). Clear
+    // via the store's setter so the viewer popup's Pinia also drops back to the real labels store.
+    viewerStore.setPreviewLabels(null)
   }
 
   const blocker = computed<PreviewBlocker | null>(
@@ -171,13 +168,11 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     notPreviewed.value = Array.isArray(res?.notPreviewed) ? res.notPreviewed : []
     // P7: a labels-shaped reply carries `previewLabels: {valueName, imageUid, projectUid}`; when set,
     // the ViewerWindow's labels slab URL flips to the scratch `<vn>__preview.ome.zarr` for this vn.
-    if (res?.previewLabels && typeof res.previewLabels === 'object') {
-      previewLabels.value = res.previewLabels
-      previewLabelsActive.value = true
-    } else {
-      previewLabels.value = null
-      previewLabelsActive.value = false
-    }
+    // Goes on the VIEWER STORE (bridged across windows), because the run completes in the module
+    // page's Pinia and the render happens in the popup viewer's Pinia — a plain ref here would never
+    // reach it.
+    viewerStore.setPreviewLabels(
+      res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
     error.value = ''
     errorCode.value = ''
   }, {
@@ -321,7 +316,6 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   return {
     enabled, pinned, runState, status, context, counts, passes, fallback2d, signal, tiling,
     error, errorCode, starting,
-    previewLabels, previewLabelsActive,
     blocker, notice, summary, busy, baseOnly, tiled, composite, warnings, notPreviewed,
     setContext, request, start, stop, toggle, refreshStatus,
     /** show the current result now, skipping the debounce (the manual "preview now" action) */

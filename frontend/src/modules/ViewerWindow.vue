@@ -463,8 +463,8 @@ watch(labelName, () => reallocate())
 // P7: a task preview toggling on/off flips whether the labels texture must be allocated when the
 // picker is empty (a first-time segmentation preview). Refetch the timepoint so the mask slab arrives
 // into the same round-trip as the pixels — same reason as the labelName watch above.
-watch(() => taskPreview.previewLabelsActive &&
-             taskPreview.previewLabels?.imageUid === imageUid, () => reallocate())
+watch(() => !!viewerStore.previewLabels &&
+             viewerStore.previewLabels?.imageUid === imageUid, () => reallocate())
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -702,8 +702,8 @@ const frame = usePlotResize(canvas, () => {
   // has to be complete.
   // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
-  const showLabels = !!labelName.value || (taskPreview.previewLabelsActive &&
-    taskPreview.previewLabels?.imageUid === imageUid)
+  const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+    viewerStore.previewLabels?.imageUid === imageUid)
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
@@ -1015,9 +1015,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // cannot label this response with a different segmentation's name.
     // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
     // has not picked one — a first-time segmentation preview must render even without a picker entry.
-    const previewMatches = taskPreview.previewLabelsActive &&
-      taskPreview.previewLabels?.imageUid === imageUid
-    const vn = labelName.value || (previewMatches ? taskPreview.previewLabels!.valueName : '')
+    const previewMatches = !!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid
+    const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
@@ -1038,9 +1038,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
-        const usePreview = taskPreview.previewLabelsActive &&
-          taskPreview.previewLabels?.valueName === vn &&
-          taskPreview.previewLabels?.imageUid === imageUid
+        const usePreview = !!viewerStore.previewLabels &&
+          viewerStore.previewLabels?.valueName === vn &&
+          viewerStore.previewLabels?.imageUid === imageUid
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
           preview: usePreview,
@@ -2183,8 +2183,8 @@ async function reallocate(refit = false) {
     if (!r) return
     // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
-    const wantLabels = !!labelName.value || (taskPreview.previewLabelsActive &&
-      taskPreview.previewLabels?.imageUid === imageUid)
+    const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid)
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
