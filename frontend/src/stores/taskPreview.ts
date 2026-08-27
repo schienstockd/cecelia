@@ -101,7 +101,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
 
   const blocker = computed<PreviewBlocker | null>(
     () => previewBlocker(context.value, status.value,
-      { enabled: enabled.value, pinned: pinned.value, openImage: viewerStore.openImage }))
+      { enabled: enabled.value, pinned: pinned.value,
+        openImage: viewerStore.openImage,
+        hasRegion: viewerStore.visibleRegion !== null }))
   /** the one line under the button: what is wrong, and whether it is amber */
   const notice  = computed(() => previewNotice(
     blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))
@@ -131,10 +133,13 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   async function refreshStatus() {
     try {
       status.value = await previewApi.status()
-      starting.value = Boolean(status.value?.starting)
     } catch {
-      status.value = null            // backend unreachable; the blocker becomes 'no-image-open'
+      status.value = null            // backend unreachable; the blocker becomes 'no-viewer-open'
     }
+    // Sync `starting` OUTSIDE the try, so a status fetch that throws still clears a stuck 'Starting…'
+    // — otherwise a transient error during `start()` (e.g. the backend still restarting) leaves the
+    // toggle showing a spinner with nothing scheduled to clear it.
+    starting.value = Boolean(status.value?.starting)
   }
 
   // ── the one scheduler ───────────────────────────────────────────────────────
