@@ -31,6 +31,9 @@
 import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
+import { useViewerStore } from '../stores/viewer'
+import { useTaskPreviewStore } from '../stores/taskPreview'
+import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -82,6 +85,11 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 
 const route = useRoute()
 const settings = useSettingsStore()
+// Task-preview integration (P7): publishes what this viewer has open + its visible region for the
+// task-preview store to feed into `/api/preview/run`, and reads back the active preview labels flag
+// so the labels slab URL flips to the scratch `<vn>__preview.ome.zarr` when a preview is showing.
+const viewerStore = useViewerStore()
+const taskPreview = useTaskPreviewStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
@@ -1014,8 +1022,15 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       })),
       (async () => {
         if (!vn) return null
+        // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
+        // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
+        // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
+        const usePreview = taskPreview.previewLabelsActive &&
+          taskPreview.previewLabels?.valueName === vn &&
+          taskPreview.previewLabels?.imageUid === imageUid
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+          preview: usePreview,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
@@ -2327,6 +2342,54 @@ watch(zPlane,    () => propsSink.schedule())
 watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
+
+// ── Task-preview integration (P7) ─────────────────────────────────────────────
+// One scheduler per this specific emit: pan/zoom fires per frame, but the preview API is expensive
+// and its own store already debounces. This coalesces bursts so the store doesn't schedule per event.
+const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) { viewerStore.setVisibleRegion(null); return }
+  // The volume camera's basis is µm-across-the-screen; the visibleRegion helper wants image-pixel
+  // pan/zoom. Convert here so the helper stays pure and testable.
+  const umPerL0X = m.voxelUm?.[0] || 1
+  const umPerL0Y = m.voxelUm?.[1] || 1
+  const canvasW = Math.max(1, c.clientWidth)
+  const canvasH = Math.max(1, c.clientHeight)
+  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleL0H = visibleHeightUm / umPerL0Y
+  // Zoom in this helper's units: >1 = zoomed in (visible window shrinks). A "fit" camera shows the
+  // whole image height in `visibleL0H` L0 pixels, so `zoom = m.nY / visibleL0H`.
+  const zoom = (m.nY || 1) / Math.max(1, visibleL0H)
+  const region = computeVisibleRegion({
+    panX: cam.value.panX / umPerL0X,
+    panY: -cam.value.panY / umPerL0Y,     // screen-up is negative image-Y (see panDrag)
+    zoom, canvasW, canvasH,
+    imageW: m.nX, imageH: m.nY,
+    currentZ: mode.value === 'plane' ? zPlane.value : Math.floor((m.nZ - 1) / 2),
+    currentT: t.value,
+    ndisplay: mode.value === 'plane' ? 2 : 3,
+  })
+  viewerStore.setVisibleRegion(region)
+}, { wait: 100 })
+
+watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
+       zPlane, t, mode, meta],
+      () => publishRegionSink.schedule(undefined))
+
+// Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
+// same route as the pixels: the meta response is the one authoritative resolution of an image
+// version.
+watch(meta, m => {
+  if (!m) { viewerStore.setOpenImage(null); return }
+  viewerStore.setOpenImage({
+    projectUid, imageUid,
+    valueName: m.valueName ?? valueName.value ?? '',
+    zarrPath: m.zarrPath ?? '',
+    taskDir: m.taskDir ?? '',
+  })
+})
 
 // The panel is now the single version picker (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). Its
 // `<select>` writes `cc.viewerImageVersion` via `settings.setImageVersion`; the popup's own copy

@@ -1,5 +1,11 @@
 # Session B — P7: task preview overlays
 
+> **OUTCOME 2026-08-27 — BUILT.** Delivery is a labels-shaped scratch OME-Zarr next to the real one,
+> served by `/api/viewer/slab?labels=<vn>&preview=1`. Napari path deleted. Region source is the
+> browser viewer store (`useViewerStore().visibleRegion` + `openImage`), body-carried to the API.
+> AF-image preview deferred to P7.1 (no browser image-overlay path yet). See
+> `docs/todo/WEB_VIEWER_PLAN.md` → *P7 — task preview overlays* for the shipped design.
+
 Branch: `feat/viewer-p7-task-previews` (fork from origin/main).
 
 ## Goal

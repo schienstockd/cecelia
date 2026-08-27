@@ -13587,62 +13587,57 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         end
     end
 
-    @testset "a preview reply becomes a viewer command without Julia decoding it" begin
-        # Julia is a pass-through: the blocks move worker → viewer untouched (the codec lives in
-        # cecelia.utils.block_transfer, used by both Python ends).
-        #
-        # A reply carries a LIST of layers, each with its own `kind`, because one task can preview
-        # several things: AF correction returns one image layer per corrected channel so they sit
-        # beside the originals to be flipped against. A single mask field plus a type flag — which is
-        # what this was — could not express that.
-        mask = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
-        img  = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u2", "data" => "eJxjYGBgAAAABAAC")
+    @testset "a preview reply is validated into a JSON payload for the browser viewer" begin
+        # P7: layers carry `valueName`/`path` (labels store on disk) — the browser fetches the mask
+        # through `/api/viewer/slab?labels=<vn>&preview=1`, so Julia's pass-through only asserts the
+        # payload shape rather than decoding pixels. A reply still carries a LIST of layers, kept for
+        # the AF path (P7.1) which will add `image`-kind layers alongside.
         layers = [
-            Dict("kind" => "labels", "name" => "Preview", "block" => mask,
+            Dict("kind" => "labels", "name" => "Preview",
+                 "valueName" => "A", "path" => "/x/labels/A__preview.ome.zarr",
                  "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
-            Dict("kind" => "image", "name" => "nuc-GFP AF", "block" => img,
+            Dict("kind" => "image", "name" => "nuc-GFP AF",
+                 "valueName" => "A", "path" => "/x/data/nucAF.ome.zarr",
                  "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
         ]
         reply = Dict("layers" => layers,
                      "region" => Dict("T" => [3, 4], "Z" => [1, 2],
                                       "Y" => [0, 4], "X" => [0, 4]),
                      "valueName" => "A", "counts" => Dict("base" => 7))
-        cmd = Cecelia.preview_show_command(reply)
-        @test cmd["type"] == "show_task_preview"
-        @test cmd["layers"] === layers                      # not re-encoded, not copied
-        @test cmd["layers"][1]["block"] === mask
-        @test cmd["show"] == true
+        payload = Cecelia.preview_reply_payload(reply)
+        @test payload["layers"] === layers                  # not re-encoded, not copied
+        @test payload["valueName"] == "A"
         # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
-        # `({vn}) Labels` evict each other in the viewer instead of stacking
-        @test cmd["value_name"] == "A"
-        @test !occursin("__preview", cmd["value_name"])
+        # `({vn}) Labels` share a stem in the labels registry rather than diverge
+        @test !occursin("__preview", payload["valueName"])
 
         # no layers at all is a fault, not a viewer showing nothing
-        @test_throws ErrorException Cecelia.preview_show_command(
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             filter(p -> first(p) != "layers", reply))
-        @test_throws ErrorException Cecelia.preview_show_command(
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             merge(reply, Dict("layers" => Any[])))
 
         # a layer missing any of its geometry is a fault too — caught HERE rather than as a Python
         # traceback in the viewer, which is the point of validating in the pass-through
-        for missing_key in ("kind", "name", "block", "shape", "axes")
+        for missing_key in ("kind", "name", "valueName", "path", "shape", "axes")
             broken_layer = filter(p -> first(p) != missing_key, layers[1])
-            @test_throws ErrorException Cecelia.preview_show_command(
+            @test_throws ErrorException Cecelia.preview_reply_payload(
                 merge(reply, Dict("layers" => Any[broken_layer])))
         end
 
+        # an inline `block` field is protocol-12 and must not reach the browser — the API refuses to
+        # answer a stale worker that still sends one
+        @test_throws ErrorException Cecelia.preview_reply_payload(
+            merge(reply, Dict("layers" => Any[merge(layers[1], Dict("block" => "AA=="))])))
+
         # an unknown kind is refused rather than passed on for the viewer to guess at
-        @test_throws ErrorException Cecelia.preview_show_command(
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
 
-        # `source` (the viewer layer a corrected channel derives from, so the bridge can mirror its
-        # colormap) rides through untouched and is OPTIONAL — Julia neither requires it nor interprets
-        # it. Required here would break the one thing the pass-through exists to allow: the two Python
-        # ends evolving the payload without this file learning every field.
+        # `source` (the viewer layer a corrected channel derives from) rides through untouched and is
+        # OPTIONAL — Julia neither requires it nor interprets it.
         sourced = merge(reply, Dict("layers" => Any[merge(layers[2], Dict("source" => "nuc-GFP"))]))
-        @test Cecelia.preview_show_command(sourced)["layers"][1]["source"] == "nuc-GFP"
-        @test Cecelia.preview_show_command(
-            merge(reply, Dict("layers" => Any[layers[2]])))["layers"][1] === layers[2]
+        @test Cecelia.preview_reply_payload(sourced)["layers"][1]["source"] == "nuc-GFP"
     end
 
     @testset "a composite says which steps it does not preview" begin

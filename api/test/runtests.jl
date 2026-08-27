@@ -1080,10 +1080,12 @@ end
 end
 
 @testset "API: task preview never guesses which image is open" begin
-    # The property this whole route exists for. `napari_api` tracked the open image but exposed
-    # nothing, so callers had to be told which image to act on — and guessing wrong wrote scratch
-    # stores into images the user wasn't looking at. Every branch below is a REFUSAL, because the
+    # The property this whole route exists for. Under P7 the browser viewer sends its open image and
+    # visible region in the body; the fallback below through `_current_*` refs is the transitional
+    # path while other clients still act through napari. Every branch is a REFUSAL, because the
     # alternative to refusing is acting on the wrong image.
+    _region() = Dict("xy" => Dict("X" => [0, 32], "Y" => [0, 32]),
+                     "z" => 0, "t" => 0, "ndisplay" => 2)
     saved = (_current_image_uid[], _current_zarr_path[], _current_task_dir[])
     try
         # ── nothing open → the status route says so in every field, so a client can't read a
@@ -1096,9 +1098,10 @@ end
         @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
         @test d.alive == false
 
-        # ...and a run refuses rather than picking something
+        # ...and a run refuses rather than picking something (napari fallback returns no-image-open)
         st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
-                                               "params" => Dict("models" => Dict())))
+                                               "params" => Dict("models" => Dict()),
+                                               "region" => _region()))
         @test st == 409
         @test JSON3.read(body).code == "no-image-open"
 
@@ -1106,15 +1109,24 @@ end
         _current_image_uid[] = "openImg"; _current_zarr_path[] = "/x/openImg.ome.zarr"
         _current_task_dir[]  = "/x/meta"
         st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "otherImg",
-                                               "params" => Dict("models" => Dict())))
+                                               "params" => Dict("models" => Dict()),
+                                               "region" => _region()))
         @test st == 409
         d = JSON3.read(body)
         @test d.code == "image-mismatch" && d.openImageUid == "openImg"
 
         # ── missing required fields are 400s, not silent defaults
-        @test _post(api_preview_run, Dict("imageUid" => "i", "params" => Dict()))[1] == 400
-        @test _post(api_preview_run, Dict("projectUid" => "p", "params" => Dict()))[1] == 400
-        @test _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i"))[1] == 400
+        @test _post(api_preview_run, Dict("imageUid" => "i", "params" => Dict(),
+                                          "region" => _region()))[1] == 400
+        @test _post(api_preview_run, Dict("projectUid" => "p", "params" => Dict(),
+                                          "region" => _region()))[1] == 400
+        @test _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                          "region" => _region()))[1] == 400
+        # region itself is now required (P7 — comes from the browser viewer body, not from napari)
+        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                               "params" => Dict("models" => Dict())))
+        @test st == 400
+        @test JSON3.read(body).code == "no-region"
 
         # ── the open image, but the task reads a DIFFERENT VERSION of it → refuse and say which to
         #    open. Previewing anyway would either segment pixels the user can't see or pair the
@@ -1137,7 +1149,8 @@ end
 
                 st, body = _post(api_preview_run, Dict(
                     "projectUid" => "p", "imageUid" => uid,
-                    "params" => Dict("valueName" => "corrected", "models" => Dict())))
+                    "params" => Dict("valueName" => "corrected", "models" => Dict()),
+                    "region" => _region()))
                 @test st == 409
                 d = JSON3.read(body)
                 @test d.code == "version-mismatch" && d.wantedValueName == "corrected"
@@ -1150,8 +1163,23 @@ end
                 # an unknown valueName is a 404, not a preview of the active version
                 st, _ = _post(api_preview_run, Dict(
                     "projectUid" => "p", "imageUid" => uid,
-                    "params" => Dict("valueName" => "nope", "models" => Dict())))
+                    "params" => Dict("valueName" => "nope", "models" => Dict()),
+                    "region" => _region()))
                 @test st == 404
+
+                # ── body-first path (browser viewer): send zarrPath/taskDir/imageUid inline. The
+                # napari fallback is skipped and the same version-mismatch guard fires against the
+                # body-supplied path, so a viewer showing a different version still can't preview.
+                _current_image_uid[] = nothing; _current_zarr_path[] = nothing
+                _current_task_dir[]  = nothing
+                st, body = _post(api_preview_run, Dict(
+                    "projectUid" => "p", "imageUid" => uid,
+                    "zarrPath" => joinpath(proj_root, "p", "0", uid, "orig.ome.zarr"),
+                    "taskDir"  => meta,
+                    "params" => Dict("valueName" => "corrected", "models" => Dict()),
+                    "region" => _region()))
+                @test st == 409
+                @test JSON3.read(body).code == "version-mismatch"
             finally
                 had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
             end
@@ -1164,6 +1192,27 @@ end
         @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
     finally
         _current_image_uid[], _current_zarr_path[], _current_task_dir[] = saved
+    end
+end
+
+@testset "API: preview stop sweeps the scratch labels store" begin
+    # A preview writes `<vn>__preview.ome.zarr` under `{taskDir}/labels/`; a stop must clear it so
+    # a subsequent session doesn't inherit stale bytes over the `preview=1` slab route. The worker
+    # is not running here — the sweep is best-effort and the stop route must still succeed.
+    mktempdir() do task_dir
+        labels_dir = joinpath(task_dir, "labels")
+        mkpath(labels_dir)
+        stale = joinpath(labels_dir, "A__preview.ome.zarr")
+        mkpath(stale); write(joinpath(stale, "junk"), "x")
+        @test isdir(stale)
+
+        st, body = _post(api_preview_stop, Dict("taskDir" => task_dir))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.stopped == true && d.alive == false
+        # the worker was down, so this is a no-op on the disk from the API side — the sweep only
+        # runs when the worker is up (it owns the file handles that might still be holding it
+        # open on Windows). Left as debris here; a later run wipes it on entry via `_stage_labels_store`.
     end
 end
 

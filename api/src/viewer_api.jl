@@ -281,6 +281,12 @@ function api_viewer_meta(req::HTTP.Request)
                             # only `valueName` an explicit request echoes itself and the comparison is
                             # impossible.
                             activeValueName = active_vn,
+                            # The store the browser viewer is looking at and the image's meta dir.
+                            # Body-carried into `/api/preview/run` (P7): the preview API uses these
+                            # as source of truth for "what's on screen" rather than reaching sideways
+                            # into `current_napari_image()`.
+                            zarrPath = zp,
+                            taskDir  = td,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,
                             contrastSource = src, voxelUm = vox, spaceUnit = unit,
                             frameIntervalMin = tmin, calibrated = cal, channels, levels))
@@ -323,10 +329,27 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # `labels=<value_name>` serves the MASK for that segmentation instead of the image. Same reader,
     # same headers, same shape guard — a mask is just another zarr of the same geometry, which is what
     # makes P4 cheap. The dtype differs (label ids, not intensities), and `X-Slab-Bpv` already says so.
+    #
+    # `preview=1` (P7) retargets a labels request to the scratch preview store the task-preview
+    # worker just wrote — `<vn>__preview.ome.zarr` instead of `<vn>.ome.zarr` — riding the same
+    # reader and headers as the real labels slab. The preview store is deliberately full-image
+    # geometry, so the coordinate math the reader does is identical; only the file path differs.
+    preview_labels = get(q, "preview", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
         zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
         lerr === nothing || return false
+        if preview_labels
+            zp_preview = if endswith(zp, ".ome.zarr")
+                replace(zp, r"\.ome\.zarr$" => "__preview.ome.zarr")
+            elseif endswith(zp, ".zarr")
+                replace(zp, r"\.zarr$" => "__preview.zarr")
+            else
+                zp * "__preview.ome.zarr"
+            end
+            isdir(zp_preview) || return false
+            zp = zp_preview
+        end
     else
         zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
         err === nothing || return false
