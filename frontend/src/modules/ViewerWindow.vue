@@ -460,6 +460,11 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
+// P7: a task preview toggling on/off flips whether the labels texture must be allocated when the
+// picker is empty (a first-time segmentation preview). Refetch the timepoint so the mask slab arrives
+// into the same round-trip as the pixels — same reason as the labelName watch above.
+watch(() => taskPreview.previewLabelsActive &&
+             taskPreview.previewLabels?.imageUid === imageUid, () => reallocate())
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -695,7 +700,11 @@ const frame = usePlotResize(canvas, () => {
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
   // has to be complete.
-  r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
+  // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
+  const showLabels = !!labelName.value || (taskPreview.previewLabelsActive &&
+    taskPreview.previewLabels?.imageUid === imageUid)
+  r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   r.draw()
@@ -1004,7 +1013,11 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
     // cannot label this response with a different segmentation's name.
-    const vn = labelName.value
+    // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
+    // has not picked one — a first-time segmentation preview must render even without a picker entry.
+    const previewMatches = taskPreview.previewLabelsActive &&
+      taskPreview.previewLabels?.imageUid === imageUid
+    const vn = labelName.value || (previewMatches ? taskPreview.previewLabels!.valueName : '')
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
@@ -2168,8 +2181,12 @@ async function reallocate(refit = false) {
   } else {
     const r = renderer.value
     if (!r) return
+    // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
+    // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
+    const wantLabels = !!labelName.value || (taskPreview.previewLabelsActive &&
+      taskPreview.previewLabels?.imageUid === imageUid)
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-               mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+               mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)

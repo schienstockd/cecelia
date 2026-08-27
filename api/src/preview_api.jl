@@ -204,29 +204,16 @@ function api_preview_run(body_bytes::Vector{UInt8})
         error = "region required — POST the viewer's visible region in the body",
         code  = "no-region"))
 
-    # Prefer the body's explicit source-of-truth (browser viewer). Fall back to `current_napari_image()`
-    # only when the client hasn't sent them — a purely transitional path while napari fades out.
-    body_zarr_path = String(get(data, "zarrPath", ""))
-    body_task_dir  = String(get(data, "taskDir", ""))
-    body_image_uid = String(get(data, "imageUid", ""))
-
-    open_zarr_path = body_zarr_path
-    open_task_dir  = body_task_dir
-    if isempty(open_zarr_path) || isempty(open_task_dir)
-        @warn "Preview run: falling back to napari-tracked open image (browser viewer should carry zarrPath/taskDir in body)"
-        napari_open = current_napari_image()
-        isnothing(napari_open.imageUid) &&
-            return 409, JSON3.write((; error = "No image open in the viewer. Open the image to preview it.",
-                                       code = "no-image-open"))
-        napari_open.imageUid == image_uid ||
-            return 409, JSON3.write((; error = "Open this image in the viewer to preview it.",
-                                       code = "image-mismatch", openImageUid = napari_open.imageUid))
-        (isnothing(napari_open.zarrPath) || isnothing(napari_open.taskDir)) &&
-            return 409, JSON3.write((; error = "The viewer has no image version resolved yet.",
-                                       code = "no-image-open"))
-        open_zarr_path = String(napari_open.zarrPath)
-        open_task_dir  = String(napari_open.taskDir)
-    end
+    # The browser viewer is the source of truth for what's on screen. It writes into
+    # `useViewerStore().openImage` and the FE body-carries those fields. No viewer open ⇒ no region
+    # to preview; the FE's `previewBlocker` catches this before the POST, and this refusal is the
+    # server-side belt for anything that gets past it.
+    open_zarr_path = String(get(data, "zarrPath", ""))
+    open_task_dir  = String(get(data, "taskDir",  ""))
+    (isempty(open_zarr_path) || isempty(open_task_dir)) &&
+        return 409, JSON3.write((;
+            error = "Open the image in the browser viewer window to preview.",
+            code  = "no-viewer-open"))
 
     # Which version would the RUN read? If that isn't what the browser has open, previewing either
     # the wrong pixels or the wrong region — refuse and say which version to open.

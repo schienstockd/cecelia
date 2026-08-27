@@ -100,7 +100,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   }
 
   const blocker = computed<PreviewBlocker | null>(
-    () => previewBlocker(context.value, status.value, { enabled: enabled.value, pinned: pinned.value }))
+    () => previewBlocker(context.value, status.value,
+      { enabled: enabled.value, pinned: pinned.value, openImage: viewerStore.openImage }))
   /** the one line under the button: what is wrong, and whether it is amber */
   const notice  = computed(() => previewNotice(
     blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))

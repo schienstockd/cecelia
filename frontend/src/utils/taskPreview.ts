@@ -49,7 +49,7 @@ export type PreviewBlocker =
 export function previewBlocker(
   ctx: PreviewContext | null,
   status: PreviewStatus | null,
-  opts: { enabled: boolean; pinned: boolean },
+  opts: { enabled: boolean; pinned: boolean; openImage?: { imageUid: string } | null },
 ): PreviewBlocker | null {
   if (!opts.enabled) return 'off'
   if (opts.pinned) return 'pinned'
@@ -57,8 +57,12 @@ export function previewBlocker(
   if (!ctx.params) return 'no-params'
   const params = paramsBlocker(ctx.params)
   if (params) return params
-  if (!status || !status.imageUid) return 'no-image-open'
-  if (status.imageUid !== ctx.imageUid) return 'image-mismatch'
+  // Prefer the browser viewer's identity when the caller supplies it (P7 onward — the WebGPU viewer
+  // is the source of truth). `status.imageUid` remains the transitional fallback (populated by
+  // `current_napari_image()` on the server) and will go with napari in P8.
+  const openUid = opts.openImage?.imageUid ?? status?.imageUid ?? null
+  if (!openUid) return 'no-image-open'
+  if (openUid !== ctx.imageUid) return 'image-mismatch'
   return null
 }
 
