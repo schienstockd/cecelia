@@ -554,7 +554,10 @@ const slabLevel = computed(() => {
   if (mode.value === 'plane') {
     const o = settings.viewerPlaneLevel
     if (o >= 0) return Math.max(0, Math.min((m.levels?.length ?? 1) - 1, Math.floor(o)))
-    return pickTileLevel(camZoom.value, m)
+    // Anchor on `loadedLevel` (what's on the GPU) so hysteresis biases against thrashing the
+    // whole plane on a wobble around a `floor(log2(zoom))` boundary. `loadedLevel = -1` before
+    // the first `reallocate` falls through to the classic floor picker — see `pickTileLevel`.
+    return pickTileLevel(camZoom.value, m, loadedLevel.value)
   }
   const override = settings.viewerVolumeLevel
   return pickVolumeLevel(m, override < 0 ? undefined : override)

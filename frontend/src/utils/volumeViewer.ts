@@ -164,6 +164,18 @@ export function metaUrl(q: { projectUid: string; imageUid: string; valueName?: s
 }
 
 /**
+ * Log2-space hysteresis for `pickTileLevel`, adapted from Kiln's SSE selector
+ * (`kiln-render/src/streaming/streaming-manager.ts:747-754`, MIT-licensed —
+ * https://github.com/mpanknin/kiln-render), which keeps splitting to a finer LOD while the
+ * screen-space error is still above 70% of the pixel budget so a wheel gesture cannot flip the
+ * LOD twice around a boundary. In our log2-of-zoom picker the same 0.7 factor becomes a
+ * `log2(1/0.7) ≈ 0.515`-unit margin PAST the integer boundary before we abandon the finer level
+ * for the coarser one; going finer (zoom in) is committed immediately, matching Kiln's
+ * `projectedError > maxPixelError` certain-split branch.
+ */
+export const TILE_LOD_HYST_LOG2 = Math.log2(1 / 0.7)
+
+/**
  * 2D pan/zoom LOD: the level whose native pixel is closest to (without going finer than) one device
  * pixel, given the viewport zoom. `zoom` is L0 pixels per DEVICE pixel — 1 means 1:1, 2 means one
  * device pixel shows two L0 pixels, 0.5 means magnified past 1:1.
@@ -173,16 +185,39 @@ export function metaUrl(q: { projectUid: string; imageUid: string; valueName?: s
  * pixels the screen can't show. At `zoom < 1` (magnified past 1:1) we stay on L0; nothing finer
  * exists and the renderer upscales.
  *
+ * `previousLevel` is the level whose textures are currently on the GPU (`loadedLevel` in
+ * `ViewerWindow.vue`), and it turns on asymmetric hysteresis biased toward finer — see
+ * `TILE_LOD_HYST_LOG2` above for the citation. Zooming in past a boundary swaps to the finer level
+ * immediately; zooming out only coarsens once `log2(zoom)` clears `previousLevel + 1 + HYST`, so a
+ * wheel-detent wobble at exactly `zoom = 2^k` no longer refetches the whole plane on the way back
+ * to the same level. Omit `previousLevel` (or pass `-1`) for the initial pick where no textures
+ * are resident yet — that path keeps the classic `floor(log2(zoom))` behaviour.
+ *
  * ASSUMES CLEAN 2× STEPS — true for every store `bioformats2raw` or `create_multiscales` writes today.
  * If a future writer ships a non-2× pyramid, this needs to consult `levels[n].nX` for the actual
  * per-level factor. The meta payload already carries the shapes, so the change is here rather than in
  * the server contract. (Spatial audit Phase 3, 2026-08-25.)
  */
-export function pickTileLevel(zoom: number, meta: ViewerMeta): number {
+export function pickTileLevel(zoom: number, meta: ViewerMeta, previousLevel?: number): number {
   const n = meta.levels?.length ?? 1
   if (n <= 1 || !Number.isFinite(zoom) || zoom <= 1) return 0
-  const raw = Math.floor(Math.log2(zoom))
-  return Math.max(0, Math.min(n - 1, raw))
+  const clamp = (v: number) => Math.max(0, Math.min(n - 1, v))
+  const raw = Math.log2(zoom)
+  const baseline = clamp(Math.floor(raw))
+  // No prior anchor → the initial pick before any texture is on the GPU. Returning the raw
+  // baseline here is why `loadedLevel = -1` on mount doesn't lock the viewer to a stale level.
+  if (previousLevel === undefined || !Number.isFinite(previousLevel) || previousLevel < 0) {
+    return baseline
+  }
+  const prev = clamp(Math.floor(previousLevel))
+  // Same level or the raw picker wants finer (user zoomed in) → commit immediately. Kiln's
+  // `projectedError > maxPixelError` branch, no hysteresis on quality-improving swaps.
+  if (baseline <= prev) return baseline
+  // Coarser is being requested. Only accept it once we've cleared the hysteresis band past the
+  // boundary between `prev` and `prev + 1` — otherwise the current (finer) level survives the
+  // wobble around the integer threshold.
+  if (raw >= prev + 1 + TILE_LOD_HYST_LOG2) return baseline
+  return prev
 }
 
 /**
