@@ -303,3 +303,20 @@ EOF
   esac
   say "Done. Launch Cecelia from your menu, or run:  cd \"$INSTALL_DIR\" && \"$PIXI\" run app"
 fi
+
+# ── Remote-access handoff ─────────────────────────────────────────────────────
+# On a cloud VM (public IP discoverable via metadata) print a connection.json the
+# user pastes into the Cecelia laptop launcher's setup wizard — see docs/todo/REMOTE_ACCESS_PLAN.md.
+# Local installs (no metadata endpoint) skip this silently. CECELIA_PUBLIC_HOST overrides autodetection.
+CONN_HOME="${HOME:-/root}"
+CONN="$CONN_HOME/cecelia-connection.json"
+if [ -x "$INSTALL_DIR/scripts/print-connection.sh" ]; then
+  CONN_JSON=$(sh "$INSTALL_DIR/scripts/print-connection.sh" 2>/dev/null || true)
+  if [ -n "$CONN_JSON" ]; then
+    printf '%s\n' "$CONN_JSON" > "$CONN"
+    chmod 600 "$CONN" 2>/dev/null || true
+    say "Remote-access connection profile written to $CONN"
+    say "Copy the JSON below into the Cecelia laptop launcher (see docs/INSTALL.md):"
+    printf '\n%s\n\n' "$CONN_JSON"
+  fi
+fi
