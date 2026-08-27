@@ -779,7 +779,8 @@ end
 # next chunk, and its output will need Dominik's eyes on real cells rather than a green frame.
 #
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
-# z?: int, titleCard?, maxFrames?: 30 }` — response: `{ ok, path, filename, frames, width, height }`.
+# z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],
+# pointSizePx?: 6, segmentWidthPx?: 2 } }` — response: `{ ok, path, filename, frames, width, height }`.
 function api_viewer_record_test(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
@@ -818,6 +819,48 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     z = z_raw === nothing ? nothing : Int(z_raw)
     tc_raw = get(data, :titleCard, nothing)
     title_card = tc_raw isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in tc_raw) : nothing
+
+    # Optional P3 overlays. The author resolves populations/tracks into the primitives' columnar
+    # shape once, and hands back a per-t closure — a movie of a gated experiment carries its
+    # annotations rather than raw channels. `overlays.valueName` may differ from the frame's
+    # `valueName` (a movie of processed image `A` with pops from segmentation `B`).
+    ov_raw = get(data, :overlays, nothing)
+    overlays_for = nothing
+    point_size_px = 6; segment_width_px = 2
+    if ov_raw isa AbstractDict
+        ov_vn = String(get(ov_raw, :valueName, ""))
+        # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
+        # frame (`vnn`) — a movie of the active segmentation is the smoke test's expected case.
+        ov_vn = isempty(ov_vn) ? something(vnn, "") : ov_vn
+        ov_pt = String(get(ov_raw, :popType, "flow"))
+        ov_paths_raw = get(ov_raw, :popPaths, nothing)
+        ov_paths = ov_paths_raw isa AbstractVector ?
+                   String[String(p) for p in ov_paths_raw] : nothing
+        include_tracks = Bool(get(ov_raw, :includeTracks, true))
+        point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
+        segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
+        # Build the transform against the NATIVE frame size — same H/W the sweep will see.
+        # `record_view_movie` here uses default crop/max_px (no crop, no downsample); if the smoke
+        # route ever grows a crop, the transform picks it up automatically.
+        img, gerr = _gating_image(pu, iu)
+        if gerr === nothing && !isempty(ov_vn) && _has_label_props(img)
+            d = axis_dims(caxes, ndims(arr))
+            H = haskey(d, "y") ? size(arr, d["y"]) : 0
+            W = haskey(d, "x") ? size(arr, d["x"]) : 0
+            if H > 0 && W > 0
+                tf = pixel_transform(H, W; crop = nothing, max_px = 0)
+                overlays_for = try
+                    build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                       transform = tf, pops_filter = ov_paths,
+                                       include_tracks = include_tracks)
+                catch e
+                    @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e
+                    nothing
+                end
+            end
+        end
+    end
+
     # Filename picked here rather than by the caller: `_valid_movie_name` is what `/api/movies` filters
     # by, so a smoke movie has to sort with the others without a slash or a dot-tmp fragment.
     filename = "smoketest_" * iu * ".mp4"
@@ -826,7 +869,10 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     out_path = joinpath(out_dir, filename)
     result = try
         record_view_movie(zp, out_path; ts = ts, channels = 0:(nc - 1), specs = specs,
-                          z = z, title_card = title_card)
+                          z = z, title_card = title_card,
+                          overlays_for = overlays_for,
+                          point_size_px = point_size_px,
+                          segment_width_px = segment_width_px)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end

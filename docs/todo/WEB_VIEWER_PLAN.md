@@ -468,10 +468,21 @@ Blocking, not rail-integrated, capped at 30 frames by default; registered in `mo
 `/movies` page picks it up. Its job is to make the pipeline eyeball-able before the full
 `handle_movie_record` / `run_single_movie` migration.
 
+**Built: the overlay AUTHOR** (`api/src/overlay_author.jl`). `build_overlays_for(img; value_name,
+pop_type, transform)` reads `resolve_pops` and the label store's centroids ONCE and returns a per-t
+closure `record_view_movie(overlays_for = ...)` calls every frame. Points bucket by
+`centroid_t`; tracks accumulate into a growing tail (segment appearing at t₀ stays on every frame
+t ≥ t₀ — same behaviour as napari's `tail_length=None`). `pixel_transform` bakes the crop + stride
+`render_view_frame` applies into a reusable mapping so the caller stays ignorant of
+`_clamp_range` / `plane[1:step:H, 1:step:W]` — one derivation of the numbers, not two. The smoke
+route takes an optional `overlays: { popType, valueName, popPaths, pointSizePx, segmentWidthPx,
+includeTracks }` block, so a POST can be verified end-to-end against a real project
+(`resolve_pops` cache warms on the first read).
+
 **Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage),
-and the overlay AUTHOR — the caller that resolves populations / tracks / colour-by into the point +
-segment columns and reads/projects the label store per t. The overlay primitives are complete; what
-remains is the request path and the h5ad-to-columns resolver.
+and the MASK author (reading the label zarr per t + projecting to 2D for `mask_for(t)`). The overlay
+primitives and the point/track author are complete; what remains is the request path and the label
+store reader per t.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write

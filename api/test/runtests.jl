@@ -4993,6 +4993,179 @@ end
     @test ncr == black
 end
 
+@testset "API: overlay_author — hex + pixel transform" begin
+    # `hex_to_rgb` is a five-line helper, but every value comes from user text (a pop's colour is a
+    # `#rrggbb` string from a colour picker), so a mis-parse silently paints one pop in another's
+    # colour. Assert the three forms the picker actually produces and the fallback for bad input.
+    @test hex_to_rgb("#00ff00") == RGB{N0f8}(0, 1, 0)
+    @test hex_to_rgb("00FF00")  == RGB{N0f8}(0, 1, 0)
+    @test hex_to_rgb("#f00")    == RGB{N0f8}(1, 0, 0)
+    # Legible fallback rather than an error: a pop with a bad colour still paints, and the caller
+    # can flag the malformed value without the whole movie failing.
+    @test hex_to_rgb("nope")    == RGB{N0f8}(1, 1, 1)
+    @test hex_to_rgb("")        == RGB{N0f8}(1, 1, 1)
+
+    # Identity transform: native pixels are 0-based, drawn pixels 1-based, so `(0, 0) → (1, 1)`.
+    tf = pixel_transform(100, 200)
+    @test (tf.dW, tf.dH) == (200, 100)
+    @test _apply(tf, 0, 0) == (1, 1)
+    @test _apply(tf, 199, 99) == (200, 100)
+    @test _apply(tf, 200, 99) === nothing            # off-frame drops rather than clamps
+    @test _apply(tf, -1, 0)  === nothing
+    @test _apply(tf, NaN, 0) === nothing
+
+    # Crop shifts the origin and shrinks the drawn frame. `crop = (x = 50:99, y = 20:79)` means
+    # native x ∈ [50, 99] maps to drawn x ∈ [1, 50].
+    tc = pixel_transform(100, 200; crop = (x = 50:99, y = 20:79))
+    @test (tc.dW, tc.dH) == (50, 60)
+    @test _apply(tc, 50, 20) == (1, 1)
+    @test _apply(tc, 99, 79) == (50, 60)
+    @test _apply(tc, 49, 20) === nothing            # to the left of the crop
+    @test _apply(tc, 100, 20) === nothing            # to the right
+
+    # max_px downsamples: a 200-wide native frame with max_px = 100 halves to 100 wide, and
+    # `plane[1:2:end]` selects native offsets {0, 2, 4, …}, so an even native offset lands on its
+    # own drawn column and odd offsets fall between two drawn columns.
+    ts = pixel_transform(200, 200; max_px = 100)
+    @test ts.step == 2
+    @test (ts.dW, ts.dH) == (100, 100)
+    @test _apply(ts, 0, 0) == (1, 1)
+    @test _apply(ts, 2, 2) == (2, 2)
+    @test _apply(ts, 4, 4) == (3, 3)                        # every 2 native = 1 drawn
+    @test _apply(ts, 198, 198) == (100, 100)                # the last selected native offset
+
+    # Crop and stride compose. `crop = 0:99` gives a cropped extent of 100 native; step 2 gives a
+    # 50-wide drawn frame. Native offset 99 lands past the last drawn column by a rounding
+    # overshoot and is clamped there rather than dropped — the alternative is a movie that
+    # silently loses its right-edge cells to a rounding gap. A pixel truly outside the crop still
+    # drops.
+    tcs = pixel_transform(200, 200; crop = (x = 0:99, y = 0:99), max_px = 50)
+    @test tcs.step == 2
+    @test (tcs.dW, tcs.dH) == (50, 50)
+    @test _apply(tcs, 98, 98) == (50, 50)
+    @test _apply(tcs, 99, 99) == (50, 50)                   # edge case: clamp, not drop
+    @test _apply(tcs, 200, 200) === nothing                 # truly outside the crop
+end
+
+@testset "API: overlay_author — build_overlays_for on the labelProps fixture" begin
+    # The AUTHOR — the caller `frame_overlays.jl` exists to serve. Given a real segmentation and a
+    # pop drawn over it, the closure has to hand back the right columnar shape per t: coordinates
+    # in the drawn frame, the pop's colour, and t-bucketed so a per-frame render sees only that
+    # frame's cells. Bug this catches: the primitives look right on the frame_overlays testset
+    # (synthetic data) while the resolver silently drops every cell (wrong column names, wrong
+    # 0/1-based indexing, wrong µm/pixel mix).
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            # Create a wide-open pop that catches every cell, so the closure has to hand back
+            # non-empty data on frame 0. Read the fixture's actual channel columns rather than
+            # hard-coding `c1`/`c2` — the gating suite tolerates a warning when those are absent,
+            # but this suite asserts that the pop resolves to a non-empty label set.
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "all", "colour" => "#00ff00", "gate" => gate)))))
+
+            # Native-frame transform: use the label store's own extent (its coordinates are the
+            # image the segmentation was run against — reading it back from the zarr would be a
+            # second derivation of the same numbers).
+            lp = label_props(img; value_name = "B")
+            view_centroid_cols(lp; order = [:x, :y])
+            select_cols(lp, ["centroid_t"])
+            df = as_df(lp)
+            H = ceil(Int, maximum(Float64.(df.centroid_y))) + 8
+            W = ceil(Int, maximum(Float64.(df.centroid_x))) + 8
+            tf = pixel_transform(H, W)
+
+            overlays_for = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                              transform = tf)
+
+            # Frame 0: every cell whose `centroid_t == 0` shows up, in `#00ff00`, at its own
+            # drawn pixel. A wrong µm/pixel mix would put them all off-frame, and a wrong t
+            # filter would either return nothing (drops all) or the full table (never filters).
+            pts0, segs0 = overlays_for(0)
+            @test pts0 !== nothing
+            n0 = length(pts0.x)
+            @test n0 > 0
+            @test length(pts0.y) == n0 && length(pts0.colour) == n0
+            @test all(p -> p == RGB{N0f8}(0, 1, 0), pts0.colour)
+            @test all(x -> 1 <= x <= tf.dW, pts0.x)
+            @test all(y -> 1 <= y <= tf.dH, pts0.y)
+
+            # And it matches the raw table on the same t. `centroid_t == 0` in the store means
+            # the same cells the closure hands to draw.
+            want0 = count(t -> t isa Real && Int(round(Float64(t))) == 0, df.centroid_t)
+            @test n0 == want0
+
+            # A frame in the middle differs from frame 0 — otherwise the t bucketing did nothing.
+            # Pick the median t in the store to be robust to whatever the fixture contains.
+            ts_in_store = sort!(unique(Int[Int(round(Float64(t))) for t in df.centroid_t
+                                            if t isa Real && isfinite(Float64(t))]))
+            if length(ts_in_store) >= 2
+                mid = ts_in_store[max(2, length(ts_in_store) ÷ 2)]
+                ptsm, _ = overlays_for(mid)
+                # A frame either has cells or doesn't. Both cases are fine — what matters is that
+                # the count MATCHES the store, not that it is nonzero.
+                nm = ptsm === nothing ? 0 : length(ptsm.x)
+                wantm = count(t -> t isa Real && Int(round(Float64(t))) == mid, df.centroid_t)
+                @test nm == wantm
+            end
+
+            # Segments: the fixture is tracked (see the /tracking/paths suite above), so a
+            # track-flavoured resolver ought to build a growing tail. Emit tracks by creating a
+            # `track` pop over the whole set — the flow pop is not a track pop by itself.
+            btrack = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                      "valueName" => "B", "popType" => "flow")
+            # The already-added "all" pop returns is_track = false. Instead, use the deriving
+            # `_tracked` on the `live` popType — that pop_type reserves an underscore-prefixed
+            # leaf for the tracked-cells derived pop and returns `is_track = true`.
+            _, segs_late = build_overlays_for(img; value_name = "B", pop_type = "live",
+                                               transform = tf)(last(ts_in_store))
+            # Every segment endpoint lands inside the drawn frame (the author drops off-frame
+            # cells rather than clamping — coordinates outside the drawn frame are what a wrong
+            # transform would produce).
+            if segs_late !== nothing
+                @test all(x -> 1 <= x <= tf.dW, segs_late.x0)
+                @test all(x -> 1 <= x <= tf.dW, segs_late.x1)
+                @test all(y -> 1 <= y <= tf.dH, segs_late.y0)
+                @test all(y -> 1 <= y <= tf.dH, segs_late.y1)
+                # `include_tracks = false` disables segment generation for a movie that wants
+                # points only. Bug this catches: the flag ignored, tracks drawn regardless.
+                _, no_segs = build_overlays_for(img; value_name = "B", pop_type = "live",
+                                                 transform = tf,
+                                                 include_tracks = false)(last(ts_in_store))
+                @test no_segs === nothing
+            end
+
+            # `pops_filter` restricts to specific paths. A filter that matches nothing returns an
+            # empty point set — the closure paints nothing, not "everything since no filter matched".
+            empty_for = build_overlays_for(img; value_name = "B", pop_type = "flow",
+                                            transform = tf, pops_filter = String["/no-such"])
+            e0, _ = empty_for(0)
+            @test e0 === nothing || isempty(e0.x)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: render_view_frame — points and segments overlays" begin
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)
