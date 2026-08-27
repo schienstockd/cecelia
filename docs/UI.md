@@ -445,6 +445,38 @@ Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 u
   `pi-spin pi-spinner`**, which frees `pi-cog` to mean only settings/options. `pi-spin` is a *modifier*,
   not a glyph. "Edit" was split between `pi-pencil` and `pi-file-edit`; it is `pi-pencil`.
 
+## Colours — one meaning per token, and the glossary is the reference
+
+Sibling to the icon glossary. `frontend/src/lib/colorLegend.ts` is THE list of what every colour this
+app assigns a meaning to — the severity trio, the accent family, surfaces + ink, the qualitative
+palettes and the heat ramp — grouped by family. **Consult it before hard-coding a new hex or picking
+a palette**: find the meaning you need and use its token, or — if the meaning is genuinely new — add
+an entry saying what it means. Users read the same list from the **palette** in the header
+(`pi-palette`, beside the icon key, rendered by `ColorLegendDialog.vue`).
+
+It cannot rot, because `colorLegend.test.ts` scans two sources:
+- every colour `--cc-*` token declared on `:root` in `style.css` must be listed (and every listed
+  `--cc-*` token must still be declared);
+- every palette, the heat ramp, and every entry in `trackColorModes` in `palettes.json` must be
+  listed (and every listed one must exist in the JSON).
+
+Two rules, mirroring the icon rules:
+
+- **One meaning per token.** `--cc-warn` (legacy) and `--cc-sev-warn` (canonical severity) look
+  similar and cover overlapping ground, but each has its own line and its own use site.
+- **One token per meaning.** If a new surface wants "the app talking to you", it uses `--cc-guide`
+  and does not introduce a second whitish variable. Same rule that got applied to `pi-palette` for
+  icons — one glyph, one thing.
+
+**Severity is the special case.** Colour is never the sole cue on QC state: the severity trio pairs
+with the icon-glossary shapes (`pi-check-circle` / `pi-exclamation-triangle` / `pi-times-circle`)
+routed through `lib/severity.ts`. See *Severity (QC / traffic-light)* above.
+
+**Palette + track modes are the shared spec.** `palettes.json` is read by both the browser look and
+the Julia offline movie renderer (`api/src/overlay_author.jl`), pinned by a parity test on each
+side. Editing the JSON is the edit — a colour changes in a browser look AND in a rendered movie
+without touching `.ts` or `.jl`. See `docs/todo/VIEWER_PARITY_PLAN.md`.
+
 ## Modals & dialogs — always use `BaseModal`
 
 **Every centred modal/dialog is built on `frontend/src/components/BaseModal.vue`. Never hand-roll an

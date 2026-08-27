@@ -13,6 +13,7 @@
 
 import type { ViewerMeta } from './volumeViewer'
 import { BLUE_HEAT_RGB } from '../plots/flowColors'
+import palettesJson from '../plots/palettes.json'
 
 /** One population as the gating engine resolved it — the same shape napari's points layers get. */
 export interface OverlayPop {
@@ -336,8 +337,15 @@ export function buildTrackBuffer(
   return { data, firstAt, endAt, count: segs.length }
 }
 
-/** How track ribbons are coloured. Set per set in the viewer (settings.getTrackColorMode). */
+/** How track ribbons are coloured. Set per set in the viewer (settings.getTrackColorMode). The
+ *  three names live in `palettes.json` — same file the Julia offline renderer reads, so a mode
+ *  the browser knows is a mode the movie renderer accepts. The union type is authored explicitly
+ *  because a JSON import comes in as `string[]`; the parity test in `palettes.test.ts` asserts the
+ *  array matches the union so a JSON edit that adds/removes/renames a mode still fails a test
+ *  rather than silently mismatching the type. */
 export type TrackColorMode = 'track' | 'speed' | 'solid'
+export const TRACK_COLOR_MODES: readonly TrackColorMode[] =
+  palettesJson.trackColorModes as readonly TrackColorMode[]
 
 /** What the viewer needs to draw ribbons AND label the legend. `sources` mirrors the ticked track
  *  eyes (one entry per input payload that actually contributed segments), so the panel can print a

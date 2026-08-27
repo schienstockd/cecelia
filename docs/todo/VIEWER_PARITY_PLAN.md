@@ -1,6 +1,6 @@
 # Viewer parity — one decision, two renderers
 
-**Status:** planning (2026-08-27) — no branch yet
+**Status:** Phases 1 + 2 BUILT on `feat/viewer-parity-palette-json` (2026-08-27); Phases 3–5 next
 
 ## Goal
 
@@ -70,7 +70,7 @@ Julia is for the batch case where "no browser open" is the point.
 
 ## Phases
 
-### Phase 1 — palette to shared JSON
+### Phase 1 — palette to shared JSON — BUILT (feat/viewer-parity-palette-json)
 
 - New file: `frontend/src/plots/palettes.json` (or a `.ts` re-export around a shared JSON). Every
   entry keyed by palette name; `cecelia` is the first key, the twelve current colours.
@@ -83,7 +83,7 @@ Julia is for the batch case where "no browser open" is the point.
 **Ship gate:** a colour edit in the JSON changes a browser look AND a Julia movie without either
 `.ts` or `.jl` being touched.
 
-### Phase 2 — track colour modes + heat ramp to shared spec
+### Phase 2 — track colour modes + heat ramp to shared spec — BUILT (feat/viewer-parity-palette-json)
 
 - Extend the same JSON asset with a `trackColorModes` block: the three names, the heat-ramp stop
   list (five RGB triples).
