@@ -1474,7 +1474,11 @@ def read_timepoint(level, dim_utils, t, drop_time=True, ignore_channel=False):
     caller slicing labels must set it: with a C-before-T layout the default would otherwise pick the
     wrong axis, silently reading one channel's worth of Z instead of a timepoint. (It happens to be
     harmless for the T-first layouts cecelia imports today, which is exactly why it needs saying.)"""
-    if dim_utils is None or not dim_utils.is_timeseries():
+    # `is_timeseries(ignore_one=True)` is False for T=1 stacks, but the T axis is still THERE — the
+    # caller asked for `drop_time`, and the tile/slice code downstream indexes axes as if T were
+    # gone. Route by "does the array have a T axis at all", not by "is there more than one frame".
+    has_t = dim_utils is not None and 'T' in dim_utils.im_dim_order
+    if not has_t:
         return fortify(level)
     t_idx = dim_utils.dim_idx('T', ignore_channel=ignore_channel)
     sl = [slice(None)] * len(level.shape)
