@@ -109,6 +109,11 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ### Fixed
 
+- **The viewer's z-plane slider only updated the image when you let go of it.** It now follows the
+  drag, through the same 120 ms scheduler that shift+wheel already used, so the planes go past while
+  you look for one. A drag still costs a single refetch — the scheduler collapses a burst to the
+  position the pointer stopped at.
+
 - **Coastal segmentation's `Match durations (seconds)` fed the model its motion channels in the wrong
   order.** Any result produced with it should be re-run. Coastal names each per-scale flow plane after
   the frame lag it was measured at (`mag_4`) and stacks them by a *string* sort of those names, at

@@ -1742,12 +1742,24 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  * the depth RANGE is a two-ended thing a single wheel cannot express.
  *
  * The plane change is scheduled, not applied per notch. Changing z drops every cached texture and
- * refetches — the same reason the z slider commits on `@change` rather than per pointer move — and a
- * wheel has no release to commit on. So the number moves immediately (the readout must track the
- * pointer) and the refetch collapses to the last position through `debouncedLatest`, the canonical
- * scheduler for exactly this.
+ * refetches, so firing per notch would queue a fetch the user has already scrolled past. The number
+ * moves immediately (the readout must track the pointer) and the refetch collapses to the last
+ * position through `debouncedLatest`, the canonical scheduler for exactly this.
+ *
+ * The z SLIDER shares this pump, on `@input`. It used to commit on `@change` — one refetch, on
+ * release — which is not how a z slider reads: you drag it to find a plane, so the planes have to go
+ * past. The wait that makes stepping a wheel feel live is the same wait that makes dragging feel
+ * live, and the scheduler already guarantees the run that lands is the position the pointer stopped
+ * at, so a drag costs one refetch too. The time slider is deliberately NOT on this path: `gotoT`
+ * paints from a cache and is cheap enough to run per pointer move.
  */
 const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
+/** Move to a plane: the readout follows the pointer, the refetch follows the pump. */
+function stepZ(next: number) {
+  if (next === zPlane.value) return
+  zPlane.value = next
+  zPump.schedule(next)
+}
 /**
  * 2D pyramid LOD swap on zoom. A wheel gesture crossing a `floor(log2(zoom))` threshold changes the
  * `slabLevel` computed, and the watch pumps a reallocate at that new level. Debounced (150 ms) because
@@ -1768,10 +1780,7 @@ function onWheel(e: WheelEvent) {
   const m = meta.value
   if (e.shiftKey && mode.value === 'plane' && m && m.nZ > 1) {
     const step = e.deltaY > 0 ? 1 : -1
-    const next = Math.max(0, Math.min(m.nZ - 1, zPlane.value + step))
-    if (next === zPlane.value) return
-    zPlane.value = next
-    zPump.schedule(next)
+    stepZ(Math.max(0, Math.min(m.nZ - 1, zPlane.value + step)))
     return
   }
   // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
@@ -2674,7 +2683,7 @@ onUnmounted(() => {
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
           <input
             type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
-            v-model.number="zPlane" @change="reallocate()"
+            :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
             v-tooltip.bottom="'Which z plane to show — changing it reloads the timecourse'"
           >
           <span class="cc-readout cc-fs-2xs vw-num">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
