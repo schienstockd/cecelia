@@ -59,7 +59,7 @@ const shown = computed(() => families.value.reduce((n, f) => n + f.entries.lengt
             <span class="cl-swatch">
               <span v-if="e.swatch.kind === 'var'" class="cl-chip"
                     :style="{ background: `var(${e.swatch.cssVar})` }" />
-              <span v-else-if="e.swatch.kind === 'palette'" class="cl-strip">
+              <span v-else-if="e.swatch.kind === 'palette'" class="cl-strip cc-row-tight">
                 <span v-for="(hex, i) in e.swatch.hexes" :key="i" class="cl-dot"
                       :style="{ background: hex }" />
               </span>
@@ -118,9 +118,10 @@ const shown = computed(() => families.value.reduce((n, f) => n + f.entries.lengt
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs);
 }
-/* The palette strip is a row of small dots — one per colour. Wraps to a second line at 12 colours
-   (cecelia); a 7-8 colour palette stays on one line. */
-.cl-strip  { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; max-width: 6rem; }
+/* The palette strip is a row of small dots — one per colour. Layout comes from `.cc-row-tight`
+   (composed on the element); only the wrap-width and dot chrome are our business here.
+   Wraps to a second line at 12 colours (cecelia); a 7-8 colour palette stays on one line. */
+.cl-strip  { max-width: 6rem; }
 .cl-dot    { width: 0.55rem; height: 0.55rem; border-radius: var(--cc-radius-pill); border: 1px solid var(--cc-border); }
 /* Empty chip for a behavioural token (track-mode:solid — the colour is per-source, not a hex). */
 .cl-none   { background: repeating-linear-gradient(45deg, var(--cc-surface-2), var(--cc-surface-2) 4px, var(--cc-surface-1) 4px, var(--cc-surface-1) 8px); }
