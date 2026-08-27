@@ -21,8 +21,17 @@
 
 using ColorTypes: RGB
 using FixedPointNumbers: N0f8
+using JSON3
 
 const _HEX_RE = r"^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$"
+
+# Shared source of truth for the house track palette, the three track-colour-mode names, and the
+# five-stop heat ramp — same JSON the browser reads in `frontend/src/plots/palettes.json`. Kept as
+# ONE file so a colour edit lands in the movie renderer AND the browser look without a
+# code change, and a mode the browser knows is a mode this author accepts by construction.
+# Path is resolved once at include: api/src/overlay_author.jl → ../../frontend/src/plots/palettes.json.
+const _PALETTES_JSON_PATH = normpath(joinpath(@__DIR__, "..", "..", "frontend", "src", "plots",
+                                              "palettes.json"))
 
 """
     hex_to_rgb(hex) -> RGB{N0f8}
@@ -111,11 +120,10 @@ end
 const _EMPTY_POINTS = (; x = Int[], y = Int[], colour = RGB{N0f8}[])
 const _EMPTY_SEGS   = (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
 
-# The house 12-colour palette from `frontend/src/plots/plot.ts` (`PALETTES.cecelia`). Same list, so
-# a movie's tracks share colours with a look's tracks — the two views of the same experiment stay
-# recognisable. When the palette moves there, this list is the second answer; a shared source of
-# truth would need a build-time codegen step, which is more machinery than a 12-line list justifies.
-const CECELIA_TRACK_PALETTE = [
+# Fallback used ONLY when `palettes.json` is missing (a broken checkout — not a normal state), so
+# the movie renderer still draws SOMETHING instead of throwing at `include` time. The parity test in
+# `api/test/runtests.jl` asserts these numbers match the JSON, so drift is caught immediately.
+const _CECELIA_TRACK_PALETTE_FALLBACK = [
     RGB{N0f8}(0xEB / 255, 0xD4 / 255, 0x41 / 255),
     RGB{N0f8}(0x46 / 255, 0x82 / 255, 0xB4 / 255),
     RGB{N0f8}(0xAA / 255, 0x1F / 255, 0x5E / 255),
@@ -130,14 +138,59 @@ const CECELIA_TRACK_PALETTE = [
     RGB{N0f8}(0xC1 / 255, 0x55 / 255, 0x3E / 255),
 ]
 
-# Heat ramp (cool → hot), used by track_color_mode = "speed". Approximates the browser's
-# `heatUnit` — a five-stop viridis-ish gradient. Kept short: exact colours don't matter as much as
-# the ORDER (dark blue → cyan → yellow → red).
-_heat_stops() = (RGB{N0f8}(0.267, 0.005, 0.329),
-                 RGB{N0f8}(0.229, 0.322, 0.545),
-                 RGB{N0f8}(0.128, 0.567, 0.551),
-                 RGB{N0f8}(0.369, 0.788, 0.383),
-                 RGB{N0f8}(0.993, 0.906, 0.144))
+# Same five browser heat-ramp anchors (`BLUE_HEAT_ANCHORS` in `frontend/src/plots/flowColors.ts`),
+# used as the fallback when the JSON is missing. Cool → hot: dark blue → cyan → green → orange → red.
+const _HEAT_STOPS_FALLBACK = (RGB{N0f8}(0x0B / 255, 0x1A / 255, 0x4D / 255),
+                              RGB{N0f8}(0x17 / 255, 0x93 / 255, 0xFF / 255),
+                              RGB{N0f8}(0x04 / 255, 0xFA / 255, 0x00 / 255),
+                              RGB{N0f8}(0xFF / 255, 0xA8 / 255, 0x05 / 255),
+                              RGB{N0f8}(0xFF / 255, 0x38 / 255, 0x56 / 255))
+
+# Parse a single hex string in the JSON to `RGB{N0f8}`. Strict — an unparseable colour is a JSON
+# authoring error and should fail load, not fall back to white.
+function _hex_to_rgb_strict(hex::AbstractString)::RGB{N0f8}
+    m = match(_HEX_RE, strip(String(hex)))
+    m === nothing && error("palettes.json: unparseable hex colour '$hex'")
+    h = m.captures[1]
+    length(h) == 3 && (h = string(h[1], h[1], h[2], h[2], h[3], h[3]))
+    r = parse(Int, h[1:2]; base = 16) / 255
+    g = parse(Int, h[3:4]; base = 16) / 255
+    b = parse(Int, h[5:6]; base = 16) / 255
+    RGB{N0f8}(r, g, b)
+end
+
+# Load palettes.json ONCE at include time. Missing file → warn and fall back to the frozen literals
+# above (broken checkout). Malformed content → let the error propagate; JSON drift is a bug, not a
+# recovery path.
+function _load_palettes()
+    if !isfile(_PALETTES_JSON_PATH)
+        @warn "palettes.json missing — falling back to frozen literals. Restore \
+               frontend/src/plots/palettes.json to keep browser + Julia in sync." path = _PALETTES_JSON_PATH
+        return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
+                modes    = ["track", "speed", "solid"],
+                heat     = collect(_HEAT_STOPS_FALLBACK))
+    end
+    doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
+    pal = [_hex_to_rgb_strict(String(h)) for h in doc.palettes.cecelia]
+    modes = [String(m) for m in doc.trackColorModes]
+    heat  = [_hex_to_rgb_strict(String(h)) for h in doc.heatRamp]
+    (palette = pal, modes = modes, heat = heat)
+end
+
+const _PALETTES_DATA = _load_palettes()
+
+# The house 12-colour palette from `PALETTES.cecelia` in the shared JSON. Same list as the browser
+# look, so a movie's tracks share colours with a look's tracks by construction.
+const CECELIA_TRACK_PALETTE = _PALETTES_DATA.palette
+
+# The three track-colour-mode names accepted by `build_overlays_for(track_color_mode = ...)`. Read
+# from the JSON so a mode the browser knows is a mode this author accepts — no silent fallback to
+# `"track"` on a new mode name.
+const TRACK_COLOR_MODES = _PALETTES_DATA.modes
+
+# Heat ramp (cool → hot), used by `track_color_mode = "speed"`. Same anchors as the browser's
+# `BLUE_HEAT_ANCHORS`; interpolation is done at draw time in `_heat_ramp` below.
+_heat_stops() = _PALETTES_DATA.heat
 function _heat_ramp(u::Real)::RGB{N0f8}
     stops = _heat_stops()
     n = length(stops)
@@ -377,7 +430,7 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                                       colour = RGB{N0f8}[]))}()
     tracks_active = include_tracks && hasT && tail_length > 0
     tcm = String(track_color_mode)
-    tcm in ("track", "speed", "solid") ||
+    tcm in TRACK_COLOR_MODES ||
         (@warn "build_overlays_for: unknown track_color_mode, falling back to \"track\"" mode = tcm;
          tcm = "track")
 

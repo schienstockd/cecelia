@@ -126,7 +126,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-database', means: 'Load slices on demand' },
       { icon: 'pi-search-plus', means: 'Zoom' },
       { icon: 'pi-tag', means: 'Labels — channel names, or labels drawn on a plot' },
-      { icon: 'pi-palette', means: 'Cell clusters' },
+      { icon: 'pi-palette', means: 'Colour — palettes, colour-by options, cluster hues' },
       { icon: 'pi-globe', means: 'Applies to every plot' },
       { icon: 'pi-map-marker', means: 'Just this one — the active plot, or a napari selection' },
     ],

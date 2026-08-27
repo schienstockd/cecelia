@@ -1,0 +1,12 @@
+{
+  "palettes": {
+    "cecelia": ["#EBD441", "#4682B4", "#AA1F5E", "#B3BCC2", "#2F4F4F", "#5FB0B7",
+                "#C77DA6", "#D98E32", "#3E6D8E", "#8E4585", "#7A8B99", "#C1553E"],
+    "okabe-ito": ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#000000"],
+    "tol-bright": ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB"],
+    "tol-muted": ["#88CCEE", "#44AA99", "#117733", "#332288", "#DDCC77", "#999933", "#CC6677", "#882255", "#AA4499"],
+    "tol-light": ["#77AADD", "#EE8866", "#EEDD88", "#FFAABB", "#99DDFF", "#44BB99", "#BBCC33", "#AAAA00"]
+  },
+  "trackColorModes": ["track", "speed", "solid"],
+  "heatRamp": ["#0B1A4D", "#1793FF", "#04FA00", "#FFA805", "#FF3856"]
+}

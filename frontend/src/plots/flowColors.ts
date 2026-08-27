@@ -1,12 +1,17 @@
 // FlowJo-style "pseudocolour" blue-heat ramp for the 2D density renderer (plots/density.ts →
 // PlotLayers). Low end lifted off pure black so sparse density stays visible.
 // (R: .flowColorRampBlueHeat, flowHelpers.R:775.)
+//
+// The five anchors live in `palettes.json` under `heatRamp` — same file the Julia offline renderer
+// reads to interpolate the track "speed" ramp. One list, two callers, so a dot on a plot and a
+// track segment in a movie cannot disagree.
+import palettesJson from './palettes.json'
 
 export function hexRgb(h: string): [number, number, number] {
   return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
 }
 
-export const BLUE_HEAT_ANCHORS = ['#0b1a4d', '#1793ff', '#04fa00', '#ffa805', '#ff3856']
+export const BLUE_HEAT_ANCHORS: readonly string[] = palettesJson.heatRamp
 
 // packed RGB lookup (256×3): index a 0..255 density bucket → [r,g,b]
 export const BLUE_HEAT_RGB: Uint8ClampedArray = (() => {
