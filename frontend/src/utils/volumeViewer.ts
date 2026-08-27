@@ -133,6 +133,13 @@ export interface SlabQuery {
    */
   preview?: boolean
   /**
+   * Cache-buster for the preview slab (P7). Two runs on the same (vn, t, z, preview=1) produce a
+   * byte-identical URL, so the browser's HTTP cache would serve the previous run's bytes even
+   * though the scratch store on disk has been rewritten. Set to the current `previewLabels.updateId`
+   * — a monotonic per-run counter — so every re-run misses cache. No-op without `preview`.
+   */
+  previewId?: number
+  /**
    * XY tile bounds, 0-based inclusive `[lo, hi]` in the LEVEL's coordinate space (a level=1 tile at
    * x=100..199 is a different region on disk from level=0 at the same numbers). Absent means the whole
    * axis — same shape as `z`. Together with `level` this is the pan/zoom viewer's access pattern.
@@ -156,6 +163,9 @@ export function slabUrl(q: SlabQuery): string {
   if (q.valueName) p.set('valueName', q.valueName)
   if (q.labels) p.set('labels', q.labels)
   if (q.labels && q.preview) p.set('preview', '1')
+  // Cache-bust identical preview URLs across re-runs. Server-side is harmless (unknown query params
+  // are ignored by `try_serve_slab`), so this stays a pure client-side concern.
+  if (q.labels && q.preview && q.previewId !== undefined) p.set('_pv', String(q.previewId))
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the

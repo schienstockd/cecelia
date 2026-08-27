@@ -461,13 +461,17 @@ const labelName = computed(() => {
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
-// param edit / toggle-on) replaces the object on the viewer store even when the vn/imageUid stay
-// the same, and reference change is what wakes this watcher up. A boolean-only watch stays true
-// across re-runs and misses every mask update after the first. `n` fires on a new/refreshed
-// preview; `o` catches the toggle-off case (previewLabels goes null while it was ours).
-watch(() => viewerStore.previewLabels, (n, o) => {
-  if (n?.imageUid === imageUid || o?.imageUid === imageUid) reallocate()
+// param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
+//   * `updateId` (>0) when the current preview matches this image
+//   * `0`                otherwise
+// A primitive watch is bulletproof against the object-identity subtleties of accessing a Pinia
+// ref through the store proxy — earlier attempts (boolean, object reference) missed re-runs on
+// the same image, so the mask on screen stayed pinned to the first run's plane.
+const previewLabelsKey = computed(() => {
+  const p = viewerStore.previewLabels
+  return p && p.imageUid === imageUid ? p.updateId : 0
 })
+watch(previewLabelsKey, () => reallocate())
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -1047,6 +1051,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
           preview: usePreview,
+          // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
+          // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
+          previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
