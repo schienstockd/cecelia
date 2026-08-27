@@ -87,6 +87,7 @@ disagree, the plan's header wins — and fix the row.
 | [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) | planned (2026-07-22) | In-app 3D crop UI; supersedes the napari-driven crop, which has a low ceiling |
 | [`STATS_ANNOTATIONS_PLAN.md`](STATS_ANNOTATIONS_PLAN.md) | planning · no branch | Server-side hypothesis tests rendered as marks inside existing Observable Plot charts; no new route |
 | [`WHATS_NEW_PLAN.md`](WHATS_NEW_PLAN.md) | planning · no branch | In-app What's New modal reusing the `/api/update/check` plumbing |
+| [`REMOTE_ACCESS_PLAN.md`](REMOTE_ACCESS_PLAN.md) | planning (2026-08-27) · no branch | Direct-browser access to a Cecelia VM without an SSH tunnel or a third-party service. Jupyter-style `?t=<token>` first visit, cookie-swap, one guard at the `handle_stream` chokepoint, loopback bypass keeps dev unchanged. HTTPS is explicitly out of scope (subscription cost + image-viewer overhead). Replaces the tunnel workaround in `docs/INSTALL.md` (PR #677) once shipped |
 | [`OBSERVER_DATA_ACCESS_PLAN.md`](OBSERVER_DATA_ACCESS_PLAN.md) | parked (scoped, not started) | Let the observer read actual cell data, not just QC/logs/meta |
 | [`QC_OBSERVER_PLAN.md`](QC_OBSERVER_PLAN.md) | parked | Observer-side QC surface; supersedes three exploratory prompts in `docs/ai-assist/` |
 
