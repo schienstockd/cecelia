@@ -39,6 +39,11 @@ frame. Return `(nothing, nothing)` for a frame with no overlays. `points`/`segme
 `frame_overlays.jl` column NamedTuples, with pixel coordinates the caller has already resolved
 against the frame's grid (post-crop / post-stride). `point_size_px` and `segment_width_px` mirror
 `render_view_frame`'s.
+
+`mask_for(t::Int) -> (mask, id_colours)` is called per frame for P4 outlines. `mask` is a 2D
+`AbstractMatrix{<:Integer}` at the frame's shape (the caller reads and projects the label store as
+they see fit); `id_colours` maps label id → outline colour. `(nothing, nothing)` = no mask for this
+frame. `mask_contour_px` sets the outline width.
 """
 function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,
@@ -46,8 +51,9 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            z = nothing, channels = nothing, specs = nothing,
                            crop = nothing, max_px::Int = 0,
                            title_card = nothing,
-                           overlays_for = nothing,
+                           overlays_for = nothing, mask_for = nothing,
                            point_size_px::Int = 6, segment_width_px::Int = 2,
+                           mask_contour_px::Int = 1,
                            task_dir::AbstractString = mktempdir(),
                            on_log::Function = println,
                            on_progress::Function = (n, t) -> nothing,
@@ -70,8 +76,9 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
         open(raw, "w") do io
             W, H, written, stopped = write_raw_frames(io, arr, caxes, frames; z = z,
                 channels = channels, specs = specs, crop = crop, max_px = max_px,
-                overlays_for = overlays_for,
+                overlays_for = overlays_for, mask_for = mask_for,
                 point_size_px = point_size_px, segment_width_px = segment_width_px,
+                mask_contour_px = mask_contour_px,
                 on_progress = on_progress, cancelled = cancelled)
         end
         stopped && return (; path = out_path, frames = 0, width = W, height = H, cancelled = true)
@@ -104,8 +111,9 @@ test asserts these bytes against `render_view_frame`'s own output rather than ag
 function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
                           z = nothing, channels = nothing, specs = nothing,
                           crop = nothing, max_px::Int = 0,
-                          overlays_for = nothing,
+                          overlays_for = nothing, mask_for = nothing,
                           point_size_px::Int = 6, segment_width_px::Int = 2,
+                          mask_contour_px::Int = 1,
                           on_progress::Function = (n, t) -> nothing,
                           cancelled::Function = () -> false)
     W = H = 0
@@ -117,10 +125,16 @@ function write_raw_frames(io::IO, arr, caxes, ts::AbstractVector{<:Integer};
         # by t sorted, so it can slice in O(1) — pre-materialising per-t rows here would allocate
         # every frame and defeat the browser's own contiguous-range trick.
         pts, segs = overlays_for === nothing ? (nothing, nothing) : overlays_for(Int(t))
+        # `mask_for(t)` is `(mask, id_colours)`. Separate from `overlays_for` because a mask is a 2D
+        # array the caller reads/projects per-t (via `read_slab` on a labels store), and giving it its
+        # own callback keeps the projection choice with whoever owns the store.
+        mask, mask_cols = mask_for === nothing ? (nothing, nothing) : mask_for(Int(t))
         img = render_view_frame(arr, caxes, Int(t); z = z, channels = channels,
                                 specs = specs, crop = crop, max_px = max_px,
                                 points = pts, point_size_px = point_size_px,
-                                segments = segs, segment_width_px = segment_width_px)
+                                segments = segs, segment_width_px = segment_width_px,
+                                mask = mask, mask_colours = mask_cols,
+                                mask_contour_px = mask_contour_px)
         # h264/yuv420p needs even dimensions, and nothing downstream will fix an odd frame —
         # `movie_io` says so explicitly. Cropped here rather than there so the size the encoder is
         # told is the size that was actually written.

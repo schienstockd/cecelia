@@ -4909,6 +4909,87 @@ end
     zero_px = copy(black)
     draw_points!(zero_px, (; x = [10], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 0)
     @test zero_px == black
+
+    # ── mask outlines ────────────────────────────────────────────────────────────
+    # A 2x2 block of id=1 in the middle of an otherwise empty frame. Its outline is the whole 2x2
+    # block: every pixel of the block has at least one background neighbour, so the outline IS the
+    # block. Cells one pixel across always end up fully painted; that is what napari's `contour = 1`
+    # produces too, and is not a bug.
+    mask = zeros(Int, 20, 20)
+    mask[10:11, 10:11] .= 1
+    id_col = Dict{Int,RGB{N0f8}}(1 => RGB{N0f8}(1, 0, 0))
+    mfr = copy(black)
+    draw_mask_outline!(mfr, mask, id_col; contour_px = 1)
+    @test mfr[10, 10] == RGB{N0f8}(1, 0, 0)
+    @test mfr[11, 11] == RGB{N0f8}(1, 0, 0)
+    @test mfr[10, 9]  == RGB{N0f8}(0, 0, 0)                    # background stays untouched
+    @test mfr[12, 12] == RGB{N0f8}(0, 0, 0)
+
+    # A larger cell: the INTERIOR (a pixel whose four neighbours are all the same id) is NOT painted —
+    # the outline is a rim, not a fill. Bug this catches: neighbour-testing the just-painted array
+    # would propagate the outline colour sideways across the cell as a filled band.
+    big = zeros(Int, 20, 20)
+    big[5:14, 5:14] .= 2
+    id_big = Dict{Int,RGB{N0f8}}(2 => RGB{N0f8}(0, 1, 0))
+    bfr = copy(black)
+    draw_mask_outline!(bfr, big, id_big; contour_px = 1)
+    @test bfr[5, 5]   == RGB{N0f8}(0, 1, 0)                    # corner: on the rim
+    @test bfr[5, 10]  == RGB{N0f8}(0, 1, 0)                    # top edge
+    @test bfr[9, 9]   == RGB{N0f8}(0, 0, 0)                    # interior: unpainted
+    @test bfr[10, 10] == RGB{N0f8}(0, 0, 0)
+
+    # contour_px thickens perpendicularly — a width-3 outline paints the two 1-pixel bands either
+    # side of the rim as well as the rim itself.
+    fat = copy(black)
+    draw_mask_outline!(fat, big, id_big; contour_px = 3)
+    @test fat[5, 5]   == RGB{N0f8}(0, 1, 0)                    # rim
+    @test fat[4, 5]   == RGB{N0f8}(0, 1, 0)                    # one out
+    @test fat[6, 6]   == RGB{N0f8}(0, 1, 0)                    # one in — thickens BOTH sides
+    @test fat[3, 5]   == RGB{N0f8}(0, 0, 0)                    # two out: outside a width-3 outline
+
+    # Ids absent from the map are skipped — a hidden pop leaves its labels untouched rather than
+    # needing the caller to rewrite the mask.
+    both = zeros(Int, 20, 20)
+    both[5:8, 5:8] .= 3
+    both[12:15, 12:15] .= 4
+    only3 = Dict{Int,RGB{N0f8}}(3 => RGB{N0f8}(0, 0, 1))       # 4 absent
+    ofr = copy(black)
+    draw_mask_outline!(ofr, both, only3; contour_px = 1)
+    @test ofr[5, 5]   == RGB{N0f8}(0, 0, 1)                    # id 3 painted
+    @test ofr[12, 12] == RGB{N0f8}(0, 0, 0)                    # id 4 skipped
+
+    # A cell touching the frame edge reads as CLOSED — the edge is treated as "different", so the
+    # outline runs along the edge as well as the cell's interior boundary. Otherwise the outline
+    # would open at the frame boundary and read like a track that walked off-screen.
+    edge = zeros(Int, 20, 20)
+    edge[1:3, 1:3] .= 5
+    efr = copy(black)
+    draw_mask_outline!(efr, edge, Dict{Int,RGB{N0f8}}(5 => RGB{N0f8}(1, 1, 0)); contour_px = 1)
+    @test efr[1, 1] == RGB{N0f8}(1, 1, 0)
+    @test efr[1, 3] == RGB{N0f8}(1, 1, 0)
+    @test efr[3, 1] == RGB{N0f8}(1, 1, 0)
+
+    # Two adjacent cells with different ids — the shared border is painted in BOTH colours, but only
+    # each cell's OWN colour touches its own interior side. Bug this catches: writing across the
+    # border would leak one cell's colour into the neighbour.
+    adj = zeros(Int, 20, 20)
+    adj[5:10, 5:9]  .= 6
+    adj[5:10, 10:14] .= 7
+    dfr = copy(black)
+    draw_mask_outline!(dfr, adj,
+        Dict{Int,RGB{N0f8}}(6 => RGB{N0f8}(1, 0, 0), 7 => RGB{N0f8}(0, 0, 1)); contour_px = 1)
+    @test dfr[7, 9]  == RGB{N0f8}(1, 0, 0)                     # id 6's border pixel — red
+    @test dfr[7, 10] == RGB{N0f8}(0, 0, 1)                     # id 7's border pixel — blue
+
+    # Shape guard: mask and frame must agree.
+    @test_throws ArgumentError draw_mask_outline!(black, zeros(Int, 10, 10),
+        Dict{Int,RGB{N0f8}}(); contour_px = 1)
+
+    # contour_px <= 0 draws nothing rather than throwing — same policy as size_px / width_px on the
+    # other primitives.
+    ncr = copy(black)
+    draw_mask_outline!(ncr, big, id_big; contour_px = 0)
+    @test ncr == black
 end
 
 @testset "API: render_view_frame — points and segments overlays" begin
@@ -4948,6 +5029,29 @@ end
                                  point_size_px = 3, segment_width_px = 1)
         @test both[20, 20] == RGB{N0f8}(1, 0, 0)              # point wins at the shared pixel
         @test both[20, 30] == RGB{N0f8}(0, 1, 0)              # the tail's other end is untouched
+
+        # A mask outline paints the outline colour on the rim of the labelled region — asserted on a
+        # cell shape big enough to have an interior, so the "outline is a rim, not a fill" property
+        # from the primitive testset carries through.
+        mask = zeros(Int, H, W)
+        mask[30:40, 30:40] .= 1
+        with_mask = render_view_frame(v2, 1; channels = 0:1, specs = specs,
+                                      mask = mask,
+                                      mask_colours = Dict{Int,RGB{N0f8}}(1 => RGB{N0f8}(1, 0, 1)),
+                                      mask_contour_px = 1)
+        @test size(with_mask) == (H, W)
+        @test with_mask[30, 30] == RGB{N0f8}(1, 0, 1)         # rim
+        @test with_mask[35, 35] != RGB{N0f8}(1, 0, 1)         # interior — original pixel preserved
+
+        # Layer order: mask below segments below points. A point AT a mask outline pixel still reads
+        # as the point's colour.
+        layered = render_view_frame(v2, 1; channels = 0:1, specs = specs,
+                                    mask = mask,
+                                    mask_colours = Dict{Int,RGB{N0f8}}(1 => RGB{N0f8}(1, 0, 1)),
+                                    points = (; x = [30], y = [30],
+                                              colour = [RGB{N0f8}(1, 1, 0)]),
+                                    point_size_px = 3, mask_contour_px = 1)
+        @test layered[30, 30] == RGB{N0f8}(1, 1, 0)           # point wins over the outline
     end
 end
 

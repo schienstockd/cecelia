@@ -451,16 +451,21 @@ which calls `title_card.prepend_title_to_movie` after the encode. One path for b
 card composited into the raw frames from Julia would have to duplicate `movie_io`'s even-crop rule
 and the font stack, and the helper's own suite already covers the render+prepend.
 
-**Built: CPU-side point and segment drawing.** `frame_overlays.jl` has `draw_points!` and
-`draw_segments!` — pure primitives on `RGB{N0f8}` frames, columnar `(x, y, colour)` inputs.
-`render_view_frame(...; points, segments, point_size_px, segment_width_px)` composites them onto the
-frame after the channels; `record_view_movie(...; overlays_for)` takes a per-t callback so the sweep
-loop pays no per-frame allocation for the (already sorted by t) overlay table.
+**Built: CPU-side point, segment and mask-outline drawing.** `frame_overlays.jl` has `draw_points!`,
+`draw_segments!` and `draw_mask_outline!` — pure primitives on `RGB{N0f8}` frames, columnar `(x, y,
+colour)` inputs for points/segments, a 2D `AbstractMatrix{<:Integer}` + `id → colour` dict for the
+mask. `render_view_frame(...; points, segments, mask, mask_colours, ...)` composites them onto the
+frame after the channels; `record_view_movie(...; overlays_for, mask_for)` takes per-t callbacks so
+the sweep loop pays no per-frame allocation. Layer order matches the browser: mask below segments
+below points, so a marker at a track endpoint over an outline reads as marker → segment → outline.
+
+The mask outline is TWO-PASS (detect boundary pixels, then stamp) — writing paint into the same array
+we're neighbour-testing would propagate colour into a cell's interior as a filled band.
 
 **Still to do:** wiring it to the movie rail (`handle_movie_record` / `run_single_movie` currently
 drive napari), including the caller that resolves populations / tracks / colour-by into the point +
-segment columns; and mask outlines (P4 content on the CPU frame — a label-slab read plus a contour
-draw, same shape as the browser's outline pass).
+segment columns, and the caller that reads and projects the label store per t. The overlay
+PRIMITIVES are complete; what remains is the movie-request path.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
