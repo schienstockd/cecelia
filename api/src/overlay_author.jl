@@ -443,3 +443,175 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
         (pts, segs)
     end
 end
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Mask author — the P4 outline pass, per-t.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+"""
+    build_mask_for(img; value_name, pop_type, transform,
+                   pops_filter = nothing, z = nothing,
+                   all_cells = false, all_cells_colour = "#9ca3af")
+        -> (t -> (mask, id_colours))
+
+Return a `record_view_movie(mask_for = ...)` closure that reads the segmentation's label store per
+frame, projects it to the drawn frame's grid, and hands the primitive its `(mask, id_colours)` pair.
+
+Same design as `build_overlays_for`: resolve pops → id → colour ONCE at build, then per-t just read
+the label plane and stride it. The label store's `img_labels_path` is opened ONCE (`open_level0`)
+so a sweep pays one metadata round-trip, not `nT` — same shape as `record_view_movie`'s image read.
+
+`z` mirrors `render_view_frame`'s `z` selection: `nothing` MIPs the whole stack (napari's default
+for a label layer), an `Int` picks one plane, a `UnitRange` MIPs that range. The z choice on the
+mask must match the frame's; the caller passes the same value in.
+
+`id_colours` is built from `resolve_pops` for cell pop_types (`flow`/`live`/`clust`) and from
+`pop_df(...; granularity = :cell)` for track pop_types (`track`/`trackclust`) — same branch as the
+overlay author, and for the same reason (track gates live on `track_props`, so `resolve_pops`'s
+cell fetch cannot evaluate them). Colour policy matches the browser: last pop wins for a cell in
+two pops (`draw_mask_outline!` overwrites on collision), and hidden pops (`show = false`) are
+skipped so hiding a population in the gating manager also hides its outlines.
+
+`all_cells = true` paints every cell in the segmentation in one colour, ignoring pops — the
+mask counterpart of `build_overlays_for(all_tracks = true)`. Useful for a cpSAM-style tracked
+segmentation with no gated pops, where the answer to "just show me the cells" is one colour
+per outline.
+"""
+function build_mask_for(img; value_name::AbstractString, pop_type::AbstractString,
+                        transform::PixelTransform,
+                        pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                        z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
+                        all_cells::Bool = false,
+                        all_cells_colour::AbstractString = "#9ca3af")
+    pt = String(pop_type)
+    vn = String(value_name)
+    is_track_pt = pt in ("track", "trackclust")
+
+    # ── Open the label store ONCE. Same reason the movie sweep opens the image ONCE: an
+    # `nT`-frame sweep would otherwise pay `nT` metadata round-trips for a geometry that cannot
+    # change mid-sweep.
+    zp = img_labels_path(img, vn)
+    isdir(zp) || throw(ArgumentError("build_mask_for: label store not on disk for value_name '$vn'"))
+    arr, caxes = open_level0(String(zp))
+
+    # ── Build id → colour ONCE, from pops.
+    id_colours = Dict{Int,RGB{N0f8}}()
+    if all_cells
+        # Paint every known cell in one colour. Enumerating labels from `label_props` costs one
+        # `.h5ad` read; the alternative — scanning uniques out of the mask per frame — is nT reads
+        # over the whole label store, which is what the sweep is trying to avoid in the first place.
+        lp = label_props(img; value_name = vn)
+        df = as_df(lp)
+        colour = hex_to_rgb(String(all_cells_colour))
+        @inbounds for i in 1:size(df, 1)
+            lab = df[i, :label]
+            (lab isa Real && isfinite(Float64(lab))) || continue
+            id_colours[Int(round(Float64(lab)))] = colour
+        end
+    elseif !is_track_pt
+        pops = try
+            resolve_pops(img, pt; value_name = vn)
+        catch e
+            @warn "build_mask_for: resolve_pops failed" value_name pop_type exception = e
+            NamedTuple[]
+        end
+        if pops_filter !== nothing
+            want = Set(String(p) for p in pops_filter)
+            pops = [p for p in pops if String(p.path) in want]
+        end
+        for p in pops
+            Bool(get(p, :show, true)) || continue
+            colour = hex_to_rgb(String(p.colour))
+            for L in p.labels
+                id_colours[Int(L)] = colour
+            end
+        end
+    else
+        # Track pop_types — expand via `pop_df` for the same reason as `build_overlays_for` (gates
+        # live on `track_props`). Only `label` + `pop` are read; centroids/track_id are irrelevant
+        # for a label→colour lookup.
+        m = try
+            load_pop_map(img; value_name = vn, pop_type = pt)
+        catch e
+            @warn "build_mask_for: load_pop_map failed for track pop_type" value_name pop_type exception = e
+            nothing
+        end
+        pop_meta = Dict{String,RGB{N0f8}}()
+        want_paths = String[]
+        if m !== nothing
+            paths = String[path for path in pop_paths(m) if !pop_at(m, path).transient]
+            if pops_filter !== nothing
+                pf = Set(String(p) for p in pops_filter)
+                paths = [p for p in paths if p in pf]
+            end
+            for path in paths
+                p = pop_at(m, path)
+                Bool(get(p, :show, true)) || continue
+                pop_meta[String(path)] = hex_to_rgb(String(p.colour))
+                push!(want_paths, String(path))
+            end
+        end
+        if !isempty(want_paths)
+            df = try
+                pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
+                       centroids = :pixel, include_x = false, include_obs = true)
+            catch e
+                @warn "build_mask_for: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
+                nothing
+            end
+            if df !== nothing && size(df, 1) > 0
+                cols = names(df)
+                has_pop = "pop" in cols
+                @inbounds for i in 1:size(df, 1)
+                    lab = df[i, :label]
+                    (lab isa Real && isfinite(Float64(lab))) || continue
+                    pop_path = has_pop ? String(df[i, :pop]) : first(want_paths)
+                    colour = get(pop_meta, pop_path, nothing)
+                    colour === nothing && continue
+                    id_colours[Int(round(Float64(lab)))] = colour
+                end
+            end
+        end
+    end
+
+    # Empty dict → the render loop pays for a mask read per frame with nothing to draw. Short-
+    # circuit so an unpopulated pop set is `(nothing, nothing)` — the primitive skips it entirely.
+    isempty(id_colours) && return (_::Int) -> (nothing, nothing)
+
+    # ── The per-t closure.
+    return function(t::Int)
+        # Read the label plane at (t, c = 0). Label stores are single-channel — the schema pins
+        # c = 0. `read_slab` returns (x, y, z) column-major (or (x, y) if the store is 2D); MIP over
+        # z if it survived (a scalar z drops the dim exactly like t and c do).
+        vol = try
+            v, _, _, _ = read_slab(arr, caxes, Int(t), 0; z = z)
+            v
+        catch e
+            @warn "build_mask_for: read_slab failed" t exception = e
+            return (nothing, nothing)
+        end
+        m = ndims(vol) >= 3 ? dropdims(maximum(vol; dims = 3); dims = 3) : vol
+        # Transpose to (y, x) — same swap `render_view_frame` applies to the image plane, so the
+        # mask lands on the SAME grid the composited channels do.
+        plane = permutedims(m, (2, 1))
+        H, W = size(plane)
+        # Match `pixel_transform` on the frame side: crop by `x_lo:x_lo+cW-1` × `y_lo:y_lo+cH-1`,
+        # then stride by `step`. Anything else would put the outlines at a different resolution
+        # than the pixels beneath them.
+        y0 = transform.y_lo + 1
+        x0 = transform.x_lo + 1
+        y1 = min(H, transform.y_lo + transform.cH)
+        x1 = min(W, transform.x_lo + transform.cW)
+        (y1 >= y0 && x1 >= x0) || return (nothing, nothing)
+        sub = @view plane[y0:y1, x0:x1]
+        strided = transform.step > 1 ?
+            sub[1:transform.step:size(sub, 1), 1:transform.step:size(sub, 2)] :
+            sub
+        # Convert to Int if the store is a smaller integer — `draw_mask_outline!` takes any
+        # `AbstractMatrix{<:Integer}` but the `id_colours` dict is `Int`-keyed. A `copy` here so
+        # the composited frame doesn't hold a view onto the Zarr chunk's buffer.
+        mask = eltype(strided) <: Integer ? Array{Int}(strided) :
+               throw(ArgumentError("build_mask_for: label store is non-integer ($(eltype(strided)))"))
+        (mask, id_colours)
+    end
+end

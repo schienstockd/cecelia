@@ -781,8 +781,9 @@ end
 # `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
 # z?: int, titleCard?, maxFrames?: 30, overlays?: { popType?: "flow", valueName?, popPaths?: [...],
 # pointSizePx?: 6, segmentWidthPx?: 2, tailLength?: 30, includeTracks?: true,
-# allTracks?: false, allTracksColour?: "#9ca3af", trackColorMode?: "track" } }`
-# — response: `{ ok, path, filename, frames, width, height, overlays: {...} }`.
+# allTracks?: false, allTracksColour?: "#9ca3af", trackColorMode?: "track",
+# showMask?: false, allCells?: false, allCellsColour?: "#9ca3af", maskContourPx?: 1 } }`
+# — response: `{ ok, path, filename, frames, width, height, overlays: {...}, mask: {...} }`.
 function api_viewer_record_test(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
@@ -828,11 +829,13 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     # `valueName` (a movie of processed image `A` with pops from segmentation `B`).
     ov_raw = get(data, :overlays, nothing)
     overlays_for = nothing
-    point_size_px = 6; segment_width_px = 2
+    mask_for = nothing
+    point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
     # Diagnostics returned in the response so a smoke test can tell whether the AUTHOR engaged
     # and whether ANY frame carried a point/segment. A movie with no overlays is otherwise
     # indistinguishable from a movie whose overlays fell outside the drawn frame.
     ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
+    mask_diag = Dict{String,Any}("requested" => false, "reason" => "")
     if ov_raw isa AbstractDict
         ov_vn = String(get(ov_raw, :valueName, ""))
         # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
@@ -909,6 +912,46 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
                     ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
                     isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
                 end
+
+                # ── Optional P4 mask outlines. Same transform, same pops_filter, same
+                # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
+                # is the gate — off by default because it costs one label-store read per frame,
+                # and a smoke test's default should stay cheap.
+                show_mask = Bool(get(ov_raw, :showMask, false))
+                all_cells = Bool(get(ov_raw, :allCells, false))
+                mask_diag["requested"] = show_mask
+                if show_mask
+                    all_cells_col = String(get(ov_raw, :allCellsColour, "#9ca3af"))
+                    mask_contour_px = Int(get(ov_raw, :maskContourPx, mask_contour_px))
+                    mask_inner = try
+                        build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                       transform = tf, pops_filter = ov_paths,
+                                       z = z, all_cells = all_cells,
+                                       all_cells_colour = all_cells_col)
+                    catch e
+                        mask_diag["reason"] = "author threw: $(sprint(showerror, e))"
+                        @warn "record-test: mask author failed" value_name = ov_vn pop_type = ov_pt exception = e
+                        nothing
+                    end
+                    if mask_inner !== nothing
+                        # Same tally shape as the overlays branch — count frames that carried a
+                        # mask and unique-ish ids drawn per frame is more machinery than the
+                        # smoke test needs (the primitive silently skips ids absent from the
+                        # dict, so the answer is `id_colours` size × frames).
+                        mask_frames = Ref(0); mask_ids = Ref(0)
+                        mask_for = function(t::Int)
+                            m, dict = mask_inner(t)
+                            if m !== nothing && dict !== nothing
+                                mask_frames[] += 1
+                                mask_ids[] = length(dict)
+                            end
+                            (m, dict)
+                        end
+                        mask_diag["_tally"] = (mask_frames, mask_ids)
+                        isempty(mask_diag["reason"]) && (mask_diag["reason"] = "ok")
+                        mask_diag["allCells"] = all_cells
+                    end
+                end
             end
         end
     end
@@ -923,8 +966,10 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         record_view_movie(zp, out_path; ts = ts, channels = 0:(nc - 1), specs = specs,
                           z = z, title_card = title_card,
                           overlays_for = overlays_for,
+                          mask_for = mask_for,
                           point_size_px = point_size_px,
-                          segment_width_px = segment_width_px)
+                          segment_width_px = segment_width_px,
+                          mask_contour_px = mask_contour_px)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
@@ -942,7 +987,13 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         ov_diag["framesCalled"]  = frames_ref[]
         delete!(ov_diag, "_tally")
     end
+    if haskey(mask_diag, "_tally")
+        mf, mi = mask_diag["_tally"]
+        mask_diag["framesWithMask"] = mf[]
+        mask_diag["idColoursCount"] = mi[]
+        delete!(mask_diag, "_tally")
+    end
     200, JSON3.write((; ok = true, path = result.path, filename = filename,
                         frames = result.frames, width = result.width, height = result.height,
-                        overlays = ov_diag))
+                        overlays = ov_diag, mask = mask_diag))
 end

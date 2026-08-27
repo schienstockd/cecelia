@@ -5216,6 +5216,116 @@ end
     end
 end
 
+@testset "API: overlay_author — build_mask_for guard + id_colours dict" begin
+    # The mask AUTHOR is the P4 counterpart of `build_overlays_for`: given a segmentation and a
+    # `pop_type`, hand `record_view_movie(mask_for = ...)` a per-frame `(mask, id_colours)` pair.
+    # The read/project pass needs a real label store on disk (out of scope here; the smoke route's
+    # end-to-end run is where a full store is exercised), but the id → colour dict IS testable
+    # cheaply against the labelProps fixture — that's the half a wrong colour policy would silently
+    # break (a movie with outlines drawn in a pop's OTHER colour, or on background labels because
+    # the dict was built from label_props instead of the pop labels).
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            # (1) Missing label store → ArgumentError, not a downstream Zarr crash on a `nothing`
+            # store. The guard is at the boundary so the caller sees a legible error rather than a
+            # server-side stack trace.
+            tf = pixel_transform(64, 64)
+            @test_throws ArgumentError build_mask_for(img; value_name = "B", pop_type = "flow",
+                                                     transform = tf)
+
+            # Prepare a minimal (t, c, y, x) uint16 label store under `1/{uid}/labels/B.zarr`, so
+            # `img_labels_path` resolves it via `img.labels["B"]`. Writing pixels through `zcreate`
+            # is the same pattern the byte-order testset uses — a full NGFF store with a pyramid is
+            # more than the id → colour dict needs.
+            #
+            # Frame layout — three labels: 1 top-left, 2 top-right, 3 bottom (populated in ALL
+            # timepoints). Values are ids the closure is meant to look up in the dict.
+            nt, nc, ny, nx = 3, 1, 8, 8
+            labels_dir = joinpath(dir, "testpr", "1", "KDIeEm", "labels")
+            mkpath(labels_dir)
+            zp = joinpath(labels_dir, "B.zarr")
+            # A "flat" NGFF store: root group with an array "0" and multiscales axes in .zattrs.
+            # Zarr.jl is column-major and reverses vs C-order, so declaring (t,c,y,x) in NGFF
+            # means (x,y,c,t) as Julia dims.
+            axes_attr = Dict("multiscales" =>
+                             [Dict("axes" => [Dict("name" => n) for n in ["t", "c", "y", "x"]])])
+            g = zgroup(Zarr.DirectoryStore(zp); attrs = axes_attr)
+            a = zcreate(UInt16, g, "0", nx, ny, nc, nt; chunks = (nx, ny, nc, nt))
+            block = zeros(UInt16, nx, ny, nc, nt)
+            block[1:3, 1:3, 1, :] .= UInt16(1)
+            block[6:8, 1:3, 1, :] .= UInt16(2)
+            block[1:8, 6:8, 1, :] .= UInt16(3)
+            a[:, :, :, :] = block
+
+            # Register the store on the image (a `save!` roundtrip so `_gating_image` reads the
+            # updated ccid.json on the next call).
+            img.labels = Dict("B" => ["B.zarr"])
+            save!(img)
+            img, _ = _gating_image("testpr", "KDIeEm")
+
+            # Wire a pop that catches every cell — same shape as the overlays testset above.
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "all", "colour" => "#00ff00", "gate" => gate)))))
+
+            mask_for = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf)
+            m, dict = mask_for(0)
+            # Frame at t = 0 is present, at the drawn frame's shape (identity transform: dW = nx,
+            # dH = ny). The dict is populated from the pop's labels — a null gate catches every
+            # cell in the label_props table, and each of those cells' labels lands in the dict
+            # keyed by INT with the pop's colour.
+            @test m !== nothing && dict !== nothing
+            @test !isempty(dict)
+            green = RGB{N0f8}(0, 1, 0)
+            @test all(v -> v == green, values(dict))
+            @test eltype(keys(dict)) <: Integer
+            # The mask carries the ids we wrote — 1, 2, 3 on frame 0. draw_mask_outline! will
+            # silently skip an id absent from the dict, so this pins the read/project pass too.
+            uniq = Set(Int.(m))
+            @test 1 in uniq && 2 in uniq && 3 in uniq
+
+            # `all_cells = true` bypasses pops and paints every cell in one colour — the mask
+            # counterpart of `build_overlays_for(all_tracks = true)`. Bug this catches: the flag
+            # wired but the fallback dict never populated, so the primitive skips every id.
+            mask_all = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                     all_cells = true, all_cells_colour = "#9ca3af")
+            _, dict_all = mask_all(0)
+            grey = RGB{N0f8}(hex_to_rgb("#9ca3af"))
+            @test !isempty(dict_all)
+            @test all(v -> v == grey, values(dict_all))
+
+            # A `pops_filter` that matches nothing yields an EMPTY dict → the closure short-
+            # circuits to `(nothing, nothing)` so the primitive isn't asked to draw a mask with
+            # no colours (which would still cost a per-frame Zarr read).
+            mask_none = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                       pops_filter = String["/no-such"])
+            mn, dn = mask_none(0)
+            @test mn === nothing && dn === nothing
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: render_view_frame — points and segments overlays" begin
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)

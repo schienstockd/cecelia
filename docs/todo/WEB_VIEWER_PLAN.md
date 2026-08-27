@@ -483,10 +483,26 @@ optional `overlays: { popType, valueName, popPaths, pointSizePx, segmentWidthPx,
 includeTracks }` block, so a POST can be verified end-to-end against a real project
 (`resolve_pops` cache warms on the first read).
 
-**Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage),
-and the MASK author (reading the label zarr per t + projecting to 2D for `mask_for(t)`). The overlay
-primitives and the point/track author are complete; what remains is the request path and the label
-store reader per t.
+**Built: the MASK author** (`api/src/overlay_author.jl` → `build_mask_for`). Same design as
+`build_overlays_for` — build id → colour ONCE from `resolve_pops` (cell pop_types) or
+`pop_df(...; granularity = :cell)` (track pop_types), then per-t read the label store and project
+to 2D. Opens the label store ONCE via `img_labels_path` + `open_level0` so a sweep pays one
+metadata round-trip rather than `nT`. Reads `read_slab(arr, caxes, t, 0; z = z)` — the same `z`
+selection the frame render uses, so a movie of "plane 12" outlines plane 12's cells and a MIP over
+z outlines the projected cells; a mismatched z would put the outlines on a different slab than the
+pixels beneath them. Projects to the drawn frame's grid through the same `PixelTransform` the
+overlay author uses (`x_lo:x_lo + cW - 1` × `y_lo:y_lo + cH - 1`, then stride by `step`). `all_cells
+= true` paints every cell in one colour ignoring pops — the mask counterpart of `all_tracks`, for a
+tracked segmentation without gated pops (cpSAM on zolIMa/fXgbTl). An empty id → colour dict short-
+circuits to `(nothing, nothing)` so the primitive isn't asked to draw a mask with no colours.
+
+The smoke route now takes `overlays: { ..., showMask, allCells, allCellsColour, maskContourPx }`
+and returns a `mask: {...}` diagnostic block alongside `overlays: {...}`, so a POST verifies both
+authors end-to-end against a real project.
+
+**Still to do:** wiring the record BUTTON to the same path (progress rail, cancel, config storage).
+The overlay primitives, the point/track author and the mask author are all complete; what remains
+is the request path — off `handle_movie_record` / `run_single_movie` onto `record_view_movie`.
 
 ### P6 — the selection round-trip — **BUILT**
 `start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
