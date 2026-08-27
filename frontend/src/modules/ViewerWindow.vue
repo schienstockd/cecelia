@@ -1043,7 +1043,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), m.nX)))
 
     const t1 = performance.now()
-    await r.uploadTimepoint(tp, bufs, t.value, labelBuf)
+    await r.uploadFrame(tp, bufs, t.value, labelBuf)
     timing.value = {
       fetchMs: Math.round(fetchMs), uploadMs: Math.round(performance.now() - t1), serverMs,
     }

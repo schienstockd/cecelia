@@ -2,7 +2,7 @@
 // here; the logic that does not is in `utils/volumeViewer.ts` (and is unit-tested there).
 //
 // Lifecycle: `createVolumeRenderer(canvas)` → `setImage(meta, budgetBytes)` once per image →
-// `uploadTimepoint(t, bufs)` per timepoint → `show(t)` + `draw()` per frame → `destroy()`. Nothing is
+// `uploadFrame(t, bufs)` per timepoint → `show(t)` + `draw()` per frame → `destroy()`. Nothing is
 // allocated per frame.
 //
 // ONE TEXTURE PER CACHED TIMEPOINT, under a byte budget, evicted least-recently-used. That is what
@@ -73,7 +73,7 @@ export interface VolumeRenderer {
    * the caller can time the transfer rather than the staging copy. Evicts to stay inside the budget,
    * never evicting `keep`.
    */
-  uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number,
+  uploadFrame(t: number, channelBytes: ArrayBuffer[], keep: number,
                   labelBytes?: ArrayBuffer | null): Promise<void>
   /**
    * Cap the cache at `n` timepoints. The effective `capacity` is the smallest of this, the byte ceiling
@@ -403,7 +403,7 @@ export async function createVolumeRenderer(
   /** z planes per timepoint actually loaded — `meta.nZ` in 3D, 1 in the 2D plane view. */
   let depth = 1
   /** XY dimensions actually loaded — `meta.nX`/`meta.nY` at level 0, else the coarser pyramid level's
-   *  dimensions. Set by `setImage`, used by `uploadTimepoint`'s texture allocation and by the u12/u13
+   *  dimensions. Set by `setImage`, used by `uploadFrame`'s texture allocation and by the u12/u13
    *  shader uniform (dims.x/y). Level does NOT change the physical extent — a level-1 volume of a 3.3
    *  mm image is still 3.3 mm across, just half the voxels — so camera fitting stays on `meta.nX`. */
   let renderNX = 0
@@ -565,11 +565,18 @@ export async function createVolumeRenderer(
       setChannels(m.channels)
     },
 
-    async uploadTimepoint(t: number, channelBytes: ArrayBuffer[], keep: number,
+    async uploadFrame(t: number, channelBytes: ArrayBuffer[], keep: number,
                           labelBytes: ArrayBuffer | null = null) {
       const m = meta
       if (!m || !usable()) return
       const nch = Math.min(m.nC, MAX_CHANNELS)
+      // Snapshot the renderer's geometry — `setImage` can rewrite `renderNX`/`renderNY`/`depth`
+      // across either of the awaits below (a level swap driven by a zoom gesture is exactly when
+      // this fires). If we allocated at the OLD dims and wrote at the NEW ones, `writeTexture` throws
+      // `Texture copy range … touches outside of Texture` — measured on FtGoJO: 1012 create vs 2024
+      // write. Snapshot everything derived from geometry too, so no closure read after an await can
+      // pick up a stale value.
+      const nx = renderNX, ny = renderNY, dp = depth
       // Channels stacked along z in one texture: one binding, one loop in the shader.
       //
       // ALLOCATED INSIDE AN OOM ERROR SCOPE, which is the whole reason a too-large cache can no longer
@@ -582,14 +589,14 @@ export async function createVolumeRenderer(
       // level-0, so the buffer is 1/4 the bytes, which is the whole reason the 3D view can load big-XY
       // images at all (the client picks the coarsest level by default via `pickVolumeLevel`).
       const texture = device.createTexture({
-        size: [renderNX, renderNY, depth * nch], dimension: '3d', format: 'r16uint',
+        size: [nx, ny, dp * nch], dimension: '3d', format: 'r16uint',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
       // The mask goes in the SAME error scope and the same slot as the image it annotates. One
       // allocation failing has to take the pair down together: a slot holding a volume and no mask
       // would render the image with the outlines silently missing.
       const labelTexture = (labels && labelBytes) ? device.createTexture({
-        size: [renderNX, renderNY, depth], dimension: '3d', format: 'r32uint',
+        size: [nx, ny, dp], dimension: '3d', format: 'r32uint',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       }) : null
       const oom = await device.popErrorScope()
@@ -602,19 +609,26 @@ export async function createVolumeRenderer(
         return
       }
       if (!usable()) return
+      // If the renderer moved to a new geometry across the OOM-scope await (a level swap raced the
+      // upload — `setImage` already ran `dropAll`), the fetched bytes describe the OLD level and the
+      // slot would render at the wrong resolution. Destroy and abandon; the caller will refetch.
+      if (nx !== renderNX || ny !== renderNY || dp !== depth) {
+        if (!dead) { texture.destroy(); labelTexture?.destroy() }
+        return
+      }
       if (labelTexture && labelBytes) {
         device.queue.writeTexture(
           { texture: labelTexture }, labelBytes,
-          { bytesPerRow: renderNX * LABEL_BPV, rowsPerImage: renderNY },
-          [renderNX, renderNY, depth],
+          { bytesPerRow: nx * LABEL_BPV, rowsPerImage: ny },
+          [nx, ny, dp],
         )
       }
       for (let c = 0; c < Math.min(channelBytes.length, nch); c++) {
         device.queue.writeTexture(
-          { texture, origin: [0, 0, c * depth] },
+          { texture, origin: [0, 0, c * dp] },
           channelBytes[c],
-          { bytesPerRow: renderNX * m.bytesPerVoxel, rowsPerImage: renderNY },
-          [renderNX, renderNY, depth],
+          { bytesPerRow: nx * m.bytesPerVoxel, rowsPerImage: ny },
+          [nx, ny, dp],
         )
       }
       // `writeTexture` returns once the bytes are STAGED, so without this the caller times the CPU-side
@@ -624,6 +638,12 @@ export async function createVolumeRenderer(
       await device.queue.onSubmittedWorkDone()
       // The device can go during that await, and everything below allocates against it.
       if (!usable()) { if (!dead) { texture.destroy(); labelTexture?.destroy() } return }
+      // And again — the geometry could have moved while we waited for the queue. Registering a slot
+      // whose textures don't match the current uniforms puts a wrong-resolution frame on screen.
+      if (nx !== renderNX || ny !== renderNY || dp !== depth) {
+        if (!dead) { texture.destroy(); labelTexture?.destroy() }
+        return
+      }
 
       const bg = device.createBindGroup({
         layout: bindGroupLayout,
