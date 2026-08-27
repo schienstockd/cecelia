@@ -87,6 +87,7 @@ disagree, the plan's header wins — and fix the row.
 | [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) | planned (2026-07-22) | In-app 3D crop UI; supersedes the napari-driven crop, which has a low ceiling |
 | [`STATS_ANNOTATIONS_PLAN.md`](STATS_ANNOTATIONS_PLAN.md) | planning · no branch | Server-side hypothesis tests rendered as marks inside existing Observable Plot charts; no new route |
 | [`WHATS_NEW_PLAN.md`](WHATS_NEW_PLAN.md) | planning · no branch | In-app What's New modal reusing the `/api/update/check` plumbing |
+| [`REMOTE_ACCESS_PLAN.md`](REMOTE_ACCESS_PLAN.md) | planning (2026-08-27) · no branch | Cross-OS SSH-tunnel launcher for reaching a Cecelia VM install: user double-clicks a per-OS icon, tunnel opens, browser opens at `localhost`. Free, cloud-vendor-agnostic, rate-limit-free. Server stays loopback-bound — no app-layer auth needed. Reshaped 2026-08-27 from an earlier token-based URL-auth design; that path was killed by the shared-bucket Let's Encrypt rate limit on nip.io (see file's git history for the reasoning trail) |
 | [`OBSERVER_DATA_ACCESS_PLAN.md`](OBSERVER_DATA_ACCESS_PLAN.md) | parked (scoped, not started) | Let the observer read actual cell data, not just QC/logs/meta |
 | [`QC_OBSERVER_PLAN.md`](QC_OBSERVER_PLAN.md) | parked | Observer-side QC surface; supersedes three exploratory prompts in `docs/ai-assist/` |
 
