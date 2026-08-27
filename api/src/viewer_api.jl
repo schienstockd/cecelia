@@ -759,3 +759,81 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
+
+# ── POST /api/viewer/record-test ──────────────────────────────────────────────────
+#
+# A SMOKE-TEST route that produces an mp4 through renderer C so the pipeline can be eyeballed before
+# the movie rail (`handle_movie_record` / `run_single_movie`) is migrated off napari. Blocking, not
+# rail-integrated — the record runs on the request thread, cancellation is not offered and progress is
+# not streamed. Kept out of the parity checklist for that reason.
+#
+# What it exercises:
+#   * `resolve_image_version` → same active-vs-explicit rule the meta route uses,
+#   * `resolved_display_specs` from the SAVED viewer props (sampled fallback), so the mp4's colours
+#     match what the browser drew,
+#   * `record_view_movie` end-to-end (frame render → raw temp → `encode_movie_run.py`),
+#   * optional `title_card` — passes through to the shared prepend helper.
+#
+# `maxFrames` caps the sweep (default 30 — a smoke test should not wait minutes). Absent overlays: the
+# author that resolves populations / centroids / tracks into the primitives' columnar shape is the
+# next chunk, and its output will need Dominik's eyes on real cells rather than a green frame.
+#
+# `POST /api/viewer/record-test` — body: `{ projectUid, imageUid, valueName?, ts?: [start, end],
+# z?: int, titleCard?, maxFrames?: 30 }` — response: `{ ok, path, filename, frames, width, height }`.
+function api_viewer_record_test(body_bytes::Vector{UInt8})
+    data = try JSON3.read(String(body_bytes)) catch; nothing end
+    data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
+    pu = String(get(data, :projectUid, ""))
+    iu = String(get(data, :imageUid, ""))
+    (isempty(pu) || isempty(iu)) &&
+        return 400, JSON3.write((; error = "projectUid and imageUid required"))
+    vn_raw = get(data, :valueName, nothing)
+    vnn = (vn_raw === nothing || String(vn_raw) == "") ? nothing : String(vn_raw)
+    zp, td, err = resolve_image_version(pu, iu, vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    # Specs — saved viewer props if present, else sampled. Sampled has the frame-flicker property
+    # (decision 5), so a movie without saved props is louder than one with them; the test is a smoke
+    # check, so this is a live limitation to flag not a defect to fix here.
+    arr, caxes = open_level0(zp)
+    nc  = try
+        d = axis_dims(caxes, ndims(arr))
+        haskey(d, "c") ? size(arr, d["c"]) : 1
+    catch; 1 end
+    props = _props_path(td, zp)
+    specs = resolved_display_specs(props, nc)
+    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+    # Timepoint range. `ts = [start, end]` inclusive, both 0-based to match the browser's slab route;
+    # missing = all frames. Capped by `maxFrames` so a 200-frame movie is not the default surprise.
+    ts_raw = get(data, :ts, nothing)
+    ts = if ts_raw isa AbstractVector && length(ts_raw) == 2
+        collect(Int(ts_raw[1]):Int(ts_raw[2]))
+    else
+        nothing
+    end
+    max_frames = Int(get(data, :maxFrames, 30))
+    if ts !== nothing && length(ts) > max_frames
+        ts = ts[1:max_frames]
+    end
+    z_raw = get(data, :z, nothing)
+    z = z_raw === nothing ? nothing : Int(z_raw)
+    tc_raw = get(data, :titleCard, nothing)
+    title_card = tc_raw isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in tc_raw) : nothing
+    # Filename picked here rather than by the caller: `_valid_movie_name` is what `/api/movies` filters
+    # by, so a smoke movie has to sort with the others without a slash or a dot-tmp fragment.
+    filename = "smoketest_" * iu * ".mp4"
+    out_dir  = _movies_dir_for_project(pu)
+    mkpath(out_dir)
+    out_path = joinpath(out_dir, filename)
+    result = try
+        record_view_movie(zp, out_path; ts = ts, channels = 0:(nc - 1), specs = specs,
+                          z = z, title_card = title_card)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    # Bank it into the registry so it shows up on /movies with a producer tag — the same one-line
+    # write the batch/animation paths do, so `startedAt`/`imageUid` are set. No config kind: this is a
+    # smoke test, not something the movie editor should try to reopen for edit.
+    register_movie!(pu, filename; produced_by = "smoketest", image_uid = iu)
+    200, JSON3.write((; ok = true, path = result.path, filename = filename,
+                        frames = result.frames, width = result.width, height = result.height))
+end

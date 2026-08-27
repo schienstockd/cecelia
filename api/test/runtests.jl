@@ -4607,6 +4607,7 @@ end
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
+        "/api/viewer/record-test",
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4648,7 +4649,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 120
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 121
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -5873,6 +5874,25 @@ end
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end
+end
+
+@testset "API: /api/viewer/record-test — input guards" begin
+    # The route itself is a smoke test — an end-to-end run needs the Python encoder, so the fixture
+    # suites don't attempt it. What IS testable without leaving Julia is the request validation, so a
+    # missing/invalid body fails the way the /movies UI expects (a 400 with an error field, not a
+    # cascade of 500s from `record_view_movie` trying to open ""); and that an unknown image resolves
+    # to a 404 rather than crashing on a bad zarr path.
+    st, out = api_viewer_record_test(Vector{UInt8}("not json at all"))
+    @test st == 400
+    @test occursin("invalid JSON", JSON3.read(out).error)
+
+    st, out = api_viewer_record_test(Vector{UInt8}(JSON3.write(Dict("imageUid" => "x"))))
+    @test st == 400
+    @test occursin("projectUid", JSON3.read(out).error)
+
+    st, out = api_viewer_record_test(
+        Vector{UInt8}(JSON3.write(Dict("projectUid" => "no-such", "imageUid" => "nope"))))
+    @test st == 404
 end
 
 @testset "API: a napari selection resolves to TRACKS" begin
