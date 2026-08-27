@@ -230,6 +230,12 @@ draws through WebGPU, so a recorded movie of a gated experiment shows the annota
 pixels a result. Coordinates are 1-based row/column and MUST be pre-resolved to the frame's pixel grid
 by the caller (µm → pixel, crop / stride honoured); this file is pure drawing. See
 `frame_overlays.jl` for the shape.
+
+`mask` is a same-shape `AbstractMatrix{<:Integer}` — the P4 label store's frame with whatever z
+projection the caller applied. Present WITH `mask_colours::AbstractDict{<:Integer,<:RGB}` = label →
+outline colour, or the mask is skipped. `mask_contour_px` is the outline width (napari's `contour`
+setting). Ids absent from `mask_colours` are skipped, so hiding populations does not require
+rewriting the mask.
 """
 render_view_frame(zarr_path::AbstractString, t::Int; kwargs...) =
     render_view_frame(open_level0(zarr_path)..., t; kwargs...)
@@ -239,7 +245,8 @@ function render_view_frame(arr, caxes, t::Int;
                            channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
                            specs = nothing, crop = nothing, max_px::Int = 0,
                            points = nothing, point_size_px::Int = 6,
-                           segments = nothing, segment_width_px::Int = 2)
+                           segments = nothing, segment_width_px::Int = 2,
+                           mask = nothing, mask_colours = nothing, mask_contour_px::Int = 1)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     nc   = haskey(dims, "c") ? size(arr, dims["c"]) : 1
@@ -302,9 +309,14 @@ function render_view_frame(arr, caxes, t::Int;
     length(sp) >= length(chans) ||
         throw(ArgumentError("render_view_frame: $(length(sp)) specs for $(length(chans)) channels"))
     frame = composite_rgb(chw, sp)
-    # Overlays paint on top of the composited channels — segments below points, so a marker at a
-    # track's endpoint reads as a marker rather than a fatter tail. The caller has already resolved
-    # µm → pixel and honoured `crop`/`max_px`; this file is pure drawing.
+    # Overlays paint on top of the composited channels. ORDER matters — the browser draws in the
+    # same layering: mask outlines below tracks below points, so a marker at a track's endpoint reads
+    # as a marker rather than a fatter tail, and a cell's outline reads as an outline rather than a
+    # fatter marker. The caller has already resolved µm → pixel and honoured `crop`/`max_px`; this
+    # file is pure drawing.
+    if mask !== nothing && mask_colours !== nothing
+        draw_mask_outline!(frame, mask, mask_colours; contour_px = mask_contour_px)
+    end
     segments === nothing || draw_segments!(frame, segments; width_px = segment_width_px)
     points === nothing   || draw_points!(frame, points; size_px = point_size_px)
     frame

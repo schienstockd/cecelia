@@ -108,3 +108,53 @@ function _bresenham!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::Int, y1
     end
     frame
 end
+
+"""
+    draw_mask_outline!(frame, mask, id_colours; contour_px = 1) -> frame
+
+Paint segmentation outlines onto `frame`. An outline pixel is one where `mask[y, x] != 0` AND at
+least one 4-connected neighbour holds a DIFFERENT id — label boundaries, plus the boundary between a
+label and background. Painted in `id_colours[mask[y, x]]`; ids absent from the map are skipped so a
+caller can hide populations without rebuilding the mask.
+
+`mask` is a same-shape `AbstractMatrix{<:Integer}` — the label store's frame at this timepoint, with
+whatever z projection the caller applied (napari's contour has no projection choice; the browser's
+nearest-label rule for MIP is the P4 decision). `contour_px` widens the outline by stamping a
+(2*(contour_px÷2)+1)-side square at each boundary pixel — matching napari's `contour` parameter and
+what the browser's outline pass draws.
+
+Two-pass detect-then-stamp: writing paint into the same array we're neighbour-testing propagates
+just-painted colours into the interior of a large cell (the outline walks sideways as a filled band
+rather than a border). We compute boundary hits into a local list first, then stamp.
+
+Note: this draws OUTLINES only, not the 0.7-opacity fill napari uses when `contour = 0`. Outlines
+are what "contour = N" (napari's setting) means, and what most gating movies want; the fill mode is
+a separate primitive.
+"""
+function draw_mask_outline!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},
+                            id_colours::AbstractDict; contour_px::Int = 1)
+    size(frame) == size(mask) ||
+        throw(ArgumentError("draw_mask_outline!: mask $(size(mask)) differs from frame $(size(frame))"))
+    contour_px <= 0 && return frame
+    H, W = size(frame)
+    half = max(0, contour_px ÷ 2)
+    hits = Tuple{Int,Int,RGB{N0f8}}[]
+    @inbounds for j in 1:W, i in 1:H
+        id = mask[i, j]
+        id == 0 && continue
+        col = get(id_colours, id, nothing)
+        col === nothing && continue
+        # 4-connected. A pixel on the frame edge is treated as bordering "different" so an
+        # edge-touching cell reads as closed rather than an open contour.
+        is_edge = (i == 1) || (i == H) || (j == 1) || (j == W) ||
+                  (mask[i - 1, j] != id) || (mask[i + 1, j] != id) ||
+                  (mask[i, j - 1] != id) || (mask[i, j + 1] != id)
+        is_edge && push!(hits, (i, j, convert(RGB{N0f8}, col)))
+    end
+    @inbounds for (i, j, rgb) in hits, dy in -half:half, dx in -half:half
+        y = i + dy; x = j + dx
+        (1 <= y <= H && 1 <= x <= W) || continue
+        frame[y, x] = rgb
+    end
+    frame
+end
