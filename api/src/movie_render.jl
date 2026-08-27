@@ -29,12 +29,17 @@ there — **pass `specs`**, or every frame gets its own percentile contrast and 
 `on_progress(n, total)` and `cancelled()` are the rail's contract. Cancellation is checked between
 frames, so it costs at most one frame; a cancelled run writes nothing to `out_path` and leaves no temp
 behind, which is the same guarantee `movie_writer` makes on its side.
+
+`title_card` is the same dict shape `_title_card_content` in `napari_api.jl` produces (`title`, `note`,
+`sections`, `durationSec`) — passed through to the encoder runner and prepended to the mp4 by the
+shared `title_card.prepend_title_to_movie` helper. `nothing` = no card.
 """
 function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,
                            fps::Real = 15,
                            z = nothing, channels = nothing, specs = nothing,
                            crop = nothing, max_px::Int = 0,
+                           title_card = nothing,
                            task_dir::AbstractString = mktempdir(),
                            on_log::Function = println,
                            on_progress::Function = (n, t) -> nothing,
@@ -63,10 +68,11 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
 
         # `Cecelia.run_py`, qualified: api/src runs in `Main` with `using Cecelia`, so an unexported
         # name called bare loads fine, registers fine, and dies at runtime. The suite ratchets it.
-        ok = Cecelia.run_py("writers/encode_movie_run.py",
-                    Dict("rawPath" => raw, "outPath" => out_path, "width" => W, "height" => H,
-                         "frames" => written, "fps" => Float64(fps)),
-                    task_dir; on_log = on_log, on_process = on_process)
+        params = Dict{String,Any}("rawPath" => raw, "outPath" => out_path, "width" => W, "height" => H,
+                                  "frames" => written, "fps" => Float64(fps))
+        title_card === nothing || (params["titleCard"] = title_card)
+        ok = Cecelia.run_py("writers/encode_movie_run.py", params, task_dir;
+                            on_log = on_log, on_process = on_process)
         ok || error("record_view_movie: the encoder failed — see the log above")
         (; path = out_path, frames = written, width = W, height = H, cancelled = false)
     finally
