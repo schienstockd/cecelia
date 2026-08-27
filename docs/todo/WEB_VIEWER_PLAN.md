@@ -17,17 +17,17 @@ decision here. Prior context: [`CLOUD_MIGRATION_ASSESSMENT.md`](CLOUD_MIGRATION_
 (storage + headless GL, still valid), [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) (the first
 browser-rendered image surface, built).
 
-## The split: B for interactive, C for offline
+## The split: browser for interactive, offline for recording
 
 | | Renderer | Covers |
 |---|---|---|
-| **B** | WebGPU in the browser | image display 2D/3D, contrast, camera, labels, points, tracks, t-scrubbing, selection, mask correction |
-| **C** | `api/src/image_render.jl`, extended | `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, title cards |
+| **Browser** | WebGPU in the browser | image display 2D/3D, contrast, camera, labels, points, tracks, t-scrubbing, selection, mask correction |
+| **Offline** | `api/src/image_render.jl`, extended | `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, title cards |
 
-The split is on **interactivity, not difficulty**. B must produce a frame in ~16 ms and does it in
-5.3 ms. C's 117 ms/frame is irrelevant offline — a 181-frame movie is ~27 s — and C already reads the
-zarr, already applies napari's exported LUTs, and `jobs.jl` already gives the progress/cancel
-contract `record_timelapse` needs.
+The split is on **interactivity, not difficulty**. The browser must produce a frame in ~16 ms and does
+it in 5.3 ms. The offline renderer's 117 ms/frame is irrelevant offline — a 181-frame movie is ~27 s —
+and it already reads the zarr, already applies napari's exported LUTs, and `jobs.jl` already gives the
+progress/cancel contract `record_timelapse` needs.
 
 ## What is already measured, so it is not re-litigated
 
@@ -93,7 +93,7 @@ them is the argument for deriving the list instead of writing it from memory.
 | — (t-scrubbing; napari's own dims slider) | **P2** |
 | `show_populations`, `show_tracks` | **P3** |
 | `show_labels`, `refresh_labels`, `colour_labels`, `show_branch_labels`, `colour_branch_labels` | **P4** |
-| `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, `capture_view_state`, `apply_view_state` | **P5** (renderer C) |
+| `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, `capture_view_state`, `apply_view_state` | **P5** (offline renderer) |
 | `start_cell_selection`, `update_selection_scope` | **P6** |
 | `show_task_preview`, `preview_region` | **P7** |
 | `ping`, `gl_info`, `set_task_dir`, `configure_autosave`, `save_layer_props` | **P8** — bridge plumbing, deleted with the bridge |
@@ -267,10 +267,10 @@ A device that is lost anyway now offers a **Reload** rather than a setting to go
 context goes with the device, so it cannot be recovered in place.
 
 ### P3 — h5ad-derived overlays: points, tracks, colour-by — **POINTS BUILT**
-**The second make-or-break.** A and C read h5ad server-side and ship identifiers only
-(`CLOUD_MIGRATION_ASSESSMENT.md` §3a); B must add routes. Do NOT reimplement `LabelPropsView` in the
-browser — serve centroids/tracks/columns as JSON or binary from Julia, through the canonical
-`label_props` view.
+**The second make-or-break.** napari and the offline renderer read h5ad server-side and ship
+identifiers only (`CLOUD_MIGRATION_ASSESSMENT.md` §3a); the browser must add routes. Do NOT
+reimplement `LabelPropsView` in the browser — serve centroids/tracks/columns as JSON or binary from
+Julia, through the canonical `label_props` view.
 **Fails if:** the payloads turn out large enough to need their own caching story. Measure first: h5ad
 is 139 MB total across 55 files, median 0.77 MB, so probably not.
 
@@ -401,12 +401,12 @@ not hold three, and the 2D view is the one people gate on.
 ### P5 — the offline capture path in C — **FRAME + SWEEP BUILT**
 Camera in `image_render.jl` + the four capture commands + title cards, on `jobs.jl` with
 progress/cancel. Non-interactive, so 117 ms/frame is fine. `capture_view_state`/`apply_view_state` are
-the keyframe contract the animation page already speaks, so B must be able to answer them too.
+the keyframe contract the animation page already speaks, so the browser must be able to answer them too.
 
 **Built: `render_view_frame`** — one movie-grade frame, and it differs from `render_preview_frame` in
 the three ways a movie differs from a thumbnail:
 
-  - **It returns pixels, not a PNG.** Half of C's warm frame was PNG encoding (49.5 ms of 117 ms), and
+  - **It returns pixels, not a PNG.** Half of the offline renderer's warm frame was PNG encoding (49.5 ms of 117 ms), and
     an encoder wants raw frames — paying for a PNG per frame only to decode it again is most of the
     render. That is the plan's "pick a better codec" answered by not encoding at all until the end.
   - **It takes the same z SELECTION as the browser's slab route**, off the same `read_slab`: `nothing`

@@ -1,4 +1,4 @@
-# ── frame_overlays.jl — CPU-side overlay drawing for renderer C (WEB_VIEWER_PLAN.md → P5) ─
+# ── frame_overlays.jl — CPU-side overlay drawing for the offline renderer (WEB_VIEWER_PLAN.md → P5) ─
 #
 # Points, tracks and mask outlines rasterised onto an `RGB{N0f8}` frame. The browser draws these
 # through WebGPU (`viewerOverlays.ts`, `mipShader.ts`); a recorded movie has to draw the same content
