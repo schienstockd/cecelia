@@ -180,12 +180,16 @@ export async function createBrickVolumeRenderer(
     }
     const budget = budgetBytes > 0 ? budgetBytes : DEFAULT_ATLAS_BUDGET
     const layout = pickAtlasLayout(brickSize, bpv, nC, budget, limits)
+    console.info('[bricks] setImage', {
+      zDepth: zd, meta_nZ: meta.nZ, meta_nX: meta.nX, meta_nY: meta.nY, nC,
+      brickSize, bpv, budget, layout,
+    })
     if (layout === null) {
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
     }
     const texture = createBrickAtlasTexture(device, layout, limits, onError)
-    if (texture === null) return
+    if (texture === null) { console.warn('[bricks] createBrickAtlasTexture failed'); return }
 
     const capacity = atlasSlotCapacity(layout)
     const pageTable = new PageTable(capacity)

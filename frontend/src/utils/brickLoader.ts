@@ -151,17 +151,29 @@ export async function fetchBrick(
   let res: Response
   try {
     res = await fetch(url, { signal })
-  } catch {
+  } catch (e) {
+    console.warn('[bricks] fetch threw', e)
     return null
   }
-  if (!res.ok) return null
-  const shape = parseBrickSlabShape(res.headers.get('X-Slab-Shape'))
-  if (!shape) return null
+  if (!res.ok) {
+    console.warn('[bricks] fetch !ok', res.status, res.statusText, url)
+    return null
+  }
+  const header = res.headers.get('X-Slab-Shape')
+  const shape = parseBrickSlabShape(header)
+  if (!shape) {
+    console.warn('[bricks] fetch bad shape header', header, url)
+    return null
+  }
   const bytes = await res.arrayBuffer()
   const err = brickShapeError(
-    res.headers.get('X-Slab-Shape'), bytes.byteLength,
-    meta.bytesPerVoxel, expectedNC, expectedBrickSize,
+    header, bytes.byteLength, meta.bytesPerVoxel, expectedNC, expectedBrickSize,
   )
-  if (err !== null) return null
+  if (err !== null) {
+    console.warn('[bricks] fetch shape mismatch', err, {
+      header, byteLength: bytes.byteLength, expectedNC, expectedBrickSize, bpv: meta.bytesPerVoxel,
+    })
+    return null
+  }
   return { bytes, shape }
 }
