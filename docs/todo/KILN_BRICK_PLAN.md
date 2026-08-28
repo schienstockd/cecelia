@@ -47,11 +47,12 @@ around what's visible, not a Z-streaming device. Same atlas, different geometry.
 6. **3D halo = one ring of bricks around the visible frustum**, at the same level as the visible
    brick. The name Dominik coined for it (2026-08-28) — same idea as the 2D `haloPrefetch` but a 3D
    neighbourhood shell around what the camera sees. Not a Kiln concept; grafted on.
-7. **Data source is the existing Julia slab endpoint, not a new brick endpoint.** One request per
-   brick, one axis-aligned slab (t, level, x-range, y-range, z-range, all channels), same
-   `Content-Encoding` compression as today (`WEB_VIEWER_PLAN.md` → Decision 1). The Julia side
-   gains a `slab_brick(...)` helper wrapping `open_zarr` at the requested level. No client-side
-   chunk assembly.
+7. **Data source is the existing Julia slab endpoint — verbatim, no new route.** A brick request
+   is a bounded slab: `try_serve_slab` at `api/src/viewer_api.jl:320` already accepts
+   `(t, c, z, zTo, x, xTo, y, yTo, level, enc)` with clamping, level selection and zstd. Adding a
+   `slab_brick(...)` helper would be a second answer to a question that has one; the client
+   composes brick URLs from the existing route. Only new work server-side is a per-brick
+   measurement gate (see P0). No client-side chunk assembly.
 8. **Fallback is the current `pickVolumeLevel` path**, kept behind a `viewerBrickEnabled` flag until
    Phase 4 validates parity. The old path exits when the flag lands in `main`, not before.
 
@@ -74,10 +75,13 @@ Concrete atlas dimensions live in the atlas manager and are computed from
 Each phase is independently shippable; each ends with a green `pixi run test-frontend` and a
 manual browser check on SispLk + 35uedD.
 
-**P0 — Julia brick provider (server).** `GET /viewer/brick?...` → axis-aligned slab, all channels
-stacked along z, `X-Slab-Bpv` + `X-Slab-Shape` headers already used by the flat atlas. Thin wrapper
-over `open_zarr` at the requested level via `zarr_utils` (never bare `zarr.open`). Guard test
-against `SispLk`/`35uedD` fixtures.
+**P0 — Brick-size + fetch measurement gate (server-side).** No new endpoint: `try_serve_slab` at
+`api/src/viewer_api.jl:320` already answers `(t, c, z, zTo, x, xTo, y, yTo, level, enc)` — a brick
+IS a bounded slab. What P0 delivers is a per-brick fetch benchmark against SispLk (uint8, 8.7 GB
+L0) and 35uedD (uint8, 8.5 GB L0) at brick sizes 64/128/256 and pyramid levels 0-2, so brick size
+(Decision 2) is a measured number rather than a Kiln inheritance. Bench script under
+`docs/todo/spike/webgpu/`, JSON result files under the same, and the plan's brick-size decision
+either confirmed or amended based on the numbers.
 
 **P1 — Vendor Kiln into `frontend/src/lib/webgpu/kiln/`.** Import the physical atlas + page table +
 SSE scheduler unchanged. Add an attribution comment naming the upstream commit hash. Wire nothing
