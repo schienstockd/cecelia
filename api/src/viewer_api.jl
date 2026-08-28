@@ -862,11 +862,23 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             if show_mask
                 all_cells_col = String(get(ov_raw, :allCellsColour, "#9ca3af"))
                 mask_contour_px = Int(get(ov_raw, :maskContourPx, mask_contour_px))
+                # colourBy / colourOverrides ride on `ov_raw` (from `_overlays_raw_from_config`) —
+                # nothing to do here beyond forwarding; the author does the actual recolour. Empty
+                # / missing → pop-derived colours (pre-P5.5 behaviour).
+                cb_raw_v = get(ov_raw, :colourBy, nothing)
+                cb_raw_v === nothing && (cb_raw_v = get(ov_raw, "colourBy", nothing))
+                mask_cb = (cb_raw_v isa AbstractString && !isempty(String(cb_raw_v))) ?
+                            String(cb_raw_v) : nothing
+                co_raw_v = get(ov_raw, :colourOverrides, nothing)
+                co_raw_v === nothing && (co_raw_v = get(ov_raw, "colourOverrides", nothing))
+                mask_co = co_raw_v isa AbstractDict ? co_raw_v : nothing
                 mask_inner = try
                     build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,
                                    transform = tf, pops_filter = ov_paths,
                                    z = z, all_cells = all_cells,
-                                   all_cells_colour = all_cells_col)
+                                   all_cells_colour = all_cells_col,
+                                   colour_by = mask_cb,
+                                   colour_overrides = mask_co)
                 catch e
                     mask_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "movie mask: author failed" value_name = ov_vn pop_type = ov_pt exception = e

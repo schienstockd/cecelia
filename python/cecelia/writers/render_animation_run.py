@@ -167,31 +167,49 @@ def _render_frame(vol, state, canvas_h, canvas_w, z_aniso, q_mult, device, dtype
     n_samples = max(4, int(np.ceil(diag * q_mult)))
     step_v = diag / n_samples
 
-    # View-space sample coords → world → volume voxels. Build once per frame; grid_sample eats it.
+    # View-space sample coords → world → volume voxels. The X / Y grids are ONCE per frame; the
+    # Z grid is chunked so the (1, C, S, H, W) `grid_sample` temporary stays under a memory budget.
+    # `SAMPLE_CHUNK` is picked so the peak allocation is ≤ ~256 MiB at fp32 across (C, H, W):
+    # `C * chunk * H * W * 4 B ≤ 256 MiB`  →  `chunk ≤ 256 MiB / (C * H * W * 4)`. This chunking is
+    # the difference between a 512² render running and OOMing at 1.85 GiB on an 8 GiB card. Old
+    # path used ONE big grid and blew the budget by 7× on large canvases.
     js = (torch.arange(canvas_w, device=device, dtype=dtype) - (canvas_w + 1) / 2) * world_per_px
     is_ = (torch.arange(canvas_h, device=device, dtype=dtype) - (canvas_h + 1) / 2) * world_per_px
-    ss = (torch.arange(n_samples, device=device, dtype=dtype) - (n_samples + 1) / 2) * step_v
-    XV = js.view(1, 1, -1).expand(n_samples, canvas_h, canvas_w)
-    YV = is_.view(1, -1, 1).expand(n_samples, canvas_h, canvas_w)
-    ZV = ss.view(-1, 1, 1).expand(n_samples, canvas_h, canvas_w)
-    # world = R @ view; einsum keeps the (S, H, W) grid batched.
-    xw = R[0, 0] * XV + R[0, 1] * YV + R[0, 2] * ZV
-    yw = R[1, 0] * XV + R[1, 1] * YV + R[1, 2] * ZV
-    zw = R[2, 0] * XV + R[2, 1] * YV + R[2, 2] * ZV
-    vy = yw + cy
-    vx = xw + cx
-    vz = zw / float(z_aniso) + cz
-    # grid_sample normalised coords: index 0 → -1, index N-1 → +1 (align_corners=True). Out-of-volume
-    # sample coords are clamped to zero fill (padding_mode='zeros'), so a rotation that pans off the
-    # volume produces black — same behaviour as the Julia kernel's bounds check.
-    gx = 2 * vx / max(1, X - 1) - 1
-    gy = 2 * vy / max(1, Y - 1) - 1
-    gz = 2 * vz / max(1, Z - 1) - 1
-    grid = torch.stack([gx, gy, gz], dim=-1).unsqueeze(0)     # (1, S, H, W, 3)
+    ss_all = (torch.arange(n_samples, device=device, dtype=dtype) - (n_samples + 1) / 2) * step_v
 
-    sampled = F.grid_sample(vol.unsqueeze(0), grid, mode='bilinear',
-                             padding_mode='zeros', align_corners=True)   # (1, C, S, H, W)
-    chw = sampled.max(dim=2).values.squeeze(0)                # (C, H, W) — the MIP
+    C = vol.shape[0]
+    # 256 MiB / bytes_per_slice — round down, cap at 128 so we don't collapse to 1 unnecessarily on
+    # tiny canvases.
+    bytes_per_slice = int(C) * int(canvas_h) * int(canvas_w) * 4
+    max_chunk = max(1, min(128, (256 * 1024 * 1024) // max(bytes_per_slice, 1)))
+    sample_chunk = min(int(n_samples), int(max_chunk))
+
+    chw = None
+    z_denom = max(1, Z - 1)
+    for s0 in range(0, n_samples, sample_chunk):
+        s1 = min(s0 + sample_chunk, n_samples)
+        S = s1 - s0
+        ss = ss_all[s0:s1]
+        XV = js.view(1, 1, -1).expand(S, canvas_h, canvas_w)
+        YV = is_.view(1, -1, 1).expand(S, canvas_h, canvas_w)
+        ZV = ss.view(-1, 1, 1).expand(S, canvas_h, canvas_w)
+        xw = R[0, 0] * XV + R[0, 1] * YV + R[0, 2] * ZV
+        yw = R[1, 0] * XV + R[1, 1] * YV + R[1, 2] * ZV
+        zw = R[2, 0] * XV + R[2, 1] * YV + R[2, 2] * ZV
+        vy = yw + cy
+        vx = xw + cx
+        vz = zw / float(z_aniso) + cz
+        gx = 2 * vx / max(1, X - 1) - 1
+        gy = 2 * vy / max(1, Y - 1) - 1
+        gz = 2 * vz / z_denom - 1
+        grid = torch.stack([gx, gy, gz], dim=-1).unsqueeze(0)     # (1, S, H, W, 3)
+        sampled = F.grid_sample(vol.unsqueeze(0), grid, mode='bilinear',
+                                 padding_mode='zeros', align_corners=True)   # (1, C, S, H, W)
+        # Running MIP across chunks — a per-chunk `.max(dim=2)` keeps the memory bounded and gives
+        # bit-identical output to the one-shot path (max is associative).
+        chunk_mip = sampled.max(dim=2).values.squeeze(0)          # (C, H, W)
+        chw = chunk_mip if chw is None else torch.maximum(chw, chunk_mip)
+        del sampled, grid, XV, YV, ZV, xw, yw, zw, vx, vy, vz, gx, gy, gz, chunk_mip
 
     # Composite: per-channel clip+normalise + LUT LINEAR interp + additive blend. Linear (not nearest)
     # is what the Julia `_lut_at` does — a 2-stop black→base ramp reduces to `n * base`, exactly the

@@ -442,7 +442,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
             end
             for path in paths
                 p = pop_at(m, path)
-                Bool(get(p, :show, true)) || continue
+                Bool(hasproperty(p, :show) ? p.show : true) || continue
                 pop_meta[String(path)] = (colour = hex_to_rgb(String(p.colour)),)
                 push!(want_paths, String(path))
             end
@@ -578,6 +578,7 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                                   track_color_mode = track_color_mode,
                                   colour_by = colour_by,
                                   colour_overrides = colour_overrides)
+    tail_L = max(1, tail_length)
     return function(t::Int)
         pts_raw, segs_raw = _state_at(state, t)
         pts = nothing
@@ -593,6 +594,7 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
         segs = nothing
         if segs_raw !== nothing
             xs0 = Int[]; ys0 = Int[]; xs1 = Int[]; ys1 = Int[]; cs = RGB{N0f8}[]
+            alphas = Float64[]
             @inbounds for i in eachindex(segs_raw.x0)
                 xy0 = _apply(transform, segs_raw.x0[i], segs_raw.y0[i])
                 xy1 = _apply(transform, segs_raw.x1[i], segs_raw.y1[i])
@@ -605,8 +607,14 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                 push!(xs0, xy0[1]); push!(ys0, xy0[2])
                 push!(xs1, xy1[1]); push!(ys1, xy1[2])
                 push!(cs, segs_raw.colour[i])
+                # Per-segment alpha for the tail fade — SAME formula the 3D projector uses so a 2D
+                # and 3D animation of the same track fade at the same rate. `t1_vec[i]` is the
+                # segment's arrival timepoint (bucketed by `_state_at`).
+                age = (t + 1) - segs_raw.t1[i]
+                push!(alphas, 0.2 + 0.8 * clamp(1.0 - Float64(age) / Float64(tail_L), 0.0, 1.0))
             end
-            isempty(xs0) || (segs = (; x0 = xs0, y0 = ys0, x1 = xs1, y1 = ys1, colour = cs))
+            isempty(xs0) || (segs = (; x0 = xs0, y0 = ys0, x1 = xs1, y1 = ys1,
+                                       colour = cs, alpha = alphas))
         end
         (pts, segs)
     end
@@ -772,10 +780,14 @@ function build_mask_for(img; value_name::AbstractString, pop_type::AbstractStrin
                         pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                         z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
                         all_cells::Bool = false,
-                        all_cells_colour::AbstractString = "#9ca3af")
+                        all_cells_colour::AbstractString = "#9ca3af",
+                        colour_by::Union{Nothing,AbstractString} = nothing,
+                        colour_overrides::Union{Nothing,AbstractDict} = nothing)
     pt = String(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
+    cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
+    cb_overrides_rgb = _prep_overrides(colour_overrides)
 
     # ── Open the label store ONCE. Same reason the movie sweep opens the image ONCE: an
     # `nT`-frame sweep would otherwise pay `nT` metadata round-trips for a geometry that cannot
@@ -836,7 +848,7 @@ function build_mask_for(img; value_name::AbstractString, pop_type::AbstractStrin
             end
             for path in paths
                 p = pop_at(m, path)
-                Bool(get(p, :show, true)) || continue
+                Bool(hasproperty(p, :show) ? p.show : true) || continue
                 pop_meta[String(path)] = hex_to_rgb(String(p.colour))
                 push!(want_paths, String(path))
             end
@@ -859,6 +871,43 @@ function build_mask_for(img; value_name::AbstractString, pop_type::AbstractStrin
                     colour = get(pop_meta, pop_path, nothing)
                     colour === nothing && continue
                     id_colours[Int(round(Float64(lab)))] = colour
+                end
+            end
+        end
+    end
+
+    # ── colour_labels — recolour every id in id_colours by its value in an obs column. Same
+    # `_cb_prepare` resolver the overlay authors use, so a labels layer coloured by "clusters" and
+    # a points layer coloured by "clusters" pick the SAME hex per value — one palette, one place.
+    # `nothing` if the column is absent OR colour_by wasn't asked for → falls through to the
+    # pop-derived colours built above.
+    if cb_col !== nothing && !isempty(id_colours)
+        lp = label_props(img; value_name = vn)
+        select_cols(lp, [cb_col])
+        df = try
+            as_df(lp)
+        catch e
+            @warn "build_mask_for: colour_by column read failed" value_name colour_by exception = e
+            nothing
+        end
+        if df !== nothing
+            # Cell-pops path uses a pop_map for user-pop colour donation; all-cells / track paths
+            # get plain Okabe-Ito / heat-ramp. Match the overlay author's per-branch rule.
+            cb_pop_map = if all_cells
+                nothing
+            elseif is_track_pt
+                try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
+            else
+                try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
+            end
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map)
+            if cb_resolve !== nothing
+                @inbounds for i in 1:size(df, 1)
+                    lab = df[i, :label]
+                    (lab isa Real && isfinite(Float64(lab))) || continue
+                    lid = Int(round(Float64(lab)))
+                    haskey(id_colours, lid) || continue
+                    id_colours[lid] = cb_resolve(id_colours[lid], i)
                 end
             end
         end

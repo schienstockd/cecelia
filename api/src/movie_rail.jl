@@ -94,6 +94,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # on, that IS the intended mask; else the mask filters by the same pops the points would draw.
         out["allCells"]        = !(show_pops || show_gated)
     end
+    # colourBy / colourOverrides — same knobs the overlay author reads (`_build_overlay_state`).
+    # `build_mask_for` picks them up so a labels layer coloured by "clusters" and the pop dots
+    # coloured by "clusters" share the same palette. Absent / empty → pop-derived colours.
+    cb_raw = _cfg_str(cfg, "colourBy", "")
+    isempty(cb_raw) || (out["colourBy"] = cb_raw)
+    co_raw = get(cfg, "colourOverrides", nothing)
+    co_raw === nothing && (co_raw = get(cfg, :colourOverrides, nothing))
+    co_raw isa AbstractDict && (out["colourOverrides"] = co_raw)
     out
 end
 

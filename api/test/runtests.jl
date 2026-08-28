@@ -4911,6 +4911,33 @@ end
     draw_points!(zero_px, (; x = [10], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 0)
     @test zero_px == black
 
+    # ── per-segment alpha — track-tail fade parity with the 3D PIL rasteriser.
+    # A segment with alpha = 1 paints the pure colour (same as no alpha). alpha = 0.5 blends
+    # 50/50 with the underlying frame. alpha = 0 leaves the frame untouched.
+    bg = fill(RGB{N0f8}(0.2, 0.0, 0.0), 20, 20)   # dark red background
+    fade = copy(bg)
+    draw_segments!(fade,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.5]);
+        width_px = 1)
+    # 0.5 * white + 0.5 * (0.2, 0, 0) → (0.6, 0.5, 0.5). N0f8 rounds each channel to /255.
+    r = Float64(fade[10, 9].r); g = Float64(fade[10, 9].g); b = Float64(fade[10, 9].b)
+    @test isapprox(r, 0.6; atol = 0.01)
+    @test isapprox(g, 0.5; atol = 0.01)
+    @test isapprox(b, 0.5; atol = 0.01)
+    # alpha = 0 → frame unchanged
+    zero_alpha = copy(bg)
+    draw_segments!(zero_alpha,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.0]);
+        width_px = 1)
+    @test zero_alpha == bg
+    # Alpha length mismatch → error early
+    @test_throws ArgumentError draw_segments!(bg,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.5, 0.5]);
+        width_px = 1)
+
     # ── mask outlines ────────────────────────────────────────────────────────────
     # A 2x2 block of id=1 in the middle of an otherwise empty frame. Its outline is the whole 2x2
     # block: every pixel of the block has at least one background neighbour, so the outline IS the
@@ -5320,6 +5347,24 @@ end
                                        pops_filter = String["/no-such"])
             mn, dn = mask_none(0)
             @test mn === nothing && dn === nothing
+
+            # colour_labels — recolour every id in the mask by an obs column. Total overrides
+            # → every id gets the same colour, proving the resolver hits every id in the dict
+            # (and picks up the DEFAULT colour when overrides don't match). Same `_cb_prepare`
+            # helper the overlay author uses; matching palettes across labels + points is the point.
+            lp2 = label_props(img; value_name = "B")
+            df2 = as_df(lp2)
+            ts_all = unique(Int[Int(round(Float64(v))) for v in df2.centroid_t
+                                 if v isa Real && isfinite(Float64(v))])
+            ov = Dict{String,String}(string(t) => "#00ff00" for t in ts_all)
+            mask_cb = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                      all_cells = true, all_cells_colour = "#9ca3af",
+                                      colour_by = "centroid_t",
+                                      colour_overrides = ov)
+            _, dict_cb = mask_cb(0)
+            green = RGB{N0f8}(hex_to_rgb("#00ff00"))
+            @test !isempty(dict_cb)
+            @test all(v -> v == green, values(dict_cb))
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

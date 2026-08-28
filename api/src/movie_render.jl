@@ -475,7 +475,11 @@ function _resolve_keyframe_overlay_builders(img, overlays_config)
     tail = _ov_int(overlays_config, "tailLength", 30)
     tcm  = _ov_str(overlays_config, "trackColourMode", "track")
     pops_filter = _ov_strvec(overlays_config, "popsFilter")
-    inc_tracks  = show_gated
+    # `include_tracks` gates the track-history build. Whole-seg ribbons (`showTracks = true`) need
+    # it too — dropping this was a latent bug that shipped only dots when `showTracks` was on
+    # without `showGatedTracks`. The author's `all_tracks` flag flips WHICH cells to iterate; the
+    # `include_tracks` flag flips WHETHER to also record segments.
+    inc_tracks  = show_gated || show_tracks
     # `colourBy` is optional — an obs column name. `colourOverrides` is a Dict{String,String}
     # mapping value → hex. Both empty / missing → author falls back to pop-derived colours.
     cb_raw = get(overlays_config, "colourBy", nothing)
