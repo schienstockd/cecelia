@@ -3093,7 +3093,8 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0"
+                :max="Math.max(chMax[c] ?? 1, ch.hi, initialContrast[c]?.hi ?? 1, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />
