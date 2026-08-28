@@ -133,10 +133,15 @@ grew `cTo?: number` in `volumeViewer.ts`; flat-atlas callers are unchanged (scal
 never emits the param). Not yet plumbed into a scheduler or `ViewerWindow.vue` — the LRU and
 `viewerBrickEnabled` flag live in P4 alongside the halo prefetch.
 
-**P4 — 3D halo + SSE scheduler.** One ring of neighbour bricks at the visible level; SSE-driven
-LOD selection with hysteresis (port the `TILE_LOD_HYST_LOG2 = log2(1/0.7)` constant from PR #682
-once merged). Instrument with a `?bricks` debug overlay showing residency, level per brick, and
-eviction reason (mirrors the tile mini-map).
+**P4 — 3D halo + SSE scheduler. ✓ scaffolded 2026-08-28.**
+`frontend/src/utils/brickScheduler.ts` — `bricksIntersectingViewport(view, world, level)` walks
+the brick grid at a level and returns the core + 1-ring halo bricks with a Chebyshev distance
+rank (same shape as `tileEvictions` in `tileViewer.ts`). `pickBrickLevel` composes
+`sseDesiredLevel` + `sseLevelWithHysteresis`. `scheduleBricks(view, world, resident,
+previousLevel)` is the frame decision: `{ level, toLoad, toEvict }`. First-pass is XY-only
+(walks every `bz` slab per level — matches SispLk/35uedD nZ=4); proper 3D frustum + z-brick
+culling deferred to when a deep-Z reference image is available. Debug overlay + shader-side
+integration land in P5 (the tick loop that drives the scheduler is a viewer concern).
 
 **P5 — Integrate.** Toggle `viewerBrickEnabled` in dev; verify SispLk and 35uedD render at L0 in
 the visible region and coarsen away from the camera. Compare visible frame time against the
