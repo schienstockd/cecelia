@@ -2454,6 +2454,7 @@ async function loadVersion(refit: boolean) {
   // per-channel contrast surface or camera pose hooked into the sink today (VIEWER_TILES_PLAN.md →
   // open). Wrapped in `duringRestore` again so the autosave watchers below don't echo it back.
   const r = renderer.value
+  const tBeforeRestore = t.value
   if (r && saved) {
     propsSink.duringRestore(() => {
       applyViewState(saved, m, {
@@ -2471,6 +2472,15 @@ async function loadVersion(refit: boolean) {
       })
     })
     pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
+    // Reallocate's `gotoT` already fired for the PRE-restore t (usually 0). If the restore moved
+    // t (usually because the panel remembered a mid-timecourse frame), kick a fresh pump so the
+    // frame the user actually wants doesn't wait until they nudge a control. Without this, the
+    // still-overlay reads "Loading timepoint N…" forever — the fetches for 0..prefetch fired
+    // but the restored t never got its turn.
+    if (t.value !== tBeforeRestore) {
+      console.info('[viewer] restore moved t', { from: tBeforeRestore, to: t.value })
+      gotoT(t.value)
+    }
   }
   if (refit) { /* nothing more — fitDist already seeded, cam already fit */ }
   starting.value = ''
