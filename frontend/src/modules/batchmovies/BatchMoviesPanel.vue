@@ -243,24 +243,21 @@ async function fillFromView(force = false) {
   if (!force && Object.keys(channels.value).length) return   // already authored → leave alone
   seeding.value = true
   let seed: BatchMovieCfg = {}
-  // Prefer the browser volume viewer's published viewState (`useViewerStore.viewState`) — the popup
-  // writes it on every camera / channel change (same shape napari emits). Falls back to napari when
-  // the browser viewer isn't running. Auto-seed only trusts the source when its OPEN image is the
-  // first selected one; forced (button click) reads whichever source has state.
+  // Read the BROWSER volume viewer's published viewState (`useViewerStore.viewState`). The popup
+  // writes it on every camera / channel change (same shape napari emits). No napari fallback —
+  // this page is on the movie rail's off-napari path and any read from `/api/napari/view-state`
+  // would silently drift the seed back to whatever napari has open, which is what the user hit.
+  // Auto-seed still only trusts the source when its OPEN image is the first selected one; forced
+  // (button click) reads whatever the browser viewer currently has. If the browser viewer isn't
+  // open yet, `seed` stays empty and the palette default below kicks in.
   const browserOpenUid = viewer.openImage?.imageUid
   if (viewer.viewState && (force || browserOpenUid === first)) {
     seed = seedConfigFromViewState(viewer.viewState as unknown as ViewStateLike, rep.channelNames ?? [])
-  } else {
-    try {
-      const res = await fetch('/api/napari/view-state', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }),
-      })
-      if (res.ok) {
-        const j = await res.json() as { viewState?: ViewStateLike; imageUid?: string }
-        // auto: only trust the live view when the OPEN image is the first selected one
-        if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState, rep.channelNames ?? [])
-      }
-    } catch { /* fall through to the palette default */ }
+  } else if (force) {
+    // User pressed the button expecting a fill — tell them why nothing changed rather than
+    // silently defaulting.
+    log.info('Open the image in the viewer first — fill-from-view reads the live view.',
+             { source: 'movies' })
   }
   // no usable live channels → default palette so the picker isn't blank
   if (!Object.keys(seed.channels ?? {}).length) {
