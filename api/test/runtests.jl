@@ -6932,6 +6932,82 @@ end
     @test collect(j.segments.alpha) == [0.8]
 end
 
+@testset "API: overlay_author — colourBy + colourOverrides recolour via shared state" begin
+    # The drift-guarantee payoff: `colour_by` + `colour_overrides` plug in ONCE at
+    # `_build_overlay_state`, so pointing 2D and 3D authors at the same column produces the same
+    # per-vertex colours. Fixture is `testpr`/`KDIeEm` with a wide-open pop; we override the
+    # `centroid_t` column so every cell falls to a known value → override wins uniformly.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "cb", "colour" => "#000000", "gate" => gate)))))
+
+            # Which column to colour by — pick something guaranteed present, `centroid_t`. Discover
+            # its values to build a total-override map, so EVERY dot gets a known colour.
+            lp = label_props(img; value_name = "B")
+            view_centroid_cols(lp; order = [:x, :y, :z])
+            df = as_df(lp)
+            ts = unique(Int[Int(round(Float64(v))) for v in df.centroid_t
+                             if v isa Real && isfinite(Float64(v))])
+            overrides = Dict{String,String}(string(t) => "#00ff00" for t in ts)
+
+            # 2D author with colourBy = centroid_t + total overrides → all points paint green.
+            H = ceil(Int, maximum(Float64.(df.centroid_y))) + 8
+            W = ceil(Int, maximum(Float64.(df.centroid_x))) + 8
+            tf = pixel_transform(H, W)
+            per_t_2d = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                           colour_by = "centroid_t",
+                                           colour_overrides = overrides)
+            pts, _ = per_t_2d(0)
+            @test pts !== nothing
+            @test length(pts.colour) > 0
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts.colour)
+
+            # 3D author, same colourBy + overrides — same colours per vertex.
+            per_t_3d = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
+                                             colour_by = "centroid_t",
+                                             colour_overrides = overrides)
+            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+            pts3d, _ = per_t_3d(0, R0, 0.0, 0.0, 0.0, 1.0, 100, 100, 1.0)
+            @test pts3d !== nothing
+            @test length(pts3d.colour) > 0
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts3d.colour)
+
+            # Partial override — one value overridden, the rest fall to Okabe-Ito. The overridden
+            # value's colour matches; some non-overridden values differ.
+            partial = Dict{String,String}(string(first(ts)) => "#0000ff")
+            per_t_2d_p = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                             colour_by = "centroid_t",
+                                             colour_overrides = partial)
+            pts_p, _ = per_t_2d_p(first(ts))
+            @test pts_p !== nothing
+            @test all(c -> c == RGB{N0f8}(0, 0, 1), pts_p.colour)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: overlay_author — rotation_matrix_from_angles matches vispy convention" begin
     # The rotation-matrix convention is REPLICATED in three places: `render_view_frame_3d` (Julia
     # CPU fallback), `render_animation_run.py::_rotation_matrix` (GPU raycast), and

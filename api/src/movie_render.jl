@@ -476,6 +476,14 @@ function _resolve_keyframe_overlay_builders(img, overlays_config)
     tcm  = _ov_str(overlays_config, "trackColourMode", "track")
     pops_filter = _ov_strvec(overlays_config, "popsFilter")
     inc_tracks  = show_gated
+    # `colourBy` is optional — an obs column name. `colourOverrides` is a Dict{String,String}
+    # mapping value → hex. Both empty / missing → author falls back to pop-derived colours.
+    cb_raw = get(overlays_config, "colourBy", nothing)
+    colour_by = (cb_raw === nothing || (cb_raw isa AbstractString && isempty(String(cb_raw)))) ?
+                  nothing : String(cb_raw)
+    cov_raw = get(overlays_config, "colourOverrides", nothing)
+    colour_overrides = cov_raw isa AbstractDict ?
+        Dict{String,String}(String(k) => String(v) for (k, v) in cov_raw) : nothing
 
     # Same author for both dimensionalities; the 2D one takes a `PixelTransform`, so we curry a
     # per-canvas builder that the caller pins to the frame's crop/max_px at draw time. `native_h`/
@@ -487,14 +495,18 @@ function _resolve_keyframe_overlay_builders(img, overlays_config)
                             include_tracks = inc_tracks,
                             tail_length = tail,
                             all_tracks = show_tracks,
-                            track_color_mode = tcm)
+                            track_color_mode = tcm,
+                            colour_by = colour_by,
+                            colour_overrides = colour_overrides)
     end
     per_t3d = build_overlays3d_for(img; value_name = vn, pop_type = pt,
                                     pops_filter = pops_filter,
                                     include_tracks = inc_tracks,
                                     tail_length = tail,
                                     all_tracks = show_tracks,
-                                    track_color_mode = tcm)
+                                    track_color_mode = tcm,
+                                    colour_by = colour_by,
+                                    colour_overrides = colour_overrides)
     (_build2d, per_t3d)
 end
 

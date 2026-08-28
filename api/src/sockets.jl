@@ -332,6 +332,18 @@ function handle_movie_record(ws, data)
             # `look` carries the resolved per-set settings; a missing tailLength means "napari
             # default", which is 30 (matches `_overlays_raw_from_config`).
             ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)
+            # `colourBy` + `colourOverrides` — per-set settings the animation-page emit resolved at
+            # snapshot time (frontend's AnimationPanel.vue pulls `settings.getColourBy(setUid)`
+            # / `settings.getColourOverrides(setUid, colourBy)` and threads them onto `look`).
+            # Absent / empty → author falls back to pop-derived colours.
+            cb_raw = get(look_cfg, "colourBy", nothing)
+            cb_raw === nothing && (cb_raw = get(look_cfg, :colourBy, nothing))
+            if cb_raw !== nothing && !(cb_raw isa AbstractString && isempty(String(cb_raw)))
+                ovs_cfg["colourBy"] = String(cb_raw)
+            end
+            co_raw = get(look_cfg, "colourOverrides", nothing)
+            co_raw === nothing && (co_raw = get(look_cfg, :colourOverrides, nothing))
+            co_raw isa AbstractDict && (ovs_cfg["colourOverrides"] = co_raw)
         end
         @async try
             run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,

@@ -209,6 +209,90 @@ function _state_at(state::OverlayState, t::Int)
     (pts, segs_raw)
 end
 
+# ── Colour-by / colour-overrides — per-vertex colouring by an obs column ──────────
+#
+# Napari colours points / track ribbons by a chosen obs column: categorical values
+# (String, Bool, Integer) go through `colour_by_palette` (Okabe-Ito by sorted
+# position, but a user pop that filters for a value on that column donates its
+# colour); continuous columns (Float) go through a viridis-ish heat ramp
+# normalised over the frame's df range. `colour_overrides` is a
+# `{value_string → hex}` map that wins per-value.
+#
+# ONE resolver builds a per-row closure so the collection loop just does
+# `_push_point!(t, xyz, cb_resolve(default_col, i))` at every push site — three
+# extra characters per site, and colourBy lights up for populations AND tracks in
+# BOTH 2D and 3D atomically.
+#
+# `track_color_mode` interaction — when `colour_by` is set, tracks force to
+# `"solid"` (the arriving cell's colour). Napari's `color_by` overrides its
+# categorical/speed palettes the same way; matching that keeps the browser view
+# and the movie in the same colours.
+
+_prep_overrides(colour_overrides) = colour_overrides === nothing ? nothing :
+    Dict{String,RGB{N0f8}}(String(k) => hex_to_rgb(String(v)) for (k, v) in colour_overrides)
+
+# Given a df that has the `colour_by` column present, return a per-row resolver
+# `(default_col::RGB, i::Int) -> RGB`. `nothing` means colourBy is disabled OR the
+# column is absent — the caller falls back to the pop's own colour. `pop_map`
+# supplies the user-pop colour donation for categorical values (`nothing` for the
+# `all_tracks` path — no pop map means Okabe-Ito by sorted position).
+function _cb_prepare(df, cb_col::Union{Nothing,String},
+                     cb_overrides::Union{Nothing,Dict{String,RGB{N0f8}}},
+                     pop_map)
+    cb_col === nothing && return nothing
+    sym = Symbol(cb_col)
+    sym in propertynames(df) || return nothing
+    col = df[!, sym]
+    # Categorical vs continuous — decided by column dtype. `AbstractFloat` → continuous
+    # (viridis-ish heat ramp), everything else → categorical. Integer columns (cluster
+    # ids, HMM states) stay categorical, which matches napari.
+    is_continuous = eltype(col) <: AbstractFloat
+    if is_continuous
+        vals = Float64[Float64(v) for v in col if v isa Real && isfinite(Float64(v))]
+        (lo, hi) = isempty(vals) ? (0.0, 1.0) : (minimum(vals), maximum(vals))
+        span = hi > lo ? (hi - lo) : 1.0
+        return (default, i) -> begin
+            v = col[i]
+            (v isa Real && isfinite(Float64(v))) || return default
+            if cb_overrides !== nothing
+                # Try `string(v)` first, then `string(Int(v))` when v is an integer-valued Real.
+                # Frontend override maps come from user-typed values in the settings pane; a user
+                # types `"0"` for a category the AnnData column stores as `0.0`, so match both.
+                k = string(v)
+                haskey(cb_overrides, k) && return cb_overrides[k]
+                if v isa Real && isfinite(Float64(v)) && isinteger(Float64(v))
+                    ki = string(Int(v))
+                    haskey(cb_overrides, ki) && return cb_overrides[ki]
+                end
+            end
+            _heat_ramp(clamp((Float64(v) - lo) / span, 0.0, 1.0))
+        end
+    else
+        uniq = unique(collect(skipmissing(col)))
+        hexes = pop_map === nothing ?
+            Dict{Any,String}(v => OKABE_ITO[mod1(k, length(OKABE_ITO))]
+                              for (k, v) in enumerate(sort(uniq; by = string))) :
+            colour_by_palette(pop_map, cb_col, uniq)
+        palette = Dict{Any,RGB{N0f8}}(k => hex_to_rgb(String(v)) for (k, v) in hexes)
+        return (default, i) -> begin
+            v = col[i]
+            if cb_overrides !== nothing
+                # Try `string(v)` first, then `string(Int(v))` when v is an integer-valued Real.
+                # Frontend override maps come from user-typed values in the settings pane; a user
+                # types `"0"` for a category the AnnData column stores as `0.0`, so match both.
+                k = string(v)
+                haskey(cb_overrides, k) && return cb_overrides[k]
+                if v isa Real && isfinite(Float64(v)) && isinteger(Float64(v))
+                    ki = string(Int(v))
+                    haskey(cb_overrides, ki) && return cb_overrides[ki]
+                end
+            end
+            haskey(palette, v) && return palette[v]
+            default
+        end
+    end
+end
+
 # Native-voxel collection. Three branches match the pre-refactor `build_overlays_for`:
 #   * `all_tracks = true`  → whole-segmentation ribbons (every cell with `track_id > 0`)
 #   * cell pop_types       → `resolve_pops` + centroid table
@@ -222,7 +306,14 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                               tail_length::Int = 30,
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
-                              track_color_mode::AbstractString = "track")
+                              track_color_mode::AbstractString = "track",
+                              colour_by::Union{Nothing,AbstractString} = nothing,
+                              colour_overrides::Union{Nothing,AbstractDict} = nothing)
+    cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
+    cb_overrides_rgb = _prep_overrides(colour_overrides)
+    # When colourBy is on, tracks paint in the arriving-cell colour (napari's `color_by`
+    # semantics on the tracks layer). "track"/"speed" would ignore what we resolved.
+    effective_tcm = cb_col === nothing ? String(track_color_mode) : "solid"
     pt = String(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
@@ -256,9 +347,13 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
         else
             view_centroid_cols(lp; order = [:x, :y, :z])
             select_cols(lp, ["track_id"])
+            cb_col === nothing || select_cols(lp, [cb_col])
             df = as_df(lp)
             has_z = "centroid_z" in names(df)
-            colour = hex_to_rgb(String(all_tracks_colour))
+            default_col = hex_to_rgb(String(all_tracks_colour))
+            # No pop map for the whole-segmentation path — categorical values fall to Okabe-Ito by
+            # sorted position (napari does the same for a `color_by` on an unpopulated track store).
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, nothing)
             @inbounds for i in 1:size(df, 1)
                 px = df[i, :centroid_x]; py = df[i, :centroid_y]
                 (px isa Real && py isa Real) || continue
@@ -266,6 +361,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                 (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
                 pz = _z_of(df, i, has_z)
                 ti = hasT ? Int(round(Float64(t))) : 0
+                colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
                 _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                 if include_tracks
                     traw = df[i, :track_id]
@@ -289,6 +385,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
         end
         view_centroid_cols(lp; order = [:x, :y, :z])
         hasK && select_cols(lp, ["track_id"])
+        cb_col === nothing || select_cols(lp, [cb_col])
         df = as_df(lp)
         has_z = "centroid_z" in names(df)
         n = size(df, 1)
@@ -296,9 +393,15 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
         @inbounds for i in 1:n
             row_of[Int(df[i, :label])] = i
         end
+        # Optional pop_map load — categorical colour_by uses user-pop-derived colours where a pop
+        # filters for a value on the same column (`colour_by_palette`). Cheap to reload here
+        # (JSON parse). `nothing` if the sidecar is missing → Okabe-Ito by sorted position.
+        cb_pop_map = cb_col === nothing ? nothing :
+            try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
+        cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map)
         for p in pops
             Bool(get(p, :show, true)) || continue
-            colour = hex_to_rgb(String(p.colour))
+            default_col = hex_to_rgb(String(p.colour))
             is_track_pop = Bool(get(p, :is_track, false)) && hasK
             for L in p.labels
                 i = get(row_of, Int(L), 0)
@@ -309,6 +412,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                 (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
                 pz = _z_of(df, i, has_z)
                 ti = hasT ? Int(round(Float64(t))) : 0
+                colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
                 _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                 if include_tracks && is_track_pop
                     traw = df[i, :track_id]
@@ -354,6 +458,9 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
             if df !== nothing && size(df, 1) > 0
                 col_exists(c) = c in names(df)
                 has_z = col_exists("centroid_z")
+                # `pop_df(include_obs=true)` already surfaced every obs column — colour_by is
+                # already present in the df, no extra select_cols round-trip needed.
+                cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, m)
                 @inbounds for i in 1:size(df, 1)
                     (col_exists("centroid_x") && col_exists("centroid_y")) || break
                     px = df[i, :centroid_x]; py = df[i, :centroid_y]
@@ -365,7 +472,8 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                     pop_path = col_exists("pop") ? String(df[i, :pop]) : first(want_paths)
                     meta = get(pop_meta, pop_path, nothing)
                     meta === nothing && continue
-                    colour = meta.colour
+                    default_col = meta.colour
+                    colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
                     _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                     if include_tracks && col_exists("track_id")
                         traw = df[i, :track_id]
@@ -388,7 +496,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                               Vector{Float64},Vector{Float64},Vector{Float64},
                               Vector{RGB{N0f8}}}}}()
     tracks_active = include_tracks && hasT && tail_length > 0
-    tcm = String(track_color_mode)
+    tcm = effective_tcm
     tcm in ("track", "speed", "solid") ||
         (@warn "_build_overlay_state: unknown track_color_mode, falling back to \"track\"" mode = tcm;
          tcm = "track")
@@ -459,13 +567,17 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                             tail_length::Int = 30,
                             all_tracks::Bool = false,
                             all_tracks_colour::AbstractString = "#9ca3af",
-                            track_color_mode::AbstractString = "track")
+                            track_color_mode::AbstractString = "track",
+                            colour_by::Union{Nothing,AbstractString} = nothing,
+                            colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
                                   value_name = value_name, pop_type = pop_type,
                                   pops_filter = pops_filter, include_tracks = include_tracks,
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
-                                  track_color_mode = track_color_mode)
+                                  track_color_mode = track_color_mode,
+                                  colour_by = colour_by,
+                                  colour_overrides = colour_overrides)
     return function(t::Int)
         pts_raw, segs_raw = _state_at(state, t)
         pts = nothing
@@ -569,13 +681,17 @@ function build_overlays3d_for(img; value_name::AbstractString, pop_type::Abstrac
                               tail_length::Int = 30,
                               all_tracks::Bool = false,
                               all_tracks_colour::AbstractString = "#9ca3af",
-                              track_color_mode::AbstractString = "track")
+                              track_color_mode::AbstractString = "track",
+                              colour_by::Union{Nothing,AbstractString} = nothing,
+                              colour_overrides::Union{Nothing,AbstractDict} = nothing)
     state = _build_overlay_state(img;
                                   value_name = value_name, pop_type = pop_type,
                                   pops_filter = pops_filter, include_tracks = include_tracks,
                                   tail_length = tail_length, all_tracks = all_tracks,
                                   all_tracks_colour = all_tracks_colour,
-                                  track_color_mode = track_color_mode)
+                                  track_color_mode = track_color_mode,
+                                  colour_by = colour_by,
+                                  colour_overrides = colour_overrides)
     tail_L = max(1, tail_length)
     return function(t::Int, R::AbstractMatrix{Float64},
                     cx::Real, cy::Real, cz::Real,
