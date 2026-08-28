@@ -2523,7 +2523,7 @@ watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|$
 // (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
 // the publisher immediately re-emits from the applied state, which is exactly what the user
 // wants (the animation page's next capture would see the new state anyway).
-watch(() => viewerStore.pendingViewState?.updateId, () => {
+watch(() => viewerStore.pendingViewState?.updateId, async () => {
   const pending = viewerStore.pendingViewState
   if (!pending) return
   const vs = pending.viewState as ViewerViewState | null
@@ -2535,14 +2535,9 @@ watch(() => viewerStore.pendingViewState?.updateId, () => {
   const applied = applyViewStateToBrowser({
     vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
   })
-  cam.value = applied.cam
-  // t / zPlane / mode drive re-render through their existing watches; setting them here mirrors
-  // the same paths the sliders take.
-  t.value      = applied.t
-  zPlane.value = applied.zPlane
-  mode.value   = applied.ndisplay === 3 ? 'volume' : 'plane'
-  // Per-channel state: mutate meta.channels in place so the existing pushChannels path picks up
-  // the change — matching how the debug channel-toggle and contrast sliders write.
+
+  // Per-channel state first so the reallocated GPU pipeline picks up the visibility / contrast on
+  // the next fetch — same order the initial mount uses (contrast/vis applied around reallocate).
   for (const src of applied.channels) {
     const dst = m.channels.find(ch => ch.name === src.name)
     if (!dst) continue
@@ -2550,6 +2545,28 @@ watch(() => viewerStore.pendingViewState?.updateId, () => {
     dst.hi = src.hi
     dst.visible = src.visible
   }
+
+  // Camera pose is cheap — one write + a redraw; the draw loop reads `cam.value` inside.
+  cam.value = applied.cam
+
+  // Mode switch (2D ↔ 3D) needs a `reallocate` — the tile vs volume renderer chain is picked at
+  // that moment (`ensureRenderer`). A bare `mode.value = ...` writes the ref but leaves the wrong
+  // renderer active, which is what the user hit: controls updated but the canvas never redrew
+  // because the plane renderer's watchers didn't fire for the new mode.
+  const modeChanged = mode.value !== (applied.ndisplay === 3 ? 'volume' : 'plane')
+  mode.value = applied.ndisplay === 3 ? 'volume' : 'plane'
+
+  // z uses the canonical `stepZ` (writes the ref + schedules the reallocate pump); a bare
+  // `zPlane.value = …` moves the number but leaves the tile atlas / volume texture on the old
+  // plane. `gotoT` is the canonical t-setter for the same reason: it schedules the tile pump or
+  // the timepoint pump depending on the render path, then redraws.
+  if (modeChanged) {
+    await reallocate(false)
+  } else if (zPlane.value !== applied.zPlane) {
+    stepZ(applied.zPlane)
+  }
+
+  if (t.value !== applied.t) gotoT(applied.t)
   pushChannels()
 })
 
