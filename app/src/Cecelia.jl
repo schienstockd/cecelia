@@ -11,6 +11,7 @@ export usable_cpus, task_workers_max
 export task_workers_widen, task_workers_derived, set_task_workers_widen!
 export runner_enabled, set_runner_enabled!, is_dev_session
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
+export bf2raw_worker_flags, bf2raw_default_workers, bf2raw_java_heap_gib, bf2raw_default_heap_gib, bf2raw_java_env
 export IMAGE_COMPRESSOR_MEASURED_ON
 export ngff_version, chunk_separator, set_store_layout!
 export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT

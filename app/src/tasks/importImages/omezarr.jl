@@ -825,9 +825,34 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         z_planes    = Int(get(img.meta, "SizeZ", 0)))
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
 
+    # Worker/heap controls — key defaults on the SOURCE extension so Imaris (`.ims`) gets the safe
+    # floor without the user having to know why. Measured 2026-08-27 on `Human_Lymph_Node_Manual_IBEX.ims`:
+    # bioformats2raw's `--max-workers=4` + JVM-default heap = 105 OOMs, 0-3 chunks written before the
+    # task terminated (`H5tiledLayoutBB\$DataChunk.getByteBuffer` → `Deflate.decode`). At workers=2,
+    # -Xmx16g: 2 OOMs and 3820 chunks / 1.5 GB written. At workers=1: OOMs go to 0. That's why the
+    # auto-default for `.ims` is 1, not 2. See `bf2raw_worker_flags` / `bf2raw_default_workers`.
+    worker_choice = string(get(params, "maxWorkers", "auto"))
+    if lowercase(strip(worker_choice)) == "auto"
+        worker_choice = bf2raw_default_workers(eff_src)
+    end
+    worker_flags = bf2raw_worker_flags(worker_choice)
+
+    heap_choice = get(params, "jvmHeapGiB", "auto")
+    heap_gib    = bf2raw_java_heap_gib(heap_choice)
+    if heap_gib == 0 && lowercase(strip(string(heap_choice))) == "auto"
+        heap_gib = bf2raw_default_heap_gib(eff_src)
+    end
+    java_env = bf2raw_java_env(heap_gib)
+
+    on_log("[INFO] Workers: $(isempty(worker_flags) ? "auto (bioformats2raw default: 4)" : worker_flags[1])")
+    on_log("[INFO] JVM heap: $(heap_gib > 0 ? "-Xmx$(heap_gib)g" : "auto (JVM default)")")
+
+    cmd = `$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $worker_flags $eff_src $zarr_out`
+    if !isempty(java_env)
+        cmd = addenv(cmd, java_env)
+    end
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;
-                        stdout = out_pipe, stderr = out_pipe); wait = false)
+    proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)
 
