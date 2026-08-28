@@ -334,7 +334,15 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # worker just wrote — `<vn>__preview.ome.zarr` instead of `<vn>.ome.zarr` — riding the same
     # reader and headers as the real labels slab. The preview store is deliberately full-image
     # geometry, so the coordinate math the reader does is identical; only the file path differs.
+    #
+    # `preview_af=1&sourceChannel=N` (P7.1) is the same idea for an IMAGE channel: the AF worker
+    # writes `{img_dir}/{vn}__preview_af_ch{N}.ome.zarr` per corrected channel, and this flag flips
+    # the read for that one channel onto that store while the other channels keep coming from the
+    # source image. `sourceChannel` is the source-image channel index the corrected store REPLACES —
+    # the FE swaps channel-by-channel URLs based on which channels were corrected. `valueName` here
+    # is the AF task's `outputValueName` (the write side's target version), NOT `c`.
     preview_labels = get(q, "preview", "") == "1"
+    preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
         zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
@@ -350,6 +358,23 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     else
         zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
         err === nothing || return false
+        if preview_af
+            # `sourceChannel` must be present (the store is per-channel) and `previewValueName` names
+            # the AF TASK's `outputValueName` — the same string the worker's `_stage_af_image_store`
+            # used. Kept separate from `valueName` on purpose: `valueName` is what
+            # `resolve_image_version` above just used to find the source image (which is where the
+            # scratch sits, via `dirname(zp)`), and the two are usually equal but need not be — a
+            # first-run AF task writes an unregistered `outputValueName` that has no image version of
+            # its own. A stale AF store from a prior preview is swept on cleanup; a missing store
+            # here is a normal race (the FE fetched before the worker's promote landed) and 404s so
+            # the browser can retry rather than serve the source image and hide the desync.
+            src_ch = tryparse(Int, get(q, "sourceChannel", ""))
+            src_ch === nothing && return false
+            af_vn = get(q, "previewValueName", "")
+            isempty(af_vn) && return false
+            zp = joinpath(dirname(zp), "$(af_vn)__preview_af_ch$(src_ch).ome.zarr")
+            isdir(zp) || return false
+        end
     end
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     c = something(tryparse(Int, get(q, "c", "0")), 0)

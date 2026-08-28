@@ -470,6 +470,29 @@ const previewLabelsKey = computed(() => {
   return p && p.imageUid === imageUid ? p.updateId : 0
 })
 watch(previewLabelsKey, () => reallocate())
+
+// P7.1: refetch whenever the AF preview for THIS image changes — a new AF run, a parameter edit or
+// a toggle-off. Every entry in the array shares one `updateId` (the store stamps them together), so
+// the key can key off any entry; use the first. Same primitive-watch discipline as previewLabelsKey.
+// Which source channels are being swapped can change between runs (different `afCombinations`), so
+// the shape of the set — not just the stamp — matters. Encode both as `"<updateId>:<c1>,<c2>,…"`.
+const previewImagesKey = computed(() => {
+  const arr = viewerStore.previewImages
+  if (!arr || arr.length === 0) return ''
+  const forThis = arr.filter(m => m.imageUid === imageUid)
+  if (forThis.length === 0) return ''
+  const chans = forThis.map(m => m.sourceChannel).sort((a, b) => a - b).join(',')
+  return `${forThis[0].updateId}:${chans}`
+})
+watch(previewImagesKey, () => reallocate())
+
+/** Fast lookup: source channel → the AF preview entry that overrides it for this image. Recomputed
+ *  in the render loop, but the array is tiny (one entry per corrected channel, typically 1–4) so
+ *  this stays a plain `.find` — no map cache needed. */
+function previewImageFor(c: number) {
+  const arr = viewerStore.previewImages
+  return arr?.find(m => m.imageUid === imageUid && m.sourceChannel === c) ?? null
+}
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -1028,7 +1051,21 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
+        // P7.1: when an AF preview run has this channel in its corrected set, retarget its slab onto
+        // the scratch AF store — same geometry (the store is channel-less full-image), so the
+        // texture and the shape guard are unchanged; only the file on disk differs. `valueName`
+        // stays the SOURCE image's vn so `resolve_image_version` finds the image dir the scratch
+        // sits in; `previewValueName` carries the AF task's `outputValueName` (the scratch's key).
+        const afPrev = previewImageFor(c)
+        const url = slabUrl({
+          projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl,
+          preview_af: !!afPrev,
+          sourceChannel: afPrev ? c : undefined,
+          previewValueName: afPrev?.valueName,
+          // Same cache-bust as the labels preview: identical (vn, t, z, preview_af=1) URL across
+          // two runs would otherwise return the FIRST run's bytes from disk cache.
+          previewAfId: afPrev?.updateId,
+        })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -1317,6 +1354,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
     // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const afPrev = previewImageFor(c)
       const url = slabUrl({
         projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
@@ -1324,6 +1362,12 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         // the current-t version — the atlas caches across timepoints (Phase F).
         z: zPlane.value,
         x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
+        // P7.1: same AF preview swap as the volume path — one entry per corrected channel, keyed on
+        // the source channel index.
+        preview_af: !!afPrev,
+        sourceChannel: afPrev ? c : undefined,
+        previewValueName: afPrev?.valueName,
+        previewAfId: afPrev?.updateId,
       })
       const res = await fetch(url, { cache: 'default', signal: ac.signal })
       if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)

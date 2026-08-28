@@ -55,7 +55,6 @@ def _ome_xml(size_t, size_z, size_c, size_y, size_x):
 </OME>"""
 
 
-@unittest.skip('AF preview browser rendering deferred to P7.1 — see docs/TODO.md')
 @unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
 class PreviewWorkerAfTest(unittest.TestCase):
     SHAPE = dict(size_t=2, size_z=2, size_c=4, size_y=24, size_x=20)
@@ -102,22 +101,44 @@ class PreviewWorkerAfTest(unittest.TestCase):
         msg.update(over)
         return self.worker.execute_command(msg)
 
-    def test_the_af_backend_returns_layers(self):
-        """The regression: this raised AttributeError on a helper that had moved modules."""
+    def test_the_af_backend_returns_previewImages_on_disk(self):
+        """The regression: this raised AttributeError on a helper that had moved modules.
+        Since P7.1, the reply carries `previewImages` — one scratch OME-Zarr per corrected channel,
+        on DISK — rather than an inline block, and the browser swaps that channel's slab URL onto
+        the scratch store."""
         out = self._request({'1': {'competingChannels': [2, 3]},
                              '2': {'competingChannels': [1, 3]}})
         self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
-        self.assertEqual(len(out['layers']), 2)
-        for layer in out['layers']:
-            self.assertEqual(layer['kind'], 'image')
-            self.assertIn('block', layer)
-            self.assertIn('source', layer)        # so the bridge can mirror the channel's colormap
-            self.assertEqual(layer['axes'], ['T', 'Z', 'Y', 'X'])
+        # Labels-style `layers` is unused for AF; the AF path returns `previewImages`.
+        self.assertNotIn('layers', out)
+        self.assertEqual(len(out['previewImages']), 2)
+        seen_channels = set()
+        for m in out['previewImages']:
+            self.assertEqual(m['axes'], ['T', 'Z', 'Y', 'X'])
+            self.assertNotIn('block', m)                          # protocol 14+ is on disk
+            self.assertTrue(os.path.isdir(m['path']))              # promoted from staging
+            self.assertIn(m['sourceChannel'], (1, 2))
+            self.assertEqual(m['valueName'], 'afCorrected')
+            self.assertIn('AF', m['name'])                         # names the source channel it corrects
+            self.assertEqual(m['shape'],
+                             [self.SHAPE['size_t'], self.SHAPE['size_z'],
+                              self.SHAPE['size_y'], self.SHAPE['size_x']])
+            seen_channels.add(m['sourceChannel'])
+        self.assertEqual(seen_channels, {1, 2})
         # the readout the GUI shows, from the same helper the run's QC uses
         for ch in ('1', '2'):
             d = out['derived'][ch]
             for k in ('background', 'competingBackgrounds', 'saturatedFrac', 'exponent'):
                 self.assertIn(k, d)
+
+    def test_scratch_store_convention(self):
+        """The path is the slab route's contract. `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr`
+        — keyed on the value_name AND the source channel index — is what the Julia slab route derives
+        the scratch path from, so the two sides must not disagree."""
+        out = self._request({'2': {'competingChannels': [3]}})
+        m, = out['previewImages']
+        expected = os.path.join(self.dir, 'afCorrected__preview_af_ch2.ome.zarr')
+        self.assertEqual(m['path'], expected)
 
     def test_the_previewed_region_is_reported_back(self):
         out = self._request({'1': {'competingChannels': [2]}})
@@ -137,17 +158,17 @@ class PreviewWorkerAfTest(unittest.TestCase):
         names = ['SHG', 'nuc-GFP', 'mem-TOM', 'CD169-Kat']
         out = self._request({'2': {'competingChannels': [3]}}, channelNames=names)
         self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
-        layer, = out['layers']
-        self.assertEqual(layer['source'], 'mem-TOM')      # the layer napari actually has
-        self.assertEqual(layer['name'], 'mem-TOM AF')     # and the corrected layer says which channel
-        self.assertNotIn('CH3', layer['name'])
+        m, = out['previewImages']
+        self.assertEqual(m['name'], 'mem-TOM AF')          # the corrected entry says which channel
+        self.assertNotIn('CH3', m['name'])
 
     def test_without_given_names_the_ome_xml_is_the_fallback(self):
         """A REPL or test driving the worker directly sends no names — that must still work, and must
-        still be a FALLBACK rather than a second source of truth."""
+        still be a FALLBACK rather than a second source of truth. The `name` field is what carries
+        the channel display name; without given names, it falls back to the OME-XML's `CH3`."""
         out = self._request({'2': {'competingChannels': [3]}})
-        layer, = out['layers']
-        self.assertEqual(layer['source'], 'CH3')
+        m, = out['previewImages']
+        self.assertEqual(m['name'], 'CH3 AF')
 
     def test_backgrounds_are_derived_once_per_channel_not_once_per_combination(self):
         """THE COLD-START COST. A background level depends on the image, the channel and the method —
@@ -173,7 +194,7 @@ class PreviewWorkerAfTest(unittest.TestCase):
                              '2': {'competingChannels': [1, 3]},
                              '3': {'competingChannels': [1, 2]}})
         self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
-        self.assertEqual(len(out['layers']), 3)
+        self.assertEqual(len(out['previewImages']), 3)
 
         # ONE pass, over the union — combinations 2 and 3 are free
         self.assertEqual(len(calls), 1, f'derived {len(calls)}x, expected 1: {calls}')
@@ -230,7 +251,7 @@ class PreviewWorkerAfTest(unittest.TestCase):
 
     def test_a_combination_with_no_competitor_is_skipped(self):
         out = self._request({'1': {'competingChannels': [2]}, '3': {'competingChannels': []}})
-        self.assertEqual(len(out['layers']), 1)
+        self.assertEqual(len(out['previewImages']), 1)
 
     def test_no_usable_combination_raises_rather_than_previewing_nothing(self):
         # NOTE `execute_command` RAISES; the `{"type": "error", "msg": ...}` reply is built one layer

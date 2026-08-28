@@ -94,6 +94,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // Preview labels are cross-window state (bridged through localStorage; see stores/viewer.ts). Clear
     // via the store's setter so the viewer popup's Pinia also drops back to the real labels store.
     viewerStore.setPreviewLabels(null)
+    // Same for AF preview: every corrected channel's slab URL flips back to the source image.
+    viewerStore.setPreviewImages(null)
   }
 
   const blocker = computed<PreviewBlocker | null>(
@@ -173,6 +175,11 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // reach it.
     viewerStore.setPreviewLabels(
       res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
+    // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
+    // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
+    // cross-window story as previewLabels.
+    viewerStore.setPreviewImages(
+      Array.isArray(res?.previewImages) ? res.previewImages : null)
     error.value = ''
     errorCode.value = ''
   }, {

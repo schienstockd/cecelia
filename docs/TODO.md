@@ -43,18 +43,6 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
-### AF preview browser rendering (P7.1)
-
-P7 shipped labels-preview through the P4 labels-slab pipeline (scratch `<vn>__preview.ome.zarr`).
-AF correction produces `kind:"image"` layers per corrected channel — the browser has no per-channel
-image-overlay path yet, so `_preview_af` in `preview/preview_worker.py` currently raises
-`NotImplementedError` and the API returns 501 with `code = "af-preview-not-in-browser"`. Napari's AF
-preview goes away with P8/decommission, so AF users lose preview until this ships.
-
-Needs a browser image-overlay path — most likely a scratch per-channel image OME-Zarr served through
-the image slab route + a viewer swap that renders one channel from the preview store while the rest
-stay on the real one. Design lock before building. See `docs/todo/WEB_VIEWER_PLAN.md` → *P7*.
-
 ### WebGPU per-image layer props — animation snapshot source (P9 blocker)
 
 **Blocks** [`docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md`](todo/VIEWER_CONTROLS_SPLIT_PLAN.md) → P9

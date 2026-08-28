@@ -46,7 +46,12 @@ const PREVIEW_PORT   = 7656
 # disk; the browser fetches it through the `preview=1` slab route rather than decoding an inline block.
 # The load-bearing kind of bump — a protocol-12 worker would still send a block that no browser
 # receiver decodes, and a napari-era rendering path no longer exists to consume it.
-const PREVIEW_PROTOCOL = 13
+# 14 is the AF preview cut-over (P7.1): AF replies carry `previewImages` (per-corrected-channel scratch
+# image stores on disk, at `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr`) instead of an
+# inline block or a 501. The browser flips each corrected channel's slab URL onto the scratch store
+# through `preview_af=1&sourceChannel=N`. A protocol-13 worker would still raise `NotImplementedError`
+# on AF against a backend that believes it works.
+const PREVIEW_PROTOCOL = 14
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
@@ -234,35 +239,55 @@ end
 
 Build the JSON body the API returns to the FE from a worker reply.
 
-A reply carries a LIST of layers, each with its own `kind` — `labels` for a segmentation mask on
-disk, `image` reserved for future AF/correction previews (P7.1). Each layer carries `valueName` +
-`path` rather than an inline block; the browser fetches the mask through
-`/api/viewer/slab?labels=<vn>&preview=1`, which rides the same reader the finished labels slab does.
+Two kinds of layer live in a reply — asserted separately so field-name discipline is enforced in
+ONE place rather than at runtime. A LABELS preview carries `layers` (a segmentation mask on disk,
+one entry with `kind='labels'`) and the browser fetches it through
+`/api/viewer/slab?labels=<vn>&preview=1`. An AF preview carries `previewImages` (one entry per
+CORRECTED channel, no `kind` field — the whole array IS `image`) and the browser swaps each source
+channel's slab URL through `/api/viewer/slab?preview_af=1&sourceChannel=N`. Both ride the same slab
+reader as their non-preview counterparts, so this route is small on purpose.
 
-Kept as a pure function of the reply so the wiring is testable without either process running, and
-so the field names are asserted in one place rather than discovered at runtime — including that
-every `kind` is one the viewer knows how to build.
+A reply must carry at least one — an empty reply is a bug in the backend, not a valid case. The
+labels path never sets `previewImages` and the AF path never sets `layers`, so exclusivity is a
+runtime invariant, not a schema one; both being present is not asserted against, because a future
+composite backend could legitimately return both.
 """
 function preview_reply_payload(reply::AbstractDict;
                                value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
     layers = get(reply, "layers", nothing)
-    (layers isa AbstractVector && !isempty(layers)) ||
-        error("preview reply has no 'layers'")
-    for (i, l) in enumerate(layers)
-        l isa AbstractDict || error("preview layer $i is not a dict")
-        for key in ("kind", "name", "valueName", "path", "shape", "axes")
-            haskey(l, key) || error("preview layer $i is missing '$key'")
+    preview_images = get(reply, "previewImages", nothing)
+    has_layers = layers isa AbstractVector && !isempty(layers)
+    has_images = preview_images isa AbstractVector && !isempty(preview_images)
+    (has_layers || has_images) ||
+        error("preview reply has no 'layers' and no 'previewImages'")
+    if has_layers
+        for (i, l) in enumerate(layers)
+            l isa AbstractDict || error("preview layer $i is not a dict")
+            for key in ("kind", "name", "valueName", "path", "shape", "axes")
+                haskey(l, key) || error("preview layer $i is missing '$key'")
+            end
+            haskey(l, "block") &&
+                error("preview layer $i still carries an inline 'block' — protocol 13+ previews are on disk")
+            kind = String(l["kind"])
+            kind in ("labels", "image") ||
+                error("preview layer $i has unknown kind '$kind' (expected labels or image)")
         end
-        haskey(l, "block") &&
-            error("preview layer $i still carries an inline 'block' — protocol 13 previews are on disk")
-        kind = String(l["kind"])
-        kind in ("labels", "image") ||
-            error("preview layer $i has unknown kind '$kind' (expected labels or image)")
+    end
+    if has_images
+        for (i, m) in enumerate(preview_images)
+            m isa AbstractDict || error("previewImages[$i] is not a dict")
+            for key in ("sourceChannel", "valueName", "path", "shape", "axes")
+                haskey(m, key) || error("previewImages[$i] is missing '$key'")
+            end
+            haskey(m, "block") &&
+                error("previewImages[$i] still carries an inline 'block' — protocol 14+ previews are on disk")
+        end
     end
     Dict{String,Any}(
-        "layers"    => layers,
-        "region"    => get(reply, "region", Dict{String,Any}()),
-        "valueName" => String(get(reply, "valueName", value_name)),
-        "funName"   => String(get(reply, "funName", "")),
+        "layers"        => has_layers ? layers         : Any[],
+        "previewImages" => has_images ? preview_images : Any[],
+        "region"        => get(reply, "region", Dict{String,Any}()),
+        "valueName"     => String(get(reply, "valueName", value_name)),
+        "funName"       => String(get(reply, "funName", "")),
     )
 end

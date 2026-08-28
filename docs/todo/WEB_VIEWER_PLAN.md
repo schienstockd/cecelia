@@ -525,11 +525,11 @@ Every row's data was off by one label vs the mask store, so a picked mask label 
 N-1 — the highlighted cell showed at whatever centroid label N+1 has, i.e. at a random position.
 **Existing h5ads still have the buggy index** — re-run `segment.measureLabels/<vn>` to regenerate.
 
-### P7 — task preview overlays — **BUILT (2026-08-27)** · `feat/viewer-p7-task-previews`
+### P7 — task preview overlays — **BUILT (2026-08-27, AF added 2026-08-28)** · `feat/viewer-p7-task-previews`, `feat/viewer-p71-af-preview`
 `show_task_preview` + `preview_region` — the previews `api/src/preview_api.jl` used to push into napari
 so a task's parameters can be judged before it runs.
 
-**Delivery**: the worker writes a labels-shaped scratch OME-Zarr next to the real one
+**Labels delivery (P7)**: the worker writes a labels-shaped scratch OME-Zarr next to the real one
 (`<img_labels_dir>/{vn}__preview.ome.zarr`) via `zarr_utils.staged_store`, and `/api/viewer/slab`
 grows a `preview=1` flag that redirects the labels read to that path. Same reader, same headers,
 same shape guard as P4 — the preview mask piggybacks on the P4 pipeline, no new client-side texture
@@ -537,13 +537,20 @@ path. Chosen over an in-memory block push because the browser has no `block_tran
 alternative (adding one) would fork the codec (`cecelia.utils.block_transfer` is Python-only). The
 old "nothing on disk" comment in `preview_worker.py` was napari-era reasoning and is superseded here.
 
+**AF delivery (P7.1)**: same idea for AF-corrected image channels — the worker writes one scratch
+image OME-Zarr per corrected channel at `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr` (via
+`zarr_utils.staged_store`, `store_compressor('image')`), the reply carries `previewImages` (not
+inline blocks), and the slab route grows `preview_af=1&sourceChannel=N&previewValueName=<afVn>` to
+retarget that ONE channel's read onto the scratch store while the other channels keep coming from
+the source. A/B comparison is by toggling the preview on/off — a side-by-side lens (dual channel
+textures) would be a P8-ish design, and was not what napari had either. The cross-window bridge for
+this state (`stores/viewer.ts` → `previewImages`) mirrors `previewLabels` including the monotonic
+`updateId` — same reason (identical `storage` writes emit no event, and same-URL fetches hit HTTP
+cache) — the runtime discipline is written once in that file.
+
 **Region source**: the FE POSTs `region` + `zarrPath` + `taskDir` + `imageUid` in the run body
 (`useViewerStore().visibleRegion` + `openImage`); the API no longer asks napari. `preview_region(v)`
 and the napari `show_task_preview!`/`hide_task_preview!` calls are deleted.
-
-**AF preview deferred to P7.1** — image-kind layers (AF correction) have no browser image-overlay
-path yet. The worker raises `NotImplementedError` for AF backends; the API returns 501 with
-`code = "af-preview-not-in-browser"`. See `docs/TODO.md` → *AF preview browser rendering*.
 
 ### P8 — decommission
 Delete the bridge, the protocol version and the adoption/relaunch machinery. Decide there where

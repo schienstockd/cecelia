@@ -13588,16 +13588,14 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     end
 
     @testset "a preview reply is validated into a JSON payload for the browser viewer" begin
-        # P7: layers carry `valueName`/`path` (labels store on disk) — the browser fetches the mask
-        # through `/api/viewer/slab?labels=<vn>&preview=1`, so Julia's pass-through only asserts the
-        # payload shape rather than decoding pixels. A reply still carries a LIST of layers, kept for
-        # the AF path (P7.1) which will add `image`-kind layers alongside.
+        # P7: labels layers carry `valueName`/`path` (labels store on disk) — the browser fetches
+        # the mask through `/api/viewer/slab?labels=<vn>&preview=1`, so Julia's pass-through only
+        # asserts the payload shape rather than decoding pixels. P7.1: an AF reply carries
+        # `previewImages` (per-corrected-channel scratch image stores on disk) instead of an inline
+        # block; both branches share this validator.
         layers = [
             Dict("kind" => "labels", "name" => "Preview",
                  "valueName" => "A", "path" => "/x/labels/A__preview.ome.zarr",
-                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
-            Dict("kind" => "image", "name" => "nuc-GFP AF",
-                 "valueName" => "A", "path" => "/x/data/nucAF.ome.zarr",
                  "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
         ]
         reply = Dict("layers" => layers,
@@ -13607,11 +13605,12 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         payload = Cecelia.preview_reply_payload(reply)
         @test payload["layers"] === layers                  # not re-encoded, not copied
         @test payload["valueName"] == "A"
+        @test payload["previewImages"] == Any[]              # labels-only reply → empty AF list
         # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
         # `({vn}) Labels` share a stem in the labels registry rather than diverge
         @test !occursin("__preview", payload["valueName"])
 
-        # no layers at all is a fault, not a viewer showing nothing
+        # no layers AND no previewImages is a fault, not a viewer showing nothing
         @test_throws ErrorException Cecelia.preview_reply_payload(
             filter(p -> first(p) != "layers", reply))
         @test_throws ErrorException Cecelia.preview_reply_payload(
@@ -13634,10 +13633,37 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test_throws ErrorException Cecelia.preview_reply_payload(
             merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
 
-        # `source` (the viewer layer a corrected channel derives from) rides through untouched and is
-        # OPTIONAL — Julia neither requires it nor interprets it.
-        sourced = merge(reply, Dict("layers" => Any[merge(layers[2], Dict("source" => "nuc-GFP"))]))
-        @test Cecelia.preview_reply_payload(sourced)["layers"][1]["source"] == "nuc-GFP"
+        # AF preview: `previewImages` carries one entry per corrected channel, each with a source
+        # channel index and disk path — no `kind` (the array IS `image`), no `block`.
+        af_images = [
+            Dict("sourceChannel" => 1, "name" => "mem-TOM AF",
+                 "valueName" => "A", "path" => "/x/data/A__preview_af_ch1.ome.zarr",
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+            Dict("sourceChannel" => 2, "name" => "CD169 AF",
+                 "valueName" => "A", "path" => "/x/data/A__preview_af_ch2.ome.zarr",
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+        ]
+        af_reply = Dict("previewImages" => af_images,
+                        "region" => Dict("T" => [3, 4], "Y" => [0, 4], "X" => [0, 4]),
+                        "valueName" => "A")
+        af_payload = Cecelia.preview_reply_payload(af_reply)
+        @test af_payload["previewImages"] === af_images
+        @test af_payload["layers"] == Any[]
+        @test af_payload["valueName"] == "A"
+
+        # each previewImage needs the same on-disk fields as a labels layer (minus `kind`/`name`,
+        # which are labels' whole-list identity — an AF entry is one CHANNEL and identifies itself
+        # by `sourceChannel` instead).
+        for missing_key in ("sourceChannel", "valueName", "path", "shape", "axes")
+            broken = filter(p -> first(p) != missing_key, af_images[1])
+            @test_throws ErrorException Cecelia.preview_reply_payload(
+                merge(af_reply, Dict("previewImages" => Any[broken])))
+        end
+
+        # An inline `block` on an AF entry is protocol-13 and must not reach the browser.
+        @test_throws ErrorException Cecelia.preview_reply_payload(
+            merge(af_reply,
+                  Dict("previewImages" => Any[merge(af_images[1], Dict("block" => "AA=="))])))
     end
 
     @testset "a composite says which steps it does not preview" begin

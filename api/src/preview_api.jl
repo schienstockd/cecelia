@@ -280,12 +280,6 @@ function api_preview_run(body_bytes::Vector{UInt8})
         end
     catch e
         raw = sprint(showerror, e)
-        # AF preview is deferred to P7.1 — the worker raises `NotImplementedError` with a message the
-        # UI can render as "coming soon" rather than "Preview failed".
-        occursin("NotImplementedError", raw) && occursin("AF preview", raw) &&
-            return 501, JSON3.write((;
-                error = "AF preview not yet available in the browser viewer",
-                code  = "af-preview-not-in-browser"))
         # The worker dispatches on `funName` and raises naming every backend it knows. That message
         # is for whoever debugs the registry, not for the person who pressed Preview — uncoded, it
         # reached the tooltip as a repr'd Python list. Code it so the UI can say something true and
@@ -296,9 +290,12 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = raw))
     end
 
-    # Sanity-check the reply shape (labels layer requires valueName/path on disk). Flow-plane replies
-    # (`planes`) skip this — they carry PNGs, not layers.
-    payload = if get(reply, "layers", nothing) isa AbstractVector && !isempty(reply["layers"])
+    # Sanity-check the reply shape (labels layer needs valueName/path on disk; AF `previewImages`
+    # entries need the same plus `sourceChannel`). Flow-plane replies (`planes`) skip this — they
+    # carry PNGs, not layers.
+    has_layer_reply = (get(reply, "layers", nothing) isa AbstractVector && !isempty(reply["layers"])) ||
+                      (get(reply, "previewImages", nothing) isa AbstractVector && !isempty(reply["previewImages"]))
+    payload = if has_layer_reply
         try
             preview_reply_payload(reply; value_name = value_name)
         catch e
@@ -312,12 +309,30 @@ function api_preview_run(body_bytes::Vector{UInt8})
     # points the reader at `<vn>__preview.ome.zarr` rather than the finished store, but everything
     # else is the same. Returned as data the FE composes into a URL rather than a URL the API
     # composes, so a project uid change doesn't require an API redeploy.
-    preview_labels = if !isempty(payload) && any(String(l["kind"]) == "labels" for l in payload["layers"])
+    preview_labels = if !isempty(payload) &&
+                        !isempty(get(payload, "layers", Any[])) &&
+                        any(String(l["kind"]) == "labels" for l in payload["layers"])
         Dict{String,Any}(
             "valueName" => String(get(payload, "valueName", value_name)),
             "imageUid"  => image_uid,
             "projectUid" => project_uid,
         )
+    else
+        nothing
+    end
+
+    # Same story for AF: one entry per corrected channel, each with the source channel index the
+    # browser needs to know which channel's slab URL to swap. The scratch store's path convention is
+    # fixed and IS the slab route's contract (`{img_dir}/{vn}__preview_af_ch{N}.ome.zarr`) — the FE
+    # doesn't need the path field, only `{sourceChannel, valueName, imageUid, projectUid}`.
+    preview_images = if !isempty(payload) && !isempty(get(payload, "previewImages", Any[]))
+        [Dict{String,Any}(
+            "sourceChannel" => Int(m["sourceChannel"]),
+            "name"          => String(get(m, "name", "")),
+            "valueName"     => String(get(m, "valueName", value_name)),
+            "imageUid"      => image_uid,
+            "projectUid"    => project_uid,
+        ) for m in payload["previewImages"]]
     else
         nothing
     end
@@ -345,8 +360,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
         valueName    = value_name,
         # the disk-backed layers (protocol 13): `{kind, name, valueName, path, shape, axes}`
         layers       = get(payload, "layers", Any[]),
-        # nothing = no labels layer in this reply (e.g. flow-planes response, or AF once P7.1 lands)
+        # nothing = no labels layer in this reply (e.g. flow-planes response, or an AF reply)
         previewLabels = preview_labels,
+        # nothing = no AF corrected channels in this reply (labels/flow-plane responses)
+        previewImages = preview_images,
         # unchanged: flow-plane backends answer with `planes` (PNGs) instead of layers
         planes       = get(reply, "planes", nothing),
         metricKeys   = get(reply, "metricKeys", nothing),
