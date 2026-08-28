@@ -2248,7 +2248,10 @@ async function ensureRenderer() {
  */
 async function reallocate(refit = false) {
   const m = meta.value
-  if (!m) return
+  console.info('[viewer] reallocate', { refit, meta: !!m, mode: mode.value,
+                                        useTiles: useTiles.value, needsTiling: needsTiling.value,
+                                        bricksEnabled })
+  if (!m) { console.warn('[viewer] reallocate: no meta yet, skipping'); return }
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
   // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
@@ -2383,9 +2386,17 @@ const propsSink = debouncedSave(async () => {
  * false from `changeVersion` (the user's pose was for a related image and is worth carrying over).
  */
 async function loadVersion(refit: boolean) {
+  console.info('[viewer] loadVersion', { refit, valueName: valueName.value })
   starting.value = 'Reading image'
-  const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+  const url = metaUrl({ projectUid, imageUid, valueName: valueName.value })
+  console.info('[viewer] fetch meta', url)
+  const res = await fetch(url)
+  console.info('[viewer] meta response', res.status)
   const m = await readJson<ViewerMeta>(res, 'Metadata')
+  console.info('[viewer] meta', {
+    nX: m.nX, nY: m.nY, nZ: m.nZ, nT: m.nT, nC: m.nC, bpv: m.bytesPerVoxel,
+    name: m.name, setUid: m.setUid, levels: m.levels?.length ?? 0,
+  })
   meta.value = m
   // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
   // when we asked for nothing in particular — otherwise this is already what we asked for.
@@ -2603,8 +2614,14 @@ async function start() {
 }
 
 onMounted(() => {
-  if (!projectUid || !imageUid) { error.value = 'No image — open this window from the viewer panel'; return }
+  console.info('[viewer] mount', { projectUid, imageUid, bricksEnabled, mode: mode.value,
+                                   valueName: valueName.value })
+  if (!projectUid || !imageUid) {
+    console.warn('[viewer] mount aborted: missing project or image')
+    error.value = 'No image — open this window from the viewer panel'; return
+  }
   if (viewerCrashedLastTime(imageUid)) {
+    console.warn('[viewer] held after prior crash — waiting for user resume')
     heldAfterCrash.value = true
     void probeWebGpu().then(p => {
       heldProbe.value = p.reason + (adapterNameText(p.name) ? ' — ' + adapterNameText(p.name) : '')
@@ -2612,6 +2629,7 @@ onMounted(() => {
     })
     return
   }
+  console.info('[viewer] → start()')
   void start()
 })
 
