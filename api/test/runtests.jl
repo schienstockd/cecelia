@@ -6785,3 +6785,44 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+# ── VIEWER_PARITY phases 1 + 2: overlay_author reads the same JSON the browser reads ─────────────
+# The house palette, the three track-colour-mode names, and the heat-ramp anchors used by the
+# offline movie renderer all live in one JSON asset (`frontend/src/plots/palettes.json`) that the
+# browser look ALSO reads. This testset pins that: the Julia constants must equal the JSON we would
+# see the browser using — otherwise the two paths draw the same experiment differently.
+# See docs/todo/VIEWER_PARITY_PLAN.md phases 1 + 2.
+@testset "API: palette + track-mode JSON is the shared source of truth for overlay_author" begin
+    palette_json = normpath(joinpath(@__DIR__, "..", "..", "frontend", "src", "plots", "palettes.json"))
+    @assert isfile(palette_json) "palettes.json missing — this test needs the checked-in file"
+    doc = JSON3.read(read(palette_json, String))
+
+    # Browser hex → Julia RGB the way overlay_author parses it (matches hex_to_rgb).
+    function _parity_rgb(hex::AbstractString)
+        h = strip(String(hex))
+        startswith(h, "#") && (h = h[2:end])
+        length(h) == 3 && (h = string(h[1], h[1], h[2], h[2], h[3], h[3]))
+        r = parse(Int, h[1:2]; base = 16) / 255
+        g = parse(Int, h[3:4]; base = 16) / 255
+        b = parse(Int, h[5:6]; base = 16) / 255
+        RGB{N0f8}(r, g, b)
+    end
+
+    # Palette equality: the JSON's `palettes.cecelia` block, parsed to RGB, is the Julia constant.
+    json_palette = [_parity_rgb(String(h)) for h in doc.palettes.cecelia]
+    @test length(CECELIA_TRACK_PALETTE) == length(json_palette) == 12
+    @test CECELIA_TRACK_PALETTE == json_palette
+
+    # Heat ramp: the JSON's five anchors are the Julia `_heat_stops()` — same order, same colours.
+    json_heat = [_parity_rgb(String(h)) for h in doc.heatRamp]
+    @test length(json_heat) == 5
+    @test collect(_heat_stops()) == json_heat
+
+    # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays_for
+    # (no fall-through to the `"track"` default warning inside the function).
+    json_modes = [String(m) for m in doc.trackColorModes]
+    @test Set(json_modes) == Set(TRACK_COLOR_MODES)
+    for m in json_modes
+        @test m in TRACK_COLOR_MODES
+    end
+end
