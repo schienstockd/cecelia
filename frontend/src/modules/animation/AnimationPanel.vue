@@ -73,16 +73,13 @@ const selected = computed(() => frames.value.find(f => f.id === anim.selectedId)
 const isOpen = computed(() => !!activeUid.value && viewer.openImage?.imageUid === activeUid.value)
 const opening = ref(false)
 function openActive() {
-  const setUid = props.setUid ?? (activeUid.value ? project.setUidOfImage(activeUid.value) : null)
-  if (!activeUid.value || !setUid || opening.value) return
+  if (!activeUid.value || opening.value) return
   opening.value = true
   // Popout is synchronous once its URL is built; the flag exists so the button spinner has a
-  // frame to render before the popup opens.
+  // frame to render before the popup opens. The pop-out only needs project + image now — the
+  // set and display name moved into `/api/viewer/meta` (2026-08-28, feat/kiln-brick-viewer).
   try {
-    // `setUid ?? undefined` — the target type accepts `string | undefined`, not the `null` the
-    // fallback chain produces when neither the prop nor the set-of-image resolver has one.
-    openViewerWindow({ projectUid: projectUid.value, imageUid: activeUid.value,
-                       setUid: setUid ?? undefined, name: activeImage.value?.name })
+    openViewerWindow({ projectUid: projectUid.value, imageUid: activeUid.value })
   } finally { opening.value = false }
 }
 
