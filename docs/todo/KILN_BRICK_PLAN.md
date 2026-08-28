@@ -123,9 +123,15 @@ and draw loop deferred to P4 alongside the 3D-halo scheduler — the physical te
 and be writeable first. `canReuseAtlas` (in `brickAtlas.ts`, tested) is the dtype-safety gate
 that catches the #684 "byte length" trap on any layout change.
 
-**P3 — Wire the Julia provider.** Replace Kiln's stub loader with `fetch('/viewer/brick?...')`;
-brick cache key = `(t, brick_x, brick_y, brick_z, level)`; LRU with `tPenalty` mirroring
-`tileViewer.ts`. Behind `viewerBrickEnabled` (default off).
+**P3 — Wire the existing slab endpoint as the brick data source. ✓ scaffolded 2026-08-28.**
+`frontend/src/utils/brickLoader.ts` — `brickSlabUrl(base, brick, nC, brickSizeVox)` builds a
+`/api/viewer/slab?cTo=nC-1` URL for one VirtualBrick, `brickShapeError` validates the P0.5
+4-tuple `X-Slab-Shape` header and byte count, `fetchBrick` is the thin fetch wrapper. Refuses
+the legacy 3-tuple response — a scalar-c fallback would upload `nz*ny*nx` bytes into a slot
+sized for `nc*nz*ny*nx` and draw a shifted image with no error (the #684 trap). `SlabQuery`
+grew `cTo?: number` in `volumeViewer.ts`; flat-atlas callers are unchanged (scalar `c` alone
+never emits the param). Not yet plumbed into a scheduler or `ViewerWindow.vue` — the LRU and
+`viewerBrickEnabled` flag live in P4 alongside the halo prefetch.
 
 **P4 — 3D halo + SSE scheduler.** One ring of neighbour bricks at the visible level; SSE-driven
 LOD selection with hysteresis (port the `TILE_LOD_HYST_LOG2 = log2(1/0.7)` constant from PR #682
