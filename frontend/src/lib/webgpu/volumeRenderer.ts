@@ -220,6 +220,21 @@ export interface VolumeRenderer {
    * renderer — its own timepoint cache uses `uploadFrame` + `setCapacity`.
    */
   setPrefetchTimepoints?(list: number[]): void
+  /**
+   * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
+   * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
+   * by `t + level` to draw the current-timepoint grid. Cheap (a `pageTable.entries()` walk
+   * plus one `inflight.keys()` snapshot); safe to call every frame. Absent on the flat
+   * renderer, whose per-timepoint slab-cache has a different residency shape.
+   */
+  brickResidency?(): {
+    resident: { t: number; level: number; bx: number; by: number; bz: number }[]
+    inflight: { t: number; level: number; bx: number; by: number; bz: number }[]
+    currentLevel: number | undefined
+    /** Brick edge in voxels — `[bx, by, bz]`. Fixed for the atlas's lifetime; the caller
+     *  derives per-level grid dims from this + `meta.nX/nY` + `2^level`. */
+    brickSizeVox: readonly [number, number, number]
+  }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
