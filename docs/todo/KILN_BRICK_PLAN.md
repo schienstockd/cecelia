@@ -104,12 +104,14 @@ Findings:
   of a 128² brick fetched in 8 ms).
 
 **P1 — Write the three brick primitives from scratch, cecelia-shaped.**
-`frontend/src/lib/webgpu/brickAtlas.ts` (physical 3D texture + slot manager),
-`frontend/src/lib/webgpu/pageTable.ts` (virtual → physical brick indirection), and
-`frontend/src/lib/webgpu/sseLod.ts` (SSE per brick + hysteresis, port `TILE_LOD_HYST_LOG2` from
-PR #682). Header comment on each: "concepts from github.com/mpanknin/kiln-render, cecelia
-implementation". Pure logic, unit-tested in `frontend/src/utils/*.test.ts`. No wiring, no
-runtime effect.
+Pure-logic modules under `frontend/src/utils/` (per `frontend/CLAUDE.md`: tests run only on
+`src/utils/*.ts`; same split as `tileViewer.ts` alongside the WebGPU-side `tileRenderer.ts`):
+`brickAtlas.ts` (slot allocation + LRU for the physical atlas), `pageTable.ts` (virtual → physical
+brick indirection), and `sseLod.ts` (SSE per brick + hysteresis, reuses `TILE_LOD_HYST_LOG2` from
+`volumeViewer.ts:200`). Header comment on each: "concepts from github.com/mpanknin/kiln-render,
+cecelia implementation". Unit-tested in matching `*.test.ts`. No wiring, no runtime effect. The
+WebGPU-side wrapper (physical 3D texture allocation, `writeTexture`) lands in P2 as
+`frontend/src/lib/webgpu/brickAtlasTexture.ts`.
 
 **P2 — Rewrite texture format + channel model.** Fork Kiln's `r16float`/filterable path to
 `r16uint`/`r8uint` keyed on `bytesPerVoxel`, N-channel WGSL loop, `textureLoad` nearest. Reuse the
