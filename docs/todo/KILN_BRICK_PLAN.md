@@ -28,10 +28,12 @@ around what's visible, not a Z-streaming device. Same atlas, different geometry.
 
 ## Locked decisions
 
-1. **Vendor Kiln into `frontend/src/lib/webgpu/kiln/`** (GPL-3 compatible with our GPL-3-or-later
-   licence — [`project_license`](../../MEMORY.md#license)) with an attribution comment naming the
-   upstream commit. What we adopt: the physical brick atlas, page-table indirection, and the SSE
-   LOD scheduler. What we rewrite: texture format, channel model, T axis, halo/prefetch policy.
+1. **Take Kiln as a reference, not a vendored fork** (Dominik, 2026-08-28: "not gospel — what we
+   can use here, not port the entire mechanism"). What we adopt as *concepts*: the physical brick
+   atlas, page-table indirection, and the SSE-with-hysteresis LOD scheduler. What we write from
+   scratch, cecelia-shaped: everything below — r8uint/r16uint texture, N-channel WGSL, T axis,
+   3D halo, hooked to `/api/viewer/slab`. Attribution to `github.com/mpanknin/kiln-render` in a
+   header comment on `brickAtlas.ts` for the ideas; no imported code.
 2. **Brick shape = 128×128×`min(brick_z, nZ)`.** For SispLk/35uedD (nZ=4) `brick_z` collapses to 4:
    a single Z-slab, tiling only in XY against the pyramid. For future nZ ≫ brick_z we tile in Z as
    well. Same atlas machinery, geometry only.
@@ -89,16 +91,25 @@ Findings:
 - **Per-request overhead dominates.** A single-channel brick is 6–8 ms whether it's 64² (16 KB) or
   256² (256 KB). Payload only starts to matter above ~1 MB (L2 B256 → 22 ms).
 - **All-channels serially is not viable at 38 channels.** SispLk L0 B128 = **273 ms/brick × 9
-  visible bricks = ~2.5 s/frame**. Motivates the `cTo` extension in Decision 7.
+  visible bricks = ~2.5 s/frame**. Motivated the `cTo` extension in Decision 7.
 - **Brick size 128 is confirmed** — same cost as 64 at fewer requests per viewport; 256 is a wash
   at L0 but starts to cost at deeper levels where read time takes over.
 - **The measurement gate rejected the naïve plan.** Without the `cTo` extension, P3 would ship a
-  visibly slower 3D view than the current whole-volume path (a Kiln inheritance sold as an
-  improvement). Amended Decision 7 accordingly before writing frontend code.
+  visibly slower 3D view than the current whole-volume path. Amended Decision 7 accordingly
+  before writing frontend code.
+- **`cTo` implemented in P0.5 (2026-08-28); bench re-run confirms the projection.** All-channels
+  batched matches single-channel cost: SispLk L0 B128 dropped from 273 ms serial to **7.9 ms
+  batched (34.3× speedup)**. A 3×3 visible viewport is 71 ms, not 2.5 s. The per-request overhead
+  was the whole story — payload size barely moves the needle at L0/L1 (2.4 MB for all 38 channels
+  of a 128² brick fetched in 8 ms).
 
-**P1 — Vendor Kiln into `frontend/src/lib/webgpu/kiln/`.** Import the physical atlas + page table +
-SSE scheduler unchanged. Add an attribution comment naming the upstream commit hash. Wire nothing
-into `ViewerWindow.vue` yet.
+**P1 — Write the three brick primitives from scratch, cecelia-shaped.**
+`frontend/src/lib/webgpu/brickAtlas.ts` (physical 3D texture + slot manager),
+`frontend/src/lib/webgpu/pageTable.ts` (virtual → physical brick indirection), and
+`frontend/src/lib/webgpu/sseLod.ts` (SSE per brick + hysteresis, port `TILE_LOD_HYST_LOG2` from
+PR #682). Header comment on each: "concepts from github.com/mpanknin/kiln-render, cecelia
+implementation". Pure logic, unit-tested in `frontend/src/utils/*.test.ts`. No wiring, no
+runtime effect.
 
 **P2 — Rewrite texture format + channel model.** Fork Kiln's `r16float`/filterable path to
 `r16uint`/`r8uint` keyed on `bytesPerVoxel`, N-channel WGSL loop, `textureLoad` nearest. Reuse the
@@ -127,9 +138,9 @@ default on. Update `WEB_VIEWER_PLAN.md` → Decision 7 to point at this plan.
 
 ## What this plan is NOT
 
-- **Not a Kiln clone.** We adopt three components (physical atlas, page-table indirection, SSE
-  scheduler). Everything else (texture format, channel model, T axis, halo, data source, WGSL
-  main) is rewritten.
+- **Not a Kiln clone or fork.** We take three *ideas* (physical atlas, page-table indirection,
+  SSE scheduler) and implement them cecelia-shaped. No imported code, no upstream sync burden,
+  no design lock-in to Kiln's format assumptions.
 - **Not a Z-streaming device.** SispLk/35uedD are XY-heavy, not Z-deep. The value is LOD-in-3D and
   view-driven residency, not streaming through 1000+ z planes.
 - **Not a 2D-path change.** The 2D tile pipeline (`tileRenderer.ts` +

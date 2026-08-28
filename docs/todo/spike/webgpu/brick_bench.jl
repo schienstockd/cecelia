@@ -117,6 +117,40 @@ function bench_all_channels(image_uid, level, brick, meta)
      nc        = nc)
 end
 
+"""Fetch one brick with a c-range (all channels in ONE request via `cTo`); return (ms, bytes)."""
+function fetch_brick_c_range_ms(image_uid, level, t, c0, c1, xlo, xhi, ylo, yhi, zlo, zhi)
+    url = "$BASE/api/viewer/slab?projectUid=$PROJECT&imageUid=$image_uid" *
+          "&t=$t&c=$c0&cTo=$c1&level=$level" *
+          "&x=$xlo&xTo=$xhi&y=$ylo&yTo=$yhi&z=$zlo&zTo=$zhi"
+    t0 = time_ns()
+    r = HTTP.get(url; status_exception = false)
+    dt = (time_ns() - t0) / 1e6
+    r.status == 200 || error("HTTP $(r.status) for $url")
+    (dt, length(r.body))
+end
+
+function bench_c_range(image_uid, level, brick, meta)
+    nc = Int(meta["nC"])
+    (nx, ny, nz) = level_dims(meta, level)
+    xlo = clamp(div(nx, 2) - div(brick, 2), 0, nx - brick)
+    ylo = clamp(div(ny, 2) - div(brick, 2), 0, ny - brick)
+    xhi = xlo + brick - 1
+    yhi = ylo + brick - 1
+    zlo = 0; zhi = nz - 1
+    # warmup
+    fetch_brick_c_range_ms(image_uid, level, 0, 0, nc - 1, xlo, xhi, ylo, yhi, zlo, zhi)
+    ts = Float64[]; bytes = 0
+    for _ in 1:REPS
+        (dt, nb) = fetch_brick_c_range_ms(image_uid, level, 0, 0, nc - 1, xlo, xhi, ylo, yhi, zlo, zhi)
+        push!(ts, dt); bytes = nb
+    end
+    (ms_median = round(med(ts); digits = 1),
+     ms_min    = round(minimum(ts); digits = 1),
+     ms_max    = round(maximum(ts); digits = 1),
+     bytes     = bytes,
+     nc        = nc)
+end
+
 results = Dict{String,Any}(
     "notes" => "Server-side HTTP bench for KILN_BRICK_PLAN P0. Warm reads only.",
     "generated_via" => "docs/todo/spike/webgpu/brick_bench.jl",
@@ -130,11 +164,12 @@ for img in IMAGES
     println("\n== ", img.uid, " (", img.name, ") ==")
     meta = image_meta(img.uid)
     rows = Dict{String,Any}(
-        "shape"        => Dict("nT" => meta["nT"], "nC" => meta["nC"], "nZ" => meta["nZ"],
-                               "nY" => meta["nY"], "nX" => meta["nX"],
-                               "bytesPerVoxel" => meta["bytesPerVoxel"]),
-        "one_channel"  => Dict{String,Any}(),
-        "all_channels" => Dict{String,Any}(),
+        "shape"          => Dict("nT" => meta["nT"], "nC" => meta["nC"], "nZ" => meta["nZ"],
+                                 "nY" => meta["nY"], "nX" => meta["nX"],
+                                 "bytesPerVoxel" => meta["bytesPerVoxel"]),
+        "one_channel"    => Dict{String,Any}(),
+        "all_channels"   => Dict{String,Any}(),
+        "c_range_batch"  => Dict{String,Any}(),
     )
     for level in LEVELS
         (nx, ny, nz) = level_dims(meta, level)
@@ -143,11 +178,15 @@ for img in IMAGES
             key = "L$(level)_B$(brick)"
             r1 = bench_one_channel(img.uid, level, brick, meta)
             r2 = bench_all_channels(img.uid, level, brick, meta)
-            rows["one_channel"][key]  = r1
-            rows["all_channels"][key] = r2
-            @printf("  L%d B%d  1ch: %6.1f ms  %8d B    %dch: %6.1f ms  %8d B  (nC=%d)\n",
-                    level, brick, r1.ms_median, r1.bytes,
-                    r2.nc, r2.ms_median, r2.bytes, r2.nc)
+            r3 = bench_c_range(img.uid, level, brick, meta)
+            rows["one_channel"][key]    = r1
+            rows["all_channels"][key]   = r2
+            rows["c_range_batch"][key]  = r3
+            speedup = r2.ms_median / max(r3.ms_median, 0.1)
+            @printf("  L%d B%d  1ch:%6.1f  %dch-serial:%6.1f  %dch-batched:%6.1f  (%.1fx speedup)\n",
+                    level, brick, r1.ms_median,
+                    r2.nc, r2.ms_median,
+                    r3.nc, r3.ms_median, speedup)
         end
     end
     results["images"][img.uid] = rows
