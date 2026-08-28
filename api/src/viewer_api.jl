@@ -356,23 +356,29 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
             isdir(zp) || return false
         end
     else
-        zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+        zp, meta_dir, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
         err === nothing || return false
         if preview_af
             # `sourceChannel` must be present (the store is per-channel) and `previewValueName` names
             # the AF TASK's `outputValueName` — the same string the worker's `_stage_af_image_store`
-            # used. Kept separate from `valueName` on purpose: `valueName` is what
-            # `resolve_image_version` above just used to find the source image (which is where the
-            # scratch sits, via `dirname(zp)`), and the two are usually equal but need not be — a
-            # first-run AF task writes an unregistered `outputValueName` that has no image version of
-            # its own. A stale AF store from a prior preview is swept on cleanup; a missing store
-            # here is a normal race (the FE fetched before the worker's promote landed) and 404s so
-            # the browser can retry rather than serve the source image and hide the desync.
+            # used. Kept separate from `valueName`: `valueName` is what `resolve_image_version` above
+            # just used to find the SOURCE image; `previewValueName` names the AF write, which is
+            # usually equal but need not be — a first-run AF task writes an unregistered
+            # `outputValueName` that has no image version of its own.
+            #
+            # The scratch sits at `{img_meta_dir}/{af_vn}__preview_af_ch{N}.ome.zarr` — the SAME
+            # `task_dir` the worker knows (`msg['taskDir']`). NOT `dirname(zp)`: the image data
+            # lives under `{proj}/0/{uid}` while the meta dir is `{proj}/1/{uid}`, and `zp` here
+            # resolves to the data side. `resolve_image_version` returns the meta dir directly, so
+            # take it from there rather than reconstruct the path.
             src_ch = tryparse(Int, get(q, "sourceChannel", ""))
             src_ch === nothing && return false
             af_vn = get(q, "previewValueName", "")
             isempty(af_vn) && return false
-            zp = joinpath(dirname(zp), "$(af_vn)__preview_af_ch$(src_ch).ome.zarr")
+            zp = joinpath(meta_dir, "$(af_vn)__preview_af_ch$(src_ch).ome.zarr")
+            # A stale AF store from a prior preview is swept on cleanup; a missing store here is a
+            # normal race (the FE fetched before the worker's promote landed) and 404s so the
+            # browser can retry rather than serve the source image and hide the desync.
             isdir(zp) || return false
         end
     end
