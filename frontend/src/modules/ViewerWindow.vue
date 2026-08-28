@@ -32,7 +32,6 @@ import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
-import { useTaskPreviewStore } from '../stores/taskPreview'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -89,7 +88,6 @@ const settings = useSettingsStore()
 // task-preview store to feed into `/api/preview/run`, and reads back the active preview labels flag
 // so the labels slab URL flips to the scratch `<vn>__preview.ome.zarr` when a preview is showing.
 const viewerStore = useViewerStore()
-const taskPreview = useTaskPreviewStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
