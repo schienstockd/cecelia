@@ -760,12 +760,149 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
 
+# ── Shared: request-overlay dict → (overlays_for, mask_for) closures ─────────────
+#
+# Every offline-renderer entry point — the smoke route below AND the movie rail (`run_single_offline` /
+# `run_batch_offline` in `movie_rail.jl`) — reads the SAME overlay/mask spec off the request and hands
+# it to the SAME `build_overlays_for` / `build_mask_for` authors. One mapping, so a movie recorded from
+# the record button and a movie recorded from `/api/viewer/record-test` speak the same language.
+#
+# `img_err` is `_gating_image`'s error string (or `nothing`). Returns `(overlays_for, mask_for,
+# point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)`. `ov_diag` / `mask_diag` carry
+# the smoke test's diagnostic breadcrumbs (populated whether or not `tally` is on); with `tally = true`
+# the returned closures additionally count points/segments/frames drawn into refs stashed under
+# `ov_diag["_tally"]` / `mask_diag["_tally"]` — the smoke route unwraps them into its response body.
+function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
+                                      z::Union{Int,Nothing} = nothing,
+                                      crop = nothing, max_px::Int = 0,
+                                      tally::Bool = false)
+    ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
+    mask_diag = Dict{String,Any}("requested" => false, "reason" => "")
+    overlays_for = nothing
+    mask_for = nothing
+    point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
+    if !(ov_raw isa AbstractDict)
+        return (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
+                  ov_diag, mask_diag)
+    end
+    ov_vn = String(get(ov_raw, :valueName, ""))
+    # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
+    # frame (`vnn`) — a movie of the active segmentation is the expected case.
+    ov_vn = isempty(ov_vn) ? something(vnn, "") : ov_vn
+    ov_pt = String(get(ov_raw, :popType, "flow"))
+    ov_paths_raw = get(ov_raw, :popPaths, nothing)
+    ov_paths = ov_paths_raw isa AbstractVector ?
+               String[String(p) for p in ov_paths_raw] : nothing
+    include_tracks = Bool(get(ov_raw, :includeTracks, true))
+    # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
+    # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
+    tail_length      = Int(get(ov_raw, :tailLength, 30))
+    # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
+    all_tracks       = Bool(get(ov_raw, :allTracks, false))
+    all_tracks_col   = String(get(ov_raw, :allTracksColour, "#9ca3af"))
+    # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
+    track_color_mode = String(get(ov_raw, :trackColorMode, "track"))
+    point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
+    segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
+    ov_diag["valueName"] = ov_vn
+    ov_diag["popType"]   = ov_pt
+    ov_diag["allTracks"] = all_tracks
+    if img_err !== nothing
+        ov_diag["reason"] = "gating image lookup failed"
+    elseif isempty(ov_vn)
+        ov_diag["reason"] = "no valueName resolved"
+    elseif !_has_label_props(img)
+        ov_diag["reason"] = "image has no labelProps"
+    else
+        d = axis_dims(caxes, ndims(arr))
+        H = haskey(d, "y") ? size(arr, d["y"]) : 0
+        W = haskey(d, "x") ? size(arr, d["x"]) : 0
+        ov_diag["frameH"] = H; ov_diag["frameW"] = W
+        if H == 0 || W == 0
+            ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
+        else
+            tf = pixel_transform(H, W; crop = crop, max_px = max_px)
+            inner = try
+                build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                   transform = tf, pops_filter = ov_paths,
+                                   include_tracks = include_tracks,
+                                   tail_length = tail_length,
+                                   all_tracks = all_tracks,
+                                   all_tracks_colour = all_tracks_col,
+                                   track_color_mode = track_color_mode)
+            catch e
+                ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
+                @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
+                nothing
+            end
+            if inner !== nothing
+                if tally
+                    # Tally per-frame counts through a wrapper closure. Cheap (one integer per frame)
+                    # and answers "did overlays fire?" without a second inspection route.
+                    pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
+                    overlays_for = function(t::Int)
+                        p, s = inner(t)
+                        p === nothing || (pts_seen[]  += length(p.x))
+                        s === nothing || (segs_seen[] += length(s.x0))
+                        frames_touched[] += 1
+                        (p, s)
+                    end
+                    ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
+                else
+                    overlays_for = inner
+                end
+                isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
+            end
+            # ── Optional P4 mask outlines. Same transform, same pops_filter, same
+            # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
+            # is the gate — off by default because it costs one label-store read per frame.
+            show_mask = Bool(get(ov_raw, :showMask, false))
+            all_cells = Bool(get(ov_raw, :allCells, false))
+            mask_diag["requested"] = show_mask
+            if show_mask
+                all_cells_col = String(get(ov_raw, :allCellsColour, "#9ca3af"))
+                mask_contour_px = Int(get(ov_raw, :maskContourPx, mask_contour_px))
+                mask_inner = try
+                    build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                   transform = tf, pops_filter = ov_paths,
+                                   z = z, all_cells = all_cells,
+                                   all_cells_colour = all_cells_col)
+                catch e
+                    mask_diag["reason"] = "author threw: $(sprint(showerror, e))"
+                    @warn "movie mask: author failed" value_name = ov_vn pop_type = ov_pt exception = e
+                    nothing
+                end
+                if mask_inner !== nothing
+                    if tally
+                        mask_frames = Ref(0); mask_ids = Ref(0)
+                        mask_for = function(t::Int)
+                            m, dict = mask_inner(t)
+                            if m !== nothing && dict !== nothing
+                                mask_frames[] += 1
+                                mask_ids[] = length(dict)
+                            end
+                            (m, dict)
+                        end
+                        mask_diag["_tally"] = (mask_frames, mask_ids)
+                    else
+                        mask_for = mask_inner
+                    end
+                    isempty(mask_diag["reason"]) && (mask_diag["reason"] = "ok")
+                    mask_diag["allCells"] = all_cells
+                end
+            end
+        end
+    end
+    (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px, ov_diag, mask_diag)
+end
+
 # ── POST /api/viewer/record-test ──────────────────────────────────────────────────
 #
-# A SMOKE-TEST route that produces an mp4 through the offline renderer so the pipeline can be eyeballed before
-# the movie rail (`handle_movie_record` / `run_single_movie`) is migrated off napari. Blocking, not
-# rail-integrated — the record runs on the request thread, cancellation is not offered and progress is
-# not streamed. Kept out of the parity checklist for that reason.
+# A SMOKE-TEST route that produces an mp4 through the offline renderer so the pipeline can be
+# eyeballed independently of the movie rail (`handle_movie_record` → `run_single_offline` and its
+# siblings in `movie_rail.jl`). Blocking, not rail-integrated — the record runs on the request thread,
+# cancellation is not offered and progress is not streamed. Kept out of the parity checklist because
+# the movie rail already exercises the same wiring end-to-end.
 #
 # What it exercises:
 #   * `resolve_image_version` → same active-vs-explicit rule the meta route uses,
@@ -823,138 +960,22 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     tc_raw = get(data, :titleCard, nothing)
     title_card = tc_raw isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in tc_raw) : nothing
 
-    # Optional P3 overlays. The author resolves populations/tracks into the primitives' columnar
-    # shape once, and hands back a per-t closure — a movie of a gated experiment carries its
-    # annotations rather than raw channels. `overlays.valueName` may differ from the frame's
-    # `valueName` (a movie of processed image `A` with pops from segmentation `B`).
+    # Optional P3 overlays + P4 masks. Whole request-dict → closure mapping lives in
+    # `_resolve_movie_overlays_mask` so the smoke route and the movie rail share ONE reader.
+    # `tally = true` wraps the returned closures in per-frame counters so the smoke response can
+    # report "did any point/segment/mask actually land in a frame?" — the movie rail asks with
+    # `tally = false`.
     ov_raw = get(data, :overlays, nothing)
-    overlays_for = nothing
-    mask_for = nothing
-    point_size_px = 6; segment_width_px = 2; mask_contour_px = 1
-    # Diagnostics returned in the response so a smoke test can tell whether the AUTHOR engaged
-    # and whether ANY frame carried a point/segment. A movie with no overlays is otherwise
-    # indistinguishable from a movie whose overlays fell outside the drawn frame.
-    ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
-    mask_diag = Dict{String,Any}("requested" => false, "reason" => "")
-    if ov_raw isa AbstractDict
-        ov_vn = String(get(ov_raw, :valueName, ""))
-        # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
-        # frame (`vnn`) — a movie of the active segmentation is the smoke test's expected case.
-        ov_vn = isempty(ov_vn) ? something(vnn, "") : ov_vn
-        ov_pt = String(get(ov_raw, :popType, "flow"))
-        ov_paths_raw = get(ov_raw, :popPaths, nothing)
-        ov_paths = ov_paths_raw isa AbstractVector ?
-                   String[String(p) for p in ov_paths_raw] : nothing
-        include_tracks = Bool(get(ov_raw, :includeTracks, true))
-        # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
-        # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting so a
-        # movie recorded from a look and a movie recorded from record-test read the same.
-        tail_length      = Int(get(ov_raw, :tailLength, 30))
-        # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring
-        # pops. `allTracks: true` is the answer to "just show me the tracks in this segmentation"
-        # for a segmentation without gated pops (napari's show-tracks whole-segmentation ribbon).
-        all_tracks       = Bool(get(ov_raw, :allTracks, false))
-        all_tracks_col   = String(get(ov_raw, :allTracksColour, "#9ca3af"))
-        # `trackColorMode` — same three modes the browser's viewer setting exposes
-        # (`getTrackColorMode`): "track" (palette by track_id, default), "speed" (heat ramp) or
-        # "solid" (source colour). Passed through so a recorded movie stays visually consistent
-        # with what the browser was showing.
-        track_color_mode = String(get(ov_raw, :trackColorMode, "track"))
-        point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
-        segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
-        ov_diag["valueName"] = ov_vn
-        ov_diag["popType"]   = ov_pt
-        ov_diag["allTracks"] = all_tracks
-        # Build the transform against the NATIVE frame size — same H/W the sweep will see.
-        # `record_view_movie` here uses default crop/max_px (no crop, no downsample); if the smoke
-        # route ever grows a crop, the transform picks it up automatically.
-        img, gerr = _gating_image(pu, iu)
-        if gerr !== nothing
-            ov_diag["reason"] = "gating image lookup failed"
-        elseif isempty(ov_vn)
-            ov_diag["reason"] = "no valueName resolved"
-        elseif !_has_label_props(img)
-            ov_diag["reason"] = "image has no labelProps"
-        else
-            d = axis_dims(caxes, ndims(arr))
-            H = haskey(d, "y") ? size(arr, d["y"]) : 0
-            W = haskey(d, "x") ? size(arr, d["x"]) : 0
-            ov_diag["frameH"] = H; ov_diag["frameW"] = W
-            if H == 0 || W == 0
-                ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
-            else
-                tf = pixel_transform(H, W; crop = nothing, max_px = 0)
-                inner = try
-                    build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                       transform = tf, pops_filter = ov_paths,
-                                       include_tracks = include_tracks,
-                                       tail_length = tail_length,
-                                       all_tracks = all_tracks,
-                                       all_tracks_colour = all_tracks_col,
-                                       track_color_mode = track_color_mode)
-                catch e
-                    ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
-                    @warn "record-test: overlay author failed" value_name = ov_vn pop_type = ov_pt exception = e
-                    nothing
-                end
-                if inner !== nothing
-                    # Tally per-frame counts through a wrapper closure. The tally is cheap
-                    # (one integer per frame) and answers "did overlays fire?" without a
-                    # second inspection route.
-                    pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
-                    overlays_for = function(t::Int)
-                        p, s = inner(t)
-                        p === nothing || (pts_seen[]  += length(p.x))
-                        s === nothing || (segs_seen[] += length(s.x0))
-                        frames_touched[] += 1
-                        (p, s)
-                    end
-                    ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
-                    isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
-                end
-
-                # ── Optional P4 mask outlines. Same transform, same pops_filter, same
-                # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
-                # is the gate — off by default because it costs one label-store read per frame,
-                # and a smoke test's default should stay cheap.
-                show_mask = Bool(get(ov_raw, :showMask, false))
-                all_cells = Bool(get(ov_raw, :allCells, false))
-                mask_diag["requested"] = show_mask
-                if show_mask
-                    all_cells_col = String(get(ov_raw, :allCellsColour, "#9ca3af"))
-                    mask_contour_px = Int(get(ov_raw, :maskContourPx, mask_contour_px))
-                    mask_inner = try
-                        build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                       transform = tf, pops_filter = ov_paths,
-                                       z = z, all_cells = all_cells,
-                                       all_cells_colour = all_cells_col)
-                    catch e
-                        mask_diag["reason"] = "author threw: $(sprint(showerror, e))"
-                        @warn "record-test: mask author failed" value_name = ov_vn pop_type = ov_pt exception = e
-                        nothing
-                    end
-                    if mask_inner !== nothing
-                        # Same tally shape as the overlays branch — count frames that carried a
-                        # mask and unique-ish ids drawn per frame is more machinery than the
-                        # smoke test needs (the primitive silently skips ids absent from the
-                        # dict, so the answer is `id_colours` size × frames).
-                        mask_frames = Ref(0); mask_ids = Ref(0)
-                        mask_for = function(t::Int)
-                            m, dict = mask_inner(t)
-                            if m !== nothing && dict !== nothing
-                                mask_frames[] += 1
-                                mask_ids[] = length(dict)
-                            end
-                            (m, dict)
-                        end
-                        mask_diag["_tally"] = (mask_frames, mask_ids)
-                        isempty(mask_diag["reason"]) && (mask_diag["reason"] = "ok")
-                        mask_diag["allCells"] = all_cells
-                    end
-                end
-            end
-        end
-    end
+    img, gerr = _gating_image(pu, iu)
+    ov = _resolve_movie_overlays_mask(img, gerr, arr, caxes, ov_raw, vnn; z = z,
+                                       crop = nothing, max_px = 0, tally = true)
+    overlays_for     = ov.overlays_for
+    mask_for         = ov.mask_for
+    point_size_px    = ov.point_size_px
+    segment_width_px = ov.segment_width_px
+    mask_contour_px  = ov.mask_contour_px
+    ov_diag          = ov.ov_diag
+    mask_diag        = ov.mask_diag
 
     # Filename picked here rather than by the caller: `_valid_movie_name` is what `/api/movies` filters
     # by, so a smoke movie has to sort with the others without a slash or a dot-tmp fragment.

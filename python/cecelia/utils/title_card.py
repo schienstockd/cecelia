@@ -253,6 +253,65 @@ def caption_band(width, height, text):
     return np.asarray(img, dtype=np.uint8)
 
 
+#: Overlay drawing colours + margins. Reused across every frame of a recording, so pinned here beside
+#: _BG/_FG. Text is white on a translucent-black rectangle for legibility against both dark
+#: fluorescence and bright brightfield; the scale bar is a solid white block above its label — same
+#: convention as napari's built-in overlays.
+_OVERLAY_TEXT      = (255, 255, 255)
+_OVERLAY_SHADOW    = (0, 0, 0)                   # background shim under text; drawn with alpha 128
+_OVERLAY_MARGIN_PX = 8
+
+
+def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
+    """Draw per-frame overlays (timestamp + scale bar) onto an (H, W, 3) uint8 RGB frame in-place-ish.
+
+    Returns the modified frame. ONE font stack, ONE colour palette, ONE renderer for every text glyph
+    on a movie frame — same rule as ``caption_band`` and the title card. Used by
+    ``encode_movie_run.py`` when the offline renderer asks for napari-parity timestamp + scale bar
+    overlays that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
+
+    ``timestamp`` is the string to draw top-left (e.g. ``"1m 30s"``) or ``None``. ``scale_bar`` is
+    ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above
+    — or ``None``. Both can be present.
+    """
+    if timestamp is None and scale_bar is None:
+        return frame_np
+    img = Image.fromarray(frame_np).convert("RGB")
+    d = ImageDraw.Draw(img, "RGB")
+    W, H = img.size
+    f = _font(max(11, int(min(H, W) * 0.045)))
+    m = _OVERLAY_MARGIN_PX
+    if timestamp:
+        s = str(timestamp)
+        box = d.textbbox((0, 0), s, font=f)
+        tw = box[2] - box[0]; th = box[3] - box[1]
+        # Shadow rectangle behind the text so it stays readable against a bright frame.
+        pad = 4
+        d.rectangle([m - pad + box[0], m - pad + box[1], m + tw + pad, m + th + pad], fill=_OVERLAY_SHADOW)
+        d.text((m - box[0], m - box[1]), s, font=f, fill=_OVERLAY_TEXT)
+    if scale_bar:
+        length_px = max(2, int(scale_bar.get("lengthPx", 0)))
+        label = str(scale_bar.get("label", ""))
+        bar_h = max(3, int(min(H, W) * 0.006))
+        # Bar bottom-right; label centred above the bar.
+        bar_x2 = W - m
+        bar_x1 = bar_x2 - length_px
+        bar_y2 = H - m
+        bar_y1 = bar_y2 - bar_h
+        if bar_x1 >= 0:
+            d.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=_OVERLAY_TEXT)
+            if label:
+                lbox = d.textbbox((0, 0), label, font=f)
+                lw = lbox[2] - lbox[0]; lh = lbox[3] - lbox[1]
+                lx = bar_x1 + (length_px - lw) / 2 - lbox[0]
+                ly = bar_y1 - lh - 4 - lbox[1]
+                pad = 4
+                d.rectangle([lx - pad + lbox[0], ly - pad + lbox[1],
+                             lx + lw + pad, ly + lh + pad], fill=_OVERLAY_SHADOW)
+                d.text((lx, ly), label, font=f, fill=_OVERLAY_TEXT)
+    return np.asarray(img, dtype=np.uint8)
+
+
 def prepend_title_to_movie(movie_path, content, *, duration_sec=3.0):
     """Prepend the rendered title card to an existing .mp4, rewriting it in place. Reads the movie's
     fps + frame size (so the card matches exactly), writes card frames then the movie's frames to a

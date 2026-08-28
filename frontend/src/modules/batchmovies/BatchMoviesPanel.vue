@@ -299,7 +299,7 @@ function generate() {
     fileAttrs: fileAttrs.value, fps: fps.value, suffix: suffix.value,
     ...movieSizeParams(sizeX.value, sizeY.value),
   })
-  log.info(`Batch movies started for ${uids.length} image(s) — napari will be busy for a bit`, { source: 'napari' })
+  log.info(`Batch movies started for ${uids.length} image(s)`, { source: 'napari' })
 }
 
 async function previewOpen() {

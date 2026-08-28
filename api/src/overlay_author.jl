@@ -151,51 +151,80 @@ function _heat_ramp(u::Real)::RGB{N0f8}
               (1 - f) * Float64(a.b) + f * Float64(b.b))
 end
 
-"""
-    build_overlays_for(img; value_name, pop_type, transform,
-                       pops_filter = nothing, include_tracks = true, tail_length = 30)
-        -> (t -> (points, segments))
+# ─────────────────────────────────────────────────────────────────────────────────
+# Shared overlay state — the collection every author consumes
+# ─────────────────────────────────────────────────────────────────────────────────
+#
+# One walk of the image → per-t bags of native-voxel (x, y, z, colour). BOTH
+# `build_overlays_for` (2D — `PixelTransform` per frame) and `build_overlays3d_for`
+# (3D — camera projection per frame) consume the same state, so pop resolution,
+# `track_color_mode` semantics, tail-length windowing and colour handling all live
+# in ONE place. If a bug is fixed here it reaches both authors at once; if a new
+# feature (colourBy, colourOverrides, skeletons) lands here it lights up 2D and 3D
+# together.
 
-Read `resolve_pops(img, pop_type; value_name)` and the segmentation's centroids ONCE and return a
-per-t closure that hands the primitives their columnar shape.
+struct OverlayState
+    # Per-t bags in NATIVE VOXEL coords. `x`, `y`, `z` are Float64 (a centroid is
+    # sub-voxel), the colour is the pop's / track-mode's resolved colour.
+    pts_by_t    :: Dict{Int,NamedTuple{(:x, :y, :z, :colour),
+                        Tuple{Vector{Float64},Vector{Float64},
+                              Vector{Float64},Vector{RGB{N0f8}}}}}
+    # Segments bucketed by arrival timepoint `t1` — the render loop slices this by
+    # `[t + 2 - tail_length, t + 1]` to pick a frame's visible tail window.
+    segs_by_end :: Dict{Int,NamedTuple{(:x0, :y0, :z0, :x1, :y1, :z1, :colour),
+                        Tuple{Vector{Float64},Vector{Float64},Vector{Float64},
+                              Vector{Float64},Vector{Float64},Vector{Float64},
+                              Vector{RGB{N0f8}}}}}
+    has_t         :: Bool
+    tail_length   :: Int
+    tracks_active :: Bool
+end
 
-- `points` on frame `t` are the centroids of every visible pop's cells whose `centroid_t == t` (a
-  still image with no `centroid_t` returns every point on frame 0). Pops iterate in `resolve_pops`
-  order; a cell in two pops paints in the LATER pop's colour, matching the primitives' overlap rule
-  (last drawn wins) and the browser's pop-layer stack.
-- `segments` on frame `t` are the last `tail_length` hops of every track_id in a track-flavoured
-  pop. A segment is a Bresenham chain between two consecutive centroids of the same track_id; it
-  is VISIBLE on frame `t` iff its ARRIVAL timepoint (the later end) falls in
-  `[t + 2 - tail_length, t + 1]` — same window as `tailRange` in the browser
-  (`frontend/src/utils/viewerOverlays.ts`), and same off-by-one that keeps `tail_length = 1` a single
-  current hop rather than two. `tail_length = 0` OR `include_tracks = false` disables segments; a
-  still image (no `centroid_t`) also produces none.
-- `pops_filter` restricts to specific pop paths (e.g. what a `look` config carries); `nothing` shows
-  every pop the resolver returns.
+# Iterate over the segments a frame `t` should show. Returns `(pts_raw, segs_raw)`
+# in NATIVE VOXELS — the caller projects. `segs_raw.t1` carries the arrival
+# timepoint per segment so a projector can compute a per-segment tail fade
+# (alpha ∝ (t + 1 - t1) / tail_length) that matches the browser overlay pass.
+function _state_at(state::OverlayState, t::Int)
+    pts = get(state.pts_by_t, state.has_t ? t : 0, nothing)
+    segs_raw = nothing
+    if state.tracks_active && !isempty(state.segs_by_end)
+        hi = t + 1
+        lo = hi - state.tail_length + 1
+        xs0 = Float64[]; ys0 = Float64[]; zs0 = Float64[]
+        xs1 = Float64[]; ys1 = Float64[]; zs1 = Float64[]
+        cs  = RGB{N0f8}[]; t1_vec = Int[]
+        for e in lo:hi
+            bag = get(state.segs_by_end, e, nothing)
+            bag === nothing && continue
+            for k in eachindex(bag.x0)
+                push!(xs0, bag.x0[k]); push!(ys0, bag.y0[k]); push!(zs0, bag.z0[k])
+                push!(xs1, bag.x1[k]); push!(ys1, bag.y1[k]); push!(zs1, bag.z1[k])
+                push!(cs,  bag.colour[k]); push!(t1_vec, e)
+            end
+        end
+        isempty(xs0) || (segs_raw = (; x0 = xs0, y0 = ys0, z0 = zs0,
+                                       x1 = xs1, y1 = ys1, z1 = zs1,
+                                       colour = cs, t1 = t1_vec))
+    end
+    (pts, segs_raw)
+end
 
-The closure returns `(nothing, nothing)` when a frame has no content — the render loop is written
-around that, so an empty t costs nothing.
-"""
-function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractString,
-                            transform::PixelTransform,
-                            pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                            include_tracks::Bool = true,
-                            tail_length::Int = 30,
-                            all_tracks::Bool = false,
-                            all_tracks_colour::AbstractString = "#9ca3af",
-                            track_color_mode::AbstractString = "track")
+# Native-voxel collection. Three branches match the pre-refactor `build_overlays_for`:
+#   * `all_tracks = true`  → whole-segmentation ribbons (every cell with `track_id > 0`)
+#   * cell pop_types       → `resolve_pops` + centroid table
+#   * track pop_types      → `pop_df(...; granularity=:cell)` (gates live on `track_props`)
+# All three funnel into the SAME `_push_point!` / `_push_track!` and the same segment build
+# (`track_color_mode` + tail-length). If any of these behaviours are wrong here, every
+# downstream author is wrong the same way — which is the drift guarantee.
+function _build_overlay_state(img; value_name::AbstractString, pop_type::AbstractString,
+                              pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                              include_tracks::Bool = true,
+                              tail_length::Int = 30,
+                              all_tracks::Bool = false,
+                              all_tracks_colour::AbstractString = "#9ca3af",
+                              track_color_mode::AbstractString = "track")
     pt = String(pop_type)
     vn = String(value_name)
-    # Two paths: cell pop_types (`flow`/`live`/`clust`) route through `resolve_pops` + the cell
-    # centroid table, because their membership is one cell per row; track pop_types (`track`/
-    # `trackclust`) route through `pop_df(...; granularity = :cell)`, because their GATES live on
-    # the per-track table (`track_props`) and `resolve_pops`'s cell fetch cannot evaluate them —
-    # the gate on `live.track.speed` / `live.track.duration` for `/sdf` returned empty membership
-    # under `resolve_pops` on zolIMa/fXgbTl. `pop_df` knows to switch data sources by pop_type and
-    # returns the tracked cells' rows with `label`/`track_id`/centroids in one shape — which is
-    # what the author needs for both the point pass and the segment pass. Every track-flavoured
-    # pop is a tracks-drawing pop; the per-pop `is_track` flag is ignored here (a track_grained
-    # gate map only produces track pops).
     is_track_pt = pt in ("track", "trackclust")
 
     lp   = label_props(img; value_name = vn)
@@ -203,72 +232,70 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
     obs  = col_names(lp; data_type = :obs)
     hasK = "track_id" in obs
 
-    # Buckets shared by both paths.
-    pts_by_t = Dict{Int,typeof((; x = Int[], y = Int[], colour = RGB{N0f8}[]))}()
-    track_hist = Dict{Tuple{Int,RGB{N0f8}},Vector{Tuple{Int,Int,Int}}}()   # (kid, colour) → sorted (t, dx, dy)
-    _push_point!(t, xy, colour) = begin
+    pts_by_t   = Dict{Int,NamedTuple{(:x, :y, :z, :colour),
+                        Tuple{Vector{Float64},Vector{Float64},
+                              Vector{Float64},Vector{RGB{N0f8}}}}}()
+    track_hist = Dict{Tuple{Int,RGB{N0f8}},Vector{Tuple{Int,Float64,Float64,Float64}}}()
+    _push_point!(t, xyz, colour) = begin
         bag = get!(pts_by_t, t) do
-            (; x = Int[], y = Int[], colour = RGB{N0f8}[])
+            (; x = Float64[], y = Float64[], z = Float64[], colour = RGB{N0f8}[])
         end
-        push!(bag.x, xy[1]); push!(bag.y, xy[2]); push!(bag.colour, colour)
+        push!(bag.x, xyz[1]); push!(bag.y, xyz[2]); push!(bag.z, xyz[3])
+        push!(bag.colour, colour)
     end
-    _push_track!(kid, colour, t, xy) = begin
-        hist = get!(track_hist, (kid, colour), Tuple{Int,Int,Int}[])
-        push!(hist, (t, xy[1], xy[2]))
+    _push_track!(kid, colour, t, xyz) = begin
+        hist = get!(track_hist, (kid, colour), Tuple{Int,Float64,Float64,Float64}[])
+        push!(hist, (t, xyz[1], xyz[2], xyz[3]))
     end
+    _z_of(df, i, has_z) = has_z ?
+        (df[i, :centroid_z] isa Real ? Float64(df[i, :centroid_z]) : 0.0) : 0.0
 
-    # Optional "whole-segmentation tracks" mode: paint every cell with `track_id > 0` in one
-    # default colour, ignoring pops entirely. Matches napari's `show-tracks` whole-segmentation
-    # ribbon (napari_api.jl:1888) — the answer to "just show me the tracks in this segmentation"
-    # for a segmentation that has no gated pops but IS tracked (e.g. cpSAM on zolIMa/fXgbTl).
     if all_tracks
         if !hasK
-            @warn "build_overlays_for: all_tracks requested but no track_id column" value_name = vn
+            @warn "_build_overlay_state: all_tracks requested but no track_id column" value_name = vn
         else
-            view_centroid_cols(lp; order = [:x, :y])
+            view_centroid_cols(lp; order = [:x, :y, :z])
             select_cols(lp, ["track_id"])
             df = as_df(lp)
+            has_z = "centroid_z" in names(df)
             colour = hex_to_rgb(String(all_tracks_colour))
             @inbounds for i in 1:size(df, 1)
                 px = df[i, :centroid_x]; py = df[i, :centroid_y]
                 (px isa Real && py isa Real) || continue
                 t = hasT ? df[i, :centroid_t] : 0
                 (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
-                xy = _apply(transform, px, py)
-                xy === nothing && continue
+                pz = _z_of(df, i, has_z)
                 ti = hasT ? Int(round(Float64(t))) : 0
-                _push_point!(ti, xy, colour)
+                _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                 if include_tracks
                     traw = df[i, :track_id]
                     (traw isa Real && isfinite(Float64(traw))) || continue
                     kid = Int(round(Float64(traw)))
                     kid > 0 || continue
-                    _push_track!(kid, colour, ti, xy)
+                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
                 end
             end
         end
     elseif !is_track_pt
-        # Cell path — resolve_pops returns each pop's cell labels; index into the centroid table.
         pops = try
             resolve_pops(img, pt; value_name = vn)
         catch e
-            @warn "build_overlays_for: resolve_pops failed" value_name pop_type exception = e
+            @warn "_build_overlay_state: resolve_pops failed" value_name pop_type exception = e
             NamedTuple[]
         end
         if pops_filter !== nothing
             want = Set(String(p) for p in pops_filter)
             pops = [p for p in pops if String(p.path) in want]
         end
-        # Only ask for the columns we'll use.
-        view_centroid_cols(lp; order = [:x, :y])
+        view_centroid_cols(lp; order = [:x, :y, :z])
         hasK && select_cols(lp, ["track_id"])
         df = as_df(lp)
-        n  = size(df, 1)
+        has_z = "centroid_z" in names(df)
+        n = size(df, 1)
         row_of = Dict{Int,Int}()
         @inbounds for i in 1:n
             row_of[Int(df[i, :label])] = i
         end
-
         for p in pops
             Bool(get(p, :show, true)) || continue
             colour = hex_to_rgb(String(p.colour))
@@ -280,29 +307,25 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                 (px isa Real && py isa Real) || continue
                 t = hasT ? df[i, :centroid_t] : 0
                 (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
-                xy = _apply(transform, px, py)
-                xy === nothing && continue
+                pz = _z_of(df, i, has_z)
                 ti = hasT ? Int(round(Float64(t))) : 0
-                _push_point!(ti, xy, colour)
-
+                _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                 if include_tracks && is_track_pop
                     traw = df[i, :track_id]
                     (traw isa Real && isfinite(Float64(traw))) || continue
                     kid = Int(round(Float64(traw)))
                     kid > 0 || continue
-                    _push_track!(kid, colour, ti, xy)
+                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
                 end
             end
         end
     else
-        # Track path — `pop_df` with granularity=:cell EXPANDS a gated track pop's members
-        # (track_ids) to the cell rows those tracks occupy, tagged with a `pop` column. That's
-        # exactly the shape the point + segment passes want. Load the pop map for the pop
-        # metadata (colour, show, path) so the expanded rows keep their pop's colour.
+        # Track path — `pop_df(; granularity=:cell)` for track/trackclust: their gates live on
+        # `track_props` and `resolve_pops`'s cell fetch cannot evaluate them.
         m = try
             load_pop_map(img; value_name = vn, pop_type = pt)
         catch e
-            @warn "build_overlays_for: load_pop_map failed for track pop_type" value_name pop_type exception = e
+            @warn "_build_overlay_state: load_pop_map failed" value_name pop_type exception = e
             nothing
         end
         pop_meta = Dict{String,NamedTuple}()
@@ -325,86 +348,69 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                 pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
                        centroids = :pixel, include_x = false, include_obs = true)
             catch e
-                @warn "build_overlays_for: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
+                @warn "_build_overlay_state: pop_df failed" value_name pop_type paths = want_paths exception = e
                 nothing
             end
             if df !== nothing && size(df, 1) > 0
-                # pop_df tags each row with `pop` (String) and `value_name`; guard the columns.
                 col_exists(c) = c in names(df)
+                has_z = col_exists("centroid_z")
                 @inbounds for i in 1:size(df, 1)
                     (col_exists("centroid_x") && col_exists("centroid_y")) || break
                     px = df[i, :centroid_x]; py = df[i, :centroid_y]
                     (px isa Real && py isa Real) || continue
                     t = col_exists("centroid_t") ? df[i, :centroid_t] : 0
                     (col_exists("centroid_t") && !(t isa Real && isfinite(Float64(t)))) && continue
-                    xy = _apply(transform, px, py)
-                    xy === nothing && continue
+                    pz = _z_of(df, i, has_z)
                     ti = col_exists("centroid_t") ? Int(round(Float64(t))) : 0
                     pop_path = col_exists("pop") ? String(df[i, :pop]) : first(want_paths)
                     meta = get(pop_meta, pop_path, nothing)
                     meta === nothing && continue
                     colour = meta.colour
-                    _push_point!(ti, xy, colour)
-
+                    _push_point!(ti, (Float64(px), Float64(py), pz), colour)
                     if include_tracks && col_exists("track_id")
                         traw = df[i, :track_id]
                         (traw isa Real && isfinite(Float64(traw))) || continue
                         kid = Int(round(Float64(traw)))
                         kid > 0 || continue
-                        _push_track!(kid, colour, ti, xy)
+                        _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
                     end
                 end
             end
         end
     end
 
-    # Turn per-track (t, x, y, colour) rows into (t0 → t1, x0, y0, x1, y1, colour) segments —
-    # one segment per adjacent timepoint. Bucket by the ARRIVAL timepoint t1 (the later end), so
-    # the closure below can slice `[t + 2 - L, t + 1]` in one range — matching `tailRange` in
-    # `frontend/src/utils/viewerOverlays.ts` (a segment's END is its arrival, and the current hop
-    # ends at t+1). L = 0 short-circuits to nothing on every frame.
-    #
-    # Segment colour follows `track_color_mode` — SAME three modes the browser exposes
-    # (`frontend/src/utils/viewerOverlays.ts` → `TrackColorMode`):
-    #   * `"track"` (default) — cycle `CECELIA_TRACK_PALETTE` by `abs(kid) % length`. Telling
-    #     adjacent tracks apart is the point; napari does the same.
-    #   * `"speed"` — heat ramp over segment speed (pixel per hop, Δt = 1). Fast tracks hot, slow
-    #     cool. Range is normalised over ALL emitted segments at build time.
-    #   * `"solid"` — every segment paints in the SOURCE colour recorded during the point pass (a
-    #     pop's colour, or `all_tracks_colour` when `all_tracks = true`). Matches the browser's
-    #     per-source solid mode for a single source.
-    segs_by_end = Dict{Int,typeof((; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[],
-                                      colour = RGB{N0f8}[]))}()
+    # ── Segment build — SAME `track_color_mode` semantics as the pre-refactor 2D/3D authors.
+    # Speed² uses native-voxel (x, y) only (matching the browser's speedSq); z is threaded through
+    # the segment but does NOT enter the speed metric — the 2D still and the 3D animation of the
+    # same experiment must share track heat.
+    segs_by_end = Dict{Int,NamedTuple{(:x0, :y0, :z0, :x1, :y1, :z1, :colour),
+                        Tuple{Vector{Float64},Vector{Float64},Vector{Float64},
+                              Vector{Float64},Vector{Float64},Vector{Float64},
+                              Vector{RGB{N0f8}}}}}()
     tracks_active = include_tracks && hasT && tail_length > 0
     tcm = String(track_color_mode)
     tcm in ("track", "speed", "solid") ||
-        (@warn "build_overlays_for: unknown track_color_mode, falling back to \"track\"" mode = tcm;
+        (@warn "_build_overlay_state: unknown track_color_mode, falling back to \"track\"" mode = tcm;
          tcm = "track")
 
     if tracks_active
-        # Pass 1: collect raw segments with their per-hop speed (as speed² to avoid the sqrt during
-        # collection). The speed range is set here so the emit pass can normalise.
-        raw = Tuple{Int,Int,Int,Int,Int,Int,Float64,RGB{N0f8}}[]   # (t1, x0, y0, x1, y1, kid, speed², solid_col)
+        raw = Tuple{Int,Float64,Float64,Float64,Float64,Float64,Float64,Int,Float64,RGB{N0f8}}[]
         s_min = Inf; s_max = -Inf
         for ((kid, col), hist) in track_hist
             length(hist) >= 2 || continue
             sort!(hist; by = first)
             for k in 1:(length(hist) - 1)
-                t0, x0, y0 = hist[k]
-                t1, x1, y1 = hist[k + 1]
+                t0, x0, y0, z0 = hist[k]
+                t1, x1, y1, z1 = hist[k + 1]
                 t1 > t0 || continue
                 dx = x1 - x0; dy = y1 - y0
-                # Speed is µm per hop in the browser (see `speedSq` in `viewerOverlays.ts`); here
-                # it's DRAWN pixels per hop because the transform already collapsed the crop and
-                # stride. That's the same ordering (fast → hot), so the heat map is faithful.
-                sp2 = Float64(dx * dx + dy * dy) / max(1, (t1 - t0))^2
+                sp2 = (dx * dx + dy * dy) / max(1, (t1 - t0))^2
                 s_min = min(s_min, sp2); s_max = max(s_max, sp2)
-                push!(raw, (t1, x0, y0, x1, y1, kid, sp2, col))
+                push!(raw, (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col))
             end
         end
-        # Pass 2: emit into the end-t buckets with the mode's colour.
         s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
-        for (t1, x0, y0, x1, y1, kid, sp2, col) in raw
+        for (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col) in raw
             colour = if tcm == "track"
                 CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
             elseif tcm == "speed"
@@ -413,36 +419,204 @@ function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractS
                 col
             end
             bag = get!(segs_by_end, t1) do
-                (; x0 = Int[], y0 = Int[], x1 = Int[], y1 = Int[], colour = RGB{N0f8}[])
+                (; x0 = Float64[], y0 = Float64[], z0 = Float64[],
+                   x1 = Float64[], y1 = Float64[], z1 = Float64[], colour = RGB{N0f8}[])
             end
-            push!(bag.x0, x0); push!(bag.y0, y0)
-            push!(bag.x1, x1); push!(bag.y1, y1)
+            push!(bag.x0, x0); push!(bag.y0, y0); push!(bag.z0, z0)
+            push!(bag.x1, x1); push!(bag.y1, y1); push!(bag.z1, z1)
             push!(bag.colour, colour)
         end
     end
 
+    OverlayState(pts_by_t, segs_by_end, hasT, tail_length, tracks_active)
+end
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# 2D author — `PixelTransform` per frame, integer drawn coords, backward-compatible
+# `(; x::Vector{Int}, y::Vector{Int}, colour)` / `(; x0, y0, x1, y1, colour)` shape
+# that `draw_points!` / `draw_segments!` expect.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+"""
+    build_overlays_for(img; value_name, pop_type, transform,
+                       pops_filter = nothing, include_tracks = true, tail_length = 30,
+                       all_tracks = false, all_tracks_colour = "#9ca3af",
+                       track_color_mode = "track")
+        -> (t -> (points, segments))
+
+Return a per-t closure that gives `record_view_movie` its 2D overlay shape. Coordinates are 1-based
+row-column in the drawn frame (post-crop + post-stride) — the mapping baked into `transform`.
+Segments emit `(; x0, y0, x1, y1, colour)`; points emit `(; x, y, colour)` — both use Int for
+compatibility with `draw_points!` / `draw_segments!`. `(nothing, nothing)` when nothing is drawable.
+
+Backed by `_build_overlay_state` — one collection, one place any pop-resolution / `track_color_mode`
+fix reaches. The projection differs only in `_apply(transform, x, y)` at emit time.
+"""
+function build_overlays_for(img; value_name::AbstractString, pop_type::AbstractString,
+                            transform::PixelTransform,
+                            pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                            include_tracks::Bool = true,
+                            tail_length::Int = 30,
+                            all_tracks::Bool = false,
+                            all_tracks_colour::AbstractString = "#9ca3af",
+                            track_color_mode::AbstractString = "track")
+    state = _build_overlay_state(img;
+                                  value_name = value_name, pop_type = pop_type,
+                                  pops_filter = pops_filter, include_tracks = include_tracks,
+                                  tail_length = tail_length, all_tracks = all_tracks,
+                                  all_tracks_colour = all_tracks_colour,
+                                  track_color_mode = track_color_mode)
     return function(t::Int)
-        pts = get(pts_by_t, hasT ? t : 0, nothing)
+        pts_raw, segs_raw = _state_at(state, t)
+        pts = nothing
+        if pts_raw !== nothing && !isempty(pts_raw.x)
+            xs = Int[]; ys = Int[]; cs = RGB{N0f8}[]
+            @inbounds for i in eachindex(pts_raw.x)
+                xy = _apply(transform, pts_raw.x[i], pts_raw.y[i])
+                xy === nothing && continue
+                push!(xs, xy[1]); push!(ys, xy[2]); push!(cs, pts_raw.colour[i])
+            end
+            isempty(xs) || (pts = (; x = xs, y = ys, colour = cs))
+        end
         segs = nothing
-        if tracks_active && !isempty(segs_by_end)
-            hi = t + 1
-            lo = hi - tail_length + 1
-            # Empty window → no segments. Consolidate every visible bucket into ONE columnar
-            # NamedTuple; per-frame allocation is bounded by the tail length rather than the
-            # whole track history, which is what the knob is for.
+        if segs_raw !== nothing
             xs0 = Int[]; ys0 = Int[]; xs1 = Int[]; ys1 = Int[]; cs = RGB{N0f8}[]
-            for e in lo:hi
-                bag = get(segs_by_end, e, nothing)
-                bag === nothing && continue
-                append!(xs0, bag.x0); append!(ys0, bag.y0)
-                append!(xs1, bag.x1); append!(ys1, bag.y1)
-                append!(cs,  bag.colour)
+            @inbounds for i in eachindex(segs_raw.x0)
+                xy0 = _apply(transform, segs_raw.x0[i], segs_raw.y0[i])
+                xy1 = _apply(transform, segs_raw.x1[i], segs_raw.y1[i])
+                # Same clipping rule as the pre-refactor path: drop a segment iff BOTH endpoints
+                # are outside the drawn frame. Keeping this exact was called out in the original
+                # docstring — a segment that panned off between frames should still draw its
+                # visible half up to the frame edge.
+                (xy0 === nothing && xy1 === nothing) && continue
+                (xy0 === nothing || xy1 === nothing) && continue
+                push!(xs0, xy0[1]); push!(ys0, xy0[2])
+                push!(xs1, xy1[1]); push!(ys1, xy1[2])
+                push!(cs, segs_raw.colour[i])
             end
             isempty(xs0) || (segs = (; x0 = xs0, y0 = ys0, x1 = xs1, y1 = ys1, colour = cs))
         end
         (pts, segs)
     end
 end
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# 3D author — camera projection per frame, subpixel (u, v) coords, per-segment
+# alpha for the tail fade. Same `OverlayState` as the 2D author so overlay
+# resolution never drifts between the two views of one experiment.
+# ─────────────────────────────────────────────────────────────────────────────────
+#
+# The projection matches `render_view_frame_3d` / `render_animation_run.py::_render_frame`
+# byte-for-byte: `world = R @ view` (Rz × Ry × Rx, vispy Base3DRotationCamera), so
+# `view = R^T @ world_iso` where `world_iso` is native voxels with `z` scaled by
+# `z_aniso = physical_z / physical_x`. The screen coord is the same `world_per_px`
+# scaling the ray builder uses so an overlay dot lands ON the cell the ray hit.
+
+"""
+    rotation_matrix_from_angles(angles) -> Matrix{Float64}
+
+Compose the R = Rz × Ry × Rx rotation matrix (vispy Base3DRotationCamera convention). `angles` is
+a 3-tuple / vector `(rx, ry, rz)` in DEGREES. Match with `render_view_frame_3d`'s kernel and the
+Python renderer's `_rotation_matrix` — one convention, three implementations required to agree.
+"""
+function rotation_matrix_from_angles(angles)
+    rx = deg2rad(Float64(angles[1]))
+    ry = deg2rad(Float64(angles[2]))
+    rz = deg2rad(Float64(angles[3]))
+    sx, cx = sin(rx), cos(rx)
+    sy, cy = sin(ry), cos(ry)
+    sz, cz = sin(rz), cos(rz)
+    Float64[
+        cz*cy   cz*sy*sx - sz*cx    cz*sy*cx + sz*sx
+        sz*cy   sz*sy*sx + cz*cx    sz*sy*cx - cz*sx
+       -sy      cy*sx               cy*cx
+    ]
+end
+
+# view = R^T @ world_iso, then screen = view/world_per_px + (canvas + 1) / 2.
+@inline function _project_3d_point(R::AbstractMatrix{Float64}, cx::Float64, cy::Float64, cz::Float64,
+                                    z_aniso::Float64, world_per_px::Float64,
+                                    canvas_h::Int, canvas_w::Int,
+                                    x::Float64, y::Float64, z::Float64)
+    xw = x - cx
+    yw = y - cy
+    zw = (z - cz) * z_aniso
+    xv = R[1,1]*xw + R[2,1]*yw + R[3,1]*zw
+    yv = R[1,2]*xw + R[2,2]*yw + R[3,2]*zw
+    u = xv / world_per_px + (Float64(canvas_w) + 1.0) / 2.0
+    v = yv / world_per_px + (Float64(canvas_h) + 1.0) / 2.0
+    (u, v)
+end
+
+"""
+    build_overlays3d_for(img; value_name, pop_type,
+                         pops_filter = nothing, include_tracks = true, tail_length = 30,
+                         all_tracks = false, all_tracks_colour = "#9ca3af",
+                         track_color_mode = "track")
+        -> ((t, R, cx, cy, cz, world_per_px, canvas_h, canvas_w, z_aniso) -> (points, segments))
+
+Per-t + per-camera closure that projects the shared overlay state through the SAME rotation the
+volume raycast uses and emits DRAWN PIXEL (u, v) coordinates. Points: `(; u, v, colour)`;
+Segments: `(; u0, v0, u1, v1, colour, alpha)`. The renderer downstream (Julia OR Python) then just
+draws — the projection math never leaves Julia, so it can't drift from the ray-cast math.
+
+`alpha` per segment ramps the tail fade the browser overlay uses:
+`alpha = 0.2 + 0.8 * clamp(1 - age / tail_length, 0, 1)`, `age = (t + 1) - t1`.
+"""
+function build_overlays3d_for(img; value_name::AbstractString, pop_type::AbstractString,
+                              pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                              include_tracks::Bool = true,
+                              tail_length::Int = 30,
+                              all_tracks::Bool = false,
+                              all_tracks_colour::AbstractString = "#9ca3af",
+                              track_color_mode::AbstractString = "track")
+    state = _build_overlay_state(img;
+                                  value_name = value_name, pop_type = pop_type,
+                                  pops_filter = pops_filter, include_tracks = include_tracks,
+                                  tail_length = tail_length, all_tracks = all_tracks,
+                                  all_tracks_colour = all_tracks_colour,
+                                  track_color_mode = track_color_mode)
+    tail_L = max(1, tail_length)
+    return function(t::Int, R::AbstractMatrix{Float64},
+                    cx::Real, cy::Real, cz::Real,
+                    world_per_px::Real,
+                    canvas_h::Int, canvas_w::Int,
+                    z_aniso::Real)
+        pts_raw, segs_raw = _state_at(state, t)
+        cxf, cyf, czf = Float64(cx), Float64(cy), Float64(cz)
+        wpp = Float64(world_per_px)
+        zaf = Float64(z_aniso)
+        pts = nothing
+        if pts_raw !== nothing && !isempty(pts_raw.x)
+            us = Float64[]; vs = Float64[]; cs = RGB{N0f8}[]
+            @inbounds for i in eachindex(pts_raw.x)
+                u, v = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
+                                          pts_raw.x[i], pts_raw.y[i], pts_raw.z[i])
+                push!(us, u); push!(vs, v); push!(cs, pts_raw.colour[i])
+            end
+            pts = (; u = us, v = vs, colour = cs)
+        end
+        segs = nothing
+        if segs_raw !== nothing && !isempty(segs_raw.x0)
+            us0 = Float64[]; vs0 = Float64[]; us1 = Float64[]; vs1 = Float64[]
+            cs = RGB{N0f8}[]; alphas = Float64[]
+            @inbounds for i in eachindex(segs_raw.x0)
+                u0, v0 = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
+                                            segs_raw.x0[i], segs_raw.y0[i], segs_raw.z0[i])
+                u1, v1 = _project_3d_point(R, cxf, cyf, czf, zaf, wpp, canvas_h, canvas_w,
+                                            segs_raw.x1[i], segs_raw.y1[i], segs_raw.z1[i])
+                push!(us0, u0); push!(vs0, v0); push!(us1, u1); push!(vs1, v1)
+                push!(cs, segs_raw.colour[i])
+                age = (t + 1) - segs_raw.t1[i]
+                alpha = 0.2 + 0.8 * clamp(1.0 - Float64(age) / Float64(tail_L), 0.0, 1.0)
+                push!(alphas, alpha)
+            end
+            segs = (; u0 = us0, v0 = vs0, u1 = us1, v1 = vs1, colour = cs, alpha = alphas)
+        end
+        (pts, segs)
+    end
+end
+
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # Mask author — the P4 outline pass, per-t.

@@ -137,7 +137,8 @@ def movie_writer(path, fps):
         writer.close()
 
 
-def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=None):
+def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=None,
+                      per_frame_overlay=None):
     """Encode a file of raw RGB24 frames to an mp4 through :func:`movie_writer`.
 
     The frames come from Julia's compositor (``api/src/movie_render.jl``, the offline renderer) —
@@ -148,6 +149,11 @@ def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=Non
     Reads one frame at a time. ``np.fromfile`` on the whole file would hold the entire movie in memory
     (~600 MB for a 181-frame recording of a real timecourse) to hand the writer one frame at a time
     anyway.
+
+    ``per_frame_overlay(i, frame_np) -> frame_np`` (optional) is called per frame, i 0-based. Return
+    the (possibly-modified) frame — this is where timestamp + scale-bar overlays land (see
+    ``title_card.draw_frame_overlays``). The offline renderer can't draw anti-aliased text in Julia,
+    so overlay drawing happens in this pass instead.
     """
     import numpy as np
     import os
@@ -171,7 +177,10 @@ def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=Non
                 raise ValueError(
                     f'raw frame {i} is {len(buf)} bytes, expected {expect} '
                     f'({width}x{height} RGB24) — the render was truncated')
-            writer.append_data(np.frombuffer(buf, dtype=np.uint8).reshape(int(height), int(width), 3))
+            frame = np.frombuffer(buf, dtype=np.uint8).reshape(int(height), int(width), 3)
+            if per_frame_overlay is not None:
+                frame = per_frame_overlay(i, frame)
+            writer.append_data(frame)
             if log is not None and (i + 1) % 25 == 0:
                 log.log(f'[PROGRESS] {i + 1}/{n}')
     return n

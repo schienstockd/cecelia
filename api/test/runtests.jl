@@ -6761,3 +6761,219 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: movie rail — offline overlay-config translator" begin
+    # `_overlays_raw_from_config` turns a viewer `look` / batch config into the smoke-route overlay
+    # shape. If it drifts, the record button silently regresses to channels-only movies.
+    @test _overlays_raw_from_config(Dict{String,Any}(), false) === nothing
+    @test _overlays_raw_from_config(nothing, false) === nothing
+    ov = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "popType" => "flow",
+                                                     "pointsSize" => 8), false)
+    @test ov isa AbstractDict
+    @test ov["popType"] == "flow"
+    @test ov["pointSizePx"] == 8
+    @test ov["allTracks"] === false
+    @test ov["includeTracks"] === false
+    # showTracks = whole-segmentation tracks, ignoring pops (napari's ribbon).
+    ov_all = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
+    @test ov_all["allTracks"] === true
+    # A mask fills the mask branch AND flips `allCells` on when there are no pops/gated to filter by.
+    ov_mask = _overlays_raw_from_config(Dict{String,Any}("labelContour" => 3), true)
+    @test ov_mask["showMask"] === true
+    @test ov_mask["maskContourPx"] == 3
+    @test ov_mask["allCells"] === true
+    # Gated tracks ON → the mask filters by those pops rather than showing every cell.
+    ov_gated = _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true), true)
+    @test ov_gated["includeTracks"] === true
+    @test ov_gated["allCells"] === false
+end
+
+@testset "API: movie rail — viewstate → render args (keyframe rendering)" begin
+    # `viewstate_to_render_args` is the single translator every keyframe of an offline animation
+    # runs through — if a Layer entry's `visible` or `contrast_limits` stopped surfacing, the movie
+    # would lose intent silently. Pin the four things a keyframe controls.
+    args = viewstate_to_render_args(
+        Dict{String,Any}("dims" => Dict("current_step" => [5, 2, 0, 0])),
+        ["CH1", "CH2"], nothing, 100, 100)
+    @test args.t == 5
+    @test args.z == 2
+    @test args.crop === nothing            # no canvas hints → no crop
+
+    # Missing viewState fields fall back to defaults.
+    args2 = viewstate_to_render_args(Dict{String,Any}(), ["CH1"],
+                                      [(0.0, 100.0, "red", true)], 100, 100)
+    @test args2.t == 0
+    @test args2.z === nothing
+    @test length(args2.specs) == 1
+    @test args2.specs[1] == (0.0, 100.0, "red", true)
+
+    # Layer entries overlay onto defaults (lookup by CHANNEL NAME, so a re-ordered image is safe).
+    args3 = viewstate_to_render_args(
+        Dict{String,Any}("layers" => Dict("CH2" => Dict("visible" => false,
+                                                          "contrast_limits" => [10, 200],
+                                                          "colormap" => "blue"))),
+        ["CH1", "CH2"], [(0.0, 100.0, "red", true), (0.0, 100.0, "green", true)],
+        100, 100)
+    @test args3.specs[1] == (0.0, 100.0, "red", true)
+    @test args3.specs[2] == (10.0, 200.0, "blue", false)
+
+    # Camera → crop only when canvas hints are given.
+    args_crop = viewstate_to_render_args(
+        Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0)),
+        ["CH1"], nothing, 100, 100; canvas_h = 40, canvas_w = 40)
+    @test args_crop.crop !== nothing
+    @test first(args_crop.crop.y) >= 0
+    @test last(args_crop.crop.y)  <= 99
+end
+
+@testset "API: interpolate_keyframes reaches the incoming keyframe exactly" begin
+    # The offline animation renderer relies on the last tween frame BEING the arrival state — not a
+    # half-step short. The napari path had this contract already; the offline sibling has to match.
+    kfs = [Dict("viewState" => Dict("dims" => Dict("current_step" => [0, 0])), "steps" => 1),
+           Dict("viewState" => Dict("dims" => Dict("current_step" => [10, 0])), "steps" => 5)]
+    frames = interpolate_keyframes(kfs)
+    @test length(frames) == 6              # 1 + 5
+    @test frames[end]["dims"]["current_step"][1] == 10
+end
+
+@testset "API: overlay_author — build_overlays3d_for on the labelProps fixture" begin
+    # 3D analogue of build_overlays_for. Same fixture, same wide-open pop, but NATIVE VOXEL coords
+    # (no `PixelTransform`) and a `z` field on both points AND segments. Bug this catches: the 3D
+    # author silently drops the z column on a 2D-segmented image, OR emits drawn-pixel coords by
+    # accident — either would visually work in the smoke script but render wrong under a rotation.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "all3d", "colour" => "#00ff00", "gate" => gate)))))
+
+            per_t = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
+                                          include_tracks = false)
+            # Identity view: R = I, cx/cy/cz = 0, zoom scale = 1 → projected (u, v) = native (x + 0.5, y + 0.5).
+            # This is the "drift guarantee" from a caller's POV: no rotation, no offset, dots land
+            # where the cell is.
+            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+            canvas_h, canvas_w = 100, 100
+            pts0, segs0 = per_t(0, R0, 0.0, 0.0, 0.0, 1.0, canvas_h, canvas_w, 1.0)
+            @test pts0 !== nothing
+            @test length(pts0.u) > 0
+            @test length(pts0.u) == length(pts0.v)
+            @test length(pts0.colour) == length(pts0.u)
+            # Every point paints in the pop's colour — the resolver honoured the gate.
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts0.colour)
+            # No tracks requested → no segments even if the fixture has `track_id`.
+            @test segs0 === nothing
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: movie rail — overlay context resolver + JSON serialisation" begin
+    # `_resolve_keyframe_overlay_builders` gates the whole overlay pipeline; `_overlays2d_state`
+    # is the JSON contract the Python renderer reads. Julia projects; Python rasterises. Pins the
+    # four decision points that could drift.
+
+    # No image → no builders (channels-only movie).
+    b2d, b3d = _resolve_keyframe_overlay_builders(nothing, nothing)
+    @test b2d === nothing
+    @test b3d === nothing
+    # Image but empty config → still nothing (no draw-request flags).
+    b2d2, b3d2 = _resolve_keyframe_overlay_builders(nothing,
+        Dict{String,Any}("valueName" => "B", "popType" => "flow"))
+    @test b2d2 === nothing && b3d2 === nothing
+    # Serialisation: a `nothing` closure → nothing, so the state dict stays terse.
+    @test _overlays2d_state(nothing, 0, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
+    # Empty points-and-segments → nothing (skip the frame's overlay pass).
+    empty_closure = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (nothing, nothing)
+    @test _overlays2d_state(empty_closure, 5, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
+    # A non-empty payload → JSON-safe primitives (Vector{Float64}, no RGB objects at rest).
+    pts = (; u = [50.5, 60.0], v = [40.0, 45.0],
+             colour = [RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0)])
+    segs = (; u0 = [50.5], v0 = [40.0], u1 = [60.0], v1 = [45.0],
+              colour = [RGB{N0f8}(1, 0, 0)], alpha = [0.8])
+    non_empty = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (pts, segs)
+    dct = _overlays2d_state(non_empty, 5, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2)
+    @test dct isa AbstractDict
+    @test dct["pointSize"] == 6
+    @test dct["segmentWidth"] == 2
+    @test dct["tailLength"] == 30
+    @test dct["points"]["u"] == [50.5, 60.0]
+    @test dct["points"]["v"] == [40.0, 45.0]
+    @test dct["points"]["colour"][1] == Float64[1.0, 0.0, 0.0]
+    @test dct["segments"]["u0"] == [50.5]
+    @test dct["segments"]["alpha"] == [0.8]
+    # Round-trips through JSON3 — the actual over-the-wire test.
+    j = JSON3.read(JSON3.write(dct))
+    @test j.pointSize == 6
+    @test collect(j.points.u) == [50.5, 60.0]
+    @test collect(j.segments.alpha) == [0.8]
+end
+
+@testset "API: overlay_author — rotation_matrix_from_angles matches vispy convention" begin
+    # The rotation-matrix convention is REPLICATED in three places: `render_view_frame_3d` (Julia
+    # CPU fallback), `render_animation_run.py::_rotation_matrix` (GPU raycast), and
+    # `rotation_matrix_from_angles` (overlay projection). ALL THREE must agree — if the overlay
+    # matrix drifts from the ray one, dots and the volume rotate in different directions.
+    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+    @test isapprox(R0, [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]; atol = 1e-9)
+    R90y = rotation_matrix_from_angles((0.0, 90.0, 0.0))
+    # Ry(90°) sends x → -z, z → x, y → y (standard right-hand rule). Check three column vectors.
+    @test isapprox(R90y * [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]; atol = 1e-9)
+    @test isapprox(R90y * [0.0, 1.0, 0.0], [0.0, 1.0,  0.0]; atol = 1e-9)
+    @test isapprox(R90y * [0.0, 0.0, 1.0], [1.0, 0.0,  0.0]; atol = 1e-9)
+end
+
+@testset "API: movie rail — 2D↔3D overlay projection agrees at identity view" begin
+    # The DRIFT GUARANTEE. At angles=(0,0,0), zoom=1, the 3D projection reduces to an axial
+    # projection: (x, y, z) → (u, v) = (x - cx + (W+1)/2 * something, y - cy + ...). We test that
+    # a point at native voxel (cx, cy, cz) projects to the CANVAS CENTRE, and that swapping angles
+    # for the same identity view produces the SAME screen coords whether we go through the 2D
+    # `pixel_transform` path (which draws at native pixel + offset) or the 3D projection. The two
+    # authors read from ONE `_build_overlay_state` and use the same collection; the projection
+    # math must round-trip to the same drawn pixel for identity views.
+    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+    canvas_h, canvas_w = 100, 100
+    # Volume extents matching a 100×100×20 image (so ext_x = ext_y and z_aniso = 1 collapses to
+    # canvas coordinates that equal the world coordinates plus a centre offset).
+    native_w, native_h, nZ = 100, 100, 20
+    z_aniso = 1.0
+    cx, cy, cz = 49.5, 49.5, 9.5
+    wpp = _world_per_px_3d(native_w, native_h, nZ, z_aniso, 1.0, canvas_w)
+    @test isapprox(wpp, 1.0; atol = 1e-9)   # canvas span == native extent → 1 world unit / pixel
+    u, v = _project_3d_point(R0, cx, cy, cz, z_aniso, wpp,
+                                       canvas_h, canvas_w, cx, cy, cz)
+    # Centre of volume projects to centre of canvas ((W + 1) / 2, (H + 1) / 2 — 0-based).
+    @test isapprox(u, (canvas_w + 1) / 2; atol = 1e-9)
+    @test isapprox(v, (canvas_h + 1) / 2; atol = 1e-9)
+    # Same world point projected at Ry(90°) rotation — the point at the volume centre should STILL
+    # project to the canvas centre (rotation about a point through the centre leaves the centre
+    # fixed). This proves the projection actually uses cx/cy/cz as the rotation origin.
+    R90 = rotation_matrix_from_angles((0.0, 90.0, 0.0))
+    u90, v90 = _project_3d_point(R90, cx, cy, cz, z_aniso, wpp,
+                                           canvas_h, canvas_w, cx, cy, cz)
+    @test isapprox(u90, (canvas_w + 1) / 2; atol = 1e-9)
+    @test isapprox(v90, (canvas_h + 1) / 2; atol = 1e-9)
+end

@@ -322,6 +322,138 @@ function render_view_frame(arr, caxes, t::Int;
     frame
 end
 
+# ── 3D rotation-MIP renderer (P5-a Stage C / animation) ─────────────────────────
+#
+# `render_view_frame_3d` is the offline counterpart to `render_view_frame` for the 3D animation case.
+# Instead of projecting the volume axially (`z = nothing`), it applies a camera rotation to the volume
+# and MIPs along the rotated view-Z. NO Qt/vispy/GL: pure Julia trilinear interp + ray-cast MIP —
+# what the toy demo of 2026-08-27 (scratchpad/rotate_demo.jl) proved viable on fXgbTl.
+#
+# Rotation is Euler `(rx, ry, rz)` in degrees, matching napari's `camera.angles` docstring
+# (`vispy.scene.cameras.turntable`; the same field `capture_view_state` writes). The rotation matrix
+# is `R = Rz * Ry * Rx` — rotate around X first, then Y, then Z — which is vispy's default when its
+# `Base3DRotationCamera` applies the transform to the volume before projection.
+#
+# `z_aniso = physical_z / physical_x` corrects for anisotropic voxels. Without it, a rotated 90° view
+# of a stack with `PhysicalSizeZ=2 µm`, `PhysicalSizeX=0.33 µm` would look ~6× squashed. The world is
+# stretched so xy and (z × z_aniso) are isotropic BEFORE the rotation is applied.
+#
+# `render_quality` picks how many samples per ray we take along view-Z:
+#   * `:draft`    — 0.5× the diagonal of the volume (fast previews)
+#   * `:standard` — 1.0× (default)
+#   * `:high`     — 2.0× (final render)
+# Trilinear interp only — tricubic wasn't visibly better in testing and pays 8× the lookups.
+#
+# `zoom` = canvas-px-per-world-unit (napari `camera.zoom`). Higher is more zoomed in. `center = (cz,
+# cy, cx)` in native voxels, or `nothing` for the volume midpoint.
+#
+# Volume load: one full (C, Y, X, Z) read per call. The keyframe renderer memoises on `(t, channels)`
+# so consecutive same-t frames reuse the volume (a rotation animation typically holds t constant).
+function render_view_frame_3d(arr, caxes, t::Int;
+                              channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
+                              specs = nothing,
+                              angles::NTuple{3,<:Real} = (0.0, 0.0, 0.0),
+                              center::Union{Nothing,NTuple{3,<:Real}} = nothing,
+                              zoom::Real = 1.0,
+                              z_aniso::Real = 1.0,
+                              canvas_h::Int = 512, canvas_w::Int = 512,
+                              render_quality::Symbol = :standard,
+                              volume_cache::Union{Nothing,Ref{Any}} = nothing)
+    nd    = ndims(arr)
+    dims  = axis_dims(caxes, nd)
+    nc    = haskey(dims, "c") ? size(arr, dims["c"]) : 1
+    chans = channels === nothing ? collect(0:(nc - 1)) : collect(Int, channels)
+    isempty(chans) && throw(ArgumentError("render_view_frame_3d: no channels selected"))
+    haskey(dims, "z") || throw(ArgumentError("render_view_frame_3d: image has no z axis (2D store — use render_view_frame)"))
+
+    # Load full volume as (C, Y, X, Z) Float32. Memoise on (t, chans) if the caller passed a cache.
+    ck = (t, Tuple(chans))
+    V = if volume_cache !== nothing && volume_cache[] isa Tuple && volume_cache[][1] == ck
+        volume_cache[][2]
+    else
+        nZ = size(arr, dims["z"]); nY = size(arr, dims["y"]); nX = size(arr, dims["x"])
+        Vloc = Array{Float32,4}(undef, length(chans), nY, nX, nZ)
+        for (k, c) in enumerate(chans)
+            for zi in 0:(nZ - 1)
+                pl, = read_slab(arr, caxes, t, c; z = zi)
+                Vloc[k, :, :, zi + 1] .= Float32.(permutedims(pl, (2, 1)))
+            end
+        end
+        volume_cache === nothing || (volume_cache[] = (ck, Vloc))
+        Vloc
+    end
+    C, nY, nX, nZ = size(V)
+    cz, cy, cx = center === nothing ? (Float64(nZ - 1) / 2, Float64(nY - 1) / 2, Float64(nX - 1) / 2) :
+                                       (Float64(center[1]), Float64(center[2]), Float64(center[3]))
+
+    # Rotation matrix R = Rz * Ry * Rx (vispy Base3DRotationCamera convention).
+    rx, ry, rz = deg2rad(Float64(angles[1])), deg2rad(Float64(angles[2])), deg2rad(Float64(angles[3]))
+    sx, cxs = sin(rx), cos(rx)
+    sy, cys = sin(ry), cos(ry)
+    sz, czs = sin(rz), cos(rz)
+    # Composed R applied to a column vector (world = R * view).
+    R11 = czs * cys;                 R12 = czs * sy * sx - sz * cxs;  R13 = czs * sy * cxs + sz * sx
+    R21 = sz  * cys;                 R22 = sz  * sy * sx + czs * cxs; R23 = sz  * sy * cxs - czs * sx
+    R31 = -sy;                       R32 = cys * sx;                  R33 = cys * cxs
+
+    # Isotropic world extents. zoom scales canvas-px-per-world-unit; higher zoom = zoomed in.
+    ext_y = Float64(nY)
+    ext_x = Float64(nX)
+    ext_z = Float64(nZ) * Float64(z_aniso)
+    canvas_span = max(ext_x, ext_y)
+    world_per_px = canvas_span / (Float64(zoom) * Float64(canvas_w))    # world units per canvas pixel
+
+    # Sample density along the ray. Diagonal (X + Z) is what a 45° tilt sees end-to-end.
+    diag = sqrt(ext_x^2 + ext_z^2)
+    q_mult = render_quality === :draft ? 0.5 :
+             render_quality === :high  ? 2.0 : 1.0
+    n_samples = max(4, ceil(Int, diag * q_mult))
+    step_v    = diag / n_samples                          # step in world units along view-Z
+
+    out = zeros(Float32, C, canvas_h, canvas_w)
+    @inbounds Threads.@threads for j in 1:canvas_w
+        xv = (j - (canvas_w + 1) / 2) * world_per_px
+        for i in 1:canvas_h
+            yv = (i - (canvas_h + 1) / 2) * world_per_px
+            for c in 1:C
+                m = 0.0f0
+                for s in 1:n_samples
+                    zv = (s - (n_samples + 1) / 2) * step_v
+                    # world = R * (xv, yv, zv)  (view-Y stays "up" because napari's canvas Y is world-Y).
+                    xw = R11 * xv + R12 * yv + R13 * zv
+                    yw = R21 * xv + R22 * yv + R23 * zv
+                    zw = R31 * xv + R32 * yv + R33 * zv
+                    vy = yw + cy
+                    vx = xw + cx
+                    vz = (zw / Float64(z_aniso)) + cz
+                    (vy < 0 || vy > nY - 1 || vx < 0 || vx > nX - 1 || vz < 0 || vz > nZ - 1) && continue
+                    y0 = floor(Int, vy); y1 = min(nY - 1, y0 + 1); fy = Float32(vy - y0)
+                    x0 = floor(Int, vx); x1 = min(nX - 1, x0 + 1); fx = Float32(vx - x0)
+                    z0 = floor(Int, vz); z1 = min(nZ - 1, z0 + 1); fz = Float32(vz - z0)
+                    c000 = V[c, y0 + 1, x0 + 1, z0 + 1]
+                    c100 = V[c, y1 + 1, x0 + 1, z0 + 1]
+                    c010 = V[c, y0 + 1, x1 + 1, z0 + 1]
+                    c110 = V[c, y1 + 1, x1 + 1, z0 + 1]
+                    c001 = V[c, y0 + 1, x0 + 1, z1 + 1]
+                    c101 = V[c, y1 + 1, x0 + 1, z1 + 1]
+                    c011 = V[c, y0 + 1, x1 + 1, z1 + 1]
+                    c111 = V[c, y1 + 1, x1 + 1, z1 + 1]
+                    v = (1 - fy) * ((1 - fx) * ((1 - fz) * c000 + fz * c001) +
+                                          fx  * ((1 - fz) * c010 + fz * c011)) +
+                          fy   * ((1 - fx) * ((1 - fz) * c100 + fz * c101) +
+                                          fx  * ((1 - fz) * c110 + fz * c111))
+                    v > m && (m = v)
+                end
+                out[c, i, j] = m
+            end
+        end
+    end
+
+    sp = specs === nothing ?
+        [percentile_spec(view(out, k, :, :), DEFAULT_CMAPS[mod1(k, 4)]) for k in 1:C] : specs
+    composite_rgb(out, sp)
+end
+
 # A 0-based inclusive pixel range → the 1-based Julia range it selects, clamped to `n`. `nothing` (or a
 # range entirely outside the frame) means the whole axis: a crop that selects nothing would render a
 # zero-size frame, which an encoder reports as a corrupt movie rather than as a bad crop.

@@ -58,6 +58,20 @@ absorbed — not in every caller, and not once per field.
 _wstr(data, key::Symbol, default::AbstractString = "") =
     (v = get(data, key, nothing); v === nothing ? String(default) : String(v))
 
+# `look` uses camelCase from the frontend but AbstractDict-safe lookups: try both String and
+# Symbol keys before falling back. JSON3 yields Symbol keys but a hand-authored test may pass
+# a Dict{String,Any}, and we want both to work.
+_ov_look_str(cfg, k::AbstractString, dflt::AbstractString) = begin
+    (cfg isa AbstractDict) || return String(dflt)
+    v = get(cfg, k, nothing); v === nothing && (v = get(cfg, Symbol(k), nothing))
+    v === nothing ? String(dflt) : String(v)
+end
+_ov_look_int(cfg, k::AbstractString, dflt::Int) = begin
+    (cfg isa AbstractDict) || return dflt
+    v = get(cfg, k, nothing); v === nothing && (v = get(cfg, Symbol(k), nothing))
+    v isa Real ? Int(round(Float64(v))) : dflt
+end
+
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
                    started_at="", finished_at="")
     if string(status) == "running"
@@ -221,8 +235,9 @@ end
 
 # A SINGLE recording (the viewer's Record button, or the animation page's render) on the same rail as
 # the batch below: async, `task:progress` per frame, `task:status`/`task:result`, and a Cancel that works.
-# It was a blocking POST until the bridge learned to report progress and take a cancel mid-render — see
-# `run_single_movie`. `keyframes` present ⇒ the interpolated animation, absent ⇒ the open image's T-sweep.
+# All three shapes run through the offline renderer (`api/src/movie_rail.jl`) — plain timelapse (`run_
+# single_offline`), compare grid (`run_single_grid_offline`), keyframe animation
+# (`run_single_keyframes_offline`) — so the record path never touches napari.
 function handle_movie_record(ws, data)
     task_id     = _wstr(data, :taskId)
     project_uid = _wstr(data, :projectUid)
@@ -291,22 +306,100 @@ function handle_movie_record(ws, data)
         "compareLayout" => layout, "compareContrast" => get(data, :compareContrast, ""),
         "showTimestamp" => show_ts, "showScaleBar" => show_sb,
         "look" => get(data, :look, nothing), "keyframes" => keyframes)
-    _batch_register!(task_id)
+    # Route decision: everything is now offline — plain timelapse, compare grids, and keyframe
+    # animations. Napari is not touched on the record path.
+    n_vns = max(1, length(value_names))
+    n_lvns = label_vns === nothing ? 0 : length(label_vns)
+    n_bvns = branch_vns === nothing ? 0 : length(branch_vns)
+    is_compare = n_vns > 1 || n_lvns > 1 || n_bvns > 1
+    if keyframes !== nothing
+        first_vn  = isempty(value_names) ? "" : String(first(value_names))
+        # `renderQuality` picks the 3D ray-cast sample density: draft (0.5×) | standard (1×) | high
+        # (2×). Meaningless for 2D keyframes — `render_view_frame` ignores it — but harmless to thread.
+        rq_raw = String(_wstr(data, :renderQuality, "standard"))
+        rq_sym = rq_raw == "draft" ? :draft : rq_raw == "high" ? :high : :standard
+        # Overlays for the animation — the frontend's per-set settings (colourBy, pointsSize,
+        # tailWidth, showPopulations, showTracks, showGatedTracks, popType, popsFilter, etc.) ride
+        # inside `look`, seeded once from the viewer state the title card already reads. Absent
+        # `look` → nothing → channels-only movie (pre-P5.5 behaviour).
+        look_cfg = get(data, :look, nothing)
+        ovs_cfg  = look_cfg isa AbstractDict ? _overlays_raw_from_config(look_cfg, false) : nothing
+        # `valueName` lives on `look` (populations + tracks belong to a segmentation), fall back to
+        # the request's first valueName. Same for `pointsSize`, `tailWidth`, `tailLength`, `popType`
+        # — the author reads them all from `overlays_config`, so seed it here from `look`.
+        if ovs_cfg !== nothing
+            ovs_cfg["valueName"] = _ov_look_str(look_cfg, "valueName", first_vn)
+            # `look` carries the resolved per-set settings; a missing tailLength means "napari
+            # default", which is 30 (matches `_overlays_raw_from_config`).
+            ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)
+        end
+        @async try
+            run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,
+                                          size_x = size_x, size_y = size_y, suffix = suffix,
+                                          title_card = card, keyframes = keyframes,
+                                          value_name = first_vn,
+                                          render_quality = rq_sym,
+                                          show_timestamp = show_ts, show_scale_bar = show_sb,
+                                          overlays_config = ovs_cfg,
+                                          movie_config = movie_config)
+        catch e
+            @warn "offline animation crashed" exception = e
+            ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
+            ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="job")
+        end
+        return
+    end
+    if keyframes === nothing && is_compare
+        # Build the same config a batch would author (versions + masks + share_contrast + layout + the
+        # pop/track flags read from `look`) so `_compare_grid` produces the same MovieRow vector.
+        look_cfg = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+        compare_cfg = Dict{Symbol,Any}()
+        look_cfg isa AbstractDict &&
+            (for (k, v) in look_cfg; compare_cfg[Symbol(k)] = v; end)
+        compare_cfg[:valueNames]       = value_names
+        compare_cfg[:labelValueNames]  = (label_vns  === nothing) ? String[] : label_vns
+        compare_cfg[:branchValueNames] = (branch_vns === nothing) ? String[] : branch_vns
+        compare_cfg[:labelContour]     = contour
+        compare_cfg[:show3D]           = show_3d
+        z_slice === nothing || (compare_cfg[:zSlice] = z_slice)
+        compare_cfg[:compareLayout]    = layout
+        compare_cfg[:compareContrast]  = String(get(data, :compareContrast, ""))
+        @async try
+            run_single_grid_offline(task_id, project_uid, image_uid; fps = fps,
+                                    size_x = size_x, size_y = size_y, suffix = suffix,
+                                    title_card = card,
+                                    compare_config = compare_cfg,
+                                    share_contrast = share_ctr, layout = layout,
+                                    t_start = t_start, t_end = t_end,
+                                    show_timestamp = show_ts, show_scale_bar = show_sb,
+                                    movie_config = movie_config)
+        catch e
+            @warn "offline compare grid crashed" exception = e
+            ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
+            ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="job")
+        end
+        return
+    end
+    # Plain single-cell timelapse — the base case. Compare + keyframes are handled above.
+    first_lvn = (label_vns !== nothing && !isempty(label_vns)) ? String(first(label_vns)) : nothing
+    first_vn  = isempty(value_names) ? "" : String(first(value_names))
+    overlays_raw = get(data, :overlays, nothing)
     @async try
-        run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
-                         suffix = suffix, title_card = card, keyframes = keyframes,
-                         movie_config = movie_config,
-                         value_names = value_names, label_value_names = label_vns,
-                         branch_value_names = branch_vns,
-                         label_contour = contour, show_3d = show_3d, z_slice = z_slice,
-                         t_start = t_start, t_end = t_end,
-                         share_contrast = share_ctr, layout = layout,
-                         show_timestamp = show_ts, show_scale_bar = show_sb, api_url = api_url)
+        run_single_offline(task_id, project_uid, image_uid; fps = fps,
+                           size_x = size_x, size_y = size_y, suffix = suffix,
+                           title_card = card,
+                           value_name = first_vn,
+                           label_value_name = first_lvn,
+                           label_contour = contour,
+                           z_slice = z_slice,
+                           t_start = t_start, t_end = t_end,
+                           show_timestamp = show_ts, show_scale_bar = show_sb,
+                           overlays_raw = overlays_raw,
+                           movie_config = movie_config)
     catch e
-        @warn "movie record crashed" exception = e
+        @warn "offline record crashed" exception = e
         ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
-        ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
-        _batch_clear!(task_id)
+        ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="job")
     end
 end
 
@@ -339,16 +432,16 @@ function handle_movie_batch(ws, data)
     movie_config = Dict{String,Any}("config" => config, "fileAttrs" => file_attrs, "fps" => fps,
                                     "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
                                     "imageUids" => image_uids)
-    _batch_register!(task_id)
+    # Batch is entirely off napari — `run_batch_offline` detects compare grid per image and dispatches
+    # to `_render_grid_offline`. There is no napari fallback for the batch any more.
     @async try
-        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps;
-                         size_x = size_x, size_y = size_y, suffix = suffix,
-                         movie_config = movie_config)
+        run_batch_offline(task_id, project_uid, image_uids, config, file_attrs, fps;
+                          size_x = size_x, size_y = size_y, suffix = suffix,
+                          movie_config = movie_config)
     catch e
-        @warn "batch movies crashed" exception = e
+        @warn "offline batch crashed" exception = e
         ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")
-        ws_status(ws, task_id, "failed", first(image_uids); fun="movie:batch", pool="viewer")
-        _batch_clear!(task_id)
+        ws_status(ws, task_id, "failed", first(image_uids); fun="movie:batch", pool="job")
     end
 end
 
