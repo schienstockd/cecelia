@@ -845,6 +845,11 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     ov_paths_raw = get(ov_raw, :popPaths, nothing)
     ov_paths = ov_paths_raw isa AbstractVector ?
                String[String(p) for p in ov_paths_raw] : nothing
+    # `showPopulations` gates the pop-dot build. Absent = true, so `record-test`'s smoke overlays
+    # block (which never carried this field) keeps painting pops the way it always has. A
+    # `look`-derived dict from `_overlays_raw_from_config` sets it explicitly, so a movie that only
+    # asked for a mask stops leaking pop dots the user didn't select (reported by Dominik).
+    show_pops = Bool(get(ov_raw, :showPopulations, true))
     include_tracks = Bool(get(ov_raw, :includeTracks, true))
     # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
     # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
@@ -865,6 +870,11 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
+    elseif !(show_pops || all_tracks)
+        # No overlay type asked for — skip the pop-dot / track build entirely. Before this gate,
+        # `build_overlays_for` painted every pop of `pop_type` regardless of `showPopulations`, so a
+        # mask-only record (has_mask=true, showPopulations=false) rendered pop dots by accident.
+        ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
     else
         d = axis_dims(caxes, ndims(arr))
         H = haskey(d, "y") ? size(arr, d["y"]) : 0

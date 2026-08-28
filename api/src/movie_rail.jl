@@ -109,6 +109,11 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     end
     out = Dict{String,Any}(
         "popType"          => _cfg_str(cfg, "popType", "flow"),
+        # Explicit gate on the pop-dot build. Presence of the field is what stops
+        # `_resolve_movie_overlays_mask` from painting pops for a mask-only record — before this
+        # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
+        # and any `ov_raw` dict leaked pop dots.
+        "showPopulations"  => show_pops,
         "includeTracks"    => show_gated,       # gated tracks alongside the pop points
         "allTracks"        => show_tracks,      # whole-segmentation tracks, ignoring pops
         "tailLength"       => 30,               # napari default; the batch config doesn't author it
