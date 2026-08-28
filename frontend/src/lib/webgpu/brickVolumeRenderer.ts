@@ -237,11 +237,16 @@ export async function createBrickVolumeRenderer(
    *  was evicted before the response landed, the payload is dropped silently — a slot the eviction
    *  freed must not be overwritten with stale bytes. */
   const kickFetch = (brick: VirtualBrick): void => {
-    if (currentMeta === null || source === null || atlas === null) return
+    if (currentMeta === null || source === null || atlas === null) {
+      console.warn('[bricks] kickFetch skipped',
+                   { meta: currentMeta !== null, source: source !== null, atlas: atlas !== null })
+      return
+    }
     const key = brickKey(brick)
     if (inflight.has(key)) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox)
+    console.debug('[bricks] fetch →', key, url)
     const ac = new AbortController()
     inflight.set(key, ac)
     void fetchBrick(url, currentMeta, layout.channelsPerBrick, layout.brickSizeVox, ac.signal)
@@ -249,24 +254,30 @@ export async function createBrickVolumeRenderer(
         // The atlas or the level could have changed while the request was in flight — drop the
         // bytes rather than writing them into a slot that no longer represents this brick.
         inflight.delete(key)
-        if (payload === null) return
-        if (destroyed || atlas === null) return
-        if (atlas.currentLevel !== brick.level) return
+        if (payload === null) { console.warn('[bricks] fetch failed', key); return }
+        if (destroyed || atlas === null) { console.debug('[bricks] dropped, atlas gone', key); return }
+        if (atlas.currentLevel !== brick.level) {
+          console.debug('[bricks] dropped, level moved', key, atlas.currentLevel, brick.level)
+          return
+        }
         const result = atlas.pageTable.insertOrEvictLru(brick, frameNow)
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
         const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(payload.bytes))
         if (!ok) {
+          console.warn('[bricks] writeBrick refused', key, result.entry.slot)
           atlas.pageTable.evict(key)
           return
         }
         if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
         atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
         atlas.pageTableDirty = true
+        console.debug('[bricks] landed', key, 'slot', result.entry.slot,
+                      'needsRedraw?', needsRedraw !== null)
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
-      .catch(() => { inflight.delete(key) })
+      .catch(err => { console.warn('[bricks] fetch threw', key, err); inflight.delete(key) })
   }
 
   /** Reverse `brickKey` back to its grid index. Uses the resident entry first (cheap) and falls
@@ -284,7 +295,10 @@ export async function createBrickVolumeRenderer(
    *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
    *  this tick decided on. */
   const tickScheduler = (): void => {
-    if (atlas === null || currentMeta === null) return
+    if (atlas === null || currentMeta === null) {
+      console.warn('[bricks] tick skipped', { atlas: atlas !== null, meta: currentMeta !== null })
+      return
+    }
     frameNow += 1
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
@@ -293,6 +307,11 @@ export async function createBrickVolumeRenderer(
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
     const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel)
+    console.debug('[bricks] tick', {
+      level: dec.level, resident: residentKeys.size,
+      toLoad: dec.toLoad.length, toEvict: dec.toEvict.length,
+      dist: view.distanceUm.toFixed(1), centre: view.centreUm.map(n => n.toFixed(1)),
+    })
 
     // Level switch invalidates every resident brick: (bx, by, bz) space is different at a coarser
     // LOD. Drop the residency, clear the page-table CPU up to the LARGER of the two levels' grids
