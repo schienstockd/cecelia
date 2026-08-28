@@ -33,6 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
+import { buildViewState } from '../utils/viewer/viewState'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -2481,6 +2482,38 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
 watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
        zPlane, t, mode, meta],
       () => publishRegionSink.schedule(undefined))
+
+// ── Publish a napari-shaped viewState alongside the visibleRegion ─────────────
+// Same signal set + same debounce as the region sink — a keyframe capture (AnimationPanel) or a
+// title-card reader is a downstream subscriber of the SAME viewer state the region publishes,
+// so they should coalesce identically. Shape lives in `utils/viewer/viewState.ts` so a bug in the
+// arithmetic is a unit-test failure rather than a rendered-mp4 discovery. Emits `null` when meta /
+// canvas aren't ready — same guard as the region sink.
+const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) { viewerStore.setViewState(null); return }
+  const canvasW = Math.max(1, c.clientWidth)
+  const canvasH = Math.max(1, c.clientHeight)
+  const vs = buildViewState({
+    cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value,
+    ndisplay: mode.value === 'plane' ? 2 : 3,
+    canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+  })
+  viewerStore.setViewState(vs)
+}, { wait: 100 })
+
+// Watch the SAME signals as the region sink, PLUS the per-channel contrast/visibility, because
+// contrast_limits + visible are the two layer fields the offline renderer reads. `meta.channels`
+// mutations in place fire meta reactively; the deep watch on channels catches the lo/hi updates
+// that don't replace the array reference.
+watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
+       () => cam.value.yaw, () => cam.value.pitch,
+       zPlane, t, mode, meta],
+      () => publishViewStateSink.schedule(undefined))
+watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
+      () => publishViewStateSink.schedule(undefined))
 
 // Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
 // same route as the pixels: the meta response is the one authoritative resolution of an image

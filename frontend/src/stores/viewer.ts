@@ -16,6 +16,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import type { VisibleRegion } from '../utils/viewer/visibleRegion'
+import type { ViewerViewState } from '../utils/viewer/viewState'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
 export interface OpenImage {
@@ -31,6 +32,7 @@ export interface OpenImage {
 
 const K_OPEN_IMAGE     = 'cc.viewer.openImage'
 const K_VISIBLE_REGION = 'cc.viewer.visibleRegion'
+const K_VIEW_STATE     = 'cc.viewer.viewState'
 const K_PREVIEW_LABELS = 'cc.viewer.previewLabels'
 const K_PREVIEW_IMAGES = 'cc.viewer.previewImages'
 
@@ -88,6 +90,7 @@ export const useViewerStore = defineStore('viewer', () => {
   // state, not `null` until the next pan.
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
+  const viewState     = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
   const previewLabels = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
 
@@ -102,6 +105,16 @@ export const useViewerStore = defineStore('viewer', () => {
   function setVisibleRegion(next: VisibleRegion | null) {
     visibleRegion.value = next
     _writeJson(K_VISIBLE_REGION, next)
+  }
+
+  /** ViewerWindow calls this on every pan/zoom/z/t/ndisplay/channel change — same debounced sink as
+   *  `visibleRegion`, but the payload is a napari-shaped viewState snapshot the AnimationPanel and
+   *  movie recorder can consume. Same JSON round-trip as the region, so a popup writer reaches the
+   *  main-window animation page through the storage bridge. Deliberately napari's schema so the
+   *  offline renderer's `viewstate_to_render_args` reads them identically. */
+  function setViewState(next: ViewerViewState | null) {
+    viewState.value = next
+    _writeJson(K_VIEW_STATE, next)
   }
 
   /** taskPreview calls this after a run: `next` non-null flips the viewer window's labels slab
@@ -139,6 +152,8 @@ export const useViewerStore = defineStore('viewer', () => {
         openImage.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_VISIBLE_REGION) {
         visibleRegion.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_VIEW_STATE) {
+        viewState.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_LABELS) {
         previewLabels.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_IMAGES) {
@@ -147,8 +162,8 @@ export const useViewerStore = defineStore('viewer', () => {
     })
   }
 
-  return { openImage, visibleRegion, previewLabels, previewImages,
-           setOpenImage, setVisibleRegion, setPreviewLabels, setPreviewImages }
+  return { openImage, visibleRegion, viewState, previewLabels, previewImages,
+           setOpenImage, setVisibleRegion, setViewState, setPreviewLabels, setPreviewImages }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
