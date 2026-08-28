@@ -588,8 +588,12 @@ export async function createVolumeRenderer(
       // Textures are sized in RENDER voxels — a level-1 volume of a 3.3 mm image is half the width of
       // level-0, so the buffer is 1/4 the bytes, which is the whole reason the 3D view can load big-XY
       // images at all (the client picks the coarsest level by default via `pickVolumeLevel`).
+      // Format keys on the store dtype — 8-bit sources (Manual IBEX .ims → `|u1`) allocate `r8uint`,
+      // 16-bit sources (Automated IBEX → `>u2`) keep `r16uint`. The mip shader binds `texture_3d<u32>`
+      // in both cases and reads `.r` as a u32; contrast/LUT max already keys on `bytesPerVoxel`.
+      const fmt: GPUTextureFormat = m.bytesPerVoxel === 1 ? 'r8uint' : 'r16uint'
       const texture = device.createTexture({
-        size: [nx, ny, dp * nch], dimension: '3d', format: 'r16uint',
+        size: [nx, ny, dp * nch], dimension: '3d', format: fmt,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
       // The mask goes in the SAME error scope and the same slot as the image it annotates. One

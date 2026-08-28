@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
-  fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, contrastCeiling,
+  fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
   slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE,
   type ViewerMeta,
@@ -211,6 +211,58 @@ describe('orbit camera', () => {
     const near = orbitZoom({ ...fit, dist: 10 }, -100, fit.dist).dist / 10
     const far = orbitZoom({ ...fit, dist: 20 }, -100, fit.dist).dist / 20
     expect(near).toBeCloseTo(far)
+  })
+})
+
+describe('slabView — dtype-aware wrap around the slab ArrayBuffer', () => {
+  // Fixes `RangeError: byte length of Uint16Array should be a multiple of 2` hit on 35uedD
+  // (Human_Spleen_Manual_IBEX): bioformats2raw preserved the source's 8-bit dtype, so the store
+  // is `|u1` and a `Uint16Array` view over an odd-byte-length response throws. `slabView` reads
+  // the same `X-Slab-Bpv` / `meta.bytesPerVoxel` the server already sends and picks the right
+  // typed-array constructor.
+  it('picks Uint8Array for bpv=1 — a uint8 store\'s bytes are 1 per voxel', () => {
+    const buf = new Uint8Array([0, 100, 255, 42]).buffer
+    const v = slabView(buf, 1)
+    expect(v).toBeInstanceOf(Uint8Array)
+    expect(v.length).toBe(4)
+    expect(v[0]).toBe(0); expect(v[1]).toBe(100); expect(v[2]).toBe(255); expect(v[3]).toBe(42)
+  })
+  it('picks Uint16Array for bpv=2 — the default for uint16 stores', () => {
+    const src = Uint16Array.of(0, 100, 65535, 42)
+    const v = slabView(src.buffer, 2)
+    expect(v).toBeInstanceOf(Uint16Array)
+    expect(v.length).toBe(4)
+    expect(v[2]).toBe(65535)
+  })
+  it('accepts an odd byte length for bpv=1 — the actual bug repro', () => {
+    // A 35uedD-shaped level tile with an odd row × col × 1 byte count that a Uint16 view rejects.
+    const odd = new Uint8Array(12977).buffer     // 12977 is odd — the L0 nX on 35uedD
+    expect(() => slabView(odd, 1)).not.toThrow()
+    expect(() => new Uint16Array(odd)).toThrow()
+    expect(slabView(odd, 1).length).toBe(12977)
+  })
+  it('bpv anything-not-1 falls back to Uint16 — pre-uint8 callers stay identical', () => {
+    // Keeps the old code path byte-identical for anyone who hasn't opted in yet (bpv=2, or a stale
+    // meta that didn't populate the field).
+    const buf = Uint16Array.of(1, 2, 3, 4).buffer
+    expect(slabView(buf, 2)).toBeInstanceOf(Uint16Array)
+    expect(slabView(buf, 4)).toBeInstanceOf(Uint16Array)  // never seen in practice; kept for defence
+    expect(slabView(buf, 0)).toBeInstanceOf(Uint16Array)
+  })
+  // contrastFromSlab / slabMax were widened to accept the union — the sampling logic doesn't care
+  // about the underlying storage width, only about the numeric values.
+  it('contrastFromSlab + slabMax work on a Uint8Array without a copy', () => {
+    const v = new Uint8Array(4096)
+    for (let i = 0; i < v.length; i++) v[i] = 10 + (i % 100)
+    v[0] = 0; v[1] = 255                          // one dead pixel, one saturated
+    const { lo, hi, max } = contrastFromSlab(v)
+    expect(lo).toBeGreaterThanOrEqual(10)
+    expect(hi).toBeLessThan(200)                  // the 255 does not set the ceiling
+    expect(max).toBeLessThanOrEqual(255)
+    // slabMax is the exact max of the strided subsample, so it can sit at 109 (10 + 99) or 255 —
+    // both are legitimate given the stride. Just prove it stays within the dtype range.
+    expect(slabMax(v)).toBeLessThanOrEqual(255)
+    expect(slabMax(v)).toBeGreaterThanOrEqual(10)
   })
 })
 

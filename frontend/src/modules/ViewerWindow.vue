@@ -49,7 +49,7 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -1037,10 +1037,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // chases each frame's own distribution and playback flickers (decision 5). The slider's RANGE is
     // not the same question and does follow the data: a max-only pass, no sort, ~1 ms a channel.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(new Uint16Array(b), m.nX))
+      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), m.nX))
     }
     seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), m.nX)))
+      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), m.nX)))
 
     const t1 = performance.now()
     await r.uploadFrame(tp, bufs, t.value, labelBuf)
@@ -1231,9 +1231,10 @@ function missingTiles(): TileKey[] {
   if (!lvl || !vp) return []
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
   const tp = t.value
+  const zp = zPlane.value
   const out: TileKey[] = []
   for (const [tx, ty] of coords) {
-    const key: TileKey = { t: tp, level, tx, ty }
+    const key: TileKey = { t: tp, z: zp, level, tx, ty }
     if (tr.hasTile(key)) { tr.touchTile(key); continue }
     out.push(key)
   }
@@ -1253,7 +1254,8 @@ function evictionKeepSet(): Set<string> {
   if (!lvl || !vp) return new Set()
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
   const tp = t.value
-  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, level, tx, ty })))
+  const zp = zPlane.value
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, z: zp, level, tx, ty })))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -1297,12 +1299,12 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // a ceiling that shrinks re-scales the slider under a value the user set.
     const rowLen = rect.xTo - rect.x + 1
     seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rowLen)))
+      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen)))
     // Seed the auto-window off the first tile that lands — same p01/p999 percentile pass as the
     // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
     // each tile's own distribution and the auto button would land somewhere new every time.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(new Uint16Array(b), rowLen))
+      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen))
     }
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
@@ -1319,7 +1321,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     const keep = evictionKeepSet()
     const evictions = tileEvictions(
       tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
-      { t: key.t, level: key.level, tx: centre.tx, ty: centre.ty },
+      { t: key.t, z: key.z, level: key.level, tx: centre.tx, ty: centre.ty },
     )
     const slot = await tr.uploadTile(key, bufs, keep, evictions)
     return slot >= 0
@@ -1341,7 +1343,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
 const tileResidentCount = ref(0)
 const tileSlotCap = ref(0)
 const tileInflight = ref(0)
-const tileResidents = shallowRef<{ t: number; level: number; tx: number; ty: number }[]>([])
+const tileResidents = shallowRef<{ t: number; z: number; level: number; tx: number; ty: number }[]>([])
 const tileLoadingKeys = shallowRef<Set<string>>(new Set())
 function syncTileCacheState() {
   const tr = tileRenderer.value
@@ -1349,7 +1351,7 @@ function syncTileCacheState() {
   tileResidentCount.value = res.length
   tileSlotCap.value = tr?.slotCapacity() ?? 0
   tileInflight.value = tileAborts.size
-  tileResidents.value = res.map(e => ({ t: e.t, level: e.level, tx: e.tx, ty: e.ty }))
+  tileResidents.value = res.map(e => ({ t: e.t, z: e.z, level: e.level, tx: e.tx, ty: e.ty }))
   tileLoadingKeys.value = new Set(tileAborts.keys())
 }
 
@@ -1371,16 +1373,16 @@ const tileMapGrid = computed(() => {
 const tileMapCellsView = computed(() => {
   const g = tileMapGrid.value
   if (!g) return []
-  const tp = t.value, lv = g.level
+  const tp = t.value, zp = zPlane.value, lv = g.level
   const residentAtHere = new Set<string>()
   for (const e of tileResidents.value) {
-    if (e.t === tp && e.level === lv) residentAtHere.add(`${e.tx},${e.ty}`)
+    if (e.t === tp && e.z === zp && e.level === lv) residentAtHere.add(`${e.tx},${e.ty}`)
   }
   const loading = tileLoadingKeys.value
   const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
   for (let ty = 0; ty < g.nTy; ty++) {
     for (let tx = 0; tx < g.nTx; tx++) {
-      const kL = tileKeyStr({ t: tp, level: lv, tx, ty })
+      const kL = tileKeyStr({ t: tp, z: zp, level: lv, tx, ty })
       const state = loading.has(kL) ? 'loading'
         : residentAtHere.has(`${tx},${ty}`) ? 'resident' : 'absent'
       cells.push({ key: `${tx},${ty}`, state })
@@ -1458,12 +1460,15 @@ function drawTiles() {
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
   // landed, and vanishes seamlessly the moment they do.
   //
-  // Filter to CURRENT-t entries: the atlas caches across timepoints (Phase F) so the ranker can
-  // prefer near-t tiles on a scrub back, but painting a stale-t tile would show wrong content
-  // under the loading chip. The loading chip is `shownT < 0` — flipped by the tile pump only on a
-  // current-t landing — so scrubbing to a new t naturally shows the chip until fresh tiles arrive.
+  // Filter to CURRENT-(t, z) entries: the atlas caches across timepoints (Phase F) AND across
+  // planes (SispLk/35uedD, 2026-08-27) so the ranker can prefer near-(t,z) tiles on a scrub back,
+  // but painting a stale-t or stale-z tile would show wrong content. Without the z filter, changing
+  // z past a tile that had already been swapped once left two co-located instances at the same
+  // level in the draw list, and the second z-swap became visually a no-op because the underlying
+  // instanced draw order was undefined between them.
   const tp = t.value
-  const entries = tr.residentTiles().filter(e => e.t === tp).slice()
+  const zp = zPlane.value
+  const entries = tr.residentTiles().filter(e => e.t === tp && e.z === zp).slice()
     .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
@@ -1909,7 +1914,7 @@ const overviewSize = computed(() => {
  * every channel change (visibility, contrast, colour) because pushChannels calls `renderOverview`.
  */
 const overviewCanvas = ref<HTMLCanvasElement | null>(null)
-const overviewChans = shallowRef<Uint16Array[] | null>(null)
+const overviewChans = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
 const overviewDims = ref<{ nX: number; nY: number } | null>(null)
 async function loadOverviewThumbnail() {
   const m = meta.value
@@ -1926,7 +1931,7 @@ async function loadOverviewThumbnail() {
       })
       const res = await fetch(url, { cache: 'default' })
       if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
-      return new Uint16Array(await res.arrayBuffer())
+      return slabView(await res.arrayBuffer(), m.bytesPerVoxel)
     }))
     overviewChans.value = bufs
     overviewDims.value = { nX: lvl.nX, nY: lvl.nY }

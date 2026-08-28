@@ -20,21 +20,25 @@
 
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
-/** A tile at timepoint `t`, level `level`, tile-grid coordinates `(tx, ty)`. Channels are stacked
- *  inside the slot, so there is no per-channel key. `z` is still viewer state (the cache is flushed
- *  when it changes); `t` used to be too, but timecourse × tiles caches across timepoints so the
- *  ranker can prefer near-t entries on a scrub (see `docs/todo/VIEWER_TILES_PLAN.md` Phase F). */
+/** A tile at timepoint `t`, plane `z`, level `level`, tile-grid coordinates `(tx, ty)`. Channels are
+ *  stacked inside the slot, so there is no per-channel key. `t` used to be viewer state ("flush on
+ *  change"); timecourse × tiles caches across timepoints so the ranker can prefer near-t entries on
+ *  a scrub (see `docs/todo/VIEWER_TILES_PLAN.md` Phase F). `z` moved into the key for the same
+ *  reason: `SispLk`/`35uedD` (uint8 Manual IBEX, nZ=4, nC=25–38) are the first stores exercising a
+ *  z axis on the tile pipeline, and without `z` in the key a plane change reuses the OLD-z tiles
+ *  silently. */
 export interface TileKey {
   t: number
+  z: number
   level: number
   tx: number
   ty: number
 }
 
-/** Canonical string form for `Map` keys — `T{t}/L{level}/x{tx}/y{ty}`. Every axis has an unambiguous
- *  letter so a grep never conflates the store's `t` axis with the tile's `tx`. */
+/** Canonical string form for `Map` keys — `T{t}/Z{z}/L{level}/x{tx}/y{ty}`. Every axis has an
+ *  unambiguous letter so a grep never conflates the store's `t` axis with the tile's `tx`. */
 export function tileKeyStr(k: TileKey): string {
-  return `T${k.t}/L${k.level}/x${k.tx}/y${k.ty}`
+  return `T${k.t}/Z${k.z}/L${k.level}/x${k.tx}/y${k.ty}`
 }
 
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in
@@ -172,13 +176,13 @@ export function tileCacheCapacity(
  * happen to overlap.
  */
 export function tileEvictions(
-  entries: Array<{ key: string; t: number; level: number; tx: number; ty: number; lastUsed: number }>,
+  entries: Array<{ key: string; t: number; z: number; level: number; tx: number; ty: number; lastUsed: number }>,
   capacity: number,
   keep: ReadonlySet<string>,
-  centre: { t: number; level: number; tx: number; ty: number },
+  centre: { t: number; z: number; level: number; tx: number; ty: number },
 ): string[] {
   if (entries.length <= capacity) return []
-  const rank = (e: { t: number; level: number; tx: number; ty: number; lastUsed: number }) => {
+  const rank = (e: { t: number; z: number; level: number; tx: number; ty: number; lastUsed: number }) => {
     // Level-normalised (tx, ty) so a coarser tile compares in the same coordinate space as the current
     // level — otherwise a level-4 tile at (10, 10) is compared to a level-0 tile at the same numbers,
     // which cover regions 16× apart.
@@ -189,13 +193,14 @@ export function tileEvictions(
     const ey = e.ty * scale(e.level)
     const dist = Math.max(Math.abs(ex - cx), Math.abs(ey - cy)) // Chebyshev — tile-shaped viewports
     const levelPenalty = Math.abs(e.level - centre.level) * 1_000_000
-    // Wrong timepoint is worse than wrong level — a scrub shouldn't sacrifice the current-t
-    // spatial cache to keep neighbour-t tiles. Coefficient 10× the level penalty keeps cross-t
+    // Wrong timepoint / wrong z is worse than wrong level — a scrub shouldn't sacrifice the current
+    // spatial cache to keep neighbours. Coefficient 10× the level penalty keeps cross-t / cross-z
     // caching a tiebreaker, not a driver: same-position wrong-t always ranks farther than a
-    // same-t neighbour, but a near-t co-located tile still beats a same-t viewport-away tile
-    // on the next scrub back. See `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision 3.
+    // same-(t,z) neighbour, but a near-t/near-z co-located tile still beats a same-(t,z) viewport-
+    // away tile on the next scrub back. See `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision 3.
     const timePenalty = Math.abs(e.t - centre.t) * 10_000_000
-    return { d: dist + levelPenalty + timePenalty, t: e.lastUsed }
+    const zPenalty = Math.abs(e.z - centre.z) * 10_000_000
+    return { d: dist + levelPenalty + timePenalty + zPenalty, t: e.lastUsed }
   }
   // Farthest FIRST — the one to drop. Recency breaks ties (older loses).
   const ordered = entries
@@ -248,6 +253,7 @@ export type TileCellState = 'absent' | 'loading' | 'resident'
 export function tileMapCells(
   lvl: ViewerLevel,
   currentT: number,
+  currentZ: number,
   currentLevel: number,
   resident: ReadonlySet<string>,
   loading: ReadonlySet<string>,
@@ -256,7 +262,7 @@ export function tileMapCells(
   const out: { tx: number; ty: number; state: TileCellState }[] = []
   for (let ty = 0; ty < nTy; ty++) {
     for (let tx = 0; tx < nTx; tx++) {
-      const k = tileKeyStr({ t: currentT, level: currentLevel, tx, ty })
+      const k = tileKeyStr({ t: currentT, z: currentZ, level: currentLevel, tx, ty })
       const state: TileCellState = loading.has(k) ? 'loading'
         : resident.has(k) ? 'resident' : 'absent'
       out.push({ tx, ty, state })
