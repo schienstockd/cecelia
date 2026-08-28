@@ -182,6 +182,20 @@ export interface VolumeRenderer {
    *  writes alpha 1 everywhere, so this changes no pixel we produce, only which compositor path the
    *  browser takes to show them. */
   setAlphaMode(mode: GPUCanvasAlphaMode): void
+  /**
+   * Brick renderer only: point the internal fetch loop at (projectUid, imageUid, valueName). The
+   * brick scheduler decides what to fetch every frame; the URL base has to be known here rather
+   * than at each call site. Absent on the flat renderer — callers use `?.` to remain agnostic.
+   */
+  setBrickSource?(source: { projectUid: string; imageUid: string; valueName?: string } | null): void
+  /**
+   * Brick renderer only: how to ask the caller for a redraw when a fetched brick lands. Brick
+   * uploads are asynchronous — a fetch that resolves between frames updates the atlas without
+   * anything on the caller's side noticing, so the shader keeps drawing the pre-arrival state.
+   * Called ONCE per new brick (batched inside a single microtask by design). Absent on the flat
+   * renderer — the flat path is caller-driven end-to-end.
+   */
+  setNeedsRedraw?(cb: (() => void) | null): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void

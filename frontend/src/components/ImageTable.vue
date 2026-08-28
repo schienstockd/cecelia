@@ -416,8 +416,6 @@ function openViewer(img: CciaImage) {
   openViewerWindow({
     projectUid: projectMeta.current?.uid ?? '',
     imageUid: img.uid,
-    setUid: props.setUid,
-    name: img.name,
   })
 }
 

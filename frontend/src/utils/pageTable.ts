@@ -29,6 +29,15 @@ export function brickKey(v: VirtualBrick): string {
   return `T${v.t}/L${v.level}/B${v.bx},${v.by},${v.bz}`
 }
 
+/** Reverse of `brickKey` — `null` on any parse failure. The scheduler + renderer use this when the
+ *  page-table has already evicted the entry (so a `get(key)` returns nothing) but the grid
+ *  coordinates are still needed to zero out the CPU-side page-table slot. */
+export function parseBrickKey(key: string): VirtualBrick | null {
+  const m = /^T(-?\d+)\/L(-?\d+)\/B(-?\d+),(-?\d+),(-?\d+)$/.exec(key)
+  if (m === null) return null
+  return { t: +m[1], level: +m[2], bx: +m[3], by: +m[4], bz: +m[5] }
+}
+
 /** Slot index → 3D origin in atlas voxel coords. Row-major over (sx, sy, sz) so a linear scan of
  *  slots walks the atlas cache-friendly. `atlasSlotCounts` is `[nSlotsX, nSlotsY, nSlotsZ]`;
  *  `brickSizeVox` is `[bx, by, bz]` — bricks are cuboids in voxel units, one dimension per axis
@@ -150,5 +159,15 @@ export class PageTable {
   /** Every currently-resident brick, in insertion order (for debug overlays + tests). */
   entries(): PageTableEntry[] {
     return Array.from(this.byKey.values())
+  }
+
+  /** Drop every entry — used on LEVEL switch (a coarser/finer LOD invalidates every current brick
+   *  key because the (bx, by, bz) space is different). Rewinds the free-slot stack so the atlas can
+   *  refill from scratch without allocating a new table. */
+  clear(): void {
+    this.byKey.clear()
+    this.bySlot.fill(null)
+    this.freeSlots.length = 0
+    for (let i = this.capacity - 1; i >= 0; i--) this.freeSlots.push(i)
   }
 }

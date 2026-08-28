@@ -155,6 +155,24 @@ the visible region and coarsen away from the camera. Compare visible frame time 
 current whole-volume path on Dominik's RTX 2000 Ada; the audit's 5.3 ms MIP budget is the target
 that must NOT regress.
 
+Broken into four visible checkpoints so a milestone can be eyeballed before the next lands:
+
+- **P5a — Plumbing.** `?bricks=1` routes to a `brickVolumeRenderer` that clears the canvas
+  magenta. Proves the URL flag swaps constructors and the device + canvas survive a mode change.
+  SHIPPED — confirmed 2026-08-27 ("yes magenta").
+- **P5b — First render.** WGSL raycast with page-table indirection, atlas 3D texture allocated
+  in `setImage`, real render pipeline. The fetch loop is P5c, so nothing populates the atlas by
+  default — flip the existing Debug **Test pattern** toggle to fill brick (0,0,0) with a diagonal
+  ramp and confirm the shader math (camera basis, brick indirection, atlas slot lookup, in-brick
+  voxel offset, N-channel sample loop) all work. Same VIEW_HALF_ANGLE and same camera basis as
+  `mipShader.ts` so the toggle between renderers doesn't jump the framing.
+- **P5c — Fetch loop.** Wire `scheduleBricks` into the frame tick, drive `fetchBrick` per
+  scheduled miss, `writeBrick` on arrival, update the page-table CPU buffer + mark dirty.
+  Bricks stream in view-first, coarsen away from the camera under the SSE picker.
+- **P5d — LUT + overlays + perf.** Add the LUT texture binding, per-channel contrast windows,
+  label texture, overlay pipelines from `mipShader.ts`. Compare visible frame time against the
+  flat renderer's 5.3 ms MIP budget on SispLk / 35uedD.
+
 **P6 — Overlays.** Points, tracks, tails, masks continue to work — they're screen-space and don't
 touch atlas geometry. Confirm no regression on `zolIMa` / `fXgbTl` reference movies.
 
