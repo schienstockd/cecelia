@@ -25,44 +25,53 @@ import { VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
 export const EMPTY_SLOT = 0xFFFFFFFF
 
 /**
- * Uniform buffer size in bytes. Eight vec4s = 128 bytes — the smallest buffer WebGPU aligns to
- * for a uniform binding. Kept small in P5b (no per-channel windows, no LUT header, no label
- * fields) because those bindings arrive with the LUT + overlays in P5d.
+ * Uniform buffer size in bytes. Grew from 8 to 10 vec4 (128→160 bytes) in the prev-level
+ * fallback: the shader falls back to the PREVIOUS level's page table when the current-level
+ * lookup returns EMPTY_SLOT, so old bricks stay on screen across a zoom threshold until the new
+ * level's replacements land — same idea as the 2D tile renderer's progressive refinement
+ * (tileRenderer.ts:211).
  */
-export const BRICK_UNIFORM_BYTES = 8 * 16
+export const BRICK_UNIFORM_BYTES = 10 * 16
 
 /**
  * Field offsets INTO the uniform buffer, in f32 slots (× 4 = bytes). Written out because getting
  * one off-by-one shifts everything downstream — same discipline as `CH0` in `volumeRenderer.ts`.
  */
 export const BU = {
-  CAM: 0,       // yaw, pitch, dist, steps
-  VP: 4,        // nch, canvasW, canvasH, ortho
-  EXT: 8,       // extX, extY, extZ, valueMax (max representable intensity, for normalisation)
-  DIMS: 12,     // nX, nY, nZ (L0 voxel count), unused
+  CAM: 0,        // yaw, pitch, dist, steps
+  VP: 4,         // nch, canvasW, canvasH, ortho
+  EXT: 8,        // extX, extY, extZ, valueMax (max representable intensity, for normalisation)
+  DIMS: 12,     // nX, nY, nZ (voxels at CURRENT level), unused
   BRICK: 16,    // brickX, brickY, brickZ, channelsPerBrick
   ATLAS: 20,    // atlasW, atlasH, atlasD (voxels), slotsX
-  GRID: 24,     // nBx, nBy, nBz (bricks per axis at L0), slotsY
+  GRID: 24,     // nBx, nBy, nBz (bricks per axis, current level), slotsY
   PAN: 28,      // panX, panY, unused, unused
+  PREV_GRID: 32, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
+  PREV_DIMS: 36, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
 }
 
 export const BRICK_WGSL = `
 struct BU {
-  cam:   vec4<f32>,  // yaw, pitch, dist, steps
-  vp:    vec4<f32>,  // nch, canvasW, canvasH, ortho
-  ext:   vec4<f32>,  // extX, extY, extZ, valueMax
-  dims:  vec4<f32>,  // nX, nY, nZ, _
-  brick: vec4<f32>,  // brickX, brickY, brickZ, channelsPerBrick
-  atlas: vec4<f32>,  // atlasW, atlasH, atlasD, slotsX
-  grid:  vec4<f32>,  // nBx, nBy, nBz, slotsY
-  pan:   vec4<f32>,  // panX, panY, _, _
+  cam:      vec4<f32>,  // yaw, pitch, dist, steps
+  vp:       vec4<f32>,  // nch, canvasW, canvasH, ortho
+  ext:      vec4<f32>,  // extX, extY, extZ, valueMax
+  dims:     vec4<f32>,  // nX, nY, nZ (current level), _
+  brick:    vec4<f32>,  // brickX, brickY, brickZ, channelsPerBrick
+  atlas:    vec4<f32>,  // atlasW, atlasH, atlasD, slotsX
+  grid:     vec4<f32>,  // nBx, nBy, nBz (current level), slotsY
+  pan:      vec4<f32>,  // panX, panY, _, _
+  prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
+  prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
 };
 @group(0) @binding(0) var<uniform> p: BU;
-// Page table: a flat u32 array over the L0 brick grid, indexed
-// (bz * nBy + by) * nBx + bx. Value = slot index in the atlas, or 0xFFFFFFFF for "not resident"
-// (the ray skips the sample when it lands there).
+// Current-level page table: (bz * nBy + by) * nBx + bx → slot index or 0xFFFFFFFF (not resident).
 @group(0) @binding(1) var<storage, read> pt: array<u32>;
 @group(0) @binding(2) var atlas: texture_3d<u32>;
+// Previous-level page table: same shape, indexed by the OLDER level's grid dimensions
+// (p.prevGrid.xyz). On a level switch, the current pt is copied here so old-level bricks stay
+// visible until the new level's replacements land — Kiln's zoom-threshold trick, same shape as
+// the 2D tile renderer's progressive-refinement pattern. Ignored when p.prevGrid.w < 0.5.
+@group(0) @binding(3) var<storage, read> prevPt: array<u32>;
 
 struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
 fn camera() -> Cam {
@@ -107,13 +116,38 @@ fn atlasSample(vi: vec3<i32>, ch: i32) -> u32 {
   let by = vi.y / bySize;
   let bz = vi.z / bzSize;
   let nBx = i32(p.grid.x); let nBy = i32(p.grid.y); let nBz = i32(p.grid.z);
-  if (bx >= nBx || by >= nBy || bz >= nBz) { return 0u; }
-  let ptIdx = (bz * nBy + by) * nBx + bx;
-  let slot = pt[ptIdx];
+  var slot: u32 = 0xFFFFFFFFu;
+  var lx = vi.x - bx * bxSize;
+  var ly = vi.y - by * bySize;
+  var lz = vi.z - bz * bzSize;
+  if (bx < nBx && by < nBy && bz < nBz) {
+    slot = pt[(bz * nBy + by) * nBx + bx];
+  }
+  // Prev-level fallback: no current-level brick here, but a coarser (or finer) level's brick
+  // covers the same world position. Convert the vi index across levels using the ratio of
+  // voxel counts, look up the prev grid, use those coords if it lands.
+  if (slot == 0xFFFFFFFFu && p.prevGrid.w > 0.5) {
+    let pnx = i32(p.prevDims.x); let pny = i32(p.prevDims.y); let pnz = i32(p.prevDims.z);
+    let vpx = i32(f32(vi.x) * p.prevDims.x / p.dims.x);
+    let vpy = i32(f32(vi.y) * p.prevDims.y / p.dims.y);
+    let vpz = i32(f32(vi.z) * p.prevDims.z / p.dims.z);
+    if (vpx >= 0 && vpy >= 0 && vpz >= 0 && vpx < pnx && vpy < pny && vpz < pnz) {
+      let pbx = vpx / bxSize;
+      let pby = vpy / bySize;
+      let pbz = vpz / bzSize;
+      let pnBx = i32(p.prevGrid.x); let pnBy = i32(p.prevGrid.y); let pnBz = i32(p.prevGrid.z);
+      if (pbx < pnBx && pby < pnBy && pbz < pnBz) {
+        let ps = prevPt[(pbz * pnBy + pby) * pnBx + pbx];
+        if (ps != 0xFFFFFFFFu) {
+          slot = ps;
+          lx = vpx - pbx * bxSize;
+          ly = vpy - pby * bySize;
+          lz = vpz - pbz * bzSize;
+        }
+      }
+    }
+  }
   if (slot == 0xFFFFFFFFu) { return 0u; }
-  let lx = vi.x - bx * bxSize;
-  let ly = vi.y - by * bySize;
-  let lz = vi.z - bz * bzSize;
   let slotsX = i32(p.atlas.w);
   let slotsY = i32(p.grid.w);
   let s = i32(slot);
