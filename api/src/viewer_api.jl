@@ -232,8 +232,10 @@ function api_viewer_meta(req::HTTP.Request)
         specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
 
         # One `init_object` for everything it can answer: the display names, the calibration, the
-        # frame interval and the unit the scale bar is labelled in.
-        names, vox, cal, unit, tmin = try
+        # frame interval, the unit the scale bar is labelled in, and the IMAGE NAME (for the window
+        # title — the client used to carry `name` in the URL query but the server owns it, so meta
+        # is the one source and the URL only carries identity: project + image + optional vn).
+        names, vox, cal, unit, tmin, image_name = try
             img = init_object(pu, iu)
             sizes, ts = img_physical_sizes(img)        # [sz, sy, sx] um/px, minutes/frame
             ax = img_scale_axes(img)
@@ -242,9 +244,21 @@ function api_viewer_meta(req::HTTP.Request)
              [sizes[3], sizes[2], sizes[1]],           # → [x, y, z], the renderer's axis order
              (; xy = :XY in ax, z = :Z in ax, t = has_t),
              _meta_str(img.meta, "PhysicalSizeUnit"),
-             has_t ? ts : nothing)
+             has_t ? ts : nothing,
+             img.name)
         catch
-            (String[], [1.0, 1.0, 1.0], (; xy = false, z = false, t = false), nothing, nothing)
+            (String[], [1.0, 1.0, 1.0], (; xy = false, z = false, t = false), nothing, nothing, "")
+        end
+        # The set this image belongs to, for per-set viewer prefs (contrast, colour-by, point size).
+        # Used to travel in the URL as `set=…`; moved server-side so the URL shrinks to identity.
+        # Picks the first set containing the image — an image can, in principle, live in multiple
+        # sets, but the URL only ever carried one and the client picks the first one it sees.
+        set_uid = try
+            proj = load_project(pu)
+            s = findfirst(s -> iu in s.image_uids, sets(proj))
+            s === nothing ? "" : sets(proj)[s].uid
+        catch
+            ""
         end
         channels = [(; name = get(names, c, "Channel $(c - 1)"),
                        lo = s.lo, hi = s.hi, visible = s.visible,
@@ -292,7 +306,9 @@ function api_viewer_meta(req::HTTP.Request)
                 chunkY = get(l.chunks, length(l.chunks) - 1, 0),
                 chunkX = get(l.chunks, length(l.chunks),     0))
              for (i, l) in enumerate(lvls)]
-        200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny, labelNames = label_names,
+        200, JSON3.write((; nT = nt, nC = nc, nZ = nz, nX = nx, nY = ny,
+                            name = image_name, setUid = set_uid,
+                            labelNames = label_names,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say

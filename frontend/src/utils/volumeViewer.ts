@@ -34,6 +34,13 @@ export interface ViewerMeta {
   nZ: number
   nX: number
   nY: number
+  /** Image display name — server-owned, used for the pop-out window title. Used to travel in the
+   *  URL as `name=…`; moved server-side so the URL only carries identity (project + image + vn). */
+  name?: string
+  /** UID of a set that contains this image — the context for per-set viewer prefs (contrast,
+   *  colour-by, point size). Empty when no set contains the image (rare — export path only).
+   *  Used to travel in the URL as `set=…`; moved server-side for the same reason as `name`. */
+  setUid?: string
   bytesPerVoxel: number
   slabBytes: number
   /**

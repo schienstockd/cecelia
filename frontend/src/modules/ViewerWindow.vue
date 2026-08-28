@@ -116,16 +116,18 @@ const valueName = ref(
   settings.getImageVersion(imageUid) || String(route.query.valueName ?? ''),
 )
 /**
- * The image's SET, seeded by the viewer panel that opened this window.
+ * The image's SET and display name are both server-owned (`/api/viewer/meta`, 2026-08-28). The URL
+ * used to carry them so the pop-out had a title and per-set prefs before the first fetch; that
+ * grew the query to five keys, and the server always knew both, so the round trip became the one
+ * source. Both start empty and populate once `meta` resolves — one frame of window-local defaults
+ * for per-set prefs before the real values land, which is not perceptible next to the slab fetch.
  *
- * It exists so the two viewers agree. Point size, colour-by and which population type is shown are
- * per-SET preferences the napari viewer panel already owns (`settings.getPointSize` and friends), and
- * a second copy of them here would mean the same image looks different depending on which eye you
- * opened it in — the exact duplication this codebase keeps paying for. Absent (an older link, or a
- * window opened some other way) falls back to the window-local defaults rather than failing.
+ * Per-set preferences (point size, colour-by, which population type is shown) live in
+ * `settings.getPointSize` and friends, keyed on `setUid.value`. Empty setUid = a viewer opened
+ * without a set context (rare — export path) → window-local defaults, same fallback as before.
  */
-const setUid = String(route.query.set ?? '')
-const imageName = String(route.query.name ?? '')
+const setUid = computed(() => meta.value?.setUid ?? '')
+const imageName = computed(() => meta.value?.name ?? '')
 
 /**
  * A second click on a DIFFERENT image's eye — the main window opens the viewer with the same window
@@ -370,19 +372,19 @@ const trackSpeedRange = ref<[number, number] | null>(null)
  *  the storage bridge whenever the panel toggles the icon. */
 const popsPanelOn = computed(() => {
   const pt = gatingCurrent.value.popType || 'flow'
-  return setUid ? settings.getPopVisible(setUid, pt) : true
+  return setUid.value ? settings.getPopVisible(setUid.value, pt) : true
 })
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
 const trackColorMode = computed<'track' | 'speed' | 'solid'>({
-  get: () => setUid ? settings.getTrackColorMode(setUid) : 'track',
-  set: (v) => { if (setUid) settings.setTrackColorMode(setUid, v); rebuildOverlays() },
+  get: () => setUid.value ? settings.getTrackColorMode(setUid.value) : 'track',
+  set: (v) => { if (setUid.value) settings.setTrackColorMode(setUid.value, v); rebuildOverlays() },
 })
 /** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
  *  override is per set — a rare viewer opened without one just keeps the palette default. */
 function setTrackSourceColour(vn: string, hex: string) {
-  if (!setUid) return
-  settings.setTrackSourceColour(setUid, vn, hex)
+  if (!setUid.value) return
+  settings.setTrackSourceColour(setUid.value, vn, hex)
   rebuildOverlays()
 }
 /**
@@ -438,8 +440,8 @@ const hiddenPops = ref<Set<string>>(new Set())
  * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
  */
 const pointSize = computed({
-  get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
-  set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
+  get: () => (setUid.value ? settings.getPointSize(setUid.value) : settings.viewerPointSize),
+  set: (v: number) => setUid.value ? settings.setPointSize(setUid.value, v) : (settings.viewerPointSize = v),
 })
 /**
  * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
@@ -448,7 +450,7 @@ const pointSize = computed({
  * is a request for the server (the values come from disk), so a watch refetches the overlays.
  * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
-const colourBy = computed(() => setUid ? settings.getColourBy(setUid) : '')
+const colourBy = computed(() => setUid.value ? settings.getColourBy(setUid.value) : '')
 watch(colourBy, () => { void loadOverlays() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
@@ -860,9 +862,9 @@ function rebuildOverlays() {
   //   3. Trackclust ribbons — from `trackclustPayloads[popManagerVn]`, gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
-  const gatedOn = setUid ? settings.getShowGatedTracks(setUid) : false
-  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
-  const overrides = setUid ? settings.getTrackSourceColours(setUid) : {}
+  const gatedOn = setUid.value ? settings.getShowGatedTracks(setUid.value) : false
+  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
+  const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string }[] = []
   for (const [vn, payload] of trackPayloads.value.entries()) {
     sources.push({ vn, payload, colour: overrides[vn] })
@@ -938,7 +940,7 @@ async function loadOverlays() {
     // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
     // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
     const currentPopType = gatingCurrent.value.popType || 'flow'
-    const popTypeOn = setUid ? settings.getPopVisible(setUid, currentPopType) : true
+    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : true
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
@@ -993,7 +995,7 @@ async function loadTracks() {
   // when the panel's Trackclust master toggle is on. The pop manager's vn is where those pops are
   // authored, so a viewer with the pop manager on "A" and per-vn eyes elsewhere still lands the
   // trackclust ribbons on A. Cached in a Map<vn, payload> so switching vns keeps prior fetches.
-  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
+  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const popMgrVn = gatingCurrent.value.valueName
   if (trackclustOn && popMgrVn) {
     // Refetch every call — `loadTracks` fires on `cc.viewerOverlaysTick`, which the pop manager
