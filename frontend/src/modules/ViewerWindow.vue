@@ -1224,17 +1224,21 @@ const depth = () => {
 }
 const pump = debouncedLatest<number>(async (tp, isCurrent) => {
   const r = renderer.value, m = meta.value
+  console.info('[viewer] pump start', { tp, hasRenderer: !!r, hasMeta: !!m })
   if (!r || !m) return
   const dir = Math.sign(tp - lastT) || 1
   lastT = tp
 
   const want = prefetchWindow(tp, dir, m.nT, depth())
+  console.info('[viewer] pump want', want)
   for (const u of want) {
     // The checkpoint. It is between fetches rather than inside one, so abandoning a window costs at
     // most the request already in flight — which is why `schedulePump` cuts that one short as well.
-    if (!isCurrent()) return
+    if (!isCurrent()) { console.info('[viewer] pump superseded'); return }
     if (r.hasTimepoint(u)) { r.touch(u); continue }
+    console.info('[viewer] pump fetchTimepoint', u)
     const ok = await fetchTimepoint(u)
+    console.info('[viewer] pump fetchTimepoint done', u, ok)
     syncCacheState()
     if (!ok || !isCurrent()) return
     // Only paints when the walk is still the current one, so a frame the user has already left cannot
@@ -2293,11 +2297,15 @@ async function reallocate(refit = false) {
     frame.redraw()
   } else {
     const r = renderer.value
-    if (!r) return
+    if (!r) { console.warn('[viewer] reallocate: no renderer, bailing'); return }
     // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
     const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
       viewerStore.previewLabels?.imageUid === imageUid)
+    console.info('[viewer] reallocate.volume', {
+      mode: mode.value, zDepth: zDepth.value, renderNX: renderNX.value, renderNY: renderNY.value,
+      t: t.value, capacity: settings.viewerCacheFrames || m.nT,
+    })
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
@@ -2309,6 +2317,7 @@ async function reallocate(refit = false) {
     r.setOrthographic(mode.value === 'plane')
     r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
     syncCacheState()
+    console.info('[viewer] reallocate → gotoT', t.value)
     gotoT(t.value)
   }
 }
