@@ -121,6 +121,11 @@ export async function createBrickVolumeRenderer(
   /** Monotonic frame counter — the PageTable's `now` argument. Kept in the renderer so the LRU
    *  order isn't a function of wall-clock (which would drift under devtools throttling). */
   let frameNow = 0
+  /** Caller-supplied redraw trigger — called when a brick lands so the frame pump paints the
+   *  new atlas state. Without it, the fetch resolves but the shader keeps rendering the pre-
+   *  arrival page-table → the box stays black (2026-08-28, first attempt was silent because of
+   *  this exact missing signal). Null when the caller hasn't wired one yet. */
+  let needsRedraw: (() => void) | null = null
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -258,6 +263,8 @@ export async function createBrickVolumeRenderer(
         if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
         atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
         atlas.pageTableDirty = true
+        // Fetched between frames — the caller has to paint again for the new slot to show up.
+        needsRedraw?.()
       })
       .catch(() => { inflight.delete(key) })
   }
@@ -510,6 +517,8 @@ export async function createBrickVolumeRenderer(
     setAlphaMode(mode: GPUCanvasAlphaMode) {
       ctx.configure({ device, format, alphaMode: mode })
     },
+
+    setNeedsRedraw(cb) { needsRedraw = cb },
 
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.

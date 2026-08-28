@@ -2219,6 +2219,10 @@ async function ensureRenderer() {
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
+      // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
+      // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
+      // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
+      r.setNeedsRedraw?.(() => frame.redraw())
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()

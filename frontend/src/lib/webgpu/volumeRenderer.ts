@@ -188,6 +188,14 @@ export interface VolumeRenderer {
    * than at each call site. Absent on the flat renderer — callers use `?.` to remain agnostic.
    */
   setBrickSource?(source: { projectUid: string; imageUid: string; valueName?: string } | null): void
+  /**
+   * Brick renderer only: how to ask the caller for a redraw when a fetched brick lands. Brick
+   * uploads are asynchronous — a fetch that resolves between frames updates the atlas without
+   * anything on the caller's side noticing, so the shader keeps drawing the pre-arrival state.
+   * Called ONCE per new brick (batched inside a single microtask by design). Absent on the flat
+   * renderer — the flat path is caller-driven end-to-end.
+   */
+  setNeedsRedraw?(cb: (() => void) | null): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
