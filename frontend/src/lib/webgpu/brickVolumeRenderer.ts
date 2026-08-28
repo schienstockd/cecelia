@@ -26,7 +26,7 @@ import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../uti
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
 } from '../../utils/brickScheduler'
-import { fetchBrick, brickSlabUrl } from '../../utils/brickLoader'
+import { fetchBrick, brickSlabUrl, padBrickPayload } from '../../utils/brickLoader'
 import { BRICK_WGSL, BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT } from './brickShader'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
@@ -267,7 +267,15 @@ export async function createBrickVolumeRenderer(
         const result = atlas.pageTable.insertOrEvictLru(brick, frameNow)
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
-        const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(payload.bytes))
+        // Edge bricks: server clamps xTo/yTo to store bounds; pad the response back up to the full
+        // slot so writeTexture takes the same-shape argument for every brick. The padded voxels
+        // are never sampled — the shader skips vi.x >= p.dims.x — so their contents don't matter.
+        const [ebx, eby, ebz] = atlas.layout.brickSizeVox
+        const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
+        const bytes = isEdge
+          ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel)
+          : payload.bytes
+        const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(bytes))
         if (!ok) {
           console.warn('[bricks] writeBrick refused', key, result.entry.slot)
           atlas.pageTable.evict(key)

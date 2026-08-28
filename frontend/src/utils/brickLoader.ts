@@ -123,13 +123,54 @@ export function brickShapeError(
   const shape = parseBrickSlabShape(header)
   if (!shape) return 'Brick response carried no 4-tuple X-Slab-Shape header (need nc,nz,ny,nx)'
   const [ebx, eby, ebz] = expectedBrickSize
-  if (shape.nc !== expectedNC || shape.nx !== ebx || shape.ny !== eby || shape.nz !== ebz) {
+  // Edge bricks: the server clamps `xTo`/`yTo` to the store's bounds so an edge brick comes back
+  // shorter than the interior on x and/or y. The caller pads the payload to full brick size before
+  // writeTexture — the padded voxels are never sampled because the shader skips `vi.x >= p.dims.x`.
+  // nc + nz must still match exactly (the atlas has no way to compensate for a wrong channel count
+  // or a wrong z-thickness). shape.nx/ny must not EXCEED the expected — a server that returns MORE
+  // than we asked for is either a route bug or a stale reply, both silent-corruption risks.
+  if (shape.nc !== expectedNC || shape.nz !== ebz) {
     return `Brick is ${shape.nc}x${shape.nz}x${shape.ny}x${shape.nx} (c,z,y,x) but ` +
            `${expectedNC}x${ebz}x${eby}x${ebx} was asked for`
+  }
+  if (shape.nx > ebx || shape.ny > eby) {
+    return `Brick nx/ny exceeds expected: got ${shape.nx}x${shape.ny}, max ${ebx}x${eby}`
   }
   const want = shape.nc * shape.nz * shape.ny * shape.nx * bytesPerVoxel
   if (byteLength !== want) return `Brick is ${byteLength} bytes, expected ${want}`
   return null
+}
+
+/**
+ * Copy a `(nc, nz, actual.ny, actual.nx)` buffer into a full-size `(nc, nz, ebx, eby)` output,
+ * leaving the padded voxels as zero. The layout is x-fastest → y → z → c (column-major, the shape
+ * the server writes). Used ONLY when the server clamped x or y at a store edge; interior bricks
+ * skip this call and use the response bytes directly.
+ */
+export function padBrickPayload(
+  bytes: ArrayBuffer,
+  actual: BrickSlabShape,
+  expectedBrickSize: readonly [number, number, number],
+  bytesPerVoxel: number,
+): ArrayBuffer {
+  const [ebx, eby, ebz] = expectedBrickSize
+  const total = actual.nc * ebz * eby * ebx * bytesPerVoxel
+  const out = new Uint8Array(total)
+  const src = new Uint8Array(bytes)
+  const rowBytes = actual.nx * bytesPerVoxel
+  const dstRow = ebx * bytesPerVoxel
+  // Per c → per z → per y: copy actual.nx*bpv bytes into the row's leading edge; the rest stays
+  // zero, and the shader never samples there.
+  for (let c = 0; c < actual.nc; c++) {
+    for (let z = 0; z < actual.nz; z++) {
+      for (let y = 0; y < actual.ny; y++) {
+        const srcOff = ((c * actual.nz + z) * actual.ny + y) * rowBytes
+        const dstOff = ((c * ebz + z) * eby + y) * dstRow
+        out.set(src.subarray(srcOff, srcOff + rowBytes), dstOff)
+      }
+    }
+  }
+  return out.buffer
 }
 
 /**
