@@ -19,6 +19,7 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useSettingsStore } from '../../stores/settings'
 import { useTaskStore } from '../../stores/tasks'
+import { useViewerStore } from '../../stores/viewer'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
@@ -55,6 +56,7 @@ const { suffixes: movieSuffixes, ensure: ensureMovieSuffixes } = useMovieSuffixe
 watch(() => projectMeta.current?.uid ?? '', (uid: string) => { void ensureMovieSuffixes(uid) }, { immediate: true })
 const settings    = useSettingsStore()
 const tasks       = useTaskStore()
+const viewer      = useViewerStore()
 const ws          = useWsStore()
 // the canvas size napari would record at, for the size fields' placeholder (shared poll)
 const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
@@ -241,16 +243,25 @@ async function fillFromView(force = false) {
   if (!force && Object.keys(channels.value).length) return   // already authored → leave alone
   seeding.value = true
   let seed: BatchMovieCfg = {}
-  try {
-    const res = await fetch('/api/napari/view-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }),
-    })
-    if (res.ok) {
-      const j = await res.json() as { viewState?: ViewStateLike; imageUid?: string }
-      // auto: only trust the live view when the OPEN image is the first selected one
-      if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState, rep.channelNames ?? [])
-    }
-  } catch { /* fall through to the palette default */ }
+  // Prefer the browser volume viewer's published viewState (`useViewerStore.viewState`) — the popup
+  // writes it on every camera / channel change (same shape napari emits). Falls back to napari when
+  // the browser viewer isn't running. Auto-seed only trusts the source when its OPEN image is the
+  // first selected one; forced (button click) reads whichever source has state.
+  const browserOpenUid = viewer.openImage?.imageUid
+  if (viewer.viewState && (force || browserOpenUid === first)) {
+    seed = seedConfigFromViewState(viewer.viewState as unknown as ViewStateLike, rep.channelNames ?? [])
+  } else {
+    try {
+      const res = await fetch('/api/napari/view-state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }),
+      })
+      if (res.ok) {
+        const j = await res.json() as { viewState?: ViewStateLike; imageUid?: string }
+        // auto: only trust the live view when the OPEN image is the first selected one
+        if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState, rep.channelNames ?? [])
+      }
+    } catch { /* fall through to the palette default */ }
+  }
   // no usable live channels → default palette so the picker isn't blank
   if (!Object.keys(seed.channels ?? {}).length) {
     seed = { channels: defaultChannelSeed(rep.channelNames ?? [], CHANNEL_COLORMAP_OPTIONS.map(o => o.value)) }
@@ -446,8 +457,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <section class="bm-sec">
         <h4>
           Channels <span class="bm-sub cc-muted">shown channels + colormap (others hidden)</span>
-          <button class="bm-link" :disabled="seeding || !project.napariImageUid" @click="fillFromView(true)"
-                  title="Copy the channel colours + overlays from the image currently open in napari">
+          <button class="bm-link" :disabled="seeding || !(viewer.openImage?.imageUid || project.napariImageUid)"
+                  @click="fillFromView(true)"
+                  title="Copy the channel colours + overlays from the image currently open in the viewer">
             <i class="pi pi-sync" /> fill from view
           </button>
         </h4>
