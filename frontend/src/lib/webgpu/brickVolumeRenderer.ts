@@ -31,7 +31,11 @@ import {
   bricksIntersectingViewport,
 } from '../../utils/brickScheduler'
 import { fetchBrick, brickSlabUrl, padBrickPayload } from '../../utils/brickLoader'
-import { BRICK_WGSL, BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT } from './brickShader'
+import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
+import {
+  BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
+  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
+} from './brickShader'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
  *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
@@ -103,12 +107,106 @@ export async function createBrickVolumeRenderer(
   const format = navigator.gpu.getPreferredCanvasFormat()
   ctx.configure({ device, format, alphaMode: 'opaque' })
 
-  // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings.
+  // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings. The
+  // bind group layout is EXPLICIT (not `auto`) so the raycast, points and segments pipelines all
+  // share ONE layout — the overlays reuse the raycast's bind group verbatim so a marker sits on
+  // the cell that the raycast drew rather than beside it. Binding 0's visibility MUST include
+  // VERTEX because the overlay passes project a point in their vertex stage; missing that flag
+  // is a pipeline-creation validation error that hands back an INVALID pipeline (same trap the
+  // flat renderer already documents — see `volumeRenderer.ts:296`).
+  const bindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: 'uniform', minBindingSize: BRICK_UNIFORM_BYTES } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
+    ],
+  })
+  const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
+
   const module = device.createShaderModule({ code: BRICK_WGSL })
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  })
+
+  // Overlay pipelines share the SAME bind group layout as the raycast (they use only binding 0,
+  // but WebGPU has no partial layout — every slot must be declared). Alpha-blended over the
+  // finished raycast, in the same pass: `loadOp: 'clear'` runs once, then the raycast writes,
+  // then the overlays composite on top. See the flat renderer for the "one pass, one clear"
+  // rationale (`volumeRenderer.ts:492`).
+  const pointsModule = device.createShaderModule({ code: BRICK_POINTS_WGSL })
+  const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (pointsErrs.length) {
+    throw new WebGpuUnavailable(
+      'Brick points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const pointsPipeline = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: {
+      module: pointsModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: POINT_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
+          { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
+        ],
+      }],
+    },
+    fragment: {
+      module: pointsModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  })
+
+  const segModule = device.createShaderModule({ code: BRICK_SEGMENTS_WGSL })
+  const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (segErrs.length) {
+    throw new WebGpuUnavailable(
+      'Brick segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const segPipeline = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: {
+      module: segModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: SEG_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
+          { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
+          { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
+        ],
+      }],
+    },
+    fragment: {
+      module: segModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
     primitive: { topology: 'triangle-list' },
   })
 
@@ -163,6 +261,24 @@ export async function createBrickVolumeRenderer(
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
    *  playback advances without cold-fetching each new t. Empty = current-t only. */
   let prefetchTs: number[] = []
+
+  /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
+   *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
+   *  discipline as the flat renderer (`volumeRenderer.ts:446`). */
+  let pointBuf: GPUBuffer | null = null
+  let pointCap = 0
+  let pointFirst = 0
+  let pointCount = 0
+  let pointSizePx = 6
+  let pointPlaneLo = -1
+  let pointPlaneHi = -1
+  let segBuf: GPUBuffer | null = null
+  let segCap = 0
+  let segFirst = 0
+  let segCount = 0
+  let segWidthPx = 3
+  let segPlaneLo = -1
+  let segPlaneHi = -1
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -252,7 +368,7 @@ export async function createBrickVolumeRenderer(
     })
 
     const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: uniformBuf } },
         { binding: 1, resource: { buffer: pageTableBuffer } },
@@ -516,6 +632,17 @@ export async function createBrickVolumeRenderer(
     }
     uniformCpu[BU.PAN + 0] = uniform.pan[0]
     uniformCpu[BU.PAN + 1] = uniform.pan[1]
+    // pan.z/w carry the SEGMENT ribbon's plane bounds — separate from the points' bounds because
+    // a track spans several planes and often reads best with more z slack than the markers. -1 =
+    // no filter (3D volume view over the whole stack). Same convention as `mipShader.ts`.
+    uniformCpu[BU.PAN + 2] = segPlaneLo
+    uniformCpu[BU.PAN + 3] = segPlaneHi
+    // Overlay layout: (pointSizePx, pointPlaneLo, tailWidthPx, pointPlaneHi). Two plane bounds
+    // for the points share this vec4 with the two screen-space widths (points + tails).
+    uniformCpu[BU.OV + 0] = pointSizePx
+    uniformCpu[BU.OV + 1] = pointPlaneLo
+    uniformCpu[BU.OV + 2] = segWidthPx
+    uniformCpu[BU.OV + 3] = pointPlaneHi
     // Prev-level fallback fields — only meaningful when a level switch has copied the previous
     // page table into the prev buffer. `prevValid` is a float flag the shader reads with a
     // > 0.5 comparison (WGSL uniform floats don't do bitwise cleanly).
@@ -577,6 +704,21 @@ export async function createBrickVolumeRenderer(
       pass.setPipeline(pipeline)
       pass.setBindGroup(0, atlas.bindGroup)
       pass.draw(3, 1, 0, 0)
+      // Overlays in the SAME pass — tails first, then points, so a marker sits ON TOP of the
+      // path leading to it. Skip when the buffer is empty: a zero-instance draw with a null
+      // vertex buffer is a validation error that discards the whole pass, blanking the volume.
+      if (segBuf !== null && segCount > 0) {
+        pass.setPipeline(segPipeline)
+        pass.setBindGroup(0, atlas.bindGroup)
+        pass.setVertexBuffer(0, segBuf)
+        pass.draw(6, segCount, 0, segFirst)
+      }
+      if (pointBuf !== null && pointCount > 0) {
+        pass.setPipeline(pointsPipeline)
+        pass.setBindGroup(0, atlas.bindGroup)
+        pass.setVertexBuffer(0, pointBuf)
+        pass.draw(6, pointCount, 0, pointFirst)
+      }
     }
     pass.end()
     device.queue.submit([enc.finish()])
@@ -653,11 +795,51 @@ export async function createBrickVolumeRenderer(
     setSteps(steps) { uniform.steps = steps },
     setOrthographic(on) { uniform.ortho = on },
 
-    setOverlayPoints(_data) { /* P6 */ },
-    setOverlayDraw(_first, _count, _sizePx, _planeLo, _planeHi) { /* P6 */ },
-    setOverlaySegments(_data) { /* P6 */ },
-    setOverlaySegmentDraw(_first, _count, _widthPx, _planeLo, _planeHi) { /* P6 */ },
-    setLabelStyle(_opacity, _contourPx) { /* P6 */ },
+    setOverlayPoints(data) {
+      // Grow-only: the movie's total instance count is bounded by the population data and the
+      // buffer is written once per (image, populations), not per frame. Reallocation would only
+      // happen on a population that shrank, which is not something the frame pump ever needs to
+      // do — the caller passes the whole ordered array when populations change.
+      if (destroyed) return
+      const needed = Math.max(data.byteLength, POINT_STRIDE * 4)
+      if (pointBuf === null || pointCap < needed) {
+        pointBuf?.destroy()
+        pointBuf = device.createBuffer({
+          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+        pointCap = needed
+      }
+      if (data.byteLength > 0) device.queue.writeBuffer(pointBuf, 0, data)
+    },
+    setOverlayDraw(first, count, sizePx, planeLo, planeHi) {
+      pointFirst = first
+      pointCount = count
+      pointSizePx = sizePx
+      // The caller passes one index when planeHi is undefined (2D view) — repeat it so the shader
+      // treats the range as a single plane rather than reading garbage from an unset slot.
+      pointPlaneLo = planeLo
+      pointPlaneHi = planeHi ?? planeLo
+    },
+    setOverlaySegments(data) {
+      if (destroyed) return
+      const needed = Math.max(data.byteLength, SEG_STRIDE * 4)
+      if (segBuf === null || segCap < needed) {
+        segBuf?.destroy()
+        segBuf = device.createBuffer({
+          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+        segCap = needed
+      }
+      if (data.byteLength > 0) device.queue.writeBuffer(segBuf, 0, data)
+    },
+    setOverlaySegmentDraw(first, count, widthPx, planeLo, planeHi) {
+      segFirst = first
+      segCount = count
+      segWidthPx = widthPx
+      segPlaneLo = planeLo
+      segPlaneHi = planeHi ?? planeLo
+    },
+    setLabelStyle(_opacity, _contourPx) { /* labels PR #696 */ },
 
     resize,
     draw,
@@ -670,7 +852,7 @@ export async function createBrickVolumeRenderer(
       return null
     },
 
-    overlayCounts: (): [number, number] => [0, 0],
+    overlayCounts: (): [number, number] => [pointCount, segCount],
 
     setTestPattern(on) {
       // ViewerWindow calls this every frame with the current toggle state, not just on change —
@@ -722,6 +904,8 @@ export async function createBrickVolumeRenderer(
       inflight.forEach(ac => ac.abort())
       inflight.clear()
       dropAtlas()
+      pointBuf?.destroy()
+      segBuf?.destroy()
       uniformBuf.destroy()
       lutTex.destroy()
       ctx.unconfigure()
