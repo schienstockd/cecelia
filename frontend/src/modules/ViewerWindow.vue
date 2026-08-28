@@ -2986,6 +2986,11 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
                     v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
+              <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
+                   the source image, so a corrected/uncorrected mixup is not silent. Only rendered when
+                   this image has an AF preview and this channel is in its corrected set. -->
+              <span v-if="previewImageFor(c)" class="vw-ch-af-badge cc-fs-3xs"
+                    v-tooltip.top="'Reading corrected pixels from the AF preview scratch store'">AF</span>
               <ColourPicker
                 :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
                 @update:model-value="v => setChannelColour(c, v)"
@@ -3395,6 +3400,8 @@ onUnmounted(() => {
   min-width: 0; overflow: clip; }
 .vw-ch :deep(.rs) { min-width: 0; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-ch-af-badge { flex: none; padding: 0 0.35rem; border-radius: var(--cc-radius-pill);
+  border: 1px solid var(--cc-accent); color: var(--cc-accent); font-weight: 600; letter-spacing: 0.02em; }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
