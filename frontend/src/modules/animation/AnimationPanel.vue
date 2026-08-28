@@ -113,11 +113,12 @@ async function screenshot(what: string): Promise<{ assetId?: string; viewState?:
     }
     const j = (await res.json()) as { assetId?: string; imageUid?: string }
     // Freeze a deep clone of the viewer state HERE so a subsequent viewer edit doesn't mutate the
-    // captured keyframe (the store's ref is the live view). `structuredClone` handles nested
-    // objects + numeric arrays; a JSON round-trip is the fallback for older runtimes.
-    const snapshot: Record<string, unknown> = typeof structuredClone === 'function'
-      ? (structuredClone(vs) as Record<string, unknown>)
-      : (JSON.parse(JSON.stringify(vs)) as Record<string, unknown>)
+    // captured keyframe (the store's ref is the live view — a Pinia reactive proxy that isn't
+    // safe to hand out by reference). Use a JSON round-trip rather than `structuredClone`: the
+    // proxy carries a getter chain that structuredClone rejects with "could not be cloned" (a
+    // real error reported on the browser volume viewer), and every field in `ViewerViewState` is
+    // JSON-safe by construction, so the round-trip is lossless.
+    const snapshot: Record<string, unknown> = JSON.parse(JSON.stringify(vs)) as Record<string, unknown>
     return { assetId: j.assetId, imageUid: j.imageUid ?? uid, viewState: snapshot }
   } catch (e) {
     log.error(`${what} failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
