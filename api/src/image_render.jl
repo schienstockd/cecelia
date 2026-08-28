@@ -50,12 +50,34 @@ const DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
 const Lut = Vector{NTuple{3,Float32}}
 
 # Resolve a spec's colour field to a LUT. A Vector of stops (from `colormap_lut`) is used as-is; a
-# String is a colormap NAME resolved through CMAP_RGB into a 2-stop black→base ramp.
+# String is EITHER a colormap NAME resolved through CMAP_RGB, OR a `#rrggbb`/`#rgb` hex — the browser
+# viewer sends hex when the user's live picker colour isn't in CMAP_RGB (see
+# `frontend/src/utils/viewer/viewState.ts`). Either way it becomes a 2-stop black→base ramp.
 _as_lut(v::Lut) = v
-_as_lut(name::AbstractString) =
-    NTuple{3,Float32}[(0f0, 0f0, 0f0), get(CMAP_RGB, lowercase(name), (1f0, 1f0, 1f0))]
+function _as_lut(s::AbstractString)
+    rgb = _hex_to_rgb01(s)
+    rgb === nothing || return NTuple{3,Float32}[(0f0, 0f0, 0f0), rgb]
+    NTuple{3,Float32}[(0f0, 0f0, 0f0), get(CMAP_RGB, lowercase(s), (1f0, 1f0, 1f0))]
+end
 _as_lut(v::AbstractVector) = NTuple{3,Float32}[
     (Float32(s[1]), Float32(s[2]), Float32(s[3])) for s in v]
+
+# `#rrggbb` / `#rgb` → 0-1 RGB. Nothing means it isn't a hex literal (`_as_lut` then tries CMAP_RGB).
+function _hex_to_rgb01(s::AbstractString)
+    m = match(r"^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$", strip(s))
+    m === nothing && return nothing
+    h = m.captures[1]
+    if length(h) == 3
+        r = parse(Int, string(h[1], h[1]); base = 16)
+        g = parse(Int, string(h[2], h[2]); base = 16)
+        b = parse(Int, string(h[3], h[3]); base = 16)
+    else
+        r = parse(Int, h[1:2]; base = 16)
+        g = parse(Int, h[3:4]; base = 16)
+        b = parse(Int, h[5:6]; base = 16)
+    end
+    (Float32(r) / 255f0, Float32(g) / 255f0, Float32(b) / 255f0)
+end
 
 # Sample a LUT at `n` ∈ [0,1] with linear interpolation between stops. A 2-stop black→base ramp reduces
 # to exactly `n .* base`, which is what the additive channel primaries need.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { napariColormapHex, CHANNEL_COLORMAP_OPTIONS } from './napariColormap'
+import { napariColormapHex, napariColormapForHex, CHANNEL_COLORMAP_OPTIONS } from './napariColormap'
 
 describe('napariColormapHex', () => {
   it('maps single-hue channel colormaps', () => {
@@ -26,6 +26,34 @@ describe('napariColormapHex', () => {
     expect(napariColormapHex('')).toBeNull()
     expect(napariColormapHex(null)).toBeNull()
     expect(napariColormapHex(undefined)).toBeNull()
+  })
+})
+
+describe('napariColormapForHex (reverse)', () => {
+  it('reverses the picker palette', () => {
+    expect(napariColormapForHex('#ff0000')).toBe('red')
+    expect(napariColormapForHex('#00ff00')).toBe('green')
+    expect(napariColormapForHex('#0000ff')).toBe('blue')
+  })
+
+  it('prefers the picker canonical name when several map to one hex', () => {
+    // 'gray' and 'grey' both map to #d4d4d4; the picker uses 'gray'.
+    expect(napariColormapForHex('#d4d4d4')).toBe('gray')
+  })
+
+  it('is case-insensitive on the hex', () => {
+    expect(napariColormapForHex('#FF7F0E')).toBe('bop orange')
+  })
+
+  it('returns null for a colour outside the palette', () => {
+    expect(napariColormapForHex('#123456')).toBeNull()
+    expect(napariColormapForHex('')).toBeNull()
+    expect(napariColormapForHex(null)).toBeNull()
+    expect(napariColormapForHex(undefined)).toBeNull()
+  })
+
+  it('round-trips the palette (name → hex → name)', () => {
+    for (const o of CHANNEL_COLORMAP_OPTIONS) expect(napariColormapForHex(o.hex)).toBe(o.value)
   })
 })
 

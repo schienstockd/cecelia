@@ -68,13 +68,36 @@ describe('buildViewState', () => {
     expect(vs.camera.angles[1]).toBeCloseTo(45, 4)                 // yaw → ry
   })
 
-  it('emits per-channel layers with contrast + visibility, colormap null', () => {
+  it('emits per-channel layers with contrast + visibility + LUT-derived colormap name', () => {
+    // DAPI LUT top = [0,0,1] → #0000ff → 'blue' (picker canonical over 'i blue'); CD3 = [0,1,0] → 'green'.
+    // The name is what `seedConfigFromViewState` reads, so an empty channels map here is what broke
+    // fill-from-view.
     const vs = buildViewState({
       cam: fakeCam(), meta: fakeMeta(), t: 0, zPlane: 0, ndisplay: 2,
       canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
     })
-    expect(vs.layers.DAPI).toEqual({ visible: true,  contrast_limits: [100, 800], colormap: null })
-    expect(vs.layers.CD3).toEqual({  visible: false, contrast_limits: [200, 900], colormap: null })
+    expect(vs.layers.DAPI).toEqual({ visible: true,  contrast_limits: [100, 800], colormap: 'blue' })
+    expect(vs.layers.CD3).toEqual({  visible: false, contrast_limits: [200, 900], colormap: 'green' })
+  })
+
+  it('emits the raw hex when the LUT top is not in the picker palette', () => {
+    const meta = fakeMeta()
+    meta.channels[0].lut = [[0, 0, 0], [0.12, 0.34, 0.56]]      // custom mix, not any named palette
+    const vs = buildViewState({
+      cam: fakeCam(), meta, t: 0, zPlane: 0, ndisplay: 2,
+      canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    expect(vs.layers.DAPI.colormap).toBe('#1f578f')      // toHex([0.12*255, 0.34*255, 0.56*255])
+  })
+
+  it('leaves colormap null when a channel has no LUT at all', () => {
+    const meta = fakeMeta()
+    meta.channels[0].lut = []
+    const vs = buildViewState({
+      cam: fakeCam(), meta, t: 0, zPlane: 0, ndisplay: 2,
+      canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    expect(vs.layers.DAPI.colormap).toBeNull()
   })
 
   it('records the canvas the zoom was written against', () => {

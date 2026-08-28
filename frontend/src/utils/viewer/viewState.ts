@@ -11,12 +11,16 @@
 //
 // Two decisions worth stating:
 //
-// 1) **`colormap` is emitted as `null` unless the caller knows the name.** The browser viewer
-//    stores LUTs as 2-stop `black → base` ramps and drops the colormap NAME when the server hands
-//    them over (`resolved_display_specs` in `image_render.jl` — ONE resolver, two consumers). The
-//    renderer's `viewstate_to_render_args` falls back to `default_specs` (the saved viewer props)
-//    for layers whose entry omits `colormap`, so a null colormap = "use the colour on disk", which
-//    is exactly the colour the user is looking at. No palette drift.
+// 1) **`colormap` is a picker NAME when we can reverse-lookup the top LUT stop, else the RAW HEX
+//    (`#rrggbb`), else `null`.** The browser viewer stores channels as 2-stop black→hex ramps and
+//    drops the colormap name. We rebuild it by taking each channel's top RGB and looking it up in
+//    `napariColormap.ts` (the picker's palette). If it doesn't match a picker entry we emit the
+//    hex directly — the Julia offline renderer (`_as_lut`) accepts `#rrggbb` and builds a 2-stop
+//    black→hex LUT, exact for a channel tint. That way a live palette pick round-trips even when
+//    the picker's name and the server's `CMAP_RGB` disagree (`bop orange` is off by a hue, so
+//    picker hex ≠ server hex, and name-only reverse would silently switch it). Emitting `null` for
+//    every channel is what broke `seedConfigFromViewState` (batch/one-shot fill-from-view read no
+//    channels → record fell back to the autosaved props, so a live colour change was invisible).
 //
 // 2) **3D `angles` are approximate.** OrbitCamera holds yaw + pitch in RADIANS; napari expects
 //    (rx, ry, rz) in DEGREES with its own axis convention. We emit `[pitch_deg, yaw_deg, 0]` as a
@@ -25,6 +29,8 @@
 //    authored from the volume mode.
 
 import type { ViewerMeta, OrbitCamera } from '../volumeViewer'
+import { napariColormapForHex } from '../napariColormap'
+import { toHex } from '../colour'
 
 export interface ViewerLayerState {
   visible: boolean
@@ -105,10 +111,15 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
 
   const layers: Record<string, ViewerLayerState> = {}
   for (const ch of meta.channels ?? []) {
+    // Top LUT stop → hex → picker name, else the hex itself. Same reading as ViewerWindow's
+    // `channelHex()`; kept short rather than shared because the two callers don't otherwise want
+    // each other's imports.
+    const top = ch.lut?.[ch.lut.length - 1]
+    const hex = top ? toHex(top.map(v => v * 255)) : null
     layers[ch.name] = {
       visible: !!ch.visible,
       contrast_limits: [Number(ch.lo), Number(ch.hi)],
-      colormap: null,                                     // see decision (1) above
+      colormap: napariColormapForHex(hex) ?? hex,
     }
   }
 
