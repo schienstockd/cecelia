@@ -484,14 +484,40 @@ const previewImagesKey = computed(() => {
   const chans = forThis.map(m => m.sourceChannel).sort((a, b) => a - b).join(',')
   return `${forThis[0].updateId}:${chans}`
 })
-watch(previewImagesKey, () => reallocate())
+watch(previewImagesKey, () => {
+  // A new AF run (or a toggle-off) resets every "show original" suspension — the corrected channels
+  // this run picked can be different from the last, so a stale entry could suspend a channel that
+  // is not corrected at all now.
+  afSuspended.value = new Set()
+  reallocate()
+})
+
+/** Per-channel A/B toggle: click the AF badge to read the SOURCE bytes for that ONE channel while the
+ *  other corrected channels stay swapped. Local to this viewer window — the state doesn't cross the
+ *  cross-window bridge because it's a per-viewer view choice, not a preview-run output.
+ *  `previewImagesKey`'s watch resets it whenever a new run lands. */
+const afSuspended = ref<Set<number>>(new Set())
+function toggleAfSuspended(c: number) {
+  const next = new Set(afSuspended.value)
+  next.has(c) ? next.delete(c) : next.add(c)
+  afSuspended.value = next
+  reallocate()
+}
 
 /** Fast lookup: source channel → the AF preview entry that overrides it for this image. Recomputed
  *  in the render loop, but the array is tiny (one entry per corrected channel, typically 1–4) so
- *  this stays a plain `.find` — no map cache needed. */
+ *  this stays a plain `.find` — no map cache needed. Returns null when the user has clicked the
+ *  badge to suspend the swap on THIS channel (A/B). */
 function previewImageFor(c: number) {
+  if (afSuspended.value.has(c)) return null
   const arr = viewerStore.previewImages
   return arr?.find(m => m.imageUid === imageUid && m.sourceChannel === c) ?? null
+}
+/** Does an AF correction EXIST for this channel? Distinguishes an uncorrected channel (no badge)
+ *  from a corrected-but-user-flipped-to-source channel (dim badge). */
+function hasAfPreview(c: number) {
+  const arr = viewerStore.previewImages
+  return !!arr?.some(m => m.imageUid === imageUid && m.sourceChannel === c)
 }
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
@@ -2987,10 +3013,17 @@ onUnmounted(() => {
               <span class="vw-ch-name cc-fs-xs"
                     v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
               <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
-                   the source image, so a corrected/uncorrected mixup is not silent. Only rendered when
-                   this image has an AF preview and this channel is in its corrected set. -->
-              <span v-if="previewImageFor(c)" class="vw-ch-af-badge cc-fs-3xs"
-                    v-tooltip.top="'Reading corrected pixels from the AF preview scratch store'">AF</span>
+                   the source image, so a corrected/uncorrected mixup is not silent. Click to A/B:
+                   suspend the swap on THIS channel (badge dims, channel reads source) while the
+                   other corrected channels stay swapped; click again to re-arm. Rendered whenever an
+                   AF correction exists for this channel, so a dimmed badge tells the user WHY the
+                   channel looks uncorrected. Resets on every new AF run. -->
+              <button v-if="hasAfPreview(c)"
+                      :class="['vw-ch-af-badge cc-fs-3xs', { 'vw-ch-af-badge-off': afSuspended.has(c) }]"
+                      @click="toggleAfSuspended(c)"
+                      v-tooltip.top="afSuspended.has(c)
+                        ? 'Reading SOURCE pixels — click to switch back to the AF correction'
+                        : 'Reading corrected pixels — click to compare against the source'">AF</button>
               <ColourPicker
                 :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
                 @update:model-value="v => setChannelColour(c, v)"
@@ -3401,7 +3434,11 @@ onUnmounted(() => {
 .vw-ch :deep(.rs) { min-width: 0; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-ch-af-badge { flex: none; padding: 0 0.35rem; border-radius: var(--cc-radius-pill);
-  border: 1px solid var(--cc-accent); color: var(--cc-accent); font-weight: 600; letter-spacing: 0.02em; }
+  border: 1px solid var(--cc-accent); background: transparent; color: var(--cc-accent);
+  font-weight: 600; letter-spacing: 0.02em; cursor: pointer; line-height: 1.2; }
+.vw-ch-af-badge:hover { background: color-mix(in srgb, var(--cc-accent) 15%, transparent); }
+.vw-ch-af-badge-off { border-color: var(--cc-border); color: var(--cc-muted); text-decoration: line-through; }
+.vw-ch-af-badge-off:hover { background: color-mix(in srgb, var(--cc-muted) 12%, transparent); }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
