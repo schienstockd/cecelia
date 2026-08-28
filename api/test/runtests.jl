@@ -4632,6 +4632,7 @@ end
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
         "/api/viewer/record-test",
+        "/api/viewer/thumbnail",
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4673,7 +4674,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 121
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 122
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6294,6 +6295,30 @@ end
 
     st, out = api_viewer_record_test(
         Vector{UInt8}(JSON3.write(Dict("projectUid" => "no-such", "imageUid" => "nope"))))
+    @test st == 404
+end
+
+@testset "API: /api/viewer/thumbnail — input guards" begin
+    # Same validation pattern as record-test: a well-shaped 400 rather than a 500 out of the
+    # renderer. Full end-to-end (viewState → PNG → assetId) needs a fixture image which the
+    # smoke suites don't run here; the request-shape guards are what protect the panel from
+    # rendering a broken thumbnail on a typo'd payload.
+    st, out = api_viewer_thumbnail(Vector{UInt8}("not json at all"))
+    @test st == 400
+    @test occursin("invalid JSON", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(Vector{UInt8}(JSON3.write(Dict("imageUid" => "x"))))
+    @test st == 400
+    @test occursin("projectUid", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(
+        Vector{UInt8}(JSON3.write(Dict("projectUid" => "p", "imageUid" => "i"))))
+    @test st == 400
+    @test occursin("viewState", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(
+        Vector{UInt8}(JSON3.write(Dict("projectUid" => "no-such", "imageUid" => "nope",
+                                        "viewState" => Dict{String,Any}()))))
     @test st == 404
 end
 

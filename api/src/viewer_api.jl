@@ -27,6 +27,7 @@
 
 using ChunkCodecLibZstd: ZstdEncodeOptions
 using ChunkCodecCore: encode
+using PNGFiles
 
 # ── Reading one volume ────────────────────────────────────────────────────────────
 
@@ -1080,4 +1081,99 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, path = result.path, filename = filename,
                         frames = result.frames, width = result.width, height = result.height,
                         overlays = ov_diag, mask = mask_diag))
+end
+
+# ── POST /api/viewer/thumbnail ────────────────────────────────────────────────────
+#
+# Render ONE frame from a captured viewState — the browser-viewer counterpart of napari's screenshot
+# endpoint (`/api/napari/screenshot`) that the animation module page has been using to author
+# keyframes. Same rendering path as the movie recorder (`viewstate_to_render_args` +
+# `render_view_frame`), so the thumbnail matches what the movie will render — a keyframe strip that
+# actually looks like the mp4 it will produce.
+#
+# **Channels only for MVP.** No overlays / no mask. The animation panel's thumbnail is for
+# identifying a keyframe in the timeline strip, not for full-fidelity preview; adding overlays
+# duplicates most of `run_single_offline` here and can land as a follow-up when the current shape
+# is confirmed to work end-to-end.
+#
+# The PNG lands as a sidecar board asset — same storage the napari screenshot uses, so the animation
+# panel's existing display + delete paths (`/api/board-assets/delete`, sidecar `<id>.png` under
+# `settings/board-assets/`) work unchanged.
+#
+# `POST /api/viewer/thumbnail` — body: `{ projectUid, imageUid, valueName?, viewState }`,
+# response: `{ ok, assetId, imageUid, width, height }`.
+function api_viewer_thumbnail(body_bytes::Vector{UInt8})
+    data = try JSON3.read(String(body_bytes)) catch; nothing end
+    data === nothing && return 400, JSON3.write((; error = "invalid JSON body"))
+    pu = String(get(data, :projectUid, ""))
+    iu = String(get(data, :imageUid, ""))
+    (isempty(pu) || isempty(iu)) &&
+        return 400, JSON3.write((; error = "projectUid and imageUid required"))
+    vn_raw = get(data, :viewState, nothing)
+    (vn_raw isa AbstractDict) ||
+        return 400, JSON3.write((; error = "viewState (object) required"))
+    vs_dict = vn_raw
+    val_raw = get(data, :valueName, nothing)
+    vnn = (val_raw === nothing || String(val_raw) == "") ? nothing : String(val_raw)
+    zp, td, err = resolve_image_version(pu, iu, vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    arr, caxes = open_level0(zp)
+    d = axis_dims(caxes, ndims(arr))
+    nc = haskey(d, "c") ? size(arr, d["c"]) : 1
+    props = _props_path(td, zp)
+    specs = resolved_display_specs(props, nc)
+    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+    # The rendered thumbnail size — read from the snapshot's `canvas` (the browser recorded it
+    # against a specific canvas so zoom + crop are consistent), else the viewState's canvas fields,
+    # else fall back to a compact 512×384 placeholder. The renderer's crop is derived from
+    # (center, zoom, canvas_h/w) so mismatched dimensions produce a wrong FoV; keeping this
+    # aligned with what the viewer emitted is important.
+    canvas_raw = get(vs_dict, :canvas, nothing)
+    canvas_raw isa AbstractDict || (canvas_raw = get(vs_dict, "canvas", nothing))
+    canvas_h = 384; canvas_w = 512
+    if canvas_raw isa AbstractDict
+        ch = get(canvas_raw, :height, get(canvas_raw, "height", nothing))
+        cw = get(canvas_raw, :width,  get(canvas_raw, "width",  nothing))
+        ch isa Real && ch > 0 && (canvas_h = Int(round(Float64(ch))))
+        cw isa Real && cw > 0 && (canvas_w = Int(round(Float64(cw))))
+    end
+    # Native H/W for the args resolver — every branch needs them.
+    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
+    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
+    (native_h == 0 || native_w == 0) &&
+        return 400, JSON3.write((; error = "image has no y/x axes"))
+    chan_names = try
+        img, ierr = _gating_image(pu, iu)
+        ierr === nothing ? something(channel_names(img; value_name = vnn), String[]) : String[]
+    catch; String[] end
+    args = try
+        viewstate_to_render_args(vs_dict, chan_names, specs, native_h, native_w;
+                                 canvas_h = canvas_h, canvas_w = canvas_w)
+    catch e
+        return 500, JSON3.write((; error = "viewState → args failed: $(sprint(showerror, e))"))
+    end
+    nT = haskey(d, "t") ? size(arr, d["t"]) : 1
+    t_clamped = clamp(Int(args.t), 0, nT - 1)
+    # 3D viewState (ndisplay = 3) needs the GPU rotation renderer, which isn't set up as a
+    # one-shot here. For MVP, thumbnails render the equivalent 2D slice (the plane the viewState
+    # was captured at) so a 3D animation still gets a keyframe strip — the movie itself will
+    # rotate via the animation record path.
+    frame = try
+        render_view_frame(arr, caxes, t_clamped;
+                          z = args.z, specs = args.specs, crop = args.crop)
+    catch e
+        return 500, JSON3.write((; error = "render failed: $(sprint(showerror, e))"))
+    end
+    tmp = tempname() * ".png"
+    try
+        PNGFiles.save(tmp, frame)
+        asset_id = _save_board_asset_file(pu, tmp)
+        h, w = size(frame)
+        return 200, JSON3.write((; ok = true, assetId = asset_id, imageUid = iu,
+                                    width = Int(w), height = Int(h)))
+    catch e
+        return 500, JSON3.write((; error = "png/save failed: $(sprint(showerror, e))"))
+    finally
+        isfile(tmp) && rm(tmp; force = true)
+    end
 end
