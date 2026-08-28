@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   atlasTextureSize, atlasVramBytes, atlasSlotCapacity,
-  validateAtlasLayout, pickAtlasLayout,
+  validateAtlasLayout, pickAtlasLayout, canReuseAtlas,
   type AtlasLayout, type DeviceLimits,
 } from './brickAtlas'
 
@@ -116,5 +116,30 @@ describe('pickAtlasLayout — real-world sizing', () => {
     expect(l!.atlasSlotCounts[0]).toBeLessThanOrEqual(2)   // 256 / 128 = 2 bricks per axis
     expect(l!.atlasSlotCounts[1]).toBeLessThanOrEqual(2)
     expect(validateAtlasLayout(l!, tight)).toBeNull()
+  })
+})
+
+describe('canReuseAtlas — the dtype-safety gate', () => {
+  const base: AtlasLayout = {
+    brickSizeVox: [128, 128, 4],
+    atlasSlotCounts: [8, 8, 1],
+    bytesPerVoxel: 1,
+    channelsPerBrick: 38,
+  }
+
+  it('reuses when every field matches', () => {
+    expect(canReuseAtlas(base, { ...base })).toBe(true)
+  })
+
+  // This is the whole reason the check exists — the flat atlas caught "byte length should be
+  // a multiple of 2" (#684) precisely because it skipped the dtype gate on reuse.
+  it('refuses reuse on a dtype change', () => {
+    expect(canReuseAtlas(base, { ...base, bytesPerVoxel: 2 })).toBe(false)
+  })
+
+  it('refuses reuse on any sizing change', () => {
+    expect(canReuseAtlas(base, { ...base, channelsPerBrick: 25 })).toBe(false)
+    expect(canReuseAtlas(base, { ...base, brickSizeVox: [64, 128, 4] })).toBe(false)
+    expect(canReuseAtlas(base, { ...base, atlasSlotCounts: [8, 8, 2] })).toBe(false)
   })
 })

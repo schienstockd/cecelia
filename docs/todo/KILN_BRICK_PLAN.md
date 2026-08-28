@@ -113,9 +113,15 @@ cecelia implementation". Unit-tested in matching `*.test.ts`. No wiring, no runt
 WebGPU-side wrapper (physical 3D texture allocation, `writeTexture`) lands in P2 as
 `frontend/src/lib/webgpu/brickAtlasTexture.ts`.
 
-**P2 — Rewrite texture format + channel model.** Fork Kiln's `r16float`/filterable path to
-`r16uint`/`r8uint` keyed on `bytesPerVoxel`, N-channel WGSL loop, `textureLoad` nearest. Reuse the
-`atlasBPV` reuse-check pattern from `tileRenderer.ts` (#684).
+**P2 — WebGPU brick atlas texture wrapper (allocation + brick write). ✓ scaffolded 2026-08-28.**
+`frontend/src/lib/webgpu/brickAtlasTexture.ts` — `createBrickAtlasTexture(device, layout, limits,
+onError?)` allocates the physical 3D texture at `r8uint | r16uint` keyed on `bytesPerVoxel` (same
+branch as #684), wraps `writeTexture` for a one-brick × all-channels payload from
+`/api/viewer/slab?cTo=nC-1` (Decision 7), routes one write per channel to `slot × brickZ × nC + c
+× brickZ` along Z (Decision 4), same OOM discipline as `volumeRenderer.ts`. Shader, bind group,
+and draw loop deferred to P4 alongside the 3D-halo scheduler — the physical texture has to exist
+and be writeable first. `canReuseAtlas` (in `brickAtlas.ts`, tested) is the dtype-safety gate
+that catches the #684 "byte length" trap on any layout change.
 
 **P3 — Wire the Julia provider.** Replace Kiln's stub loader with `fetch('/viewer/brick?...')`;
 brick cache key = `(t, brick_x, brick_y, brick_z, level)`; LRU with `tPenalty` mirroring

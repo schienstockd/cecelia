@@ -108,6 +108,28 @@ export function validateAtlasLayout(
  * Returns `null` if even a 1×1×1 slot atlas exceeds the budget (channelsPerBrick × brick volume
  * × bpv is bigger than the cap) — the caller then falls back to the flat-atlas path.
  */
+/**
+ * Does an existing atlas satisfy a new layout request? True only if EVERY sizing decision
+ * matches — brick shape, slot counts, dtype, channel count. Any mismatch (a level swap that
+ * changes the channel count, a store swap that changes bpv) forces a fresh atlas.
+ *
+ * Same reuse-check discipline as `tileRenderer.ts:298-301`, plus the dtype guard from #684 —
+ * the flat atlas caught a "byte length should be a multiple of 2" precisely because it
+ * skipped this check.
+ */
+export function canReuseAtlas(current: AtlasLayout, next: AtlasLayout): boolean {
+  return (
+    current.brickSizeVox[0] === next.brickSizeVox[0] &&
+    current.brickSizeVox[1] === next.brickSizeVox[1] &&
+    current.brickSizeVox[2] === next.brickSizeVox[2] &&
+    current.atlasSlotCounts[0] === next.atlasSlotCounts[0] &&
+    current.atlasSlotCounts[1] === next.atlasSlotCounts[1] &&
+    current.atlasSlotCounts[2] === next.atlasSlotCounts[2] &&
+    current.bytesPerVoxel === next.bytesPerVoxel &&
+    current.channelsPerBrick === next.channelsPerBrick
+  )
+}
+
 export function pickAtlasLayout(
   brickSizeVox: readonly [number, number, number],
   bytesPerVoxel: number,
