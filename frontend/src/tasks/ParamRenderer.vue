@@ -486,6 +486,20 @@ function removeGroupEntry(key: string) {
   val.value = v
 }
 
+// Copy an existing entry verbatim — the shortcut for "same again with one thing changed", which is
+// how a segmentation-model group is typically tuned. Deliberately bypasses `newEntryDefaults`: that
+// helper exists to make a FRESH entry start somewhere sensible for its position, but duplicate is an
+// explicit user request to reproduce THIS entry as-is (the user then edits the one or two things
+// they want different). New key is highest+1, same rule as `addGroupEntry`.
+function duplicateGroupEntry(key: string) {
+  const v = { ...((val.value ?? {}) as GroupValues) }
+  const src = v[key]
+  if (!src) return
+  const nextKey = String(Math.max(...groupEntries.value.map(e => Number(e.key))) + 1)
+  v[nextKey] = { ...src }
+  val.value = v
+}
+
 function updateGroupEntry(entryKey: string, paramKey: string, newVal: unknown) {
   const v = (val.value ?? {}) as GroupValues
   val.value = { ...v, [entryKey]: { ...(v[entryKey] ?? {}), [paramKey]: newVal } }
@@ -881,12 +895,23 @@ const pct = computed(() => {
              ? (entry.vals[param.labelKey] as string[])[0]
              : Number(entry.key) + 1 }}
         </span>
-        <button v-if="param.repeatable && groupEntries.length > 1"
-          class="group-remove-btn" type="button"
-          @click="removeGroupEntry(entry.key)"
-          v-tooltip.right="'Remove this entry'">
-          <i class="pi pi-times" />
-        </button>
+        <span class="group-entry-actions cc-row cc-row-tight">
+          <!-- Duplicate: shown for every entry (including a lone one), because the point is to copy
+               a tuned entry and tweak one or two params — a fresh add starts from `newEntryDefaults`,
+               which is not what "same again, but…" wants. -->
+          <button v-if="param.repeatable"
+            class="group-dup-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button"
+            @click="duplicateGroupEntry(entry.key)"
+            v-tooltip.right="'Duplicate this entry'">
+            <i class="pi pi-copy" />
+          </button>
+          <button v-if="param.repeatable && groupEntries.length > 1"
+            class="group-remove-btn" type="button"
+            @click="removeGroupEntry(entry.key)"
+            v-tooltip.right="'Remove this entry'">
+            <i class="pi pi-times" />
+          </button>
+        </span>
       </div>
       <div class="group-entry-body">
         <template v-for="p in param.params" :key="p.key">
@@ -1112,6 +1137,8 @@ const pct = computed(() => {
   transition: color 0.1s;
 }
 .group-remove-btn:hover { color: #f87171; }
+/* + cc-btn cc-btn-bare cc-btn-icon cc-btn-micro — accent tone on hover is the site-specific bit */
+.group-dup-btn:hover:not(:disabled) { color: var(--cc-accent); }
 .group-entry-body { padding: 0 0.4rem; }
 .group-entry-body .param-row:last-child { border-bottom: none; }
 
