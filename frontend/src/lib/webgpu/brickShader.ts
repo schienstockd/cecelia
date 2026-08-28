@@ -1,0 +1,184 @@
+// ── Brick-atlas raycast shader (P5b) ───────────────────────────────────────────────
+//
+// One full-screen triangle, one fragment per pixel, marches a ray through the box the same way
+// the flat renderer does. The DIFFERENCE is where a sample comes from: instead of one 3D texture
+// covering the whole volume, each sample looks its brick up in the page table, misses through
+// unmapped bricks (transparent — the tick loop will populate them), and reads the resident
+// bricks out of the atlas 3D texture.
+//
+// P5b scope: max-projection per channel + a fixed per-channel colour (rgb wheel). No LUT, no
+// labels, no overlays — those follow the same uniform block shape as `mipShader.ts` so P5d/P6
+// can graft them in without a second uniform buffer. Same VIEW_HALF_ANGLE and same camera basis
+// so the toggling between flat and brick renderers doesn't jump the framing.
+//
+// SEE `mipShader.ts` for the vertical-flip note (`up = cross(right, fwd)`, not the other way
+// round) — the same discipline applies here so the two renderers put row 0 at the top identically.
+
+import { VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
+
+/**
+ * Sentinel written into the page table for an unmapped brick. Matches `pageTable.ts`'s
+ * "not resident" convention on the JS side — a scheduler that resets an entry writes this. WGSL
+ * cannot express `0xFFFFFFFFu` as a `const` from a template literal cleanly so it's inlined at
+ * the two use sites.
+ */
+export const EMPTY_SLOT = 0xFFFFFFFF
+
+/**
+ * Uniform buffer size in bytes. Eight vec4s = 128 bytes — the smallest buffer WebGPU aligns to
+ * for a uniform binding. Kept small in P5b (no per-channel windows, no LUT header, no label
+ * fields) because those bindings arrive with the LUT + overlays in P5d.
+ */
+export const BRICK_UNIFORM_BYTES = 8 * 16
+
+/**
+ * Field offsets INTO the uniform buffer, in f32 slots (× 4 = bytes). Written out because getting
+ * one off-by-one shifts everything downstream — same discipline as `CH0` in `volumeRenderer.ts`.
+ */
+export const BU = {
+  CAM: 0,       // yaw, pitch, dist, steps
+  VP: 4,        // nch, canvasW, canvasH, ortho
+  EXT: 8,       // extX, extY, extZ, valueMax (max representable intensity, for normalisation)
+  DIMS: 12,     // nX, nY, nZ (L0 voxel count), unused
+  BRICK: 16,    // brickX, brickY, brickZ, channelsPerBrick
+  ATLAS: 20,    // atlasW, atlasH, atlasD (voxels), slotsX
+  GRID: 24,     // nBx, nBy, nBz (bricks per axis at L0), slotsY
+  PAN: 28,      // panX, panY, unused, unused
+}
+
+export const BRICK_WGSL = `
+struct BU {
+  cam:   vec4<f32>,  // yaw, pitch, dist, steps
+  vp:    vec4<f32>,  // nch, canvasW, canvasH, ortho
+  ext:   vec4<f32>,  // extX, extY, extZ, valueMax
+  dims:  vec4<f32>,  // nX, nY, nZ, _
+  brick: vec4<f32>,  // brickX, brickY, brickZ, channelsPerBrick
+  atlas: vec4<f32>,  // atlasW, atlasH, atlasD, slotsX
+  grid:  vec4<f32>,  // nBx, nBy, nBz, slotsY
+  pan:   vec4<f32>,  // panX, panY, _, _
+};
+@group(0) @binding(0) var<uniform> p: BU;
+// Page table: a flat u32 array over the L0 brick grid, indexed
+// (bz * nBy + by) * nBx + bx. Value = slot index in the atlas, or 0xFFFFFFFF for "not resident"
+// (the ray skips the sample when it lands there).
+@group(0) @binding(1) var<storage, read> pt: array<u32>;
+@group(0) @binding(2) var atlas: texture_3d<u32>;
+
+struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
+fn camera() -> Cam {
+  let cy = cos(p.cam.x); let sy = sin(p.cam.x);
+  let cp = cos(p.cam.y); let sp = sin(p.cam.y);
+  var c: Cam;
+  c.fwd = vec3(cp * sy, sp, cp * cy);
+  c.right = normalize(cross(vec3(0.0, 1.0, 0.0), c.fwd));
+  // Same vertical-flip discipline as mipShader.ts — cross(right, fwd), not cross(fwd, right).
+  c.up = cross(c.right, c.fwd);
+  c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y;
+  return c;
+}
+
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
+  var xy = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+  var o: VOut;
+  o.pos = vec4(xy[i], 0.0, 1.0);
+  o.uv = xy[i];
+  return o;
+}
+
+fn hitBox(ro: vec3<f32>, rd: vec3<f32>, h: vec3<f32>) -> vec2<f32> {
+  let inv = 1.0 / rd;
+  let a = min((-h - ro) * inv, (h - ro) * inv);
+  let b = max((-h - ro) * inv, (h - ro) * inv);
+  return vec2(max(max(a.x, a.y), a.z), min(min(b.x, b.y), b.z));
+}
+
+/**
+ * Sample the atlas for voxel index (vi, ch) at L0. Returns 0 for an out-of-box read (the ray
+ * marches past the sides deliberately, so this is common), and 0 for an unmapped brick — an
+ * unmapped brick is the "not loaded yet" state, and rendering it as zero means the visible
+ * region grows in as the fetch loop catches up rather than flashing chunks of colour.
+ */
+fn atlasSample(vi: vec3<i32>, ch: i32) -> u32 {
+  let nx = i32(p.dims.x); let ny = i32(p.dims.y); let nz = i32(p.dims.z);
+  if (vi.x < 0 || vi.y < 0 || vi.z < 0 || vi.x >= nx || vi.y >= ny || vi.z >= nz) { return 0u; }
+  let bxSize = i32(p.brick.x); let bySize = i32(p.brick.y); let bzSize = i32(p.brick.z);
+  let bx = vi.x / bxSize;
+  let by = vi.y / bySize;
+  let bz = vi.z / bzSize;
+  let nBx = i32(p.grid.x); let nBy = i32(p.grid.y); let nBz = i32(p.grid.z);
+  if (bx >= nBx || by >= nBy || bz >= nBz) { return 0u; }
+  let ptIdx = (bz * nBy + by) * nBx + bx;
+  let slot = pt[ptIdx];
+  if (slot == 0xFFFFFFFFu) { return 0u; }
+  let lx = vi.x - bx * bxSize;
+  let ly = vi.y - by * bySize;
+  let lz = vi.z - bz * bzSize;
+  let slotsX = i32(p.atlas.w);
+  let slotsY = i32(p.grid.w);
+  let s = i32(slot);
+  let sx = s % slotsX;
+  let sy = (s / slotsX) % slotsY;
+  let sz = s / (slotsX * slotsY);
+  let originX = sx * bxSize;
+  let originY = sy * bySize;
+  let nC = i32(p.brick.w);
+  let originZBase = sz * bzSize * nC;
+  return textureLoad(atlas,
+    vec3<i32>(originX + lx, originY + ly, originZBase + ch * bzSize + lz), 0).r;
+}
+
+/** Cheap per-channel colour so P5b renders SOMETHING before the LUT lands in P5d. Hue wheel
+ *  at golden-angle spacing, same idea as the label palette — a run of channels stays
+ *  distinguishable without a table. */
+fn chColour(c: i32) -> vec3<f32> {
+  let h = fract(f32(c) * 0.6180339887);
+  // HSV → RGB, s = 1, v = 1, hand-inlined so no branch on 'i32(h*6)' in the shader.
+  let r = abs(h * 6.0 - 3.0) - 1.0;
+  let g = 2.0 - abs(h * 6.0 - 2.0);
+  let b = 2.0 - abs(h * 6.0 - 4.0);
+  return clamp(vec3(r, g, b), vec3(0.0), vec3(1.0));
+}
+
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let h = p.ext.xyz * 0.5;
+  let c = camera();
+  let aspect = p.vp.y / max(p.vp.z, 1.0);
+
+  var org = c.ro;
+  var rd = -c.fwd;
+  if (p.vp.w > 0.5) {
+    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
+    org = c.ro + c.right * (in.uv.x * hh * aspect) + c.up * (in.uv.y * hh);
+  } else {
+    rd = normalize(-c.fwd + c.right * (in.uv.x * ${VIEW_HALF_ANGLE} * aspect)
+                         + c.up * (in.uv.y * ${VIEW_HALF_ANGLE}));
+  }
+
+  let t = hitBox(org, rd, h);
+  let t0 = max(t.x, 0.0);
+  if (t.y <= t0) { return vec4(0.0, 0.0, 0.0, 1.0); }
+
+  let n = i32(p.cam.w);
+  let dt = (t.y - t0) / f32(n);
+  let nch = i32(p.vp.x);
+  let valueMax = max(p.ext.w, 1.0);
+
+  var acc = vec3(0.0);
+  var mx = array<f32, 32>();
+  for (var s = 0; s < n; s = s + 1) {
+    let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
+    let uvw = (wp + h) / p.ext.xyz;
+    let vi = vec3<i32>(uvw * p.dims.xyz);
+    for (var ci = 0; ci < nch; ci = ci + 1) {
+      let v = f32(atlasSample(vi, ci));
+      mx[ci] = max(mx[ci], v);
+    }
+  }
+  for (var ci = 0; ci < nch; ci = ci + 1) {
+    let n01 = clamp(mx[ci] / valueMax, 0.0, 1.0);
+    acc = acc + chColour(ci) * n01;
+  }
+  return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`

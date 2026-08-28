@@ -38,8 +38,12 @@ import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
   createVolumeRenderer, WebGpuUnavailable,
+  // Kiln brick renderer (KILN_BRICK_PLAN.md P5) — dev-flagged via `?bricks=1`. Same interface
+  // as `createVolumeRenderer`; P5a's build is a proof-of-plumbing that clears the canvas
+  // magenta so a screenshot proves the swap works before the shader lands.
   type VolumeRenderer, type UniformState, type FrameSample,
 } from '../lib/webgpu/volumeRenderer'
+import { createBrickVolumeRenderer } from '../lib/webgpu/brickVolumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
@@ -94,6 +98,14 @@ const viewerStore = useViewerStore()
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
 /**
+ * `?bricks=1` — swap the flat-3D volume renderer for the brick-atlas one
+ * (`docs/todo/KILN_BRICK_PLAN.md`). URL-scoped rather than a setting so the two paths can be
+ * compared side-by-side by opening the same image in two windows. Read once on mount; the
+ * renderer swap on mid-session flip needs a full destroy/recreate and isn't worth the
+ * scaffolding for a dev-only flag.
+ */
+const bricksEnabled = String(route.query.bricks ?? '') === '1'
+/**
  * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
  * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
  * the URL was frozen when the popup opened; the bag is what the panel has said since.
@@ -105,16 +117,18 @@ const valueName = ref(
   settings.getImageVersion(imageUid) || String(route.query.valueName ?? ''),
 )
 /**
- * The image's SET, seeded by the viewer panel that opened this window.
+ * The image's SET and display name are both server-owned (`/api/viewer/meta`, 2026-08-28). The URL
+ * used to carry them so the pop-out had a title and per-set prefs before the first fetch; that
+ * grew the query to five keys, and the server always knew both, so the round trip became the one
+ * source. Both start empty and populate once `meta` resolves — one frame of window-local defaults
+ * for per-set prefs before the real values land, which is not perceptible next to the slab fetch.
  *
- * It exists so the two viewers agree. Point size, colour-by and which population type is shown are
- * per-SET preferences the napari viewer panel already owns (`settings.getPointSize` and friends), and
- * a second copy of them here would mean the same image looks different depending on which eye you
- * opened it in — the exact duplication this codebase keeps paying for. Absent (an older link, or a
- * window opened some other way) falls back to the window-local defaults rather than failing.
+ * Per-set preferences (point size, colour-by, which population type is shown) live in
+ * `settings.getPointSize` and friends, keyed on `setUid.value`. Empty setUid = a viewer opened
+ * without a set context (rare — export path) → window-local defaults, same fallback as before.
  */
-const setUid = String(route.query.set ?? '')
-const imageName = String(route.query.name ?? '')
+const setUid = computed(() => meta.value?.setUid ?? '')
+const imageName = computed(() => meta.value?.name ?? '')
 
 /**
  * A second click on a DIFFERENT image's eye — the main window opens the viewer with the same window
@@ -359,19 +373,19 @@ const trackSpeedRange = ref<[number, number] | null>(null)
  *  the storage bridge whenever the panel toggles the icon. */
 const popsPanelOn = computed(() => {
   const pt = gatingCurrent.value.popType || 'flow'
-  return setUid ? settings.getPopVisible(setUid, pt) : true
+  return setUid.value ? settings.getPopVisible(setUid.value, pt) : true
 })
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
 const trackColorMode = computed<'track' | 'speed' | 'solid'>({
-  get: () => setUid ? settings.getTrackColorMode(setUid) : 'track',
-  set: (v) => { if (setUid) settings.setTrackColorMode(setUid, v); rebuildOverlays() },
+  get: () => setUid.value ? settings.getTrackColorMode(setUid.value) : 'track',
+  set: (v) => { if (setUid.value) settings.setTrackColorMode(setUid.value, v); rebuildOverlays() },
 })
 /** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
  *  override is per set — a rare viewer opened without one just keeps the palette default. */
 function setTrackSourceColour(vn: string, hex: string) {
-  if (!setUid) return
-  settings.setTrackSourceColour(setUid, vn, hex)
+  if (!setUid.value) return
+  settings.setTrackSourceColour(setUid.value, vn, hex)
   rebuildOverlays()
 }
 /**
@@ -427,8 +441,8 @@ const hiddenPops = ref<Set<string>>(new Set())
  * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
  */
 const pointSize = computed({
-  get: () => (setUid ? settings.getPointSize(setUid) : settings.viewerPointSize),
-  set: (v: number) => setUid ? settings.setPointSize(setUid, v) : (settings.viewerPointSize = v),
+  get: () => (setUid.value ? settings.getPointSize(setUid.value) : settings.viewerPointSize),
+  set: (v: number) => setUid.value ? settings.setPointSize(setUid.value, v) : (settings.viewerPointSize = v),
 })
 /**
  * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
@@ -437,7 +451,7 @@ const pointSize = computed({
  * is a request for the server (the values come from disk), so a watch refetches the overlays.
  * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
-const colourBy = computed(() => setUid ? settings.getColourBy(setUid) : '')
+const colourBy = computed(() => setUid.value ? settings.getColourBy(setUid.value) : '')
 watch(colourBy, () => { void loadOverlays() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
@@ -849,9 +863,9 @@ function rebuildOverlays() {
   //   3. Trackclust ribbons — from `trackclustPayloads[popManagerVn]`, gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
-  const gatedOn = setUid ? settings.getShowGatedTracks(setUid) : false
-  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
-  const overrides = setUid ? settings.getTrackSourceColours(setUid) : {}
+  const gatedOn = setUid.value ? settings.getShowGatedTracks(setUid.value) : false
+  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
+  const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string }[] = []
   for (const [vn, payload] of trackPayloads.value.entries()) {
     sources.push({ vn, payload, colour: overrides[vn] })
@@ -927,7 +941,7 @@ async function loadOverlays() {
     // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
     // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
     const currentPopType = gatingCurrent.value.popType || 'flow'
-    const popTypeOn = setUid ? settings.getPopVisible(setUid, currentPopType) : true
+    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : true
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
@@ -982,7 +996,7 @@ async function loadTracks() {
   // when the panel's Trackclust master toggle is on. The pop manager's vn is where those pops are
   // authored, so a viewer with the pop manager on "A" and per-vn eyes elsewhere still lands the
   // trackclust ribbons on A. Cached in a Map<vn, payload> so switching vns keeps prior fetches.
-  const trackclustOn = setUid ? settings.getPopVisible(setUid, 'trackclust') : false
+  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const popMgrVn = gatingCurrent.value.valueName
   if (trackclustOn && popMgrVn) {
     // Refetch every call — `loadTracks` fires on `cc.viewerOverlaysTick`, which the pop manager
@@ -2196,11 +2210,20 @@ async function ensureRenderer() {
     } else {
       if (renderer.value) return
       if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
-      const r = await createVolumeRenderer(canvas.value!, msg => {
+      // `?bricks=1` swaps in the KILN_BRICK_PLAN P5 renderer instead of the flat volume one.
+      // Same interface, different backing — the caller doesn't branch, only the constructor
+      // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
+      // in P5b.
+      const construct = bricksEnabled ? createBrickVolumeRenderer : createVolumeRenderer
+      const r = await construct(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
+      // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
+      // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
+      // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
+      r.setNeedsRedraw?.(() => frame.redraw())
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
@@ -2276,6 +2299,9 @@ async function reallocate(refit = false) {
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
+    // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
+    // No-op on the flat renderer via the optional chain.
+    r.setBrickSource?.({ projectUid, imageUid, valueName: valueName.value || undefined })
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
@@ -2409,6 +2435,7 @@ async function loadVersion(refit: boolean) {
   // per-channel contrast surface or camera pose hooked into the sink today (VIEWER_TILES_PLAN.md →
   // open). Wrapped in `duringRestore` again so the autosave watchers below don't echo it back.
   const r = renderer.value
+  const tBeforeRestore = t.value
   if (r && saved) {
     propsSink.duringRestore(() => {
       applyViewState(saved, m, {
@@ -2426,6 +2453,12 @@ async function loadVersion(refit: boolean) {
       })
     })
     pushChannels()   // channel mutations landed on `m.channels` — push them to the LUT texture
+    // Reallocate's `gotoT` already fired for the PRE-restore t (usually 0). If the restore moved
+    // t (usually because the panel remembered a mid-timecourse frame), kick a fresh pump so the
+    // frame the user actually wants doesn't wait until they nudge a control. Without this, the
+    // still-overlay reads "Loading timepoint N…" forever — the fetches for 0..prefetch fired
+    // but the restored t never got its turn.
+    if (t.value !== tBeforeRestore) gotoT(t.value)
   }
   if (refit) { /* nothing more — fitDist already seeded, cam already fit */ }
   starting.value = ''
@@ -3148,7 +3181,8 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0"
+                :max="Math.max(chMax[c] ?? 1, ch.hi, initialContrast[c]?.hi ?? 1, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />

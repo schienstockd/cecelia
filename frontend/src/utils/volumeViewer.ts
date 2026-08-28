@@ -34,6 +34,13 @@ export interface ViewerMeta {
   nZ: number
   nX: number
   nY: number
+  /** Image display name — server-owned, used for the pop-out window title. Used to travel in the
+   *  URL as `name=…`; moved server-side so the URL only carries identity (project + image + vn). */
+  name?: string
+  /** UID of a set that contains this image — the context for per-set viewer prefs (contrast,
+   *  colour-by, point size). Empty when no set contains the image (rare — export path only).
+   *  Used to travel in the URL as `set=…`; moved server-side for the same reason as `name`. */
+  setUid?: string
   bytesPerVoxel: number
   slabBytes: number
   /**
@@ -103,6 +110,14 @@ export interface SlabQuery {
   valueName?: string
   t: number
   c: number
+  /**
+   * Last channel of a RANGE starting at `c`, inclusive — the brick-atlas viewer fetches all
+   * channels for one brick in ONE request (docs/todo/KILN_BRICK_PLAN.md → Decision 7). The
+   * server measurement showed nC=38 channels serial at 273 ms/brick vs. 7.9 ms batched, so this
+   * is not an optimisation — it is the difference between shippable and unshippable. Scalar `c`
+   * without `cTo` is the flat-atlas path, unchanged: the response shape stays `nz,ny,nx`.
+   */
+  cTo?: number
   /**
    * One z plane instead of the whole stack. This is the difference between a timecourse you can watch
    * and one you wait on: on `Dml3RG` (37 z, 4 ch, 181 t) a whole timepoint is 326 MB and ~400 ms of
@@ -192,6 +207,9 @@ export function slabUrl(q: SlabQuery): string {
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
   // server keeps the z dim). Never sent without `z`.
   if (q.z !== undefined && q.zTo !== undefined) p.set('zTo', String(q.zTo))
+  // `cTo` promotes `c` from one channel to a RANGE — the brick-atlas viewer's all-channels-per-
+  // brick request (KILN_BRICK_PLAN.md → Decision 7). Response shape grows to `nc,nz,ny,nx`.
+  if (q.cTo !== undefined) p.set('cTo', String(q.cTo))
   // XY tile bounds — omit `xTo`/`yTo` when absent, same shape as `z`/`zTo`. `level` is only sent when
   // non-zero, so the timecourse callers (which always want L0) produce byte-identical URLs.
   if (q.x !== undefined) p.set('x', String(q.x))
