@@ -559,7 +559,7 @@ export function orbitZoom(
  * up until it is coprime with the row length, which makes the walk cross every column.
  */
 export function contrastFromSlab(
-  v: Uint16Array, rowLength = 1, budget = 200_000,
+  v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000,
 ): { lo: number; hi: number; max: number } {
   const stride = sampleStride(v.length, rowLength, budget)
   const s: number[] = []
@@ -572,6 +572,21 @@ export function contrastFromSlab(
 }
 
 /**
+ * View a slab response body as its declared dtype. `bpv=1` (`|u1` on disk) needs a `Uint8Array`;
+ * `bpv=2` (`>u2` / `<u2`) needs `Uint16Array`. The distinction matters at both the correctness
+ * (`new Uint16Array(buf)` throws on odd byte length — hit on `35uedD` where a level's `nX` is odd)
+ * and the numerics level (a Uint16 view over uint8 bytes silently reads 2 pixels per value).
+ *
+ * bpv comes from the server's `X-Slab-Bpv` header / `meta.bytesPerVoxel`; anything else falls back
+ * to Uint16 to keep the pre-uint8 code path identical for callers that haven't opted in.
+ */
+export function slabView(
+  buf: ArrayBuffer, bpv: number,
+): Uint16Array | Uint8Array {
+  return bpv === 1 ? new Uint8Array(buf) : new Uint16Array(buf)
+}
+
+/**
  * Brightest voxel in the same strided subsample — no percentiles, so no sort, which is what makes it
  * cheap enough to run on EVERY timepoint instead of only the first.
  *
@@ -581,7 +596,7 @@ export function contrastFromSlab(
  * it's clipped". The AUTO window still comes from one timepoint (a window that chases each frame's own
  * distribution makes playback flicker — decision 5); it is only the RANGE that follows the data.
  */
-export function slabMax(v: Uint16Array, rowLength = 1, budget = 200_000): number {
+export function slabMax(v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000): number {
   const stride = sampleStride(v.length, rowLength, budget)
   let mx = 0
   for (let i = 0; i < v.length; i += stride) if (v[i] > mx) mx = v[i]

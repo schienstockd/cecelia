@@ -51,9 +51,13 @@ progress/cancel contract `record_timelapse` needs.
 1. **Delivery is server-assembled slabs, not client-side chunk assembly.** One request per (t, c)
    returning raw `uint16`, compression by HTTP `Content-Encoding`. Per-chunk HTTP measured 4.2x worse
    than the incumbent and plateaued from concurrency 8. Julia assembles; the browser decodes nothing.
-2. **`r16uint` 3D textures, channels stacked along z, `textureLoad` (nearest).** `r16uint` is not
-   filterable, and MIP does not need interpolation. Converting to `r16float` on the CPU costs 973 ms —
-   more than the entire read+decode — so if smooth sampling is ever wanted it happens on the GPU.
+2. **`r16uint` OR `r8uint` 3D textures, channels stacked along z, `textureLoad` (nearest).** Format
+   keys on the store's dtype (`meta.bytesPerVoxel`) — 8-bit Imaris exports (Manual IBEX) land as `|u1`
+   on disk and get `r8uint`; 16-bit sources stay `r16uint`. Both bind to `texture_3d<u32>` in WGSL
+   and are non-filterable, so MIP doesn't need interpolation either way. Converting to `r16float` on
+   the CPU costs 973 ms — more than the entire read+decode — so if smooth sampling is ever wanted
+   it happens on the GPU. **Wired in 2026-08-27 after `SispLk`/`35uedD` hit
+   `Uint16Array should be a multiple of 2` on a uint8 store with odd `nX`.**
 3. **`powerPreference: 'high-performance'` is mandatory, and verified from `limits`.**
    `requestAdapter({})` returns the integrated GPU, and Firefox blanks every `adapter.info` field.
    Assert `maxTextureDimension3D > 2048` and surface it if not — the browser-side twin of the PRIME
