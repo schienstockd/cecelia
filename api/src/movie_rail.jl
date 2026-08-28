@@ -59,6 +59,35 @@ _cfg_bool(cfg, k, default::Bool = false) = Bool(_cfg_get(cfg, k, default))
 _cfg_str(cfg, k, default::AbstractString = "") = String(_cfg_get(cfg, k, default))
 _cfg_int(cfg, k, default::Int) = (v = _cfg_get(cfg, k, default); v isa Integer ? Int(v) : Int(round(Float64(v))))
 
+# ── Apply the batch/`look` channel picks on top of the props-derived specs ───────
+#
+# `resolved_display_specs(props, nc)` reads whatever colormap the viewer autosaved for the image;
+# a batch config / single-record `look` carries the user's PICKS ({name → colormap}) — the offline
+# counterpart of `_apply_movie_config!` (napari_api.jl). Without this override, a compare grid
+# across versions rendered whatever colours the props file happened to carry, ignoring the picker
+# on the batch panel (reported by Dominik).
+#
+# Same rule napari uses: a channel named in `cfg.channels` gets its picked colormap and is visible;
+# every other channel is hidden. lo/hi stay from the props, so contrast is still whatever the viewer
+# measured. `cfg` without `channels` → specs unchanged (channels-only movie the recorder would
+# render before this override existed).
+function _apply_channel_picks(specs, cfg, img, vnn::Union{Nothing,AbstractString})
+    (specs === nothing) && return specs
+    chans = cfg isa AbstractDict ? get(cfg, :channels, get(cfg, "channels", nothing)) : nothing
+    (chans isa AbstractDict && !isempty(chans)) || return specs
+    wanted = Dict(String(k) => String(v) for (k, v) in pairs(chans))
+    ch_all = channel_names(img; value_name = vnn)
+    (ch_all === nothing || length(ch_all) != length(specs)) && return specs
+    [begin
+        s = specs[i]; ch = ch_all[i]
+        if haskey(wanted, ch)
+            (; lo = s.lo, hi = s.hi, lut = _as_lut(wanted[ch]), visible = true)
+        else
+            (; lo = s.lo, hi = s.hi, lut = s.lut,             visible = false)
+        end
+     end for i in eachindex(specs)]
+end
+
 # ── Config → `overlays_raw` translator (batch config + viewer `look`) ─────────────
 #
 # The record request the frontend sends today does not carry the smoke-route-shaped `overlays: {popType,
@@ -161,6 +190,9 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         _overlays_raw_from_config(look_cfg, has_mask)
     end
     vnn = isempty(value_name) ? nothing : String(value_name)
+    # Apply the batch/`look` channel picks on top of the props-derived specs — same override the
+    # compare grid uses (see `_apply_channel_picks`).
+    specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
                                        z = z_slice, crop = nothing, max_px = max_px, tally = false)
@@ -346,6 +378,9 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                        label_vn === nothing ? vnn : label_vn;
                                                        z = z_slice, crop = nothing, max_px = max_px,
                                                        tally = false)
+                    # Apply the batch config's channel picks on top of the props-derived specs —
+                    # same override the compare grid + single record use.
+                    specs = _apply_channel_picks(specs, config, img, vnn)
                     # Per-image encoder progress is deliberately dropped from the rail — the batch's
                     # bar counts IMAGES. Cancel flows via `job_cancelled` regardless.
                     px_i, tsm_i = img_physical_sizes(img)
@@ -441,9 +476,12 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn)
     frame[5] === nothing || throw(ArgumentError(String(frame[5])))
     zp, arr, caxes, specs, _ = frame
+    picked_specs = _apply_channel_picks(specs, cfg, img, isempty(vn) ? nothing : vn)
     # If sharing, column 1 dictates the contrast for later columns (D4 of MOVIE_COMPARE_PLAN.md).
     # `first_specs === nothing` means we ARE column 1 or the first cell to be resolved — bank ours.
-    effective_specs = (share_contrast && first_specs !== nothing) ? first_specs : specs
+    # Sharing carries the colour LUT too, so a picked colormap on col 1 doesn't get re-derived per
+    # column from each version's props file.
+    effective_specs = (share_contrast && first_specs !== nothing) ? first_specs : picked_specs
     lvns_raw = get(cfg, :labelValueNames, nothing)
     label_vn = if lvns_raw isa AbstractVector && !isempty(lvns_raw)
         String(first(lvns_raw))
@@ -460,7 +498,7 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc,
-       banked_specs = specs)
+       banked_specs = picked_specs)
 end
 
 # The compare-grid renderer. `rows` is what `_compare_grid` produced (versions across, masks down; a
