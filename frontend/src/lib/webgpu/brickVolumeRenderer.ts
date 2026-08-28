@@ -112,6 +112,10 @@ export async function createBrickVolumeRenderer(
   let testPattern = false
   let currentMeta: ViewerMeta | null = null
   let currentZDepth = 1
+  /** First store z-plane the viewer is looking at — 0 in an uncropped volume, `zPlane` in plane
+   *  mode, `zRange[0]` in a cropped volume. The brick fetch URL adds this to each brick's `bz *
+   *  brickZ` so plane mode sees the user's plane rather than plane 0 of the store. */
+  let currentZLo = 0
   let boundT = 0
   let source: BrickSource | null = null
   /** In-flight fetches keyed by brick key — the scheduler can name the same brick on consecutive
@@ -157,12 +161,13 @@ export async function createBrickVolumeRenderer(
   }
 
   const setImage = (
-    meta: ViewerMeta, budgetBytes: number, zDepth?: number, _zLo?: number,
+    meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number,
     _withLabels?: boolean, _renderNX?: number, _renderNY?: number,
   ): void => {
     currentMeta = meta
     const zd = zDepth ?? meta.nZ
     currentZDepth = zd
+    currentZLo = Math.max(0, Math.floor(zLo ?? 0))
     const [ex, ey, ez] = extentUm(meta, zd)
     uniform.ext = [ex, ey, ez]
 
@@ -249,7 +254,7 @@ export async function createBrickVolumeRenderer(
     const key = brickKey(brick)
     if (inflight.has(key)) return
     const layout = atlas.layout
-    const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox)
+    const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     console.debug('[bricks] fetch →', key, url)
     const ac = new AbortController()
     inflight.set(key, ac)

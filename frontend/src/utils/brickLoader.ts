@@ -75,6 +75,7 @@ export function brickSlabQuery(
   brick: VirtualBrick,
   nC: number,
   brickSizeVox: readonly [number, number, number],
+  zOffset: number = 0,
 ): SlabQuery {
   const b = brickBounds(brick, brickSizeVox)
   return {
@@ -89,8 +90,12 @@ export function brickSlabQuery(
     xTo: b.xHi,
     y: b.yLo,
     yTo: b.yHi,
-    z: b.zLo,
-    zTo: b.zHi,
+    // zOffset is the FIRST plane the viewer is looking at — 0 in an uncropped volume view, but
+    // in plane mode it's the currently-shown plane (`zPlane.value`), and in a cropped 3D view
+    // it's `zRange[0]`. The brick's `bz` is relative to that origin, so a brick at bz=0 with
+    // brickZ=1 in plane mode fetches ONE plane, the user's plane — not plane 0 of the store.
+    z: b.zLo + zOffset,
+    zTo: b.zHi + zOffset,
     level: brick.level,
   }
 }
@@ -100,8 +105,9 @@ export function brickSlabUrl(
   brick: VirtualBrick,
   nC: number,
   brickSizeVox: readonly [number, number, number],
+  zOffset: number = 0,
 ): string {
-  return slabUrl(brickSlabQuery(base, brick, nC, brickSizeVox))
+  return slabUrl(brickSlabQuery(base, brick, nC, brickSizeVox, zOffset))
 }
 
 /**
