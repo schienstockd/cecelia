@@ -460,14 +460,18 @@ _ov_strvec(cfg, k) = begin
 end
 
 # Build 2D + 3D overlay closures upfront from the animation's overlay context. Missing `img` (no
-# segmentation) OR no draw-request flags → return (nothing, nothing) so the render loop treats
-# every state as channels-only.
+# segmentation) OR no draw-request flags → return (nothing, nothing, nothing) so the render loop
+# treats every state as channels-only. Third slot is a 2D mask factory — used by the CPU per-frame
+# branch to draw labels-contour outlines alongside points/segments. 3D animations skip masks (a
+# 2D contour on a z-plane doesn't project naturally onto a MIP; documented as a known gap in the
+# PR body).
 function _resolve_keyframe_overlay_builders(img, overlays_config)
-    (img === nothing || overlays_config === nothing) && return (nothing, nothing)
+    (img === nothing || overlays_config === nothing) && return (nothing, nothing, nothing)
     show_pops   = _ov_bool(overlays_config, "showPopulations", false)
     show_tracks = _ov_bool(overlays_config, "showTracks",      false)
     show_gated  = _ov_bool(overlays_config, "showGatedTracks", false)
-    (show_pops || show_tracks || show_gated) || return (nothing, nothing)
+    show_mask   = _ov_bool(overlays_config, "showMask",        false)
+    (show_pops || show_tracks || show_gated || show_mask) || return (nothing, nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
     isempty(vn) && return (nothing, nothing)
@@ -511,7 +515,30 @@ function _resolve_keyframe_overlay_builders(img, overlays_config)
                                     track_color_mode = tcm,
                                     colour_by = colour_by,
                                     colour_overrides = colour_overrides)
-    (_build2d, per_t3d)
+
+    # Mask factory — mirrors `_build2d`. Same three axes per frame (crop, max_px, z) drive
+    # `build_mask_for`; skipped when the config didn't ask for a mask, so an animation that
+    # only wants points/tracks pays nothing extra.
+    _build_mask = nothing
+    if show_mask
+        all_cells    = _ov_bool(overlays_config, "allCells", false)
+        all_cells_col = _ov_str(overlays_config, "allCellsColour", "#9ca3af")
+        _build_mask = (native_h, native_w, crop, max_px, z) -> begin
+            tf = pixel_transform(native_h, native_w; crop = crop, max_px = max_px)
+            try
+                build_mask_for(img; value_name = vn, pop_type = pt, transform = tf,
+                                pops_filter = pops_filter, z = z,
+                                all_cells = all_cells,
+                                all_cells_colour = all_cells_col,
+                                colour_by = colour_by,
+                                colour_overrides = colour_overrides)
+            catch e
+                @warn "keyframes mask author failed" value_name = vn pop_type = pt exception = e
+                nothing
+            end
+        end
+    end
+    (_build2d, per_t3d, _build_mask)
 end
 
 # Compute the same `world_per_px` scale the volume raycast uses so overlays project onto the same
@@ -672,11 +699,13 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
 
     # Overlay authors — one build per animation (not per frame). `build2d` needs the per-frame
     # crop/max_px, so we curry it here and pass the crop into every 2D frame; `per_t3d` is one
-    # closure the 3D emitter calls with each frame's t.
-    build2d, per_t3d = _resolve_keyframe_overlay_builders(img, overlays_config)
+    # closure the 3D emitter calls with each frame's t. `build_mask` is the 2D-only mask factory
+    # (labels contour on the CPU per-frame path) — 3D animations skip it.
+    build2d, per_t3d, build_mask = _resolve_keyframe_overlay_builders(img, overlays_config)
     ov_tail = overlays_config === nothing ? 30 : _ov_int(overlays_config, "tailLength", 30)
     ov_psz  = overlays_config === nothing ? 6  : _ov_int(overlays_config, "pointSizePx", 6)
     ov_sw   = overlays_config === nothing ? 2  : _ov_int(overlays_config, "segmentWidthPx", 2)
+    ov_mcw  = overlays_config === nothing ? 1  : _ov_int(overlays_config, "maskContourPx", 1)
 
     # ── GPU 3D path — hand off the whole animation to `writers/render_animation_run.py` ──
     if is_3d
@@ -784,16 +813,24 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                     # 2D per-frame overlay: build a fresh author bound to THIS frame's crop (a
                     # camera pan changes the crop from frame to frame). No overlays_config → the
                     # closure is `nothing` and `render_view_frame`'s `points`/`segments` kwargs
-                    # stay unset, matching the pre-overlay behaviour.
+                    # stay unset, matching the pre-overlay behaviour. Same story for the mask
+                    # closure — off unless `showMask` was in the config.
                     pts_2d = nothing; segs_2d = nothing
                     if build2d !== nothing
                         per_t2d = build2d(native_h, native_w, args.crop, 0)
                         pts_2d, segs_2d = per_t2d(Int(t_clamped))
                     end
+                    mask_2d = nothing; mask_cols = nothing
+                    if build_mask !== nothing
+                        per_t_mask = build_mask(native_h, native_w, args.crop, 0, args.z)
+                        per_t_mask === nothing || ((mask_2d, mask_cols) = per_t_mask(Int(t_clamped)))
+                    end
                     render_view_frame(arr, caxes, Int(t_clamped);
                                        z = args.z, specs = args.specs, crop = args.crop,
                                        points = pts_2d, point_size_px = ov_psz,
-                                       segments = segs_2d, segment_width_px = ov_sw)
+                                       segments = segs_2d, segment_width_px = ov_sw,
+                                       mask = mask_2d, mask_colours = mask_cols,
+                                       mask_contour_px = ov_mcw)
                 end
                 h, w = size(img)
                 img = img[1:(h - h % 2), 1:(w - w % 2)]
