@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildViewState } from './viewState'
+import { buildViewState, applyViewStateToBrowser } from './viewState'
 import type { ViewerMeta, OrbitCamera } from '../volumeViewer'
 
 // A minimal meta for a hypothetical 512x512x10, 2-channel image with 0.5 µm voxels.
@@ -83,5 +83,63 @@ describe('buildViewState', () => {
       canvasW: 640, canvasH: 480, viewHalfAngle: VIEW_HALF_ANGLE,
     })
     expect(vs.canvas).toEqual({ width: 640, height: 480 })
+  })
+})
+
+describe('applyViewStateToBrowser (round-trip)', () => {
+  // The forward + reverse mappings live next to each other so they can't drift silently. Round-
+  // trip a non-trivial 2D state and check every scalar comes back to itself; a broken sign here
+  // = keyframe restoration drifts by a pan every time it's clicked.
+  it('round-trips a 2D pan / zoom / t / z / channels', () => {
+    const startCam = { yaw: 0, pitch: 0, dist: 800, panX: 42, panY: -17 } as OrbitCamera
+    const vs = buildViewState({
+      cam: startCam, meta: fakeMeta(), t: 3, zPlane: 4, ndisplay: 2,
+      canvasW: 600, canvasH: 400, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    const applied = applyViewStateToBrowser({
+      vs, meta: fakeMeta(), currentCam: fakeCam(), canvasH: 400,
+      viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    expect(applied.cam.panX).toBeCloseTo(startCam.panX, 5)
+    expect(applied.cam.panY).toBeCloseTo(startCam.panY, 5)
+    expect(applied.cam.dist).toBeCloseTo(startCam.dist, 4)
+    expect(applied.t).toBe(3)
+    expect(applied.zPlane).toBe(4)
+    expect(applied.ndisplay).toBe(2)
+    expect(applied.channels.map(c => `${c.name}|${c.lo}|${c.hi}|${c.visible}`))
+      .toEqual(['DAPI|100|800|true', 'CD3|200|900|false'])
+  })
+
+  it('round-trips a 3D yaw + pitch', () => {
+    const startCam = { yaw: Math.PI / 3, pitch: -Math.PI / 8, dist: 1200, panX: 0, panY: 0 } as OrbitCamera
+    const vs = buildViewState({
+      cam: startCam, meta: fakeMeta(), t: 0, zPlane: 0, ndisplay: 3,
+      canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    const applied = applyViewStateToBrowser({
+      vs, meta: fakeMeta(), currentCam: fakeCam(), canvasH: 512,
+      viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    expect(applied.cam.yaw).toBeCloseTo(startCam.yaw, 5)
+    expect(applied.cam.pitch).toBeCloseTo(startCam.pitch, 5)
+    expect(applied.ndisplay).toBe(3)
+  })
+
+  it('keeps CURRENT channel state when the snapshot has no matching layer', () => {
+    const vs = buildViewState({
+      cam: fakeCam(), meta: fakeMeta(), t: 0, zPlane: 0, ndisplay: 2,
+      canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    // Remove one layer from the snapshot — simulating a keyframe captured before that channel
+    // existed. The applier must fall back to what the CURRENT viewer already shows.
+    delete (vs.layers as Record<string, unknown>).CD3
+    const applied = applyViewStateToBrowser({
+      vs, meta: fakeMeta(), currentCam: fakeCam(), canvasH: 512,
+      viewHalfAngle: VIEW_HALF_ANGLE,
+    })
+    const cd3 = applied.channels.find(c => c.name === 'CD3')
+    expect(cd3?.lo).toBe(200)         // untouched, from meta
+    expect(cd3?.hi).toBe(900)
+    expect(cd3?.visible).toBe(false)
   })
 })

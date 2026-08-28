@@ -33,7 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
-import { buildViewState } from '../utils/viewer/viewState'
+import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -2514,6 +2514,44 @@ watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
       () => publishViewStateSink.schedule(undefined))
 watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
       () => publishViewStateSink.schedule(undefined))
+
+// ── Consume a pending viewState from the AnimationPanel ──────────────────────
+// AnimationPanel writes a `PendingViewState` when the user clicks a keyframe (Sync napari on) or
+// toggles Sync while a keyframe is selected. We convert the napari-shaped snapshot back to the
+// orbit-camera form via the SAME `applyViewStateToBrowser` reader the unit tests exercise, then
+// apply — mutating cam / t / zPlane / mode / channels in place so the existing renderer paths
+// (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
+// the publisher immediately re-emits from the applied state, which is exactly what the user
+// wants (the animation page's next capture would see the new state anyway).
+watch(() => viewerStore.pendingViewState?.updateId, () => {
+  const pending = viewerStore.pendingViewState
+  if (!pending) return
+  const vs = pending.viewState as ViewerViewState | null
+  if (!vs) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) return
+  const canvasH = Math.max(1, c.clientHeight)
+  const applied = applyViewStateToBrowser({
+    vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+  })
+  cam.value = applied.cam
+  // t / zPlane / mode drive re-render through their existing watches; setting them here mirrors
+  // the same paths the sliders take.
+  t.value      = applied.t
+  zPlane.value = applied.zPlane
+  mode.value   = applied.ndisplay === 3 ? 'volume' : 'plane'
+  // Per-channel state: mutate meta.channels in place so the existing pushChannels path picks up
+  // the change — matching how the debug channel-toggle and contrast sliders write.
+  for (const src of applied.channels) {
+    const dst = m.channels.find(ch => ch.name === src.name)
+    if (!dst) continue
+    dst.lo = src.lo
+    dst.hi = src.hi
+    dst.visible = src.visible
+  }
+  pushChannels()
+})
 
 // Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
 // same route as the pixels: the meta response is the one authoritative resolution of an image

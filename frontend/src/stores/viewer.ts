@@ -30,11 +30,12 @@ export interface OpenImage {
   taskDir: string
 }
 
-const K_OPEN_IMAGE     = 'cc.viewer.openImage'
-const K_VISIBLE_REGION = 'cc.viewer.visibleRegion'
-const K_VIEW_STATE     = 'cc.viewer.viewState'
-const K_PREVIEW_LABELS = 'cc.viewer.previewLabels'
-const K_PREVIEW_IMAGES = 'cc.viewer.previewImages'
+const K_OPEN_IMAGE       = 'cc.viewer.openImage'
+const K_VISIBLE_REGION   = 'cc.viewer.visibleRegion'
+const K_VIEW_STATE       = 'cc.viewer.viewState'
+const K_PENDING_VIEW     = 'cc.viewer.pendingViewState'
+const K_PREVIEW_LABELS   = 'cc.viewer.previewLabels'
+const K_PREVIEW_IMAGES   = 'cc.viewer.previewImages'
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -50,6 +51,19 @@ export interface PreviewLabels {
   valueName: string
   imageUid: string
   projectUid: string
+  updateId: number
+}
+
+/** A viewState the AnimationPanel wants the browser viewer to apply — the OTHER direction of the
+ *  bridge. AnimationPanel calls `setPendingViewState(vs)` when the user clicks a keyframe with
+ *  "sync viewer" on, or when they toggle sync on and want the selected keyframe to appear. The
+ *  ViewerWindow watches this ref; on change it converts back to the orbit-camera form and applies.
+ *
+ *  Stamped with `updateId` — same reason as `PreviewLabels`: identical repeat writes across
+ *  localStorage return the same JSON and DON'T fire the `storage` event, so a keyframe re-clicked
+ *  never wakes the popup viewer. Stamping guarantees the value differs each set. */
+export interface PendingViewState {
+  viewState: unknown       // opaque `ViewerViewState` object; the ViewerWindow parses it
   updateId: number
 }
 
@@ -90,9 +104,14 @@ export const useViewerStore = defineStore('viewer', () => {
   // state, not `null` until the next pan.
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
-  const viewState     = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
-  const previewLabels = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
-  const previewImages = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
+  const viewState        = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
+  // Not seeded from localStorage — a pending is a one-shot APPLY; a reload that surfaced the old
+  // pending would silently re-move the camera on window open. Seed keeps `null` so a stale write
+  // never fires. Actual pending values arrive through the setter (main window) or the storage
+  // event (popup viewer).
+  const pendingViewState = ref<PendingViewState | null>(null)
+  const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
+  const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
 
   /** ViewerWindow calls this when the image changes (route load, valueName picker). */
   function setOpenImage(next: OpenImage | null) {
@@ -115,6 +134,16 @@ export const useViewerStore = defineStore('viewer', () => {
   function setViewState(next: ViewerViewState | null) {
     viewState.value = next
     _writeJson(K_VIEW_STATE, next)
+  }
+
+  /** AnimationPanel calls this to ask the ViewerWindow to jump to a captured keyframe. Stamped
+   *  with a monotonic `updateId` so a re-click of the same keyframe fires the storage event
+   *  (identical writes are suppressed — see `PendingViewState`). ViewerWindow watches
+   *  `pendingViewState`, applies, and does not clear — the value is a signal, not a queue. */
+  function setPendingViewState(vs: ViewerViewState | null) {
+    const stamped: PendingViewState | null = vs ? { viewState: vs, updateId: ++_updateIdSeq } : null
+    pendingViewState.value = stamped
+    _writeJson(K_PENDING_VIEW, stamped)
   }
 
   /** taskPreview calls this after a run: `next` non-null flips the viewer window's labels slab
@@ -154,6 +183,8 @@ export const useViewerStore = defineStore('viewer', () => {
         visibleRegion.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_VIEW_STATE) {
         viewState.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_PENDING_VIEW) {
+        pendingViewState.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_LABELS) {
         previewLabels.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_IMAGES) {
@@ -162,8 +193,9 @@ export const useViewerStore = defineStore('viewer', () => {
     })
   }
 
-  return { openImage, visibleRegion, viewState, previewLabels, previewImages,
-           setOpenImage, setVisibleRegion, setViewState, setPreviewLabels, setPreviewImages }
+  return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
+           setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
+           setPreviewLabels, setPreviewImages }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))

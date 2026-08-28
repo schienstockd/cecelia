@@ -14,7 +14,8 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import { useAnimationStore, type AnimSnapshot } from '../../stores/animation'
-import { applyViewState } from '../../utils/napariOverlays'
+import { useViewerStore } from '../../stores/viewer'
+import type { ViewerViewState } from '../../utils/viewer/viewState'
 import { napariColormapHex } from '../../utils/napariColormap'
 import { framesFor, layersOf, channelRows, popRows, cellState, cellToggle, cameraZoom, isEdited,
          keyframeTime, type Layers } from '../../utils/animationTimeline'
@@ -27,6 +28,7 @@ const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
 const settings = useSettingsStore()
 const anim = useAnimationStore()
+const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const image = computed(() => (props.imageUid ? project.imageByUid(props.imageUid) : null))
@@ -39,12 +41,15 @@ const assetUrl = (s: AnimSnapshot) =>
 const frameTime = (s: AnimSnapshot) =>
   keyframeTime(s, image.value?.timeIncrement, image.value?.timeIncrementUnit)
 
-// select a keyframe; with Sync on, push its saved view into napari so you SEE that snapshot (and can
-// then tweak it there and Update). `applyViewState` is the shared builder — it swallows a network
-// error, so a napari that isn't running is a no-op, not a failure.
+// select a keyframe; with Sync on, push its saved view into the browser viewer so you SEE that
+// snapshot (and can then tweak it there and Update). Writes to the store's `pendingViewState`
+// bridge — ViewerWindow watches, applies through `applyViewStateToBrowser`. A closed viewer is a
+// no-op by construction (nothing consumes the pending), not a failure.
 function selectKeyframe(s: AnimSnapshot) {
   anim.selectedId = s.id
-  if (settings.animationSyncNapari && s.snapshot) applyViewState(s.snapshot)
+  if (settings.animationSyncNapari && s.snapshot) {
+    viewer.setPendingViewState(s.snapshot as unknown as ViewerViewState)
+  }
 }
 
 // ── drag-to-reorder ───────────────────────────────────────────────────────────

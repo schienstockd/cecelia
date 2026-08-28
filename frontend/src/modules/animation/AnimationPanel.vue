@@ -16,14 +16,16 @@ import { useAnimationStore, type AnimSnapshot } from '../../stores/animation'
 import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
-import { buildTitleCard, unionViewSnapshot, applyViewState, type TitleCardPayload } from '../../utils/napariOverlays'
+import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../../utils/napariOverlays'
 import { framesFor, activeAnimationUid } from '../../utils/animationTimeline'
 import { movieSizeParams } from '../../utils/movieSize'
 import { seedConfigFromViewState, type ViewStateLike } from '../../utils/batchMovie'
+import { useViewerStore } from '../../stores/viewer'
+import type { ViewerViewState } from '../../utils/viewer/viewState'
+import { openViewerWindow } from '../../utils/viewerWindow'
 import { keyframeRestore, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import { useNapariStatus } from '../../composables/useNapariStatus'
-import { useNapariOpen } from '../../composables/useNapariOpen'
 import { usePaneExpand } from '../../composables/usePaneExpand'
 import CcToggle from '../../components/CcToggle.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
@@ -47,47 +49,83 @@ const anim = useAnimationStore()
 const tasks = useTaskStore()
 const ws = useWsStore()
 const log = useLogStore()
-// the canvas size napari would record at, for the size fields' placeholder (shared poll)
+// the canvas size napari would record at, for the size fields' placeholder (shared poll). Napari is
+// still consulted here purely as the movie-output-size default; when napari is off the placeholder
+// is empty and the user types explicit sizes — a soft dependency, not a blocker.
 const { canvasSizeX, canvasSizeY } = useNapariStatus()
-const { openInNapari } = useNapariOpen()
+const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
-// The image this page is working on: the table's selection, falling back to whatever napari has open.
-const activeUid = computed(() => activeAnimationUid(props.selectedUids, project.napariImageUid))
+// The image this page is working on: the table's selection, falling back to whatever the browser
+// viewer has open (was napari — routed through `openImage` so a viewer-driven capture works even
+// when napari isn't running).
+const openViewerUid = computed(() => viewer.openImage?.imageUid ?? '')
+const activeUid = computed(() => activeAnimationUid(props.selectedUids, openViewerUid.value))
 const activeImage = computed(() => (activeUid.value ? project.imageByUid(activeUid.value) : null))
 const imageName = (uid: string) => project.imageByUid(uid)?.name ?? uid
 const frames = computed(() => framesFor(anim.snapshots, activeUid.value))
 const selected = computed(() => frames.value.find(f => f.id === anim.selectedId) ?? null)
 
-// Capture screenshots the LIVE viewer, so the page's image has to be the one napari is showing. The
-// table's eye opens it; this button is the same call, within reach of the controls that need it.
-const isOpen = computed(() => !!activeUid.value && activeUid.value === project.napariImageUid)
+// Capture reads the LIVE viewer — the browser volume viewer publishes its state into
+// `viewerStore.viewState` on every pan/zoom/z/t/channel change, so this reflects what the user is
+// looking at. `isOpen` becomes: the browser viewer has THIS image on screen. Napari is no longer
+// on the capture path.
+const isOpen = computed(() => !!activeUid.value && viewer.openImage?.imageUid === activeUid.value)
 const opening = ref(false)
-async function openActive() {
+function openActive() {
   const setUid = props.setUid ?? (activeUid.value ? project.setUidOfImage(activeUid.value) : null)
   if (!activeUid.value || !setUid || opening.value) return
   opening.value = true
-  try { await openInNapari(activeUid.value, setUid) } finally { opening.value = false }
+  // Popout is synchronous once its URL is built; the flag exists so the button spinner has a
+  // frame to render before the popup opens.
+  try {
+    openViewerWindow({ projectUid: projectUid.value, imageUid: activeUid.value,
+                       setUid, name: activeImage.value?.name })
+  } finally { opening.value = false }
 }
 
 const capturing = ref(false)
 const updating = ref(false)
 const rendering = ref(false)
 
-/** One screenshot of the live viewer → the sidecar PNG id + the view state behind it. */
-async function screenshot(what: string) {
-  const res = await fetch('/api/napari/screenshot', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid: projectUid.value }),
-  })
-  if (!res.ok) {
-    log.error(`${what} failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'napari' })
+/** Capture the current browser-viewer state → { assetId, viewState, imageUid }. Reads viewState
+ *  from the store (the popup viewer publishes it) and asks the API to render a still through the
+ *  same code path the movie renderer uses — see `POST /api/viewer/thumbnail`. Returns null on any
+ *  failure (an error is logged; the caller aborts). */
+async function screenshot(what: string): Promise<{ assetId?: string; viewState?: Record<string, unknown>; imageUid?: string } | null> {
+  const vs = viewer.viewState
+  const uid = activeUid.value
+  if (!vs || !uid || !projectUid.value) {
+    log.error(`${what} failed: no viewer state to read — open the image in the viewer first`, { source: 'movies' })
     return null
   }
-  return (await res.json()) as { assetId?: string; viewState?: Record<string, unknown>; imageUid?: string }
+  try {
+    const res = await fetch('/api/viewer/thumbnail', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: projectUid.value, imageUid: uid,
+        valueName: activeImage.value?.activeValueName, viewState: vs,
+      }),
+    })
+    if (!res.ok) {
+      log.error(`${what} failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'movies' })
+      return null
+    }
+    const j = (await res.json()) as { assetId?: string; imageUid?: string }
+    // Freeze a deep clone of the viewer state HERE so a subsequent viewer edit doesn't mutate the
+    // captured keyframe (the store's ref is the live view). `structuredClone` handles nested
+    // objects + numeric arrays; a JSON round-trip is the fallback for older runtimes.
+    const snapshot: Record<string, unknown> = typeof structuredClone === 'function'
+      ? (structuredClone(vs) as Record<string, unknown>)
+      : (JSON.parse(JSON.stringify(vs)) as Record<string, unknown>)
+    return { assetId: j.assetId, imageUid: j.imageUid ?? uid, viewState: snapshot }
+  } catch (e) {
+    log.error(`${what} failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+    return null
+  }
 }
 
-// capture the CURRENT napari view as a new keyframe (a base "look")
+// capture the CURRENT viewer view as a new keyframe (a base "look")
 async function capture() {
   if (!isOpen.value || !projectUid.value || capturing.value) return
   capturing.value = true
@@ -99,7 +137,7 @@ async function capture() {
                original: JSON.parse(JSON.stringify(j.viewState ?? {})),   // reset target
                imageUid: uid, imageName: imageName(uid), duration: 1 })
   } catch (e) {
-    log.error(`Capture failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Capture failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { capturing.value = false }
 }
 
@@ -116,8 +154,8 @@ function addKeyframe() {
   })
 }
 
-// Update the selected keyframe FROM the current napari view — re-screenshot and replace its snapshot +
-// thumbnail (and reset its baseline). This is how you "change" a snapshot: sync it, tweak in napari, save.
+// Update the selected keyframe FROM the current viewer view — re-screenshot and replace its snapshot +
+// thumbnail (and reset its baseline). This is how you "change" a snapshot: sync it, tweak in the viewer, save.
 async function updateSelected() {
   const sel = selected.value
   if (!sel || !isOpen.value || !projectUid.value || updating.value) return
@@ -136,14 +174,18 @@ async function updateSelected() {
       }).catch(() => {})
     }
   } catch (e) {
-    log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { updating.value = false }
 }
 
-// toggling Sync on immediately mirrors the selected keyframe into napari
+// toggling Sync on immediately mirrors the selected keyframe into the browser viewer via the store's
+// pending-viewState bridge (was: POST /api/napari/apply-view-state; ViewerWindow now consumes
+// `pendingViewState` and re-applies with `applyViewStateToBrowser`).
 function onToggleSync(on: boolean) {
   settings.animationSyncNapari = on
-  if (on && selected.value?.snapshot) applyViewState(selected.value.snapshot)
+  if (on && selected.value?.snapshot) {
+    viewer.setPendingViewState(selected.value.snapshot as unknown as ViewerViewState)
+  }
 }
 
 const canRender = computed(() => !!activeUid.value && frames.value.length >= 2 && !rendering.value)
@@ -314,15 +356,15 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
           <span class="ap-name" :title="activeImage?.name">{{ activeImage?.name ?? activeUid }}</span>
           <button v-if="!isOpen" class="cc-btn cc-btn-ghost cc-btn-micro" data-guide="animation.open"
                   :disabled="opening" @click="openActive"
-                  v-tooltip.left="'Open this image in napari'">
+                  v-tooltip.left="'Open this image in the viewer'">
             <i :class="['pi', opening ? 'pi-spin pi-spinner' : 'pi-eye']" /> Open
           </button>
         </div>
         <div class="ap-btns">
           <button class="cc-btn cc-btn-ghost" data-guide="animation.capture"
                   :disabled="capturing || !isOpen" @click="capture"
-                  v-tooltip.left="isOpen ? 'Capture the current napari view as a keyframe (a base look)'
-                                         : 'Open this image in napari first'">
+                  v-tooltip.left="isOpen ? 'Capture the current viewer view as a keyframe (a base look)'
+                                         : 'Open this image in the viewer first'">
             <i :class="['pi', capturing ? 'pi-spin pi-spinner' : 'pi-camera']" /> Capture view
           </button>
           <button class="cc-btn cc-btn-ghost" data-guide="animation.addKeyframe"
@@ -331,13 +373,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
             <i class="pi pi-plus" /> Add keyframe
           </button>
           <button class="cc-btn cc-btn-ghost" :disabled="!selected || updating || !isOpen" @click="updateSelected"
-                  v-tooltip.left="'Replace the selected keyframe with the current napari view (re-capture)'">
+                  v-tooltip.left="'Replace the selected keyframe with the current viewer view (re-capture)'">
             <i :class="['pi', updating ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Update selected
           </button>
         </div>
-        <CcToggle class="ap-sync" label="Sync napari"
+        <CcToggle class="ap-sync" label="Sync viewer"
                   :model-value="settings.animationSyncNapari" @update:model-value="onToggleSync($event)"
-                  v-tooltip.bottom="'Show the selected keyframe in napari when you click it'" />
+                  v-tooltip.bottom="'Show the selected keyframe in the viewer when you click it'" />
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the batch page -->

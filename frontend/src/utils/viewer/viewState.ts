@@ -119,3 +119,80 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
     canvas: { width: canvasW, height: canvasH },
   }
 }
+
+/** Inverse of `buildViewState`: napari-shape snapshot → what the browser viewer needs to APPLY it
+ *  (orbit camera position, plane / t indices, ndisplay, per-channel contrast + visibility). Kept
+ *  next to the forward direction so the two mappings can't drift; testable without the store. */
+export interface AppliedViewState {
+  cam: OrbitCamera
+  t: number
+  zPlane: number
+  ndisplay: 2 | 3
+  channels: Array<{ name: string; lo: number; hi: number; visible: boolean }>
+}
+
+export interface ApplyViewStateInput {
+  vs: ViewerViewState
+  meta: ViewerMeta
+  currentCam: OrbitCamera
+  canvasH: number
+  viewHalfAngle: number
+}
+
+export function applyViewStateToBrowser(input: ApplyViewStateInput): AppliedViewState {
+  const { vs, meta, currentCam, canvasH, viewHalfAngle } = input
+  const umPerL0X = meta.voxelUm?.[0] || 1
+  const umPerL0Y = meta.voxelUm?.[1] || 1
+
+  // The captured zoom was written against `vs.canvas.height`. If we apply into a different canvas,
+  // the visible extent has to be sized so THIS canvas shows the same image span — same reasoning as
+  // the recorder's crop derivation. Fall back to the CURRENT canvas if the snapshot omits one.
+  const capturedH = vs.canvas?.height && vs.canvas.height > 0 ? vs.canvas.height : canvasH
+  const visibleL0H = capturedH / Math.max(1e-6, vs.camera.zoom)   // image pixels visible in Y
+  const visibleHeightUm = visibleL0H * umPerL0Y
+  const dist = visibleHeightUm / (2 * Math.max(viewHalfAngle, 1e-6))
+
+  // Camera centre → pan. Inverse of `cx = W/2 - panXpx` and `cy = H/2 - panYpx`, where panXpx and
+  // panYpx are the IMAGE-pixel pans (positive-right, positive-down). Then unscale by µm/px, and
+  // flip Y (screen-up is negative image-Y in the viewer).
+  const cy = Number(vs.camera.center[1] ?? 0)
+  const cx = Number(vs.camera.center[2] ?? 0)
+  const panXpx = (meta.nX || 1) / 2 - cx
+  const panYpx = (meta.nY || 1) / 2 - cy
+  const panX =   panXpx * umPerL0X
+  const panY = -(panYpx * umPerL0Y)
+
+  // 3D angles → yaw / pitch. Inverse of the forward mapping ([pitch°, yaw°, 0]).
+  const angles = vs.camera.angles ?? [0, 0, 0]
+  const pitchDeg = Number(angles[0] ?? 0)
+  const yawDeg   = Number(angles[1] ?? 0)
+  const cam: OrbitCamera = {
+    ...currentCam,
+    dist,
+    panX, panY,
+    yaw:   yawDeg   * (Math.PI / 180),
+    pitch: pitchDeg * (Math.PI / 180),
+  }
+
+  const step = vs.dims?.current_step ?? []
+  const t = Number(step[0] ?? 0)
+  const zPlane = Number(step[1] ?? 0)
+  const ndisplay: 2 | 3 = vs.dims?.ndisplay === 3 ? 3 : 2
+
+  // Per-channel contrast + visibility. Colormap is null in browser-authored snapshots (see file
+  // header) — skipped here so re-applying doesn't blow away the LUT the user set. If a snapshot
+  // ever gains a real colormap it lands separately (setChannels re-derives the LUT).
+  const channels = meta.channels.map(ch => {
+    const l = vs.layers?.[ch.name]
+    if (!l) return { name: ch.name, lo: ch.lo, hi: ch.hi, visible: ch.visible }
+    const [lo, hi] = l.contrast_limits ?? [ch.lo, ch.hi]
+    return {
+      name: ch.name,
+      lo: Number.isFinite(Number(lo)) ? Number(lo) : ch.lo,
+      hi: Number.isFinite(Number(hi)) ? Number(hi) : ch.hi,
+      visible: l.visible ?? ch.visible,
+    }
+  })
+
+  return { cam, t, zPlane, ndisplay, channels }
+}
