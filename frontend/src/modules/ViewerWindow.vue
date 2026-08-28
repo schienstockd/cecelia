@@ -2294,6 +2294,9 @@ async function reallocate(refit = false) {
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
+    // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
+    // No-op on the flat renderer via the optional chain.
+    r.setBrickSource?.({ projectUid, imageUid, valueName: valueName.value || undefined })
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')

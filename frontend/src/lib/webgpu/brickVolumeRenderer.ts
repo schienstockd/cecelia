@@ -22,8 +22,21 @@ import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
-import { PageTable, brickKey } from '../../utils/pageTable'
+import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
+import {
+  scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
+} from '../../utils/brickScheduler'
+import { fetchBrick, brickSlabUrl } from '../../utils/brickLoader'
 import { BRICK_WGSL, BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT } from './brickShader'
+
+/** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
+ *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
+ *  ViewerWindow per fetch would round-trip Vue land each miss. Absent on the flat renderer. */
+export interface BrickSource {
+  projectUid: string
+  imageUid: string
+  valueName?: string
+}
 
 /** Brick edge in voxels — Decision 2 in KILN_BRICK_PLAN.md. Kept a module constant so both the
  *  layout picker and the shader-side `brick` uniform agree without a second decision site. */
@@ -38,17 +51,27 @@ interface AtlasState {
   layout: AtlasLayout
   texture: BrickAtlasTexture
   pageTable: PageTable
-  /** L0 grid — `nBx × nBy × nBz` bricks. Cached on `setImage` since the shader needs it in the
-   *  uniform and the scheduler will need it in P5c. */
+  /** Grid at the CURRENT level — `nBx × nBy × nBz` bricks. Recomputed on level switch. Shader
+   *  reads these from the uniform to translate `vi.xyz` (a level-scaled voxel coord) into
+   *  `(bx, by, bz)` for the page-table lookup. */
   gridNx: number
   gridNy: number
   gridNz: number
-  /** u32 buffer holding one slot index per L0 brick (or EMPTY_SLOT). Uploaded whole on residency
-   *  change — with SispLk's 4×4×1 grid this is 64 bytes, so per-frame reupload cost is trivial. */
+  /** L0 grid dimensions — the largest we ever need. Page-table buffers are sized for this so no
+   *  GPU allocation happens on level switch. `gridNx/Ny/Nz` above may be a smaller subrange of
+   *  this at coarser levels. */
+  gridNxL0: number
+  gridNyL0: number
+  gridNzL0: number
+  /** u32 buffer holding one slot index per brick at the CURRENT LEVEL (or EMPTY_SLOT).
+   *  Uploaded when dirty — with SispLk's 4×4×1 grid at L0 this is 64 bytes. Sized for the L0
+   *  grid so it never needs re-allocating. */
   pageTableBuffer: GPUBuffer
   pageTableCpu: Uint32Array
   pageTableDirty: boolean
   bindGroup: GPUBindGroup
+  /** Currently-sourced LOD level. `undefined` before the first schedule tick. */
+  currentLevel: number | undefined
 }
 
 export async function createBrickVolumeRenderer(
@@ -88,7 +111,16 @@ export async function createBrickVolumeRenderer(
   let destroyed = false
   let testPattern = false
   let currentMeta: ViewerMeta | null = null
+  let currentZDepth = 1
   let boundT = 0
+  let source: BrickSource | null = null
+  /** In-flight fetches keyed by brick key — the scheduler can name the same brick on consecutive
+   *  ticks before its bytes have landed, and we don't want to fire the request twice. AbortController
+   *  is on the value so an eviction or a device teardown can cancel the pending network work. */
+  const inflight = new Map<string, AbortController>()
+  /** Monotonic frame counter — the PageTable's `now` argument. Kept in the renderer so the LRU
+   *  order isn't a function of wall-clock (which would drift under devtools throttling). */
+  let frameNow = 0
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -125,10 +157,13 @@ export async function createBrickVolumeRenderer(
   ): void => {
     currentMeta = meta
     const zd = zDepth ?? meta.nZ
+    currentZDepth = zd
     const [ex, ey, ez] = extentUm(meta, zd)
     uniform.ext = [ex, ey, ez]
 
     dropAtlas()
+    inflight.forEach(ac => ac.abort())
+    inflight.clear()
     const bpv = meta.bytesPerVoxel
     // Thin-Z stores collapse brickZ to nZ (Decision 2). Vibratome stacks keep the full 128.
     const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd))
@@ -150,11 +185,14 @@ export async function createBrickVolumeRenderer(
     const capacity = atlasSlotCapacity(layout)
     const pageTable = new PageTable(capacity)
 
-    const gridNx = Math.max(1, Math.ceil(meta.nX / brickSize[0]))
-    const gridNy = Math.max(1, Math.ceil(meta.nY / brickSize[1]))
-    const gridNz = Math.max(1, Math.ceil(zd / brickSize[2]))
+    // L0 grid is the largest we ever address — allocate the page-table CPU + GPU buffer for it, so a
+    // level switch never has to reallocate. Coarser levels index a smaller subrange of the same
+    // storage.
+    const gridNxL0 = Math.max(1, Math.ceil(meta.nX / brickSize[0]))
+    const gridNyL0 = Math.max(1, Math.ceil(meta.nY / brickSize[1]))
+    const gridNzL0 = Math.max(1, Math.ceil(zd / brickSize[2]))
 
-    const pageTableCpu = new Uint32Array(gridNx * gridNy * gridNz).fill(EMPTY_SLOT)
+    const pageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
     const pageTableBuffer = device.createBuffer({
       size: Math.max(16, pageTableCpu.byteLength),   // WebGPU rejects 0-size buffers
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -170,8 +208,11 @@ export async function createBrickVolumeRenderer(
     })
 
     atlas = {
-      layout, texture, pageTable, gridNx, gridNy, gridNz,
+      layout, texture, pageTable,
+      gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
+      gridNxL0, gridNyL0, gridNzL0,
       pageTableBuffer, pageTableCpu, pageTableDirty: true, bindGroup,
+      currentLevel: undefined,
     }
     uniform.nch = nC
   }
@@ -180,6 +221,107 @@ export async function createBrickVolumeRenderer(
     if (atlas === null || !atlas.pageTableDirty) return
     device.queue.writeBuffer(atlas.pageTableBuffer, 0, atlas.pageTableCpu)
     atlas.pageTableDirty = false
+  }
+
+  /** Flat grid index at the CURRENT level. Matches the shader's `(bz * nBy + by) * nBx + bx`. */
+  const gridIndex = (a: AtlasState, bx: number, by: number, bz: number): number =>
+    (bz * a.gridNy + by) * a.gridNx + bx
+
+  /** Kick a fetch for one scheduled brick unless one is already in flight for that key. On arrival
+   *  the bytes are checked against the CURRENT scheduler state: if the level changed or the brick
+   *  was evicted before the response landed, the payload is dropped silently — a slot the eviction
+   *  freed must not be overwritten with stale bytes. */
+  const kickFetch = (brick: VirtualBrick): void => {
+    if (currentMeta === null || source === null || atlas === null) return
+    const key = brickKey(brick)
+    if (inflight.has(key)) return
+    const layout = atlas.layout
+    const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox)
+    const ac = new AbortController()
+    inflight.set(key, ac)
+    void fetchBrick(url, currentMeta, layout.channelsPerBrick, layout.brickSizeVox, ac.signal)
+      .then(payload => {
+        // The atlas or the level could have changed while the request was in flight — drop the
+        // bytes rather than writing them into a slot that no longer represents this brick.
+        inflight.delete(key)
+        if (payload === null) return
+        if (destroyed || atlas === null) return
+        if (atlas.currentLevel !== brick.level) return
+        const result = atlas.pageTable.insertOrEvictLru(brick, frameNow)
+        const evictedIdx = result.evictedKey === null ? -1 :
+          gridIndexOfKey(atlas, result.evictedKey)
+        const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(payload.bytes))
+        if (!ok) {
+          atlas.pageTable.evict(key)
+          return
+        }
+        if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
+        atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
+        atlas.pageTableDirty = true
+      })
+      .catch(() => { inflight.delete(key) })
+  }
+
+  /** Reverse `brickKey` back to its grid index. Uses the resident entry first (cheap) and falls
+   *  back to parsing the string form when the entry has ALREADY been evicted — which happens on
+   *  the insertOrEvictLru path, since the page table drops the LRU before it hands back the key. */
+  const gridIndexOfKey = (a: AtlasState, key: string): number => {
+    const entry = a.pageTable.get(key)
+    const brick = entry?.brick ?? parseBrickKey(key)
+    if (brick === null) return -1
+    if (brick.bx >= a.gridNx || brick.by >= a.gridNy || brick.bz >= a.gridNz) return -1
+    return gridIndex(a, brick.bx, brick.by, brick.bz)
+  }
+
+  /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
+   *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
+   *  this tick decided on. */
+  const tickScheduler = (): void => {
+    if (atlas === null || currentMeta === null) return
+    frameNow += 1
+    const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+    const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+    const view = brickViewportFromCamera(
+      camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
+    )
+    const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
+    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel)
+
+    // Level switch invalidates every resident brick: (bx, by, bz) space is different at a coarser
+    // LOD. Drop the residency, clear the page-table CPU up to the LARGER of the two levels' grids
+    // so a switch coarse→fine also wipes the L0-grid stale entries.
+    if (atlas.currentLevel !== dec.level) {
+      inflight.forEach(ac => ac.abort())
+      inflight.clear()
+      atlas.pageTable.clear()
+      atlas.pageTableCpu.fill(EMPTY_SLOT)
+      atlas.pageTableDirty = true
+      const scale = Math.pow(2, dec.level)
+      const [bx, by, bz] = atlas.layout.brickSizeVox
+      atlas.gridNx = Math.max(1, Math.ceil(currentMeta.nX / (bx * scale)))
+      atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
+      atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
+      atlas.currentLevel = dec.level
+    } else {
+      for (const key of dec.toEvict) {
+        const idx = gridIndexOfKey(atlas, key)
+        atlas.pageTable.evict(key)
+        if (idx >= 0) {
+          atlas.pageTableCpu[idx] = EMPTY_SLOT
+          atlas.pageTableDirty = true
+        }
+        const ac = inflight.get(key)
+        if (ac !== undefined) { ac.abort(); inflight.delete(key) }
+      }
+    }
+
+    // Load list — closer to the camera first (scheduler sorted by core-then-distance). Touch the
+    // ones already resident so they're LRU-fresh; kick fetches for the misses.
+    for (const s of dec.toLoad) {
+      const k = brickKey(s.brick)
+      if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
+      kickFetch(s.brick)
+    }
   }
 
   /** Fill brick (0,0,0) with a synthetic ramp — every channel gets the same ramp so you can see
@@ -236,9 +378,12 @@ export async function createBrickVolumeRenderer(
     const bpv = atlas?.layout.bytesPerVoxel ?? 1
     uniformCpu[BU.EXT + 3] = bpv === 2 ? 65535 : 255
     if (currentMeta !== null) {
-      uniformCpu[BU.DIMS + 0] = currentMeta.nX
-      uniformCpu[BU.DIMS + 1] = currentMeta.nY
-      uniformCpu[BU.DIMS + 2] = currentMeta.nZ
+      // Voxel dims AT THE CURRENT LOD LEVEL — the shader treats `p.dims` as "voxels along each
+      // axis at this level" and `vi = uvw * dims.xyz`. Wrong dims here = wrong per-voxel address.
+      const scale = Math.pow(2, atlas?.currentLevel ?? 0)
+      uniformCpu[BU.DIMS + 0] = Math.max(1, Math.ceil(currentMeta.nX / scale))
+      uniformCpu[BU.DIMS + 1] = Math.max(1, Math.ceil(currentMeta.nY / scale))
+      uniformCpu[BU.DIMS + 2] = Math.max(1, Math.ceil(currentZDepth / scale))
     }
     if (atlas !== null) {
       const [bx, by, bz] = atlas.layout.brickSizeVox
@@ -266,6 +411,10 @@ export async function createBrickVolumeRenderer(
     // Test-pattern upload is idempotent-ish (LRU updates lastUsed, but slot stays); OK per frame
     // while the flag is on — the loop only writes the atlas the first time.
     uploadTestPattern()
+    // Schedule + fetch. The tick decides the current level, updates residency + eviction, and
+    // kicks fetches; arriving payloads update `pageTableCpu` and set `pageTableDirty`. Fired
+    // BEFORE the uniform + page-table upload so this frame renders with the freshest decisions.
+    if (!testPattern) tickScheduler()
     writeUniform()
     writePageTable()
 
@@ -362,9 +511,31 @@ export async function createBrickVolumeRenderer(
       ctx.configure({ device, format, alphaMode: mode })
     },
 
+    setBrickSource(next: BrickSource | null) {
+      // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
+      // Same-source repeats are cheap (compared by shallow equality on the three fields the URL
+      // depends on), so ViewerWindow can call this unconditionally per frame without thrashing.
+      const same = source !== null && next !== null
+        && source.projectUid === next.projectUid
+        && source.imageUid === next.imageUid
+        && source.valueName === next.valueName
+      if (same) { source = next; return }
+      source = next
+      inflight.forEach(ac => ac.abort())
+      inflight.clear()
+      if (atlas !== null) {
+        atlas.pageTable.clear()
+        atlas.pageTableCpu.fill(EMPTY_SLOT)
+        atlas.pageTableDirty = true
+        atlas.currentLevel = undefined
+      }
+    },
+
     destroy() {
       if (destroyed) return
       destroyed = true
+      inflight.forEach(ac => ac.abort())
+      inflight.clear()
       dropAtlas()
       uniformBuf.destroy()
       ctx.unconfigure()

@@ -19,6 +19,7 @@
 import type { VirtualBrick } from './pageTable'
 import { brickKey } from './pageTable'
 import { sseDesiredLevel, sseLevelWithHysteresis } from './sseLod'
+import { VIEW_HALF_ANGLE, extentUm, type ViewerMeta, type OrbitCamera } from './volumeViewer'
 
 /**
  * Camera + viewport state at one instant, expressed in world µm. Everything the scheduler
@@ -202,6 +203,63 @@ export function pickBrickLevel(
  * This is a first-pass scheduler: one level per viewport, no mixed-LOD near/far bricks. The
  * mixed-LOD case (Kiln's real win) waits for a deep-Z reference image plus a proper camera.
  */
+/**
+ * Build a `BrickWorld` from the store's meta + the atlas's chosen brick geometry. Pure — same
+ * discipline as `extentUm`. The atlas layout is what pins `brickSizeVox`; the scheduler uses it
+ * to walk the grid at every level (level L is 2^L × the L0 grid). `zDepth` is the loaded depth
+ * — SispLk-shape stores load their full nZ; a cropped 3D view can pass a smaller value.
+ */
+export function brickWorldFromMeta(
+  meta: ViewerMeta,
+  brickSizeVox: readonly [number, number, number],
+  zDepth: number,
+): BrickWorld {
+  const [vx, vy, vz] = meta.voxelUm
+  return {
+    brickSizeVox,
+    voxelUmL0: [vx || 1, vy || 1, vz || 1],
+    extentVoxL0: [meta.nX, meta.nY, zDepth],
+    nLevels: Math.max(1, meta.levels?.length ?? 1),
+  }
+}
+
+/**
+ * Build a `BrickViewport` from the orbit-camera + meta at one instant. Pure — the shader-side
+ * conventions (VIEW_HALF_ANGLE, half-height = dist × VIEW_HALF_ANGLE) are the ONE source of
+ * truth for what the camera sees, so the scheduler mirrors them here rather than re-deriving.
+ *
+ * Simplifications for P5c (documented so P5d can revisit):
+ *   - `centreUm` is the box centre in world µm. Pan moves the eye in the shader — for scheduler
+ *     purposes, the visible region tracks the box centre approximately even under pan; a heavy
+ *     pan can miss a brick or two that the halo picks up anyway.
+ *   - `halfDUm` = whole box depth. Every z-slab is visited — matches the pre-3D-halo XY-only
+ *     behaviour on thin-Z stores (SispLk nZ=4). Deep-Z stores get proper z scheduling once we
+ *     have real data to eyeball.
+ *   - `focalPx` = canvas height / (2 × VIEW_HALF_ANGLE) — the pinhole equivalent of the
+ *     half-height rule the shader uses. Governs the SSE picker; wrong here = wrong LOD.
+ */
+export function brickViewportFromCamera(
+  cam: OrbitCamera,
+  meta: ViewerMeta,
+  t: number,
+  canvasHeightPx: number,
+  aspect: number,
+  zDepth: number,
+): BrickViewport {
+  const [ex, ey, ez] = extentUm(meta, zDepth)
+  const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
+  const halfW = halfH * Math.max(aspect, 1e-3)
+  return {
+    t,
+    centreUm: [ex / 2, ey / 2, ez / 2],
+    halfWUm: halfW,
+    halfHUm: halfH,
+    halfDUm: ez / 2,
+    focalPx: canvasHeightPx / Math.max(2 * VIEW_HALF_ANGLE, 1e-3),
+    distanceUm: Math.max(cam.dist, 1e-3),
+  }
+}
+
 export function scheduleBricks(
   view: BrickViewport,
   world: BrickWorld,

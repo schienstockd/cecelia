@@ -182,6 +182,12 @@ export interface VolumeRenderer {
    *  writes alpha 1 everywhere, so this changes no pixel we produce, only which compositor path the
    *  browser takes to show them. */
   setAlphaMode(mode: GPUCanvasAlphaMode): void
+  /**
+   * Brick renderer only: point the internal fetch loop at (projectUid, imageUid, valueName). The
+   * brick scheduler decides what to fetch every frame; the URL base has to be known here rather
+   * than at each call site. Absent on the flat renderer — callers use `?.` to remain agnostic.
+   */
+  setBrickSource?(source: { projectUid: string; imageUid: string; valueName?: string } | null): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
