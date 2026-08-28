@@ -19,6 +19,7 @@ import { useLogStore } from '../../stores/log'
 import { buildTitleCard, unionViewSnapshot, applyViewState, type TitleCardPayload } from '../../utils/napariOverlays'
 import { framesFor, activeAnimationUid } from '../../utils/animationTimeline'
 import { movieSizeParams } from '../../utils/movieSize'
+import { seedConfigFromViewState, type ViewStateLike } from '../../utils/batchMovie'
 import { keyframeRestore, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import { useNapariStatus } from '../../composables/useNapariStatus'
@@ -163,19 +164,33 @@ async function render() {
     const keyframeMeta = frames.value.map(f => ({
       assetId: f.assetId, title: f.title, duration: f.duration ?? 1,
     }))
-    // Title card (Phase H4): describe everything shown "at some point" across the animation — build from
-    // a UNION of all keyframes' views (channels + overlays merged), via the SHARED buildTitleCard. It
-    // includes the Channels section itself (from the union), since the recorder can't reconstruct the
-    // union from one live view.
+    // The union of every keyframe's viewState — a layer is "shown" if visible in any keyframe. Same
+    // union the title card reads, so the recorder gets ONE consistent picture of "what this animation
+    // shows across its life". Fed into `seedConfigFromViewState` to derive the `look` (channels +
+    // showTracks/showPopulations/popType), so the offline renderer's overlay author sees the same
+    // populations/tracks/colours the live viewer is currently drawing.
+    const setUid   = project.setUidOfImage(uid) ?? ''
+    const colourBy = setUid ? settings.getColourBy(setUid) : ''
+    const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
+    const union = unionViewSnapshot(frames.value.map(f => f.snapshot as ViewStateLike | undefined))
+
     let titleCard: TitleCardPayload | undefined
     if (anim.titleCard.enabled && frames.value.length) {
-      const setUid   = project.setUidOfImage(uid) ?? ''
-      const colourBy = setUid ? settings.getColourBy(setUid) : ''
-      const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
-      const union = unionViewSnapshot(frames.value.map(f => f.snapshot as { layers?: Record<string, unknown> } | undefined))
       titleCard = await buildTitleCard(projectUid.value, uid, union, activeImage.value,
         { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides, includeChannels: true })
     }
+
+    // The look — same shape ViewerPanel emits for single-record. `seedConfigFromViewState` reads the
+    // union's `layers` bag (channel colormaps + which overlays are present); colour-by rides along
+    // from per-set settings because it isn't in the snapshot. The overlay author's `valueName` needs
+    // the active segmentation — animations run against one segmentation at a time.
+    const look = {
+      ...seedConfigFromViewState(union as ViewStateLike, activeImage.value?.channelNames ?? []),
+      ...(colourBy ? { colourBy } : {}),
+      ...(Object.keys(overrides).length ? { colourOverrides: overrides } : {}),
+      valueName: activeImage.value?.activeValueName ?? '',
+    }
+
     // Over the task rail (`movie:record` with keyframes), like the viewer's Record and the batch: the
     // render shows up in the task list with a progress bar and a Cancel instead of blocking here.
     const t = tasks.add({
@@ -186,7 +201,7 @@ async function render() {
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: uid,
       keyframes, keyframeMeta, fps: anim.fps, suffix: anim.suffix, titleCard,
-      apiUrl: window.location.origin,
+      apiUrl: window.location.origin, look,
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {
