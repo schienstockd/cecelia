@@ -111,6 +111,72 @@
             }
           ],
           "tip": "NGFF 0.5 only (--shard-depth); spanning z rewrites a whole shard per plane write"
+        },
+        {
+          "key": "maxWorkers",
+          "label": "Reader workers",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (1 for Imaris, 4 otherwise)"
+            },
+            {
+              "value": "1",
+              "label": "1 \u2014 safest for big 3D Imaris"
+            },
+            {
+              "value": "2",
+              "label": "2"
+            },
+            {
+              "value": "4",
+              "label": "4 \u2014 bioformats2raw default"
+            },
+            {
+              "value": "8",
+              "label": "8"
+            }
+          ],
+          "tip": "--max-workers; drop for OOM on big 3D .ims imports"
+        },
+        {
+          "key": "jvmHeapGiB",
+          "label": "JVM heap (GiB)",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (16 for Imaris, JVM default otherwise)"
+            },
+            {
+              "value": "4",
+              "label": "4"
+            },
+            {
+              "value": "8",
+              "label": "8"
+            },
+            {
+              "value": "12",
+              "label": "12"
+            },
+            {
+              "value": "16",
+              "label": "16"
+            },
+            {
+              "value": "24",
+              "label": "24"
+            },
+            {
+              "value": "32",
+              "label": "32"
+            }
+          ],
+          "tip": "-Xmx via BIOFORMATS2RAW_OPTS; raise for OOM on big 3D Imaris"
         }
       ]
     }

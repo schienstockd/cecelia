@@ -20,15 +20,35 @@ What it does NOT do:
   0.28 s / 1.03 s / 4.14 s for 256² / 512² / 1024² on an RTX 2000 Ada, ~1.5 GiB peak VRAM. A
   downsampled preview would now be cheaper, which makes it a real option rather than a dead end —
   but it would no longer be "the same compute as the run", so it is not taken here.)
-* **Nothing on disk.** The mask block is RETURNED (`cecelia.utils.block_transfer`), not written. An
-  earlier design wrote a never-promoted scratch store and let the bridge open it; that put throwaway
-  bytes in the user's project tree, needed its own staging + sweep lifecycle, and left debris to
-  accumulate whenever a preview didn't finish cleanly. A preview is a picture, not data.
+* **Scratch labels store on disk, no image blocks over the wire.** The mask is written to
+  `{task_dir}/labels/{value_name}__preview.ome.zarr` and the reply carries `path`/`valueName`
+  rather than an inline block. The browser then fetches it through the same
+  `/api/viewer/slab?labels=<vn>&preview=1` route as a finished mask — one reader, one geometry,
+  one texture path. This overrides an earlier napari-era design that RETURNED the block inline
+  (`cecelia.utils.block_transfer`) to avoid staging in the project tree; that reasoning stopped
+  applying when the browser viewer became the sole preview surface, and the block-over-WS path
+  needed its own decode + texture upload rather than riding the labels slab.
+
+  Debris is bounded: the previous preview's store is wiped at the start of each request, a
+  `cleanup` message clears every `*__preview.ome.zarr` under a task_dir, and an `atexit` handler
+  sweeps the last-known task dirs when the worker itself exits.
+
+  AF preview follows the same pattern with per-channel image stores at
+  `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr` and the reply carries `previewImages`; the
+  browser swaps each corrected channel's slab URL onto the scratch store
+  (`/api/viewer/slab?preview_af=1&sourceChannel=N`). Flow planes stay off disk — PNG bytes,
+  viewer-agnostic — because they are canvas plots, not layers.
 
 Protocol: one JSON message per connection, same shape as the napari bridge.
     {"type": "ping"}     -> {"type": "ok", "protocol": PROTOCOL}
-    {"type": "preview", ...} -> {"type": "ok", "layers": [{kind, name, block, shape, axes}, …],
+    {"type": "preview", ...} -> {"type": "ok",
+                                 "layers"       : [{kind, name, valueName, path, shape, axes}, …]?,
+                                 "previewImages": [{sourceChannel, name, valueName, path,
+                                                     shape, axes}, …]?,
                                  "region": …, "fallback2d": bool, plus per-task fields}
+    {"type": "cleanup", "taskDir": "..."} -> {"type": "ok"}   removes every scratch preview store
+                                                             (labels AND AF images) keyed on
+                                                             {task_dir}
 
 `PROTOCOL` exists because a running worker is ADOPTED, not relaunched, when the backend restarts — that
 is deliberate (a warm worker survives a Revise restart, which is most of its value) but it means stale
@@ -37,21 +57,40 @@ before the AF backend existed ignored `funName`, fell through to the segmentatio
 "no models in preview params". Bump this whenever the reply shape or the backend set changes.
 """
 import asyncio
+import atexit
 import base64
+import glob
 import itertools
 import json
 import os
+import shutil
 import traceback
 
 import numpy as np
+import zarr
 
 import cecelia.utils.correction_utils as correction_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
-from cecelia.utils.block_transfer import encode_block
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.dim_utils import DimUtils
+
+#: Task dirs we have staged preview stores into this session, for `atexit` cleanup and for the
+#: `cleanup` message. Best-effort: adds are cheap and a torn-down worker cannot rely on `finally`.
+_PREVIEW_TASK_DIRS: set = set()
+
+#: Suffix used for every preview labels store. Keyed off the value_name so a preview for `smoothed`
+#: doesn't tread on a preview for `default`, and so `_sweep_preview_labels` can wipe every preview
+#: in a task dir with one glob whatever the value_name was.
+_PREVIEW_LABEL_SUFFIX = '__preview.ome.zarr'
+
+#: Suffix stem for AF preview image stores. Per-channel — every corrected channel writes its own store,
+#: keyed off the value_name AND the source channel index (`{vn}__preview_af_ch{N}.ome.zarr`) so the
+#: browser can swap ONE channel's slab URL onto the scratch store while the others keep reading the
+#: source. Same glob idiom as the labels sweep — `_sweep_preview_af` wipes them all.
+_PREVIEW_AF_STEM = '__preview_af_ch'
+_PREVIEW_AF_SUFFIX = '.ome.zarr'
 
 # `cellpose_utils` is imported LAZILY, by the cellpose backend only — see `_cellpose_imports`. It pulls
 # in cellpose and torch (3.1 s of the worker's import cost, measured warm), and AF correction needs
@@ -183,7 +222,18 @@ def _cellpose_imports():
 #:     keep serving previews in which a leaked channel erases the target it leaked into — silently,
 #:     against a backend that believes it is showing the new method, for a preview whose entire purpose
 #:     is to agree with the run. Its `derived` readout would also lack `bleedthrough`.
-PROTOCOL = 12
+#: 13: reply shape changed for LABELS previews — layers carry `valueName`/`path` instead of an
+#:     inline `block`. The API returns a preview slab URL and the browser fetches the mask through
+#:     `/api/viewer/slab?labels=<vn>&preview=1`; an adopted protocol-12 worker would still send the
+#:     block and the browser would see nothing. AF is now `NotImplementedError` here (deferred to
+#:     P7.1) — an old worker still segments channels the client cannot render.
+#: 14: AF preview writes ONE image store per corrected channel and the reply carries
+#:     `previewImages` (`sourceChannel`, `valueName`, `path`, `axes`, `shape`) instead of the
+#:     `NotImplementedError`. The browser fetches each corrected channel through
+#:     `/api/viewer/slab?preview_af=1&sourceChannel=N` in place of the source channel — same reader,
+#:     same texture upload as a normal image slab. An adopted protocol-13 worker would still 501 on
+#:     AF, so the browser AF toggle would keep looking broken against a backend that believes it works.
+PROTOCOL = 14
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -548,20 +598,181 @@ class PreviewContext:
             return []
 
 
-def _layer(kind, name, block, axes, full_shape, source=None):
-    """One layer for the viewer to build. `kind` decides Labels vs Image on the receiving end.
+def _layer_disk(kind, name, value_name, path, axes, full_shape, source=None):
+    """One layer for the browser viewer to fetch. `kind` decides Labels vs Image on the receiving end.
 
-    `source` names the viewer layer this one is DERIVED from — the channel being corrected. The bridge
-    mirrors that layer's colormap so the corrected channel renders in the same colour as its original,
-    which is the whole point of putting them side by side: a grey copy of a magenta channel is hard to
-    compare against, and the comparison IS the judgement. Sent explicitly rather than parsed back out
-    of `name` ("CH1 AF" → "CH1"), because a channel name containing the suffix would break that guess.
+    The mask is on DISK — the reply carries its `path` and `valueName`, not a decoded block. The
+    browser fetches it through `/api/viewer/slab?labels=<vn>&preview=1` (the same reader as the real
+    labels slab), so there is no second decode path and the preview and the run share one texture
+    upload.
+
+    `source` names the viewer layer this one is DERIVED from — kept for the AF path, which does not
+    yet write to disk (P7.1).
     """
-    out = {'kind': kind, 'name': name, 'block': encode_block(block),
+    out = {'kind': kind, 'name': name, 'valueName': str(value_name),
+           'path': str(path),
            'shape': [int(x) for x in full_shape], 'axes': list(axes)}
     if source:
         out['source'] = str(source)
     return out
+
+
+def _region_slice(axes, bounds):
+    """A tuple of `slice` objects placing the region within a full-shape array. Axes with no bound
+    stay whole (`slice(None)`)."""
+    out = []
+    for ax in axes:
+        b = bounds.get(ax) if bounds else None
+        if b is None:
+            out.append(slice(None))
+        else:
+            out.append(slice(int(b[0]), int(b[1])))
+    return tuple(out)
+
+
+def _sweep_preview_labels(task_dir):
+    """Best-effort delete of every `*__preview.ome.zarr` (and its staging siblings) under
+    `{task_dir}/labels/`. Called from the `cleanup` message, from the start of every request, and
+    from atexit."""
+    if not task_dir:
+        return
+    labels_dir = os.path.join(task_dir, 'labels')
+    if not os.path.isdir(labels_dir):
+        return
+    for pattern in (f'*{_PREVIEW_LABEL_SUFFIX}',
+                    f'*{_PREVIEW_LABEL_SUFFIX}.partial',
+                    f'*{_PREVIEW_LABEL_SUFFIX}.superseded'):
+        for path in glob.glob(os.path.join(labels_dir, pattern)):
+            try:
+                shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                pass
+
+
+def _sweep_preview_af(task_dir):
+    """Best-effort delete of every `*__preview_af_ch*.ome.zarr` (and its staging siblings) directly
+    under `{task_dir}/`. The AF stores sit at the image meta root, not under `labels/`, because they
+    are image data — one per corrected channel — and the slab route resolves them from
+    `dirname(image_zarr_path)` which IS the task dir."""
+    if not task_dir or not os.path.isdir(task_dir):
+        return
+    for pattern in (f'*{_PREVIEW_AF_STEM}*{_PREVIEW_AF_SUFFIX}',
+                    f'*{_PREVIEW_AF_STEM}*{_PREVIEW_AF_SUFFIX}.partial',
+                    f'*{_PREVIEW_AF_STEM}*{_PREVIEW_AF_SUFFIX}.superseded'):
+        for path in glob.glob(os.path.join(task_dir, pattern)):
+            try:
+                shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                pass
+
+
+def _atexit_sweep():
+    for td in list(_PREVIEW_TASK_DIRS):
+        _sweep_preview_labels(td)
+        _sweep_preview_af(td)
+
+
+atexit.register(_atexit_sweep)
+
+
+def _stage_labels_store(block, axes, full_shape, bounds, task_dir, value_name, im_path=None):
+    """Write ONE level of labels into `{task_dir}/labels/{value_name}__preview.ome.zarr`.
+
+    The block is region-sized; the store is FULL-image-sized with the block placed at `bounds` and
+    the rest left as the array's fill value (0 — unwritten label chunks read as background, which is
+    exactly what a preview outside the region should show). This is the geometry the real labels slab
+    reads at, so `/api/viewer/slab?labels=<vn>&preview=1` rides the same reader with no offset
+    fiddling on either side (`try_serve_slab` just retargets the path).
+
+    The staging + promote lifecycle comes from `zarr_utils.staged_store`, and any leftover preview
+    store at the same path is wiped up-front — a killed request from a previous parameter change
+    would otherwise sit as `.partial` debris until this worker exits.
+
+    Returns the promoted absolute path.
+    """
+    _PREVIEW_TASK_DIRS.add(task_dir)
+    labels_dir = os.path.join(task_dir, 'labels')
+    os.makedirs(labels_dir, exist_ok=True)
+
+    final_path = os.path.join(labels_dir, f'{value_name}{_PREVIEW_LABEL_SUFFIX}')
+
+    # Start-of-request cleanup: an earlier preview may have promoted at this exact path.
+    if os.path.exists(final_path):
+        shutil.rmtree(final_path, ignore_errors=True)
+
+    # Inherit zarr format from the source image; labels codec is separate from that format decision
+    # (see `_open_label_store` in segmentation_utils — one rule for both label writers).
+    enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
+    fmt = enc.get('zarr_format', 2)
+    separator = enc.get('separator')
+
+    full = tuple(int(x) for x in full_shape)
+    axes_up = [str(a).upper() for a in axes]
+
+    with zarr_utils.staged_store(final_path) as staging:
+        g = zarr.open_group(staging, mode='w', zarr_format=fmt)
+        ms_meta = zarr_utils.multiscales_metadata(axes_up, 1)
+        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
+
+        # Chunk per-plane on Y/X so writing the region touches only the chunks that overlap it —
+        # the rest are unwritten and read back as 0 through the labels store's fill_value.
+        chunks = tuple(min(full[i], 512) if ax in ('Y', 'X') else 1
+                       for i, ax in enumerate(axes_up))
+        level0 = g.create_array(
+            '0', shape=full, chunks=chunks, dtype=block.dtype, fill_value=0,
+            **zarr_utils._codec_kwargs('labels', fmt, separator=separator))
+        level0[_region_slice(axes_up, bounds)] = np.ascontiguousarray(block)
+
+    return final_path
+
+
+def _stage_af_image_store(block, axes, full_shape, bounds, task_dir, value_name,
+                          channel_index, im_path=None):
+    """Write ONE level of a corrected image channel into
+    `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr`.
+
+    Same geometry story as `_stage_labels_store`: region-sized block placed at `bounds` inside a
+    full-image store, unwritten chunks read back as 0. The slab route (`preview_af=1&sourceChannel=N`)
+    swaps this in for the source channel's slab, so the geometry MUST match the image or the browser's
+    `X-Slab-Shape` assertion will 500 the render.
+
+    The store sits at the image meta root (not under `labels/`), so `dirname(image_zarr_path)` on the
+    Julia side resolves directly to it. One store per corrected channel — sibling stores for channels
+    the user is A/B toggling against stay separate, so the browser can swap channel-by-channel.
+
+    Codec kind is `'image'`, matching the source image (label codec here would be wrong: the corrected
+    output is intensity, not label ids). Returns the promoted absolute path.
+    """
+    _PREVIEW_TASK_DIRS.add(task_dir)
+    os.makedirs(task_dir, exist_ok=True)
+
+    final_path = os.path.join(
+        task_dir, f'{value_name}{_PREVIEW_AF_STEM}{int(channel_index)}{_PREVIEW_AF_SUFFIX}')
+
+    # Start-of-request cleanup: an earlier preview may have promoted at this exact path.
+    if os.path.exists(final_path):
+        shutil.rmtree(final_path, ignore_errors=True)
+
+    enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
+    fmt = enc.get('zarr_format', 2)
+    separator = enc.get('separator')
+
+    full = tuple(int(x) for x in full_shape)
+    axes_up = [str(a).upper() for a in axes]
+
+    with zarr_utils.staged_store(final_path) as staging:
+        g = zarr.open_group(staging, mode='w', zarr_format=fmt)
+        ms_meta = zarr_utils.multiscales_metadata(axes_up, 1)
+        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
+
+        chunks = tuple(min(full[i], 512) if ax in ('Y', 'X') else 1
+                       for i, ax in enumerate(axes_up))
+        level0 = g.create_array(
+            '0', shape=full, chunks=chunks, dtype=block.dtype, fill_value=0,
+            **zarr_utils._codec_kwargs('image', fmt, separator=separator))
+        level0[_region_slice(axes_up, bounds)] = np.ascontiguousarray(block)
+
+    return final_path
 
 
 def _preview_cellpose(ctx):
@@ -601,6 +812,8 @@ def _preview_cellpose(ctx):
     block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
+    preview_path = _stage_labels_store(
+        block, axes, full_shape, ctx.bounds, ctx.task_dir, ctx.value_name, im_path=ctx.im_path)
     return {
         'counts': counts,
         'passes': passes,
@@ -609,7 +822,7 @@ def _preview_cellpose(ctx):
         # tile seams the RUN would place inside this region, which the preview does not reproduce
         'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
         'blockSize': int(seg.block_size),
-        'layers': [_layer('labels', 'Preview', block, axes, full_shape)],
+        'layers': [_layer_disk('labels', 'Preview', ctx.value_name, preview_path, axes, full_shape)],
     }
 
 
@@ -752,6 +965,8 @@ def _preview_coastal(ctx):
     block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
+    preview_path = _stage_labels_store(
+        block, axes, full_shape, ctx.bounds, ctx.task_dir, ctx.value_name, im_path=ctx.im_path)
     return {
         'counts': counts,
         'passes': passes,
@@ -759,7 +974,7 @@ def _preview_coastal(ctx):
         'noSignalWhy': why,
         'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
         'blockSize': int(seg.block_size),
-        'layers': [_layer('labels', 'Preview', block, axes, full_shape)],
+        'layers': [_layer_disk('labels', 'Preview', ctx.value_name, preview_path, axes, full_shape)],
     }
 
 
@@ -854,17 +1069,22 @@ def _preview_flow_probability(ctx):
 
 
 def _preview_af(ctx):
-    """AF-correct the visible region, one Image layer per corrected channel.
+    """AF-correct the visible region, one scratch image store per corrected channel.
 
-    The whole reason this is possible in a fraction of a second: `af_weight_stats` derives one
-    background level per participating channel over the WHOLE image — tens of seconds on a 181-frame
-    movie — and they are cached here, while `af_correct_frame` is pure per-voxel arithmetic on the crop.
-    Those globals are exactly what must NOT come from the visible region: derive them from a crop and
-    the preview subtracts a different background than the run, which is the one thing it exists to
-    rule out.
+    Same shape as the pre-P7 (napari-era) path — `af_weight_stats` is derived over the WHOLE image
+    (tens of seconds on a real movie, cached; do NOT derive over the crop, that is the whole reason
+    for the split) and `af_correct_frame` is per-voxel arithmetic on the visible tile. The change is
+    delivery: instead of an inline block per corrected channel that napari stamps as a new Image
+    layer, each channel's corrected pixels go to
+    `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr` and the reply carries a `previewImages`
+    entry per corrected channel `{sourceChannel, valueName, path, shape, axes}`. The browser flips
+    that channel's slab URL onto the scratch store (`/api/viewer/slab?preview_af=1&sourceChannel=N`),
+    keeping A/B by toggling the preview on/off rather than side-by-side layers (a two-texture compare
+    mode would be its own design).
 
-    Outputs an IMAGE, not labels, so the reply carries `kind: 'image'` per layer and the receiver adds
-    them beside the originals for A/B comparison.
+    Codec is `'image'` — the corrected output is intensity, not label ids — and dtype is the source
+    image's, so `af_correct_frame` casts in place and the slab route sees the same bytes-per-voxel it
+    would have for the original channel.
     """
     combos = {int(k): v for k, v in (ctx.params.get('afCombinations') or {}).items()}
     if not combos:
@@ -875,11 +1095,12 @@ def _preview_af(ctx):
     axes, full_shape, block_shape = ctx.block_geometry()
     names = ctx.channel_names()
     out_dtype = ctx.levels[0].dtype
-    layers, stats_out = [], {}
 
+    preview_images, stats_out = [], {}
     for ch in sorted(combos):
-        # same coercion + diagnosis the run uses: a channel NAME here means the Julia translator did not
-        # run, which is a stale-backend symptom rather than a bad parameter
+        # `channel_indices` here does two things: coerces string names → ints, and points a stale
+        # backend at the Julia translator it should have gone through. A miss in the combo list means
+        # the caller sent something we can't compute against — skip cleanly, don't raise.
         competing = script_utils.channel_indices(
             combos[ch].get('competingChannels'), f'competingChannels for channel {ch}',
             _AF_TRANSLATOR)
@@ -887,25 +1108,37 @@ def _preview_af(ctx):
             continue
         stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method,
                                exclusive=bool(combos[ch].get('exclusive', True)))
-        # every participating channel stays separate — each contributes its own term to the weight's
-        # denominator, so there is nothing to collapse into a single reference image
         slabs = {c: tile[c] for c in [ch] + competing}
         corrected = correction_utils.af_correct_frame(slabs, ch, stats, out_dtype)
-        # to the channel-less block shape (T/Z restored as length-1) so the receiver can place it at
-        # `region` without knowing how the crop was flattened — same contract as the labels path
+        # Reshape to the channel-less block shape (T/Z restored as length-1) — the store is
+        # channel-less (one file per channel), so no channel axis lands in `axes`/`full_shape` either.
         block = np.reshape(corrected, block_shape)
+        preview_path = _stage_af_image_store(
+            block, axes, full_shape, ctx.bounds, ctx.task_dir, ctx.value_name,
+            channel_index=ch, im_path=ctx.im_path)
         label = names[ch] if ch < len(names) else f'ch{ch}'
-        layers.append(_layer('image', f'{label} AF', block, axes, full_shape, source=label))
-        # same helper the run's QC reports through, so the readout and the banked metric cannot
-        # disagree about a name or a value
+        preview_images.append({
+            'sourceChannel': int(ch),
+            'name': f'{label} AF',
+            'valueName': str(ctx.value_name),
+            'path': str(preview_path),
+            'shape': [int(x) for x in full_shape],
+            'axes': list(axes),
+        })
+        # `af_derived_values` is the same helper the run's QC reports through, so the readout on
+        # the preview toggle and the banked metric cannot disagree about a name or a value.
         stats_out[str(ch)] = correction_utils.af_derived_values(stats, ch)
 
-    if not layers:
+    if not preview_images:
         raise ValueError('no combination names a competing channel')
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
-    return {'hasSignal': has_signal, 'noSignalWhy': why,
-            'derived': stats_out, 'layers': layers}
+    return {
+        'hasSignal': has_signal,
+        'noSignalWhy': why,
+        'derived': stats_out,
+        'previewImages': preview_images,
+    }
 
 
 #: fun_name → the compute that previews it. A task absent here is not previewable, which the Julia
@@ -968,6 +1201,15 @@ def execute_command(msg):
         return {"type": "ok", "protocol": PROTOCOL, "backends": sorted(_BACKENDS)}
     if kind == "preview":
         return {"type": "ok", **preview(msg)}
+    if kind == "cleanup":
+        # Toggle-off / stop path — the API calls this before killing the worker so a subsequent
+        # session doesn't inherit a stale scratch store on the slab route. Both label previews AND
+        # AF image previews get swept; both are keyed off `{task_dir}`.
+        task_dir = str(msg.get("taskDir") or "")
+        _sweep_preview_labels(task_dir)
+        _sweep_preview_af(task_dir)
+        _PREVIEW_TASK_DIRS.discard(task_dir)
+        return {"type": "ok"}
     raise ValueError(f"unknown command: {kind!r}")
 
 

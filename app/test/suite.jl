@@ -13587,62 +13587,83 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         end
     end
 
-    @testset "a preview reply becomes a viewer command without Julia decoding it" begin
-        # Julia is a pass-through: the blocks move worker → viewer untouched (the codec lives in
-        # cecelia.utils.block_transfer, used by both Python ends).
-        #
-        # A reply carries a LIST of layers, each with its own `kind`, because one task can preview
-        # several things: AF correction returns one image layer per corrected channel so they sit
-        # beside the originals to be flipped against. A single mask field plus a type flag — which is
-        # what this was — could not express that.
-        mask = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
-        img  = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u2", "data" => "eJxjYGBgAAAABAAC")
+    @testset "a preview reply is validated into a JSON payload for the browser viewer" begin
+        # P7: labels layers carry `valueName`/`path` (labels store on disk) — the browser fetches
+        # the mask through `/api/viewer/slab?labels=<vn>&preview=1`, so Julia's pass-through only
+        # asserts the payload shape rather than decoding pixels. P7.1: an AF reply carries
+        # `previewImages` (per-corrected-channel scratch image stores on disk) instead of an inline
+        # block; both branches share this validator.
         layers = [
-            Dict("kind" => "labels", "name" => "Preview", "block" => mask,
-                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
-            Dict("kind" => "image", "name" => "nuc-GFP AF", "block" => img,
+            Dict("kind" => "labels", "name" => "Preview",
+                 "valueName" => "A", "path" => "/x/labels/A__preview.ome.zarr",
                  "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
         ]
         reply = Dict("layers" => layers,
                      "region" => Dict("T" => [3, 4], "Z" => [1, 2],
                                       "Y" => [0, 4], "X" => [0, 4]),
                      "valueName" => "A", "counts" => Dict("base" => 7))
-        cmd = Cecelia.preview_show_command(reply)
-        @test cmd["type"] == "show_task_preview"
-        @test cmd["layers"] === layers                      # not re-encoded, not copied
-        @test cmd["layers"][1]["block"] === mask
-        @test cmd["show"] == true
+        payload = Cecelia.preview_reply_payload(reply)
+        @test payload["layers"] === layers                  # not re-encoded, not copied
+        @test payload["valueName"] == "A"
+        @test payload["previewImages"] == Any[]              # labels-only reply → empty AF list
         # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
-        # `({vn}) Labels` evict each other in the viewer instead of stacking
-        @test cmd["value_name"] == "A"
-        @test !occursin("__preview", cmd["value_name"])
+        # `({vn}) Labels` share a stem in the labels registry rather than diverge
+        @test !occursin("__preview", payload["valueName"])
 
-        # no layers at all is a fault, not a viewer showing nothing
-        @test_throws ErrorException Cecelia.preview_show_command(
+        # no layers AND no previewImages is a fault, not a viewer showing nothing
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             filter(p -> first(p) != "layers", reply))
-        @test_throws ErrorException Cecelia.preview_show_command(
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             merge(reply, Dict("layers" => Any[])))
 
         # a layer missing any of its geometry is a fault too — caught HERE rather than as a Python
         # traceback in the viewer, which is the point of validating in the pass-through
-        for missing_key in ("kind", "name", "block", "shape", "axes")
+        for missing_key in ("kind", "name", "valueName", "path", "shape", "axes")
             broken_layer = filter(p -> first(p) != missing_key, layers[1])
-            @test_throws ErrorException Cecelia.preview_show_command(
+            @test_throws ErrorException Cecelia.preview_reply_payload(
                 merge(reply, Dict("layers" => Any[broken_layer])))
         end
 
+        # an inline `block` field is protocol-12 and must not reach the browser — the API refuses to
+        # answer a stale worker that still sends one
+        @test_throws ErrorException Cecelia.preview_reply_payload(
+            merge(reply, Dict("layers" => Any[merge(layers[1], Dict("block" => "AA=="))])))
+
         # an unknown kind is refused rather than passed on for the viewer to guess at
-        @test_throws ErrorException Cecelia.preview_show_command(
+        @test_throws ErrorException Cecelia.preview_reply_payload(
             merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
 
-        # `source` (the viewer layer a corrected channel derives from, so the bridge can mirror its
-        # colormap) rides through untouched and is OPTIONAL — Julia neither requires it nor interprets
-        # it. Required here would break the one thing the pass-through exists to allow: the two Python
-        # ends evolving the payload without this file learning every field.
-        sourced = merge(reply, Dict("layers" => Any[merge(layers[2], Dict("source" => "nuc-GFP"))]))
-        @test Cecelia.preview_show_command(sourced)["layers"][1]["source"] == "nuc-GFP"
-        @test Cecelia.preview_show_command(
-            merge(reply, Dict("layers" => Any[layers[2]])))["layers"][1] === layers[2]
+        # AF preview: `previewImages` carries one entry per corrected channel, each with a source
+        # channel index and disk path — no `kind` (the array IS `image`), no `block`.
+        af_images = [
+            Dict("sourceChannel" => 1, "name" => "mem-TOM AF",
+                 "valueName" => "A", "path" => "/x/data/A__preview_af_ch1.ome.zarr",
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+            Dict("sourceChannel" => 2, "name" => "CD169 AF",
+                 "valueName" => "A", "path" => "/x/data/A__preview_af_ch2.ome.zarr",
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+        ]
+        af_reply = Dict("previewImages" => af_images,
+                        "region" => Dict("T" => [3, 4], "Y" => [0, 4], "X" => [0, 4]),
+                        "valueName" => "A")
+        af_payload = Cecelia.preview_reply_payload(af_reply)
+        @test af_payload["previewImages"] === af_images
+        @test af_payload["layers"] == Any[]
+        @test af_payload["valueName"] == "A"
+
+        # each previewImage needs the same on-disk fields as a labels layer (minus `kind`/`name`,
+        # which are labels' whole-list identity — an AF entry is one CHANNEL and identifies itself
+        # by `sourceChannel` instead).
+        for missing_key in ("sourceChannel", "valueName", "path", "shape", "axes")
+            broken = filter(p -> first(p) != missing_key, af_images[1])
+            @test_throws ErrorException Cecelia.preview_reply_payload(
+                merge(af_reply, Dict("previewImages" => Any[broken])))
+        end
+
+        # An inline `block` on an AF entry is protocol-13 and must not reach the browser.
+        @test_throws ErrorException Cecelia.preview_reply_payload(
+            merge(af_reply,
+                  Dict("previewImages" => Any[merge(af_images[1], Dict("block" => "AA=="))])))
     end
 
     @testset "a composite says which steps it does not preview" begin
@@ -14077,6 +14098,76 @@ end
         tip = String(get(p, :tip, ""))
         @test !isempty(tip)
         @test lowercase(tip) != lowercase(String(get(p, :label, "")))
+    end
+end
+
+@testset "bioformats2raw worker + heap flags" begin
+    # Same spec/handler drift shape as bf2raw_chunk_flags — an option surfaced in the JSON that no
+    # code translates is silent (import runs at the wrong worker count). Measured 2026-08-27 on
+    # `Human_Lymph_Node_Manual_IBEX.ims`: workers=4 (bf2raw default) → 105 OOMs and 0-3 chunks;
+    # workers=2 + -Xmx16g → 2 OOMs and 3820 chunks; workers=1 → zero OOMs. That's why Imaris auto = 1.
+    @test Cecelia.bf2raw_worker_flags("1") == ["--max-workers=1"]
+    @test Cecelia.bf2raw_worker_flags(2)   == ["--max-workers=2"]
+    @test Cecelia.bf2raw_worker_flags(8)   == ["--max-workers=8"]
+
+    # "auto" and unparseable both defer to bioformats2raw's own default (4) — same forgiving-fallback
+    # rule as chunk/compression: a bad value must not fail an hour-long import
+    @test isempty(Cecelia.bf2raw_worker_flags("auto"))
+    @test isempty(Cecelia.bf2raw_worker_flags("AUTO"))
+    @test isempty(Cecelia.bf2raw_worker_flags(""))
+    @test isempty(Cecelia.bf2raw_worker_flags("banana"))
+    @test isempty(Cecelia.bf2raw_worker_flags(0))
+    @test isempty(Cecelia.bf2raw_worker_flags(-2))
+
+    # Extension-keyed defaults — Imaris (`.ims`) is the reader we know decompresses fat HDF5 chunks.
+    # Everything else stays on "auto" (bf2raw picks 4).
+    @test Cecelia.bf2raw_default_workers("/some/path/thing.ims") == "1"
+    @test Cecelia.bf2raw_default_workers("/some/path/THING.IMS") == "1"
+    @test Cecelia.bf2raw_default_workers("/some/path/thing.tif") == "auto"
+    @test Cecelia.bf2raw_default_workers("/some/path/thing.czi") == "auto"
+    @test Cecelia.bf2raw_default_workers("")                       == "auto"
+
+    # JVM heap parsing mirrors the workers pattern
+    @test Cecelia.bf2raw_java_heap_gib("16") == 16
+    @test Cecelia.bf2raw_java_heap_gib(24)   == 24
+    @test Cecelia.bf2raw_java_heap_gib("auto") == 0
+    @test Cecelia.bf2raw_java_heap_gib("") == 0
+    @test Cecelia.bf2raw_java_heap_gib("banana") == 0
+    @test Cecelia.bf2raw_java_heap_gib(0) == 0
+    @test Cecelia.bf2raw_java_heap_gib(-4) == 0
+
+    # Extension-keyed heap default — Imaris gets headroom, everything else defers to the JVM. Cap at
+    # half the box RAM so a fixed literal can't wedge a small machine into swap (measured off
+    # Sys.total_memory at the call site, not a hardcoded number).
+    ram_gib = max(1, floor(Int, Sys.total_memory() / (1024^3)))
+    exp_ims = min(16, floor(Int, ram_gib / 2))
+    @test Cecelia.bf2raw_default_heap_gib("/some/path/thing.ims") == exp_ims
+    @test Cecelia.bf2raw_default_heap_gib("/some/path/thing.tif") == 0
+    @test Cecelia.bf2raw_default_heap_gib("")                       == 0
+
+    # Env dict shape — `heap_gib > 0` sets BIOFORMATS2RAW_OPTS with -Xmx, otherwise empty (JVM default).
+    # A pre-existing value in ENV is preserved (prepended to keep our flag winning) — feedback: never
+    # clobber a user-set env var. This side-tests that path without mutating the real ENV.
+    empty_env = Cecelia.bf2raw_java_env(0)
+    @test isempty(empty_env)
+    heap_env = Cecelia.bf2raw_java_env(16)
+    @test heap_env["BIOFORMATS2RAW_OPTS"] == "-Xmx16g" ||
+          startswith(heap_env["BIOFORMATS2RAW_OPTS"], "-Xmx16g ")
+
+    # every worker option in the task spec must actually resolve
+    spec2 = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv2  = only(filter(p -> get(p, :type, "") == "section", collect(spec2.params)))
+    mw    = only(filter(p -> get(p, :key, "") == "maxWorkers", collect(adv2.params)))
+    for o in mw.options
+        v = string(get(o, :value, o))
+        @test v == "auto" ? isempty(Cecelia.bf2raw_worker_flags(v)) :
+                            Cecelia.bf2raw_worker_flags(v) == ["--max-workers=$v"]
+    end
+    hp = only(filter(p -> get(p, :key, "") == "jvmHeapGiB", collect(adv2.params)))
+    for o in hp.options
+        v = string(get(o, :value, o))
+        n = Cecelia.bf2raw_java_heap_gib(v)
+        @test v == "auto" ? n == 0 : n == parse(Int, v)
     end
 end
 

@@ -11,6 +11,7 @@ export usable_cpus, task_workers_max
 export task_workers_widen, task_workers_derived, set_task_workers_widen!
 export runner_enabled, set_runner_enabled!, is_dev_session
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
+export bf2raw_worker_flags, bf2raw_default_workers, bf2raw_java_heap_gib, bf2raw_default_heap_gib, bf2raw_java_env
 export IMAGE_COMPRESSOR_MEASURED_ON
 export ngff_version, chunk_separator, set_store_layout!
 export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT
@@ -216,12 +217,12 @@ export launch!, close!, restart!, send
 export open_image!, show_labels!, show_branch_labels!, refresh_labels!, set_z_view!, set_3d_level!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!, stitch_movies!
-export capture_view_state, apply_view_state!, preview_region
+export capture_view_state, apply_view_state!
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
 # `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
 export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
-export preview_show_command, show_task_preview!, hide_task_preview!
+export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed
 

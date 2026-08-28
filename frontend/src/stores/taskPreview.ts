@@ -26,6 +26,7 @@ import {
   previewFailureLog } from '../utils/taskPreview'
 import { useWsStore } from './ws'
 import { useLogStore } from './log'
+import { useViewerStore } from './viewer'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
@@ -64,6 +65,18 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const starting = ref(false)
 
   const log = useLogStore()
+  const viewerStore = useViewerStore()
+
+  // Reload eviction. `enabled` is deliberately session-only (~L45), so on a page reload NO preview is
+  // active — but the viewer store's `previewLabels`/`previewImages` bags DO seed from localStorage
+  // (they have to, for a viewer window opened AFTER a preview run to pick it up). That combination
+  // meant a stale AF badge (and the corresponding channel-slab swap) survived a reload with no
+  // preview running to feed it. This store lives on the MAIN window, is created once per app load,
+  // and knows the ground truth: if `enabled` is false, no preview is showing — clear both bags so
+  // the viewer window sees `null` on its next storage-event read too. Popup viewer windows don't
+  // import this store, so they don't fight this write; the main window is the sole author.
+  viewerStore.setPreviewLabels(null)
+  viewerStore.setPreviewImages(null)
 
   /**
    * Record a failure: the readout AND the error console.
@@ -89,10 +102,18 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     signal.value = null
     tiling.value = null
     notPreviewed.value = []
+    // Preview labels are cross-window state (bridged through localStorage; see stores/viewer.ts). Clear
+    // via the store's setter so the viewer popup's Pinia also drops back to the real labels store.
+    viewerStore.setPreviewLabels(null)
+    // Same for AF preview: every corrected channel's slab URL flips back to the source image.
+    viewerStore.setPreviewImages(null)
   }
 
   const blocker = computed<PreviewBlocker | null>(
-    () => previewBlocker(context.value, status.value, { enabled: enabled.value, pinned: pinned.value }))
+    () => previewBlocker(context.value, status.value,
+      { enabled: enabled.value, pinned: pinned.value,
+        openImage: viewerStore.openImage,
+        hasRegion: viewerStore.visibleRegion !== null }))
   /** the one line under the button: what is wrong, and whether it is amber */
   const notice  = computed(() => previewNotice(
     blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))
@@ -122,17 +143,28 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   async function refreshStatus() {
     try {
       status.value = await previewApi.status()
-      starting.value = Boolean(status.value?.starting)
     } catch {
-      status.value = null            // backend unreachable; the blocker becomes 'no-image-open'
+      status.value = null            // backend unreachable; the blocker becomes 'no-viewer-open'
     }
+    // Sync `starting` OUTSIDE the try, so a status fetch that throws still clears a stuck 'Starting…'
+    // — otherwise a transient error during `start()` (e.g. the backend still restarting) leaves the
+    // toggle showing a spinner with nothing scheduled to clear it.
+    starting.value = Boolean(status.value?.starting)
   }
 
   // ── the one scheduler ───────────────────────────────────────────────────────
   const scheduler = debouncedLatest<PreviewContext>(async (ctx, isCurrent) => {
+    // Region and the browser-viewer's open image come from the viewer store (P7). If the viewer
+    // hasn't reported yet the run is skipped — same intent as `no-image-open`, but before spending a
+    // request. This never fires in practice: `request()`'s blocker check catches the same state.
+    const openImage = viewerStore.openImage
+    const region = viewerStore.visibleRegion
+    if (!region) return
     const res = await previewApi.run({
       projectUid: ctx.projectUid, imageUid: ctx.imageUid,
       valueName: ctx.valueName, funName: ctx.funName, params: ctx.params ?? {},
+      region,
+      zarrPath: openImage?.zarrPath, taskDir: openImage?.taskDir,
     })
     // Superseded while cellpose ran: the user has already moved on, so applying this would show a mask
     // for a region that is no longer on screen. The layer the backend just set is replaced by the next
@@ -147,6 +179,18 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
     tiling.value = { runSeams: res?.runSeams, blockSize: res?.blockSize }
     notPreviewed.value = Array.isArray(res?.notPreviewed) ? res.notPreviewed : []
+    // P7: a labels-shaped reply carries `previewLabels: {valueName, imageUid, projectUid}`; when set,
+    // the ViewerWindow's labels slab URL flips to the scratch `<vn>__preview.ome.zarr` for this vn.
+    // Goes on the VIEWER STORE (bridged across windows), because the run completes in the module
+    // page's Pinia and the render happens in the popup viewer's Pinia — a plain ref here would never
+    // reach it.
+    viewerStore.setPreviewLabels(
+      res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
+    // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
+    // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
+    // cross-window story as previewLabels.
+    viewerStore.setPreviewImages(
+      Array.isArray(res?.previewImages) ? res.previewImages : null)
     error.value = ''
     errorCode.value = ''
   }, {
@@ -251,8 +295,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     errorCode.value = ''
     starting.value = false
     try {
-      // removes the layer AND stops the worker — the only thing that releases the model's VRAM
-      await previewApi.stop(context.value?.valueName)
+      // sweeps the preview labels store AND stops the worker — the only thing that releases the
+      // model's VRAM. `taskDir` scopes the sweep to the currently-open image.
+      await previewApi.stop(viewerStore.openImage?.taskDir)
     } catch (e) {
       fail(e instanceof Error ? e.message : String(e))
     }
@@ -264,13 +309,23 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // ── the view-change trigger ─────────────────────────────────────────────────
   // Subscribed once, at store creation, NOT in a component's onMounted: the preview must keep tracking
   // the view while the user is on another page (the worker and the layer both outlive the panel).
+  //
+  // Under P7, the BROWSER VIEWER writes to `useViewerStore().visibleRegion`, and we watch that
+  // directly rather than routing through a WS message: the store update happens in the same tab,
+  // debounce is already done at the viewer store's sink, and this saves a round trip through the
+  // backend just to reach a peer store. `napari:view-changed` stays as a fallback while other
+  // callers still act through napari.
   const ws = useWsStore()
+  watch(() => viewerStore.visibleRegion, () => { request() })
+  watch(() => viewerStore.openImage, () => {
+    // Opening a different image (route load, valueName picker) invalidates the mask on screen — the
+    // preview labels store belongs to the previous vn/uid pair.
+    scheduler.cancel()
+    clearResult()
+    void refreshStatus().then(request)
+  })
   ws.on('napari:view-changed', () => { request() })
   ws.on('napari:opened', () => {
-    // Opening an image calls `layers.clear()` bridge-side, so the preview layer is gone. Clear the
-    // readout with it — otherwise it keeps reporting "42 cells" for a mask nobody can see, which is
-    // worse than reporting nothing. The worker stays warm on purpose (that is what it is for); a new
-    // preview is requested below if the params still apply to what is now open.
     scheduler.cancel()
     clearResult()
     void refreshStatus().then(request)

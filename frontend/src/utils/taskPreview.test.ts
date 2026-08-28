@@ -44,8 +44,10 @@ describe('previewBlocker', () => {
   })
 
   it('blocks when the viewer has nothing open', () => {
-    expect(previewBlocker(ctx(), null, on)).toBe('no-image-open')
-    expect(previewBlocker(ctx(), status({ imageUid: null }), on)).toBe('no-image-open')
+    // P7: with no browser viewer window open and no napari-side status either, it's `no-viewer-open`
+    // (was `no-image-open` under napari). Same UX — a message asking the user to open the viewer.
+    expect(previewBlocker(ctx(), null, on)).toBe('no-viewer-open')
+    expect(previewBlocker(ctx(), status({ imageUid: null }), on)).toBe('no-viewer-open')
   })
 
   it('blocks when the viewer is showing a DIFFERENT image', () => {

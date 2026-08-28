@@ -1110,3 +1110,87 @@ function bf2raw_compression_flags(name::AbstractString = image_compressor())::Ve
      "--compression-properties", "clevel=$(c.clevel)",
      "--compression-properties", "shuffle=$(c.shuffle ? shuf_on : shuf_off)"]
 end
+
+"""
+    bf2raw_worker_flags(value) -> Vector{String}
+
+bioformats2raw `--max-workers=N` flag, or **empty for `"auto"`**.
+
+Empty defers to bioformats2raw's own default of 4. That is fine for TIFF/CZI/ND2 sources whose native
+chunks decompress cheaply, but wrong for **Imaris HDF5 (`.ims`)**: each worker holds a decompressed
+HDF5 chunk of the source (`H5tiledLayoutBB\$DataChunk.getByteBuffer` → `Deflate.decode`), and on a
+big 3D volume that chunk can be several hundred MB. Four workers × chunk + reader overhead ran the
+JVM out of heap on a 3.2 GB manual-IBEX Imaris file — 105 OOMs against the default `-Xmx` in one run,
+0-3 chunks written before the task terminated. Two workers dropped it to 2 OOMs. `--max-workers=1` on
+Imaris sources is the safe floor.
+
+The auto-picker lives in `bf2raw_default_workers` — this helper just packages an explicit choice into
+the CLI shape. Anything unparseable falls back to auto rather than raising, same as the chunk /
+compression helpers: a typo must not fail an hour-long import.
+"""
+function bf2raw_worker_flags(value)::Vector{String}
+    s = lowercase(strip(string(value)))
+    (isempty(s) || s == "auto") && return String[]
+    n = tryparse(Int, s)
+    (isnothing(n) || n < 1) && return String[]
+    ["--max-workers=$n"]
+end
+
+"""
+    bf2raw_default_workers(src_path::AbstractString) -> String
+
+Reader-aware default for `--max-workers`. Returns `"1"` for Imaris (`.ims`) — the reader whose native
+HDF5 chunks are large enough that even 2 workers touch the JVM heap ceiling — and `"auto"` for
+everything else (which resolves to bioformats2raw's own default of 4). See `bf2raw_worker_flags` for
+the measurement that named this.
+"""
+function bf2raw_default_workers(src_path::AbstractString)::String
+    endswith(lowercase(src_path), ".ims") ? "1" : "auto"
+end
+
+"""
+    bf2raw_java_heap_gib(value) -> Int
+
+Parse the `jvmHeapGiB` param into an integer GiB, or `0` for auto (defer to the JVM's own default of
+~25% of RAM). Same forgiving-fallback rule as the sibling flag helpers.
+"""
+function bf2raw_java_heap_gib(value)::Int
+    s = lowercase(strip(string(value)))
+    (isempty(s) || s == "auto") && return 0
+    n = tryparse(Int, s)
+    (isnothing(n) || n < 1) && return 0
+    n
+end
+
+"""
+    bf2raw_default_heap_gib(src_path::AbstractString) -> Int
+
+Reader-aware default for the JVM heap ceiling, in GiB. Returns `0` (leave the JVM default alone) for
+readers where the default has always been enough, and a headroom number for Imaris — capped at half
+the system RAM so the launcher can't wedge the box into swap. The cap is measured off `Sys.total_memory`
+at task-start time, not a fixed literal (per `feedback_reservation_is_not_management` — don't ship a
+diagnosis without the guard).
+"""
+function bf2raw_default_heap_gib(src_path::AbstractString)::Int
+    endswith(lowercase(src_path), ".ims") || return 0
+    ram_gib = max(1, floor(Int, Sys.total_memory() / (1024^3)))
+    min(16, floor(Int, ram_gib / 2))
+end
+
+"""
+    bf2raw_java_env(heap_gib::Int) -> Dict{String,String}
+
+Build the env-var dict that the bioformats2raw launcher script honours (line 168 of the script:
+"DEFAULT_JVM_OPTS, JAVA_OPTS, and BIOFORMATS2RAW_OPTS environment variables"). `heap_gib > 0` sets
+`BIOFORMATS2RAW_OPTS = "-Xmx\${n}g"`, prepended to anything the caller already has in that env var so
+we don't clobber a manually-set flag. `heap_gib <= 0` returns an empty dict — the caller then adds
+nothing, and the JVM picks its own default.
+
+Feed the result to `addenv(cmd, env_dict)` before `run`.
+"""
+function bf2raw_java_env(heap_gib::Integer)::Dict{String,String}
+    heap_gib > 0 || return Dict{String,String}()
+    prev = get(ENV, "BIOFORMATS2RAW_OPTS", "")
+    opt  = "-Xmx$(heap_gib)g"
+    Dict{String,String}("BIOFORMATS2RAW_OPTS" => isempty(prev) ? opt : "$opt $prev")
+end

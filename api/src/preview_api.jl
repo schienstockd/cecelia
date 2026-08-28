@@ -6,11 +6,11 @@
 # to over WS" already has one way to be done here.
 #
 # The one rule this file exists to enforce: **a preview never guesses which image it is looking at.**
-# `napari_api` tracks the open image but used to expose nothing, so an out-of-band caller had to be
-# told — and during this feature's development, guessing wrong three times wrote scratch stores into
-# images the user was not looking at. `api_preview_run` reads the open image from
-# `current_napari_image()` and REFUSES a request that names a different one, rather than trusting the
-# client. See docs/todo/TASK_PREVIEW_PLAN.md.
+# The browser viewer sends its open image (`zarrPath`, `taskDir`, `imageUid`) and its visible region
+# in the POST body, and the API checks that against the store the task would read. A mismatch is a
+# 409 with the version to open, never a silent switch. See docs/todo/WEB_VIEWER_PLAN.md → P7.
+# `current_napari_image()` remains a transitional fallback while other callers still route through
+# napari; a body-first client is authoritative.
 
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
 const _preview_starting = Ref(false)
@@ -152,19 +152,23 @@ function api_preview_start(body_bytes::Vector{UInt8})
 end
 
 # ── POST /api/preview/stop ────────────────────────────────────────────────────
-# Toggle-off: remove the layer, then stop the worker. Stopping is the ONLY thing that releases the
-# VRAM a warm cellpose model holds, which is why this is a real user action and not just cleanup.
+# Toggle-off: sweep the preview labels store on disk, then stop the worker. Stopping is the ONLY
+# thing that releases the VRAM a warm cellpose model holds, which is why this is a real user action
+# and not just cleanup.
 function api_preview_stop(body_bytes::Vector{UInt8})
     data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch; Dict{String,Any}(); end
-    value_name = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
+    task_dir = String(get(data, "taskDir", ""))
 
-    # hide first: if stopping the worker throws, the user is not left looking at a stale mask
-    _with_viewer() do
-        v = _viewer()
-        v === nothing || try
-            hide_task_preview!(v; value_name = value_name)
+    # sweep first — if stopping the worker throws, the browser is not left with a preview slab route
+    # pointing at debris
+    if !isempty(task_dir)
+        try
+            _with_preview() do
+                w = _preview()
+                w === nothing || send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
+            end
         catch e
-            @warn "Could not remove preview layer" exception = e
+            @warn "Preview scratch sweep failed" exception = e
         end
     end
     _stop_preview_worker!()
@@ -172,14 +176,18 @@ function api_preview_stop(body_bytes::Vector{UInt8})
 end
 
 # ── POST /api/preview/run ─────────────────────────────────────────────────────
-# Body: `{ projectUid, imageUid, valueName, params }`. Runs the task's real compute over the region
-# the viewer is looking at and shows the result as an in-memory labels layer.
+# Body: `{ projectUid, imageUid, valueName, params, region, zarrPath, taskDir }`. Runs the task's
+# real compute over the visible region THE BROWSER VIEWER REPORTED IN THE BODY and writes the mask
+# to a scratch labels store the browser fetches via `/api/viewer/slab?labels=<vn>&preview=1`.
 #
-# `imageUid`/`valueName` are CHECKED against the open image, not used to pick one. A mismatch is a 409
-# with the version to open, because the alternatives are both silently wrong: previewing the client's
-# choice acts on an image the user isn't looking at, and previewing the open one shows a result the
-# configured run would not produce. The region is read from the same open layer, so pixels and region
-# can never come from differently-shaped versions of the image.
+# `region` (level-0 pixel bounds) and the open-image fields come from the browser viewer directly —
+# a POST detour through `current_napari_image()` (and the corresponding napari-bridge `preview_region`
+# call) belonged to the era where napari owned "the view", and is now transitional: the fallback
+# stays only so that existing tests keep working while the browser viewer settles in.
+#
+# `imageUid`/`valueName` are still CHECKED (against the store version the task would read), not used
+# to pick one. A version-mismatch is a 409, because the alternatives are both silently wrong: acting
+# on a different pixel version shows a result the run would not produce.
 function api_preview_run(body_bytes::Vector{UInt8})
     data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch
         return 400, JSON3.write((; error = "invalid JSON body")); end
@@ -188,23 +196,27 @@ function api_preview_run(body_bytes::Vector{UInt8})
     image_uid   = String(get(data, "imageUid", ""))
     value_name  = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
     params      = get(data, "params", nothing)
+    region      = get(data, "region", nothing)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error = "imageUid required"))
     params isa AbstractDict || return 400, JSON3.write((; error = "params required"))
+    region isa AbstractDict || return 400, JSON3.write((;
+        error = "region required — POST the viewer's visible region in the body",
+        code  = "no-region"))
 
-    open_image = current_napari_image()
-    isnothing(open_image.imageUid) &&
-        return 409, JSON3.write((; error = "No image open in the viewer. Open the image to preview it.",
-                                   code = "no-image-open"))
-    open_image.imageUid == image_uid ||
-        return 409, JSON3.write((; error = "Open this image in the viewer to preview it.",
-                                   code = "image-mismatch", openImageUid = open_image.imageUid))
-    (isnothing(open_image.zarrPath) || isnothing(open_image.taskDir)) &&
-        return 409, JSON3.write((; error = "The viewer has no image version resolved yet.",
-                                   code = "no-image-open"))
+    # The browser viewer is the source of truth for what's on screen. It writes into
+    # `useViewerStore().openImage` and the FE body-carries those fields. No viewer open ⇒ no region
+    # to preview; the FE's `previewBlocker` catches this before the POST, and this refusal is the
+    # server-side belt for anything that gets past it.
+    open_zarr_path = String(get(data, "zarrPath", ""))
+    open_task_dir  = String(get(data, "taskDir",  ""))
+    (isempty(open_zarr_path) || isempty(open_task_dir)) &&
+        return 409, JSON3.write((;
+            error = "Open the image in the browser viewer window to preview.",
+            code  = "no-viewer-open"))
 
-    # Which version would the RUN read? If that isn't what's on screen, previewing either the wrong
-    # pixels or the wrong region — refuse and say which version to open.
+    # Which version would the RUN read? If that isn't what the browser has open, previewing either
+    # the wrong pixels or the wrong region — refuse and say which version to open.
     in_value_name = String(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     proj_dir  = joinpath(projects_dir(), project_uid)
     meta_file = state_file(proj_dir, image_uid)
@@ -213,30 +225,20 @@ function api_preview_run(body_bytes::Vector{UInt8})
     isnothing(filename) &&
         return 404, JSON3.write((; error = "No filepath registered (valueName=$in_value_name). Run a conversion task first."))
     wanted = joinpath(proj_dir, "0", image_uid, string(filename))
-    _same_store(wanted, open_image.zarrPath) ||
+    _same_store(wanted, open_zarr_path) ||
         # The message is the frontend's TOOLTIP DETAIL — the short amber label comes from `code`
         # (frontend `ERROR_SHORT`), so this carries the two concrete names instead of restating the
         # problem. See docs/UI.md → warning copy: short = problem, detail = the action + the numbers.
         return 409, JSON3.write((;
-            error = "The viewer is showing '$(basename(String(open_image.zarrPath)))'; this task " *
+            error = "The viewer is showing '$(basename(open_zarr_path))'; this task " *
                     "reads '$in_value_name'. Open that version to preview it.",
             code = "version-mismatch",
             wantedValueName = in_value_name,
-            openZarr = basename(String(open_image.zarrPath))))
+            openZarr = basename(open_zarr_path)))
 
     ready = _ensure_preview!()
     ready || return 202, JSON3.write((; starting = true, alive = false,
                                         message = "Preview worker is starting."))
-
-    region = try
-        _with_viewer() do
-            v = _viewer()
-            v === nothing && error("napari is not running")
-            preview_region(v)
-        end
-    catch e
-        return 409, JSON3.write((; error = sprint(showerror, e), code = "no-region"))
-    end
 
     # Params as a real RUN would prepare them: section sub-params lifted to the top level, then the
     # task's own translation. Both dispatch on the task, so neither can be guessed at here — see
@@ -271,7 +273,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
         _with_preview() do
             w = _preview()
             w === nothing && error("preview worker is not running")
-            send(w, preview_request(open_image.zarrPath, open_image.taskDir, params, region;
+            send(w, preview_request(open_zarr_path, open_task_dir, params, region;
                                     value_name = value_name,
                                     fun_name = String(get(data, "funName", "")),
                                     channel_names = chan_names))
@@ -288,16 +290,51 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = raw))
     end
 
-    try
-        _with_viewer() do
-            # api_url makes the viewer report view changes back (→ `viewChanged` → WS → re-preview),
-            # which is what stops a preview going stale the moment you scroll
-            show_task_preview!(_viewer(), reply; value_name = value_name,
-                               api_url = String(get(data, "apiUrl", "http://localhost:8080")))
+    # Sanity-check the reply shape (labels layer needs valueName/path on disk; AF `previewImages`
+    # entries need the same plus `sourceChannel`). Flow-plane replies (`planes`) skip this — they
+    # carry PNGs, not layers.
+    has_layer_reply = (get(reply, "layers", nothing) isa AbstractVector && !isempty(reply["layers"])) ||
+                      (get(reply, "previewImages", nothing) isa AbstractVector && !isempty(reply["previewImages"]))
+    payload = if has_layer_reply
+        try
+            preview_reply_payload(reply; value_name = value_name)
+        catch e
+            return 500, JSON3.write((; error = "preview reply invalid: " * sprint(showerror, e)))
         end
-    catch e
-        return 500, JSON3.write((; error = "preview computed but could not be shown: " *
-                                           sprint(showerror, e)))
+    else
+        Dict{String,Any}()
+    end
+
+    # The browser fetches the preview labels store through the slab route — the flag `preview=1`
+    # points the reader at `<vn>__preview.ome.zarr` rather than the finished store, but everything
+    # else is the same. Returned as data the FE composes into a URL rather than a URL the API
+    # composes, so a project uid change doesn't require an API redeploy.
+    preview_labels = if !isempty(payload) &&
+                        !isempty(get(payload, "layers", Any[])) &&
+                        any(String(l["kind"]) == "labels" for l in payload["layers"])
+        Dict{String,Any}(
+            "valueName" => String(get(payload, "valueName", value_name)),
+            "imageUid"  => image_uid,
+            "projectUid" => project_uid,
+        )
+    else
+        nothing
+    end
+
+    # Same story for AF: one entry per corrected channel, each with the source channel index the
+    # browser needs to know which channel's slab URL to swap. The scratch store's path convention is
+    # fixed and IS the slab route's contract (`{img_dir}/{vn}__preview_af_ch{N}.ome.zarr`) — the FE
+    # doesn't need the path field, only `{sourceChannel, valueName, imageUid, projectUid}`.
+    preview_images = if !isempty(payload) && !isempty(get(payload, "previewImages", Any[]))
+        [Dict{String,Any}(
+            "sourceChannel" => Int(m["sourceChannel"]),
+            "name"          => String(get(m, "name", "")),
+            "valueName"     => String(get(m, "valueName", value_name)),
+            "imageUid"      => image_uid,
+            "projectUid"    => project_uid,
+        ) for m in payload["previewImages"]]
+    else
+        nothing
     end
 
     200, JSON3.write((;
@@ -320,7 +357,17 @@ function api_preview_run(body_bytes::Vector{UInt8})
         derived     = get(reply, "derived", Dict{String,Any}()),
         # for a composite, the steps this preview does not run — the run does more than you see
         notPreviewed = task === nothing ? Dict{String,Any}[] : preview_steps_not_previewed(task),
-        valueName  = value_name,
+        valueName    = value_name,
+        # the disk-backed layers (protocol 13): `{kind, name, valueName, path, shape, axes}`
+        layers       = get(payload, "layers", Any[]),
+        # nothing = no labels layer in this reply (e.g. flow-planes response, or an AF reply)
+        previewLabels = preview_labels,
+        # nothing = no AF corrected channels in this reply (labels/flow-plane responses)
+        previewImages = preview_images,
+        # unchanged: flow-plane backends answer with `planes` (PNGs) instead of layers
+        planes       = get(reply, "planes", nothing),
+        metricKeys   = get(reply, "metricKeys", nothing),
+        temporalScales = get(reply, "temporalScales", nothing),
     ))
 end
 

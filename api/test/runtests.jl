@@ -1080,14 +1080,17 @@ end
 end
 
 @testset "API: task preview never guesses which image is open" begin
-    # The property this whole route exists for. `napari_api` tracked the open image but exposed
-    # nothing, so callers had to be told which image to act on — and guessing wrong wrote scratch
-    # stores into images the user wasn't looking at. Every branch below is a REFUSAL, because the
-    # alternative to refusing is acting on the wrong image.
+    # The property this whole route exists for. Under P7 the browser viewer is the source of truth: it
+    # writes `useViewerStore().openImage` on the client side and body-carries `zarrPath`/`taskDir`/
+    # `imageUid`/`region` into `/api/preview/run`. The API refuses when they're missing rather than
+    # falling back to napari (deleted with the napari send calls in P7). Every branch is a REFUSAL,
+    # because the alternative to refusing is acting on the wrong image.
+    _region() = Dict("xy" => Dict("X" => [0, 32], "Y" => [0, 32]),
+                     "z" => 0, "t" => 0, "ndisplay" => 2)
+    # ── nothing body-carried → 409 no-viewer-open, and the status route says the napari-tracked side
+    #    is null too so a transitional client can't read a plausible-looking default out of it
     saved = (_current_image_uid[], _current_zarr_path[], _current_task_dir[])
     try
-        # ── nothing open → the status route says so in every field, so a client can't read a
-        #    plausible-looking default out of it
         _current_image_uid[] = nothing; _current_zarr_path[] = nothing; _current_task_dir[] = nothing
         st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
         @test st == 200
@@ -1095,75 +1098,96 @@ end
         @test d.imageUid === nothing && d.zarrPath === nothing && d.taskDir === nothing
         @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
         @test d.alive == false
-
-        # ...and a run refuses rather than picking something
-        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
-                                               "params" => Dict("models" => Dict())))
-        @test st == 409
-        @test JSON3.read(body).code == "no-image-open"
-
-        # ── a DIFFERENT image open → refuse, and name what is actually open
-        _current_image_uid[] = "openImg"; _current_zarr_path[] = "/x/openImg.ome.zarr"
-        _current_task_dir[]  = "/x/meta"
-        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "otherImg",
-                                               "params" => Dict("models" => Dict())))
-        @test st == 409
-        d = JSON3.read(body)
-        @test d.code == "image-mismatch" && d.openImageUid == "openImg"
-
-        # ── missing required fields are 400s, not silent defaults
-        @test _post(api_preview_run, Dict("imageUid" => "i", "params" => Dict()))[1] == 400
-        @test _post(api_preview_run, Dict("projectUid" => "p", "params" => Dict()))[1] == 400
-        @test _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i"))[1] == 400
-
-        # ── the open image, but the task reads a DIFFERENT VERSION of it → refuse and say which to
-        #    open. Previewing anyway would either segment pixels the user can't see or pair the
-        #    region with a differently-shaped store.
-        mktempdir() do proj_root
-            conf  = cecelia_conf()
-            pdirs = get!(conf, "dirs", Dict{String,Any}())
-            had   = haskey(pdirs, "projects"); prev = get(pdirs, "projects", nothing)
-            pdirs["projects"] = proj_root
-            try
-                uid = "img9"
-                meta = joinpath(proj_root, "p", "1", uid); mkpath(meta)
-                write(joinpath(meta, "ccid.json"), JSON3.write(Dict(
-                    "uid" => uid,
-                    "filepath" => Dict("default" => "orig.ome.zarr",
-                                       "corrected" => "drift.ome.zarr", "_active" => "default"))))
-                _current_image_uid[] = uid
-                _current_zarr_path[] = joinpath(proj_root, "p", "0", uid, "orig.ome.zarr")
-                _current_task_dir[]  = meta
-
-                st, body = _post(api_preview_run, Dict(
-                    "projectUid" => "p", "imageUid" => uid,
-                    "params" => Dict("valueName" => "corrected", "models" => Dict())))
-                @test st == 409
-                d = JSON3.read(body)
-                @test d.code == "version-mismatch" && d.wantedValueName == "corrected"
-                # The frontend renders `code` as the short amber label and this message as the
-                # tooltip detail, so the message must carry the SPECIFICS — both names — rather than
-                # restate the problem. See `previewNotice`/`ERROR_SHORT` in utils/taskPreview.ts.
-                @test occursin("corrected", d.error) && occursin("orig.ome.zarr", d.error)
-                @test d.openZarr == "orig.ome.zarr"
-
-                # an unknown valueName is a 404, not a preview of the active version
-                st, _ = _post(api_preview_run, Dict(
-                    "projectUid" => "p", "imageUid" => uid,
-                    "params" => Dict("valueName" => "nope", "models" => Dict())))
-                @test st == 404
-            finally
-                had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
-            end
-        end
-
-        # ── a RUNNING segmentation puts the viewer on the staging store while ccid.json still
-        #    resolves the final path. Same store mid-write, so this must NOT be a mismatch.
-        @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr" * Cecelia.STORE_STAGING_SUFFIX)
-        @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr")
-        @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
     finally
         _current_image_uid[], _current_zarr_path[], _current_task_dir[] = saved
+    end
+
+    st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                           "params" => Dict("models" => Dict()),
+                                           "region" => _region()))
+    @test st == 409
+    @test JSON3.read(body).code == "no-viewer-open"
+
+    # ── missing required fields are 400s, not silent defaults
+    @test _post(api_preview_run, Dict("imageUid" => "i", "params" => Dict(),
+                                      "region" => _region()))[1] == 400
+    @test _post(api_preview_run, Dict("projectUid" => "p", "params" => Dict(),
+                                      "region" => _region()))[1] == 400
+    @test _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                      "region" => _region()))[1] == 400
+    # region itself is required — comes from the browser viewer body, not from a viewer WS callback
+    st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                           "params" => Dict("models" => Dict())))
+    @test st == 400
+    @test JSON3.read(body).code == "no-region"
+
+    # ── the body's zarrPath vs the version the task would read → refuse and say which to open.
+    #    Previewing anyway would either segment pixels the user can't see or pair the region with a
+    #    differently-shaped store.
+    mktempdir() do proj_root
+        conf  = cecelia_conf()
+        pdirs = get!(conf, "dirs", Dict{String,Any}())
+        had   = haskey(pdirs, "projects"); prev = get(pdirs, "projects", nothing)
+        pdirs["projects"] = proj_root
+        try
+            uid = "img9"
+            meta = joinpath(proj_root, "p", "1", uid); mkpath(meta)
+            write(joinpath(meta, "ccid.json"), JSON3.write(Dict(
+                "uid" => uid,
+                "filepath" => Dict("default" => "orig.ome.zarr",
+                                   "corrected" => "drift.ome.zarr", "_active" => "default"))))
+            open_zarr = joinpath(proj_root, "p", "0", uid, "orig.ome.zarr")
+
+            st, body = _post(api_preview_run, Dict(
+                "projectUid" => "p", "imageUid" => uid,
+                "zarrPath" => open_zarr, "taskDir" => meta,
+                "params" => Dict("valueName" => "corrected", "models" => Dict()),
+                "region" => _region()))
+            @test st == 409
+            d = JSON3.read(body)
+            @test d.code == "version-mismatch" && d.wantedValueName == "corrected"
+            # The frontend renders `code` as the short amber label and this message as the tooltip
+            # detail, so the message must carry the SPECIFICS rather than restate the problem. See
+            # `previewNotice`/`ERROR_SHORT` in utils/taskPreview.ts.
+            @test occursin("corrected", d.error) && occursin("orig.ome.zarr", d.error)
+
+            # an unknown valueName is a 404, not a preview of the active version
+            st, _ = _post(api_preview_run, Dict(
+                "projectUid" => "p", "imageUid" => uid,
+                "zarrPath" => open_zarr, "taskDir" => meta,
+                "params" => Dict("valueName" => "nope", "models" => Dict()),
+                "region" => _region()))
+            @test st == 404
+        finally
+            had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
+        end
+    end
+
+    # ── a RUNNING segmentation puts the viewer on the staging store while ccid.json still resolves
+    #    the final path. Same store mid-write, so this must NOT be a mismatch.
+    @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr" * Cecelia.STORE_STAGING_SUFFIX)
+    @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr")
+    @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
+end
+
+@testset "API: preview stop sweeps the scratch labels store" begin
+    # A preview writes `<vn>__preview.ome.zarr` under `{taskDir}/labels/`; a stop must clear it so
+    # a subsequent session doesn't inherit stale bytes over the `preview=1` slab route. The worker
+    # is not running here — the sweep is best-effort and the stop route must still succeed.
+    mktempdir() do task_dir
+        labels_dir = joinpath(task_dir, "labels")
+        mkpath(labels_dir)
+        stale = joinpath(labels_dir, "A__preview.ome.zarr")
+        mkpath(stale); write(joinpath(stale, "junk"), "x")
+        @test isdir(stale)
+
+        st, body = _post(api_preview_stop, Dict("taskDir" => task_dir))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.stopped == true && d.alive == false
+        # the worker was down, so this is a no-op on the disk from the API side — the sweep only
+        # runs when the worker is up (it owns the file handles that might still be holding it
+        # open on Windows). Left as debris here; a later run wipes it on entry via `_stage_labels_store`.
     end
 end
 
@@ -7097,4 +7121,44 @@ end
                                            canvas_h, canvas_w, cx, cy, cz)
     @test isapprox(u90, (canvas_w + 1) / 2; atol = 1e-9)
     @test isapprox(v90, (canvas_h + 1) / 2; atol = 1e-9)
+end
+# ── VIEWER_PARITY phases 1 + 2: overlay_author reads the same JSON the browser reads ─────────────
+# The house palette, the three track-colour-mode names, and the heat-ramp anchors used by the
+# offline movie renderer all live in one JSON asset (`frontend/src/plots/palettes.json`) that the
+# browser look ALSO reads. This testset pins that: the Julia constants must equal the JSON we would
+# see the browser using — otherwise the two paths draw the same experiment differently.
+# See docs/todo/VIEWER_PARITY_PLAN.md phases 1 + 2.
+@testset "API: palette + track-mode JSON is the shared source of truth for overlay_author" begin
+    palette_json = normpath(joinpath(@__DIR__, "..", "..", "frontend", "src", "plots", "palettes.json"))
+    @assert isfile(palette_json) "palettes.json missing — this test needs the checked-in file"
+    doc = JSON3.read(read(palette_json, String))
+
+    # Browser hex → Julia RGB the way overlay_author parses it (matches hex_to_rgb).
+    function _parity_rgb(hex::AbstractString)
+        h = strip(String(hex))
+        startswith(h, "#") && (h = h[2:end])
+        length(h) == 3 && (h = string(h[1], h[1], h[2], h[2], h[3], h[3]))
+        r = parse(Int, h[1:2]; base = 16) / 255
+        g = parse(Int, h[3:4]; base = 16) / 255
+        b = parse(Int, h[5:6]; base = 16) / 255
+        RGB{N0f8}(r, g, b)
+    end
+
+    # Palette equality: the JSON's `palettes.cecelia` block, parsed to RGB, is the Julia constant.
+    json_palette = [_parity_rgb(String(h)) for h in doc.palettes.cecelia]
+    @test length(CECELIA_TRACK_PALETTE) == length(json_palette) == 12
+    @test CECELIA_TRACK_PALETTE == json_palette
+
+    # Heat ramp: the JSON's five anchors are the Julia `_heat_stops()` — same order, same colours.
+    json_heat = [_parity_rgb(String(h)) for h in doc.heatRamp]
+    @test length(json_heat) == 5
+    @test collect(_heat_stops()) == json_heat
+
+    # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays_for
+    # (no fall-through to the `"track"` default warning inside the function).
+    json_modes = [String(m) for m in doc.trackColorModes]
+    @test Set(json_modes) == Set(TRACK_COLOR_MODES)
+    for m in json_modes
+        @test m in TRACK_COLOR_MODES
+    end
 end

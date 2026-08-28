@@ -19,8 +19,15 @@
 // have always had, and the Movies list joins it rather than introducing a second, per-panel rule the
 // user would have to learn. WIDTH stays per panel (`storageKey`) — panels hold different things and a
 // shared width would be wrong for all of them.
+import { computed } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { usePanelResize } from '../composables/usePanelResize'
+
+/** Settings-store keys the panel is allowed to bind its collapse flag to. The default
+ *  `rightPanelCollapsed` is the app-wide shared fold — see the header. Adding a new key here (and
+ *  the ref itself in `stores/settings.ts`) is the extension point when a panel needs an
+ *  independent flag, e.g. the viewer window's sidebar (Dominik, 2026-08-28). */
+type CollapsedKey = 'rightPanelCollapsed' | 'viewerWindowSideCollapsed'
 
 const props = withDefaults(defineProps<{
   /** localStorage key for THIS panel's width. Widths are per panel; the collapse state is not. */
@@ -31,28 +38,38 @@ const props = withDefaults(defineProps<{
   max?: number
   /** Starting width in px. `null` (the default) sizes to content until the user drags. */
   defaultWidth?: number | null
-}>(), { min: 200, max: 680, defaultWidth: null })
+  /** Which settings-store flag governs collapse. Default is the app-wide `rightPanelCollapsed`; the
+   *  viewer window passes `viewerWindowSideCollapsed` because its sidebar holds different content
+   *  and used to fold together with the module pages' right panel. */
+  collapsedKey?: CollapsedKey
+}>(), { min: 200, max: 680, defaultWidth: null, collapsedKey: 'rightPanelCollapsed' })
 
 const settings = useSettingsStore()
 const { widthStyle, onResizeStart } = usePanelResize({
   min: props.min, max: props.max, default: props.defaultWidth, storageKey: props.storageKey,
 })
+
+// One accessor so the template stays a single expression regardless of which flag it is bound to.
+const collapsed = computed<boolean>({
+  get: () => settings[props.collapsedKey],
+  set: v => { settings[props.collapsedKey] = v },
+})
 </script>
 
 <template>
-  <div class="cc-panel" :class="{ collapsed: settings.rightPanelCollapsed }"
-       :style="settings.rightPanelCollapsed ? undefined : widthStyle">
+  <div class="cc-panel" :class="{ collapsed }"
+       :style="collapsed ? undefined : widthStyle">
     <!-- drag the left edge to resize (persisted per panel) -->
-    <div v-if="!settings.rightPanelCollapsed" class="cc-panel-resizer" @mousedown="onResizeStart"
+    <div v-if="!collapsed" class="cc-panel-resizer" @mousedown="onResizeStart"
          v-tooltip.top="'Drag to resize'" />
     <button class="cc-panel-handle" data-guide="layout.rightPanelHandle"
-            @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
-            v-tooltip.left="`${settings.rightPanelCollapsed ? 'Show' : 'Hide'} ${label}`"
-            :aria-label="`${settings.rightPanelCollapsed ? 'Show' : 'Hide'} ${label}`">
-      <i :class="['pi', settings.rightPanelCollapsed ? 'pi-angle-double-left' : 'pi-angle-double-right']" />
+            @click="collapsed = !collapsed"
+            v-tooltip.left="`${collapsed ? 'Show' : 'Hide'} ${label}`"
+            :aria-label="`${collapsed ? 'Show' : 'Hide'} ${label}`">
+      <i :class="['pi', collapsed ? 'pi-angle-double-left' : 'pi-angle-double-right']" />
     </button>
     <!-- v-show, not v-if: collapsing must not tear down the content (and refetch everything on reopen) -->
-    <div v-show="!settings.rightPanelCollapsed" class="cc-panel-slot"><slot /></div>
+    <div v-show="!collapsed" class="cc-panel-slot"><slot /></div>
   </div>
 </template>
 

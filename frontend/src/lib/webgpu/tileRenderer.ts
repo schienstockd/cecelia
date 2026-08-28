@@ -35,9 +35,15 @@ import { tileKeyStr, tileFetchRect, type TileKey } from '../../utils/tileViewer'
 /** Float index of channel slot 0 — four leading vec4s in. Written out because getting it wrong
  *  shifts every channel's window by one slot, which draws with the wrong channel bright. */
 const CH0 = 16
-/** Bytes per voxel this pipeline supports. u16 only, same as the volume renderer — no r16float path.
- *  A store with a different dtype must be widened/narrowed by the caller before upload. */
-const BPV = 2
+/** Bytes per voxel the atlas is currently allocated for. Set on `setImage` from the store's dtype
+ *  (`meta.bytesPerVoxel`): 1 for `|u1` sources (Manual IBEX .ims), 2 for `|u2` sources. Feeds both
+ *  the budget math (`computeCapacity`) and the `writeTexture` layout (`bytesPerRow = w * BPV`) —
+ *  a hardcoded 2 sent uint8 tiles with `bytesPerRow = 2w` against a `w*1` buffer, producing
+ *  "required size 1786401 exceeds linear data size 893691" (2× over, the exact ratio) — the error
+ *  Dominik hit on `SispLk`/`35uedD` 2026-08-27.
+ *  Fallback default is `2` so a caller that hasn't threaded `bytesPerVoxel` through gets the old
+ *  behaviour. */
+const DEFAULT_BPV = 2
 /** Hard ceiling on slot count, independent of budget and adapter limits. The visible+halo tile set at
  *  1080p on the deepest useful zoom is ≤ 16 tiles per level, so 128 slots covers cross-level residency
  *  during a zoom swap without wasting an atlas the size of the working set. */
@@ -48,6 +54,7 @@ const MAX_SLOTS = 128
 export interface TileEntry {
   key: string
   t: number
+  z: number
   level: number
   tx: number
   ty: number
@@ -208,6 +215,7 @@ export async function createTileRenderer(
   let atlasChunkX = 0
   let atlasChunkY = 0
   let atlasNC = 0
+  let atlasBPV = DEFAULT_BPV      // set from `m.bytesPerVoxel` on setImage
   let capacity = 0
   let currentLevel = -1
   let metaRef: ViewerMeta | null = null
@@ -262,14 +270,15 @@ export async function createTileRenderer(
     atlasChunkX = 0
     atlasChunkY = 0
     atlasNC = 0
+    atlasBPV = DEFAULT_BPV
     capacity = 0
     currentLevel = -1
   }
 
-  function computeCapacity(budgetBytes: number, chunkX: number, chunkY: number, nC: number): number {
+  function computeCapacity(budgetBytes: number, chunkX: number, chunkY: number, nC: number, bpv: number): number {
     if (!(chunkX > 0 && chunkY > 0 && nC > 0)) return 0
     // Every candidate cap. The tightest wins; each is measured against a real error, not tuned.
-    const perSlot = chunkX * chunkY * nC * BPV
+    const perSlot = chunkX * chunkY * nC * bpv
     const fromBudget = Math.max(1, Math.floor(budgetBytes / Math.max(perSlot, 1)))
     const dim3D = report.maxTextureDimension3D ?? 2048
     const fromAdapter = Math.max(1, Math.floor(dim3D / nC))
@@ -305,17 +314,24 @@ export async function createTileRenderer(
       u[8] = ex; u[9] = ey; u[10] = 0; u[11] = 0
       u[12] = nch; u[13] = 0; u[14] = 0; u[15] = 0
       u[4] = nch                                        // vp.x = channel count
-      if (reuse) return
-      // Different shape → fresh atlas.
+      const bpv = m.bytesPerVoxel === 1 ? 1 : 2
+      if (reuse && atlasBPV === bpv) return
+      // Different shape or dtype → fresh atlas.
       dropAtlas()
-      const cap = computeCapacity(budgetBytes, chunkX, chunkY, nch)
+      atlasBPV = bpv
+      const cap = computeCapacity(budgetBytes, chunkX, chunkY, nch, bpv)
       if (cap <= 0) return
       // Same OOM discipline as the volume renderer — a big atlas can legitimately fail to allocate,
       // and the caller then holds at capacity 0 rather than crashing the browser.
       if (!usable()) return
       device.pushErrorScope('out-of-memory')
+      // Texture format keys on the store's dtype: 8-bit Imaris exports (Manual IBEX) come out `|u1`
+      // in zarr, 16-bit `|u2`. The shader binds `texture_3d<u32>` either way and reads `.r` as a
+      // u32, so no shader change — only the storage width differs. Contrast/LUT already keys the
+      // dtype-max on `bytesPerVoxel` (`contrastCeiling` in `utils/volumeViewer.ts`).
+      const fmt: GPUTextureFormat = m.bytesPerVoxel === 1 ? 'r8uint' : 'r16uint'
       const tex = device.createTexture({
-        size: [chunkX, chunkY, cap * nch], dimension: '3d', format: 'r16uint',
+        size: [chunkX, chunkY, cap * nch], dimension: '3d', format: fmt,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
       // Fire the pop but don't await — a failed alloc will surface via onuncapturederror; the atlas
@@ -388,14 +404,14 @@ export async function createTileRenderer(
         device.queue.writeTexture(
           { texture: atlas, origin: [0, 0, slot * atlasNC + c] },
           channelBytes[c],
-          { bytesPerRow: w * BPV, rowsPerImage: h },
+          { bytesPerRow: w * atlasBPV, rowsPerImage: h },
           [w, h, 1],
         )
       }
       await device.queue.onSubmittedWorkDone()
       if (!usable()) return -1
       tiles.set(kStr, {
-        key: kStr, t: key.t, level: key.level, tx: key.tx, ty: key.ty,
+        key: kStr, t: key.t, z: key.z, level: key.level, tx: key.tx, ty: key.ty,
         lastUsed: ++touchCounter, slot,
       })
       return slot

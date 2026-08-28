@@ -48,18 +48,13 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
 // Colour palettes ported from the old R version (plotHelpers.R `adjustColors`). Okabe & Ito (CUD,
 // colourblind-safe) and Paul Tol's qualitative schemes. 'standard' = the population manager colours
 // (per-pop `colorOf`); the others assign by series order; 'user' = a comma-separated custom list.
-export const PALETTES: Record<string, string[]> = {
-  // the house palette. The four leads are the behaviourDTx.Rmd `colPal` cluster colours (yellow /
-  // steel-blue / berry / grey, matching the published UMAPs) + a dark slate accent; the rest are muted,
-  // distinct hues chosen AROUND that theme (more blues/berries/greys + warm ochre/terracotta) so a
-  // larger domain stays on-brand instead of turning neon. 12 total.
-  'cecelia': ['#EBD441', '#4682B4', '#AA1F5E', '#B3BCC2', '#2F4F4F', '#5FB0B7',
-              '#C77DA6', '#D98E32', '#3E6D8E', '#8E4585', '#7A8B99', '#C1553E'],
-  'okabe-ito': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000'],
-  'tol-bright': ['#4477AA', '#EE6677', '#228833', '#CCBB44', '#66CCEE', '#AA3377', '#BBBBBB'],
-  'tol-muted': ['#88CCEE', '#44AA99', '#117733', '#332288', '#DDCC77', '#999933', '#CC6677', '#882255', '#AA4499'],
-  'tol-light': ['#77AADD', '#EE8866', '#EEDD88', '#FFAABB', '#99DDFF', '#44BB99', '#BBCC33', '#AAAA00'],
-}
+// The list lives in `palettes.json` — same file the Julia offline renderer reads for
+// `CECELIA_TRACK_PALETTE`, so a movie's tracks share colours with a look's tracks by construction
+// rather than a code comment. The four leads of `cecelia` are the behaviourDTx.Rmd `colPal` cluster
+// colours (yellow / steel-blue / berry / grey, matching the published UMAPs) + a dark slate accent;
+// the rest are muted, distinct hues chosen AROUND that theme so a larger domain stays on-brand.
+import palettesJson from './palettes.json'
+export const PALETTES: Record<string, string[]> = palettesJson.palettes
 export type PaletteName = 'standard' | 'distinct' | 'cecelia' | 'okabe-ito' | 'tol-bright' | 'tol-muted' | 'tol-light' | 'user'
 
 // N visually-distinct colours by even HCL-ish hue spacing (port of R randomcoloR::distinctColorPalette

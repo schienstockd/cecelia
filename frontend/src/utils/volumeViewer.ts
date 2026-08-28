@@ -76,6 +76,13 @@ export interface ViewerMeta {
   /** The ACTIVE version, whatever was asked for — so a picker can say whether what is on screen is
    *  the version every task runs against. `valueName` echoes an explicit request and cannot. */
   activeValueName?: string
+  /**
+   * The store the browser viewer is looking at, and the image's meta dir on disk. Body-carried into
+   * `/api/preview/run` so the task-preview API uses these as source of truth for "what's on screen"
+   * rather than reaching sideways into napari (P7).
+   */
+  zarrPath?: string
+  taskDir?: string
   channels: ViewerChannel[]
 }
 
@@ -120,6 +127,33 @@ export interface SlabQuery {
    */
   labels?: string
   /**
+   * Retarget a labels request to the SCRATCH preview store the task-preview worker just wrote (P7).
+   * Rides the same reader and headers as `labels` alone; only the file on disk differs
+   * (`<vn>__preview.ome.zarr` instead of `<vn>.ome.zarr`). No-op without `labels`.
+   */
+  preview?: boolean
+  /**
+   * Cache-buster for the preview slab (P7). Two runs on the same (vn, t, z, preview=1) produce a
+   * byte-identical URL, so the browser's HTTP cache would serve the previous run's bytes even
+   * though the scratch store on disk has been rewritten. Set to the current `previewLabels.updateId`
+   * — a monotonic per-run counter — so every re-run misses cache. No-op without `preview`.
+   */
+  previewId?: number
+  /**
+   * Swap this channel's image slab onto the AF preview scratch store (P7.1). The worker writes one
+   * store per corrected channel at
+   * `{img_dir}/{previewValueName}__preview_af_ch{sourceChannel}.ome.zarr` (channel-less; geometry
+   * matches the source image). The caller passes the source-image channel index in `sourceChannel`
+   * and the AF task's `outputValueName` in `previewValueName`; `valueName` on the outer request
+   * stays the SOURCE image's vn (that is what resolves the image dir the scratch sits in), and `c`
+   * stays as the source channel — the store is channel-less so `c` is a no-op on the server (same
+   * as a labels preview slab). No-op without `preview_af`. Same cache-bust story as `previewId`.
+   */
+  preview_af?: boolean
+  sourceChannel?: number
+  previewValueName?: string
+  previewAfId?: number
+  /**
    * XY tile bounds, 0-based inclusive `[lo, hi]` in the LEVEL's coordinate space (a level=1 tile at
    * x=100..199 is a different region on disk from level=0 at the same numbers). Absent means the whole
    * axis — same shape as `z`. Together with `level` this is the pan/zoom viewer's access pattern.
@@ -142,6 +176,17 @@ export function slabUrl(q: SlabQuery): string {
   })
   if (q.valueName) p.set('valueName', q.valueName)
   if (q.labels) p.set('labels', q.labels)
+  if (q.labels && q.preview) p.set('preview', '1')
+  // Cache-bust identical preview URLs across re-runs. Server-side is harmless (unknown query params
+  // are ignored by `try_serve_slab`), so this stays a pure client-side concern.
+  if (q.labels && q.preview && q.previewId !== undefined) p.set('_pv', String(q.previewId))
+  // AF preview (P7.1): only meaningful WITHOUT `labels` (this is an image swap, not a mask swap).
+  if (!q.labels && q.preview_af && q.sourceChannel !== undefined && q.previewValueName) {
+    p.set('preview_af', '1')
+    p.set('sourceChannel', String(q.sourceChannel))
+    p.set('previewValueName', q.previewValueName)
+    if (q.previewAfId !== undefined) p.set('_pv', String(q.previewAfId))
+  }
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the
@@ -164,6 +209,18 @@ export function metaUrl(q: { projectUid: string; imageUid: string; valueName?: s
 }
 
 /**
+ * Log2-space hysteresis for `pickTileLevel`, adapted from Kiln's SSE selector
+ * (`kiln-render/src/streaming/streaming-manager.ts:747-754`, MIT-licensed —
+ * https://github.com/mpanknin/kiln-render), which keeps splitting to a finer LOD while the
+ * screen-space error is still above 70% of the pixel budget so a wheel gesture cannot flip the
+ * LOD twice around a boundary. In our log2-of-zoom picker the same 0.7 factor becomes a
+ * `log2(1/0.7) ≈ 0.515`-unit margin PAST the integer boundary before we abandon the finer level
+ * for the coarser one; going finer (zoom in) is committed immediately, matching Kiln's
+ * `projectedError > maxPixelError` certain-split branch.
+ */
+export const TILE_LOD_HYST_LOG2 = Math.log2(1 / 0.7)
+
+/**
  * 2D pan/zoom LOD: the level whose native pixel is closest to (without going finer than) one device
  * pixel, given the viewport zoom. `zoom` is L0 pixels per DEVICE pixel — 1 means 1:1, 2 means one
  * device pixel shows two L0 pixels, 0.5 means magnified past 1:1.
@@ -173,16 +230,39 @@ export function metaUrl(q: { projectUid: string; imageUid: string; valueName?: s
  * pixels the screen can't show. At `zoom < 1` (magnified past 1:1) we stay on L0; nothing finer
  * exists and the renderer upscales.
  *
+ * `previousLevel` is the level whose textures are currently on the GPU (`loadedLevel` in
+ * `ViewerWindow.vue`), and it turns on asymmetric hysteresis biased toward finer — see
+ * `TILE_LOD_HYST_LOG2` above for the citation. Zooming in past a boundary swaps to the finer level
+ * immediately; zooming out only coarsens once `log2(zoom)` clears `previousLevel + 1 + HYST`, so a
+ * wheel-detent wobble at exactly `zoom = 2^k` no longer refetches the whole plane on the way back
+ * to the same level. Omit `previousLevel` (or pass `-1`) for the initial pick where no textures
+ * are resident yet — that path keeps the classic `floor(log2(zoom))` behaviour.
+ *
  * ASSUMES CLEAN 2× STEPS — true for every store `bioformats2raw` or `create_multiscales` writes today.
  * If a future writer ships a non-2× pyramid, this needs to consult `levels[n].nX` for the actual
  * per-level factor. The meta payload already carries the shapes, so the change is here rather than in
  * the server contract. (Spatial audit Phase 3, 2026-08-25.)
  */
-export function pickTileLevel(zoom: number, meta: ViewerMeta): number {
+export function pickTileLevel(zoom: number, meta: ViewerMeta, previousLevel?: number): number {
   const n = meta.levels?.length ?? 1
   if (n <= 1 || !Number.isFinite(zoom) || zoom <= 1) return 0
-  const raw = Math.floor(Math.log2(zoom))
-  return Math.max(0, Math.min(n - 1, raw))
+  const clamp = (v: number) => Math.max(0, Math.min(n - 1, v))
+  const raw = Math.log2(zoom)
+  const baseline = clamp(Math.floor(raw))
+  // No prior anchor → the initial pick before any texture is on the GPU. Returning the raw
+  // baseline here is why `loadedLevel = -1` on mount doesn't lock the viewer to a stale level.
+  if (previousLevel === undefined || !Number.isFinite(previousLevel) || previousLevel < 0) {
+    return baseline
+  }
+  const prev = clamp(Math.floor(previousLevel))
+  // Same level or the raw picker wants finer (user zoomed in) → commit immediately. Kiln's
+  // `projectedError > maxPixelError` branch, no hysteresis on quality-improving swaps.
+  if (baseline <= prev) return baseline
+  // Coarser is being requested. Only accept it once we've cleared the hysteresis band past the
+  // boundary between `prev` and `prev + 1` — otherwise the current (finer) level survives the
+  // wobble around the integer threshold.
+  if (raw >= prev + 1 + TILE_LOD_HYST_LOG2) return baseline
+  return prev
 }
 
 /**
@@ -500,7 +580,7 @@ export function orbitZoom(
  * up until it is coprime with the row length, which makes the walk cross every column.
  */
 export function contrastFromSlab(
-  v: Uint16Array, rowLength = 1, budget = 200_000,
+  v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000,
 ): { lo: number; hi: number; max: number } {
   const stride = sampleStride(v.length, rowLength, budget)
   const s: number[] = []
@@ -513,6 +593,21 @@ export function contrastFromSlab(
 }
 
 /**
+ * View a slab response body as its declared dtype. `bpv=1` (`|u1` on disk) needs a `Uint8Array`;
+ * `bpv=2` (`>u2` / `<u2`) needs `Uint16Array`. The distinction matters at both the correctness
+ * (`new Uint16Array(buf)` throws on odd byte length — hit on `35uedD` where a level's `nX` is odd)
+ * and the numerics level (a Uint16 view over uint8 bytes silently reads 2 pixels per value).
+ *
+ * bpv comes from the server's `X-Slab-Bpv` header / `meta.bytesPerVoxel`; anything else falls back
+ * to Uint16 to keep the pre-uint8 code path identical for callers that haven't opted in.
+ */
+export function slabView(
+  buf: ArrayBuffer, bpv: number,
+): Uint16Array | Uint8Array {
+  return bpv === 1 ? new Uint8Array(buf) : new Uint16Array(buf)
+}
+
+/**
  * Brightest voxel in the same strided subsample — no percentiles, so no sort, which is what makes it
  * cheap enough to run on EVERY timepoint instead of only the first.
  *
@@ -522,7 +617,7 @@ export function contrastFromSlab(
  * it's clipped". The AUTO window still comes from one timepoint (a window that chases each frame's own
  * distribution makes playback flicker — decision 5); it is only the RANGE that follows the data.
  */
-export function slabMax(v: Uint16Array, rowLength = 1, budget = 200_000): number {
+export function slabMax(v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000): number {
   const stride = sampleStride(v.length, rowLength, budget)
   let mx = 0
   for (let i = 0; i < v.length; i += stride) if (v[i] > mx) mx = v[i]

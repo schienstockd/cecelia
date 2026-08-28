@@ -5,6 +5,7 @@ import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
 import { openIconLegend } from '../lib/iconLegendOpen'
+import { openColorLegend } from '../lib/colorLegendOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 
 const ws = useWsStore()
@@ -71,6 +72,15 @@ const statusTip: Record<string, string> = {
             aria-label="Open the icon glossary"
             @click="openIconLegend">
       <i class="pi pi-key" />
+    </button>
+
+    <!-- The colour glossary — sibling to the icon key. Same reason it sits here rather than in
+         Settings: "what does this colour mean?" is asked while looking at the swatch. -->
+    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.colorLegend"
+            v-tooltip.bottom="'What the colours mean'"
+            aria-label="Open the colour glossary"
+            @click="openColorLegend">
+      <i class="pi pi-palette" />
     </button>
 
     <!-- Where to go when the app is not the answer: report a problem, or ask someone. Next to the

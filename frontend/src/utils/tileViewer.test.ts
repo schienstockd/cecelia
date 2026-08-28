@@ -20,10 +20,18 @@ const META: ViewerMeta = {
 
 describe('tileKeyStr', () => {
   it('formats deterministically so it can be a Map key', () => {
-    expect(tileKeyStr({ t: 0, level: 0, tx: 3, ty: 5 })).toBe('T0/L0/x3/y5')
+    expect(tileKeyStr({ t: 0, z: 0, level: 0, tx: 3, ty: 5 })).toBe('T0/Z0/L0/x3/y5')
   })
   it('encodes the timepoint so tiles from different t are distinct cache entries', () => {
-    expect(tileKeyStr({ t: 7, level: 0, tx: 3, ty: 5 })).toBe('T7/L0/x3/y5')
+    expect(tileKeyStr({ t: 7, z: 0, level: 0, tx: 3, ty: 5 })).toBe('T7/Z0/L0/x3/y5')
+  })
+  it('encodes z so plane-change scrubs do not reuse the wrong slice (SispLk/35uedD)', () => {
+    // The bug: without z in the key, an nZ>1 store scrolled its z slider and the cache returned
+    // "hasTile" for the old z's tiles. The renderer drew the previous plane and the pump had
+    // nothing to fetch.
+    expect(tileKeyStr({ t: 0, z: 12, level: 0, tx: 0, ty: 0 })).toBe('T0/Z12/L0/x0/y0')
+    expect(tileKeyStr({ t: 0, z: 0, level: 0, tx: 0, ty: 0 })).not.toBe(
+      tileKeyStr({ t: 0, z: 1, level: 0, tx: 0, ty: 0 }))
   })
 })
 
@@ -131,12 +139,12 @@ describe('tileCacheCapacity', () => {
 })
 
 describe('tileEvictions', () => {
-  const entry = (tx: number, ty: number, lastUsed: number, level = 0, t = 0) =>
-    ({ key: `T${t}/L${level}/x${tx}/y${ty}`, t, level, tx, ty, lastUsed })
+  const entry = (tx: number, ty: number, lastUsed: number, level = 0, t = 0, z = 0) =>
+    ({ key: `T${t}/Z${z}/L${level}/x${tx}/y${ty}`, t, z, level, tx, ty, lastUsed })
 
   it('drops nothing when the cache is under capacity', () => {
     const es = [entry(0, 0, 1), entry(1, 0, 2)]
-    expect(tileEvictions(es, 4, new Set(), { t: 0, level: 0, tx: 0, ty: 0 })).toEqual([])
+    expect(tileEvictions(es, 4, new Set(), { t: 0, z: 0, level: 0, tx: 0, ty: 0 })).toEqual([])
   })
 
   it('drops the tile FARTHEST from the viewport centre before a closer stale one', () => {
@@ -144,7 +152,7 @@ describe('tileEvictions', () => {
     const near = entry(0, 0, 1)      // right next to centre, oldest
     const far = entry(10, 10, 999)   // recently touched but three viewports away
     const centre = entry(0, 1, 5)
-    const drops = tileEvictions([near, far, centre], 2, new Set(), { t: 0, level: 0, tx: 0, ty: 0 })
+    const drops = tileEvictions([near, far, centre], 2, new Set(), { t: 0, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([far.key])
   })
 
@@ -154,7 +162,7 @@ describe('tileEvictions', () => {
     const nearStale = entry(0, 0, 1)
     const farProtected = entry(20, 20, 2)
     const drops = tileEvictions([nearStale, farProtected], 1, new Set([farProtected.key]),
-                                { t: 0, level: 0, tx: 0, ty: 0 })
+                                { t: 0, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([nearStale.key])
   })
 
@@ -164,7 +172,7 @@ describe('tileEvictions', () => {
     const l0Neighbour = entry(1, 0, 1, 0)      // one tile east at L0, fresh
     const l4CoLocated = entry(0, 0, 999, 4)    // deeper level, most-recently used
     const drops = tileEvictions([l0Neighbour, l4CoLocated], 1, new Set(),
-                                { t: 0, level: 0, tx: 0, ty: 0 })
+                                { t: 0, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([l4CoLocated.key])
   })
 
@@ -172,7 +180,7 @@ describe('tileEvictions', () => {
     const older = entry(1, 0, 1)
     const newer = entry(0, 1, 2)   // same Chebyshev distance to (0, 0)
     const drops = tileEvictions([older, newer], 1, new Set(),
-                                { t: 0, level: 0, tx: 0, ty: 0 })
+                                { t: 0, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([older.key])
   })
 
@@ -184,8 +192,19 @@ describe('tileEvictions', () => {
     const sameTNeighbour = entry(5, 5, 999, 0, 3) // one tile away, MRU, same t
     const wrongTCoLocated = entry(0, 0, 999, 0, 4) // co-located, MRU, but t off by 1
     const drops = tileEvictions([sameTNeighbour, wrongTCoLocated], 1, new Set(),
-                                { t: 3, level: 0, tx: 0, ty: 0 })
+                                { t: 3, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([wrongTCoLocated.key])
+  })
+
+  it('a same-position wrong-z tile ranks FARTHER than a same-z viewport neighbour (SispLk plane scrub)', () => {
+    // Same shape as the t-penalty invariant: on a z scrub back, the current-z neighbour must
+    // survive over a co-located tile from a distant plane. Without this, plane-changing on a 3D
+    // Imaris store either drew stale planes or thrashed the cache — the exact bug 2026-08-27.
+    const sameZNeighbour = { key: 'a', t: 0, z: 20, level: 0, tx: 5, ty: 5, lastUsed: 999 }
+    const wrongZCoLocated = { key: 'b', t: 0, z: 21, level: 0, tx: 0, ty: 0, lastUsed: 999 }
+    const drops = tileEvictions([sameZNeighbour, wrongZCoLocated], 1, new Set(),
+                                { t: 0, z: 20, level: 0, tx: 0, ty: 0 })
+    expect(drops).toEqual(['b'])
   })
 
   it('cross-t penalty dominates level penalty — a wrong-t co-located tile loses to a wrong-level same-t one', () => {
@@ -194,7 +213,7 @@ describe('tileEvictions', () => {
     const wrongLevelSameT = entry(0, 0, 1, 4, 3)  // 4 levels away, oldest, same t
     const sameLevelWrongT = entry(0, 0, 999, 0, 4) // same level, MRU, t off by 1
     const drops = tileEvictions([wrongLevelSameT, sameLevelWrongT], 1, new Set(),
-                                { t: 3, level: 0, tx: 0, ty: 0 })
+                                { t: 3, z: 0, level: 0, tx: 0, ty: 0 })
     expect(drops).toEqual([sameLevelWrongT.key])
   })
 })
@@ -220,27 +239,28 @@ describe('tileGridDims', () => {
 
 describe('tileMapCells', () => {
   it('one absent cell per tile in the grid', () => {
-    const cells = tileMapCells(L4, 0, 4, new Set(), new Set())
+    const cells = tileMapCells(L4, 0, 0, 4, new Set(), new Set())
     expect(cells).toHaveLength(4)
     expect(cells.every(c => c.state === 'absent')).toBe(true)
   })
-  it('marks resident tiles by their (t, level) key', () => {
-    const resident = new Set([tileKeyStr({ t: 0, level: 4, tx: 0, ty: 0 })])
-    const cells = tileMapCells(L4, 0, 4, resident, new Set())
+  it('marks resident tiles by their (t, z, level) key', () => {
+    const resident = new Set([tileKeyStr({ t: 0, z: 0, level: 4, tx: 0, ty: 0 })])
+    const cells = tileMapCells(L4, 0, 0, 4, resident, new Set())
     expect(cells.find(c => c.tx === 0 && c.ty === 0)!.state).toBe('resident')
     expect(cells.find(c => c.tx === 1 && c.ty === 0)!.state).toBe('absent')
   })
-  it('ignores residency at a DIFFERENT (t, level) — the map is one slice', () => {
+  it('ignores residency at a DIFFERENT (t, z, level) — the map is one slice', () => {
     const resident = new Set([
-      tileKeyStr({ t: 5, level: 4, tx: 0, ty: 0 }),  // wrong t
-      tileKeyStr({ t: 0, level: 0, tx: 0, ty: 0 }),  // wrong level
+      tileKeyStr({ t: 5, z: 0, level: 4, tx: 0, ty: 0 }),  // wrong t
+      tileKeyStr({ t: 0, z: 7, level: 4, tx: 0, ty: 0 }),  // wrong z — the SispLk case
+      tileKeyStr({ t: 0, z: 0, level: 0, tx: 0, ty: 0 }),  // wrong level
     ])
-    const cells = tileMapCells(L4, 0, 4, resident, new Set())
+    const cells = tileMapCells(L4, 0, 0, 4, resident, new Set())
     expect(cells.every(c => c.state === 'absent')).toBe(true)
   })
   it('loading wins over resident when a tile is both', () => {
-    const k = tileKeyStr({ t: 0, level: 4, tx: 1, ty: 1 })
-    const cells = tileMapCells(L4, 0, 4, new Set([k]), new Set([k]))
+    const k = tileKeyStr({ t: 0, z: 0, level: 4, tx: 1, ty: 1 })
+    const cells = tileMapCells(L4, 0, 0, 4, new Set([k]), new Set([k]))
     expect(cells.find(c => c.tx === 1 && c.ty === 1)!.state).toBe('loading')
   })
 })

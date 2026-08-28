@@ -31,6 +31,8 @@
 import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
+import { useViewerStore } from '../stores/viewer'
+import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -49,7 +51,7 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -78,10 +80,15 @@ import ChipSelect from '../components/ChipSelect.vue'
 import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
+import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 
 const route = useRoute()
 const settings = useSettingsStore()
+// Task-preview integration (P7): publishes what this viewer has open + its visible region for the
+// task-preview store to feed into `/api/preview/run`, and reads back the active preview labels flag
+// so the labels slab URL flips to the scratch `<vn>__preview.ome.zarr` when a preview is showing.
+const viewerStore = useViewerStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
@@ -452,6 +459,67 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
+// P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
+// param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
+//   * `updateId` (>0) when the current preview matches this image
+//   * `0`                otherwise
+// A primitive watch is bulletproof against the object-identity subtleties of accessing a Pinia
+// ref through the store proxy — earlier attempts (boolean, object reference) missed re-runs on
+// the same image, so the mask on screen stayed pinned to the first run's plane.
+const previewLabelsKey = computed(() => {
+  const p = viewerStore.previewLabels
+  return p && p.imageUid === imageUid ? p.updateId : 0
+})
+watch(previewLabelsKey, () => reallocate())
+
+// P7.1: refetch whenever the AF preview for THIS image changes — a new AF run, a parameter edit or
+// a toggle-off. Every entry in the array shares one `updateId` (the store stamps them together), so
+// the key can key off any entry; use the first. Same primitive-watch discipline as previewLabelsKey.
+// Which source channels are being swapped can change between runs (different `afCombinations`), so
+// the shape of the set — not just the stamp — matters. Encode both as `"<updateId>:<c1>,<c2>,…"`.
+const previewImagesKey = computed(() => {
+  const arr = viewerStore.previewImages
+  if (!arr || arr.length === 0) return ''
+  const forThis = arr.filter(m => m.imageUid === imageUid)
+  if (forThis.length === 0) return ''
+  const chans = forThis.map(m => m.sourceChannel).sort((a, b) => a - b).join(',')
+  return `${forThis[0].updateId}:${chans}`
+})
+watch(previewImagesKey, () => {
+  // A new AF run (or a toggle-off) resets every "show original" suspension — the corrected channels
+  // this run picked can be different from the last, so a stale entry could suspend a channel that
+  // is not corrected at all now.
+  afSuspended.value = new Set()
+  reallocate()
+})
+
+/** Per-channel A/B toggle: click the AF badge to read the SOURCE bytes for that ONE channel while the
+ *  other corrected channels stay swapped. Local to this viewer window — the state doesn't cross the
+ *  cross-window bridge because it's a per-viewer view choice, not a preview-run output.
+ *  `previewImagesKey`'s watch resets it whenever a new run lands. */
+const afSuspended = ref<Set<number>>(new Set())
+function toggleAfSuspended(c: number) {
+  const next = new Set(afSuspended.value)
+  next.has(c) ? next.delete(c) : next.add(c)
+  afSuspended.value = next
+  reallocate()
+}
+
+/** Fast lookup: source channel → the AF preview entry that overrides it for this image. Recomputed
+ *  in the render loop, but the array is tiny (one entry per corrected channel, typically 1–4) so
+ *  this stays a plain `.find` — no map cache needed. Returns null when the user has clicked the
+ *  badge to suspend the swap on THIS channel (A/B). */
+function previewImageFor(c: number) {
+  if (afSuspended.value.has(c)) return null
+  const arr = viewerStore.previewImages
+  return arr?.find(m => m.imageUid === imageUid && m.sourceChannel === c) ?? null
+}
+/** Does an AF correction EXIST for this channel? Distinguishes an uncorrected channel (no badge)
+ *  from a corrected-but-user-flipped-to-source channel (dim badge). */
+function hasAfPreview(c: number) {
+  const arr = viewerStore.previewImages
+  return !!arr?.some(m => m.imageUid === imageUid && m.sourceChannel === c)
+}
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -554,7 +622,10 @@ const slabLevel = computed(() => {
   if (mode.value === 'plane') {
     const o = settings.viewerPlaneLevel
     if (o >= 0) return Math.max(0, Math.min((m.levels?.length ?? 1) - 1, Math.floor(o)))
-    return pickTileLevel(camZoom.value, m)
+    // Anchor on `loadedLevel` (what's on the GPU) so hysteresis biases against thrashing the
+    // whole plane on a wobble around a `floor(log2(zoom))` boundary. `loadedLevel = -1` before
+    // the first `reallocate` falls through to the classic floor picker — see `pickTileLevel`.
+    return pickTileLevel(camZoom.value, m, loadedLevel.value)
   }
   const override = settings.viewerVolumeLevel
   return pickVolumeLevel(m, override < 0 ? undefined : override)
@@ -687,7 +758,11 @@ const frame = usePlotResize(canvas, () => {
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
   // has to be complete.
-  r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
+  // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
+  const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+    viewerStore.previewLabels?.imageUid === imageUid)
+  r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   r.draw()
@@ -996,10 +1071,28 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
     // cannot label this response with a different segmentation's name.
-    const vn = labelName.value
+    // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
+    // has not picked one — a first-time segmentation preview must render even without a picker entry.
+    const previewMatches = !!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid
+    const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
-        const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
+        // P7.1: when an AF preview run has this channel in its corrected set, retarget its slab onto
+        // the scratch AF store — same geometry (the store is channel-less full-image), so the
+        // texture and the shape guard are unchanged; only the file on disk differs. `valueName`
+        // stays the SOURCE image's vn so `resolve_image_version` finds the image dir the scratch
+        // sits in; `previewValueName` carries the AF task's `outputValueName` (the scratch's key).
+        const afPrev = previewImageFor(c)
+        const url = slabUrl({
+          projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl,
+          preview_af: !!afPrev,
+          sourceChannel: afPrev ? c : undefined,
+          previewValueName: afPrev?.valueName,
+          // Same cache-bust as the labels preview: identical (vn, t, z, preview_af=1) URL across
+          // two runs would otherwise return the FIRST run's bytes from disk cache.
+          previewAfId: afPrev?.updateId,
+        })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
         const buf = await res.arrayBuffer()
@@ -1014,8 +1107,18 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       })),
       (async () => {
         if (!vn) return null
+        // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
+        // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
+        // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
+        const usePreview = !!viewerStore.previewLabels &&
+          viewerStore.previewLabels?.valueName === vn &&
+          viewerStore.previewLabels?.imageUid === imageUid
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+          preview: usePreview,
+          // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
+          // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
+          previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
@@ -1037,10 +1140,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // chases each frame's own distribution and playback flickers (decision 5). The slider's RANGE is
     // not the same question and does follow the data: a max-only pass, no sort, ~1 ms a channel.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(new Uint16Array(b), m.nX))
+      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), m.nX))
     }
     seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), m.nX)))
+      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), m.nX)))
 
     const t1 = performance.now()
     await r.uploadFrame(tp, bufs, t.value, labelBuf)
@@ -1231,9 +1334,10 @@ function missingTiles(): TileKey[] {
   if (!lvl || !vp) return []
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
   const tp = t.value
+  const zp = zPlane.value
   const out: TileKey[] = []
   for (const [tx, ty] of coords) {
-    const key: TileKey = { t: tp, level, tx, ty }
+    const key: TileKey = { t: tp, z: zp, level, tx, ty }
     if (tr.hasTile(key)) { tr.touchTile(key); continue }
     out.push(key)
   }
@@ -1253,7 +1357,8 @@ function evictionKeepSet(): Set<string> {
   if (!lvl || !vp) return new Set()
   const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
   const tp = t.value
-  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, level, tx, ty })))
+  const zp = zPlane.value
+  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, z: zp, level, tx, ty })))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -1278,6 +1383,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
     // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
     const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+      const afPrev = previewImageFor(c)
       const url = slabUrl({
         projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
@@ -1285,6 +1391,12 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         // the current-t version — the atlas caches across timepoints (Phase F).
         z: zPlane.value,
         x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
+        // P7.1: same AF preview swap as the volume path — one entry per corrected channel, keyed on
+        // the source channel index.
+        preview_af: !!afPrev,
+        sourceChannel: afPrev ? c : undefined,
+        previewValueName: afPrev?.valueName,
+        previewAfId: afPrev?.updateId,
       })
       const res = await fetch(url, { cache: 'default', signal: ac.signal })
       if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
@@ -1297,12 +1409,12 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // a ceiling that shrinks re-scales the slider under a value the user set.
     const rowLen = rect.xTo - rect.x + 1
     seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(new Uint16Array(b), rowLen)))
+      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen)))
     // Seed the auto-window off the first tile that lands — same p01/p999 percentile pass as the
     // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
     // each tile's own distribution and the auto button would land somewhere new every time.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(new Uint16Array(b), rowLen))
+      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen))
     }
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
@@ -1319,7 +1431,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     const keep = evictionKeepSet()
     const evictions = tileEvictions(
       tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
-      { t: key.t, level: key.level, tx: centre.tx, ty: centre.ty },
+      { t: key.t, z: key.z, level: key.level, tx: centre.tx, ty: centre.ty },
     )
     const slot = await tr.uploadTile(key, bufs, keep, evictions)
     return slot >= 0
@@ -1341,7 +1453,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
 const tileResidentCount = ref(0)
 const tileSlotCap = ref(0)
 const tileInflight = ref(0)
-const tileResidents = shallowRef<{ t: number; level: number; tx: number; ty: number }[]>([])
+const tileResidents = shallowRef<{ t: number; z: number; level: number; tx: number; ty: number }[]>([])
 const tileLoadingKeys = shallowRef<Set<string>>(new Set())
 function syncTileCacheState() {
   const tr = tileRenderer.value
@@ -1349,7 +1461,7 @@ function syncTileCacheState() {
   tileResidentCount.value = res.length
   tileSlotCap.value = tr?.slotCapacity() ?? 0
   tileInflight.value = tileAborts.size
-  tileResidents.value = res.map(e => ({ t: e.t, level: e.level, tx: e.tx, ty: e.ty }))
+  tileResidents.value = res.map(e => ({ t: e.t, z: e.z, level: e.level, tx: e.tx, ty: e.ty }))
   tileLoadingKeys.value = new Set(tileAborts.keys())
 }
 
@@ -1371,16 +1483,16 @@ const tileMapGrid = computed(() => {
 const tileMapCellsView = computed(() => {
   const g = tileMapGrid.value
   if (!g) return []
-  const tp = t.value, lv = g.level
+  const tp = t.value, zp = zPlane.value, lv = g.level
   const residentAtHere = new Set<string>()
   for (const e of tileResidents.value) {
-    if (e.t === tp && e.level === lv) residentAtHere.add(`${e.tx},${e.ty}`)
+    if (e.t === tp && e.z === zp && e.level === lv) residentAtHere.add(`${e.tx},${e.ty}`)
   }
   const loading = tileLoadingKeys.value
   const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
   for (let ty = 0; ty < g.nTy; ty++) {
     for (let tx = 0; tx < g.nTx; tx++) {
-      const kL = tileKeyStr({ t: tp, level: lv, tx, ty })
+      const kL = tileKeyStr({ t: tp, z: zp, level: lv, tx, ty })
       const state = loading.has(kL) ? 'loading'
         : residentAtHere.has(`${tx},${ty}`) ? 'resident' : 'absent'
       cells.push({ key: `${tx},${ty}`, state })
@@ -1458,12 +1570,15 @@ function drawTiles() {
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
   // landed, and vanishes seamlessly the moment they do.
   //
-  // Filter to CURRENT-t entries: the atlas caches across timepoints (Phase F) so the ranker can
-  // prefer near-t tiles on a scrub back, but painting a stale-t tile would show wrong content
-  // under the loading chip. The loading chip is `shownT < 0` — flipped by the tile pump only on a
-  // current-t landing — so scrubbing to a new t naturally shows the chip until fresh tiles arrive.
+  // Filter to CURRENT-(t, z) entries: the atlas caches across timepoints (Phase F) AND across
+  // planes (SispLk/35uedD, 2026-08-27) so the ranker can prefer near-(t,z) tiles on a scrub back,
+  // but painting a stale-t or stale-z tile would show wrong content. Without the z filter, changing
+  // z past a tile that had already been swapped once left two co-located instances at the same
+  // level in the draw list, and the second z-swap became visually a no-op because the underlying
+  // instanced draw order was undefined between them.
   const tp = t.value
-  const entries = tr.residentTiles().filter(e => e.t === tp).slice()
+  const zp = zPlane.value
+  const entries = tr.residentTiles().filter(e => e.t === tp && e.z === zp).slice()
     .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
@@ -1909,7 +2024,7 @@ const overviewSize = computed(() => {
  * every channel change (visibility, contrast, colour) because pushChannels calls `renderOverview`.
  */
 const overviewCanvas = ref<HTMLCanvasElement | null>(null)
-const overviewChans = shallowRef<Uint16Array[] | null>(null)
+const overviewChans = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
 const overviewDims = ref<{ nX: number; nY: number } | null>(null)
 async function loadOverviewThumbnail() {
   const m = meta.value
@@ -1926,7 +2041,7 @@ async function loadOverviewThumbnail() {
       })
       const res = await fetch(url, { cache: 'default' })
       if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
-      return new Uint16Array(await res.arrayBuffer())
+      return slabView(await res.arrayBuffer(), m.bytesPerVoxel)
     }))
     overviewChans.value = bufs
     overviewDims.value = { nX: lvl.nX, nY: lvl.nY }
@@ -2153,8 +2268,12 @@ async function reallocate(refit = false) {
   } else {
     const r = renderer.value
     if (!r) return
+    // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
+    // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
+    const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid)
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-               mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+               mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
@@ -2327,6 +2446,54 @@ watch(zPlane,    () => propsSink.schedule())
 watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
+
+// ── Task-preview integration (P7) ─────────────────────────────────────────────
+// One scheduler per this specific emit: pan/zoom fires per frame, but the preview API is expensive
+// and its own store already debounces. This coalesces bursts so the store doesn't schedule per event.
+const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) { viewerStore.setVisibleRegion(null); return }
+  // The volume camera's basis is µm-across-the-screen; the visibleRegion helper wants image-pixel
+  // pan/zoom. Convert here so the helper stays pure and testable.
+  const umPerL0X = m.voxelUm?.[0] || 1
+  const umPerL0Y = m.voxelUm?.[1] || 1
+  const canvasW = Math.max(1, c.clientWidth)
+  const canvasH = Math.max(1, c.clientHeight)
+  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleL0H = visibleHeightUm / umPerL0Y
+  // Zoom in this helper's units: >1 = zoomed in (visible window shrinks). A "fit" camera shows the
+  // whole image height in `visibleL0H` L0 pixels, so `zoom = m.nY / visibleL0H`.
+  const zoom = (m.nY || 1) / Math.max(1, visibleL0H)
+  const region = computeVisibleRegion({
+    panX: cam.value.panX / umPerL0X,
+    panY: -cam.value.panY / umPerL0Y,     // screen-up is negative image-Y (see panDrag)
+    zoom, canvasW, canvasH,
+    imageW: m.nX, imageH: m.nY,
+    currentZ: mode.value === 'plane' ? zPlane.value : Math.floor((m.nZ - 1) / 2),
+    currentT: t.value,
+    ndisplay: mode.value === 'plane' ? 2 : 3,
+  })
+  viewerStore.setVisibleRegion(region)
+}, { wait: 100 })
+
+watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
+       zPlane, t, mode, meta],
+      () => publishRegionSink.schedule(undefined))
+
+// Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
+// same route as the pixels: the meta response is the one authoritative resolution of an image
+// version.
+watch(meta, m => {
+  if (!m) { viewerStore.setOpenImage(null); return }
+  viewerStore.setOpenImage({
+    projectUid, imageUid,
+    valueName: m.valueName ?? valueName.value ?? '',
+    zarrPath: m.zarrPath ?? '',
+    taskDir: m.taskDir ?? '',
+  })
+})
 
 // The panel is now the single version picker (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). Its
 // `<select>` writes `cc.viewerImageVersion` via `settings.setImageVersion`; the popup's own copy
@@ -2572,7 +2739,17 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <aside class="vw-side">
+    <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
+         left edge drags to resize, and the width persists per `storage-key`. Same primitive the
+         module pages use for their right panel, so the affordances are one shared thing rather
+         than a viewer-only fourth. The COLLAPSE flag is a viewer-window own field
+         (`viewerWindowSideCollapsed`), not the app-wide `rightPanelCollapsed` — the viewer's
+         controls and the module page's task list hold different things, and sharing meant every
+         collapse fold both. -->
+    <CollapsiblePanel storage-key="viewerWindowSide" label="viewer controls"
+                      :default-width="240" :min="200" :max="480"
+                      collapsed-key="viewerWindowSideCollapsed">
+      <div class="vw-side">
       <div class="cc-row cc-row-tight">
         <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
         <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
@@ -2851,6 +3028,18 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <span class="vw-ch-name cc-fs-xs"
                     v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
+              <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
+                   the source image, so a corrected/uncorrected mixup is not silent. Click to A/B:
+                   suspend the swap on THIS channel (badge dims, channel reads source) while the
+                   other corrected channels stay swapped; click again to re-arm. Rendered whenever an
+                   AF correction exists for this channel, so a dimmed badge tells the user WHY the
+                   channel looks uncorrected. Resets on every new AF run. -->
+              <button v-if="hasAfPreview(c)"
+                      :class="['vw-ch-af-badge cc-fs-3xs', { 'vw-ch-af-badge-off': afSuspended.has(c) }]"
+                      @click="toggleAfSuspended(c)"
+                      v-tooltip.top="afSuspended.has(c)
+                        ? 'Reading SOURCE pixels — click to switch back to the AF correction'
+                        : 'Reading corrected pixels — click to compare against the source'">AF</button>
               <ColourPicker
                 :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
                 @update:model-value="v => setChannelColour(c, v)"
@@ -3166,7 +3355,8 @@ onUnmounted(() => {
           </div>
         </CollapsibleSection>
       </template>
-    </aside>
+      </div>
+    </CollapsiblePanel>
   </div>
 </template>
 
@@ -3245,12 +3435,14 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 .vw-side {
-  width: 15rem; flex: none; padding: 0.6rem;
+  /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
+     stay here — the panel deliberately owns no padding so its consumers pad their own root. */
+  flex: 1; min-width: 0; padding: 0.6rem;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
      and any tight row visually escape past the sidebar's right edge (Dominik, 2026-08-26). Only
      the vertical axis needs to scroll. */
   overflow: hidden auto;
-  border-left: 1px solid var(--cc-border); display: flex; flex-direction: column; gap: 0.35rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
 }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
@@ -3260,6 +3452,12 @@ onUnmounted(() => {
   min-width: 0; overflow: clip; }
 .vw-ch :deep(.rs) { min-width: 0; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-ch-af-badge { flex: none; padding: 0 0.35rem; border-radius: var(--cc-radius-pill);
+  border: 1px solid var(--cc-accent); background: transparent; color: var(--cc-accent);
+  font-weight: 600; letter-spacing: 0.02em; cursor: pointer; line-height: 1.2; }
+.vw-ch-af-badge:hover { background: color-mix(in srgb, var(--cc-accent) 15%, transparent); }
+.vw-ch-af-badge-off { border-color: var(--cc-border); color: var(--cc-text-dim); text-decoration: line-through; }
+.vw-ch-af-badge-off:hover { background: color-mix(in srgb, var(--cc-text-dim) 12%, transparent); }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
