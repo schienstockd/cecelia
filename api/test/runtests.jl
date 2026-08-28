@@ -6552,6 +6552,36 @@ end
         @test read_slab(p, 0, 0; z = 2:0)[4] == 1
         @test read_slab(p, 0, 0; z = 2:0)[1][2, 3, 1] == val(2, 3, 3, 1, 1)
         @test ndims(read_slab(p, 0, 0; z = 2:0)[1]) == 3     # still a volume, not a plane
+
+        # ── A RANGE of CHANNELS (brick atlas: all channels of one brick in ONE request) ────
+        # The brick-atlas 3D viewer wants every channel of a spatial brick in a single response —
+        # KILN_BRICK_PLAN.md → Decision 7. Serially at nC=38 measured 273 ms/brick, or ~2.5 s for a
+        # 3x3 visible viewport; batched into one request drops to a single round trip. A range KEEPS
+        # the c dim as the last axis, so `(x, y, z, c)` — the atlas can upload it as
+        # `nc groups of nz consecutive planes` without a copy (KILN_BRICK_PLAN.md → Decision 4).
+        rc, cx, cy, cz, cn = read_slab(p, 0, 0:1)
+        @test (cx, cy, cz, cn) == (nx, ny, nz, 2)
+        @test ndims(rc) == 4
+        @test rc[2, 3, 1, 1] == val(2, 3, 1, 1, 1)          # first channel of the range
+        @test rc[2, 3, 1, 2] == val(2, 3, 1, 2, 1)          # second channel of the range
+        # Wire order stays x-fastest — the atlas uploads the buffer directly, no reshape.
+        @test vec(rc)[1:nx] == [val(x, 1, 1, 1, 1) for x in 1:nx]
+        # Length-1 RANGE keeps the c dim (rank 4); scalar-c drops it (rank 3). Same contract as z.
+        @test read_slab(p, 0, 0:0)[5] == 1
+        @test ndims(read_slab(p, 0, 0:0)[1]) == 4           # RANGE at length 1 keeps the dim
+        @test ndims(read_slab(p, 0, 0)[1]) == 3             # scalar-c drops it — flat atlas path unchanged
+        # Clamped both ends, same shape as z-range. Out-of-range c gets the closest existing channel.
+        @test read_slab(p, 0, 0:999)[5] == nc
+        @test read_slab(p, 0, -5:1)[5] == 2
+        # A backwards pair reads as the single channel at its start (Julia normalises `1:0` to empty;
+        # the route orders integers before building the range).
+        @test read_slab(p, 0, 2:0)[5] == 1
+        # A c-range combined with a z-range keeps both dims: (x, y, z, c), for a 4D brick payload.
+        rcz, _, _, rz, rn = read_slab(p, 0, 0:1; z = 1:2)
+        @test (rz, rn) == (2, 2)
+        @test ndims(rcz) == 4
+        @test rcz[2, 3, 1, 1] == val(2, 3, 2, 1, 1)         # first z, first c of the request
+        @test rcz[2, 3, 2, 2] == val(2, 3, 3, 2, 1)         # last z, last c
     end
 
     # A store whose axes are NOT (t,c,z,y,x) must be PERMUTED to (x,y,z), not passed through. This is
