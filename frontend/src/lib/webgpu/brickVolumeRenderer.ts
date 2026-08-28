@@ -17,7 +17,10 @@
 import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
 import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
-import { extentUm, slabMax, slabView } from '../../utils/volumeViewer'
+import {
+  extentUm, slabMax, slabView, lutTextureBytes,
+  MAX_CHANNELS, LUT_STOPS,
+} from '../../utils/volumeViewer'
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
@@ -114,6 +117,12 @@ export async function createBrickVolumeRenderer(
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
   const uniformCpu = new Float32Array(BRICK_UNIFORM_BYTES / 4)
+  // LUT: same shape the flat renderer uses (MAX_CHANNELS rows × LUT_STOPS pixels wide, rgba8).
+  // Written whenever `setChannels` runs; lives for the renderer's lifetime.
+  const lutTex = device.createTexture({
+    size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
 
   const setupErr = await device.popErrorScope()
   if (setupErr) {
@@ -249,6 +258,7 @@ export async function createBrickVolumeRenderer(
         { binding: 1, resource: { buffer: pageTableBuffer } },
         { binding: 2, resource: texture.texture.createView() },
         { binding: 3, resource: { buffer: prevPageTableBuffer } },
+        { binding: 4, resource: lutTex.createView() },
       ],
     })
 
@@ -477,17 +487,9 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.EXT + 0] = uniform.ext[0]
     uniformCpu[BU.EXT + 1] = uniform.ext[1]
     uniformCpu[BU.EXT + 2] = uniform.ext[2]
-    // valueMax normalises the raw u32 sample into [0,1] for the crude colour ramp. Naive full-
-    // range (255 / 65535) leaves real microscopy data — typical intensities ~1000-5000 on a
-    // uint16 store — normalised to ~0.05 and the box renders near-black. Use the MAX per-channel
-    // `hi` from the server's contrast spec so at least the visible range covers [0, 1] before
-    // the real LUT lands in P5d. Falls back to dtype max if channels haven't been set yet.
-    const bpv = atlas?.layout.bytesPerVoxel ?? 1
-    const dtypeMax = bpv === 2 ? 65535 : 255
-    const chMax = channels.length > 0
-      ? Math.max(1, ...channels.map(c => c.hi))
-      : dtypeMax
-    uniformCpu[BU.EXT + 3] = Math.max(1, Math.min(dtypeMax, chMax))
+    // Per-channel contrast windows go in `p.ch[c]` below; the leading `p.ext.w` slot is unused
+    // now that the shader normalises via each channel's own (lo, hi).
+    uniformCpu[BU.EXT + 3] = 0
     if (currentMeta !== null) {
       // Voxel dims AT THE CURRENT LOD LEVEL — the shader treats `p.dims` as "voxels along each
       // axis at this level" and `vi = uvw * dims.xyz`. Wrong dims here = wrong per-voxel address.
@@ -528,6 +530,23 @@ export async function createBrickVolumeRenderer(
       uniformCpu[BU.PREV_DIMS + 2] = Math.max(1, Math.ceil(currentZDepth / prevScale))
     } else {
       uniformCpu[BU.PREV_GRID + 3] = 0
+    }
+    // Per-channel (lo, hi, visible, unused). Rows past `channels.length` stay zero so the shader
+    // skips them via the `visible < 0.5` check. Same discipline as `CH0` in `volumeRenderer.ts`.
+    for (let ci = 0; ci < MAX_CHANNELS; ci++) {
+      const off = BU.CH0 + ci * 4
+      const ch = channels[ci]
+      if (ch === undefined) {
+        uniformCpu[off + 0] = 0
+        uniformCpu[off + 1] = 1
+        uniformCpu[off + 2] = 0
+        uniformCpu[off + 3] = 0
+      } else {
+        uniformCpu[off + 0] = ch.lo
+        uniformCpu[off + 1] = ch.hi
+        uniformCpu[off + 2] = ch.visible ? 1 : 0
+        uniformCpu[off + 3] = 0
+      }
     }
     device.queue.writeBuffer(uniformBuf, 0, uniformCpu)
   }
@@ -598,7 +617,14 @@ export async function createBrickVolumeRenderer(
       return true
     },
     hasTimepoint(_t) { return true },
-    residentTimepoints() { return atlas === null ? [] : [boundT] },
+    residentTimepoints() {
+      // Every unique `t` currently holding at least one brick — the time strip uses this to show
+      // where prefetch has buffered. Bricks-per-t need not be complete for the strip to light up.
+      if (atlas === null) return []
+      const seen = new Set<number>()
+      for (const e of atlas.pageTable.entries()) seen.add(e.brick.t)
+      return [...seen].sort((a, b) => a - b)
+    },
     touch(_t) { /* no-op */ },
 
     cache: { capacity: 1, bytesPerTimepoint: 0, zDepth: 1 },
@@ -614,6 +640,14 @@ export async function createBrickVolumeRenderer(
       channels.length = 0
       channels.push(...list)
       uniform.nch = Math.min(list.length, atlas?.layout.channelsPerBrick ?? list.length)
+      // Rewrite the LUT texture — one row per channel, resampled to LUT_STOPS pixels wide.
+      // Same helper the flat renderer uses so a channel that renders one way in the flat path
+      // renders identically here.
+      device.queue.writeTexture(
+        { texture: lutTex }, lutTextureBytes(list),
+        { bytesPerRow: LUT_STOPS * 4, rowsPerImage: MAX_CHANNELS },
+        [LUT_STOPS, MAX_CHANNELS],
+      )
     },
 
     setSteps(steps) { uniform.steps = steps },
@@ -689,6 +723,7 @@ export async function createBrickVolumeRenderer(
       inflight.clear()
       dropAtlas()
       uniformBuf.destroy()
+      lutTex.destroy()
       ctx.unconfigure()
     },
   }
