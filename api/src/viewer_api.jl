@@ -31,23 +31,17 @@ using ChunkCodecCore: encode
 # ── Reading one volume ────────────────────────────────────────────────────────────
 
 """
-    read_slab(zarr_path, t, c; z = nothing, x = nothing, y = nothing, level = 0) -> (vol, nx, ny, nz, nc)
+    read_slab(zarr_path, t, c; z = nothing, x = nothing, y = nothing, level = 0) -> (vol, nx, ny, nz)
 
-Voxels of timepoint `t`, channel `c` (both 0-based) as an `(x, y, z)` — or `(x, y, z, c)` when `c` is
-a range — column-major array. Linear memory is x-fastest, which is what a WebGPU 3D texture takes.
-Missing axes count as 1, so a 2D single-channel still answers the same shape of question as a 5D movie.
+Voxels of timepoint `t`, channel `c` (both 0-based) as an `(x, y, z)` column-major array — i.e. one
+whose linear memory is x-fastest, which is what a WebGPU 3D texture takes. Missing axes count as 1, so
+a 2D single-channel still answers the same shape of question as a 5D movie.
 
-`z` and `c` (both 0-based) select the depth and channel, and WHICH KIND decides the rank of the answer:
+`z` (0-based) selects the depth, and it is the difference between a timecourse you can watch and one
+you wait on. It takes either kind of index, and WHICH KIND decides the rank of the answer:
 
-  - an `Int` reads ONE PLANE / one channel and drops the dim, exactly as `t` does → `nz == 1` /
-    `nc == 1`;
-  - a `UnitRange` reads a SLAB of that many planes / channels and keeps it → an extra output dim.
-
-`c` as a range is what the brick-atlas viewer uses (`docs/todo/KILN_BRICK_PLAN.md` → Decision 7).
-Measured cost of ONE brick × 38 channels serially over HTTP was 273 ms on SispLk; batching them
-into one request drops the per-request overhead to a single round trip. Scalar `c` is the flat
-atlas's path — kept for backward compat, unchanged output shape (`(vol, nx, ny, nz)` destructures
-fine because the extra `nc` is on the end).
+  - an `Int` reads ONE PLANE and drops the z dim, exactly as `t` and `c` do → `nz == 1`;
+  - a `UnitRange` reads a SLAB of that many planes and keeps it → a shorter volume.
 
 Measured on `Dml3RG` (37 z, 4 ch, 181 t): a whole timepoint is 326 MB and ~400 ms of server read, one
 plane is 8.8 MB and ~13-22 ms. More to the point, the whole 181-timepoint movie is 1.59 GB at one plane
@@ -78,14 +72,14 @@ The `(arr, caxes)` form is for a caller that reads MANY slabs out of one store �
 cannot change mid-sweep. It does not take `level` because the caller has already opened a specific
 level; passing a different one would silently disagree with the array in hand.
 """
-read_slab(zarr_path::AbstractString, t::Int, c::Union{Int,AbstractUnitRange{Int}};
+read_slab(zarr_path::AbstractString, t::Int, c::Int;
           z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
           x::Union{AbstractUnitRange{Int},Nothing} = nothing,
           y::Union{AbstractUnitRange{Int},Nothing} = nothing,
           level::Int = 0) =
     read_slab(open_level(zarr_path, level)..., t, c; z = z, x = x, y = y)
 
-function read_slab(arr, caxes, t::Int, c::Union{Int,AbstractUnitRange{Int}};
+function read_slab(arr, caxes, t::Int, c::Int;
                    z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
                    x::Union{AbstractUnitRange{Int},Nothing} = nothing,
                    y::Union{AbstractUnitRange{Int},Nothing} = nothing)
@@ -95,8 +89,7 @@ function read_slab(arr, caxes, t::Int, c::Union{Int,AbstractUnitRange{Int}};
 
     idx = Any[Colon() for _ in 1:nd]
     haskey(dims, "t") && (idx[dims["t"]] = t + 1)      # 0-based → 1-based; scalar, so the dim drops
-    # Scalar `c` drops the dim (flat atlas path); range set below with _clamp_range once defined.
-    haskey(dims, "c") && c isa Int && (idx[dims["c"]] = c + 1)
+    haskey(dims, "c") && (idx[dims["c"]] = c + 1)
     # A scalar z drops the z dim exactly as t and c do, so `kept` below excludes it and `nz` answers 1
     # — one code path serves a plane, a sub-slab and a whole volume rather than three that can disagree.
     # Ranges (x, y, and z-as-range) are CLAMPED to the store rather than trusted: these come off a query
@@ -114,27 +107,17 @@ function read_slab(arr, caxes, t::Int, c::Union{Int,AbstractUnitRange{Int}};
         nz_all = size(arr, dims["z"])
         idx[dims["z"]] = z isa Int ? clamp(z, 0, nz_all - 1) + 1 : _clamp_range(z, nz_all)
     end
-    # `c` as a range: brick-atlas viewer wants all channels for one brick in ONE request. Clamped
-    # here so the c handling reads the same as z's. Scalar c was already set above.
-    if !(c isa Int) && haskey(dims, "c")
-        idx[dims["c"]] = _clamp_range(c, size(arr, dims["c"]))
-    end
     y === nothing || !haskey(dims, "y") ||
         (idx[dims["y"]] = _clamp_range(y, size(arr, dims["y"])))
     x === nothing || !haskey(dims, "x") ||
         (idx[dims["x"]] = _clamp_range(x, size(arr, dims["x"])))
     sub = read_native(arr, idx...)
 
-    # Julia dim j carries the C-order axis at position nd-j+1. Scalar indexing dropped t (and c,
-    # unless c is a range), so rebuild the surviving names in Julia dim order and permute them to
-    # exactly (x, y, z, c). Scalar-c stores end at (x, y, z); range-c stores add c as the last dim
-    # — the brick atlas expects channels stacked along z as a single texture, and the client can
-    # reinterpret a (x, y, z*nc, 1) view over a (x, y, z, c) buffer without copying (nc groups of
-    # nz consecutive planes, cache-friendly), so putting c LAST is the choice that matches Kiln's
-    # z-stacked convention (KILN_BRICK_PLAN.md → Decision 4).
+    # Julia dim j carries the C-order axis at position nd-j+1. Scalar indexing dropped t and c, so
+    # rebuild the surviving names in Julia dim order and permute them to exactly (x, y, z).
     kept = String[names[nd - j + 1] for j in 1:nd if !(idx[j] isa Int)]
     order = Int[]
-    for want in ("x", "y", "z", "c")
+    for want in ("x", "y", "z")
         k = findfirst(==(want), kept)
         k === nothing || push!(order, k)
     end
@@ -142,11 +125,9 @@ function read_slab(arr, caxes, t::Int, c::Union{Int,AbstractUnitRange{Int}};
     # for the identity — 87 MB per slab on the real target. Skip it, but keep the general path.
     vol = (ndims(sub) != length(order) || order == collect(1:length(order))) ? sub :
           permutedims(sub, order)
-    nx = size(vol, 1)
-    ny = ndims(vol) >= 2 ? size(vol, 2) : 1
+    nx, ny = size(vol, 1), size(vol, 2)
     nz = ndims(vol) >= 3 ? size(vol, 3) : 1
-    nc = ndims(vol) >= 4 ? size(vol, 4) : 1
-    vol, nx, ny, nz, nc
+    vol, nx, ny, nz
 end
 
 """
@@ -402,13 +383,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         end
     end
     t = something(tryparse(Int, get(q, "t", "0")), 0)
-    c0 = something(tryparse(Int, get(q, "c", "0")), 0)
-    c1 = haskey(q, "cTo") ? tryparse(Int, q["cTo"]) : nothing
-    # `cTo` present promotes `c` to a range — the brick-atlas viewer fetches all channels for one
-    # brick in one request (KILN_BRICK_PLAN.md → Decision 7). Ordered here, while the two ends
-    # are still separate integers, for the same reason as z: Julia normalises a backwards
-    # UnitRange to empty. Scalar `c` (no `cTo`) is the flat atlas's path, unchanged.
-    c = c1 === nothing ? c0 : min(c0, c1):max(c0, c1)
+    c = something(tryparse(Int, get(q, "c", "0")), 0)
     z0 = haskey(q, "z") ? tryparse(Int, q["z"]) : nothing
     z1 = haskey(q, "zTo") ? tryparse(Int, q["zTo"]) : nothing
     # `zTo` present promotes the scalar to a range, which is what keeps the z dim (see `read_slab`).
@@ -442,10 +417,10 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # there is still a response to shape — once bytes are on the wire the only thing left is a broken
     # connection, which the client cannot tell from a network blip. An out-of-range `t` or `c` is the
     # ordinary case (a hand-edited URL, a stale slider bound) and answers 400 with the actual bound.
-    local body, nx, ny, nz, nc, bpv, read_ms, comp_ms
+    local body, nx, ny, nz, bpv, read_ms, comp_ms
     try
         t0 = time()
-        vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
+        vol, nx, ny, nz = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
         body = slab_bytes(vol)
         bpv  = sizeof(eltype(vol))
         read_ms = round(1000 * (time() - t0); digits = 1)
@@ -468,12 +443,9 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     end
 
     HTTP.setheader(stream, "Content-Type"   => "application/octet-stream")
-    # X-Slab-Shape: nc,nz,ny,nx when the request has a `cTo` (channels axis is kept), otherwise
-    # nz,ny,nx (the legacy scalar-c shape, unchanged for the flat atlas). The client asserts this
-    # against `meta`, so a store whose axes are not what we think fails LOUDLY. Silently
-    # transposed voxels still render; they just render the wrong thing.
-    HTTP.setheader(stream, "X-Slab-Shape"   =>
-                   c isa Int ? "$nz,$ny,$nx" : "$nc,$nz,$ny,$nx")
+    # nz,ny,nx — the client asserts this against `meta`, so a store whose axes are not what we think
+    # fails LOUDLY. Silently transposed voxels still render; they just render the wrong thing.
+    HTTP.setheader(stream, "X-Slab-Shape"   => "$nz,$ny,$nx")
     HTTP.setheader(stream, "X-Slab-Bpv"     => string(bpv))
     # The level actually served after clamping. A hand-edited URL asking level=99 gets the deepest
     # existing level, and the client's cache key needs to match what came back, not what it asked for.
