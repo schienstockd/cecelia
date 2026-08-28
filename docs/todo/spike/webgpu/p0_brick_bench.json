@@ -1,0 +1,271 @@
+{
+    "images": {
+        "SispLk": {
+            "shape": {
+                "nC": 38,
+                "bytesPerVoxel": 1,
+                "nT": 1,
+                "nX": 7848,
+                "nY": 7293,
+                "nZ": 4
+            },
+            "all_channels": {
+                "L0_B64": {
+                    "ms_median": 284.7,
+                    "ms_min": 249.6,
+                    "ms_max": 341.9,
+                    "bytes": 622592,
+                    "nc": 38
+                },
+                "L0_B128": {
+                    "ms_median": 273.3,
+                    "ms_min": 250,
+                    "ms_max": 304.5,
+                    "bytes": 2490368,
+                    "nc": 38
+                },
+                "L2_B128": {
+                    "ms_median": 458.2,
+                    "ms_min": 416.6,
+                    "ms_max": 536.5,
+                    "bytes": 2490368,
+                    "nc": 38
+                },
+                "L1_B256": {
+                    "ms_median": 470,
+                    "ms_min": 460.2,
+                    "ms_max": 560.6,
+                    "bytes": 9961472,
+                    "nc": 38
+                },
+                "L1_B128": {
+                    "ms_median": 273.8,
+                    "ms_min": 269.4,
+                    "ms_max": 285,
+                    "bytes": 2490368,
+                    "nc": 38
+                },
+                "L2_B64": {
+                    "ms_median": 283.7,
+                    "ms_min": 277.8,
+                    "ms_max": 397.6,
+                    "bytes": 622592,
+                    "nc": 38
+                },
+                "L0_B256": {
+                    "ms_median": 265.1,
+                    "ms_min": 263.5,
+                    "ms_max": 281.3,
+                    "bytes": 9961472,
+                    "nc": 38
+                },
+                "L1_B64": {
+                    "ms_median": 291,
+                    "ms_min": 278.8,
+                    "ms_max": 387.3,
+                    "bytes": 622592,
+                    "nc": 38
+                },
+                "L2_B256": {
+                    "ms_median": 756.2,
+                    "ms_min": 745.2,
+                    "ms_max": 938,
+                    "bytes": 9961472,
+                    "nc": 38
+                }
+            },
+            "one_channel": {
+                "L0_B64": {
+                    "ms_median": 8.6,
+                    "ms_min": 8.3,
+                    "ms_max": 8.6,
+                    "bytes": 16384
+                },
+                "L0_B128": {
+                    "ms_median": 7.6,
+                    "ms_min": 7.4,
+                    "ms_max": 57,
+                    "bytes": 65536
+                },
+                "L2_B128": {
+                    "ms_median": 12.7,
+                    "ms_min": 12.3,
+                    "ms_max": 23.3,
+                    "bytes": 65536
+                },
+                "L1_B256": {
+                    "ms_median": 13.9,
+                    "ms_min": 13.8,
+                    "ms_max": 14.8,
+                    "bytes": 262144
+                },
+                "L1_B128": {
+                    "ms_median": 7.8,
+                    "ms_min": 7.4,
+                    "ms_max": 8,
+                    "bytes": 65536
+                },
+                "L2_B64": {
+                    "ms_median": 7.7,
+                    "ms_min": 7.4,
+                    "ms_max": 12.5,
+                    "bytes": 16384
+                },
+                "L0_B256": {
+                    "ms_median": 7.6,
+                    "ms_min": 7.4,
+                    "ms_max": 8,
+                    "bytes": 262144
+                },
+                "L1_B64": {
+                    "ms_median": 7.5,
+                    "ms_min": 7.4,
+                    "ms_max": 7.6,
+                    "bytes": 16384
+                },
+                "L2_B256": {
+                    "ms_median": 22.6,
+                    "ms_min": 21.9,
+                    "ms_max": 33.2,
+                    "bytes": 262144
+                }
+            }
+        },
+        "35uedD": {
+            "shape": {
+                "nC": 25,
+                "bytesPerVoxel": 1,
+                "nT": 1,
+                "nX": 12977,
+                "nY": 6543,
+                "nZ": 4
+            },
+            "all_channels": {
+                "L0_B64": {
+                    "ms_median": 191.3,
+                    "ms_min": 184.4,
+                    "ms_max": 232.6,
+                    "bytes": 409600,
+                    "nc": 25
+                },
+                "L0_B128": {
+                    "ms_median": 187.6,
+                    "ms_min": 180.6,
+                    "ms_max": 209.4,
+                    "bytes": 1638400,
+                    "nc": 25
+                },
+                "L2_B128": {
+                    "ms_median": 199.7,
+                    "ms_min": 189.5,
+                    "ms_max": 210.6,
+                    "bytes": 1638400,
+                    "nc": 25
+                },
+                "L1_B256": {
+                    "ms_median": 201.4,
+                    "ms_min": 198.6,
+                    "ms_max": 218.8,
+                    "bytes": 6553600,
+                    "nc": 25
+                },
+                "L1_B128": {
+                    "ms_median": 192.7,
+                    "ms_min": 187.1,
+                    "ms_max": 217.1,
+                    "bytes": 1638400,
+                    "nc": 25
+                },
+                "L2_B64": {
+                    "ms_median": 205.8,
+                    "ms_min": 195.8,
+                    "ms_max": 307.2,
+                    "bytes": 409600,
+                    "nc": 25
+                },
+                "L0_B256": {
+                    "ms_median": 193.9,
+                    "ms_min": 190.8,
+                    "ms_max": 204.1,
+                    "bytes": 6553600,
+                    "nc": 25
+                },
+                "L1_B64": {
+                    "ms_median": 227.9,
+                    "ms_min": 204.4,
+                    "ms_max": 276.3,
+                    "bytes": 409600,
+                    "nc": 25
+                },
+                "L2_B256": {
+                    "ms_median": 204.3,
+                    "ms_min": 194.9,
+                    "ms_max": 213.6,
+                    "bytes": 6553600,
+                    "nc": 25
+                }
+            },
+            "one_channel": {
+                "L0_B64": {
+                    "ms_median": 5.8,
+                    "ms_min": 5.7,
+                    "ms_max": 10,
+                    "bytes": 16384
+                },
+                "L0_B128": {
+                    "ms_median": 5.9,
+                    "ms_min": 5.9,
+                    "ms_max": 24.4,
+                    "bytes": 65536
+                },
+                "L2_B128": {
+                    "ms_median": 6.5,
+                    "ms_min": 6.5,
+                    "ms_max": 6.7,
+                    "bytes": 65536
+                },
+                "L1_B256": {
+                    "ms_median": 6.2,
+                    "ms_min": 6.1,
+                    "ms_max": 6.4,
+                    "bytes": 262144
+                },
+                "L1_B128": {
+                    "ms_median": 6.5,
+                    "ms_min": 6.5,
+                    "ms_max": 7.2,
+                    "bytes": 65536
+                },
+                "L2_B64": {
+                    "ms_median": 6.8,
+                    "ms_min": 6.6,
+                    "ms_max": 7.8,
+                    "bytes": 16384
+                },
+                "L0_B256": {
+                    "ms_median": 6,
+                    "ms_min": 5.8,
+                    "ms_max": 7.1,
+                    "bytes": 262144
+                },
+                "L1_B64": {
+                    "ms_median": 7.4,
+                    "ms_min": 6,
+                    "ms_max": 10.5,
+                    "bytes": 16384
+                },
+                "L2_B256": {
+                    "ms_median": 7.6,
+                    "ms_min": 6.6,
+                    "ms_max": 9.4,
+                    "bytes": 262144
+                }
+            }
+        }
+    },
+    "generated_via": "docs/todo/spike/webgpu/brick_bench.jl",
+    "project": "4rNbMp",
+    "reps": 5,
+    "notes": "Server-side HTTP bench for KILN_BRICK_PLAN P0. Warm reads only.",
+    "endpoint": "/api/viewer/slab"
+}
