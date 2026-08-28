@@ -2737,10 +2737,13 @@ onUnmounted(() => {
     <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
          left edge drags to resize, and the width persists per `storage-key`. Same primitive the
          module pages use for their right panel, so the affordances are one shared thing rather
-         than a viewer-only fourth. Collapse tracks the app-wide `settings.rightPanelCollapsed`
-         by design (see the header on CollapsiblePanel.vue). -->
+         than a viewer-only fourth. The COLLAPSE flag is a viewer-window own field
+         (`viewerWindowSideCollapsed`), not the app-wide `rightPanelCollapsed` — the viewer's
+         controls and the module page's task list hold different things, and sharing meant every
+         collapse fold both. -->
     <CollapsiblePanel storage-key="viewerWindowSide" label="viewer controls"
-                      :default-width="240" :min="200" :max="480">
+                      :default-width="240" :min="200" :max="480"
+                      collapsed-key="viewerWindowSideCollapsed">
       <div class="vw-side">
       <div class="cc-row cc-row-tight">
         <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
@@ -3448,8 +3451,8 @@ onUnmounted(() => {
   border: 1px solid var(--cc-accent); background: transparent; color: var(--cc-accent);
   font-weight: 600; letter-spacing: 0.02em; cursor: pointer; line-height: 1.2; }
 .vw-ch-af-badge:hover { background: color-mix(in srgb, var(--cc-accent) 15%, transparent); }
-.vw-ch-af-badge-off { border-color: var(--cc-border); color: var(--cc-muted); text-decoration: line-through; }
-.vw-ch-af-badge-off:hover { background: color-mix(in srgb, var(--cc-muted) 12%, transparent); }
+.vw-ch-af-badge-off { border-color: var(--cc-border); color: var(--cc-text-dim); text-decoration: line-through; }
+.vw-ch-af-badge-off:hover { background: color-mix(in srgb, var(--cc-text-dim) 12%, transparent); }
 /* The thumbs are centred on their value, so half of one overhangs at either end of the rail. Room for
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
