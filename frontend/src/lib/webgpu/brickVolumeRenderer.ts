@@ -17,7 +17,7 @@
 import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
 import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
-import { extentUm } from '../../utils/volumeViewer'
+import { extentUm, slabMax, slabView } from '../../utils/volumeViewer'
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
@@ -130,6 +130,11 @@ export async function createBrickVolumeRenderer(
    *  arrival page-table → the box stays black (2026-08-28, first attempt was silent because of
    *  this exact missing signal). Null when the caller hasn't wired one yet. */
   let needsRedraw: (() => void) | null = null
+  /** Caller-supplied hook that receives per-channel MAX brightness after each landed brick, so
+   *  ViewerWindow can grow `seenMax` from real data — same discipline as the flat renderer's
+   *  per-timepoint slab walk (`ViewerWindow.vue:1159`). Without it the contrast slider's ceiling
+   *  never adapts and dragging `hi` down locks the range at 0..initial. Null when unwired. */
+  let onBrickLoaded: ((perChannelMax: number[]) => void) | null = null
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -276,6 +281,20 @@ export async function createBrickVolumeRenderer(
         if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
         atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
         atlas.pageTableDirty = true
+        // Grow `seenMax` from the actual bytes we just received — same discipline the flat
+        // renderer runs in `uploadFrame`. Compute on the RAW (un-padded) payload: padded regions
+        // are zeros and never contribute to max, so it doesn't matter, but the raw shape lets us
+        // walk fewer bytes on edge bricks.
+        if (onBrickLoaded !== null) {
+          const bpv = atlas.layout.bytesPerVoxel
+          const perChBytes = payload.shape.nz * payload.shape.ny * payload.shape.nx * bpv
+          const perChannelMax: number[] = []
+          for (let ci = 0; ci < payload.shape.nc; ci++) {
+            const slice = payload.bytes.slice(ci * perChBytes, (ci + 1) * perChBytes)
+            perChannelMax.push(slabMax(slabView(slice, bpv), payload.shape.nx))
+          }
+          onBrickLoaded(perChannelMax)
+        }
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
@@ -542,6 +561,7 @@ export async function createBrickVolumeRenderer(
     },
 
     setNeedsRedraw(cb) { needsRedraw = cb },
+    setOnBrickLoaded(cb) { onBrickLoaded = cb },
 
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
