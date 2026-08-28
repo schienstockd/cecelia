@@ -67,6 +67,17 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const log = useLogStore()
   const viewerStore = useViewerStore()
 
+  // Reload eviction. `enabled` is deliberately session-only (~L45), so on a page reload NO preview is
+  // active — but the viewer store's `previewLabels`/`previewImages` bags DO seed from localStorage
+  // (they have to, for a viewer window opened AFTER a preview run to pick it up). That combination
+  // meant a stale AF badge (and the corresponding channel-slab swap) survived a reload with no
+  // preview running to feed it. This store lives on the MAIN window, is created once per app load,
+  // and knows the ground truth: if `enabled` is false, no preview is showing — clear both bags so
+  // the viewer window sees `null` on its next storage-event read too. Popup viewer windows don't
+  // import this store, so they don't fight this write; the main window is the sole author.
+  viewerStore.setPreviewLabels(null)
+  viewerStore.setPreviewImages(null)
+
   /**
    * Record a failure: the readout AND the error console.
    *
@@ -94,6 +105,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // Preview labels are cross-window state (bridged through localStorage; see stores/viewer.ts). Clear
     // via the store's setter so the viewer popup's Pinia also drops back to the real labels store.
     viewerStore.setPreviewLabels(null)
+    // Same for AF preview: every corrected channel's slab URL flips back to the source image.
+    viewerStore.setPreviewImages(null)
   }
 
   const blocker = computed<PreviewBlocker | null>(
@@ -173,6 +186,11 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // reach it.
     viewerStore.setPreviewLabels(
       res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
+    // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
+    // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
+    // cross-window story as previewLabels.
+    viewerStore.setPreviewImages(
+      Array.isArray(res?.previewImages) ? res.previewImages : null)
     error.value = ''
     errorCode.value = ''
   }, {

@@ -140,6 +140,20 @@ export interface SlabQuery {
    */
   previewId?: number
   /**
+   * Swap this channel's image slab onto the AF preview scratch store (P7.1). The worker writes one
+   * store per corrected channel at
+   * `{img_dir}/{previewValueName}__preview_af_ch{sourceChannel}.ome.zarr` (channel-less; geometry
+   * matches the source image). The caller passes the source-image channel index in `sourceChannel`
+   * and the AF task's `outputValueName` in `previewValueName`; `valueName` on the outer request
+   * stays the SOURCE image's vn (that is what resolves the image dir the scratch sits in), and `c`
+   * stays as the source channel — the store is channel-less so `c` is a no-op on the server (same
+   * as a labels preview slab). No-op without `preview_af`. Same cache-bust story as `previewId`.
+   */
+  preview_af?: boolean
+  sourceChannel?: number
+  previewValueName?: string
+  previewAfId?: number
+  /**
    * XY tile bounds, 0-based inclusive `[lo, hi]` in the LEVEL's coordinate space (a level=1 tile at
    * x=100..199 is a different region on disk from level=0 at the same numbers). Absent means the whole
    * axis — same shape as `z`. Together with `level` this is the pan/zoom viewer's access pattern.
@@ -166,6 +180,13 @@ export function slabUrl(q: SlabQuery): string {
   // Cache-bust identical preview URLs across re-runs. Server-side is harmless (unknown query params
   // are ignored by `try_serve_slab`), so this stays a pure client-side concern.
   if (q.labels && q.preview && q.previewId !== undefined) p.set('_pv', String(q.previewId))
+  // AF preview (P7.1): only meaningful WITHOUT `labels` (this is an image swap, not a mask swap).
+  if (!q.labels && q.preview_af && q.sourceChannel !== undefined && q.previewValueName) {
+    p.set('preview_af', '1')
+    p.set('sourceChannel', String(q.sourceChannel))
+    p.set('previewValueName', q.previewValueName)
+    if (q.previewAfId !== undefined) p.set('_pv', String(q.previewAfId))
+  }
   // Only when asked for: an absent `z` means the whole stack, and `z=0` is a legitimate plane.
   if (q.z !== undefined) p.set('z', String(q.z))
   // `zTo` promotes `z` from one plane to a RANGE of planes, which is a different rank of answer (the

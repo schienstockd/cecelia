@@ -84,8 +84,13 @@ const barY = computed(() => ey.value - my.value - barH.value)
          :style="chrome === 'fixed' ? { fontSize: timeFontPx + 'px', top: '8px', left: '10px' } : undefined"
     >{{ timeLabel }}</div>
     <!-- vector scale bar, bottom-right: an SVG whose viewBox IS the frame's physical extent (µm), so the
-         bar length is correct by construction and stays aligned to the letterboxed image. Needs the extent. -->
-    <svg v-if="ok && showScaleBar && bar" class="ovl-svg" :viewBox="`0 0 ${ex} ${ey}`" preserveAspectRatio="xMidYMid meet">
+         bar length is correct by construction and stays aligned to the letterboxed image. Needs the extent.
+         Under `chrome: 'fixed'`, hold rendering until the host box has been measured (`perUnit > 0`):
+         with no measurement `fixed` collapses to false and the sizes fall back to the PROPORTIONAL branch
+         for one frame, which flashes a large label + thick bar before snapping to the fixed sizes on the
+         next tick. Waiting one frame is invisible; the flash isn't. -->
+    <svg v-if="ok && showScaleBar && bar && (chrome !== 'fixed' || perUnit > 0)"
+         class="ovl-svg" :viewBox="`0 0 ${ex} ${ey}`" preserveAspectRatio="xMidYMid meet">
       <rect :x="barX1" :y="barY" :width="bar.um" :height="barH" class="ovl-fill" />
       <text :x="(barX1 + barX2) / 2" :y="barY - font * 0.35" :font-size="font"
             class="ovl-text" text-anchor="middle">{{ bar.label }}</text>

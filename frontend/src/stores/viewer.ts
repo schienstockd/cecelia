@@ -32,6 +32,7 @@ export interface OpenImage {
 const K_OPEN_IMAGE     = 'cc.viewer.openImage'
 const K_VISIBLE_REGION = 'cc.viewer.visibleRegion'
 const K_PREVIEW_LABELS = 'cc.viewer.previewLabels'
+const K_PREVIEW_IMAGES = 'cc.viewer.previewImages'
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -44,6 +45,22 @@ const K_PREVIEW_LABELS = 'cc.viewer.previewLabels'
  *  never wakes up on a plane change or a param edit, and the mask on screen stays from the FIRST
  *  run. Set by `setPreviewLabels`; callers pass just the identity. */
 export interface PreviewLabels {
+  valueName: string
+  imageUid: string
+  projectUid: string
+  updateId: number
+}
+
+/** One corrected channel from an AF preview run — set by taskPreview after an AF run, read by
+ *  ViewerWindow to swap that channel's slab request onto the scratch AF store. Same cross-window
+ *  bridge as `previewLabels`, and the same `updateId` idiom: identical identity across re-runs
+ *  would produce no `storage` event and the popup would keep showing the first run's pixels.
+ *
+ *  The set is per-image and per-run. When a new AF preview run lands, every corrected channel's
+ *  entry is written at once with a shared `updateId`, and the ViewerWindow watch fires ONCE per
+ *  run (not per channel), even though the swap runs across every entry. */
+export interface PreviewImage {
+  sourceChannel: number
   valueName: string
   imageUid: string
   projectUid: string
@@ -72,6 +89,7 @@ export const useViewerStore = defineStore('viewer', () => {
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
   const previewLabels = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
+  const previewImages = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
 
   /** ViewerWindow calls this when the image changes (route load, valueName picker). */
   function setOpenImage(next: OpenImage | null) {
@@ -97,6 +115,22 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_PREVIEW_LABELS, stamped)
   }
 
+  /** taskPreview calls this after an AF run: `next` non-null flips each corrected channel's slab
+   *  onto the scratch AF store; `null` (on stop / error / mismatch) flips them all back. A single
+   *  `updateId` stamps the whole array — every entry shares it — so the watch on the popup viewer
+   *  fires ONCE per run, not once per channel. */
+  function setPreviewImages(next: Omit<PreviewImage, 'updateId'>[] | null) {
+    if (!next || next.length === 0) {
+      previewImages.value = null
+      _writeJson(K_PREVIEW_IMAGES, null)
+      return
+    }
+    const stamp = ++_updateIdSeq
+    const stamped = next.map(m => ({ ...m, updateId: stamp }))
+    previewImages.value = stamped
+    _writeJson(K_PREVIEW_IMAGES, stamped)
+  }
+
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the
   // pattern is symmetric — every window listens, every window writes on its own change.
   if (typeof window !== 'undefined') {
@@ -107,12 +141,14 @@ export const useViewerStore = defineStore('viewer', () => {
         visibleRegion.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_LABELS) {
         previewLabels.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_PREVIEW_IMAGES) {
+        previewImages.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
-  return { openImage, visibleRegion, previewLabels,
-           setOpenImage, setVisibleRegion, setPreviewLabels }
+  return { openImage, visibleRegion, previewLabels, previewImages,
+           setOpenImage, setVisibleRegion, setPreviewLabels, setPreviewImages }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
