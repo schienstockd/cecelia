@@ -47,7 +47,7 @@ const CH0 = 28
 const LABEL_BPV = 4
 /** Probe side for `sampleFrame`. 128 because `128 * 4` is already a multiple of the 256-byte
  *  `bytesPerRow` alignment a texture-to-buffer copy requires — no padded rows to unpick. */
-const PROBE_PX = 128
+export const PROBE_PX = 128
 
 export interface VolumeRenderer {
   readonly adapter: AdapterReport

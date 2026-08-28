@@ -16,6 +16,7 @@
 
 import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
+import { PROBE_PX } from './volumeRenderer'
 import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
 import {
   extentUm, slabMax, slabView, lutTextureBytes,
@@ -591,14 +592,17 @@ export async function createBrickVolumeRenderer(
     atlas.pageTableDirty = true
   }
 
-  const writeUniform = () => {
+  const writeUniform = (widthOverride?: number, heightOverride?: number) => {
     uniformCpu[BU.CAM + 0] = camState.yaw
     uniformCpu[BU.CAM + 1] = camState.pitch
     uniformCpu[BU.CAM + 2] = camState.dist
     uniformCpu[BU.CAM + 3] = uniform.steps
     uniformCpu[BU.VP + 0] = uniform.nch
-    uniformCpu[BU.VP + 1] = canvas.width
-    uniformCpu[BU.VP + 2] = canvas.height
+    // Overridable so `sampleFrame` can render into a square probe with the shader treating the
+    // aspect ratio correctly — a stretched aspect would frame the volume differently from what is
+    // on screen, and the probe's whole job is to report on the SAME framing.
+    uniformCpu[BU.VP + 1] = widthOverride ?? canvas.width
+    uniformCpu[BU.VP + 2] = heightOverride ?? canvas.height
     uniformCpu[BU.VP + 3] = uniform.ortho ? 1 : 0
     uniformCpu[BU.EXT + 0] = uniform.ext[0]
     uniformCpu[BU.EXT + 1] = uniform.ext[1]
@@ -678,6 +682,33 @@ export async function createBrickVolumeRenderer(
     device.queue.writeBuffer(uniformBuf, 0, uniformCpu)
   }
 
+  /**
+   * Encode the volume and, optionally, the overlays into an open pass — ONE encoder for both the
+   * canvas draw and the probe copy, so what `sampleFrame` measures cannot drift from what the
+   * screen was told to draw. Skips the overlays when the vertex buffer is empty because a
+   * zero-instance draw with a null buffer is a validation error that discards the WHOLE pass
+   * (same trap the flat renderer already documents — `volumeRenderer.ts:492`).
+   */
+  const encodePass = (pass: GPURenderPassEncoder, withOverlays: boolean) => {
+    if (atlas === null) return
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, atlas.bindGroup)
+    pass.draw(3, 1, 0, 0)
+    if (!withOverlays) return
+    if (segBuf !== null && segCount > 0) {
+      pass.setPipeline(segPipeline)
+      pass.setBindGroup(0, atlas.bindGroup)
+      pass.setVertexBuffer(0, segBuf)
+      pass.draw(6, segCount, 0, segFirst)
+    }
+    if (pointBuf !== null && pointCount > 0) {
+      pass.setPipeline(pointsPipeline)
+      pass.setBindGroup(0, atlas.bindGroup)
+      pass.setVertexBuffer(0, pointBuf)
+      pass.draw(6, pointCount, 0, pointFirst)
+    }
+  }
+
   const draw = () => {
     if (destroyed) return
     // Test-pattern upload is idempotent-ish (LRU updates lastUsed, but slot stays); OK per frame
@@ -700,26 +731,7 @@ export async function createBrickVolumeRenderer(
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
       }],
     })
-    if (atlas !== null) {
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, atlas.bindGroup)
-      pass.draw(3, 1, 0, 0)
-      // Overlays in the SAME pass — tails first, then points, so a marker sits ON TOP of the
-      // path leading to it. Skip when the buffer is empty: a zero-instance draw with a null
-      // vertex buffer is a validation error that discards the whole pass, blanking the volume.
-      if (segBuf !== null && segCount > 0) {
-        pass.setPipeline(segPipeline)
-        pass.setBindGroup(0, atlas.bindGroup)
-        pass.setVertexBuffer(0, segBuf)
-        pass.draw(6, segCount, 0, segFirst)
-      }
-      if (pointBuf !== null && pointCount > 0) {
-        pass.setPipeline(pointsPipeline)
-        pass.setBindGroup(0, atlas.bindGroup)
-        pass.setVertexBuffer(0, pointBuf)
-        pass.draw(6, pointCount, 0, pointFirst)
-      }
-    }
+    encodePass(pass, true)
     pass.end()
     device.queue.submit([enc.finish()])
   }
@@ -845,11 +857,56 @@ export async function createBrickVolumeRenderer(
     draw,
     uniformState: () => ({ ...uniform }),
 
-    async sampleFrame(_withOverlays?): Promise<FrameSample | null> {
-      // Contrast auto-sampling reads the flat renderer's probe copy. Bricks don't produce one
-      // yet — returning null tells the caller "no sample available", which is the same handshake
-      // it uses for a cold timepoint.
-      return null
+    async sampleFrame(withOverlays = false): Promise<FrameSample | null> {
+      if (destroyed || atlas === null) return null
+      // Its own square target rather than a copy of the canvas — same rationale as the flat
+      // renderer: the canvas texture is transient and copying one needs a COPY_SRC usage on the
+      // context, which would change how every real frame is presented for the sake of a
+      // diagnostic. PROBE_PX is 128 because 128 × 4 is already a 256-byte multiple, which is
+      // what copyTextureToBuffer's bytesPerRow requires.
+      const N = PROBE_PX
+      const tex = device.createTexture({
+        size: [N, N], format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      })
+      const buf = device.createBuffer({
+        size: N * N * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      })
+      // Tell the shader the target is square so `aspect` (canvas.w / canvas.h) matches. Restored
+      // AFTER the pass is encoded so nothing else draws with the probe dims.
+      writeUniform(N, N)
+      writePageTable()
+      const enc = device.createCommandEncoder()
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: tex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
+        }],
+      })
+      encodePass(pass, withOverlays)
+      pass.end()
+      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
+      device.queue.submit([enc.finish()])
+      // Real canvas dims back before the next real frame — writeUniform() with no args reads
+      // canvas.width/height.
+      writeUniform()
+      try {
+        await buf.mapAsync(GPUMapMode.READ)
+        const px = new Uint8Array(buf.getMappedRange().slice(0))
+        let max = 0, sum = 0, lit = 0
+        for (let i = 0; i < px.length; i += 4) {
+          const m = Math.max(px[i], px[i + 1], px[i + 2])
+          if (m > 0) lit++
+          if (m > max) max = m
+          sum += px[i] + px[i + 1] + px[i + 2]
+        }
+        return {
+          max: max / 255, mean: sum / (px.length / 4 * 3) / 255,
+          lit: lit / (px.length / 4), size: N,
+        }
+      } catch { return null }
+      finally { buf.destroy(); tex.destroy() }
     },
 
     overlayCounts: (): [number, number] => [pointCount, segCount],
