@@ -37,8 +37,12 @@ import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
   createVolumeRenderer, WebGpuUnavailable,
+  // Kiln brick renderer (KILN_BRICK_PLAN.md P5) — dev-flagged via `?bricks=1`. Same interface
+  // as `createVolumeRenderer`; P5a's build is a proof-of-plumbing that clears the canvas
+  // magenta so a screenshot proves the swap works before the shader lands.
   type VolumeRenderer, type UniformState, type FrameSample,
 } from '../lib/webgpu/volumeRenderer'
+import { createBrickVolumeRenderer } from '../lib/webgpu/brickVolumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
@@ -92,6 +96,14 @@ const viewerStore = useViewerStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
+/**
+ * `?bricks=1` — swap the flat-3D volume renderer for the brick-atlas one
+ * (`docs/todo/KILN_BRICK_PLAN.md`). URL-scoped rather than a setting so the two paths can be
+ * compared side-by-side by opening the same image in two windows. Read once on mount; the
+ * renderer swap on mid-session flip needs a full destroy/recreate and isn't worth the
+ * scaffolding for a dev-only flag.
+ */
+const bricksEnabled = String(route.query.bricks ?? '') === '1'
 /**
  * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
  * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
@@ -2195,7 +2207,12 @@ async function ensureRenderer() {
     } else {
       if (renderer.value) return
       if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
-      const r = await createVolumeRenderer(canvas.value!, msg => {
+      // `?bricks=1` swaps in the KILN_BRICK_PLAN P5 renderer instead of the flat volume one.
+      // Same interface, different backing — the caller doesn't branch, only the constructor
+      // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
+      // in P5b.
+      const construct = bricksEnabled ? createBrickVolumeRenderer : createVolumeRenderer
+      const r = await construct(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'GPU error: ' + msg)
       })
