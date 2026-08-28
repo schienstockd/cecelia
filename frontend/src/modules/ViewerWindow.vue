@@ -80,6 +80,7 @@ import ChipSelect from '../components/ChipSelect.vue'
 import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
+import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 
 const route = useRoute()
@@ -2733,7 +2734,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <aside class="vw-side">
+    <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
+         left edge drags to resize, and the width persists per `storage-key`. Same primitive the
+         module pages use for their right panel, so the affordances are one shared thing rather
+         than a viewer-only fourth. Collapse tracks the app-wide `settings.rightPanelCollapsed`
+         by design (see the header on CollapsiblePanel.vue). -->
+    <CollapsiblePanel storage-key="viewerWindowSide" label="viewer controls"
+                      :default-width="240" :min="200" :max="480">
+      <div class="vw-side">
       <div class="cc-row cc-row-tight">
         <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
         <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
@@ -3339,7 +3347,8 @@ onUnmounted(() => {
           </div>
         </CollapsibleSection>
       </template>
-    </aside>
+      </div>
+    </CollapsiblePanel>
   </div>
 </template>
 
@@ -3418,12 +3427,14 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 .vw-side {
-  width: 15rem; flex: none; padding: 0.6rem;
+  /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
+     stay here — the panel deliberately owns no padding so its consumers pad their own root. */
+  flex: 1; min-width: 0; padding: 0.6rem;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
      and any tight row visually escape past the sidebar's right edge (Dominik, 2026-08-26). Only
      the vertical axis needs to scroll. */
   overflow: hidden auto;
-  border-left: 1px solid var(--cc-border); display: flex; flex-direction: column; gap: 0.35rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
 }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
