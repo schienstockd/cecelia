@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   bricksIntersectingViewport, pickBrickLevel, scheduleBricks,
+  brickWorldFromMeta, brickViewportFromCamera,
   type BrickViewport, type BrickWorld,
 } from './brickScheduler'
 import { brickKey } from './pageTable'
+import type { ViewerMeta, OrbitCamera } from './volumeViewer'
+import { VIEW_HALF_ANGLE } from './volumeViewer'
 
 // SispLk-shape, but rounded to make the arithmetic easy to reason about in the assertions.
 // 128 vox × 1 µm = 128 µm brick edge at L0. A 4x4x1 grid of bricks = 512x512x4 voxels total.
@@ -180,5 +183,80 @@ describe('scheduleBricks', () => {
     expect(dec1.toEvict).toContain(staleKey)
     // …and the correct-level brick is on the load list.
     expect(dec1.toLoad.some(s => s.brick.bx === dec0.toLoad[0].brick.bx)).toBe(true)
+  })
+})
+
+const META: ViewerMeta = {
+  nT: 1, nC: 4, nZ: 4, nX: 512, nY: 512, bytesPerVoxel: 1, slabBytes: 512 * 512 * 4,
+  contrastSource: 'viewer', voxelUm: [0.5, 0.5, 2],
+  calibrated: { xy: true, z: true, t: false }, spaceUnit: 'um', frameIntervalMin: null,
+  channels: [],
+  levels: [
+    { level: 0, nX: 512, nY: 512, chunkX: 128, chunkY: 128 },
+    { level: 1, nX: 256, nY: 256, chunkX: 128, chunkY: 128 },
+    { level: 2, nX: 128, nY: 128, chunkX: 128, chunkY: 128 },
+  ],
+}
+
+describe('brickWorldFromMeta', () => {
+  it('carries the atlas brick shape + meta voxelUm + L0 dims', () => {
+    const w = brickWorldFromMeta(META, [128, 128, 4], META.nZ)
+    expect(w.brickSizeVox).toEqual([128, 128, 4])
+    expect(w.voxelUmL0).toEqual([0.5, 0.5, 2])
+    expect(w.extentVoxL0).toEqual([512, 512, 4])
+    expect(w.nLevels).toBe(3)
+  })
+
+  it('defaults an uncalibrated axis to 1 µm', () => {
+    const uncalibrated: ViewerMeta = { ...META, voxelUm: [0, 0, 0] }
+    const w = brickWorldFromMeta(uncalibrated, [128, 128, 4], META.nZ)
+    expect(w.voxelUmL0).toEqual([1, 1, 1])
+  })
+
+  it('clamps nLevels to at least 1 for a single-level store', () => {
+    const flat: ViewerMeta = { ...META, levels: [] }
+    expect(brickWorldFromMeta(flat, [128, 128, 4], META.nZ).nLevels).toBe(1)
+  })
+})
+
+describe('brickViewportFromCamera', () => {
+  const cam: OrbitCamera = { yaw: 0, pitch: 0, dist: 100, panX: 0, panY: 0 }
+
+  it('centres on the box, half-height = dist × VIEW_HALF_ANGLE', () => {
+    // extentUm = [512*0.5, 512*0.5, 4*2] = [256, 256, 8]
+    const v = brickViewportFromCamera(cam, META, 0, 1024, 1.0, META.nZ)
+    expect(v.centreUm).toEqual([128, 128, 4])
+    expect(v.halfHUm).toBeCloseTo(100 * VIEW_HALF_ANGLE, 6)
+    expect(v.halfWUm).toBeCloseTo(100 * VIEW_HALF_ANGLE, 6)
+  })
+
+  it('aspect stretches halfW, not halfH — the width scales with the canvas', () => {
+    const v = brickViewportFromCamera(cam, META, 0, 1024, 2.0, META.nZ)
+    expect(v.halfWUm).toBeCloseTo(v.halfHUm * 2, 6)
+  })
+
+  it('halfDUm covers the whole box depth — walk every z-slab (thin-Z default)', () => {
+    // extentUm.z = 8; halfDUm should be 4 (half the depth), so bricks at ANY z survive the walk.
+    const v = brickViewportFromCamera(cam, META, 0, 1024, 1.0, META.nZ)
+    expect(v.halfDUm).toBeCloseTo(4, 6)
+  })
+
+  it('focalPx = canvasHeight / (2 × VIEW_HALF_ANGLE) — same pinhole the shader implies', () => {
+    const v = brickViewportFromCamera(cam, META, 0, 1024, 1.0, META.nZ)
+    expect(v.focalPx).toBeCloseTo(1024 / (2 * VIEW_HALF_ANGLE), 6)
+  })
+
+  it('distanceUm mirrors cam.dist', () => {
+    const v = brickViewportFromCamera({ ...cam, dist: 350 }, META, 0, 1024, 1.0, META.nZ)
+    expect(v.distanceUm).toBe(350)
+  })
+
+  it('scheduling picks L0 at dist=100, coarsens with distance', () => {
+    // sseDesiredLevel(voxelXY=0.5, dist=100, focalPx≈1138) = log2(100 / (0.5 * 1138)) ≈ -2.5 → 0.
+    const world = brickWorldFromMeta(META, [128, 128, 4], META.nZ)
+    const view100 = brickViewportFromCamera(cam, META, 0, 1024, 1.0, META.nZ)
+    expect(pickBrickLevel(view100, world, undefined)).toBe(0)
+    const viewFar = brickViewportFromCamera({ ...cam, dist: 20000 }, META, 0, 1024, 1.0, META.nZ)
+    expect(pickBrickLevel(viewFar, world, undefined)).toBe(2)
   })
 })

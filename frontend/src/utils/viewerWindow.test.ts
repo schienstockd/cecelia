@@ -2,19 +2,19 @@ import { describe, it, expect } from 'vitest'
 import { viewerWindowQuery } from './viewerWindow'
 
 describe('viewerWindowQuery', () => {
-  it('carries everything the pop-out cannot look up for itself', () => {
-    // A pop-out is a fresh app instance with no project open, so a key missing here is a preference
-    // the viewer silently forgets rather than an error anyone sees.
+  it('carries only identity — project, image, optional version', () => {
+    // A pop-out is a fresh app instance with no project open. The window used to carry `set=` and
+    // `name=` too; both moved to /api/viewer/meta (2026-08-28) — the server already knows them.
     expect(viewerWindowQuery({
-      projectUid: 'zolIMa', imageUid: 'fXgbTl', setUid: 'obWDNS',
-      valueName: 'driftCorrected', name: 'M2b (cropped)',
-    })).toBe('project=zolIMa&image=fXgbTl&set=obWDNS&valueName=driftCorrected&name=M2b+%28cropped%29')
+      projectUid: 'zolIMa', imageUid: 'fXgbTl', valueName: 'driftCorrected',
+    })).toBe('project=zolIMa&image=fXgbTl&valueName=driftCorrected')
   })
 
-  it('omits what it was not given rather than sending it empty', () => {
-    // `set=` empty reads as a set whose preferences are all defaults, which is not the same as no set.
+  it('omits an unspecified version rather than sending it empty', () => {
+    // `valueName=` empty would echo back through `resolve_image_version` as an explicit empty
+    // string; that's not the same as "server, pick the active version".
     expect(viewerWindowQuery({ projectUid: 'p', imageUid: 'i' })).toBe('project=p&image=i')
-    expect(viewerWindowQuery({ projectUid: 'p', imageUid: 'i', setUid: '', name: '' }))
+    expect(viewerWindowQuery({ projectUid: 'p', imageUid: 'i', valueName: '' }))
       .toBe('project=p&image=i')
   })
 })
