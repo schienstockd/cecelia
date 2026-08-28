@@ -3,7 +3,7 @@ import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, contrastCeiling,
   slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
-  MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE,
+  MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
 } from './volumeViewer'
 
@@ -364,6 +364,51 @@ describe('pickTileLevel — 2D pan/zoom LOD', () => {
     const m = withLevels([{ nX: 800, nY: 800 }, { nX: 400, nY: 400 }])
     expect(pickTileLevel(0.5, m)).toBe(0)
     expect(pickTileLevel(0, m)).toBe(0)
+  })
+
+  // Hysteresis path — adapted from Kiln (kiln-render/src/streaming/streaming-manager.ts:747-754,
+  // MIT-licensed, https://github.com/mpanknin/kiln-render). Boundary at zoom = 2, band up to
+  // 2 * 2^HYST ≈ 2.859; anywhere INSIDE the band the finer level wins, OUTSIDE the coarser does.
+  describe('hysteresis around integer boundaries — adapted from Kiln SSE selector', () => {
+    const m3 = () => withLevels([{ nX: 800, nY: 800 }, { nX: 400, nY: 400 }, { nX: 200, nY: 200 }])
+    const boundary = Math.pow(2, 1 + TILE_LOD_HYST_LOG2)  // ~= 2.857
+    it('previousLevel undefined / -1 falls back to the classic floor picker', () => {
+      const m = m3()
+      expect(pickTileLevel(2.5, m)).toBe(1)          // classic picker: floor(log2(2.5)) = 1
+      expect(pickTileLevel(2.5, m, undefined)).toBe(1)
+      expect(pickTileLevel(2.5, m, -1)).toBe(1)      // sentinel: no textures resident yet
+    })
+    it('going finer (zoom in) commits immediately — Kiln\'s certain-split branch', () => {
+      const m = m3()
+      // Sitting on L2, zoom drops below the L1 boundary → commit to L1 immediately, no band.
+      expect(pickTileLevel(3.9, m, 2)).toBe(1)
+      expect(pickTileLevel(2, m, 2)).toBe(1)         // exactly on the boundary is already finer
+      expect(pickTileLevel(1.5, m, 2)).toBe(0)       // drops past two boundaries at once
+    })
+    it('going coarser is delayed until zoom clears the hysteresis band past the boundary', () => {
+      const m = m3()
+      // Sitting on L0, wobbling around the L0/L1 boundary at zoom = 2 must NOT flip to L1.
+      expect(pickTileLevel(2.0, m, 0)).toBe(0)
+      expect(pickTileLevel(2.5, m, 0)).toBe(0)       // still inside the band [2, 2^(1+HYST)]
+      expect(pickTileLevel(boundary - 0.001, m, 0)).toBe(0)
+      expect(pickTileLevel(boundary + 0.001, m, 0)).toBe(1)  // decisive zoom-out crosses the band
+    })
+    it('same level in and out is a no-op — no thrash on identical picks', () => {
+      const m = m3()
+      expect(pickTileLevel(2.5, m, 1)).toBe(1)
+      expect(pickTileLevel(1, m, 0)).toBe(0)
+    })
+    it('bias is asymmetric toward finer — quality regressions cost more than bandwidth wobble', () => {
+      // At zoom = 2.5 the raw picker would say L1. If we're already on L0 (finer), we STAY on L0
+      // because it looks better; if we're already on L1 (coarser), we stay on L1 (no thrash).
+      const m = m3()
+      expect(pickTileLevel(2.5, m, 0)).toBe(0)       // stick with finer
+      expect(pickTileLevel(2.5, m, 1)).toBe(1)       // no thrash
+    })
+    it('respects the clamp — a previousLevel beyond nLevels-1 is treated as the deepest', () => {
+      const m = m3()   // 3 levels → max = 2
+      expect(pickTileLevel(2.5, m, 99)).toBe(1)      // clamps prev to 2, baseline is 1 → finer wins
+    })
   })
 })
 
