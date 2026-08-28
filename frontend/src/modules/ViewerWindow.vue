@@ -31,6 +31,8 @@
 import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
+import { useViewerStore } from '../stores/viewer'
+import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -82,6 +84,10 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 
 const route = useRoute()
 const settings = useSettingsStore()
+// Task-preview integration (P7): publishes what this viewer has open + its visible region for the
+// task-preview store to feed into `/api/preview/run`, and reads back the active preview labels flag
+// so the labels slab URL flips to the scratch `<vn>__preview.ome.zarr` when a preview is showing.
+const viewerStore = useViewerStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
@@ -452,6 +458,18 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
+// P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
+// param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
+//   * `updateId` (>0) when the current preview matches this image
+//   * `0`                otherwise
+// A primitive watch is bulletproof against the object-identity subtleties of accessing a Pinia
+// ref through the store proxy — earlier attempts (boolean, object reference) missed re-runs on
+// the same image, so the mask on screen stayed pinned to the first run's plane.
+const previewLabelsKey = computed(() => {
+  const p = viewerStore.previewLabels
+  return p && p.imageUid === imageUid ? p.updateId : 0
+})
+watch(previewLabelsKey, () => reallocate())
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -687,7 +705,11 @@ const frame = usePlotResize(canvas, () => {
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
   // has to be complete.
-  r.setLabelStyle(labelName.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
+  // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
+  const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+    viewerStore.previewLabels?.imageUid === imageUid)
+  r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   r.draw()
@@ -996,7 +1018,11 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
     // cannot label this response with a different segmentation's name.
-    const vn = labelName.value
+    // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
+    // has not picked one — a first-time segmentation preview must render even without a picker entry.
+    const previewMatches = !!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid
+    const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         const url = slabUrl({ projectUid, imageUid, valueName: valueName.value, t: tp, c, ...zq, enc, level: lvl })
@@ -1014,8 +1040,18 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       })),
       (async () => {
         if (!vn) return null
+        // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
+        // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
+        // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
+        const usePreview = !!viewerStore.previewLabels &&
+          viewerStore.previewLabels?.valueName === vn &&
+          viewerStore.previewLabels?.imageUid === imageUid
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+          preview: usePreview,
+          // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
+          // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
+          previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
@@ -2153,8 +2189,12 @@ async function reallocate(refit = false) {
   } else {
     const r = renderer.value
     if (!r) return
+    // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
+    // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
+    const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
+      viewerStore.previewLabels?.imageUid === imageUid)
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
-               mode.value === 'plane' ? zPlane.value : zRange.value[0], !!labelName.value,
+               mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
@@ -2327,6 +2367,54 @@ watch(zPlane,    () => propsSink.schedule())
 watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
+
+// ── Task-preview integration (P7) ─────────────────────────────────────────────
+// One scheduler per this specific emit: pan/zoom fires per frame, but the preview API is expensive
+// and its own store already debounces. This coalesces bursts so the store doesn't schedule per event.
+const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) { viewerStore.setVisibleRegion(null); return }
+  // The volume camera's basis is µm-across-the-screen; the visibleRegion helper wants image-pixel
+  // pan/zoom. Convert here so the helper stays pure and testable.
+  const umPerL0X = m.voxelUm?.[0] || 1
+  const umPerL0Y = m.voxelUm?.[1] || 1
+  const canvasW = Math.max(1, c.clientWidth)
+  const canvasH = Math.max(1, c.clientHeight)
+  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleL0H = visibleHeightUm / umPerL0Y
+  // Zoom in this helper's units: >1 = zoomed in (visible window shrinks). A "fit" camera shows the
+  // whole image height in `visibleL0H` L0 pixels, so `zoom = m.nY / visibleL0H`.
+  const zoom = (m.nY || 1) / Math.max(1, visibleL0H)
+  const region = computeVisibleRegion({
+    panX: cam.value.panX / umPerL0X,
+    panY: -cam.value.panY / umPerL0Y,     // screen-up is negative image-Y (see panDrag)
+    zoom, canvasW, canvasH,
+    imageW: m.nX, imageH: m.nY,
+    currentZ: mode.value === 'plane' ? zPlane.value : Math.floor((m.nZ - 1) / 2),
+    currentT: t.value,
+    ndisplay: mode.value === 'plane' ? 2 : 3,
+  })
+  viewerStore.setVisibleRegion(region)
+}, { wait: 100 })
+
+watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
+       zPlane, t, mode, meta],
+      () => publishRegionSink.schedule(undefined))
+
+// Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
+// same route as the pixels: the meta response is the one authoritative resolution of an image
+// version.
+watch(meta, m => {
+  if (!m) { viewerStore.setOpenImage(null); return }
+  viewerStore.setOpenImage({
+    projectUid, imageUid,
+    valueName: m.valueName ?? valueName.value ?? '',
+    zarrPath: m.zarrPath ?? '',
+    taskDir: m.taskDir ?? '',
+  })
+})
 
 // The panel is now the single version picker (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). Its
 // `<select>` writes `cc.viewerImageVersion` via `settings.setImageVersion`; the popup's own copy

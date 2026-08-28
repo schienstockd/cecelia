@@ -78,16 +78,30 @@ export const previewApi = {
     return res.json()
   },
   start: () => svcPost('/api/preview/start'),
-  stop: (valueName?: string) => svcPost('/api/preview/stop', { valueName }),
+  /** Stop the worker AND sweep the preview labels store under `taskDir`. `taskDir` is optional for
+   *  callers that don't know the open image (Settings module), but a normal toggle-off from a viewer
+   *  window MUST pass it so the scratch bytes don't outlive the toggle. */
+  stop: (taskDir?: string) => svcPost('/api/preview/stop', { taskDir }),
   /**
    * One plane of the task's real compute. Deadlined because the control shows "Previewing…" for the
    * whole round trip and the scheduler treats a run as in flight until it settles — so a request that
    * never comes back wedges both, permanently, with the mask of some earlier run still on screen. The
    * window is far above a real preview (warm 0.14–0.9 s, cold 2048² a few seconds; the worker's 17.7 s
    * import shows up as an immediate `starting` reply, not a slow one), so hitting it means stuck.
+   *
+   * `region` and the open-image fields come from the browser viewer (P7): the API uses them as source
+   * of truth for what's on screen rather than asking napari.
    */
-  run: (body: { projectUid: string; imageUid: string; valueName: string; funName: string; params: object }) =>
-    svcPost('/api/preview/run', body, PREVIEW_RUN_TIMEOUT_MS),
+  run: (body: {
+    projectUid: string
+    imageUid: string
+    valueName: string
+    funName: string
+    params: object
+    region: object
+    zarrPath?: string
+    taskDir?: string
+  }) => svcPost('/api/preview/run', body, PREVIEW_RUN_TIMEOUT_MS),
 }
 
 export const PREVIEW_RUN_TIMEOUT_MS = 90_000

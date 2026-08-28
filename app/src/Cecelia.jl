@@ -217,12 +217,12 @@ export launch!, close!, restart!, send
 export open_image!, show_labels!, show_branch_labels!, refresh_labels!, set_z_view!, set_3d_level!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!, stitch_movies!
-export capture_view_state, apply_view_state!, preview_region
+export capture_view_state, apply_view_state!
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
 # `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
 export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
-export preview_show_command, show_task_preview!, hide_task_preview!
+export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed
 

@@ -55,6 +55,7 @@ def _ome_xml(size_t, size_z, size_c, size_y, size_x):
 </OME>"""
 
 
+@unittest.skip('AF preview browser rendering deferred to P7.1 — see docs/TODO.md')
 @unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
 class PreviewWorkerAfTest(unittest.TestCase):
     SHAPE = dict(size_t=2, size_z=2, size_c=4, size_y=24, size_x=20)

@@ -36,6 +36,7 @@ export type PreviewBlocker =
   | 'no-af-channels'    // an AF correction with no channel combination to run
   | 'image-mismatch'    // the viewer has a different image open
   | 'no-image-open'     // nothing open in the viewer
+  | 'no-viewer-open'    // the browser viewer window isn't open — no region to preview (P7)
 
 /**
  * Why a preview must not run right now, or `null` when it may.
@@ -49,7 +50,14 @@ export type PreviewBlocker =
 export function previewBlocker(
   ctx: PreviewContext | null,
   status: PreviewStatus | null,
-  opts: { enabled: boolean; pinned: boolean },
+  opts: {
+    enabled: boolean; pinned: boolean;
+    openImage?: { imageUid: string } | null;
+    /** True when the browser viewer store has a `visibleRegion` for THIS image — the P7 requirement.
+     *  Without it, the run has nothing to preview and would return `no-region`; catch it here so the
+     *  UI says why instead of firing a doomed request that leaves 'Starting…' stuck. */
+    hasRegion?: boolean;
+  },
 ): PreviewBlocker | null {
   if (!opts.enabled) return 'off'
   if (opts.pinned) return 'pinned'
@@ -57,8 +65,15 @@ export function previewBlocker(
   if (!ctx.params) return 'no-params'
   const params = paramsBlocker(ctx.params)
   if (params) return params
-  if (!status || !status.imageUid) return 'no-image-open'
-  if (status.imageUid !== ctx.imageUid) return 'image-mismatch'
+  // Prefer the browser viewer's identity when the caller supplies it (P7 onward — the WebGPU viewer
+  // is the source of truth). `status.imageUid` remains the transitional fallback (populated by
+  // `current_napari_image()` on the server) and will go with napari in P8.
+  const openUid = opts.openImage?.imageUid ?? status?.imageUid ?? null
+  if (!openUid) return 'no-viewer-open'
+  if (openUid !== ctx.imageUid) return 'image-mismatch'
+  // The viewer knows what's open but has not reported a region yet — either the window is still
+  // laying out or the user hasn't moved the camera. Refuse rather than firing an empty-region run.
+  if (opts.hasRegion === false) return 'no-viewer-open'
   return null
 }
 
@@ -149,6 +164,7 @@ export function hasPreviewableModel(params: Record<string, unknown> | null): boo
 export function blockerMessage(b: PreviewBlocker | null): string {
   switch (b) {
     case 'no-image-open':   return 'Open the image to preview it'
+    case 'no-viewer-open':  return 'Open the viewer to preview'
     case 'image-mismatch':  return 'Open this image to preview it'
     case 'no-models':       return 'Add a model to preview'
     case 'no-af-channels':  return 'Add a division channel to preview'
@@ -168,6 +184,7 @@ const ERROR_SHORT: Record<string, string> = {
   'version-mismatch':       'Wrong version open',
   'image-mismatch':         'Wrong image open',
   'no-image-open':          'No image open',
+  'no-viewer-open':         'Viewer not open',
   'no-region':              'No region to preview',
   'params-not-previewable': 'Params not usable',
   'timeout':                'Preview timed out',

@@ -42,7 +42,11 @@ const PREVIEW_PORT   = 7656
 # 12 is the same "fixed inside the worker" case as 11: the estimator for that unmix is now chosen per
 # combination by `exclusive`, and an adopted protocol-11 worker always uses the envelope — ~5x too small
 # a coefficient on a pair of distinct cell types, i.e. a preview that visibly leaves the overspill in.
-const PREVIEW_PROTOCOL = 12
+# 13 is the browser-viewer cut-over (P7): labels layers carry `valueName`/`path` and the mask is on
+# disk; the browser fetches it through the `preview=1` slab route rather than decoding an inline block.
+# The load-bearing kind of bump — a protocol-12 worker would still send a block that no browser
+# receiver decodes, and a napari-era rendering path no longer exists to consume it.
+const PREVIEW_PROTOCOL = 13
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
@@ -226,60 +230,39 @@ function preview_request(im_path::AbstractString, task_dir::AbstractString,
 end
 
 """
-    preview_show_command(reply; value_name) -> Dict
+    preview_reply_payload(reply; value_name) -> Dict
 
-The napari command that renders a worker reply. Julia is a PASS-THROUGH for the pixels here: it moves
-opaque payloads from one resident process to the other and never decodes them (see
-`cecelia.utils.block_transfer` for the codec — one implementation, both Python ends).
+Build the JSON body the API returns to the FE from a worker reply.
 
-A reply carries a LIST of layers, each with its own `kind` — `labels` for a segmentation mask, `image`
-for a corrected channel. One task can produce several: AF correction returns one image layer per
-corrected channel, so they can sit beside the originals and be flipped between. The alternative, a
-single mask field plus a type flag, could not express that.
+A reply carries a LIST of layers, each with its own `kind` — `labels` for a segmentation mask on
+disk, `image` reserved for future AF/correction previews (P7.1). Each layer carries `valueName` +
+`path` rather than an inline block; the browser fetches the mask through
+`/api/viewer/slab?labels=<vn>&preview=1`, which rides the same reader the finished labels slab does.
 
-Kept as a pure function of the reply so the wiring is testable without either process running, and so
-the field names are asserted in one place rather than discovered at runtime — including that every
-`kind` is one the viewer knows how to build.
+Kept as a pure function of the reply so the wiring is testable without either process running, and
+so the field names are asserted in one place rather than discovered at runtime — including that
+every `kind` is one the viewer knows how to build.
 """
-function preview_show_command(reply::AbstractDict;
-                              value_name::AbstractString = VERSIONED_DEFAULT_VAL,
-                              api_url::Union{AbstractString,Nothing} = nothing)::Dict{String,Any}
+function preview_reply_payload(reply::AbstractDict;
+                               value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
     layers = get(reply, "layers", nothing)
     (layers isa AbstractVector && !isempty(layers)) ||
         error("preview reply has no 'layers'")
     for (i, l) in enumerate(layers)
         l isa AbstractDict || error("preview layer $i is not a dict")
-        for key in ("kind", "name", "block", "shape", "axes")
+        for key in ("kind", "name", "valueName", "path", "shape", "axes")
             haskey(l, key) || error("preview layer $i is missing '$key'")
         end
+        haskey(l, "block") &&
+            error("preview layer $i still carries an inline 'block' — protocol 13 previews are on disk")
         kind = String(l["kind"])
         kind in ("labels", "image") ||
             error("preview layer $i has unknown kind '$kind' (expected labels or image)")
     end
-    cmd = Dict{String,Any}(
-        "type"       => "show_task_preview",
-        "value_name" => String(get(reply, "valueName", value_name)),
-        "layers"     => layers,
-        "region"     => get(reply, "region", Dict{String,Any}()),
-        "show"       => true,
+    Dict{String,Any}(
+        "layers"    => layers,
+        "region"    => get(reply, "region", Dict{String,Any}()),
+        "valueName" => String(get(reply, "valueName", value_name)),
+        "funName"   => String(get(reply, "funName", "")),
     )
-    # where the viewer posts "the view moved" back to. Only sent with a SHOWN preview, so the viewer
-    # listens exactly while something is chasing the view (see `_attach_view_listener`).
-    api_url === nothing || (cmd["api_url"] = String(api_url))
-    cmd
 end
-
-"""
-    show_task_preview!(v::NapariViewer, reply; value_name) -> NapariViewer
-
-Send a worker reply to the viewer. `hide_task_preview!` removes the layer — toggling the preview off,
-or a preview that found nothing, both go through it.
-"""
-show_task_preview!(v::NapariViewer, reply::AbstractDict;
-                   value_name::AbstractString = VERSIONED_DEFAULT_VAL,
-                   api_url::Union{AbstractString,Nothing} = nothing) =
-    (send(v, preview_show_command(reply; value_name = value_name, api_url = api_url)); v)
-
-hide_task_preview!(v::NapariViewer; value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
-    (send(v, Dict{String,Any}("type" => "show_task_preview",
-                              "value_name" => String(value_name), "show" => false)); v)
