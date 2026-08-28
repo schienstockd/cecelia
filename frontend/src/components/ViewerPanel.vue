@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
+import { useViewerStore } from '../stores/viewer'
 import { pushLabels as apiPushLabels, buildTitleCard, pushZView, pushLabelContour, pushDetail3d,
          type TitleCardPayload } from '../utils/napariOverlays'
 import {
@@ -40,6 +41,7 @@ const settings     = useSettingsStore()
 const ws           = useWsStore()
 const log          = useLogStore()
 const taskStore    = useTaskStore()
+const viewerStore  = useViewerStore()
 
 // Is a recording in flight? The napari viewer is UI-serial — one render at a time — so the Record
 // button reflects the TASK, not a local flag: the render outlives this component's request and its
@@ -362,7 +364,11 @@ watch(() => settings.napariAutoSaveLayerProps, async enabled => {
 // the movie was finished — a frozen button, no progress, and no way out of a 4K render started by
 // mistake. The button no longer owns the "in progress" state either; the task list does.
 async function recordTimelapse() {
-  const uid        = projectStore.napariImageUid
+  // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whether the popup
+  // browser viewer OR napari has the image. Was `napariImageUid`, which stayed null when only the
+  // browser viewer was open, so the Record button silently early-returned (a regression the user
+  // hit after napari was retired from the record path).
+  const uid        = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid || recording.value || recordingTask.value) return
   recording.value = true
@@ -372,12 +378,21 @@ async function recordTimelapse() {
     // (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 7). It used to be fetched only when the title card
     // was on — but the look has to be captured whether or not the movie carries a card, and this
     // recorder records what is ON SCREEN, so the view state is the only place that look exists.
+    //
+    // Prefer the browser viewer's published state (`useViewerStore.viewState`) — the popup writes
+    // it on every camera / channel change, and it's the same shape napari emits. Falls back to
+    // napari when the browser viewer isn't running (a project where napari is the only viewer
+    // open — rare after P5 but still valid).
     let snapshot: ViewStateLike | null = null
-    try {
-      const vsr = await fetch('/api/napari/view-state', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
-      if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: ViewStateLike }).viewState ?? null
-    } catch { /* best-effort — the card still renders, the look is simply not banked */ }
+    if (viewerStore.viewState && viewerStore.openImage?.imageUid === uid) {
+      snapshot = viewerStore.viewState as unknown as ViewStateLike
+    } else {
+      try {
+        const vsr = await fetch('/api/napari/view-state', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
+        if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: ViewStateLike }).viewState ?? null
+      } catch { /* best-effort — the card still renders, the look is simply not banked */ }
+    }
 
     // Title card (Phase H): built via the SHARED buildTitleCard — the same path the animation page
     // uses. Channels are added by the recorder from the live viewer, so the frontend supplies only
