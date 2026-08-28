@@ -23,12 +23,12 @@ import { VIEW_HALF_ANGLE, MAX_CHANNELS, LUT_STOPS } from '../../utils/volumeView
 export const EMPTY_SLOT = 0xFFFFFFFF
 
 /**
- * Uniform buffer size in bytes. Eleven leading vec4s (camera + geometry + overlays + prev-level)
- * + one vec4 per channel slot. `EXT.w` used to carry a global normalisation ceiling; per-channel
- * contrast windows now live in `p.ch[c]` (lo, hi, visible, unused), same shape the flat
- * renderer's `mipShader.ts` uses.
+ * Uniform buffer size in bytes. Twelve leading vec4s (camera + geometry + overlays + labels +
+ * prev-level) + one vec4 per channel slot. `EXT.w` used to carry a global normalisation ceiling;
+ * per-channel contrast windows now live in `p.ch[c]` (lo, hi, visible, unused), same shape the
+ * flat renderer's `mipShader.ts` uses.
  */
-export const BRICK_UNIFORM_BYTES = 11 * 16 + MAX_CHANNELS * 16
+export const BRICK_UNIFORM_BYTES = 12 * 16 + MAX_CHANNELS * 16
 
 /**
  * Field offsets INTO the uniform buffer, in f32 slots (× 4 = bytes). Written out because getting
@@ -44,10 +44,11 @@ export const BU = {
   GRID: 24,      // nBx, nBy, nBz (bricks per axis, current level), slotsY
   PAN: 28,       // panX, panY, ribbon planeLo, ribbon planeHi
   OV: 32,        // point size (px), first plane shown, tail width (px), last plane shown
-  PREV_GRID: 36, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
-  PREV_DIMS: 40, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
+  LAB: 36,       // opacity (0 = off), contour width (px, 0 = filled), palette rows, unused
+  PREV_GRID: 40, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
+  PREV_DIMS: 44, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
   /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
-  CH0: 44,
+  CH0: 48,
 }
 
 /**
@@ -67,6 +68,7 @@ struct BU {
   grid:     vec4<f32>,  // nBx, nBy, nBz (current level), slotsY
   pan:      vec4<f32>,  // panX, panY, ribbon planeLo, ribbon planeHi
   ov:       vec4<f32>,  // point size px, first plane, tail width px, last plane
+  lab:      vec4<f32>,  // opacity (0 = off), contour px (0 = filled), palette rows, _
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
   ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
@@ -123,6 +125,14 @@ ${BRICK_SHARED_WGSL}
 // via textureLoad + explicit lerp between two stops (a sampler would interpolate across the
 // channel rows too — same reason mipShader.ts avoids sampling).
 @group(0) @binding(4) var lut: texture_2d<f32>;
+// Label atlas: r32uint, same slot layout as the image atlas but ONE plane per slot in Z (labels
+// have no channels). Same page-table entries — a resident brick has BOTH intensity and labels
+// (or a placeholder for the label atlas when labels are off). A 1x1x1 placeholder is bound when
+// no segmentation is picked, and the shader skips label sampling entirely at p.lab.x == 0.
+@group(0) @binding(5) var labAtlas: texture_3d<u32>;
+// Label palette: LABEL_PALETTE_N x 1 rgba8. id % rows -- consecutive ids get consecutive rows,
+// so touching cells always come out maximally far apart in hue.
+@group(0) @binding(6) var pal: texture_2d<f32>;
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -200,6 +210,59 @@ fn atlasSample(vi: vec3<i32>, ch: i32) -> u32 {
     vec3<i32>(originX + lx, originY + ly, originZBase + ch * bzSize + lz), 0).r;
 }
 
+/**
+ * Sample the LABEL atlas for voxel vi. Shares the page-table lookup with atlasSample: labels
+ * bricks land in the SAME slot as their intensity twin, so one lookup gates both. Returns 0 for
+ * an out-of-box read AND for an unmapped brick -- an unresident brick has no label either.
+ *
+ * Unlike atlasSample, the label atlas has NO per-channel Z stride -- one plane per brick along Z.
+ * The prev-level fallback is skipped here: sampling a coarser-level label at a finer position
+ * looks correct until two neighbouring cells straddle the coarser voxel and get swapped ids.
+ */
+fn labAtlasSample(vi: vec3<i32>) -> u32 {
+  let nx = i32(p.dims.x); let ny = i32(p.dims.y); let nz = i32(p.dims.z);
+  if (vi.x < 0 || vi.y < 0 || vi.z < 0 || vi.x >= nx || vi.y >= ny || vi.z >= nz) { return 0u; }
+  let bxSize = i32(p.brick.x); let bySize = i32(p.brick.y); let bzSize = i32(p.brick.z);
+  let bx = vi.x / bxSize;
+  let by = vi.y / bySize;
+  let bz = vi.z / bzSize;
+  let nBx = i32(p.grid.x); let nBy = i32(p.grid.y); let nBz = i32(p.grid.z);
+  if (bx >= nBx || by >= nBy || bz >= nBz) { return 0u; }
+  let slot = pt[(bz * nBy + by) * nBx + bx];
+  if (slot == 0xFFFFFFFFu) { return 0u; }
+  let slotsX = i32(p.atlas.w);
+  let slotsY = i32(p.grid.w);
+  let s = i32(slot);
+  let sx = s % slotsX;
+  let sy = (s / slotsX) % slotsY;
+  let sz = s / (slotsX * slotsY);
+  let lx = vi.x - bx * bxSize;
+  let ly = vi.y - by * bySize;
+  let lz = vi.z - bz * bzSize;
+  return textureLoad(labAtlas,
+    vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz), 0).r;
+}
+
+// napari's contour: the label's OUTLINE, w voxels thick, in-plane only (x/y). Mirrors
+// mipShader.ts's labEdge — filled at w = 0 (napari's default), which draws the region rather
+// than the boundary.
+fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
+  if (w <= 0) { return true; }
+  for (var k = 1; k <= w; k = k + 1) {
+    if (labAtlasSample(vi + vec3<i32>(k, 0, 0)) != id ||
+        labAtlasSample(vi - vec3<i32>(k, 0, 0)) != id ||
+        labAtlasSample(vi + vec3<i32>(0, k, 0)) != id ||
+        labAtlasSample(vi - vec3<i32>(0, k, 0)) != id) { return true; }
+  }
+  return false;
+}
+
+// id % rows on the one-row palette. Id 0 never reaches here so every row is available.
+fn labColour(id: u32) -> vec3<f32> {
+  let rows = max(i32(p.lab.z), 1);
+  return textureLoad(pal, vec2<i32>(i32(id % u32(rows)), 0), 0).rgb;
+}
+
 // Channel c's ramp at normalised intensity n. Same discipline as mipShader.ts's ramp: lerp
 // between the two LUT stops n falls between, row c addressed exactly, so no filtering can bleed
 // across into row c+1. Exact for ANY row count, no MAX_CHANNELS assumption.
@@ -238,10 +301,19 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
 
   var acc = vec3(0.0);
   var mx = array<f32, ${MAX_CHANNELS}>();
+  // The NEAREST label along the ray -- front-to-back, first non-zero id wins. Mirrors
+  // mipShader.ts: a max over label ids is meaningless because id ordering is not brightness, and
+  // in 2D (steps == 1) the single sample IS the plane's mask.
+  var labId: u32 = 0u;
+  var labVi = vec3<i32>(0, 0, 0);
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
     let vi = vec3<i32>(uvw * p.dims.xyz);
+    if (p.lab.x > 0.0 && labId == 0u) {
+      let id = labAtlasSample(vi);
+      if (id != 0u) { labId = id; labVi = vi; }
+    }
     for (var ci = 0; ci < nch; ci = ci + 1) {
       let v = f32(atlasSample(vi, ci));
       mx[ci] = max(mx[ci], v);
@@ -254,6 +326,12 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     let hi = p.ch[ci].y;
     let win = clamp((mx[ci] - lo) / max(hi - lo, 1.0), 0.0, 1.0);
     acc = acc + ramp(ci, win);
+  }
+  // Label composite: mix the id's palette colour on top of the raycast result at p.lab.x. The
+  // ray already found the front-most id; labEdge decides whether THIS voxel is on the contour.
+  // No cascade to the outer channels -- napari draws the mask on top of the signal.
+  if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
+    acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }

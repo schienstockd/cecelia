@@ -2321,7 +2321,15 @@ async function reallocate(refit = false) {
                renderNX.value, renderNY.value)
     // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
     // No-op on the flat renderer via the optional chain.
-    r.setBrickSource?.({ projectUid, imageUid, valueName: valueName.value || undefined })
+    r.setBrickSource?.({
+      projectUid, imageUid,
+      valueName: valueName.value || undefined,
+      // Fire label brick fetches when the picker or the preview marks THIS image as showing
+      // labels — same predicate `wantLabels` above uses to decide whether the texture is
+      // allocated. `undefined` when no mask is picked, which lets the brick loader skip label
+      // requests entirely on projects with no segmentation.
+      labelName: wantLabels ? (labelName.value || undefined) : undefined,
+    })
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')

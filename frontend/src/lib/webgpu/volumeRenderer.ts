@@ -187,7 +187,15 @@ export interface VolumeRenderer {
    * brick scheduler decides what to fetch every frame; the URL base has to be known here rather
    * than at each call site. Absent on the flat renderer — callers use `?.` to remain agnostic.
    */
-  setBrickSource?(source: { projectUid: string; imageUid: string; valueName?: string } | null): void
+  setBrickSource?(source: {
+    projectUid: string; imageUid: string
+    valueName?: string
+    /** Segmentation value_name for the mask overlay. When set, the brick renderer's fetch loop
+     *  fires a parallel `labels=<name>` request per intensity brick and writes the u32 ids into
+     *  the label atlas at the same slot. Undefined = no label fetches; the placeholder texture
+     *  stays bound and the shader skips the label path via `p.lab.x == 0`. */
+    labelName?: string
+  } | null): void
   /**
    * Brick renderer only: how to ask the caller for a redraw when a fetched brick lands. Brick
    * uploads are asynchronous — a fetch that resolves between frames updates the atlas without
