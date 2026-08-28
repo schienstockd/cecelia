@@ -290,7 +290,7 @@ export async function createBrickVolumeRenderer(
         atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
         atlas.pageTableDirty = true
         console.debug('[bricks] landed', key, 'slot', result.entry.slot,
-                      'needsRedraw?', needsRedraw !== null)
+                      'has?', atlas.pageTable.has(key), 'entries', atlas.pageTable.entries().length)
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
@@ -328,6 +328,10 @@ export async function createBrickVolumeRenderer(
       level: dec.level, resident: residentKeys.size,
       toLoad: dec.toLoad.length, toEvict: dec.toEvict.length,
       dist: view.distanceUm.toFixed(1), centre: view.centreUm.map(n => n.toFixed(1)),
+      boundT, atlasLevel: atlas.currentLevel,
+      residentSample: [...residentKeys].slice(0, 3),
+      loadKeys: dec.toLoad.map(s => brickKey(s.brick)),
+      evictKeys: dec.toEvict,
     })
 
     // Level switch invalidates every resident brick: (bx, by, bz) space is different at a coarser
