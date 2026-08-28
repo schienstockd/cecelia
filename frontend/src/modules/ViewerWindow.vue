@@ -1279,6 +1279,17 @@ function gotoT(tp: number) {
   }
   showT(tp)
   schedulePump(tp)
+  // Brick renderer only: hint the playback window so the tick loop prefetches upcoming
+  // timepoints. The flat renderer's `pump` already prefetches via `uploadFrame`; the brick
+  // renderer streams per-viewport per-t, so the hint lives here rather than inside the pump.
+  const r = renderer.value; const m = meta.value
+  if (r?.setPrefetchTimepoints && m) {
+    const dir = Math.sign(tp - lastT) || 1
+    // Small depth — atlas has plenty of room, but every extra `t` fires 16-64 fetches. 4 covers
+    // half a second of 8fps playback and lands cheaply; sane default until we measure.
+    const cap = playing.value ? 4 : 1
+    r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
+  }
 }
 
 // ── Tile mode: per-viewport fetching with a halo prefetch ────────────────────────

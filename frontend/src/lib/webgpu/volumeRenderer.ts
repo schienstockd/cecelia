@@ -204,6 +204,14 @@ export interface VolumeRenderer {
    * headroom locks the range. Absent on the flat renderer.
    */
   setOnBrickLoaded?(cb: ((perChannelMax: number[]) => void) | null): void
+  /**
+   * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
+   * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
+   * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
+   * `show(t)` swaps them onto the page table. Empty = current-t only. Absent on the flat
+   * renderer — its own timepoint cache uses `uploadFrame` + `setCapacity`.
+   */
+  setPrefetchTimepoints?(list: number[]): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void

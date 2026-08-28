@@ -25,6 +25,7 @@ import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTex
 import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
+  bricksIntersectingViewport,
 } from '../../utils/brickScheduler'
 import { fetchBrick, brickSlabUrl, padBrickPayload } from '../../utils/brickLoader'
 import { BRICK_WGSL, BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT } from './brickShader'
@@ -135,6 +136,11 @@ export async function createBrickVolumeRenderer(
    *  per-timepoint slab walk (`ViewerWindow.vue:1159`). Without it the contrast slider's ceiling
    *  never adapts and dragging `hi` down locks the range at 0..initial. Null when unwired. */
   let onBrickLoaded: ((perChannelMax: number[]) => void) | null = null
+  /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
+   *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
+   *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
+   *  playback advances without cold-fetching each new t. Empty = current-t only. */
+  let prefetchTs: number[] = []
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -278,9 +284,20 @@ export async function createBrickVolumeRenderer(
           atlas.pageTable.evict(key)
           return
         }
+        // pageTableCpu is the SHADER's map: it can only address ONE timepoint at a time (the one
+        // `boundT` names). A prefetch brick — one whose t is ahead of `boundT` — goes into the
+        // atlas + pageTable (so LRU keeps it warm) but does NOT rewrite pageTableCpu; when the
+        // caller later `show()`s that t, `show` rebuilds pageTableCpu from resident entries and
+        // the prefetched bricks light up instantly. Also gate on the current level, since a level
+        // switch could have flipped between the request and the arrival.
+        const forVisibleFrame = brick.t === boundT && brick.level === atlas.currentLevel
         if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
-        atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
-        atlas.pageTableDirty = true
+        if (forVisibleFrame) {
+          atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
+          atlas.pageTableDirty = true
+        } else if (evictedIdx >= 0) {
+          atlas.pageTableDirty = true
+        }
         // Grow `seenMax` from the actual bytes we just received — same discipline the flat
         // renderer runs in `uploadFrame`. Compute on the RAW (un-padded) payload: padded regions
         // are zeros and never contribute to max, so it doesn't matter, but the raw shape lets us
@@ -341,25 +358,28 @@ export async function createBrickVolumeRenderer(
       atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
       atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
       atlas.currentLevel = dec.level
-    } else {
-      for (const key of dec.toEvict) {
-        const idx = gridIndexOfKey(atlas, key)
-        atlas.pageTable.evict(key)
-        if (idx >= 0) {
-          atlas.pageTableCpu[idx] = EMPTY_SLOT
-          atlas.pageTableDirty = true
-        }
-        const ac = inflight.get(key)
-        if (ac !== undefined) { ac.abort(); inflight.delete(key) }
-      }
     }
+    // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
+    // `boundT`, but the prefetch loop below fills the atlas with bricks at other `t` values that
+    // scheduleBricks doesn't know about. Actively dropping them here would evict our own prefetch
+    // work every tick. LRU handles cache pressure once the atlas actually fills, and the atlas is
+    // big enough (thousands of slots) that pressure is rare in practice.
 
     // Load list — closer to the camera first (scheduler sorted by core-then-distance). Touch the
-    // ones already resident so they're LRU-fresh; kick fetches for the misses.
-    for (const s of dec.toLoad) {
-      const k = brickKey(s.brick)
-      if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
-      kickFetch(s.brick)
+    // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
+    // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
+    // the prefetch timepoints, dropping duplicates via `brickKey`.
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel)
+    const ts = [boundT]
+    for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
+    for (const pt of ts) {
+      for (const s of scheduled) {
+        const brickAtT: VirtualBrick = { ...s.brick, t: pt }
+        const k = brickKey(brickAtT)
+        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
+        if (inflight.has(k)) continue
+        kickFetch(brickAtT)
+      }
     }
   }
 
@@ -498,7 +518,25 @@ export async function createBrickVolumeRenderer(
 
     setCapacity(_n) { /* P5c */ },
     vramCapped: () => false,
-    show(t) { boundT = t; return true },
+    show(t) {
+      if (boundT === t) return true
+      boundT = t
+      // Rebuild pageTableCpu so the shader now addresses THIS t's bricks. Prefetched entries for
+      // the incoming t are already in the atlas (LRU-warmed by tickScheduler on prior ticks), so
+      // this is just a re-index — no new fetches, no black frame. Bricks not yet resident at t
+      // stay EMPTY_SLOT and the fetch loop picks them up on the next tick.
+      if (atlas !== null) {
+        atlas.pageTableCpu.fill(EMPTY_SLOT)
+        for (const entry of atlas.pageTable.entries()) {
+          if (entry.brick.t !== t || entry.brick.level !== atlas.currentLevel) continue
+          const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
+          if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
+          atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+        }
+        atlas.pageTableDirty = true
+      }
+      return true
+    },
     hasTimepoint(_t) { return true },
     residentTimepoints() { return atlas === null ? [] : [boundT] },
     touch(_t) { /* no-op */ },
@@ -562,6 +600,7 @@ export async function createBrickVolumeRenderer(
 
     setNeedsRedraw(cb) { needsRedraw = cb },
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
+    setPrefetchTimepoints(list) { prefetchTs = list.slice() },
 
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
