@@ -14,11 +14,25 @@ const SISPLK_WORLD: BrickWorld = {
   nLevels: 3,
 }
 
-const centreView = (halfWUm: number): BrickViewport => ({
+// Vibratome-ish: 256 xy vox × 1 µm, 8 z vox × 5 µm — anisotropic z that's 5× the xy pitch.
+// Grid 2×2×8 bricks = 256×256×64 voxels total (nZ = 64 planes at 1-µm slices, or the same
+// depth at a coarser plane spacing). The store is > 300 µm deep, thick enough to justify
+// z-halo rather than "walk every slab".
+const VIBRATOME_WORLD: BrickWorld = {
+  brickSizeVox: [128, 128, 4],
+  voxelUmL0: [1, 1, 5],
+  extentVoxL0: [256, 256, 64],
+  nLevels: 3,
+}
+
+// XY-only case: `halfDUm` covers the whole store depth so the z-halo saturates the grid.
+// nZ=4 vox × 1 µm = 4 µm deep; halfDUm=100 well past 2 µm.
+const centreView = (halfWUm: number, halfDUm = 100): BrickViewport => ({
   t: 0,
-  centreUm: [256, 256],           // dead-centre of the 512x512 grid
+  centreUm: [256, 256, 2],        // dead-centre of the 512x512x4 grid
   halfWUm,
   halfHUm: halfWUm,
+  halfDUm,
   focalPx: 512,
   distanceUm: 512,                 // sseDesiredLevel(1, 512, 512) = log2(1) = 0
 })
@@ -46,14 +60,43 @@ describe('bricksIntersectingViewport', () => {
   })
 
   it('clamps halo against the store — no negative brick coords', () => {
-    // Viewport near (0, 0) — the halo would go to (-1, -1) without clamping.
-    const view: BrickViewport = { ...centreView(16), centreUm: [16, 16] }
+    // Viewport near (0, 0, 0) — the halo would go to (-1, -1, -1) without clamping.
+    const view: BrickViewport = { ...centreView(16), centreUm: [16, 16, 0] }
     const scheduled = bricksIntersectingViewport(view, SISPLK_WORLD, 0)
     for (const s of scheduled) {
       expect(s.brick.bx).toBeGreaterThanOrEqual(0)
       expect(s.brick.by).toBeGreaterThanOrEqual(0)
       expect(s.brick.bz).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  // XY-only case: SispLk (nZ=4) with a large halfDUm walks every z-slab regardless of the
+  // camera's z position — matches the pre-amendment "walk every bz" behaviour, so the atlas
+  // built for the thin-Z store isn't retrained by the API change.
+  it('thin-Z + large halfDUm reduces to the XY-only walk', () => {
+    const view = centreView(16, /* halfDUm */ 100)
+    const scheduled = bricksIntersectingViewport(view, SISPLK_WORLD, 0)
+    // Every bz in [0, gridNz-1] appears somewhere.
+    const bzSeen = new Set(scheduled.map(s => s.brick.bz))
+    expect(bzSeen.has(0)).toBe(true)                    // only one z-slab on SispLk (gridNz=1)
+    expect(bzSeen.size).toBe(1)
+  })
+
+  // Deep-Z case: a vibratome view centred at z=100 µm with halfDUm=10 µm covers ~1 brick in z
+  // (brick_z * vz = 20 µm), so core = 1 z-slab, halo = ±1 z-slab. Compared to walking all
+  // 8 z-slabs, this is a real reduction.
+  it('deep-Z + tight halfDUm limits z-brick residency to a slab + halo', () => {
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [128, 128, 100],
+      halfWUm: 16, halfHUm: 16, halfDUm: 10,
+      focalPx: 512, distanceUm: 512,
+    }
+    const scheduled = bricksIntersectingViewport(view, VIBRATOME_WORLD, 0)
+    const bzSeen = new Set(scheduled.map(s => s.brick.bz))
+    // Way fewer than 8 z-slabs; the halo picks up ~2-3 slabs around z=100 µm.
+    expect(bzSeen.size).toBeLessThan(8)
+    expect(bzSeen.size).toBeGreaterThanOrEqual(2)
   })
 
   it('at a coarser level, one brick covers 4× the µm — same viewport spans fewer bricks', () => {
@@ -82,6 +125,25 @@ describe('pickBrickLevel', () => {
   it('clamps to the store\'s pyramid depth', () => {
     const view: BrickViewport = { ...centreView(200), distanceUm: 1e6 }
     expect(pickBrickLevel(view, SISPLK_WORLD, undefined)).toBe(SISPLK_WORLD.nLevels - 1)
+  })
+
+  // Anisotropic z (vz > vxy): the tighter axis wins. On vibratome data (vz=5, vxy=1), the z
+  // axis becomes the constraint — a distance where xy could coarsen to L2 still needs L0 in
+  // z, so the picker returns L0. Undersampling z is what shows visually; oversampling xy
+  // just wastes VRAM.
+  it('anisotropic z picks the finer level (undersampling z is what visibly breaks)', () => {
+    // At distance=2048, xy SSE picks L2 (log2(2048 / (1*512)) = 2). Z SSE picks L0
+    // (log2(2048 / (5*512)) = log2(0.8) < 0 → floor 0). MIN wins → L0.
+    const viewLo = {
+      t: 0, centreUm: [128, 128, 100] as [number, number, number],
+      halfWUm: 100, halfHUm: 100, halfDUm: 10,
+      focalPx: 512, distanceUm: 2048,
+    }
+    expect(pickBrickLevel(viewLo, VIBRATOME_WORLD, undefined)).toBe(0)
+    // Pull the camera much further back so BOTH axes want L2+: xy wants log2(10240/512)=~4.3,
+    // z wants log2(10240/2560)=2. MIN → 2.
+    const viewFar = { ...viewLo, distanceUm: 10240 }
+    expect(pickBrickLevel(viewFar, VIBRATOME_WORLD, undefined)).toBe(2)
   })
 })
 

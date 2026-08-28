@@ -1,14 +1,17 @@
-// ── Brick scheduler — visibility + halo + per-brick LOD ────────────────────────────
+// ── Brick scheduler — visibility + 3D halo + per-brick LOD ─────────────────────────
 //
 // Given a viewport (camera + world-space rect) and the current atlas residency, produce a
 // load list and an eviction list. The scheduler is pure — no fetches, no GPU calls, no
 // timers — so it's testable, and the runtime side (the tick loop) drives it every frame
 // with fresh camera state.
 //
-// FIRST-PASS SCOPE: XY-heavy stores (SispLk, 35uedD — nZ=4). Z is treated as flat: one brick
-// per z-slab, `bz = 0` throughout, and visibility is the XY viewport intersection with each
-// brick's µm AABB. This is what KILN_BRICK_PLAN.md grounded the design in. When a deep-Z
-// reference image lands, extend to a proper 3D frustum + z-brick tiling in a follow-up.
+// SCOPE: designed for both XY-heavy (SispLk, 35uedD — nZ=4) and deep-Z (thick vibratome) stores.
+// Voxel µm size is anisotropic per axis — vibratome z is often 3-10x the xy pitch — and the
+// scheduler honours that in TWO places: (a) `pickBrickLevel` takes the FINER of the xy and z
+// SSE levels so a coarse-z voxel doesn't undersample rays that step through it, and (b) the
+// halo ring extends into z, sized in µm rather than brick units so an anisotropic-z brick
+// isn't over-prefetched. XY-only reproduces as the special case where the viewport covers the
+// whole store depth (`halfDUm ≥ nZ * voxelUmZ / 2`), which matches SispLk today.
 //
 // Concepts adapted from Kiln (github.com/mpanknin/kiln-render — MIT; ideas only, no imported
 // code). See docs/todo/KILN_BRICK_PLAN.md → Decisions 5 (T-axis), 6 (3D halo), and Phase P4.
@@ -24,13 +27,18 @@ import { sseDesiredLevel, sseLevelWithHysteresis } from './sseLod'
 export interface BrickViewport {
   /** Current timepoint — the T axis of the residency key. */
   t: number
-  /** Viewport centre in world µm (x, y). Z is nominal for the flat-Z case; use 0 when the
-   *  camera isn't a real 3D camera yet. */
-  centreUm: [number, number]
-  /** Half-width / half-height of the visible rectangle in world µm — an axis-aligned bounding
-   *  box at the camera plane. Rotation is not modelled in the first pass. */
+  /** Viewport centre in world µm (x, y, z). For a 2D-plane viewer, z is the currently-shown
+   *  plane in µm; for a 3D volume view, z is the camera-projected sample-plane centre. On the
+   *  flat-Z case (SispLk, nZ=4), the store is thin enough that any centre works — see
+   *  `halfDUm` below. */
+  centreUm: [number, number, number]
+  /** Half-width / half-height / half-depth of the visible frustum in world µm — an axis-aligned
+   *  bounding box at the camera plane. Rotation is not modelled in the first pass. For an
+   *  XY-only viewer over a thin store, set `halfDUm` >= store's `nZ * voxelUmZ / 2` and the
+   *  z-halo reduces to "walk every z-slab" — the SispLk behaviour before this amendment. */
   halfWUm: number
   halfHUm: number
+  halfDUm: number
   /** Pinhole focal length in device pixels. Only affects LOD via `sseDesiredLevel`. */
   focalPx: number
   /** Nominal distance from camera to the sample plane in µm. Used by `sseDesiredLevel`;
@@ -71,13 +79,14 @@ export interface ScheduledBrick {
 }
 
 /**
- * Bricks at one level whose µm AABB intersects the viewport rect, walking whole bricks
+ * Bricks at one level whose µm AABB intersects the viewport frustum, walking whole bricks
  * (edge fractions round outward). Returns a sorted list — closer to the viewport centre
- * first — so the caller can uploads them in visual-priority order.
+ * first — so the caller uploads them in visual-priority order.
  *
- * `ring` = 0 for bricks IN the viewport, 1 for the 1-ring halo Dominik named a "3D halo"
- * (2026-08-28). No larger halos in this first pass — one ring covers pan/scroll intent
- * without wasting VRAM on off-screen prefetch.
+ * `ring` = 0 for bricks IN the viewport core, 1 for the 1-ring halo Dominik named a "3D halo"
+ * (2026-08-28) — one brick wider on each side in X, Y AND Z. On a thin-Z store (SispLk,
+ * nZ=4) the caller sets `halfDUm >= nZ * voxelUmZ / 2`, so the z-halo saturates the grid
+ * and behaviour reduces to "walk every z-slab" — the XY-only case, unchanged.
  */
 export function bricksIntersectingViewport(
   view: BrickViewport,
@@ -85,13 +94,17 @@ export function bricksIntersectingViewport(
   level: number,
 ): ScheduledBrick[] {
   const [bx, by, bz] = world.brickSizeVox
-  const [vx, vy] = world.voxelUmL0
+  const [vx, vy, vz] = world.voxelUmL0
   const scale = Math.pow(2, level)
-  // Brick edge in µm at this level.
+  // Brick edge in µm at this level — anisotropic per axis so an anisotropic-z brick is
+  // ranked correctly in world space (a 4-voxel z brick at vz=5µm is a 20µm slab, not a 4µm
+  // one; the difference decides whether the near-camera vibratome bricks project close or
+  // far).
   const brickWumX = bx * vx * scale
   const brickWumY = by * vy * scale
+  const brickWumZ = bz * vz * scale
 
-  // Viewport rect → brick-coord rect. Clamped against the store's brick grid so a viewport
+  // Viewport frustum → brick-coord rect. Clamped against the store's brick grid so a viewport
   // off the store's edge doesn't produce negative brick coords (the server would clamp bytes
   // to zero-length, but the loader would still burn a fetch).
   const gridNx = Math.max(1, Math.ceil(world.extentVoxL0[0] / (bx * scale)))
@@ -103,27 +116,42 @@ export function bricksIntersectingViewport(
   const bxHiView = Math.floor((view.centreUm[0] + view.halfWUm) / brickWumX)
   const byLoView = Math.floor((view.centreUm[1] - view.halfHUm) / brickWumY)
   const byHiView = Math.floor((view.centreUm[1] + view.halfHUm) / brickWumY)
+  const bzLoView = Math.floor((view.centreUm[2] - view.halfDUm) / brickWumZ)
+  const bzHiView = Math.floor((view.centreUm[2] + view.halfDUm) / brickWumZ)
 
-  // 1-ring halo — one brick wider on each side. The core check below labels each brick with
-  // its ring so the caller (or the debug overlay) can distinguish visible from prefetched.
+  // 1-ring halo in all three axes. Halo clamped against the grid — no negative brick coords,
+  // no overshoot past the store's last brick. On a thin-Z store, `halfDUm` >= nZ*vz/2
+  // makes bzLoView<=0 and bzHiView>=gridNz-1, and the z-halo saturates the grid → all z-slabs
+  // included, matching the pre-amendment XY-only walk.
   const bxLo = clamp(bxLoView - 1, gridNx - 1)
   const bxHi = clamp(bxHiView + 1, gridNx - 1)
   const byLo = clamp(byLoView - 1, gridNy - 1)
   const byHi = clamp(byHiView + 1, gridNy - 1)
+  const bzLo = clamp(bzLoView - 1, gridNz - 1)
+  const bzHi = clamp(bzHiView + 1, gridNz - 1)
 
   // Centre-of-viewport in brick units — Chebyshev distance from this ranks the load order.
+  // Distances are measured in µm-normalised brick units so an anisotropic-z step doesn't
+  // outweigh xy just because the number is bigger; each axis contributes its own µm distance
+  // divided by that axis's brick µm size, i.e. the number of bricks between camera and target.
   const bcx = view.centreUm[0] / brickWumX
   const bcy = view.centreUm[1] / brickWumY
+  const bcz = view.centreUm[2] / brickWumZ
 
   const out: ScheduledBrick[] = []
-  for (let bzIdx = 0; bzIdx < gridNz; bzIdx++) {
+  for (let bzIdx = bzLo; bzIdx <= bzHi; bzIdx++) {
     for (let byIdx = byLo; byIdx <= byHi; byIdx++) {
       for (let bxIdx = bxLo; bxIdx <= bxHi; bxIdx++) {
-        const inCore = bxIdx >= bxLoView && bxIdx <= bxHiView
-                     && byIdx >= byLoView && byIdx <= byHiView
-        const ring = inCore ? 0 : 1
-        // Chebyshev distance in brick units to the centre.
-        const distance = Math.max(Math.abs(bxIdx - bcx), Math.abs(byIdx - bcy))
+        const inCoreXY = bxIdx >= bxLoView && bxIdx <= bxHiView
+                       && byIdx >= byLoView && byIdx <= byHiView
+        const inCoreZ  = bzIdx >= bzLoView && bzIdx <= bzHiView
+        const ring = (inCoreXY && inCoreZ) ? 0 : 1
+        // Chebyshev distance in brick units to the centre — includes z now.
+        const distance = Math.max(
+          Math.abs(bxIdx - bcx),
+          Math.abs(byIdx - bcy),
+          Math.abs(bzIdx - bcz),
+        )
         out.push({
           brick: { t: view.t, level, bx: bxIdx, by: byIdx, bz: bzIdx },
           distance,
@@ -139,17 +167,27 @@ export function bricksIntersectingViewport(
 }
 
 /**
- * Per-brick LOD via SSE + hysteresis. `previousLevel` is the level the brick's KEY currently
- * hashes to in the atlas (the resident version); it's `undefined` when the brick has never
- * been requested before. Same asymmetric-hysteresis discipline as `pickTileLevel` — going
- * finer commits immediately, going coarser waits out the log2(1/0.7) band.
+ * Per-brick LOD via SSE + hysteresis. Anisotropic: takes the FINER of the xy and z desired
+ * levels so a coarse-z voxel doesn't undersample rays that step through it. On vibratome
+ * data (vz ≈ 3-10 × vxy), the z axis usually wins — we'd rather waste a bit of xy VRAM than
+ * MIP through a chunkier z stack.
+ *
+ * `previousLevel` is the level the brick's KEY currently hashes to in the atlas (the resident
+ * version); it's `undefined` when the brick has never been requested before. Same asymmetric-
+ * hysteresis discipline as `pickTileLevel` — going finer commits immediately, going coarser
+ * waits out the log2(1/0.7) band.
  */
 export function pickBrickLevel(
   view: BrickViewport,
   world: BrickWorld,
   previousLevel: number | undefined,
 ): number {
-  const raw = sseDesiredLevel(world.voxelUmL0[0], view.distanceUm, view.focalPx)
+  const xyRaw = sseDesiredLevel(world.voxelUmL0[0], view.distanceUm, view.focalPx)
+  const zRaw  = sseDesiredLevel(world.voxelUmL0[2], view.distanceUm, view.focalPx)
+  // MIN → the finer level wins. An SSE that says "L2 in xy, L0 in z" resolves to L0 so the
+  // ray-stepper still hits every voxel along z. Isotropic stores fall through unchanged
+  // because both terms are equal.
+  const raw = Math.min(xyRaw, zRaw)
   return sseLevelWithHysteresis(raw, previousLevel, world.nLevels)
 }
 

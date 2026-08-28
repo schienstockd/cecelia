@@ -133,15 +133,22 @@ grew `cTo?: number` in `volumeViewer.ts`; flat-atlas callers are unchanged (scal
 never emits the param). Not yet plumbed into a scheduler or `ViewerWindow.vue` — the LRU and
 `viewerBrickEnabled` flag live in P4 alongside the halo prefetch.
 
-**P4 — 3D halo + SSE scheduler. ✓ scaffolded 2026-08-28.**
+**P4 — 3D halo + SSE scheduler. ✓ scaffolded 2026-08-28; P4.1 anisotropic-z amended 2026-08-28.**
 `frontend/src/utils/brickScheduler.ts` — `bricksIntersectingViewport(view, world, level)` walks
-the brick grid at a level and returns the core + 1-ring halo bricks with a Chebyshev distance
-rank (same shape as `tileEvictions` in `tileViewer.ts`). `pickBrickLevel` composes
-`sseDesiredLevel` + `sseLevelWithHysteresis`. `scheduleBricks(view, world, resident,
-previousLevel)` is the frame decision: `{ level, toLoad, toEvict }`. First-pass is XY-only
-(walks every `bz` slab per level — matches SispLk/35uedD nZ=4); proper 3D frustum + z-brick
-culling deferred to when a deep-Z reference image is available. Debug overlay + shader-side
-integration land in P5 (the tick loop that drives the scheduler is a viewer concern).
+the brick grid at a level and returns core + 1-ring halo bricks with a Chebyshev distance rank
+(same shape as `tileEvictions` in `tileViewer.ts`). Halo is a **full 3D ring** — one brick wider
+in x, y AND z. `pickBrickLevel` composes `sseDesiredLevel` + `sseLevelWithHysteresis` per axis
+and takes the **MIN of xy and z** desired levels so an anisotropic-z store (thick vibratome,
+vz ≈ 3-10× vxy) doesn't undersample z. `scheduleBricks(view, world, resident, previousLevel)`
+is the frame decision: `{ level, toLoad, toEvict }`. XY-only reduces to the special case where
+the viewport's `halfDUm ≥ nZ * voxelUmZ / 2` — SispLk-shape (nZ=4) reproduces the pre-amendment
+"walk every z-slab" behaviour unchanged. Debug overlay + shader-side integration land in P5.
+
+**Why P4.1 landed before P5, not after data arrives (2026-08-28):** Dominik confirmed thick
+vibratome images are coming but no reference image exists yet. Extending the scheduler's API
+now — `centreUm: [x, y, z]`, `halfDUm`, anisotropic voxel scaling — is purely additive and
+costs ~1 hour; retrofitting after the wire-up would touch every P5 call site. Same discipline
+as designing `SlabQuery.cTo` before P3 rather than after.
 
 **P5 — Integrate.** Toggle `viewerBrickEnabled` in dev; verify SispLk and 35uedD render at L0 in
 the visible region and coarsen away from the camera. Compare visible frame time against the
