@@ -79,8 +79,10 @@ function openActive() {
   // Popout is synchronous once its URL is built; the flag exists so the button spinner has a
   // frame to render before the popup opens.
   try {
+    // `setUid ?? undefined` — the target type accepts `string | undefined`, not the `null` the
+    // fallback chain produces when neither the prop nor the set-of-image resolver has one.
     openViewerWindow({ projectUid: projectUid.value, imageUid: activeUid.value,
-                       setUid, name: activeImage.value?.name })
+                       setUid: setUid ?? undefined, name: activeImage.value?.name })
   } finally { opening.value = false }
 }
 
