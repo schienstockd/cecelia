@@ -542,10 +542,13 @@ export async function createBrickVolumeRenderer(
     overlayCounts: (): [number, number] => [0, 0],
 
     setTestPattern(on) {
+      // ViewerWindow calls this every frame with the current toggle state, not just on change —
+      // so an unconditional "on=false → drop brick (0,0,0)" evicts a real viewport brick every
+      // frame, then the fetch loop re-loads it, then next frame evicts it again → infinite loop
+      // (2026-08-28). Fire the synthetic-brick cleanup ONLY on the true→false transition.
+      const wasOn = testPattern
       testPattern = on
-      if (!on && atlas !== null) {
-        // Turning the test pattern OFF drops the synthetic entry — otherwise it lingers as an
-        // LRU-protected slot the real fetcher can't reuse.
+      if (wasOn && !on && atlas !== null) {
         const key = brickKey({ t: boundT, level: 0, bx: 0, by: 0, bz: 0 })
         if (atlas.pageTable.has(key)) {
           atlas.pageTable.evict(key)
