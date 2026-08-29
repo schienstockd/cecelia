@@ -635,6 +635,30 @@ export async function createBrickVolumeRenderer(
   /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
    *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
    *  this tick decided on. */
+  /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
+   *  `hasTimepoint(t)` so the play loop can hold on the previous frame instead of advancing
+   *  into a half-loaded one. Halo bricks are NOT required — they're prefetch, and demanding
+   *  them would stall playback on a viewport that hasn't fully warmed the ring yet, which is
+   *  the usual state during scrub.
+   *
+   *  Not free: rebuilds the intersect list every call. Called at most once per frame for
+   *  `show`, once per playback tick for `hasTimepoint` — a few hundred grid entries either way.
+   *  Cheap in absolute terms, but worth not calling in a per-brick hot loop. */
+  const coreBricksResident = (t: number): boolean => {
+    if (atlas === null || currentMeta === null) return false
+    const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+    const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+    const view = brickViewportFromCamera(
+      camState, currentMeta, t, canvas.height, aspect, currentZDepth,
+    )
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
+    for (const s of scheduled) {
+      if (s.ring !== 0) continue
+      if (!atlas.pageTable.has(brickKey(s.brick))) return false
+    }
+    return true
+  }
+
   const tickScheduler = (): void => {
     if (atlas === null || currentMeta === null) return
     frameNow += 1
@@ -906,25 +930,28 @@ export async function createBrickVolumeRenderer(
     setCapacity(_n) { /* P5c */ },
     vramCapped: () => false,
     show(t) {
-      if (boundT === t) return true
-      boundT = t
-      // Rebuild pageTableCpu so the shader now addresses THIS t's bricks. Prefetched entries for
-      // the incoming t are already in the atlas (LRU-warmed by tickScheduler on prior ticks), so
-      // this is just a re-index — no new fetches, no black frame. Bricks not yet resident at t
-      // stay EMPTY_SLOT and the fetch loop picks them up on the next tick.
-      if (atlas !== null) {
-        atlas.pageTableCpu.fill(EMPTY_SLOT)
-        for (const entry of atlas.pageTable.entries()) {
-          if (entry.brick.t !== t || entry.brick.level !== atlas.currentLevel) continue
-          const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
-          if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
-          atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+      // The play loop uses the RETURN VALUE to decide whether to hold on the previous frame,
+      // so this can NOT be a bare `return true`. When the atlas doesn't hold the core viewport
+      // bricks for `t`, showing that t would draw partial/black bricks (the "half-black"
+      // symptom Dominik reported on fXgbTl 3D playback, 2026-08-29). Bumping boundT is still
+      // correct — the scheduler needs it to know what to fetch next — but reporting readiness
+      // is what the play loop reads. Same discipline as flat's `showT`.
+      if (boundT !== t) {
+        boundT = t
+        if (atlas !== null) {
+          atlas.pageTableCpu.fill(EMPTY_SLOT)
+          for (const entry of atlas.pageTable.entries()) {
+            if (entry.brick.t !== t || entry.brick.level !== atlas.currentLevel) continue
+            const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
+            if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
+            atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+          }
+          atlas.pageTableDirty = true
         }
-        atlas.pageTableDirty = true
       }
-      return true
+      return coreBricksResident(t)
     },
-    hasTimepoint(_t) { return true },
+    hasTimepoint(t) { return coreBricksResident(t) },
     residentTimepoints() {
       // Every unique `t` currently holding at least one brick — the time strip uses this to show
       // where prefetch has buffered. Bricks-per-t need not be complete for the strip to light up.

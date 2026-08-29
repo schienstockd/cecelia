@@ -3172,6 +3172,16 @@ onUnmounted(() => {
             >
             <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
           </div>
+          <!-- Playback held while brick fetches catch up. Same signal (`waitingFor`) that lights
+               the busy dot; the caption names WHY playback slowed instead of the user wondering.
+               Auto-hides the moment the next timepoint's core bricks land — see brick renderer's
+               `hasTimepoint`. -->
+          <div v-if="playing && waitingFor >= 0" class="cc-row cc-row-tight vw-hold-hint">
+            <span class="cc-muted cc-fs-3xs"
+                  v-tooltip.bottom="'Playback throttled to fetch rate — pause or lower Fps to skip this'">
+              Waiting for bricks
+            </span>
+          </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
@@ -3843,4 +3853,7 @@ onUnmounted(() => {
   padding: 0.15rem 0.25rem 0.25rem;
 }
 .vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
+/* Hint that playback is fetch-limited. Aligns under the Fps slider with a tiny inset so it
+   reads as a status line to the slider above, not a separate row of controls. */
+.vw-hold-hint { padding-left: 0.4rem; margin-top: -0.1rem; }
 </style>
