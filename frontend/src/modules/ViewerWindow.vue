@@ -76,7 +76,7 @@ import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
-  type BenchSample, type BenchMeta, type BenchVram,
+  type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
@@ -119,6 +119,9 @@ const benchT0 = ref<number>(0)
 const benchFirstFrameMs = ref<number | null>(null)
 const benchFrames = shallowRef<BenchSample[]>([])
 const benchBytes = ref(0)
+/** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
+ *  renderer. Used by Session D to compare writeTexture vs MAP_WRITE staging. */
+const benchWrites = shallowRef<BenchWriteSample[]>([])
 /** Save-time live tally so the panel shows progress without allocating on every frame. */
 const benchLive = computed(() => {
   const now = performance.now()
@@ -132,6 +135,7 @@ function benchReset() {
   benchFirstFrameMs.value = null
   benchFrames.value = []
   benchBytes.value = 0
+  benchWrites.value = []
 }
 /** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
  *  so a directory of them doesn't collide across images or renderers. */
@@ -166,6 +170,7 @@ function benchSave() {
     frames: benchFrames.value,
     bytesFetched: benchBytes.value,
     vram,
+    writes: benchWrites.value,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -2435,6 +2440,16 @@ async function ensureRenderer() {
           frame.redraw()
         }
       })
+      // ?bench=1: capture per-writeBrick timings so Session D can A/B MAP_WRITE against the
+      // current writeTexture-per-channel loop. Fires from inside the brick renderer, so kept
+      // gated on the harness flag — no cost when bench is off.
+      if (benchEnabled) {
+        r.setOnBrickWritten?.((durationMs, bytes) => {
+          benchWrites.value = [...benchWrites.value, {
+            atMs: performance.now(), durationMs, bytes,
+          }]
+        })
+      }
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()

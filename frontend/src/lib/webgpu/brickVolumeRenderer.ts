@@ -317,6 +317,10 @@ export async function createBrickVolumeRenderer(
    *  same timepoint the volume is showing — otherwise a scrub-past-cold would render volume at
    *  t=5 with overlays at t=0. Null when unwired. */
   let onDisplayAdvanced: ((t: number) => void) | null = null
+  /** Per-writeBrick timing hook — bench harness only. Fires with the CPU-side duration of one
+   *  writeBrick call and the byte count uploaded. Session D (MAP_WRITE staging) uses this to
+   *  A/B against a copyBufferToTexture variant. Null when unwired. */
+  let onBrickWritten: ((durationMs: number, bytes: number) => void) | null = null
   /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
    *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
@@ -543,7 +547,12 @@ export async function createBrickVolumeRenderer(
         const bytes = isEdge
           ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel)
           : payload.bytes
-        const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(bytes))
+        const writeT0 = onBrickWritten !== null ? performance.now() : 0
+        const brickBytes = new Uint8Array(bytes)
+        const ok = atlas.texture.writeBrick(result.entry.slot, brickBytes)
+        if (onBrickWritten !== null && ok) {
+          onBrickWritten(performance.now() - writeT0, brickBytes.byteLength)
+        }
         if (!ok) {
           atlas.pageTable.evict(key)
           return
@@ -1170,6 +1179,7 @@ export async function createBrickVolumeRenderer(
     setNeedsRedraw(cb) { needsRedraw = cb },
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
+    setOnBrickWritten(cb) { onBrickWritten = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelOverride(level) {
       // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the

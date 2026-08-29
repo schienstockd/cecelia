@@ -221,6 +221,12 @@ export interface VolumeRenderer {
    */
   setOnDisplayAdvanced?(cb: ((t: number) => void) | null): void
   /**
+   * Brick renderer only: per-writeBrick timing hook — CPU-side duration of one writeBrick call
+   * plus its byte count. Bench harness uses this to A/B alternative upload paths (MAP_WRITE
+   * staging vs the current writeTexture-per-channel loop). Absent on the flat renderer.
+   */
+  setOnBrickWritten?(cb: ((durationMs: number, bytes: number) => void) | null): void
+  /**
    * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
    * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
    * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
