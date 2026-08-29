@@ -3346,6 +3346,10 @@ onUnmounted(() => {
             <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+            <template v-if="bricksEnabled">
+              <span class="cc-muted">Level</span>
+              <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
+            </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">
             <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
