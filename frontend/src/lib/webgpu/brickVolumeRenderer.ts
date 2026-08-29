@@ -325,12 +325,12 @@ export async function createBrickVolumeRenderer(
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
    *  playback advances without cold-fetching each new t. Empty = current-t only. */
   let prefetchTs: number[] = []
-  /** User-chosen level override — pins scheduler to this level, bypassing SSE. Undefined =
-   *  fall back to the SSE picker. Threaded through by ViewerWindow from its `slabLevel`
-   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). This closes the
-   *  bytes-fetched gap between the two renderers on multi-level statics — the 168× we saw on
-   *  f8gzA2 was almost entirely brick choosing L0-L1 where flat chose L5. */
-  let levelOverride: number | undefined = undefined
+  /** User-chosen level FLOOR — coarsest LOD the SSE picker is allowed to pick. Undefined = no
+   *  floor (SSE freely picks any). Threaded through by ViewerWindow from its `slabLevel`
+   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). Replaces the 8b780fd
+   *  pin: pinning blocked zoom-in adaptive LOD outright (SispLk stuck on L5 at deep zoom).
+   *  Over-fetch protection now sits inside `scheduleBricks` via `MAX_INTERSECT_BRICKS`. */
+  let levelFloor: number | undefined = undefined
 
   /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
    *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
@@ -750,7 +750,7 @@ export async function createBrickVolumeRenderer(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelOverride)
+    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor)
 
     // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
     // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
@@ -1212,12 +1212,12 @@ export async function createBrickVolumeRenderer(
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
-    setLevelOverride(level) {
-      // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the
-      // brick renderer honours the same choice the flat renderer does. `undefined` re-enables
-      // the SSE picker. Same-value writes are cheap; ViewerWindow calls this unconditionally
-      // from a `slabLevel` watch.
-      levelOverride = level === undefined || level < 0 ? undefined : Math.floor(level)
+    setLevelFloor(level) {
+      // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`
+      // dropdown: Auto = n-1 (coarsest possible, no restriction), an explicit pick = that level.
+      // `undefined` (or negative) drops the floor entirely. Same-value writes are cheap;
+      // ViewerWindow calls this unconditionally from a `slabLevel` watch.
+      levelFloor = level === undefined || level < 0 ? undefined : Math.floor(level)
     },
 
     brickResidency() {

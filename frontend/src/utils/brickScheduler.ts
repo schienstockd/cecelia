@@ -261,22 +261,65 @@ export function brickViewportFromCamera(
 }
 
 /**
- * Level source: the user's dropdown (pinned) or the SSE picker (adaptive). Kept as one enum
- * argument so the caller doesn't have to encode `undefined-means-adaptive` at every call site.
- * Pinned wins so the "coarsest by default, user can override to finer" flow (mirroring flat's
- * `pickVolumeLevel`) drops the fetch cost on multi-level statics — measured 2026-08-29: f8gzA2
- * flat pulled 17 MB; brick with SSE pulled 2.85 GB at the same view.
+ * Coarsest level the caller allows. `undefined` means "no floor" (SSE freely picks any level up
+ * to `nLevels-1`). Callers usually pass the user's `viewerVolumeLevel` dropdown — Auto = `n-1`
+ * (coarsest possible, no effective restriction), an explicit dropdown pick = that level's index.
+ */
+export type FloorLevel = number | undefined
+
+/**
+ * Bricks-per-frame ceiling for the over-fetch guard. Bench baseline 2026-08-29 (pre-#702):
+ * f8gzA2 at fit distance intersected 200+ bricks when SSE picked L0/L1, pulling 2.85 GB — that's
+ * the pathology the pin (8b780fd) was crude-fixing. Bounding on intersect count instead is more
+ * honest: it targets the "wide viewport, fine level" cost directly, without blocking zoom-in on
+ * moderate stores. 32 is a starting point; re-measure in B1 and tune from real data.
+ */
+export const MAX_INTERSECT_BRICKS = 32
+
+/**
+ * Guard the SSE-desired level against over-fetch. If the intersect list at the chosen level is
+ * over `MAX_INTERSECT_BRICKS`, walk one level coarser and re-check, bounded by `floorLevel`.
+ * Returns the level the scheduler should actually use.
+ */
+export function guardIntersectCost(
+  view: BrickViewport,
+  world: BrickWorld,
+  chosen: number,
+  floorLevel: number,
+): number {
+  let level = chosen
+  while (level < floorLevel) {
+    if (bricksIntersectingViewport(view, world, level).length <= MAX_INTERSECT_BRICKS) break
+    level += 1
+  }
+  return level
+}
+
+/**
+ * Frame scheduler. Two-stage LOD pick:
+ *   1. `pickBrickLevel` — SSE picker with hysteresis, freely picking any level per viewport.
+ *   2. Clamp to `floorLevel` (user's dropdown = coarsest allowed) — never coarser than the user
+ *      asked; the SSE picker gets to go finer as the user zooms in.
+ *   3. `guardIntersectCost` — if the SSE-chosen level would fan out to too many bricks (the
+ *      wide-viewport-on-huge-L0 pathology, f8gzA2 fit distance), coarsen back toward the floor
+ *      until the intersect list fits under `MAX_INTERSECT_BRICKS`.
+ *
+ * Reversal of the 8b780fd `pinLevel` approach: pinning to the dropdown blocked zoom-in adaptive
+ * LOD entirely (SispLk stuck on L5 at deep zoom, 2026-08-29 screenshot). The floor + guard combo
+ * covers f8gzA2's over-fetch without the collateral damage.
  */
 export function scheduleBricks(
   view: BrickViewport,
   world: BrickWorld,
   resident: ReadonlySet<string>,
   previousLevel: number | undefined,
-  pinLevel?: number,
+  floorLevel?: FloorLevel,
 ): { level: number; toLoad: ScheduledBrick[]; toEvict: string[] } {
-  const level = pinLevel !== undefined && Number.isFinite(pinLevel) && pinLevel >= 0
-    ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(pinLevel)))
-    : pickBrickLevel(view, world, previousLevel)
+  const floor = floorLevel !== undefined && Number.isFinite(floorLevel) && floorLevel >= 0
+    ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(floorLevel)))
+    : world.nLevels - 1
+  const chosen = Math.min(pickBrickLevel(view, world, previousLevel), floor)
+  const level = guardIntersectCost(view, world, chosen, floor)
   const scheduled = bricksIntersectingViewport(view, world, level)
   const wantedKeys = new Set(scheduled.map(s => brickKey(s.brick)))
   const toLoad = scheduled.filter(s => !resident.has(brickKey(s.brick)))

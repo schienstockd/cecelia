@@ -2086,13 +2086,14 @@ watch(slabLevel, (newLvl) => {
   if (!meta.value || mode.value !== 'plane') return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
-/** Brick renderer: pin the scheduler to the user's chosen level so it matches flat's fetches
- *  1:1. Without this the brick renderer's SSE picker chose L0-L1 while flat picked L5 by
- *  default (`pickVolumeLevel = n-1`), and bricks pulled 168× more bytes than flat on f8gzA2.
- *  Fires whether or not the volume path is active — the setter is a no-op when the flat
- *  renderer is on and cheap when the value hasn't changed. */
+/** Brick renderer: use the dropdown as a FLOOR (coarsest allowed), letting SSE pick finer as
+ *  the user zooms in. Auto = coarsest possible = no effective restriction. Replaces 8b780fd's
+ *  pin, which blocked adaptive LOD entirely and left SispLk stuck at L5 on deep zoom
+ *  (screenshot 2026-08-29). Over-fetch on wide viewports (f8gzA2 fit distance) is now bounded
+ *  by `MAX_INTERSECT_BRICKS` inside the scheduler. Fires whether or not the volume path is
+ *  active — the setter is a no-op when the flat renderer is on and cheap when unchanged. */
 watch(slabLevel, (newLvl) => {
-  renderer.value?.setLevelOverride?.(newLvl)
+  renderer.value?.setLevelFloor?.(newLvl)
 }, { immediate: true })
 function onWheel(e: WheelEvent) {
   e.preventDefault()
@@ -2571,9 +2572,9 @@ async function reallocate(refit = false) {
       // requests entirely on projects with no segmentation.
       labelName: wantLabels ? (labelName.value || undefined) : undefined,
     })
-    // Pin the brick scheduler to slabLevel — the SSE default fetches an order of magnitude too
-    // much on multi-level statics. See the slabLevel watcher above.
-    r.setLevelOverride?.(slabLevel.value)
+    // Brick scheduler floor = slabLevel (dropdown). SSE picks finer as user zooms in; over-fetch
+    // on wide viewports is bounded by MAX_INTERSECT_BRICKS. See the slabLevel watcher above.
+    r.setLevelFloor?.(slabLevel.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')

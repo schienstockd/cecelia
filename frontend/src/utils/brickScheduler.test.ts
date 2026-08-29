@@ -185,27 +185,92 @@ describe('scheduleBricks', () => {
     expect(dec1.toLoad.some(s => s.brick.bx === dec0.toLoad[0].brick.bx)).toBe(true)
   })
 
-  it('pinLevel overrides SSE — a store with pyramid renders at the pinned level, not the picker\'s choice', () => {
+  it('floorLevel clamps the SSE picker — SSE-desired coarser than floor still returns floor', () => {
+    // Zoomed out on a 6-level pyramid: SSE picks something coarse (~L5). Floor at L2 clamps to
+    // L2 — but the point of the FLOOR isn't to force COARSER, it's to force finer. The clamp
+    // uses min(sseLevel, floor), so a coarser SSE pick is bumped down to the floor.
     const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 6 }
-    const view = centreView(200)
-    // SSE picker's choice at this camera might be L0 or L1; regardless, pinLevel=3 must win.
-    const dec = scheduleBricks(view, world, new Set(), undefined, 3)
-    expect(dec.level).toBe(3)
-    for (const s of dec.toLoad) expect(s.brick.level).toBe(3)
+    const view: BrickViewport = { ...centreView(200), distanceUm: 32768 }
+    // SSE at distanceUm=32768 wants log2(32768/512) = 6, clamped to n-1=5.
+    expect(pickBrickLevel(view, world, undefined)).toBe(5)
+    const dec = scheduleBricks(view, world, new Set(), undefined, 2)
+    expect(dec.level).toBe(2)
+    for (const s of dec.toLoad) expect(s.brick.level).toBe(2)
   })
 
-  it('pinLevel clamps to [0, nLevels-1]', () => {
+  it('SSE finer than floor is allowed — zoom-in loads finer bricks without user changing dropdown', () => {
+    // Zoomed in on a 6-level pyramid at floor=L5 (Auto default). SSE picks L0 (close camera).
+    // Floor at L5 (coarsest possible) doesn't restrict — L0 wins.
+    const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 6 }
+    const view: BrickViewport = { ...centreView(16), distanceUm: 256 }
+    // Confirm SSE would pick a fine level here.
+    expect(pickBrickLevel(view, world, undefined)).toBeLessThan(5)
+    // Floor at coarsest (Auto default) → SSE's finer pick wins.
+    const dec = scheduleBricks(view, world, new Set(), undefined, 5)
+    expect(dec.level).toBeLessThan(5)
+  })
+
+  it('floorLevel clamps to [0, nLevels-1]', () => {
     const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 3 }
-    const view = centreView(200)
+    // Zoom out enough that SSE would go for the coarsest, so out-of-range floors are the whole
+    // constraint (not just a min against SSE).
+    const view: BrickViewport = { ...centreView(200), distanceUm: 1e6 }
     expect(scheduleBricks(view, world, new Set(), undefined, 9).level).toBe(2)
-    expect(scheduleBricks(view, world, new Set(), undefined, -5).level).toBe(0)
+    // A negative floor is dropped (undefined semantics) — SSE freely picks, ends up at coarsest.
+    expect(scheduleBricks(view, world, new Set(), undefined, -5).level).toBe(2)
   })
 
-  it('undefined pinLevel falls back to the SSE picker (backwards compat)', () => {
+  it('undefined floorLevel == floor at nLevels-1 (no restriction)', () => {
     const view = centreView(200)
-    const withPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined)
-    const noPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, undefined)
-    expect(withPin.level).toBe(noPin.level)
+    const noFloor = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, undefined)
+    const coarsestFloor = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, SISPLK_WORLD.nLevels - 1)
+    expect(noFloor.level).toBe(coarsestFloor.level)
+  })
+
+  it('over-fetch guard coarsens the level when the intersect list is too large', () => {
+    // Wide viewport at fit distance on a "huge" store — many bricks intersect at fine level.
+    // Guard should coarsen until under MAX_INTERSECT_BRICKS. Uses a big-grid world (16x16 at L0)
+    // so L0 has 256 bricks, L2 has 16 — well under the 32-brick default.
+    const bigWorld: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [1, 1, 1],
+      extentVoxL0: [128 * 16, 128 * 16, 4],
+      nLevels: 4,
+    }
+    // Camera close in, but viewport covers the whole store — mimics f8gzA2 fit distance.
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [128 * 8, 128 * 8, 2],
+      halfWUm: 128 * 8, halfHUm: 128 * 8, halfDUm: 100,
+      focalPx: 512, distanceUm: 128,   // fine, so SSE wants L0
+    }
+    // SSE alone would pick L0 with 256+ bricks — over MAX_INTERSECT_BRICKS.
+    expect(pickBrickLevel(view, bigWorld, undefined)).toBe(0)
+    expect(bricksIntersectingViewport(view, bigWorld, 0).length).toBeGreaterThan(32)
+    // Guard walks up to L2 (or coarser) to stay under 32.
+    const dec = scheduleBricks(view, bigWorld, new Set(), undefined, 3)
+    expect(dec.level).toBeGreaterThan(0)
+    expect(bricksIntersectingViewport(view, bigWorld, dec.level).length).toBeLessThanOrEqual(32)
+  })
+
+  it('over-fetch guard respects the floor — never coarsens past what the user asked', () => {
+    // Same setup: even with a wide viewport, if the user pinned floor at L1, the guard cannot
+    // coarsen past L1 — even if L1 is still over MAX_INTERSECT_BRICKS.
+    const bigWorld: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [1, 1, 1],
+      extentVoxL0: [128 * 16, 128 * 16, 4],
+      nLevels: 4,
+    }
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [128 * 8, 128 * 8, 2],
+      halfWUm: 128 * 8, halfHUm: 128 * 8, halfDUm: 100,
+      focalPx: 512, distanceUm: 128,
+    }
+    // Floor = L1 — guard can walk L0 → L1 but not further.
+    const dec = scheduleBricks(view, bigWorld, new Set(), undefined, 1)
+    expect(dec.level).toBe(1)
   })
 })
 

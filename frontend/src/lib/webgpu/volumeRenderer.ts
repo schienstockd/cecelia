@@ -235,14 +235,15 @@ export interface VolumeRenderer {
    */
   setPrefetchTimepoints?(list: number[]): void
   /**
-   * Brick renderer only: pin the scheduler to the caller's chosen LOD level, bypassing SSE.
-   * `undefined` (or a negative number) re-enables the SSE picker. Threaded from ViewerWindow's
-   * `slabLevel` computed so brick honours the same user override the flat renderer does — the
-   * bytes-fetched gap between them on multi-level statics (measured 2026-08-29: 168× on
-   * f8gzA2) was almost entirely SSE picking finer than flat's coarsest-default. Absent on the
-   * flat renderer — its `pickVolumeLevel` already picks per fetch, no runtime setter needed.
+   * Brick renderer only: floor for the SSE-picked LOD — coarsest level the scheduler is allowed
+   * to use. `undefined` (or a negative number) means no floor (freely SSE). Threaded from
+   * ViewerWindow's `slabLevel` computed. Replaces the 8b780fd pin: the pin blocked adaptive LOD
+   * outright (SispLk zoom-in stuck at L5, 2026-08-29 screenshot). Over-fetch protection now
+   * comes from `MAX_INTERSECT_BRICKS` inside `scheduleBricks` — coarser than picking a hard pin,
+   * but wide-viewport-on-huge-L0 (f8gzA2 fit) is exactly what the intersect count catches.
+   * Absent on the flat renderer — its `pickVolumeLevel` already picks per fetch.
    */
-  setLevelOverride?(level: number | undefined): void
+  setLevelFloor?(level: number | undefined): void
   /**
    * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
    * every resident brick's virtual key plus the in-flight fetch keys — the caller filters

@@ -62,9 +62,20 @@ Three things follow from this that Sonnet's earlier read (2026-08-27) didn't hav
    worth building for what changes about zero times per session. `bricksEnabled` becomes a
    `computed` read once inside the mount closure; `nLevels`/`nX`/`nY` don't move for one image.
 
-4. **`pickVolumeLevel` stays** in the flat path. Kill Decision 8 of KILN_BRICK_PLAN ("fallback is
-   the current path") — that reads as a design retreat. It isn't; flat + `pickVolumeLevel` is the
-   RIGHT renderer for the small-image case the predicate points at.
+4. **The user dropdown is a FLOOR, not a pin. SSE reloads finer on zoom-in.** Reversal of the
+   8b780fd `setLevelOverride` pin. Dominik screenshot 2026-08-29 (SispLk zoomed IN, still L5,
+   one L5 voxel covering ~30 device px): the pin blocks the exact reason the pyramid exists. New
+   rule:
+   - "Auto" (dropdown = -1) → floor = `n-1` (coarsest); SSE freely picks finer as viewport shrinks.
+   - Explicit level (dropdown = k) → floor = k; SSE never coarser than k, always finer if warranted.
+   - **Over-fetch guard** — if the SSE-desired level's viewport intersect list exceeds
+     `MAX_INTERSECT_BRICKS`, coarsen one level at a time until it fits (or floor is reached). This
+     is the honest fix for f8gzA2 fit-distance: 168× over-fetch was SSE picking L0-L1 for a wide
+     viewport, not SSE being wrong — bounding the intersect count at BOTH ends is what the pin
+     approximated poorly.
+   - `pickVolumeLevel` **stays** in the flat path unchanged; it defines the FLOOR the brick path
+     clamps against, not the render level.
+   - Rename `setLevelOverride` → `setLevelFloor` (behaviour change, name change follows).
 
 5. **Perf ratchet applies to the case brick REPLACES flat.** The 5.3 ms MIP budget from
    `NAPARI_WEBGPU_AUDIT.md` is a bar for stores the predicate says "use brick" (i.e. mostly the
@@ -75,6 +86,21 @@ Three things follow from this that Sonnet's earlier read (2026-08-27) didn't hav
    (P0.5 in the old plan). Nothing here needs a server change.
 
 ## Phased build sequence
+
+**B0 — Unpin LOD, wire the floor + SSE + over-fetch guard.** Blocks B1: with the pin in place, zoom
+on SispLk sits on L5 while the user asks for L0 (screenshot 2026-08-29). Concrete:
+- `frontend/src/lib/webgpu/brickVolumeRenderer.ts` — rename `setLevelOverride` → `setLevelFloor`.
+  Internal `levelOverride` becomes `levelFloor`. `scheduleBricks` accepts `floorLevel` and calls
+  `pickBrickLevel` with `previousLevel`, then clamps to `min(chosen, floorLevel)`.
+- `frontend/src/utils/brickScheduler.ts` — add `MAX_INTERSECT_BRICKS` (start at 32) and the guard:
+  if `bricksIntersectingViewport(view, world, chosen).length > MAX_INTERSECT_BRICKS`, walk one level
+  coarser until it fits (bounded by `floorLevel`).
+- `frontend/src/modules/ViewerWindow.vue` — the `watch(slabLevel, r.setLevelOverride)` at line 2094
+  becomes `r.setLevelFloor?.(slabLevel.value)`; nothing else in ViewerWindow needs to change.
+- Chip false-negative: Dominik screenshot shows all 4 core L5 bricks resident with the chip still
+  visible → `coreBricksResident(displayT)` false-negatives. Diagnose in the same PR (may resolve when
+  the level path changes; if not, add a targeted fix).
+- Cost: one PR. Deliverable: zoom in on SispLk → L4 → L3 → L0 loads, atlas bytes stay bounded.
 
 **B1 — Re-baseline post-#702.** One browser session on the five reference images. Save fresh bench
 blobs, drop into `~/Downloads/TMP/bench/`. The one number that changes the plan: Dml3RG's brick MB
