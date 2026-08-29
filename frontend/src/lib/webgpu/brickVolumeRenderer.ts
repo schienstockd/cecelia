@@ -1248,10 +1248,15 @@ export async function createBrickVolumeRenderer(
         currentLevel: atlas.currentLevel,
         displayT,
         boundT,
-        // Whether the frame the shader is painting is COMPLETE — reused directly from the
-        // gate `show(t)` uses to advance displayT. False = the unblank rule promoted an
-        // incomplete t and the canvas is showing a partial frame.
-        displayValid: displayT >= 0 && coreBricksResident(displayT),
+        // Whether the canvas reflects the TARGET the user asked for, AND is complete. False
+        // covers both flavours of "not the whole truth":
+        //   - stale: `displayT !== boundT` (hold-on-cold keeps the shader on the last-good t
+        //     while the scheduler chases the new one — the pixels are FROM AN OLDER FRAME,
+        //     not the timepoint the user scrubbed to).
+        //   - partial: `displayT === boundT` but the "unblank" rule (ad0a20ec) advanced
+        //     without every core brick landing (holes = `EMPTY_SLOT`).
+        // Reuses the same `coreBricksResident` predicate `show(t)`'s ready-check runs.
+        displayValid: displayT >= 0 && displayT === boundT && coreBricksResident(displayT),
         brickSizeVox: atlas.layout.brickSizeVox,
       }
     },

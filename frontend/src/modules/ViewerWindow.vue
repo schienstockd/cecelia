@@ -2207,14 +2207,15 @@ const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: nu
 const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
 const brickCurrentLevel = ref<number | undefined>(undefined)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
-/** Whether the shader's page table is complete for the current viewport at `displayT`. False
- *  when the "unblank" rule promoted the display to a partly-loaded t (the canvas is showing
- *  a mix of real bricks + EMPTY_SLOT holes, i.e. the pixels are lying). Drives the partial-
- *  frame chip. Initial `true` = we haven't drawn anything yet, so nothing to warn about. */
+/** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
+ *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
+ *  drawing an OLDER t while the scheduler chases the target) and unblank partial frames
+ *  (target t drawn with `EMPTY_SLOT` holes). Drives the canvas-invalid chip. Initial `true`
+ *  = we haven't drawn anything yet, so nothing to warn about. */
 const brickDisplayValid = ref<boolean>(true)
-/** Bricks path only: is the frame ON SCREEN a partial one? True gates the "Partial frame"
- *  chip and reads clean in the template. `shownT >= 0` gate = don't fire during initial
- *  load (the "Loading timepoint…" chip already owns that state). */
+/** Bricks path only: is the canvas out of sync with the target? True gates the amber chip.
+ *  `shownT >= 0` gate = don't fire during initial load (the "Loading timepoint…" chip
+ *  already owns that state). */
 const canvasPartial = computed(() =>
   bricksEnabled && shownT.value >= 0 && !brickDisplayValid.value)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
@@ -3055,16 +3056,16 @@ onUnmounted(() => {
       <div v-else-if="shownT < 0" class="vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
       </div>
-      <!-- Bricks path only: the "unblank" rule (ad0a20ec) advances displayT to a t whose core
-           bricks aren't fully resident yet, so the shader draws whatever landed + EMPTY_SLOT
-           holes for the rest. Legitimate as a hold-vs-blank trade-off, but the pixels are a
-           partial frame the user should not treat as truth. Amber chip surfaces that — same
-           slot as "Loading timepoint…", triggered only after we've shown at least one frame
-           (`shownT >= 0`), so it never fights the initial-load message. -->
+      <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
+           STALE (hold-on-cold keeps displayT on the last-good t while the scheduler chases
+           the new one — canvas shows an OLDER frame than the user scrubbed to) and PARTIAL
+           (unblank rule advanced displayT before every core brick landed — target frame with
+           EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
+           `shownT >= 0` so it never fights the initial-load message. -->
       <div v-else-if="canvasPartial" class="vw-status-chip vw-status-chip-warn"
-           v-tooltip.top="'Some bricks for this timepoint have not landed yet — the canvas is showing empty regions'">
+           v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
         <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
-        <span>Partial frame</span>
+        <span>Loading bricks…</span>
       </div>
       <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
            a small image still benefits from a corner reference while zoomed in (Dominik, 2026-08-26).
