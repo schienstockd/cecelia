@@ -117,7 +117,12 @@ const bricksEnabled = String(route.query.bricks ?? '') === '1'
  * - `?brickHold=0|1`  — hold going-finer swaps until current level is stable (default 1).
  */
 const parseNumQuery = (v: unknown, fallback: number): number => {
-  const n = Number(String(v ?? '')); return Number.isFinite(n) ? n : fallback
+  // `Number('')` returns 0 (finite), so an unset URL param would silently override the fallback
+  // with 0. Guard on the raw string being empty before converting.
+  const s = String(v ?? '')
+  if (s === '') return fallback
+  const n = Number(s)
+  return Number.isFinite(n) ? n : fallback
 }
 const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
