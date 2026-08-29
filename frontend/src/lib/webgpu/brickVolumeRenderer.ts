@@ -65,14 +65,13 @@ const BRICK_Z_MAX = 128
  *  magnitude as the flat renderer's typical timepoint budget on Dominik's RTX 2000 Ada. */
 const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
 
-/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host,
- *  so a scheduler that kicks 500 requests still processes them 6 at a time — the extras just
- *  sit in the queue eating memory and cancellation overhead. Match the browser's cap; missed
- *  bricks come back on the next scheduler tick (which runs every draw). Measured 2026-08-29:
- *  bench harness on f8gzA2 pulled 2.85 GB with no cap; the flat renderer at the same view
- *  fetched 17 MB. Level thrashing shrank after this cap because aborted-not-yet-canceled
- *  fetches no longer flood the queue. */
-const MAX_INFLIGHT = 8
+/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host
+ *  and HTTP/2 multiplexes freely; 16 gives room for both while leaving slack for prefetch t's
+ *  behind boundT's bricks. 8 (the initial pick) was too tight — the scheduler kicks the current
+ *  t's bricks first, and at 16 bricks per timepoint (fXgbTl at brickSize [128,128,32]) that
+ *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
+ *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
+const MAX_INFLIGHT = 16
 
 interface AtlasState {
   layout: AtlasLayout

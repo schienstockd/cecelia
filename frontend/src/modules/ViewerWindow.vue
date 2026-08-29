@@ -1837,6 +1837,16 @@ function tick() {
       // frame 0 — playback then waits forever for something nothing is fetching.
       waitingFor.value = step.next
       schedulePump(step.next)
+      // Brick renderer only: schedulePump is a flat-renderer path — nothing on the brick side
+      // hears it. Push step.next into the prefetch window so the brick tickScheduler starts
+      // fetching for it now, or a stall never unstalls (nothing else is telling the scheduler
+      // this t matters). Under playback cap=4 so the window covers the direction of travel.
+      const m = meta.value
+      if (r?.setPrefetchTimepoints && m) {
+        const dir = Math.sign(step.next - t.value) || 1
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, 4))
+      }
+      frame.redraw()
     } else {
       waitingFor.value = -1
       gotoT(step.t)
