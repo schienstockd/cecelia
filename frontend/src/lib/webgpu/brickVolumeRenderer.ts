@@ -795,15 +795,26 @@ export async function createBrickVolumeRenderer(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
+    const decRaw = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
+
+    // Bootstrap-to-floor: on the very first swap (currentLevel is undefined), force the initial
+    // level to `floor` regardless of what SSE picked. Every subsequent swap will then have a
+    // populated prev-page-table to fall back on — no "flash of black" during initial load while
+    // finer bricks are still fetching, because the shader can sample the floor bricks for holes.
+    // Floor is cheap: at the coarsest level of the pyramid, a store like SispLk needs 4 bricks
+    // for full coverage. Once floor is stable, the hold-going-finer gate lets SSE take over.
+    const isFirstSwap = atlas.currentLevel === undefined
+    const bootstrapLevel = levelFloor !== undefined
+      ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(levelFloor)))
+      : world.nLevels - 1
+    const dec = isFirstSwap ? { ...decRaw, level: bootstrapLevel } : decRaw
 
     // Hold-going-finer: only advance to a finer level once the CURRENT level is fully resident
     // at the viewport. Otherwise a rapid zoom cascades L5→L3→L1→... and each swap's prev-page-
     // table snapshot is partial. Two swaps deep the shader has nowhere to fall back to — the
     // "black rectangle in the middle" symptom Dominik hit 2026-08-29. Coarser is always allowed
     // (going the other way is a viewport-widening move; the coarser bricks are cheap and the
-    // prev-page-table is definitionally more complete). Initial `undefined → k` always fires so
-    // the atlas gets its first level.
+    // prev-page-table is definitionally more complete). Initial `undefined → floor` always fires.
     const goingFiner = atlas.currentLevel !== undefined && dec.level < atlas.currentLevel
     const currentStable = atlas.currentLevel !== undefined && coreBricksResident(displayT)
     const swapAllowed = atlas.currentLevel !== dec.level
