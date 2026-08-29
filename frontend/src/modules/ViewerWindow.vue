@@ -2238,6 +2238,22 @@ watch(bricksMapShown, v => localStorage.setItem('cc.vw.brickmap', String(v)))
  *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
 const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
 const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+/** Bench diagnostic: how many bricks at the CURRENT atlas level are resident vs still fetching.
+ *  Filters by target `t` (matches the mini-map convention). Populated only when `bricksEnabled`. */
+const brickResidentsAtLevel = computed(() => {
+  const lv = brickCurrentLevel.value; const tp = t.value
+  if (lv === undefined) return 0
+  let n = 0
+  for (const e of brickResidents.value) if (e.level === lv && e.t === tp) n++
+  return n
+})
+const brickInflightAtLevel = computed(() => {
+  const lv = brickCurrentLevel.value; const tp = t.value
+  if (lv === undefined) return 0
+  let n = 0
+  for (const e of brickInflight.value) if (e.level === lv && e.t === tp) n++
+  return n
+})
 const brickCurrentLevel = ref<number | undefined>(undefined)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
@@ -3384,6 +3400,8 @@ onUnmounted(() => {
               <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
               <span class="cc-muted">Cam</span>
               <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
+              <span class="cc-muted">Bricks</span>
+              <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight</span>
             </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">
