@@ -65,6 +65,15 @@ const BRICK_Z_MAX = 128
  *  magnitude as the flat renderer's typical timepoint budget on Dominik's RTX 2000 Ada. */
 const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
 
+/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host,
+ *  so a scheduler that kicks 500 requests still processes them 6 at a time — the extras just
+ *  sit in the queue eating memory and cancellation overhead. Match the browser's cap; missed
+ *  bricks come back on the next scheduler tick (which runs every draw). Measured 2026-08-29:
+ *  bench harness on f8gzA2 pulled 2.85 GB with no cap; the flat renderer at the same view
+ *  fetched 17 MB. Level thrashing shrank after this cap because aborted-not-yet-canceled
+ *  fetches no longer flood the queue. */
+const MAX_INFLIGHT = 8
+
 interface AtlasState {
   layout: AtlasLayout
   texture: BrickAtlasTexture
@@ -302,6 +311,12 @@ export async function createBrickVolumeRenderer(
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
    *  playback advances without cold-fetching each new t. Empty = current-t only. */
   let prefetchTs: number[] = []
+  /** User-chosen level override — pins scheduler to this level, bypassing SSE. Undefined =
+   *  fall back to the SSE picker. Threaded through by ViewerWindow from its `slabLevel`
+   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). This closes the
+   *  bytes-fetched gap between the two renderers on multi-level statics — the 168× we saw on
+   *  f8gzA2 was almost entirely brick choosing L0-L1 where flat chose L5. */
+  let levelOverride: number | undefined = undefined
 
   /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
    *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
@@ -487,6 +502,10 @@ export async function createBrickVolumeRenderer(
     if (currentMeta === null || source === null || atlas === null) return
     const key = brickKey(brick)
     if (inflight.has(key)) return
+    // Backpressure: the browser queues everything past ~6 concurrent HTTP/1.1 requests anyway,
+    // and an unbounded fan-out floods the queue with fetches the scheduler no longer wants by
+    // the time they run. Next tick picks up whatever we skipped. See MAX_INFLIGHT comment.
+    if (inflight.size >= MAX_INFLIGHT) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
@@ -625,7 +644,7 @@ export async function createBrickVolumeRenderer(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel)
+    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelOverride)
 
     // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
     // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
@@ -633,8 +652,12 @@ export async function createBrickVolumeRenderer(
     // re-indexes into the same texture. The PageTable object stays too: its entries still name
     // real slots, they're just now indexed by the OLDER grid dims.
     if (atlas.currentLevel !== dec.level) {
-      inflight.forEach(ac => ac.abort())
-      inflight.clear()
+      // DON'T abort inflight: the requests are already on the wire, and cancelling only stops
+      // the CLIENT waiting — the server still ships the bytes. Let them land; the arrival
+      // guard (`atlas.currentLevel !== brick.level`) discards stale-level bytes silently, and
+      // an in-progress fetch for the LEVEL we're leaving might still be useful if the camera
+      // zooms back. Measured 2026-08-29: abort-on-swap combined with SSE hysteresis was the
+      // primary cause of the "blank canvas, never backfills" symptom on Dml3RG scrub.
       // Only promote current → prev when there IS a current level (skip the initial
       // undefined → 0 transition, which has nothing worth keeping around).
       if (atlas.currentLevel !== undefined) {
@@ -1068,6 +1091,13 @@ export async function createBrickVolumeRenderer(
     setNeedsRedraw(cb) { needsRedraw = cb },
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
+    setLevelOverride(level) {
+      // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the
+      // brick renderer honours the same choice the flat renderer does. `undefined` re-enables
+      // the SSE picker. Same-value writes are cheap; ViewerWindow calls this unconditionally
+      // from a `slabLevel` watch.
+      levelOverride = level === undefined || level < 0 ? undefined : Math.floor(level)
+    },
 
     brickResidency() {
       if (atlas === null) {
