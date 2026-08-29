@@ -109,6 +109,20 @@ const imageUid = String(route.query.image ?? '')
  */
 const bricksEnabled = String(route.query.bricks ?? '') === '1'
 /**
+ * Brick LOD tuning knobs — URL params for interactive feel-testing. Applied ONCE at mount to
+ * the renderer. Defaults reproduce the shipped behaviour; refresh with a new value to try
+ * something else.
+ * - `?brickThr=N`     — core intersect ceiling for the over-fetch guard (default 256).
+ * - `?brickBias=N`    — added to the SSE-picked level (positive = coarser, negative = finer).
+ * - `?brickHold=0|1`  — hold going-finer swaps until current level is stable (default 1).
+ */
+const parseNumQuery = (v: unknown, fallback: number): number => {
+  const n = Number(String(v ?? '')); return Number.isFinite(n) ? n : fallback
+}
+const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
+const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
+const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
+/**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
  * User drives the workload (scrubbing, zooming); Save button downloads a JSON blob for
@@ -2489,13 +2503,16 @@ async function ensureRenderer() {
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
+      // Apply URL-provided LOD tuning knobs. No-ops on the flat renderer. See `parseNumQuery`
+      // block at the top of the module for the param names.
+      r.setSchedulerKnobs?.({ maxIntersect: brickKnobThr, bias: brickKnobBias })
+      r.setHoldFinerEnabled?.(brickKnobHold)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
-      // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
-      // cheap even with a burst of arrivals in the same tick. Also refresh the residency
-      // snapshot — otherwise the mini-map only updates on brick LAND (setOnBrickLoaded), which
-      // means the "amber = fetching" phase is invisible because syncCacheState only ever sees
-      // fetches that already resolved (Dominik, 2026-08-29). syncCacheState is a couple of
-      // linear walks; fine at rAF rate. No-op on the flat renderer.
+      // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
+      // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
+      // phase is invisible because `syncCacheState` only ever sees fetches that already
+      // resolved. `syncCacheState` is a couple of linear walks; fine at rAF rate. No-op on the
+      // flat renderer.
       r.setNeedsRedraw?.(() => { syncCacheState(); frame.redraw() })
       // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
       // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
@@ -3402,6 +3419,10 @@ onUnmounted(() => {
               <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
               <span class="cc-muted">Bricks</span>
               <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight</span>
+              <span class="cc-muted">Knobs</span>
+              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
+                thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
+              </span>
             </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">

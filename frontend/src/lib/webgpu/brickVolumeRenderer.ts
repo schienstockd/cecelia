@@ -29,7 +29,7 @@ import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTex
 import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
-  bricksIntersectingViewport,
+  bricksIntersectingViewport, DEFAULT_KNOBS, type SchedulerKnobs,
 } from '../../utils/brickScheduler'
 import {
   fetchBrick, brickSlabUrl, padBrickPayload,
@@ -331,6 +331,13 @@ export async function createBrickVolumeRenderer(
    *  pin: pinning blocked zoom-in adaptive LOD outright (SispLk stuck on L5 at deep zoom).
    *  Over-fetch protection now sits inside `scheduleBricks` via `MAX_INTERSECT_BRICKS`. */
   let levelFloor: number | undefined = undefined
+  /** Tunable LOD knobs — `?brickThr=` and `?brickBias=` URL params override at mount. Defaults
+   *  reproduce the shipped behaviour. */
+  let schedulerKnobs: SchedulerKnobs = { ...DEFAULT_KNOBS }
+  /** Whether to hold going-finer swaps until the current level's core is fully resident. Default
+   *  true (protects prev-level fallback from arriving mid-load; the fix for the black-rectangle
+   *  pattern). URL param `?brickHold=0` disables. */
+  let holdFinerEnabled = true
 
   /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
    *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
@@ -776,7 +783,7 @@ export async function createBrickVolumeRenderer(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor)
+    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
 
     // Hold-going-finer: only advance to a finer level once the CURRENT level is fully resident
     // at the viewport. Otherwise a rapid zoom cascades L5→L3→L1→... and each swap's prev-page-
@@ -787,7 +794,8 @@ export async function createBrickVolumeRenderer(
     // the atlas gets its first level.
     const goingFiner = atlas.currentLevel !== undefined && dec.level < atlas.currentLevel
     const currentStable = atlas.currentLevel !== undefined && coreBricksResident(displayT)
-    const swapAllowed = atlas.currentLevel !== dec.level && (!goingFiner || currentStable)
+    const swapAllowed = atlas.currentLevel !== dec.level
+      && (!goingFiner || !holdFinerEnabled || currentStable)
     // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
     // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
     // slots don't change — they hold whatever bricks are LRU-warm — so the prev page table just
@@ -1279,6 +1287,12 @@ export async function createBrickVolumeRenderer(
       // ViewerWindow calls this unconditionally from a `slabLevel` watch.
       levelFloor = level === undefined || level < 0 ? undefined : Math.floor(level)
     },
+    setSchedulerKnobs(k) {
+      // Merge over the current knobs; ViewerWindow reads `?brickThr=` and `?brickBias=` on
+      // mount and calls this once. Same-tick tickScheduler picks up the change on next call.
+      schedulerKnobs = { ...schedulerKnobs, ...k }
+    },
+    setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
 
     brickResidency() {
       if (atlas === null) {

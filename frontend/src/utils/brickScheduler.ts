@@ -282,29 +282,42 @@ export type FloorLevel = number | undefined
  * level pick: at max zoom on SispLk, halo doubles the total count but the frame cost is the
  * core viewport. First cut counted total (32) and coarsened SispLk max-zoom to L3 (Dominik
  * screenshot 2026-08-29), which is exactly the pin behaviour we were replacing. Switched to
- * core-only + 64: SispLk max-zoom lands at L1 (core=45), f8gzA2 fit stays at L5-floor (core=45,
- * under threshold, but SSE-wanted L0-L2 all coarsen through it — the loop still hits floor).
- * Re-measure in B1 and tune from real bench data.
+ * core-only + 64 -> tuned to 256 after user testing. URL param `brickThr` overrides live.
  */
 export const MAX_INTERSECT_BRICKS = 256
 
 /**
+ * Tunable knobs for the LOD picker. Exposed via URL params (see ViewerWindow) so Dominik can
+ * feel out the trade-offs live. Defaults reproduce the shipped behaviour; URL params override.
+ * - `maxIntersect` — CORE brick count ceiling for the over-fetch guard. Higher = more ambitious
+ *   (fetches finer bricks even on wider viewports); lower = safer memory but stays coarser.
+ * - `bias` — added to the SSE-picked level BEFORE floor and guard. Positive = coarser (draw less
+ *   detail than the pinhole math wants); negative = finer.
+ */
+export interface SchedulerKnobs {
+  maxIntersect: number
+  bias: number
+}
+export const DEFAULT_KNOBS: SchedulerKnobs = { maxIntersect: MAX_INTERSECT_BRICKS, bias: 0 }
+
+/**
  * Guard the SSE-desired level against over-fetch. Counts core (ring === 0) bricks only — halo
  * is prefetch and not part of what the frame actually samples. If the core count at the chosen
- * level exceeds `MAX_INTERSECT_BRICKS`, walk one level coarser and re-check, bounded by
- * `floorLevel`. Returns the level the scheduler should actually use.
+ * level exceeds `maxIntersect`, walk one level coarser and re-check, bounded by `floorLevel`.
+ * Returns the level the scheduler should actually use.
  */
 export function guardIntersectCost(
   view: BrickViewport,
   world: BrickWorld,
   chosen: number,
   floorLevel: number,
+  maxIntersect: number = MAX_INTERSECT_BRICKS,
 ): number {
   let level = chosen
   while (level < floorLevel) {
     const coreCount = bricksIntersectingViewport(view, world, level)
       .filter(s => s.ring === 0).length
-    if (coreCount <= MAX_INTERSECT_BRICKS) break
+    if (coreCount <= maxIntersect) break
     level += 1
   }
   return level
@@ -329,12 +342,18 @@ export function scheduleBricks(
   resident: ReadonlySet<string>,
   previousLevel: number | undefined,
   floorLevel?: FloorLevel,
+  knobs: SchedulerKnobs = DEFAULT_KNOBS,
 ): { level: number; toLoad: ScheduledBrick[]; toEvict: string[] } {
   const floor = floorLevel !== undefined && Number.isFinite(floorLevel) && floorLevel >= 0
     ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(floorLevel)))
     : world.nLevels - 1
-  const chosen = Math.min(pickBrickLevel(view, world, previousLevel), floor)
-  const level = guardIntersectCost(view, world, chosen, floor)
+  // Apply the tunable bias to the SSE pick BEFORE clamping. Positive bias coarsens (pushes
+  // toward the floor); negative bias sharpens (pushes toward L0). Clamped to the pyramid range
+  // before the floor clamp so a wild bias can't drive the picker out of bounds.
+  const raw = pickBrickLevel(view, world, previousLevel) + knobs.bias
+  const biased = Math.max(0, Math.min(world.nLevels - 1, Math.round(raw)))
+  const chosen = Math.min(biased, floor)
+  const level = guardIntersectCost(view, world, chosen, floor, knobs.maxIntersect)
   const scheduled = bricksIntersectingViewport(view, world, level)
   const wantedKeys = new Set(scheduled.map(s => brickKey(s.brick)))
   const toLoad = scheduled.filter(s => !resident.has(brickKey(s.brick)))
