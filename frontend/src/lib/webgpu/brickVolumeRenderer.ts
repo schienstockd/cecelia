@@ -695,15 +695,21 @@ export async function createBrickVolumeRenderer(
   const tickScheduler = (): void => {
     if (atlas === null || currentMeta === null) return
     frameNow += 1
-    // Auto-advance displayT: if a landed brick pushed residency past the threshold since the
-    // last tick, promote and rebuild before we render. Without this, a scrub past residency
-    // stays stuck on the old frame indefinitely — the play loop's `show(t)=false` never
-    // re-checks after the initial call. `onDisplayAdvanced` signals ViewerWindow so it can
-    // sync `shownT` (overlays) with the new t.
-    if (boundT !== displayT && coreBricksResident(boundT)) {
-      displayT = boundT
-      rebuildPageTableForDisplayT()
-      onDisplayAdvanced?.(displayT)
+    // Auto-advance displayT under the same rule as show(t): promote when boundT is ready OR
+    // when the OLD displayT's bricks are no longer drawable (evicted, moved out of viewport).
+    // The "OR !displayDrawable" clause exists because a scrub-then-play-then-stop sequence can
+    // leave displayT pointing at a t whose bricks were LRU-evicted while playback moved past
+    // — without this the shader draws a fully black canvas from an all-EMPTY pageTableCpu
+    // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
+    // stays in sync with what the volume is drawing.
+    if (boundT !== displayT) {
+      const targetReady = coreBricksResident(boundT)
+      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
+      if (targetReady || !displayDrawable) {
+        displayT = boundT
+        rebuildPageTableForDisplayT()
+        onDisplayAdvanced?.(displayT)
+      }
     }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
@@ -976,17 +982,17 @@ export async function createBrickVolumeRenderer(
       // Bump the scheduler target unconditionally — the fetch loop needs to know what to fetch
       // for next, whether or not we're ready to draw it yet.
       boundT = t
-      // Advance the DISPLAYED timepoint only when core viewport bricks at t are resident. If
-      // they aren't, keep drawing whatever displayT already had (the previous good frame). The
-      // "half-black seam" symptom from 2026-08-29 was this being missing.
+      // Advance the DISPLAYED timepoint under two conditions, either sufficient:
+      //   (a) core bricks at t are resident (the happy path — we can draw a full frame), OR
+      //   (b) the OLD displayT is no longer drawable (its bricks were evicted or the viewport
+      //       moved off them). If we insist on `ready` alone and displayT's bricks are gone,
+      //       the shader draws a fully black canvas — worse than a partial frame at the new t.
+      //       Symptom Dominik hit 2026-08-29 after start-stop-play: bricks resident at boundT,
+      //       displayT stuck at t=0, shader black. Also `displayT === -1` (first-ever show)
+      //       hits this branch — displayT gets set so the shader has bytes to draw.
       const ready = coreBricksResident(t)
-      if (ready && displayT !== t) {
-        displayT = t
-        rebuildPageTableForDisplayT()
-      } else if (displayT === -1 && atlas !== null) {
-        // First-ever show: even if not "ready", we DO need pageTableCpu to reflect this t so a
-        // partial-first-frame renders as SOMETHING (nothing to fall back to). displayT stays -1
-        // so hasTimepoint() reports honestly, but the shader has bytes to draw.
+      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
+      if ((ready || !displayDrawable) && displayT !== t) {
         displayT = t
         rebuildPageTableForDisplayT()
       }

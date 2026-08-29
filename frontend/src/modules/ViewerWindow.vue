@@ -2409,8 +2409,12 @@ async function ensureRenderer() {
       renderer.value = r
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
-      // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
-      r.setNeedsRedraw?.(() => frame.redraw())
+      // cheap even with a burst of arrivals in the same tick. Also refresh the residency
+      // snapshot — otherwise the mini-map only updates on brick LAND (setOnBrickLoaded), which
+      // means the "amber = fetching" phase is invisible because syncCacheState only ever sees
+      // fetches that already resolved (Dominik, 2026-08-29). syncCacheState is a couple of
+      // linear walks; fine at rAF rate. No-op on the flat renderer.
+      r.setNeedsRedraw?.(() => { syncCacheState(); frame.redraw() })
       // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
       // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
       // initial server-shipped `hi` and dragging `hi` below it locks the range.
@@ -3190,17 +3194,14 @@ onUnmounted(() => {
               v-model.number="settings.viewerFps"
               v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
             >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
-          </div>
-          <!-- Playback held while brick fetches catch up. Same signal (`waitingFor`) that lights
-               the busy dot; the caption names WHY playback slowed instead of the user wondering.
-               Auto-hides the moment the next timepoint's core bricks land — see brick renderer's
-               `hasTimepoint`. -->
-          <div v-if="playing && waitingFor >= 0" class="cc-row cc-row-tight vw-hold-hint">
-            <span class="cc-muted cc-fs-3xs"
-                  v-tooltip.bottom="'Playback throttled to fetch rate — pause or lower Fps to skip this'">
-              Waiting for bricks
-            </span>
+            <!-- Playback-throttled indicator: colour the readout number itself amber. Zero layout
+                 impact vs. inserting an icon — the Fps slider already lives in a very narrow
+                 sidebar column, and adding an icon shrinks it further (Dominik, 2026-08-29). -->
+            <span class="cc-readout cc-fs-2xs vw-num"
+                  :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                  v-tooltip.left="playing && waitingFor >= 0
+                    ? 'Playback throttled — fetches are behind the requested Fps'
+                    : 'Requested playback rate'">{{ settings.viewerFps }}</span>
           </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -3873,7 +3874,7 @@ onUnmounted(() => {
   padding: 0.15rem 0.25rem 0.25rem;
 }
 .vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
-/* Hint that playback is fetch-limited. Aligns under the Fps slider with a tiny inset so it
-   reads as a status line to the slider above, not a separate row of controls. */
-.vw-hold-hint { padding-left: 0.4rem; margin-top: -0.1rem; }
+/* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
+   change — the Fps slider stays the size it was. */
+.vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 </style>
