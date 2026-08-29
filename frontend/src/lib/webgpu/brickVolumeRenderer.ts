@@ -539,6 +539,13 @@ export async function createBrickVolumeRenderer(
         // The atlas or the level could have changed while the request was in flight — drop the
         // bytes rather than writing them into a slot that no longer represents this brick.
         inflight.delete(key)
+        // Nudge the frame pump BEFORE any early-return path. `tickScheduler` runs inside `draw`,
+        // and `draw` only fires on `frame.redraw`. Every early-return here (bad payload,
+        // destroyed, level mismatch) skips the success-path `needsRedraw` below — so if all the
+        // in-flight fetches took an early-return path, the pump never woke and the scheduler
+        // never re-issued the missing bricks. "12 inflight forever, 5 missing, doesn't do
+        // anything" (Dominik 2026-08-29). rAF-coalesced, so calling it always is cheap.
+        needsRedraw?.()
         if (payload === null) return
         if (destroyed || atlas === null) return
         if (atlas.currentLevel !== brick.level) return
@@ -634,7 +641,12 @@ export async function createBrickVolumeRenderer(
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
-      .catch(() => { inflight.delete(key) })
+      .catch(() => {
+        inflight.delete(key)
+        // Same reason as the `.then()` early-return needsRedraw: without it, a burst of failed
+        // fetches leaves the frame pump quiescent and `tickScheduler` never re-issues them.
+        needsRedraw?.()
+      })
   }
 
   /** Fire a label brick fetch alongside its intensity twin. Writes into the SAME atlas slot the
