@@ -111,6 +111,62 @@ export function brickSlabUrl(
 }
 
 /**
+ * URL for one label brick — `/api/viewer/slab?labels=<name>` at the same (x, y, z, t) box the
+ * image brick covers. Labels are u32 ids (no channels) so nc is fixed at 1 and there's no cTo.
+ * The server ships them at the same geometry as the image bricks — same page-table entry, same
+ * atlas slot — so the shader's page-table lookup works for both.
+ */
+export function brickLabelSlabUrl(
+  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd' },
+  labelName: string,
+  brick: VirtualBrick,
+  brickSizeVox: readonly [number, number, number],
+  zOffset: number = 0,
+): string {
+  const b = brickBounds(brick, brickSizeVox)
+  return slabUrl({
+    projectUid: base.projectUid,
+    imageUid: base.imageUid,
+    labels: labelName,
+    enc: base.enc,
+    t: brick.t,
+    c: 0,
+    x: b.xLo,
+    xTo: b.xHi,
+    y: b.yLo,
+    yTo: b.yHi,
+    z: b.zLo + zOffset,
+    zTo: b.zHi + zOffset,
+    level: brick.level,
+  })
+}
+
+/** Fetch one label brick. Shape guard: nc must be 1 (labels are single-plane), nz must match,
+ *  nx/ny may be smaller when the server clamped an edge brick. Returns null on any failure so a
+ *  missed label brick leaves the shader drawing intensity without labels rather than crashing. */
+export async function fetchLabelBrick(
+  url: string,
+  expectedBrickSize: readonly [number, number, number],
+  signal?: AbortSignal,
+): Promise<{ bytes: ArrayBuffer; shape: BrickSlabShape } | null> {
+  let res: Response
+  try { res = await fetch(url, { signal }) } catch { return null }
+  if (!res.ok) return null
+  const header = res.headers.get('X-Slab-Shape')
+  const shape = parseBrickSlabShape(header)
+  if (!shape) return null
+  const bytes = await res.arrayBuffer()
+  // Labels are always u32 ids -- 4 bytes/voxel, nc=1. Skip brickShapeError (which is
+  // channel-aware) and roll a smaller check inline.
+  const [ebx, eby, ebz] = expectedBrickSize
+  if (shape.nc !== 1 || shape.nz !== ebz) return null
+  if (shape.nx > ebx || shape.ny > eby) return null
+  const want = shape.nc * shape.nz * shape.ny * shape.nx * 4
+  if (bytes.byteLength !== want) return null
+  return { bytes, shape }
+}
+
+/**
  * Why a response cannot be uploaded to the atlas, or `null` when it can. Same shape as
  * `slabShapeError` in `volumeViewer.ts` — a truncated body or mis-shaped header uploads
  * without complaint and renders a plausible-looking image of the wrong thing.

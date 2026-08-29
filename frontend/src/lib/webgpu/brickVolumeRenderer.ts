@@ -31,7 +31,11 @@ import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
   bricksIntersectingViewport,
 } from '../../utils/brickScheduler'
-import { fetchBrick, brickSlabUrl, padBrickPayload } from '../../utils/brickLoader'
+import {
+  fetchBrick, brickSlabUrl, padBrickPayload,
+  fetchLabelBrick, brickLabelSlabUrl,
+} from '../../utils/brickLoader'
+import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import {
   BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
@@ -45,6 +49,11 @@ export interface BrickSource {
   projectUid: string
   imageUid: string
   valueName?: string
+  /** Segmentation value_name for the mask overlay. When set, every image brick fetch fires a
+   *  parallel `labels=<name>` brick fetch and writes the u32 ids into the label atlas at the
+   *  same slot. Undefined = no labels shown; the placeholder texture stays bound and the
+   *  shader's label path is skipped via `p.lab.x == 0`. */
+  labelName?: string
 }
 
 /** Brick edge in voxels — Decision 2 in KILN_BRICK_PLAN.md. Kept a module constant so both the
@@ -94,6 +103,13 @@ interface AtlasState {
   bindGroup: GPUBindGroup
   /** Currently-sourced LOD level. `undefined` before the first schedule tick. */
   currentLevel: number | undefined
+  /** Per-image label atlas (r32uint), OR the shared placeholder when the source has no
+   *  labelName. Same slot geometry as `texture` except brickZ isn't multiplied by channelsPerBrick
+   *  — labels are single-channel. Bound at binding 5. */
+  labelTexture: GPUTexture
+  /** Whether the atlas above is the real per-image r32uint atlas (true) or the placeholder
+   *  (false). Fetches use this to decide whether to fire label brick requests. */
+  labelsEnabled: boolean
 }
 
 export async function createBrickVolumeRenderer(
@@ -126,6 +142,13 @@ export async function createBrickVolumeRenderer(
       { binding: 3, visibility: GPUShaderStage.FRAGMENT,
         buffer: { type: 'read-only-storage' } },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
+      // Label atlas + palette. ALWAYS bound (WebGPU has no optional binding); when no
+      // segmentation is picked, a 1x1x1 r32uint placeholder rides here and the shader skips the
+      // label path via `p.lab.x == 0`. Same discipline as `volumeRenderer.ts:309`.
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 6, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
     ],
   })
@@ -222,6 +245,23 @@ export async function createBrickVolumeRenderer(
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
+  // Label palette: LABEL_PALETTE_N x 1 rgba8. Written ONCE at renderer construction — the
+  // palette is a golden-angle hue ramp keyed on `id % rows`, so it never depends on the image.
+  const palTex = device.createTexture({
+    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  device.queue.writeTexture(
+    { texture: palTex }, labelPaletteBytes(),
+    { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1],
+  )
+  // Placeholder label atlas — bound whenever a timepoint has no mask, because the bind group has
+  // to be complete. r32uint one-voxel texture whose only value is 0; the shader's `p.lab.x == 0`
+  // check short-circuits every sample of it, so it's a no-op even if the shader accidentally reads.
+  const noLabelAtlas = device.createTexture({
+    size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
+  })
 
   const setupErr = await device.popErrorScope()
   if (setupErr) {
@@ -281,6 +321,11 @@ export async function createBrickVolumeRenderer(
   let segPlaneLo = -1
   let segPlaneHi = -1
 
+  /** Label style. `setLabelStyle(0, _)` disables the label pass in the shader (via `p.lab.x`);
+   *  a non-zero opacity + zero contour = filled cells; non-zero contour = napari's outline. */
+  let labelOpacity = 0
+  let labelContourPx = 0
+
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
   const uniform: UniformState = {
@@ -296,6 +341,8 @@ export async function createBrickVolumeRenderer(
     atlas.texture.destroy()
     atlas.pageTableBuffer.destroy()
     atlas.prevPageTableBuffer.destroy()
+    // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
+    if (atlas.labelsEnabled) atlas.labelTexture.destroy()
     atlas = null
   }
 
@@ -313,7 +360,7 @@ export async function createBrickVolumeRenderer(
 
   const setImage = (
     meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number,
-    _withLabels?: boolean, _renderNX?: number, _renderNY?: number,
+    withLabels?: boolean, _renderNX?: number, _renderNY?: number,
   ): void => {
     currentMeta = meta
     const zd = zDepth ?? meta.nZ
@@ -368,6 +415,26 @@ export async function createBrickVolumeRenderer(
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
 
+    // Label atlas: r32uint, same slot layout as the image atlas (same slotsX/Y/Z, same brickXY)
+    // but Z is `slotsZ * brickZ` — labels have no channel stacking. Only allocated when the
+    // caller flags `withLabels`; otherwise the shared placeholder rides in this slot. The atlas
+    // ALLOCATION is decoupled from whether label bytes are actually fetched — the caller has to
+    // pre-declare labels here for the same reason the flat renderer does (a texture allocation is
+    // expensive; toggling between real and placeholder without warning would drop every landed
+    // brick on the floor). Fetches then gate on `source.labelName` separately.
+    const labelsEnabled = !!withLabels
+    let labelTexture: GPUTexture
+    if (labelsEnabled) {
+      const [bx, by, bz] = layout.brickSizeVox
+      const [sx, sy, sz] = layout.atlasSlotCounts
+      labelTexture = device.createTexture({
+        size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+    } else {
+      labelTexture = noLabelAtlas
+    }
+
     const bindGroup = device.createBindGroup({
       layout: bindGroupLayout,
       entries: [
@@ -376,6 +443,8 @@ export async function createBrickVolumeRenderer(
         { binding: 2, resource: texture.texture.createView() },
         { binding: 3, resource: { buffer: prevPageTableBuffer } },
         { binding: 4, resource: lutTex.createView() },
+        { binding: 5, resource: labelTexture.createView() },
+        { binding: 6, resource: palTex.createView() },
       ],
     })
 
@@ -389,6 +458,7 @@ export async function createBrickVolumeRenderer(
       prevLevel: undefined,
       bindGroup,
       currentLevel: undefined,
+      labelTexture, labelsEnabled,
     }
     uniform.nch = nC
   }
@@ -473,10 +543,63 @@ export async function createBrickVolumeRenderer(
           }
           onBrickLoaded(perChannelMax)
         }
+        // Labels: fire a parallel fetch for the same brick's mask if the source names a
+        // labelName and this atlas has the real label texture bound. Written into the same slot
+        // — a resident brick has both intensity + labels, or intensity alone (opacity is 0 or the
+        // brick simply had no labels landed yet). Fire-and-forget: a label miss must not stall
+        // the image path.
+        if (atlas.labelsEnabled && source?.labelName) {
+          void kickLabelFetch(brick, result.entry.slot, ac.signal)
+        }
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
       .catch(() => { inflight.delete(key) })
+  }
+
+  /** Fire a label brick fetch alongside its intensity twin. Writes into the SAME atlas slot the
+   *  image brick just took, so the shader's one page-table lookup gates both. Discards silently on
+   *  any failure — a missed label brick leaves the shader drawing intensity, which is closer to
+   *  what a user expects than showing an outline over the wrong signal.
+   *
+   *  Kept out of `inflight` (that keys on brick identity, and a label reuses the same key). If the
+   *  slot is reassigned before the label lands, `pageTable.get(key).slot` catches the change and
+   *  the bytes drop cleanly. */
+  const kickLabelFetch = async (
+    brick: VirtualBrick, expectedSlot: number, signal: AbortSignal,
+  ): Promise<void> => {
+    if (!source?.labelName || atlas === null) return
+    const layout = atlas.layout
+    const url = brickLabelSlabUrl(source, source.labelName, brick, layout.brickSizeVox, currentZLo)
+    const payload = await fetchLabelBrick(url, layout.brickSizeVox, signal)
+    if (payload === null) return
+    if (destroyed || atlas === null || !atlas.labelsEnabled) return
+    // Slot may have been reassigned to a different brick since the image landed. Look up the
+    // resident slot and verify — a match means our bytes still target the intensity twin.
+    const key = brickKey(brick)
+    const entry = atlas.pageTable.get(key)
+    if (entry === undefined || entry.slot !== expectedSlot) return
+    const [ebx, eby, ebz] = layout.brickSizeVox
+    const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
+    // Pad through the same helper as intensity — u32 is 4 bytes/voxel, and the helper's per-c/z/y
+    // copy is bpv-agnostic. nc = 1 here.
+    const bytes = isEdge
+      ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4)
+      : payload.bytes
+    // Label atlas has no channel stacking — slot origin z is `sz * brickZ`, not `sz * brickZ * nC`.
+    const [sxCount] = layout.atlasSlotCounts
+    const syCount = layout.atlasSlotCounts[1]
+    const sx = expectedSlot % sxCount
+    const sy = Math.floor(expectedSlot / sxCount) % syCount
+    const sz = Math.floor(expectedSlot / (sxCount * syCount))
+    device.queue.writeTexture(
+      { texture: atlas.labelTexture,
+        origin: [sx * ebx, sy * eby, sz * ebz] },
+      new Uint8Array(bytes),
+      { bytesPerRow: ebx * 4, rowsPerImage: eby },
+      [ebx, eby, ebz],
+    )
+    needsRedraw?.()
   }
 
   /** Reverse `brickKey` back to its grid index. Uses the resident entry first (cheap) and falls
@@ -647,6 +770,14 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.OV + 1] = pointPlaneLo
     uniformCpu[BU.OV + 2] = segWidthPx
     uniformCpu[BU.OV + 3] = pointPlaneHi
+    // Labels: (opacity, contourPx, paletteRows, unused). Opacity 0 disables the label path in
+    // the shader without touching bindings — labels off is a uniform write, not a bind group
+    // rebuild. The palette row count is fixed at renderer construction; passed through so the
+    // shader's `id % rows` uses the same number the texture was written with.
+    uniformCpu[BU.LAB + 0] = atlas?.labelsEnabled ? labelOpacity : 0
+    uniformCpu[BU.LAB + 1] = labelContourPx
+    uniformCpu[BU.LAB + 2] = LABEL_PALETTE_N
+    uniformCpu[BU.LAB + 3] = 0
     // Prev-level fallback fields — only meaningful when a level switch has copied the previous
     // page table into the prev buffer. `prevValid` is a float flag the shader reads with a
     // > 0.5 comparison (WGSL uniform floats don't do bitwise cleanly).
@@ -851,7 +982,10 @@ export async function createBrickVolumeRenderer(
       segPlaneLo = planeLo
       segPlaneHi = planeHi ?? planeLo
     },
-    setLabelStyle(_opacity, _contourPx) { /* labels PR #696 */ },
+    setLabelStyle(opacity, contourPx) {
+      labelOpacity = Math.max(0, Math.min(1, opacity))
+      labelContourPx = Math.max(0, Math.round(contourPx))
+    },
 
     resize,
     draw,
@@ -937,12 +1071,16 @@ export async function createBrickVolumeRenderer(
 
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
-      // Same-source repeats are cheap (compared by shallow equality on the three fields the URL
+      // Same-source repeats are cheap (compared by shallow equality on the four fields the URL
       // depends on), so ViewerWindow can call this unconditionally per frame without thrashing.
+      // labelName's equality matters too: a change in mask picker leaves the intensity bricks
+      // valid but the LABEL bricks stale, so those need re-fetching. For simplicity we treat any
+      // labelName change as a full source switch and re-fetch everything.
       const same = source !== null && next !== null
         && source.projectUid === next.projectUid
         && source.imageUid === next.imageUid
         && source.valueName === next.valueName
+        && source.labelName === next.labelName
       if (same) { source = next; return }
       source = next
       inflight.forEach(ac => ac.abort())
@@ -965,6 +1103,8 @@ export async function createBrickVolumeRenderer(
       segBuf?.destroy()
       uniformBuf.destroy()
       lutTex.destroy()
+      palTex.destroy()
+      noLabelAtlas.destroy()
       ctx.unconfigure()
     },
   }
