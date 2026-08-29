@@ -70,6 +70,19 @@ interface AtlasState {
   pageTableBuffer: GPUBuffer
   pageTableCpu: Uint32Array
   pageTableDirty: boolean
+  /** Previous-level page table — the shader's fallback when the current level's lookup misses.
+   *  Populated on level switch by copying the current CPU buffer here, then clearing the current
+   *  one. Sized like the main pageTable buffer (L0 grid) so nothing reallocates on level swap. */
+  prevPageTableBuffer: GPUBuffer
+  prevPageTableCpu: Uint32Array
+  prevPageTableDirty: boolean
+  /** Grid dims for the previous level. `undefined` before the first level switch, in which case
+   *  the shader treats `prevValid=0` and skips the fallback. */
+  prevGridNx: number
+  prevGridNy: number
+  prevGridNz: number
+  /** Level index of the previous-level fallback. `undefined` when no fallback is active. */
+  prevLevel: number | undefined
   bindGroup: GPUBindGroup
   /** Currently-sourced LOD level. `undefined` before the first schedule tick. */
   currentLevel: number | undefined
@@ -156,6 +169,7 @@ export async function createBrickVolumeRenderer(
     if (atlas === null) return
     atlas.texture.destroy()
     atlas.pageTableBuffer.destroy()
+    atlas.prevPageTableBuffer.destroy()
     atlas = null
   }
 
@@ -218,6 +232,15 @@ export async function createBrickVolumeRenderer(
       size: Math.max(16, pageTableCpu.byteLength),   // WebGPU rejects 0-size buffers
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
+    // Prev-level fallback buffer: same size + shape as pageTableBuffer, empty until the first
+    // level switch copies the current CPU buffer here. Must be bound even when unused — WebGPU
+    // won't let a bind-group slot go absent, and `prevValid=0` in the uniform keeps the shader
+    // from reading it.
+    const prevPageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
+    const prevPageTableBuffer = device.createBuffer({
+      size: Math.max(16, prevPageTableCpu.byteLength),
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
 
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -225,6 +248,7 @@ export async function createBrickVolumeRenderer(
         { binding: 0, resource: { buffer: uniformBuf } },
         { binding: 1, resource: { buffer: pageTableBuffer } },
         { binding: 2, resource: texture.texture.createView() },
+        { binding: 3, resource: { buffer: prevPageTableBuffer } },
       ],
     })
 
@@ -232,16 +256,26 @@ export async function createBrickVolumeRenderer(
       layout, texture, pageTable,
       gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
       gridNxL0, gridNyL0, gridNzL0,
-      pageTableBuffer, pageTableCpu, pageTableDirty: true, bindGroup,
+      pageTableBuffer, pageTableCpu, pageTableDirty: true,
+      prevPageTableBuffer, prevPageTableCpu, prevPageTableDirty: true,   // upload the empty state
+      prevGridNx: 0, prevGridNy: 0, prevGridNz: 0,
+      prevLevel: undefined,
+      bindGroup,
       currentLevel: undefined,
     }
     uniform.nch = nC
   }
 
   const writePageTable = () => {
-    if (atlas === null || !atlas.pageTableDirty) return
-    device.queue.writeBuffer(atlas.pageTableBuffer, 0, atlas.pageTableCpu)
-    atlas.pageTableDirty = false
+    if (atlas === null) return
+    if (atlas.pageTableDirty) {
+      device.queue.writeBuffer(atlas.pageTableBuffer, 0, atlas.pageTableCpu)
+      atlas.pageTableDirty = false
+    }
+    if (atlas.prevPageTableDirty) {
+      device.queue.writeBuffer(atlas.prevPageTableBuffer, 0, atlas.prevPageTableCpu)
+      atlas.prevPageTableDirty = false
+    }
   }
 
   /** Flat grid index at the CURRENT level. Matches the shader's `(bz * nBy + by) * nBx + bx`. */
@@ -343,13 +377,24 @@ export async function createBrickVolumeRenderer(
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
     const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel)
 
-    // Level switch invalidates every resident brick: (bx, by, bz) space is different at a coarser
-    // LOD. Drop the residency, clear the page-table CPU up to the LARGER of the two levels' grids
-    // so a switch coarse→fine also wipes the L0-grid stale entries.
+    // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
+    // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
+    // slots don't change — they hold whatever bricks are LRU-warm — so the prev page table just
+    // re-indexes into the same texture. The PageTable object stays too: its entries still name
+    // real slots, they're just now indexed by the OLDER grid dims.
     if (atlas.currentLevel !== dec.level) {
       inflight.forEach(ac => ac.abort())
       inflight.clear()
-      atlas.pageTable.clear()
+      // Only promote current → prev when there IS a current level (skip the initial
+      // undefined → 0 transition, which has nothing worth keeping around).
+      if (atlas.currentLevel !== undefined) {
+        atlas.prevPageTableCpu.set(atlas.pageTableCpu)
+        atlas.prevPageTableDirty = true
+        atlas.prevGridNx = atlas.gridNx
+        atlas.prevGridNy = atlas.gridNy
+        atlas.prevGridNz = atlas.gridNz
+        atlas.prevLevel = atlas.currentLevel
+      }
       atlas.pageTableCpu.fill(EMPTY_SLOT)
       atlas.pageTableDirty = true
       const scale = Math.pow(2, dec.level)
@@ -469,6 +514,21 @@ export async function createBrickVolumeRenderer(
     }
     uniformCpu[BU.PAN + 0] = uniform.pan[0]
     uniformCpu[BU.PAN + 1] = uniform.pan[1]
+    // Prev-level fallback fields — only meaningful when a level switch has copied the previous
+    // page table into the prev buffer. `prevValid` is a float flag the shader reads with a
+    // > 0.5 comparison (WGSL uniform floats don't do bitwise cleanly).
+    if (atlas !== null && atlas.prevLevel !== undefined && currentMeta !== null) {
+      const prevScale = Math.pow(2, atlas.prevLevel)
+      uniformCpu[BU.PREV_GRID + 0] = atlas.prevGridNx
+      uniformCpu[BU.PREV_GRID + 1] = atlas.prevGridNy
+      uniformCpu[BU.PREV_GRID + 2] = atlas.prevGridNz
+      uniformCpu[BU.PREV_GRID + 3] = 1
+      uniformCpu[BU.PREV_DIMS + 0] = Math.max(1, Math.ceil(currentMeta.nX / prevScale))
+      uniformCpu[BU.PREV_DIMS + 1] = Math.max(1, Math.ceil(currentMeta.nY / prevScale))
+      uniformCpu[BU.PREV_DIMS + 2] = Math.max(1, Math.ceil(currentZDepth / prevScale))
+    } else {
+      uniformCpu[BU.PREV_GRID + 3] = 0
+    }
     device.queue.writeBuffer(uniformBuf, 0, uniformCpu)
   }
 
