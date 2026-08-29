@@ -1166,6 +1166,7 @@ const syncCacheState = () => {
     brickInflight.value = br.inflight
     brickCurrentLevel.value = br.currentLevel
     brickSizeVox.value = br.brickSizeVox
+    brickDisplayValid.value = br.displayValid
   }
 }
 
@@ -2206,6 +2207,17 @@ const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: nu
 const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
 const brickCurrentLevel = ref<number | undefined>(undefined)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
+/** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
+ *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
+ *  drawing an OLDER t while the scheduler chases the target) and unblank partial frames
+ *  (target t drawn with `EMPTY_SLOT` holes). Drives the canvas-invalid chip. Initial `true`
+ *  = we haven't drawn anything yet, so nothing to warn about. */
+const brickDisplayValid = ref<boolean>(true)
+/** Bricks path only: is the canvas out of sync with the target? True gates the amber chip.
+ *  `shownT >= 0` gate = don't fire during initial load (the "Loading timepoint…" chip
+ *  already owns that state). */
+const canvasPartial = computed(() =>
+  bricksEnabled && shownT.value >= 0 && !brickDisplayValid.value)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -3044,6 +3056,17 @@ onUnmounted(() => {
       <div v-else-if="shownT < 0" class="vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
       </div>
+      <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
+           STALE (hold-on-cold keeps displayT on the last-good t while the scheduler chases
+           the new one — canvas shows an OLDER frame than the user scrubbed to) and PARTIAL
+           (unblank rule advanced displayT before every core brick landed — target frame with
+           EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
+           `shownT >= 0` so it never fights the initial-load message. -->
+      <div v-else-if="canvasPartial" class="vw-status-chip vw-status-chip-warn"
+           v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
+        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <span>Loading bricks…</span>
+      </div>
       <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
            a small image still benefits from a corner reference while zoomed in (Dominik, 2026-08-26).
            Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
@@ -3783,6 +3806,7 @@ onUnmounted(() => {
   display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
 }
 .vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+.vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
 .vw-status-chip-icon { font-size: 1em; }
 .vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark

@@ -270,6 +270,15 @@ export interface VolumeRenderer {
     displayT: number
     /** The timepoint the SCHEDULER is fetching for — what the user asked for last. */
     boundT: number
+    /** True when the canvas reflects the TARGET the user asked for AND is complete — i.e.
+     *  `displayT === boundT` and every core viewport brick at `displayT` is resident. False
+     *  covers both flavours of "canvas isn't the whole truth":
+     *    - stale: hold-on-cold keeps `displayT` at the last-good t while the scheduler
+     *      chases the new one, so pixels are FROM AN OLDER FRAME than the user scrubbed to.
+     *    - partial: the "unblank" rule (ad0a20ec) promoted `displayT` before residency
+     *      caught up, so pixels are the target frame with EMPTY_SLOT holes.
+     *  The chip in `ViewerWindow.vue` surfaces both. */
+    displayValid: boolean
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>

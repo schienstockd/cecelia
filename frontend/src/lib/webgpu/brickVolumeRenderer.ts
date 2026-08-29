@@ -1231,7 +1231,7 @@ export async function createBrickVolumeRenderer(
         return {
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
-          displayT: -1, boundT: 0,
+          displayT: -1, boundT: 0, displayValid: false,
         }
       }
       const resident = atlas.pageTable.entries().map(e => ({
@@ -1248,6 +1248,15 @@ export async function createBrickVolumeRenderer(
         currentLevel: atlas.currentLevel,
         displayT,
         boundT,
+        // Whether the canvas reflects the TARGET the user asked for, AND is complete. False
+        // covers both flavours of "not the whole truth":
+        //   - stale: `displayT !== boundT` (hold-on-cold keeps the shader on the last-good t
+        //     while the scheduler chases the new one — the pixels are FROM AN OLDER FRAME,
+        //     not the timepoint the user scrubbed to).
+        //   - partial: `displayT === boundT` but the "unblank" rule (ad0a20ec) advanced
+        //     without every core brick landing (holes = `EMPTY_SLOT`).
+        // Reuses the same `coreBricksResident` predicate `show(t)`'s ready-check runs.
+        displayValid: displayT >= 0 && displayT === boundT && coreBricksResident(displayT),
         brickSizeVox: atlas.layout.brickSizeVox,
       }
     },
