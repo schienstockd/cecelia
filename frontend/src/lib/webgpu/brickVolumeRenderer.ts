@@ -580,6 +580,22 @@ export async function createBrickVolumeRenderer(
           && evictedBrick.t === displayT
           && evictedBrick.level === atlas.currentLevel
         if (evictedWasVisible) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
+        // Prev-level eviction: `prevPageTableCpu` may still index this slot at a different grid
+        // position (the OLD level's grid). If we don't wipe it, the shader's fallback lookup will
+        // return the slot number and sample the FRESH brick's bytes with prev-level coords —
+        // producing a scrambled block. Ring-halo-of-blank pattern (Dominik screenshot #32,
+        // 2026-08-29). Prev-level touch loop in `tickScheduler` should keep this rare, but the
+        // wipe is the safety net for when the atlas genuinely runs out.
+        if (evictedBrick !== null
+            && atlas.prevLevel !== undefined
+            && evictedBrick.level === atlas.prevLevel
+            && evictedBrick.t === displayT) {
+          const pIdx = prevGridIndexOfBrick(atlas, evictedBrick)
+          if (pIdx >= 0) {
+            atlas.prevPageTableCpu[pIdx] = EMPTY_SLOT
+            atlas.prevPageTableDirty = true
+          }
+        }
         if (forVisibleFrame) {
           atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
           atlas.pageTableDirty = true
@@ -668,6 +684,16 @@ export async function createBrickVolumeRenderer(
     if (brick === null) return -1
     if (brick.bx >= a.gridNx || brick.by >= a.gridNy || brick.bz >= a.gridNz) return -1
     return gridIndex(a, brick.bx, brick.by, brick.bz)
+  }
+
+  /** Prev-page-table index for a brick belonging to the PREV level. Same shape as `gridIndex`,
+   *  but with `prevGridNx/Ny` — the OLDER level's grid dims that `prevPageTableCpu` was written
+   *  for. Returns -1 if the brick doesn't belong in the prev grid (out-of-range coord or the
+   *  prev grid isn't set up yet). */
+  const prevGridIndexOfBrick = (a: AtlasState, brick: VirtualBrick): number => {
+    if (a.prevGridNx <= 0 || a.prevGridNy <= 0 || a.prevGridNz <= 0) return -1
+    if (brick.bx >= a.prevGridNx || brick.by >= a.prevGridNy || brick.bz >= a.prevGridNz) return -1
+    return (brick.bz * a.prevGridNy + brick.by) * a.prevGridNx + brick.bx
   }
 
   /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
@@ -792,6 +818,18 @@ export async function createBrickVolumeRenderer(
       atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
       atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
       atlas.currentLevel = dec.level
+    }
+    // Keep prev-level bricks LRU-warm. The shader's fallback path samples them for holes in the
+    // current level — but they're NATURALLY the oldest bricks in the atlas after a level swap,
+    // so plain LRU picks them as eviction victims first. Ring-halo-of-blank pattern from #32:
+    // as L0 bricks arrived, they LRU-evicted L1 (prev) bricks, and the fallback lookup returned
+    // slots now holding unrelated L0 data → shader read empty. Touching them every tick keeps
+    // them in the top half of the LRU ordering. Cheap: O(atlas entries) with a fixed cap; the
+    // whole loop is a few hundred `Map.set` calls at most.
+    if (atlas.prevLevel !== undefined) {
+      for (const e of atlas.pageTable.entries()) {
+        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow)
+      }
     }
     // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
     // `boundT`, but the prefetch loop below fills the atlas with bricks at other `t` values that
