@@ -677,6 +677,18 @@ export async function createBrickVolumeRenderer(
     atlas.pageTableDirty = true
   }
 
+  /** True when the atlas holds AT LEAST ONE brick at `t` at the current level. Cheap sentinel
+   *  for "would rebuilding pageTableCpu for this t leave any non-EMPTY entry?" — if false,
+   *  rebuilding paints a fully black frame. Used to gate the "unblank" auto-advance rule so
+   *  displayT never promotes to a t whose bricks weren't fetched. */
+  const anyBricksResident = (t: number): boolean => {
+    if (atlas === null) return false
+    for (const e of atlas.pageTable.entries()) {
+      if (e.brick.t === t && e.brick.level === atlas.currentLevel) return true
+    }
+    return false
+  }
+
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
    *  `hasTimepoint(t)` so the play loop can hold on the previous frame instead of advancing
    *  into a half-loaded one. Halo bricks are NOT required — they're prefetch, and demanding
@@ -714,7 +726,8 @@ export async function createBrickVolumeRenderer(
     if (boundT !== displayT) {
       const targetReady = coreBricksResident(boundT)
       const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-      if (targetReady || !displayDrawable) {
+      const canPartial = anyBricksResident(boundT)
+      if (targetReady || (!displayDrawable && canPartial)) {
         displayT = boundT
         rebuildPageTableForDisplayT()
         onDisplayAdvanced?.(displayT)
@@ -993,15 +1006,17 @@ export async function createBrickVolumeRenderer(
       boundT = t
       // Advance the DISPLAYED timepoint under two conditions, either sufficient:
       //   (a) core bricks at t are resident (the happy path — we can draw a full frame), OR
-      //   (b) the OLD displayT is no longer drawable (its bricks were evicted or the viewport
-      //       moved off them). If we insist on `ready` alone and displayT's bricks are gone,
-      //       the shader draws a fully black canvas — worse than a partial frame at the new t.
-      //       Symptom Dominik hit 2026-08-29 after start-stop-play: bricks resident at boundT,
-      //       displayT stuck at t=0, shader black. Also `displayT === -1` (first-ever show)
-      //       hits this branch — displayT gets set so the shader has bytes to draw.
+      //   (b) the OLD displayT can't be drawn AND the NEW t has at least SOMETHING resident
+      //       (partial frame > blank frame). Only promoting when boundT has bricks avoids the
+      //       trap where displayT jumps to a cold t and rebuildPageTableForDisplayT leaves the
+      //       page table all EMPTY_SLOT — 2026-08-29 blank-canvas symptom.
+      // First-ever show (displayT === -1) hits (b) — anyBricksResident may still be false, in
+      // which case we don't advance and the shader draws whatever the last-rendered pageTableCpu
+      // held (clear if it's the fresh atlas).
       const ready = coreBricksResident(t)
       const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-      if ((ready || !displayDrawable) && displayT !== t) {
+      const canPartial = anyBricksResident(t)
+      if ((ready || (!displayDrawable && canPartial)) && displayT !== t) {
         displayT = t
         rebuildPageTableForDisplayT()
       }
