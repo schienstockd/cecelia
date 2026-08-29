@@ -42,31 +42,46 @@ function _encoded_scale(W_enc::Int, arr, caxes, crop, max_px::Int)
     W_enc > 0 ? max(1.0, Float64(cropped_w) / Float64(W_enc)) : 1.0
 end
 
-# Pick a "nice" scale-bar length: one of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000] µm, whichever is
-# closest to 20% of the frame width. Returns `(um, length_px)`. `nothing` when no valid choice fits.
-const _SCALE_BAR_STEPS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0)
+# Pick a "nice" scale-bar length: the LARGEST step ≤ 30% of the frame's physical width, from the
+# same ladder `niceScaleBar` in `frontend/src/utils/stillOverlay.ts` uses. One policy across the
+# viewer overlay, the still-strip, and the offline movie encoder — a movie and its live view can't
+# then disagree on which "nice" number the bar shows. Returns `(um, length_px)`, `nothing` when no
+# step fits.
+const _SCALE_BAR_STEPS = (1.0, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0,
+                            200.0, 250.0, 500.0, 1000.0, 2000.0, 5000.0)
 function _pick_scale_bar(um_per_px::Real, frame_w::Int)
-    target_um = 0.20 * frame_w * Float64(um_per_px)
-    target_um > 0 || return nothing
-    best = _SCALE_BAR_STEPS[1]
+    extent_um = Float64(frame_w) * Float64(um_per_px)
+    max_um    = 0.30 * extent_um
+    max_um > 0 || return nothing
+    pick = 0.0
     for s in _SCALE_BAR_STEPS
-        abs(log(s / target_um)) < abs(log(best / target_um)) && (best = s)
+        s <= max_um && (pick = s)
     end
-    len_px = round(Int, best / Float64(um_per_px))
+    pick > 0 || return nothing
+    len_px = round(Int, pick / Float64(um_per_px))
     (len_px < 2 || len_px > frame_w * 0.9) && return nothing
-    (best, len_px)
+    (pick, len_px)
 end
 
-# Format a t-in-frames + minutes-per-frame → "1h 30m", "45m 20s", or "12s". `time_step_min` is
-# minutes-per-frame (matches `img_physical_sizes` return convention).
+# Roll µm → mm at ≥ 1000, same as `niceScaleBar`'s label — a 1000 µm bar reads "1 mm" and a movie
+# doesn't say "1000 µm" while the viewer says "1 mm".
+function _scale_bar_label(um::Real)
+    um >= 1000.0 && return string(Int(round(um / 1000.0)), " mm")
+    um >= 1.0    && return string(Int(round(um)), " µm")
+    string(um, " µm")
+end
+
+# Format a t-in-frames + minutes-per-frame → "H:MM:SS", zero-padded — the SAME clock the browser
+# volume viewer's on-screen overlay uses (`elapsedLabel(...,'clock')` in
+# `frontend/src/utils/stillOverlay.ts`). One time format across viewer + movie, so the on-screen
+# clock and the movie clock don't disagree on the same frame.
 function _format_ts(t_idx::Integer, time_step_min::Real)
-    total_sec = Float64(t_idx) * Float64(time_step_min) * 60.0
-    total_sec = max(0.0, total_sec)
-    h = floor(Int, total_sec / 3600); r = total_sec - h * 3600
-    m = floor(Int, r / 60);           s = r - m * 60
-    h > 0     && return string(h, "h ", lpad(m, 2, '0'), "m")
-    m > 0     && return string(m, "m ", lpad(round(Int, s), 2, '0'), "s")
-    string(round(Int, s), "s")
+    total_sec = max(0.0, Float64(t_idx) * Float64(time_step_min) * 60.0)
+    total_sec = round(Int, total_sec)          # match `Math.round(secs)` on the JS side
+    h = fld(total_sec, 3600)
+    m = fld(total_sec - h * 3600, 60)
+    s = total_sec - h * 3600 - m * 60
+    string(h, ":", lpad(m, 2, '0'), ":", lpad(s, 2, '0'))
 end
 
 function _build_timelapse_overlays(ts::AbstractVector{<:Integer}, um_per_px::Real, frame_w::Int,
@@ -74,8 +89,7 @@ function _build_timelapse_overlays(ts::AbstractVector{<:Integer}, um_per_px::Rea
                                      show_timestamp::Bool = true, show_scale_bar::Bool = true)
     sb = show_scale_bar ? _pick_scale_bar(um_per_px, frame_w) : nothing
     sb_dict = sb === nothing ? nothing :
-              Dict{String,Any}("lengthPx" => sb[2],
-                                "label"    => (sb[1] >= 1 ? string(Int(sb[1]), " µm") : string(sb[1], " µm")))
+              Dict{String,Any}("lengthPx" => sb[2], "label" => _scale_bar_label(sb[1]))
     ts_ok = show_timestamp && time_step_min !== nothing
     return [begin
         e = Dict{String,Any}()
@@ -424,6 +438,39 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
         end
     end
     (; t, z, specs, crop, ndisplay, angles, center3d, zoom = zoom_val)
+end
+
+# The crop half of `viewstate_to_render_args`, in isolation. The one-shot record (which uses fixed
+# specs across the T sweep and doesn't need per-frame arg resolution) still needs the viewer's
+# CROP so the movie shows the same rectangle the viewer showed — same maths as the animation
+# renderer, but returns `nothing` for 3D and for snapshots without a camera + canvas. Kept next to
+# the full translator so a change to the crop math lands in one place.
+function crop_from_view_state(vs::Union{Nothing,AbstractDict}, native_h::Int, native_w::Int)
+    vs isa AbstractDict || return nothing
+    dims = get(vs, "dims", nothing)
+    nd_raw = dims isa AbstractDict ? get(dims, "ndisplay", nothing) : nothing
+    ndisplay = (nd_raw isa Real && Int(round(Float64(nd_raw))) == 3) ? 3 : 2
+    ndisplay == 3 && return nothing
+    camera = get(vs, "camera", nothing)
+    camera isa AbstractDict || return nothing
+    c_raw = get(camera, "center", nothing)
+    (c_raw isa AbstractVector && length(c_raw) >= 2) || return nothing
+    cy = Float64(c_raw[end - 1]); cx = Float64(c_raw[end])
+    z_raw = get(camera, "zoom", nothing)
+    (z_raw isa Real && Float64(z_raw) > 0) || return nothing
+    zoom_val = Float64(z_raw)
+    canv = get(vs, "canvas", nothing)
+    (canv isa AbstractDict) || return nothing
+    ch = get(canv, "height", 0); cw = get(canv, "width", 0)
+    (ch isa Real && cw isa Real && ch > 0 && cw > 0) || return nothing
+    half_h = Float64(ch) / (2.0 * zoom_val)
+    half_w = Float64(cw) / (2.0 * zoom_val)
+    y1 = max(0, floor(Int, cy - half_h))
+    y2 = min(native_h - 1, ceil(Int, cy + half_h))
+    x1 = max(0, floor(Int, cx - half_w))
+    x2 = min(native_w - 1, ceil(Int, cx + half_w))
+    (x1 < x2 && y1 < y2) || return nothing
+    (; x = x1:x2, y = y1:y2)
 end
 
 # ── Overlay-context resolvers used by record_keyframes_view_movie ──────────────────

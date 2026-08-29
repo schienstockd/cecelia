@@ -438,6 +438,12 @@ async function recordTimelapse() {
       // banked with the movie, not acted on by the recorder — it already records this look by
       // recording the screen (MOVIE_MANAGEMENT_PLAN.md Phase 4)
       look,
+      // The full napari-shape snapshot rides alongside `look`. `look` covers the channel picks +
+      // overlay flags; the snapshot's `camera` + `canvas` are what the offline record needs to
+      // reproduce the visible rectangle — a viewer zoomed into a corner would otherwise record
+      // the whole image at native aspect (bug reported 2026-08-29, the movie/viewer side-by-side).
+      // Absent when the snapshot fell through the napari fallback.
+      ...(snapshot ? { viewState: snapshot } : {}),
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
   } catch (e) {

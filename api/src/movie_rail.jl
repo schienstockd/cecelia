@@ -158,6 +158,15 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
                             show_timestamp::Bool = true, show_scale_bar::Bool = true,
                             overlays_raw = nothing,
+                            # The viewer's captured `viewState` snapshot (napari-shape;
+                            # `frontend/src/utils/viewer/viewState.ts`). Threaded in so the offline
+                            # record picks up the viewer's CROP — the visible rectangle the user is
+                            # looking at, in native pixels — rather than always recording the whole
+                            # image at native aspect. Without this, a viewer zoomed in on a corner
+                            # produced a full-image movie with a totally different framing. 3D and
+                            # snapshots without a camera + canvas return `nothing`, which falls
+                            # through to the previous behaviour.
+                            view_state::Union{Nothing,AbstractDict} = nothing,
                             movie_config = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -183,6 +192,14 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     max_px = _max_px_from_size(size_x, size_y)
+    # Viewer crop: pull the visible rectangle out of the snapshot and pass it to the encoder as
+    # `crop`. Native H/W come from the store, not from the snapshot's canvas — `crop_from_view_state`
+    # clamps against these so a stale snapshot can't index off the edge of the image. `nothing` here
+    # falls through to the previous behaviour (whole image, native aspect).
+    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
+    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
+    view_crop = (native_h > 0 && native_w > 0) ?
+        crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
 
     # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
     # the on-screen `look` (banked in `movie_config`) into that shape so the offline record doesn't
@@ -200,7 +217,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
-                                       z = z_slice, crop = nothing, max_px = max_px, tally = false)
+                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false)
 
     out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
@@ -224,7 +241,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         result = record_view_movie(zp, out_path;
                                    ts = ts, fps = fps,
                                    z = z_slice, channels = 0:(nc - 1), specs = specs,
-                                   crop = nothing, max_px = max_px,
+                                   crop = view_crop, max_px = max_px,
                                    title_card = title_card,
                                    overlays_for = ov.overlays_for,
                                    mask_for     = ov.mask_for,

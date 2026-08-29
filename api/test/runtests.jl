@@ -6950,6 +6950,67 @@ end
     @test last(args_crop.crop.y)  <= 99
 end
 
+@testset "API: crop_from_view_state — one-shot record uses the viewer's rectangle" begin
+    # The one-shot record needs the SAME visible rectangle the viewer is looking at, or it renders
+    # a full-image movie at native aspect regardless of the user's zoom + pan (bug 2026-08-29). Pin
+    # the crop maths in isolation — matches the crop half of `viewstate_to_render_args`, but the
+    # one-shot path doesn't own per-frame arg resolution and only needs this piece.
+    vs = Dict{String,Any}(
+        "dims"   => Dict("ndisplay" => 2, "current_step" => [0, 0]),
+        "camera" => Dict("center" => [0.0, 50.0, 50.0], "zoom" => 2.0),
+        "canvas" => Dict("width" => 40, "height" => 40),
+    )
+    c = crop_from_view_state(vs, 100, 100)
+    @test c !== nothing
+    @test first(c.x) >= 0
+    @test last(c.x)  <= 99
+    @test first(c.y) >= 0
+    @test last(c.y)  <= 99
+    # canvas 40 px / (2 × zoom 2) = 10 px half-width around cx = 50 → x = 40:60 (inclusive).
+    @test collect(c.x) == collect(40:60)
+    @test collect(c.y) == collect(40:60)
+
+    # 3D → no 2D crop.
+    vs3 = Dict{String,Any}("dims" => Dict("ndisplay" => 3),
+                            "camera" => Dict("center" => [5.0, 50.0, 50.0], "zoom" => 2.0),
+                            "canvas" => Dict("width" => 40, "height" => 40))
+    @test crop_from_view_state(vs3, 100, 100) === nothing
+
+    # Missing canvas / camera / zoom → nothing (falls through to whole-image behaviour).
+    @test crop_from_view_state(nothing,                   100, 100) === nothing
+    @test crop_from_view_state(Dict{String,Any}(),        100, 100) === nothing
+    @test crop_from_view_state(
+        Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0)),
+        100, 100) === nothing                                                    # no canvas
+end
+
+@testset "API: movie overlays — clock timestamp + scale-bar picker match the viewer" begin
+    # The Julia encoder-side overlays and the browser volume viewer's on-screen overlays draw the
+    # SAME frame at the same time — if their formatters drift, a movie captured from the viewer
+    # reads "7m 30s / 20 µm" while the viewer itself reads "0:07:30 / 50 µm". Pin the two policies
+    # here so a future drift is a failing test, not a screenshot comparison.
+    #
+    # Timestamp: "H:MM:SS", zero-padded — matches `elapsedLabel(...,'clock')` in
+    # `frontend/src/utils/stillOverlay.ts`.
+    @test _format_ts(0,   0.5) == "0:00:00"
+    @test _format_ts(15,  0.5) == "0:07:30"       # 15 frames × 30 s
+    @test _format_ts(120, 1.0) == "2:00:00"       # 2 hours
+    @test _format_ts(1,   1/60) == "0:00:01"      # 1 s
+
+    # Scale bar: largest step ≤ 30 % of the frame's µm-extent, roll to mm at ≥ 1000 — matches
+    # `niceScaleBar` in `frontend/src/utils/stillOverlay.ts`.
+    #  600 px × 0.5 µm/px = 300 µm extent → 30 % = 90 µm → largest fitting step is 50 µm.
+    sb = _pick_scale_bar(0.5, 600)
+    @test sb !== nothing
+    @test sb[1] == 50.0
+    @test _scale_bar_label(sb[1]) == "50 µm"
+    #  A big frame rolls up to mm.
+    @test _scale_bar_label(1000.0) == "1 mm"
+    @test _scale_bar_label(2000.0) == "2 mm"
+    #  A tiny frame (too small for the smallest step) returns nothing.
+    @test _pick_scale_bar(0.001, 10) === nothing
+end
+
 @testset "API: interpolate_keyframes reaches the incoming keyframe exactly" begin
     # The offline animation renderer relies on the last tween frame BEING the arrival state — not a
     # half-step short. The napari path had this contract already; the offline sibling has to match.
