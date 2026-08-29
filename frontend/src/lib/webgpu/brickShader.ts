@@ -14,7 +14,7 @@
 // SEE `mipShader.ts` for the vertical-flip note (`up = cross(right, fwd)`, not the other way
 // round) — the same discipline applies here so the two renderers put row 0 at the top identically.
 
-import { VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
+import { VIEW_HALF_ANGLE, MAX_CHANNELS, LUT_STOPS } from '../../utils/volumeViewer'
 
 /**
  * Sentinel written into the page table for an unmapped brick. Matches `pageTable.ts`'s
@@ -25,13 +25,12 @@ import { VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
 export const EMPTY_SLOT = 0xFFFFFFFF
 
 /**
- * Uniform buffer size in bytes. Grew from 8 to 10 vec4 (128→160 bytes) in the prev-level
- * fallback: the shader falls back to the PREVIOUS level's page table when the current-level
- * lookup returns EMPTY_SLOT, so old bricks stay on screen across a zoom threshold until the new
- * level's replacements land — same idea as the 2D tile renderer's progressive refinement
- * (tileRenderer.ts:211).
+ * Uniform buffer size in bytes. Ten leading vec4s (camera + geometry + prev-level) + one
+ * vec4 per channel slot. `EXT.w` used to carry a global normalisation ceiling; per-channel
+ * contrast windows now live in `p.ch[c]` (lo, hi, visible, unused), same shape the flat
+ * renderer's `mipShader.ts` uses.
  */
-export const BRICK_UNIFORM_BYTES = 10 * 16
+export const BRICK_UNIFORM_BYTES = 10 * 16 + MAX_CHANNELS * 16
 
 /**
  * Field offsets INTO the uniform buffer, in f32 slots (× 4 = bytes). Written out because getting
@@ -40,21 +39,23 @@ export const BRICK_UNIFORM_BYTES = 10 * 16
 export const BU = {
   CAM: 0,        // yaw, pitch, dist, steps
   VP: 4,         // nch, canvasW, canvasH, ortho
-  EXT: 8,        // extX, extY, extZ, valueMax (max representable intensity, for normalisation)
-  DIMS: 12,     // nX, nY, nZ (voxels at CURRENT level), unused
-  BRICK: 16,    // brickX, brickY, brickZ, channelsPerBrick
-  ATLAS: 20,    // atlasW, atlasH, atlasD (voxels), slotsX
-  GRID: 24,     // nBx, nBy, nBz (bricks per axis, current level), slotsY
-  PAN: 28,      // panX, panY, unused, unused
+  EXT: 8,        // extX, extY, extZ, unused
+  DIMS: 12,      // nX, nY, nZ (voxels at CURRENT level), unused
+  BRICK: 16,     // brickX, brickY, brickZ, channelsPerBrick
+  ATLAS: 20,     // atlasW, atlasH, atlasD (voxels), slotsX
+  GRID: 24,      // nBx, nBy, nBz (bricks per axis, current level), slotsY
+  PAN: 28,       // panX, panY, unused, unused
   PREV_GRID: 32, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   PREV_DIMS: 36, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
+  /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
+  CH0: 40,
 }
 
 export const BRICK_WGSL = `
 struct BU {
   cam:      vec4<f32>,  // yaw, pitch, dist, steps
   vp:       vec4<f32>,  // nch, canvasW, canvasH, ortho
-  ext:      vec4<f32>,  // extX, extY, extZ, valueMax
+  ext:      vec4<f32>,  // extX, extY, extZ, _
   dims:     vec4<f32>,  // nX, nY, nZ (current level), _
   brick:    vec4<f32>,  // brickX, brickY, brickZ, channelsPerBrick
   atlas:    vec4<f32>,  // atlasW, atlasH, atlasD, slotsX
@@ -62,6 +63,7 @@ struct BU {
   pan:      vec4<f32>,  // panX, panY, _, _
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
+  ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
 };
 @group(0) @binding(0) var<uniform> p: BU;
 // Current-level page table: (bz * nBy + by) * nBx + bx → slot index or 0xFFFFFFFF (not resident).
@@ -72,6 +74,10 @@ struct BU {
 // visible until the new level's replacements land — Kiln's zoom-threshold trick, same shape as
 // the 2D tile renderer's progressive-refinement pattern. Ignored when p.prevGrid.w < 0.5.
 @group(0) @binding(3) var<storage, read> prevPt: array<u32>;
+// LUT: MAX_CHANNELS rows × LUT_STOPS pixels wide. Row c is channel c's ramp resampled. Read
+// via textureLoad + explicit lerp between two stops (a sampler would interpolate across the
+// channel rows too — same reason mipShader.ts avoids sampling).
+@group(0) @binding(4) var lut: texture_2d<f32>;
 
 struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
 fn camera() -> Cam {
@@ -162,16 +168,17 @@ fn atlasSample(vi: vec3<i32>, ch: i32) -> u32 {
     vec3<i32>(originX + lx, originY + ly, originZBase + ch * bzSize + lz), 0).r;
 }
 
-/** Cheap per-channel colour so P5b renders SOMETHING before the LUT lands in P5d. Hue wheel
- *  at golden-angle spacing, same idea as the label palette — a run of channels stays
- *  distinguishable without a table. */
-fn chColour(c: i32) -> vec3<f32> {
-  let h = fract(f32(c) * 0.6180339887);
-  // HSV → RGB, s = 1, v = 1, hand-inlined so no branch on 'i32(h*6)' in the shader.
-  let r = abs(h * 6.0 - 3.0) - 1.0;
-  let g = 2.0 - abs(h * 6.0 - 2.0);
-  let b = 2.0 - abs(h * 6.0 - 4.0);
-  return clamp(vec3(r, g, b), vec3(0.0), vec3(1.0));
+// Channel c's ramp at normalised intensity n. Same discipline as mipShader.ts's ramp: lerp
+// between the two LUT stops n falls between, row c addressed exactly, so no filtering can bleed
+// across into row c+1. Exact for ANY row count, no MAX_CHANNELS assumption.
+fn ramp(c: i32, n: f32) -> vec3<f32> {
+  let q = clamp(n, 0.0, 1.0) * (${LUT_STOPS}.0 - 1.0);
+  let i = i32(floor(q));
+  let j = min(i + 1, ${LUT_STOPS} - 1);
+  let f = q - floor(q);
+  let a = textureLoad(lut, vec2<i32>(i, c), 0).rgb;
+  let b = textureLoad(lut, vec2<i32>(j, c), 0).rgb;
+  return mix(a, b, f);
 }
 
 @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
@@ -195,11 +202,10 @@ fn chColour(c: i32) -> vec3<f32> {
 
   let n = i32(p.cam.w);
   let dt = (t.y - t0) / f32(n);
-  let nch = i32(p.vp.x);
-  let valueMax = max(p.ext.w, 1.0);
+  let nch = min(i32(p.vp.x), ${MAX_CHANNELS});
 
   var acc = vec3(0.0);
-  var mx = array<f32, 32>();
+  var mx = array<f32, ${MAX_CHANNELS}>();
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
@@ -210,8 +216,12 @@ fn chColour(c: i32) -> vec3<f32> {
     }
   }
   for (var ci = 0; ci < nch; ci = ci + 1) {
-    let n01 = clamp(mx[ci] / valueMax, 0.0, 1.0);
-    acc = acc + chColour(ci) * n01;
+    // Skip channels flagged invisible — same convention as mipShader.ts's per-channel visible bit.
+    if (p.ch[ci].z < 0.5) { continue; }
+    let lo = p.ch[ci].x;
+    let hi = p.ch[ci].y;
+    let win = clamp((mx[ci] - lo) / max(hi - lo, 1.0), 0.0, 1.0);
+    acc = acc + ramp(ci, win);
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }

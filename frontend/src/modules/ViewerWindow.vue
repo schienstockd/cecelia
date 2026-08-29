@@ -2239,6 +2239,10 @@ async function ensureRenderer() {
       // initial server-shipped `hi` and dragging `hi` below it locks the range.
       r.setOnBrickLoaded?.(perChannelMax => {
         seenMax.value = perChannelMax.map((v, c) => Math.max(seenMax.value[c] ?? 0, v))
+        // Time-strip animation reads `resident.value` from `residentTimepoints()`. Bricks land
+        // asynchronously, and the flat-path pump's `syncCacheState` calls don't run — refresh
+        // here so the strip lights up as prefetch fills.
+        syncCacheState()
       })
       void r.lost.then(info => {
         stopPlay()
