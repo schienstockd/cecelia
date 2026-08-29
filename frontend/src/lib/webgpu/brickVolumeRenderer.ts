@@ -752,12 +752,22 @@ export async function createBrickVolumeRenderer(
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
     const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor)
 
+    // Hold-going-finer: only advance to a finer level once the CURRENT level is fully resident
+    // at the viewport. Otherwise a rapid zoom cascades L5→L3→L1→... and each swap's prev-page-
+    // table snapshot is partial. Two swaps deep the shader has nowhere to fall back to — the
+    // "black rectangle in the middle" symptom Dominik hit 2026-08-29. Coarser is always allowed
+    // (going the other way is a viewport-widening move; the coarser bricks are cheap and the
+    // prev-page-table is definitionally more complete). Initial `undefined → k` always fires so
+    // the atlas gets its first level.
+    const goingFiner = atlas.currentLevel !== undefined && dec.level < atlas.currentLevel
+    const currentStable = atlas.currentLevel !== undefined && coreBricksResident(displayT)
+    const swapAllowed = atlas.currentLevel !== dec.level && (!goingFiner || currentStable)
     // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
     // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
     // slots don't change — they hold whatever bricks are LRU-warm — so the prev page table just
     // re-indexes into the same texture. The PageTable object stays too: its entries still name
     // real slots, they're just now indexed by the OLDER grid dims.
-    if (atlas.currentLevel !== dec.level) {
+    if (swapAllowed) {
       // DON'T abort inflight: the requests are already on the wire, and cancelling only stops
       // the CLIENT waiting — the server still ships the bytes. Let them land; the arrival
       // guard (`atlas.currentLevel !== brick.level`) discards stale-level bytes silently, and
@@ -793,7 +803,7 @@ export async function createBrickVolumeRenderer(
     // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
     // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
     // the prefetch timepoints, dropping duplicates via `brickKey`.
-    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel)
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     const ts = [boundT]
     for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
     for (const pt of ts) {

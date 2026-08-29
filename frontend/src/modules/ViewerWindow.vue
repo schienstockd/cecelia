@@ -3182,7 +3182,7 @@ onUnmounted(() => {
           <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
-            <option :value="-1">Auto ({{ (meta.levels?.length ?? 1) - 1 }} — coarsest)</option>
+            <option :value="-1">Auto</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>

@@ -277,7 +277,7 @@ export type FloorLevel = number | undefined
  * under threshold, but SSE-wanted L0-L2 all coarsen through it — the loop still hits floor).
  * Re-measure in B1 and tune from real bench data.
  */
-export const MAX_INTERSECT_BRICKS = 64
+export const MAX_INTERSECT_BRICKS = 128
 
 /**
  * Guard the SSE-desired level against over-fetch. Counts core (ring === 0) bricks only — halo
