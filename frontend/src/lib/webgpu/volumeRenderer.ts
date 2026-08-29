@@ -222,17 +222,10 @@ export interface VolumeRenderer {
   setOnDisplayAdvanced?(cb: ((t: number) => void) | null): void
   /**
    * Brick renderer only: per-writeBrick timing hook — CPU-side duration of one writeBrick call
-   * plus its byte count. Bench harness uses this to A/B alternative upload paths (MAP_WRITE
-   * staging vs the current writeTexture-per-channel loop). Absent on the flat renderer.
+   * plus its byte count. Bench harness uses this to time the atlas-upload path. Absent on the
+   * flat renderer.
    */
   setOnBrickWritten?(cb: ((durationMs: number, bytes: number) => void) | null): void
-  /**
-   * Brick renderer only: which upload path new atlases use for `writeBrick` — `'writeTexture'`
-   * (default, the shipping N-per-channel loop) or `'mapWrite'` (Session D's staging buffer +
-   * `copyBufferToTexture`). Takes effect on the next atlas rebuild (level swap / `setImage`);
-   * changing it mid-image is a no-op until then. Absent on the flat renderer.
-   */
-  setUploadMode?(mode: 'writeTexture' | 'mapWrite'): void
   /**
    * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
    * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
