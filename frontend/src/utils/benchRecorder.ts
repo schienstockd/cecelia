@@ -49,6 +49,15 @@ export interface BenchVram {
 
 /** The blob saved to disk. Absolute times are `performance.now()` relative — the session
  *  origin (`t0`) is 0. Wall-clock stamp is separate so two sessions can be diffed by date. */
+/** Per-writeBrick timing sample — brick renderer only. Populated via
+ *  `setOnBrickWritten` on the renderer. Used by Session D to A/B MAP_WRITE staging against the
+ *  current writeTexture-per-channel loop. */
+export interface BenchWriteSample {
+  atMs: number            // performance.now() at the write, relative to session t0 in the blob
+  durationMs: number      // CPU-side duration of the writeBrick call
+  bytes: number           // payload byte count for this brick
+}
+
 export interface BenchBlob {
   version: 1
   mode: 'flat' | 'brick'
@@ -59,6 +68,7 @@ export interface BenchBlob {
   frames: BenchSample[]
   bytesFetched: number
   vram: BenchVram | null
+  writes: BenchWriteSample[]   // empty on flat mode
   summary: BenchSummary
 }
 
@@ -115,6 +125,7 @@ export function buildBlob(input: {
   bytesFetched: number
   vram: BenchVram | null
   isoDate: string
+  writes?: readonly BenchWriteSample[]
 }): BenchBlob {
   const sessionMs = input.savedAt - input.t0
   return {
@@ -127,6 +138,10 @@ export function buildBlob(input: {
     frames: input.frames.map(f => ({ atMs: f.atMs - input.t0, drawMs: f.drawMs })),
     bytesFetched: input.bytesFetched,
     vram: input.vram,
+    // Normalise write timestamps to be relative to t0 too — same convention as `frames`.
+    writes: (input.writes ?? []).map(w => ({
+      atMs: w.atMs - input.t0, durationMs: w.durationMs, bytes: w.bytes,
+    })),
     summary: summarize(input.frames, sessionMs),
   }
 }

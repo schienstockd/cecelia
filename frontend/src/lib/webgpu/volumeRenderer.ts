@@ -213,6 +213,20 @@ export interface VolumeRenderer {
    */
   setOnBrickLoaded?(cb: ((perChannelMax: number[]) => void) | null): void
   /**
+   * Brick renderer only: signal that the displayed timepoint just advanced (either via
+   * `show(t)` on a ready t, or via the scheduler auto-catching-up once core bricks land after
+   * a scrub-past-cold). ViewerWindow syncs `shownT` here so overlays draw at the same t the
+   * volume is currently painting — otherwise a scrub past residency draws volume at the new t
+   * with overlays still at the old one. Absent on the flat renderer.
+   */
+  setOnDisplayAdvanced?(cb: ((t: number) => void) | null): void
+  /**
+   * Brick renderer only: per-writeBrick timing hook — CPU-side duration of one writeBrick call
+   * plus its byte count. Bench harness uses this to A/B alternative upload paths (MAP_WRITE
+   * staging vs the current writeTexture-per-channel loop). Absent on the flat renderer.
+   */
+  setOnBrickWritten?(cb: ((durationMs: number, bytes: number) => void) | null): void
+  /**
    * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
    * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
    * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
@@ -243,6 +257,12 @@ export interface VolumeRenderer {
     /** Brick edge in voxels — `[bx, by, bz]`. Fixed for the atlas's lifetime; the caller
      *  derives per-level grid dims from this + `meta.nX/nY` + `2^level`. */
     brickSizeVox: readonly [number, number, number]
+    /** The timepoint the shader's pageTableCpu currently addresses — what's being DRAWN.
+     *  May differ from `boundT` when the hold-on-cold rule kept the display at a resident
+     *  t while the scheduler chases the target. `-1` before any t has been shown. */
+    displayT: number
+    /** The timepoint the SCHEDULER is fetching for — what the user asked for last. */
+    boundT: number
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>

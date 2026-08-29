@@ -76,7 +76,7 @@ import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
-  type BenchSample, type BenchMeta, type BenchVram,
+  type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
@@ -119,6 +119,9 @@ const benchT0 = ref<number>(0)
 const benchFirstFrameMs = ref<number | null>(null)
 const benchFrames = shallowRef<BenchSample[]>([])
 const benchBytes = ref(0)
+/** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
+ *  renderer. Used by Session D to compare writeTexture vs MAP_WRITE staging. */
+const benchWrites = shallowRef<BenchWriteSample[]>([])
 /** Save-time live tally so the panel shows progress without allocating on every frame. */
 const benchLive = computed(() => {
   const now = performance.now()
@@ -132,6 +135,7 @@ function benchReset() {
   benchFirstFrameMs.value = null
   benchFrames.value = []
   benchBytes.value = 0
+  benchWrites.value = []
 }
 /** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
  *  so a directory of them doesn't collide across images or renderers. */
@@ -166,6 +170,7 @@ function benchSave() {
     frames: benchFrames.value,
     bytesFetched: benchBytes.value,
     vram,
+    writes: benchWrites.value,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -1607,13 +1612,20 @@ const brickMapGrid = computed(() => {
   return { nBx, nBy, nBz, level: lvl }
 })
 
-/** Per-Z-slice residency cells at the current level + `shownT`. One entry per slice; each entry
- *  is the row-major nBx × nBy grid for that slice. Filters the resident + inflight snapshots
- *  inline (cheaper than pre-computing a per-cell Set). */
+/** Per-Z-slice residency cells at the current level + target `t`. One entry per slice; each
+ *  entry is the row-major nBx × nBy grid for that slice. Filters the resident + inflight
+ *  snapshots inline (cheaper than pre-computing a per-cell Set). */
 const brickMapSlices = computed(() => {
   const g = brickMapGrid.value
   if (!g) return []
-  const tp = shownT.value >= 0 ? shownT.value : t.value
+  // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
+  // loading-progress indicator: what the user wants to see is bricks fetching toward the t
+  // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
+  // (the timepoint the shader currently paints) made progress invisible during scrub-past-cold
+  // — `displayT` stays on the OLD t until enough of the NEW t lands, so the map read "all
+  // resident" while fetches were firing for boundT (Dominik, 2026-08-29: "the map only shows
+  // loading progress on initial image load and never after").
+  const tp = t.value
   const residentAtHere = new Set<string>()
   for (const e of brickResidents.value) {
     if (e.t === tp && e.level === g.level) residentAtHere.add(`${e.bx},${e.by},${e.bz}`)
@@ -1837,6 +1849,16 @@ function tick() {
       // frame 0 — playback then waits forever for something nothing is fetching.
       waitingFor.value = step.next
       schedulePump(step.next)
+      // Brick renderer only: schedulePump is a flat-renderer path — nothing on the brick side
+      // hears it. Push step.next into the prefetch window so the brick tickScheduler starts
+      // fetching for it now, or a stall never unstalls (nothing else is telling the scheduler
+      // this t matters). Under playback cap=4 so the window covers the direction of travel.
+      const m = meta.value
+      if (r?.setPrefetchTimepoints && m) {
+        const dir = Math.sign(step.next - t.value) || 1
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, 4))
+      }
+      frame.redraw()
     } else {
       waitingFor.value = -1
       gotoT(step.t)
@@ -2399,8 +2421,12 @@ async function ensureRenderer() {
       renderer.value = r
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
-      // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
-      r.setNeedsRedraw?.(() => frame.redraw())
+      // cheap even with a burst of arrivals in the same tick. Also refresh the residency
+      // snapshot — otherwise the mini-map only updates on brick LAND (setOnBrickLoaded), which
+      // means the "amber = fetching" phase is invisible because syncCacheState only ever sees
+      // fetches that already resolved (Dominik, 2026-08-29). syncCacheState is a couple of
+      // linear walks; fine at rAF rate. No-op on the flat renderer.
+      r.setNeedsRedraw?.(() => { syncCacheState(); frame.redraw() })
       // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
       // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
       // initial server-shipped `hi` and dragging `hi` below it locks the range.
@@ -2411,6 +2437,26 @@ async function ensureRenderer() {
         // here so the strip lights up as prefetch fills.
         syncCacheState()
       })
+      // When a scrub past cold-cache advances the DISPLAYED t asynchronously (via the brick
+      // scheduler auto-catch-up), sync `shownT` so overlays match. `showT` handles the
+      // synchronous path directly; this covers the case where `show(t)` returned false and
+      // residency finished later.
+      r.setOnDisplayAdvanced?.(t => {
+        if (shownT.value !== t) {
+          shownT.value = t
+          frame.redraw()
+        }
+      })
+      // ?bench=1: capture per-writeBrick timings so Session D can A/B MAP_WRITE against the
+      // current writeTexture-per-channel loop. Fires from inside the brick renderer, so kept
+      // gated on the harness flag — no cost when bench is off.
+      if (benchEnabled) {
+        r.setOnBrickWritten?.((durationMs, bytes) => {
+          benchWrites.value = [...benchWrites.value, {
+            atMs: performance.now(), durationMs, bytes,
+          }]
+        })
+      }
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
@@ -3170,7 +3216,14 @@ onUnmounted(() => {
               v-model.number="settings.viewerFps"
               v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
             >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
+            <!-- Playback-throttled indicator: colour the readout number itself amber. Zero layout
+                 impact vs. inserting an icon — the Fps slider already lives in a very narrow
+                 sidebar column, and adding an icon shrinks it further (Dominik, 2026-08-29). -->
+            <span class="cc-readout cc-fs-2xs vw-num"
+                  :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                  v-tooltip.left="playing && waitingFor >= 0
+                    ? 'Playback throttled — fetches are behind the requested Fps'
+                    : 'Requested playback rate'">{{ settings.viewerFps }}</span>
           </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -3843,4 +3896,7 @@ onUnmounted(() => {
   padding: 0.15rem 0.25rem 0.25rem;
 }
 .vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
+/* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
+   change — the Fps slider stays the size it was. */
+.vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 </style>
