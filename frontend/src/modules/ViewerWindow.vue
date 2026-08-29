@@ -3434,6 +3434,12 @@ onUnmounted(() => {
                 thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
               </span>
             </template>
+            <template v-else>
+              <span class="cc-muted">Cache</span>
+              <span>{{ resident.length }} / {{ gpu.capacity }}{{ gpu.capped ? ' (GPU limit)' : '' }}</span>
+              <span class="cc-muted">Per-t</span>
+              <span>{{ (gpu.bytesPerTimepoint / 1e6).toFixed(1) }} MB</span>
+            </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">
             <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
