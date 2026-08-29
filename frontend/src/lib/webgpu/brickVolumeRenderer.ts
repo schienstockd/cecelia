@@ -810,14 +810,20 @@ export async function createBrickVolumeRenderer(
         atlas.prevGridNz = atlas.gridNz
         atlas.prevLevel = atlas.currentLevel
       }
-      atlas.pageTableCpu.fill(EMPTY_SLOT)
-      atlas.pageTableDirty = true
       const scale = Math.pow(2, dec.level)
       const [bx, by, bz] = atlas.layout.brickSizeVox
       atlas.gridNx = Math.max(1, Math.ceil(currentMeta.nX / (bx * scale)))
       atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
       atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
       atlas.currentLevel = dec.level
+      // Rebuild pageTableCpu from any bricks already resident at the NEW level. Without this,
+      // a zoom-out-then-zoom-in leaves earlier L0 bricks in the atlas (still in `pageTable`)
+      // but with pageTableCpu[gridIndex] == EMPTY_SLOT — the fetch loop's `has(key)` check
+      // skips them, so they never get re-written and the shader falls back to prev-level (or
+      // black) at their positions. Dominik screenshot #37/#38: "when i zoom in some bricks go
+      // blank. but it thinks these were already loaded". `rebuildPageTableForDisplayT` clears
+      // to EMPTY_SLOT then re-populates for the current (displayT, currentLevel) entries.
+      rebuildPageTableForDisplayT()
     }
     // Keep prev-level bricks LRU-warm. The shader's fallback path samples them for holes in the
     // current level — but they're NATURALLY the oldest bricks in the atlas after a level swap,
