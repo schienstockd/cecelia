@@ -3210,7 +3210,12 @@ onUnmounted(() => {
           <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
-            <option :value="-1">Auto</option>
+            <!-- 3D-mode Auto: the dropdown is a FLOOR the SSE picker clamps against. On the brick
+                 renderer the atlas's active level moves with zoom; show it in the label so the
+                 3D control matches the 2D one's live readout (Dominik 2026-08-29). Flat renderer:
+                 `brickCurrentLevel` is undefined and the label collapses to plain "Auto". -->
+            <option :value="-1">Auto{{ bricksEnabled && brickCurrentLevel !== undefined
+              ? ` (L${brickCurrentLevel} — zoom-driven)` : '' }}</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
