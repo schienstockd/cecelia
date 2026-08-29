@@ -6,13 +6,11 @@
 // unmapped bricks (transparent — the tick loop will populate them), and reads the resident
 // bricks out of the atlas 3D texture.
 //
-// P5b scope: max-projection per channel + a fixed per-channel colour (rgb wheel). No LUT, no
-// labels, no overlays — those follow the same uniform block shape as `mipShader.ts` so P5d/P6
-// can graft them in without a second uniform buffer. Same VIEW_HALF_ANGLE and same camera basis
-// so the toggling between flat and brick renderers doesn't jump the framing.
-//
-// SEE `mipShader.ts` for the vertical-flip note (`up = cross(right, fwd)`, not the other way
-// round) — the same discipline applies here so the two renderers put row 0 at the top identically.
+// Overlays (points + track tails) share this uniform buffer and live in the SAME render pass as
+// the raycast — a second camera would draw a marker next to its cell rather than on it and still
+// look plausible. See `mipShader.ts` for the vertical-flip note (`up = cross(right, fwd)`, not
+// the other way round) — the same discipline applies here so the two renderers put row 0 at the
+// top identically.
 
 import { VIEW_HALF_ANGLE, MAX_CHANNELS, LUT_STOPS } from '../../utils/volumeViewer'
 
@@ -25,12 +23,12 @@ import { VIEW_HALF_ANGLE, MAX_CHANNELS, LUT_STOPS } from '../../utils/volumeView
 export const EMPTY_SLOT = 0xFFFFFFFF
 
 /**
- * Uniform buffer size in bytes. Ten leading vec4s (camera + geometry + prev-level) + one
- * vec4 per channel slot. `EXT.w` used to carry a global normalisation ceiling; per-channel
+ * Uniform buffer size in bytes. Eleven leading vec4s (camera + geometry + overlays + prev-level)
+ * + one vec4 per channel slot. `EXT.w` used to carry a global normalisation ceiling; per-channel
  * contrast windows now live in `p.ch[c]` (lo, hi, visible, unused), same shape the flat
  * renderer's `mipShader.ts` uses.
  */
-export const BRICK_UNIFORM_BYTES = 10 * 16 + MAX_CHANNELS * 16
+export const BRICK_UNIFORM_BYTES = 11 * 16 + MAX_CHANNELS * 16
 
 /**
  * Field offsets INTO the uniform buffer, in f32 slots (× 4 = bytes). Written out because getting
@@ -39,45 +37,41 @@ export const BRICK_UNIFORM_BYTES = 10 * 16 + MAX_CHANNELS * 16
 export const BU = {
   CAM: 0,        // yaw, pitch, dist, steps
   VP: 4,         // nch, canvasW, canvasH, ortho
-  EXT: 8,        // extX, extY, extZ, unused
+  EXT: 8,        // extX, extY, extZ, zOriginUm (0 in an uncropped volume)
   DIMS: 12,      // nX, nY, nZ (voxels at CURRENT level), unused
   BRICK: 16,     // brickX, brickY, brickZ, channelsPerBrick
   ATLAS: 20,     // atlasW, atlasH, atlasD (voxels), slotsX
   GRID: 24,      // nBx, nBy, nBz (bricks per axis, current level), slotsY
-  PAN: 28,       // panX, panY, unused, unused
-  PREV_GRID: 32, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
-  PREV_DIMS: 36, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
+  PAN: 28,       // panX, panY, ribbon planeLo, ribbon planeHi
+  OV: 32,        // point size (px), first plane shown, tail width (px), last plane shown
+  PREV_GRID: 36, // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
+  PREV_DIMS: 40, // prevNX, prevNY, prevNZ (voxels at PREVIOUS level), unused
   /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
-  CH0: 40,
+  CH0: 44,
 }
 
-export const BRICK_WGSL = `
+/**
+ * The uniform struct + camera basis + projection, shared VERBATIM by the raycast and the overlay
+ * passes. Same discipline as `SHARED_WGSL` in `mipShader.ts`: one copy interpolated into every
+ * pass so a marker drawn by `project()` sits on the cell drawn by the raycast rather than beside
+ * it. Vertical-flip lives in `up = cross(right, fwd)` — see the note there.
+ */
+const BRICK_SHARED_WGSL = `
 struct BU {
   cam:      vec4<f32>,  // yaw, pitch, dist, steps
   vp:       vec4<f32>,  // nch, canvasW, canvasH, ortho
-  ext:      vec4<f32>,  // extX, extY, extZ, _
+  ext:      vec4<f32>,  // extX, extY, extZ, zOriginUm
   dims:     vec4<f32>,  // nX, nY, nZ (current level), _
   brick:    vec4<f32>,  // brickX, brickY, brickZ, channelsPerBrick
   atlas:    vec4<f32>,  // atlasW, atlasH, atlasD, slotsX
   grid:     vec4<f32>,  // nBx, nBy, nBz (current level), slotsY
-  pan:      vec4<f32>,  // panX, panY, _, _
+  pan:      vec4<f32>,  // panX, panY, ribbon planeLo, ribbon planeHi
+  ov:       vec4<f32>,  // point size px, first plane, tail width px, last plane
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
   ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
 };
 @group(0) @binding(0) var<uniform> p: BU;
-// Current-level page table: (bz * nBy + by) * nBx + bx → slot index or 0xFFFFFFFF (not resident).
-@group(0) @binding(1) var<storage, read> pt: array<u32>;
-@group(0) @binding(2) var atlas: texture_3d<u32>;
-// Previous-level page table: same shape, indexed by the OLDER level's grid dimensions
-// (p.prevGrid.xyz). On a level switch, the current pt is copied here so old-level bricks stay
-// visible until the new level's replacements land — Kiln's zoom-threshold trick, same shape as
-// the 2D tile renderer's progressive-refinement pattern. Ignored when p.prevGrid.w < 0.5.
-@group(0) @binding(3) var<storage, read> prevPt: array<u32>;
-// LUT: MAX_CHANNELS rows × LUT_STOPS pixels wide. Row c is channel c's ramp resampled. Read
-// via textureLoad + explicit lerp between two stops (a sampler would interpolate across the
-// channel rows too — same reason mipShader.ts avoids sampling).
-@group(0) @binding(4) var lut: texture_2d<f32>;
 
 struct Cam { fwd: vec3<f32>, right: vec3<f32>, up: vec3<f32>, ro: vec3<f32> };
 fn camera() -> Cam {
@@ -91,6 +85,44 @@ fn camera() -> Cam {
   c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y;
   return c;
 }
+
+// World µm → clip space, the exact inverse of the ray construction. Returns w along the view
+// axis so a caller can size a point under perspective. Matches mipShader.ts's project() so a
+// user toggling between renderers gets the same on-screen coordinates.
+fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
+  let d = world - c.ro;
+  let sx = dot(d, c.right);
+  let sy = dot(d, c.up);
+  if (p.vp.w > 0.5) {
+    let hh = p.cam.z * ${VIEW_HALF_ANGLE};
+    return vec3(sx / (hh * aspect), sy / hh, 1.0);
+  }
+  let w = max(dot(d, -c.fwd), 1e-4);
+  return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
+}
+
+// Centre of the LOADED box in absolute image um. Overlays are absolute; the raycast is centred on
+// the origin. ext.w is the z origin -- 0 for an uncropped volume, non-zero when the brick
+// renderer loads a subrange (plane mode / cropped 3D).
+fn boxCentre() -> vec3<f32> {
+  return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
+}
+`
+
+export const BRICK_WGSL = `
+${BRICK_SHARED_WGSL}
+// Current-level page table: (bz * nBy + by) * nBx + bx → slot index or 0xFFFFFFFF (not resident).
+@group(0) @binding(1) var<storage, read> pt: array<u32>;
+@group(0) @binding(2) var atlas: texture_3d<u32>;
+// Previous-level page table: same shape, indexed by the OLDER level's grid dimensions
+// (p.prevGrid.xyz). On a level switch, the current pt is copied here so old-level bricks stay
+// visible until the new level's replacements land — Kiln's zoom-threshold trick, same shape as
+// the 2D tile renderer's progressive-refinement pattern. Ignored when p.prevGrid.w < 0.5.
+@group(0) @binding(3) var<storage, read> prevPt: array<u32>;
+// LUT: MAX_CHANNELS rows × LUT_STOPS pixels wide. Row c is channel c's ramp resampled. Read
+// via textureLoad + explicit lerp between two stops (a sampler would interpolate across the
+// channel rows too — same reason mipShader.ts avoids sampling).
+@group(0) @binding(4) var lut: texture_2d<f32>;
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -224,5 +256,110 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     acc = acc + ramp(ci, win);
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
+}
+`
+
+/**
+ * Overlay points, alpha-blended over the raycast in the SAME pass. Two triangles per instance,
+ * scaled in SCREEN pixels via `p.ov.x` so a marker stays legible when zoomed out and doesn't
+ * swallow the cell when zoomed in. Plane filter uses `p.ov.y`/`p.ov.w` (the loaded z range);
+ * negative `p.ov.y` disables the filter. Mirrors `POINTS_WGSL` in `mipShader.ts` — same camera,
+ * same project(), so a marker sits on the cell rather than beside it.
+ */
+export const BRICK_POINTS_WGSL = `
+${BRICK_SHARED_WGSL}
+
+struct POut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) rgb: vec3<f32>,
+  @location(1) local: vec2<f32>,
+};
+
+@vertex fn vs(
+  @builtin(vertex_index) vi: u32,
+  @location(0) centre: vec3<f32>,
+  @location(1) rgb: vec3<f32>,
+  @location(2) plane: f32,
+) -> POut {
+  var o: POut;
+  o.rgb = rgb;
+  var q = array<vec2<f32>, 6>(
+    vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0),
+    vec2(-1.0,  1.0), vec2(1.0, -1.0), vec2( 1.0, 1.0));
+  let corner = q[vi];
+  o.local = corner;
+
+  // Outside the planes actually LOADED → a degenerate quad clipped behind the far plane. Negative
+  // ov.y disables the filter (3D volume view over the whole stack).
+  if (p.ov.y >= 0.0 && (plane < p.ov.y - 0.5 || plane > p.ov.w + 0.5)) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);
+    return o;
+  }
+
+  let aspect = p.vp.y / max(p.vp.z, 1.0);
+  let c = camera();
+  let ndc = project(centre - boxCentre(), c, aspect);
+  let px = p.ov.x;
+  o.pos = vec4(ndc.x + corner.x * (2.0 * px / max(p.vp.y, 1.0)),
+               ndc.y + corner.y * (2.0 * px / max(p.vp.z, 1.0)),
+               0.0, 1.0);
+  return o;
+}
+
+@fragment fn fs(in: POut) -> @location(0) vec4<f32> {
+  let r = length(in.local);
+  let a = 1.0 - smoothstep(0.75, 1.0, r);
+  if (a <= 0.001) { discard; }
+  return vec4(in.rgb, a);
+}
+`
+
+/**
+ * Track tails. One screen-space quad per segment, widened perpendicular to the SCREEN-space
+ * direction so the width is in pixels and stays constant under perspective. Own plane bounds
+ * (`p.pan.z`/`p.pan.w`) so ribbons can be widened independently of the points' z reach. Mirrors
+ * `SEGMENTS_WGSL` in `mipShader.ts`.
+ */
+export const BRICK_SEGMENTS_WGSL = `
+${BRICK_SHARED_WGSL}
+
+struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
+
+@vertex fn vs(
+  @builtin(vertex_index) vi: u32,
+  @location(0) a: vec3<f32>,
+  @location(1) b: vec3<f32>,
+  @location(2) rgb: vec3<f32>,
+  @location(3) plane: f32,
+) -> SOut {
+  var o: SOut;
+  o.rgb = rgb;
+  if (p.pan.z >= 0.0 && (plane < p.pan.z - 0.5 || plane > p.pan.w + 0.5)) {
+    o.pos = vec4(0.0, 0.0, 2.0, 1.0);
+    return o;
+  }
+  let aspect = p.vp.y / max(p.vp.z, 1.0);
+  let c = camera();
+  let pa = project(a - boxCentre(), c, aspect).xy;
+  let pb = project(b - boxCentre(), c, aspect).xy;
+
+  let sa = vec2(pa.x * p.vp.y, pa.y * p.vp.z) * 0.5;
+  let sb = vec2(pb.x * p.vp.y, pb.y * p.vp.z) * 0.5;
+  var dir = sb - sa;
+  let len = length(dir);
+  dir = select(vec2(1.0, 0.0), dir / max(len, 1e-6), len > 1e-6);
+  let nrm = vec2(-dir.y, dir.x) * (p.ov.z * 0.5);
+
+  var corner = array<vec2<f32>, 6>(
+    vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(0.0, 1.0),
+    vec2(0.0,  1.0), vec2(1.0, -1.0), vec2(1.0, 1.0));
+  let k = corner[vi];
+  let sp2 = mix(sa, sb, k.x) + nrm * k.y;
+  o.pos = vec4(sp2.x * 2.0 / max(p.vp.y, 1.0), sp2.y * 2.0 / max(p.vp.z, 1.0), 0.0, 1.0);
+  return o;
+}
+
+@fragment fn fs(in: SOut) -> @location(0) vec4<f32> {
+  return vec4(in.rgb, 0.85);
 }
 `
