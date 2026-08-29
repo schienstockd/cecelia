@@ -1441,6 +1441,47 @@ end
     end
 end
 
+@testset "API: sRGB encode matches the browser viewer's canvas gamma" begin
+    # The offline movie renderer and the browser volume viewer both need to hand the display /
+    # codec pixels in sRGB — otherwise the movie reads ~2× dimmer than the viewer at the same
+    # specs (audit 2026-08-29). Pin the transfer function's known values + the whole pipeline's
+    # mid-tone lift; a regression that silently reverts to linear output would drop these back.
+    r = p -> Float64(red(p)); g = p -> Float64(green(p)); b = p -> Float64(blue(p))
+
+    # `_linear_to_srgb` on canonical points (IEC 61966-2-1 piecewise curve).
+    @test _linear_to_srgb(0f0) == 0f0
+    @test isapprox(_linear_to_srgb(1f0), 1f0; atol = 1e-6)          # Float32 arithmetic loses 1 ulp
+    # Mid-tone: 0.5 linear → ~0.735 sRGB. This is the entire visual difference between the linear
+    # movie and the viewer, so keep the tolerance tight.
+    @test isapprox(_linear_to_srgb(0.5f0), 0.7353569f0; atol = 5e-4)
+    # Piecewise segment near zero (linear × 12.92), below the 0.0031308 threshold.
+    @test isapprox(_linear_to_srgb(0.001f0), 0.001f0 * 12.92f0; atol = 1e-6)
+
+    # `srgb_encode` on an already-composited frame — mid-grey lifts, white stays white.
+    lut_r = [(0f0, 0f0, 0f0), (1f0, 0f0, 0f0)]
+    half  = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut_r, true)])
+    @test isapprox(r(half[1, 1]), 0.5; atol = 0.01)                # linear composite still 0.5
+    lifted = srgb_encode(half)
+    @test isapprox(r(lifted[1, 1]), 0.7353; atol = 0.01)           # sRGB-encoded, mid-tones up
+    @test g(lifted[1, 1]) == 0.0 && b(lifted[1, 1]) == 0.0         # zero channels stay zero
+    white = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, [(0f0,0f0,0f0),(1f0,1f0,1f0)], true)])
+    @test all(c -> isapprox(c(srgb_encode(white)[1, 1]), 1.0; atol = 1e-3), (r, g, b))
+
+    # `render_view_frame` bakes the encode in — the same specs the viewer draws with produce a
+    # frame whose mid-tone channel reads ABOVE the linear composite. This is what closes the
+    # visual gap between the movie and the on-screen canvas.
+    mktempdir() do dir
+        # A 1-t, 1-c, 1-z, 4-y, 4-x store filled at mid intensity; contrast 0..1 → composite 0.5.
+        arr = fill(Float32(0.5), 1, 1, 1, 4, 4)
+        caxes = ["t", "c", "z", "y", "x"]
+        frame = render_view_frame(arr, caxes, 0; z = 0, channels = 0:0,
+                                    specs = [(lo = 0.0, hi = 1.0,
+                                                lut = [(0f0,0f0,0f0),(1f0,0f0,0f0)],
+                                                visible = true)])
+        @test isapprox(r(frame[1, 1]), 0.7353; atol = 0.01)         # sRGB, not 0.5
+    end
+end
+
 # Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for
 # `arr.metadata.dtype`, which is exactly enough to assert the no-copy path by object identity.
 struct FakeZMeta; dtype::String; end

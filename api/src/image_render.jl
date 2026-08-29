@@ -170,21 +170,33 @@ end
 resolved_display_specs(specs::AbstractVector) =
     [(; lo = s[1], hi = s[2], lut = _as_lut(s[3]), visible = s[4]) for s in specs]
 
-# sRGB piecewise transfer function (IEC 61966-2-1): linear [0,1] → sRGB-encoded [0,1]. Standard
-# gamma the browser WebGPU canvas applies for us (context configured with a `-srgb` format on Linux,
-# `getPreferredCanvasFormat` — see `frontend/src/lib/webgpu/volumeRenderer.ts`). The offline movie
-# writes 8-bit pixels straight from the linear accumulator, and the mp4 encoder + every player
-# treats those numbers AS sRGB — so mid-tones read ~2× dimmer than the viewer shows them (audit
-# 2026-08-29). Applying the encode here matches the viewer's on-screen brightness pixel-for-pixel.
+# sRGB piecewise transfer function (IEC 61966-2-1): linear [0,1] → sRGB-encoded [0,1]. This is
+# what the browser volume viewer's WebGPU canvas applies for us — the canvas is now pinned to an
+# sRGB view (`frontend/src/lib/webgpu/canvasFormat.ts`), so the shader's linear accumulator gets
+# gamma-encoded at write time. Every consumer here that hands a byte to a display device / codec
+# has to do the same explicit encode, or the linear numbers would be interpreted AS sRGB — mid-
+# tones ~2× dimmer than the viewer shows (audit 2026-08-29). Kept as a standalone helper so a
+# caller that needs LINEAR pixels (a numeric readout, an image-processing step) can skip it.
 @inline function _linear_to_srgb(x::Float32)
     x = clamp(x, 0f0, 1f0)
     x <= 0.0031308f0 && return 12.92f0 * x
     1.055f0 * x^(1f0 / 2.4f0) - 0.055f0
 end
 
+# Apply sRGB encoding to an already-composited RGB frame. Callers that write pixels to disk / into
+# an mp4 must call this on the `composite_rgb` result; the tests on `composite_rgb` stay in the
+# LINEAR space (which is what the LUT + blend policy asserts). One caller each way, one function
+# each way — no in-place mutation, so the linear frame stays available if a caller wants both.
+srgb_encode(img::AbstractMatrix{RGB{N0f8}}) =
+    [RGB{N0f8}(_linear_to_srgb(Float32(red(p))),
+               _linear_to_srgb(Float32(green(p))),
+               _linear_to_srgb(Float32(blue(p))))
+     for p in img]
+
 # Pure: composite a (C, H, W) float array + per-channel (lo, hi, colour, visible) specs → H×W RGB{N0f8}
-# via clip-to-contrast, colourise through the channel's LUT, additive blend, then sRGB-encode. `colour`
-# is a colormap name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.
+# via clip-to-contrast, colourise through the channel's LUT, additive blend. `colour` is a colormap
+# name or a LUT (see `_as_lut`). Output is LINEAR — callers writing pixels for display / codec must
+# wrap with `srgb_encode`. Unit-testable without any IO/zarr.
 function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
     C, H, W = size(chw)
     acc = zeros(Float32, 3, H, W)
@@ -201,9 +213,7 @@ function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
             acc[3, i, j] += b
         end
     end
-    [RGB{N0f8}(_linear_to_srgb(acc[1, i, j]),
-               _linear_to_srgb(acc[2, i, j]),
-               _linear_to_srgb(acc[3, i, j]))
+    [RGB{N0f8}(clamp(acc[1, i, j], 0, 1), clamp(acc[2, i, j], 0, 1), clamp(acc[3, i, j], 0, 1))
      for i in 1:H, j in 1:W]
 end
 
@@ -257,7 +267,9 @@ function render_preview_frame(zarr_path::AbstractString, props_path::AbstractStr
     if specs === nothing || length(specs) < size(chw, 1)
         specs = [percentile_spec(view(chw, c, :, :), DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
     end
-    img = composite_rgb(chw, specs)
+    # sRGB-encode before writing PNG bytes — every image viewer treats an 8-bit PNG as sRGB, so a
+    # linear composite would read ~2× dimmer than the WebGPU volume viewer's canvas shows.
+    img = srgb_encode(composite_rgb(chw, specs))
 
     io = IOBuffer()
     PNGFiles.save(io, img)
@@ -387,7 +399,11 @@ function render_view_frame(arr, caxes, t::Int;
     end
     segments === nothing || draw_segments!(frame, segments; width_px = segment_width_px)
     points === nothing   || draw_points!(frame, points; size_px = point_size_px)
-    frame
+    # sRGB encoding AFTER overlays: the overlay drawers write in the composite's colour space, so
+    # encoding pre-overlay would give the tracks / masks a different gamma than the pixels around
+    # them. One transfer at the end, one uniform sRGB output — same reasoning as the browser
+    # viewer's sRGB canvas view (`frontend/src/lib/webgpu/canvasFormat.ts`).
+    srgb_encode(frame)
 end
 
 # ── 3D rotation-MIP renderer (P5-a Stage C / animation) ─────────────────────────
@@ -519,7 +535,10 @@ function render_view_frame_3d(arr, caxes, t::Int;
 
     sp = specs === nothing ?
         [percentile_spec(view(out, k, :, :), DEFAULT_CMAPS[mod1(k, 4)]) for k in 1:C] : specs
-    composite_rgb(out, sp)
+    # sRGB-encode the composite for display, matching the browser viewer's sRGB canvas. The 3D
+    # renderer doesn't draw overlays (they're stitched in by the caller via `render_view_frame`'s
+    # 2D path), so encoding here is the last step before the frame is handed to the encoder.
+    srgb_encode(composite_rgb(out, sp))
 end
 
 # A 0-based inclusive pixel range → the 1-based Julia range it selects, clamped to `n`. `nothing` (or a

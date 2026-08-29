@@ -15,6 +15,7 @@
 // See docs/todo/KILN_BRICK_PLAN.md → Phase P5.
 
 import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
+import { pickSrgbCanvasFormats } from './canvasFormat'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
 import { PROBE_PX } from './volumeRenderer'
 import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
@@ -129,8 +130,11 @@ export async function createBrickVolumeRenderer(
 
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
-  const format = navigator.gpu.getPreferredCanvasFormat()
-  ctx.configure({ device, format, alphaMode: 'opaque' })
+  // sRGB canvas policy — pipeline targets and the color-attachment view use the sRGB variant;
+  // the canvas itself is configured at the linear base with the sRGB view declared compatible.
+  // Matches the offline movie renderer's `_linear_to_srgb`. See `./canvasFormat.ts`.
+  const { base: canvasFormat, viewFormat: format } = pickSrgbCanvasFormats()
+  ctx.configure({ device, format: canvasFormat, viewFormats: [format], alphaMode: 'opaque' })
 
   // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings. The
   // bind group layout is EXPLICIT (not `auto`) so the raycast, points and segments pipelines all
@@ -981,7 +985,9 @@ export async function createBrickVolumeRenderer(
     writeUniform()
     writePageTable()
 
-    const view = ctx.getCurrentTexture().createView()
+    // Explicit sRGB view — see the flat renderer for the reasoning; both draw paths use the
+    // same policy so a stylistic change to one is visible in the other.
+    const view = ctx.getCurrentTexture().createView({ format })
     const enc = device.createCommandEncoder()
     const pass = enc.beginRenderPass({
       colorAttachments: [{

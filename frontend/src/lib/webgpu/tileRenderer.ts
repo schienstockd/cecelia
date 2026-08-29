@@ -29,6 +29,7 @@ import {
   type ViewerMeta, type ViewerChannel,
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
+import { pickSrgbCanvasFormats } from './canvasFormat'
 export { WebGpuUnavailable, type AdapterReport }
 import { tileKeyStr, tileFetchRect, type TileKey } from '../../utils/tileViewer'
 
@@ -137,8 +138,11 @@ export async function createTileRenderer(
   device.pushErrorScope('validation')
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
-  const format = navigator.gpu.getPreferredCanvasFormat()
-  ctx.configure({ device, format, alphaMode: 'opaque' })
+  // sRGB canvas policy — see `./canvasFormat.ts`. Pipeline targets + the color-attachment view
+  // use the sRGB variant so gamma-encoding happens at write time, matching the offline movie
+  // renderer's `_linear_to_srgb`.
+  const { base: canvasFormat, viewFormat: format } = pickSrgbCanvasFormats()
+  ctx.configure({ device, format: canvasFormat, viewFormats: [format], alphaMode: 'opaque' })
 
   const module = device.createShaderModule({ code: TILE_WGSL })
   const errs = (await module.getCompilationInfo()).messages.filter(m => m.type === 'error')
@@ -485,7 +489,8 @@ export async function createTileRenderer(
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({
         colorAttachments: [{
-          view: ctx.getCurrentTexture().createView(),
+          // Explicit sRGB view — see `./canvasFormat.ts`.
+          view: ctx.getCurrentTexture().createView({ format }),
           clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
         }],
       })
