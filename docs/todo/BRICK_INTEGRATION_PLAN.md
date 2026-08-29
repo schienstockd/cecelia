@@ -145,16 +145,30 @@ threshold has to exclude that store.
 sub-pixel on zolIMa and fXgbTl. Open both renderers side-by-side (two windows, one `?bricks=0`, one
 `?bricks=1`, same image + timepoint). Anything that jumps between the two is a bug.
 
-**B7 — Retire the flat 3D path.** Only if B5 + B6 both green. Flat still owns the small-movie case
-(fXgbTl) per Decision 2, so this stops being "retire flat entirely" and becomes "retire the FLAT
-branch of the brick auto-select fallback" — the `bricksEnabled` predicate stays, but the code path
-for `bricksEnabled === false` is exercised only when the user opens a movie that fits the cache.
-The flat renderer itself keeps its 2D plane duty regardless.
+**B7 — STRUCK.** Not a real task after B2+B3+the toggle: auto-select routes small movies to flat
+(fXgbTl) and everything else to brick, and the Bricks Auto/Brick/Flat toggle lets the user override
+per session for images the predicate gets wrong (Dml3RG 2D is the recorded case). There is nothing
+left to "retire" — flat is a legitimate renderer for real cases. The `bricksEnabled === false`
+branch stays load-bearing.
 
 **B8 — Delete hold-on-cold code path.** Follow-up once Frankenstein has weeks in Dominik's daily
 use with no regressions. Remove the `frankensteinEnabled = false` branch in `show()` and the auto-
 advance block, remove `?brickFrank=0` toggle, drop the `prevDisplayT` guard on the second pass.
 Cost: ~20 lines out. Waiting on confidence, not a technical block.
+
+**B9 ✅ shipped 2026-08-29** — Bricks Auto/Brick/Flat toggle in the VIEW panel + reactive
+renderer swap. `settings.viewerBricksMode` persisted to localStorage. Watcher explicitly destroys
+`renderer.value` before `reallocate` so the toggle actually swaps renderers — without the destroy
+step `ensureRenderer`'s `if (renderer.value) return` short-circuit left the OLD renderer running.
+
+**B10 ✅ shipped 2026-08-29** — Fast plane switch via `setZPlane(zLo)` on both renderers. Brick
+renderer keeps its ~64 MB atlas texture allocated and clears the page table + inflight (same
+discipline as level swap). Flat renderer bumps a `planeVersion` counter and stamps slots; stale
+slots miss on `show`/`hasTimepoint`, and `uploadFrame`'s existing `dropSlot(t)` cleans them
+lazily as t's are revisited (no upfront 200 ms `dropAll`). ViewerWindow's `zPump` aborts
+in-flight slab fetches before firing `setZPlane` — otherwise old-plane bytes could land in a
+slot stamped fresh. `useTiles` and volume mode fall through to full reallocate (different
+geometry). Together closes the 1-2 s plane-wheel freeze Dominik hit on Dml3RG 2D.
 
 ## Perf ledger (populated in B5)
 

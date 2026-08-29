@@ -2153,13 +2153,17 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  * paints from a cache and is cheap enough to run per pointer move.
  */
 const zPump = debouncedLatest<number>(async (zp) => {
-  // Brick renderer: setZPlane keeps the ~64 MB atlas texture allocated and just invalidates
-  // brick contents — measured 1-2 s freeze on Dml3RG 2D plane wheel (Dominik 2026-08-29) came
-  // from `dropAtlas` + `createTexture` in the reallocate path. Flat renderer has no equivalent
-  // fast path today; it still reallocates. On mode change or first mount `renderer.value` may
-  // be null → also fall through.
+  // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
+  // (which destroys textures / atlas — the 200 ms-2 s freeze Dominik hit 2026-08-29). Abort
+  // any in-flight slab fetches first: their URLs carry the OLD zPlane and would land in a
+  // slot stamped with the NEW planeVersion, leaving wrong bytes on a "fresh" slot. Volume
+  // mode and useTiles have different geometry / cache shapes → fall through to reallocate.
   const r = renderer.value
   if (r?.setZPlane && !useTiles.value && mode.value === 'plane') {
+    for (const ac of aborts.values()) ac.abort()
+    aborts.clear()
+    inflight.clear()
+    pump.cancel()
     r.setZPlane(zp)
     gotoT(t.value)
     return
