@@ -56,6 +56,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  shouldUseBricks,
   VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -107,7 +108,20 @@ const imageUid = String(route.query.image ?? '')
  * renderer swap on mid-session flip needs a full destroy/recreate and isn't worth the
  * scaffolding for a dev-only flag.
  */
-const bricksEnabled = String(route.query.bricks ?? '') === '1'
+/** URL override for the auto-select. `?bricks=1` forces brick, `?bricks=0` forces flat, absent
+ *  lets `shouldUseBricks(meta)` decide. Both directions available for A/B testing without
+ *  editing the predicate. */
+const bricksOverride = String(route.query.bricks ?? '')
+/** Computed so it re-evaluates when `meta` lands (server round-trip). Read `.value` in script,
+ *  auto-unwraps in template. Consumers that snapshot the value once (e.g. `ensureRenderer`)
+ *  see the final classification because `reallocate` guards on `meta.value` being non-null
+ *  before it calls them. */
+const bricksEnabled = computed<boolean>(() => {
+  if (bricksOverride === '1') return true
+  if (bricksOverride === '0') return false
+  const m = meta.value
+  return m !== null && shouldUseBricks(m)
+})
 /**
  * Brick LOD tuning knobs — URL params for interactive feel-testing. Applied ONCE at mount to
  * the renderer. Defaults reproduce the shipped behaviour; refresh with a new value to try
@@ -182,7 +196,7 @@ function benchSave() {
     brickSizeVox: br?.brickSizeVox ?? [0, 0, 0],
   } : null
   const blob = buildBenchBlob({
-    mode: bricksEnabled ? 'brick' : 'flat',
+    mode: bricksEnabled.value ? 'brick' : 'flat',
     meta: benchMeta,
     t0: benchT0.value,
     savedAt: performance.now(),
@@ -1628,7 +1642,7 @@ function syncTileCacheState() {
 const brickMapGrid = computed(() => {
   const m = meta.value
   const lvl = brickCurrentLevel.value
-  if (!bricksEnabled || !m || lvl === undefined) return null
+  if (!bricksEnabled.value || !m || lvl === undefined) return null
   const [bx, by, bz] = brickSizeVox.value
   const scale = Math.pow(2, lvl)
   const zd = mode.value === 'plane' ? 1 : zDepth.value
@@ -1894,7 +1908,7 @@ function tick() {
     // Frankenstein mode: advance every tick regardless of residency, so the snap-to-boundT
     // in show(t) fires and the shader draws each frame with prev-t hole-fill for whatever
     // hasn't landed. Otherwise a not-yet-resident t stalls and Frankenstein never runs.
-    const readyProbe = brickKnobFrank && bricksEnabled
+    const readyProbe = brickKnobFrank && bricksEnabled.value
       ? () => true
       : (u: number) => r?.hasTimepoint(u) ?? false
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
@@ -2309,7 +2323,7 @@ const brickDisplayValid = ref<boolean>(true)
  *  `shownT >= 0` gate = don't fire during initial load (the "Loading timepoint…" chip
  *  already owns that state). */
 const canvasPartial = computed(() =>
-  bricksEnabled && shownT.value >= 0 && !brickDisplayValid.value)
+  bricksEnabled.value && shownT.value >= 0 && !brickDisplayValid.value)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -2526,7 +2540,7 @@ async function ensureRenderer() {
       // Same interface, different backing — the caller doesn't branch, only the constructor
       // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
       // in P5b.
-      const construct = bricksEnabled ? createBrickVolumeRenderer : createVolumeRenderer
+      const construct = bricksEnabled.value ? createBrickVolumeRenderer : createVolumeRenderer
       const r = await construct(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'GPU error: ' + msg)

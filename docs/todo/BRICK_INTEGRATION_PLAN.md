@@ -53,14 +53,18 @@ Three things follow from this that Sonnet's earlier read (2026-08-27) didn't hav
    URL flag stays as a **dev override** (`?bricks=0` forces flat, `?bricks=1` forces brick) so we can
    A/B any image. User-facing UI does not surface the choice.
 
-2. **Predicate: `nX * nY < HUGE_XY_THRESHOLD`, brick otherwise.** No `nLevels` gate — bench data
-   shows brick's TTFF win covers single-level stores too. `HUGE_XY_THRESHOLD` starts at 200 Mpx
-   (fXgbTl 0.2, Dml3RG 1.1, FtGoJO 4.1, SispLk 57 — all under; f8gzA2 343 — over). Refined once
-   B4 (f8gzA2 scaling) resolves.
+2. **Predicate: whole-movie bytes vs a cache budget.** `nT * bytesPerT < CACHE_BUDGET_BYTES` → flat,
+   else brick. Reshaped from the earlier `nX * nY < 200 Mpx` gate after bench5 (2026-08-29) showed
+   the intersect guard dropped f8gzA2's drawP95 200 ms → 2.8 ms — the shader-scaling exclusion
+   disappeared. bench6 then showed the honest axis is "does flat's cache hold the whole movie":
+   fXgbTl (1.4 GB total, cached 31/31, playback 0.10 ms, zero re-fetch) → **flat**; Dml3RG (8.5 GB,
+   cached 4/181) → **brick**; f8gzA2 (17 GB per t) → **brick** (flat can't upload one volume).
+   Budget starts at 1.5 GB. `CACHE_BUDGET_BYTES` in `volumeViewer.ts` locked by unit tests.
 
-3. **Selection is mount-time.** Mid-session flip needs a full renderer teardown + rebuild that isn't
-   worth building for what changes about zero times per session. `bricksEnabled` becomes a
-   `computed` read once inside the mount closure; `nLevels`/`nX`/`nY` don't move for one image.
+3. **Selection is reactive on `meta`, evaluated once meta lands.** `bricksEnabled` is a `computed`
+   that reads `meta.value` under a null guard. Consumers snapshot the value inside `ensureRenderer`
+   after `reallocate` confirmed `meta.value !== null`, so mid-session flips don't happen and the
+   renderer is picked once per image.
 
 4. **The user dropdown is a FLOOR, not a pin. SSE reloads finer on zoom-in.** Reversal of the
    8b780fd `setLevelOverride` pin. Dominik screenshot 2026-08-29 (SispLk zoomed IN, still L5,
@@ -87,68 +91,49 @@ Three things follow from this that Sonnet's earlier read (2026-08-27) didn't hav
 
 ## Phased build sequence
 
-**B0 — Unpin LOD, wire the floor + SSE + over-fetch guard.** Blocks B1: with the pin in place, zoom
-on SispLk sits on L5 while the user asks for L0 (screenshot 2026-08-29). Concrete:
-- `frontend/src/lib/webgpu/brickVolumeRenderer.ts` — rename `setLevelOverride` → `setLevelFloor`.
-  Internal `levelOverride` becomes `levelFloor`. `scheduleBricks` accepts `floorLevel` and calls
-  `pickBrickLevel` with `previousLevel`, then clamps to `min(chosen, floorLevel)`.
-- `frontend/src/utils/brickScheduler.ts` — add `MAX_INTERSECT_BRICKS` (start at 32) and the guard:
-  if `bricksIntersectingViewport(view, world, chosen).length > MAX_INTERSECT_BRICKS`, walk one level
-  coarser until it fits (bounded by `floorLevel`).
-- `frontend/src/modules/ViewerWindow.vue` — the `watch(slabLevel, r.setLevelOverride)` at line 2094
-  becomes `r.setLevelFloor?.(slabLevel.value)`; nothing else in ViewerWindow needs to change.
-- Chip false-negative: Dominik screenshot shows all 4 core L5 bricks resident with the chip still
-  visible → `coreBricksResident(displayT)` false-negatives. Diagnose in the same PR (may resolve when
-  the level path changes; if not, add a targeted fix).
-- Cost: one PR. Deliverable: zoom in on SispLk → L4 → L3 → L0 loads, atlas bytes stay bounded.
+**B0 ✅ shipped 2026-08-29** — Unpin LOD, wire the floor + SSE + over-fetch guard. `setLevelOverride`
+renamed to `setLevelFloor`; `MAX_INTERSECT_BRICKS = 256`; scheduler applies pan; hold-going-finer
+gate; prev-level touch bias; `rebuildPageTableForDisplayT` on level swap; `needsRedraw` nudges on
+all fetch completions; bootstrap-to-floor on first swap; URL knobs `?brickThr`/`?brickBias`/
+`?brickHold`; bench chip diagnostics (`missing@dis`/`missing@bnd`, `displayT → boundT`). PR-scale
+sequence across ~15 commits.
 
-**B1 — Re-baseline post-#702.** One browser session on the five reference images. Save fresh bench
-blobs, drop into `~/Downloads/TMP/bench/`. The one number that changes the plan: Dml3RG's brick MB
-(pre-fix 7883 MB / post-fix expected < 1 GB). If bytes drop as predicted, Decision 2's threshold
-holds. If they don't, we have a second scaling problem alongside f8gzA2.
-- Cost: ~10 min at the browser.
-- Deliverable: five new JSON blobs, one-line changelog inline in this doc under "What we know".
+**B0.5 ✅ shipped 2026-08-29** — Frankenstein hole-fill, default on. `show(t)` and the auto-advance
+path snap `displayT` to `boundT` immediately; `rebuildPageTableForDisplayT`'s second pass fills any
+grid cell still EMPTY with the same brick position at the previous displayT (LRU-touched with plain
+`frameNow` — NOT the `PREV_TOUCH_BIAS` used for prev-level, which was ruinous for prev-t; it evicted
+freshly-landed boundT bricks and produced the constant-refresh loop from screenshot #49). Under
+playback the readiness probe returns true so scrub never stalls. `?brickFrank=0` opts back to
+hold-on-cold for A/B; hold-on-cold code path stays as dead-code candidate for B8.
 
-**B2 — Auto-select predicate + tests.** Pure function in `frontend/src/utils/volumeViewer.ts`
-(or a new `brickSelect.ts`, whichever slots better):
+**B1 — SKIPPED** by Dominik 2026-08-29. Bench6 blobs (fXgbTl, Dml3RG, f8gzA2) enough evidence.
 
+**B2 ✅ shipped 2026-08-29** — `shouldUseBricks(meta)` + tests. Cache-budget shape:
 ```ts
-export const HUGE_XY_THRESHOLD_PX = 200_000_000
+export const CACHE_BUDGET_BYTES = 1_500_000_000
 export function shouldUseBricks(meta: ViewerMeta): boolean {
-  return meta.nX * meta.nY < HUGE_XY_THRESHOLD_PX
+  const bytesPerT = meta.nX * meta.nY * meta.nZ * meta.nC * meta.bytesPerVoxel
+  if (!Number.isFinite(bytesPerT) || bytesPerT <= 0) return false
+  return bytesPerT * Math.max(meta.nT, 1) >= CACHE_BUDGET_BYTES
 }
 ```
+Landed pre-bench6 with the earlier `nX * nY < 200 Mpx` gate; reshaped to movie-fits-cache after
+bench6 showed fXgbTl (1.4 GB) fits flat cleanly and f8gzA2 needs bricks because flat can't upload
+a 17 GB volume at all.
 
-Unit test the boundary + each reference image's classification. No wiring yet.
-- Deliverable: green `pixi run test-frontend`.
+**B3 ✅ shipped 2026-08-29** — Wire the predicate. `bricksEnabled` is a `computed<boolean>` that
+consults `meta.value` reactively, with `?bricks=0|1` as a two-way dev override. Script-side reads
+use `.value`; template auto-unwraps. `ensureRenderer` snapshots `bricksEnabled.value` inside
+`reallocate`, which guards on `meta.value !== null` — so the mount-time semantic is preserved.
+- Classification with the 1.5 GB budget:
+  - fXgbTl (1.4 GB total) → **flat**
+  - Dml3RG (8.5 GB), FtGoJO, SispLk, f8gzA2 → **brick**
 
-**B3 — Wire the predicate in ViewerWindow.** Replace the `const bricksEnabled = String(route.query.bricks ?? '') === '1'` line with:
-
-```ts
-const bricksOverride = route.query.bricks
-const bricksEnabled = computed(() => {
-  const meta_v = meta.value
-  if (bricksOverride === '1') return true
-  if (bricksOverride === '0') return false
-  return meta_v ? shouldUseBricks(meta_v) : false
-})
-```
-
-Consumers already reactive (`v-if`, template refs) pick it up automatically. `ensureRenderer` reads
-it once during construction; mount-time semantics preserved. Verify by opening each reference image
-with no `?bricks=` and checking the bench chip reports the right mode.
-- Deliverable: default brick on fXgbTl / Dml3RG / FtGoJO / SispLk, default flat on f8gzA2.
-
-**B4 — f8gzA2 shader-scaling investigation.** Not a fix — a diagnosis + a threshold decision.
-Instrument how many bricks the viewport intersect list yields at f8gzA2 nZ=1 × 343 Mpx, and where
-the 200 ms drawP95 splits between `tickScheduler` + `pageTableCpu` upload + shader dispatch. Two
-outcomes possible:
-- (a) intersect list is the whole cost (200+ bricks per frame): cap the intersect count in the
-  scheduler (draw far bricks at a coarser level, close bricks at target level — brick's original
-  point), OR raise `HUGE_XY_THRESHOLD_PX` so f8gzA2 stays on flat forever.
-- (b) something else is 200 ms (LUT rebuild? label texture? bind group?): find that first.
-Deliverable: an inline `## f8gzA2 diagnosis` section in this doc, and a `?` -> `!` on Decision 2's
-threshold.
+**B4 — DIAGNOSIS FOLDED INTO B0.** The intersect guard (`MAX_INTERSECT_BRICKS = 256`, coarsen-until-
+fits) that shipped in B0 was outcome (a) from B4's hypothesis, and bench5 confirmed it: f8gzA2's
+drawP95 dropped from 200 ms → 2.8 ms without any further shader-scaling work. The "keep f8gzA2 on
+flat" outcome is off the table anyway — flat can't render it. No separate B4 write-up needed;
+Decision 2 already reflects the fact.
 
 **B5 — P5d perf pass on the "brick default" cases.** Formal bench blob per reference image AFTER
 B3 lands. Record numbers in this doc under a **Perf ledger** section. Threshold: brick's CPU-side
@@ -160,27 +145,32 @@ threshold has to exclude that store.
 sub-pixel on zolIMa and fXgbTl. Open both renderers side-by-side (two windows, one `?bricks=0`, one
 `?bricks=1`, same image + timepoint). Anything that jumps between the two is a bug.
 
-**B7 — Retire the flat 3D path.** Only if B5 + B6 both green.  Delete `pickVolumeLevel` from the 3D
-render loop (keep for the 2D level dropdown); drop `?bricks=` override to `?bricks=1` only (force-on
-for override images we haven't found yet); flip `bricksEnabled` to `computed(() => shouldUseBricks(m))`
-unconditional. **Do not do this until (a) B5 confirms no regression on the "brick default" cases
-AND (b) f8gzA2 either passes B4's threshold check OR the predicate is refined to keep it on flat.**
+**B7 — Retire the flat 3D path.** Only if B5 + B6 both green. Flat still owns the small-movie case
+(fXgbTl) per Decision 2, so this stops being "retire flat entirely" and becomes "retire the FLAT
+branch of the brick auto-select fallback" — the `bricksEnabled` predicate stays, but the code path
+for `bricksEnabled === false` is exercised only when the user opens a movie that fits the cache.
+The flat renderer itself keeps its 2D plane duty regardless.
 
-## Perf ledger (populated in B1 + B5)
+**B8 — Delete hold-on-cold code path.** Follow-up once Frankenstein has weeks in Dominik's daily
+use with no regressions. Remove the `frankensteinEnabled = false` branch in `show()` and the auto-
+advance block, remove `?brickFrank=0` toggle, drop the `prevDisplayT` guard on the second pass.
+Cost: ~20 lines out. Waiting on confidence, not a technical block.
 
-*Pending B1 re-baseline.*
+## Perf ledger (populated in B5)
+
+*Pending B5.*
 
 ## Open questions
 
-1. **Does #702 fully close Dml3RG's 7883 MB thrash?** B1 answers this.
-2. **Is f8gzA2's shader cost fixable, or a permanent exclusion?** B4 answers this. If permanent, the
-   plan doc for a future f8gzA2-shape store change might supersede this one.
-3. **Do we ever want `?bricks=1` to force-on when the predicate says off?** Yes for A/B testing, no
+1. **Is the 1.5 GB cache budget the right cut?** bench6 landed fXgbTl exactly on the flat side
+   (1.4 GB total → cap 31/31, playback 0.10 ms) and Dml3RG well on the brick side (8.5 GB). Any
+   store between 1.5–3 GB will pick brick; if that turns out to feel worse than a stretched flat
+   cache we tune the constant.
+2. **Do we ever want `?bricks=1` to force-on when the predicate says off?** Yes for A/B testing, no
    for shipping. Decision 1 already handles this — override in both directions.
-4. **Should the predicate also gate on `meta.bytesPerVoxel`?** r16uint stores double L0 bytes for
-   the same pixel count. If `HUGE_XY_THRESHOLD_PX` alone starts letting bad stores through post-B4,
-   swap to a `l0BytesPerT > MAX_L0_BYTES` predicate instead. Not urgent — none of the reference
-   images cross the line.
+3. **Does Frankenstein hole-fill leak prev-t bricks?** LRU still evicts them naturally (plain
+   `frameNow` touch, no bias). Under continuous slow-network playback, holes will grow as prev-t
+   bricks age out. Not observed in Dml3RG playback so far.
 
 ## References
 
