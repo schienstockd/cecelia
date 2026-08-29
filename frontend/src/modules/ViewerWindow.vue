@@ -2129,11 +2129,14 @@ function onWheel(e: WheelEvent) {
     return
   }
   // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
-  // and `pickTileLevel` gets down to L0. 3D volume keeps the tighter default (rotation can lose it
-  // off-screen). Reset view is always one click away either way.
+  // and `pickTileLevel` gets down to L0. 3D volume band widened 0.15 → 0.05 (Dominik 2026-08-29:
+  // "can't zoom in enough for L0 to be used") — with the brick renderer honouring SSE per zoom
+  // there's a genuine payoff for going deeper, whereas the pre-brick pin made a deep zoom just
+  // slower for the same L5 pixels. Rotation can still lose the box off-screen; Reset view is one
+  // click away.
   const band = mode.value === 'plane'
     ? { min: 0.005, max: 6 }
-    : { min: 0.15, max: 6 }
+    : { min: 0.05, max: 6 }
   // Cursor-anchored zoom (ImageJ): 2D plane only. The 3D wheel is a dolly on the orbit and adding
   // a pan-shift under a rotated basis moves the volume sideways in a way the user did not ask for.
   let anchor: { ndcX: number; ndcY: number; aspect: number } | undefined
@@ -3374,6 +3377,8 @@ onUnmounted(() => {
             <template v-if="bricksEnabled">
               <span class="cc-muted">Level</span>
               <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
+              <span class="cc-muted">Cam</span>
+              <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
             </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">

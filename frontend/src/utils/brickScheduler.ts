@@ -251,16 +251,16 @@ export function brickViewportFromCamera(
   const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
   const halfW = halfH * Math.max(aspect, 1e-3)
   // Pan shifts the CENTRE of what the shader draws. `brickShader.ts` line 87:
-  // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`. The camera moves in world by
-  // (panX, panY, 0); its aim point (where the centre ray lands in the volume) shifts to
-  // `(ex/2 + panX, ey/2 + panY, ez/2)`. Without this, the scheduler fetches bricks around the
-  // STORE centre while the shader draws a panned region — bricks around the panned view never
-  // load and the shader renders a big black rectangle (Dominik screenshot 2026-08-29, SispLk
-  // zoomed to L0 with pan). Comment on the "heavy pan can miss a brick or two that the halo picks
-  // up anyway" line above was optimistic — at high zoom the pan CAN dominate the halfW.
+  // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`, and `c.up = cross(right, fwd)`
+  // — for the default `yaw=0 pitch=0` basis (`fwd=(0,0,1)`, `right=(1,0,0)`) that resolves to
+  // `up = (0, -1, 0)`. So `up * panY` shifts world by `-panY` in Y, not `+panY`. Aim point in
+  // shader world = `(panX, -panY, 0)`; in scheduler world (origin at `(ex/2, ey/2, ez/2)`) that's
+  // `(ex/2 + panX, ey/2 - panY, ez/2)`. First-cut had `+panY` and the top half of the canvas
+  // fetched a mirrored y-region (Dominik screenshot 2026-08-29: "we still have bricks that are
+  // not being fetched" — top half of canvas black after pan).
   return {
     t,
-    centreUm: [ex / 2 + cam.panX, ey / 2 + cam.panY, ez / 2],
+    centreUm: [ex / 2 + cam.panX, ey / 2 - cam.panY, ez / 2],
     halfWUm: halfW,
     halfHUm: halfH,
     halfDUm: ez / 2,
@@ -286,7 +286,7 @@ export type FloorLevel = number | undefined
  * under threshold, but SSE-wanted L0-L2 all coarsen through it — the loop still hits floor).
  * Re-measure in B1 and tune from real bench data.
  */
-export const MAX_INTERSECT_BRICKS = 128
+export const MAX_INTERSECT_BRICKS = 256
 
 /**
  * Guard the SSE-desired level against over-fetch. Counts core (ring === 0) bricks only — halo

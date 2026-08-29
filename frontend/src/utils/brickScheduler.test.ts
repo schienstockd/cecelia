@@ -229,12 +229,13 @@ describe('scheduleBricks', () => {
 
   it('over-fetch guard coarsens the level when the CORE brick count is too large', () => {
     // Wide viewport at fit distance on a "huge" store — many core bricks at fine level. Guard
-    // counts ring===0 bricks only (halo is prefetch, doesn't gate). Big-grid world (16×16 at L0):
-    // L0 core=256 > 64, L1 core=64, L2 core=16 — the guard walks until core is under threshold.
+    // counts ring===0 bricks only (halo is prefetch, doesn't gate). Big-grid world (40×40 at L0):
+    // L0 core=1600 > 256, L1 core=400 > 256, L2 core=100 <= 256 — the guard walks until core is
+    // under threshold, landing at L2.
     const bigWorld: BrickWorld = {
       brickSizeVox: [128, 128, 4],
       voxelUmL0: [1, 1, 1],
-      extentVoxL0: [128 * 16, 128 * 16, 4],
+      extentVoxL0: [128 * 40, 128 * 40, 4],
       nLevels: 4,
     }
     // Viewport covers the whole store at L0 — mimics f8gzA2 fit distance.
@@ -286,13 +287,13 @@ describe('scheduleBricks', () => {
     const bigWorld: BrickWorld = {
       brickSizeVox: [128, 128, 4],
       voxelUmL0: [1, 1, 1],
-      extentVoxL0: [128 * 16, 128 * 16, 4],
+      extentVoxL0: [128 * 40, 128 * 40, 4],
       nLevels: 4,
     }
     const view: BrickViewport = {
       t: 0,
-      centreUm: [128 * 8, 128 * 8, 2],
-      halfWUm: 128 * 8, halfHUm: 128 * 8, halfDUm: 100,
+      centreUm: [128 * 20, 128 * 20, 2],
+      halfWUm: 128 * 20, halfHUm: 128 * 20, halfDUm: 100,
       focalPx: 512, distanceUm: 128,
     }
     // Floor = L1 — guard can walk L0 → L1 but not further.
@@ -367,15 +368,17 @@ describe('brickViewportFromCamera', () => {
   })
 
   it('centreUm follows pan — the scheduler tracks what the shader draws', () => {
-    // brickShader.ts:87: c.ro = c.fwd * dist + c.right * panX + c.up * panY. The aim point shifts
-    // by (panX, panY) from the box centre. Without this the scheduler fetches around the box
-    // centre while the shader draws a panned region — the black-rectangle bug (Dominik 2026-08-29
-    // SispLk zoomed to L0 with pan; screenshot #29).
+    // brickShader.ts:87: c.ro = c.fwd * dist + c.right * panX + c.up * panY. With yaw=0 pitch=0
+    // basis, `c.up = cross(right, fwd) = (0, -1, 0)`. So the aim point shifts by (panX, -panY)
+    // in world; in scheduler world (origin at (ex/2, ey/2, ez/2)) that lands at
+    // (ex/2 + panX, ey/2 - panY, ez/2). The Y sign is what matters — first cut had `+ panY` and
+    // the top half of the canvas fetched a mirrored y-region on pan (Dominik 2026-08-29 screenshot
+    // #30/31 "still bricks missing" after zoom + pan).
     const panned = brickViewportFromCamera(
       { ...cam, panX: 40, panY: -30 }, META, 0, 1024, 1.0, META.nZ,
     )
     expect(panned.centreUm[0]).toBeCloseTo(128 + 40, 6)
-    expect(panned.centreUm[1]).toBeCloseTo(128 + -30, 6)
+    expect(panned.centreUm[1]).toBeCloseTo(128 - -30, 6)   // ey/2 - panY, panY=-30 → +30
     expect(panned.centreUm[2]).toBeCloseTo(4, 6)
   })
 
