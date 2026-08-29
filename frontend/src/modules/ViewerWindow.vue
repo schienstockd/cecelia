@@ -108,17 +108,20 @@ const imageUid = String(route.query.image ?? '')
  * renderer swap on mid-session flip needs a full destroy/recreate and isn't worth the
  * scaffolding for a dev-only flag.
  */
-/** URL override for the auto-select. `?bricks=1` forces brick, `?bricks=0` forces flat, absent
- *  lets `shouldUseBricks(meta)` decide. Both directions available for A/B testing without
- *  editing the predicate. */
+/** URL override for the auto-select — ephemeral, wins over the persisted setting. `?bricks=1`
+ *  forces brick, `?bricks=0` forces flat, absent defers to `settings.viewerBricksMode` and then
+ *  the predicate. Dev-only tool for A/B side-by-side comparisons. */
 const bricksOverride = String(route.query.bricks ?? '')
-/** Computed so it re-evaluates when `meta` lands (server round-trip). Read `.value` in script,
- *  auto-unwraps in template. Consumers that snapshot the value once (e.g. `ensureRenderer`)
- *  see the final classification because `reallocate` guards on `meta.value` being non-null
- *  before it calls them. */
+/** Reactive on `meta` (server round-trip) AND `settings.viewerBricksMode` (user toggle). Read
+ *  `.value` in script, auto-unwraps in template. Consumers that snapshot the value once (e.g.
+ *  `ensureRenderer`) see the current classification because `reallocate` guards on `meta.value`
+ *  being non-null first — and a setting flip fires the reallocate watcher below. */
 const bricksEnabled = computed<boolean>(() => {
   if (bricksOverride === '1') return true
   if (bricksOverride === '0') return false
+  const mode = settings.viewerBricksMode
+  if (mode === 'brick') return true
+  if (mode === 'flat') return false
   const m = meta.value
   return m !== null && shouldUseBricks(m)
 })
@@ -588,6 +591,11 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
+// Renderer swap when the user flips the bricks mode. `bricksEnabled` is snapshotted inside
+// `ensureRenderer`, so a mid-session change without reallocate would keep drawing on the
+// previous choice. Also refetches everything on the wire — necessary because the two renderers
+// have different upload contracts (per-timepoint slab vs per-viewport bricks).
+watch(() => settings.viewerBricksMode, () => reallocate())
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
 // param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
 //   * `updateId` (>0) when the current preview matches this image
@@ -820,6 +828,14 @@ function setChannelColour(c: number, hex: string) {
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
+]
+/** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
+ *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
+ *  than "Auto-select/Force brick/Force flat" in a segmented control. */
+const BRICKS_MODES = [
+  { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
+  { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
+  { value: 'flat', label: 'Flat', tip: 'Force per-timepoint cache' },
 ]
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
@@ -3297,6 +3313,20 @@ onUnmounted(() => {
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
           </select>
+        </div>
+        <!-- Renderer override. Auto uses `shouldUseBricks(meta)`; Brick/Flat are safety valves for
+             images the predicate gets wrong (Dominik 2026-08-29: Dml3RG 2D is awful on bricks but
+             needed on 3D). Applies to 2D plane view too — when `useTiles === false`, the plane view
+             draws through the volume renderer, so the same override matters. `?bricks=0|1` in the
+             URL still wins over this. Flip triggers a full renderer reallocate via the watcher. -->
+        <div class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Renderer — Auto picks based on movie size'">Bricks</span>
+          <ChipSelect
+            :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
+            variant="segmented" aria-label="Renderer"
+            @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
+          />
         </div>
         <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
              pixel is closest to (without going finer than) one device pixel, so we never ship pixels
