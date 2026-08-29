@@ -823,12 +823,18 @@ export async function createBrickVolumeRenderer(
     // current level — but they're NATURALLY the oldest bricks in the atlas after a level swap,
     // so plain LRU picks them as eviction victims first. Ring-halo-of-blank pattern from #32:
     // as L0 bricks arrived, they LRU-evicted L1 (prev) bricks, and the fallback lookup returned
-    // slots now holding unrelated L0 data → shader read empty. Touching them every tick keeps
-    // them in the top half of the LRU ordering. Cheap: O(atlas entries) with a fixed cap; the
-    // whole loop is a few hundred `Map.set` calls at most.
+    // slots now holding unrelated L0 data → shader read empty. Between-tick arrivals mean the
+    // brick that JUST arrived and everything currentLevel that fetch loop touched below have
+    // `lastUsed = frameNow` — so does prev-level if we touch them with the same stamp. Ties are
+    // broken by iteration order in `evictLru`, which is arbitrary. Bumping prev's stamp WELL
+    // past `frameNow` gives them strictly-fresher ordering so no arbitrary tie-break can pick
+    // them. Screenshot #35: at L0 with 176 residents and 0 inflight, the centre still went
+    // black — a between-tick arrival tied with L1 (prev) and the arbitrary tie-break picked
+    // the L1 core, wiping the fallback.
+    const PREV_TOUCH_BIAS = 1_000_000_000
     if (atlas.prevLevel !== undefined) {
       for (const e of atlas.pageTable.entries()) {
-        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow)
+        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
       }
     }
     // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
