@@ -1019,6 +1019,11 @@ export async function createBrickVolumeRenderer(
       if ((ready || (!displayDrawable && canPartial)) && displayT !== t) {
         displayT = t
         rebuildPageTableForDisplayT()
+        // Fire the display-advanced hook so ViewerWindow's `shownT` follows displayT — the
+        // residency map filters by shownT, so if we advance without notifying, the map keeps
+        // showing the OLD t's residency instead of what the shader is actually drawing
+        // (Dominik, 2026-08-29: "the map stays purple even when half the bricks aren't loaded").
+        onDisplayAdvanced?.(displayT)
       }
       // Nudge the frame loop so tickScheduler runs with the new boundT — the caller's own
       // showT skips its `frame.redraw()` on a false return, and without this a scrub past the
