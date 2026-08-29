@@ -74,6 +74,10 @@ import {
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
+import {
+  buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
+  type BenchSample, type BenchMeta, type BenchVram,
+} from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
@@ -104,6 +108,77 @@ const imageUid = String(route.query.image ?? '')
  * scaffolding for a dev-only flag.
  */
 const bricksEnabled = String(route.query.bricks ?? '') === '1'
+/**
+ * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
+ * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
+ * User drives the workload (scrubbing, zooming); Save button downloads a JSON blob for
+ * off-line comparison of flat vs brick on the five reference images.
+ */
+const benchEnabled = String(route.query.bench ?? '') === '1'
+const benchT0 = ref<number>(0)
+const benchFirstFrameMs = ref<number | null>(null)
+const benchFrames = shallowRef<BenchSample[]>([])
+const benchBytes = ref(0)
+/** Save-time live tally so the panel shows progress without allocating on every frame. */
+const benchLive = computed(() => {
+  const now = performance.now()
+  const session = benchT0.value > 0 ? now - benchT0.value : 0
+  return summarizeBench(benchFrames.value, session)
+})
+/** Reset the bench counters. Called from setImage() so first-frame is measured from an honest
+ *  boundary; also from the panel's Reset button when the user wants a clean segment. */
+function benchReset() {
+  benchT0.value = performance.now()
+  benchFirstFrameMs.value = null
+  benchFrames.value = []
+  benchBytes.value = 0
+}
+/** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
+ *  so a directory of them doesn't collide across images or renderers. */
+function benchSave() {
+  const m = meta.value
+  if (!m) return
+  const iso = new Date().toISOString()
+  const benchMeta: BenchMeta = {
+    imageUid, valueName: valueName.value || '',
+    nT: m.nT, nC: m.nC, nZ: m.nZ, nY: m.nY, nX: m.nX,
+    nLevels: m.levels?.length ?? 1,
+    bytesPerVoxel: m.bytesPerVoxel,
+  }
+  const r = renderer.value
+  const br = r?.brickResidency?.()
+  const vram: BenchVram | null = r ? {
+    cacheCapacity: r.cache.capacity,
+    cacheBytesPerTimepoint: r.cache.bytesPerTimepoint,
+    cacheZDepth: r.cache.zDepth,
+    residentTimepoints: r.residentTimepoints().length,
+    brickCurrentLevel: br?.currentLevel ?? -1,
+    residentBricks: br?.resident.length ?? 0,
+    brickSizeVox: br?.brickSizeVox ?? [0, 0, 0],
+  } : null
+  const blob = buildBenchBlob({
+    mode: bricksEnabled ? 'brick' : 'flat',
+    meta: benchMeta,
+    t0: benchT0.value,
+    savedAt: performance.now(),
+    isoDate: iso,
+    firstFrameMs: benchFirstFrameMs.value,
+    frames: benchFrames.value,
+    bytesFetched: benchBytes.value,
+    vram,
+  })
+  const json = JSON.stringify(blob, null, 2)
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = benchFilename(blob.mode, imageUid, iso)
+  document.body.appendChild(a); a.click(); a.remove()
+  // Free after the click has been dispatched — Firefox drops the download if we revoke sync.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  vlog('info', `Bench saved: ${a.download}`,
+       `${blob.summary.nFrames} frames · ${(blob.bytesFetched / 1e6).toFixed(1)} MB · ` +
+       `first ${blob.firstFrameMs?.toFixed(0) ?? '—'} ms`)
+}
 /**
  * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
  * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
@@ -779,7 +854,21 @@ const frame = usePlotResize(canvas, () => {
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
+  // `?bench=1`: time the r.draw() submission. Only CPU-side (GPU still runs after we return),
+  // but it captures per-sample overhead like the brick renderer's page-table indirection which
+  // the flat renderer doesn't pay. First frame after setImage is recorded separately.
+  const drawT0 = benchEnabled ? performance.now() : 0
   r.draw()
+  if (benchEnabled) {
+    const drawT1 = performance.now()
+    const sample: BenchSample = { atMs: drawT1, drawMs: drawT1 - drawT0 }
+    // shallowRef on an array — replace with a new array so consumers reacting to it see the
+    // change (mutating in place wouldn't trigger the computed).
+    benchFrames.value = [...benchFrames.value, sample]
+    if (benchFirstFrameMs.value === null && benchT0.value > 0) {
+      benchFirstFrameMs.value = drawT1 - benchT0.value
+    }
+  }
   // Read back AFTER the draw, so Debug shows the numbers the frame on screen was rendered from rather
   // than the ones the next frame will use.
   const st = r.uniformState()
@@ -2386,6 +2475,10 @@ async function reallocate(refit = false) {
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
     const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
       viewerStore.previewLabels?.imageUid === imageUid)
+    // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
+    // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
+    // different image or a different mode swap and would poison the summary.
+    if (benchEnabled) benchReset()
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
@@ -2738,6 +2831,37 @@ function onKey(e: KeyboardEvent) {
   gotoT(Math.max(0, Math.min(nT.value - 1, t.value + step)))
 }
 onMounted(() => window.addEventListener('keydown', onKey))
+
+/**
+ * `?bench=1`: watch `PerformanceResourceTiming` entries for slab responses and add their
+ * transferred bytes to the recorder. This catches BOTH renderers without a hook in either —
+ * flat fetches, brick image bricks and brick label bricks all hit `/api/viewer/slab`. Kept
+ * outside the resource-timing buffer default (which is bounded); listen live and read
+ * `transferSize` per entry. `transferSize` is zero for a cache hit, which is the honest
+ * network cost (repeat scrubs shouldn't inflate the fetch tally).
+ */
+let benchPerfObs: PerformanceObserver | null = null
+onMounted(() => {
+  if (!benchEnabled) return
+  try {
+    benchPerfObs = new PerformanceObserver(list => {
+      let sum = 0
+      for (const e of list.getEntries()) {
+        if (!(e instanceof PerformanceResourceTiming)) continue
+        if (!e.name.includes('/api/viewer/slab')) continue
+        sum += e.transferSize || e.encodedBodySize || 0
+      }
+      if (sum > 0) benchBytes.value += sum
+    })
+    benchPerfObs.observe({ type: 'resource', buffered: false })
+  } catch (e) {
+    vlog('warn', 'Bench: PerformanceObserver unavailable',
+         e instanceof Error ? e.message : String(e))
+  }
+})
+onUnmounted(() => {
+  if (benchPerfObs) { benchPerfObs.disconnect(); benchPerfObs = null }
+})
 
 // The pop manager (in the main window) writes `pop.show` to the server and pings a localStorage
 // key; this listener is the popup's side of the P5 bridge. The tick's value is `<imageUid>:<ts>`,
@@ -3098,6 +3222,36 @@ onUnmounted(() => {
               </div>
               <span class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
             </div>
+          </div>
+        </template>
+
+        <!-- Bench harness — visible only under `?bench=1`. Records first-frame time, CPU draw
+             cost per frame and slab bytes fetched via a PerformanceObserver. User drives the
+             workload (scrub, zoom, spin); Save downloads a JSON blob per session. Meant for
+             flat-vs-brick timing on the five reference images. -->
+        <template v-if="benchEnabled">
+          <div class="cc-row cc-row-tight vw-bench-head">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Bench: flat vs brick timing'">Bench</span>
+            <span class="cc-muted cc-fs-3xs">{{ bricksEnabled ? 'brick' : 'flat' }}</span>
+          </div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <span class="cc-muted">First frame</span>
+            <span>{{ benchFirstFrameMs !== null ? benchFirstFrameMs.toFixed(0) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Frames</span>
+            <span>{{ benchLive.nFrames }}</span>
+            <span class="cc-muted">Draw median</span>
+            <span>{{ benchLive.drawMedianMs !== null ? benchLive.drawMedianMs.toFixed(2) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Draw p95</span>
+            <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Bytes</span>
+            <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+          </div>
+          <div class="cc-row cc-row-tight vw-bench-btns">
+            <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
+                    v-tooltip.top="'Start a new session — same as opening the image afresh'">Reset</button>
+            <button class="cc-btn cc-btn-primary cc-btn-micro" @click="benchSave"
+                    v-tooltip.top="'Download the bench JSON blob'">Save</button>
           </div>
         </template>
 
@@ -3670,4 +3824,12 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
 .vw-brickmap-zlabel { line-height: 1; }
+/* Bench harness readout — two-column grid so labels and values line up without a table. */
+.vw-bench-head { margin-top: 0.35rem; }
+.vw-bench-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  column-gap: 0.5rem; row-gap: 0.1rem;
+  padding: 0.15rem 0.25rem 0.25rem;
+}
+.vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
 </style>
