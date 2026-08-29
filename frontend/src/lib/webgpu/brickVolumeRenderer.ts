@@ -1069,6 +1069,29 @@ export async function createBrickVolumeRenderer(
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
 
+    brickResidency() {
+      if (atlas === null) {
+        return {
+          resident: [], inflight: [], currentLevel: undefined,
+          brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
+        }
+      }
+      const resident = atlas.pageTable.entries().map(e => ({
+        t: e.brick.t, level: e.brick.level,
+        bx: e.brick.bx, by: e.brick.by, bz: e.brick.bz,
+      }))
+      const inflightBricks: { t: number; level: number; bx: number; by: number; bz: number }[] = []
+      for (const key of inflight.keys()) {
+        const b = parseBrickKey(key)
+        if (b !== null) inflightBricks.push({ t: b.t, level: b.level, bx: b.bx, by: b.by, bz: b.bz })
+      }
+      return {
+        resident, inflight: inflightBricks,
+        currentLevel: atlas.currentLevel,
+        brickSizeVox: atlas.layout.brickSizeVox,
+      }
+    },
+
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
       // Same-source repeats are cheap (compared by shallow equality on the four fields the URL

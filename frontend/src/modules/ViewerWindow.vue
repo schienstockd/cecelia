@@ -1055,6 +1055,15 @@ const syncCacheState = () => {
   resident.value = r?.residentTimepoints() ?? []
   loadingT.value = [...inflight.keys()]
   if (r) gpu.value = { ...r.cache, capped: r.vramCapped() }
+  // Brick renderer only: pull the atlas snapshot so the mini map redraws from the same tick as
+  // the time strip. Cheap — `brickResidency` is a `pageTable.entries()` walk plus a Set snapshot.
+  const br = r?.brickResidency?.()
+  if (br) {
+    brickResidents.value = br.resident
+    brickInflight.value = br.inflight
+    brickCurrentLevel.value = br.currentLevel
+    brickSizeVox.value = br.brickSizeVox
+  }
 }
 
 function fetchTimepoint(tp: number): Promise<boolean> {
@@ -1489,6 +1498,56 @@ function syncTileCacheState() {
   tileResidents.value = res.map(e => ({ t: e.t, z: e.z, level: e.level, tx: e.tx, ty: e.ty }))
   tileLoadingKeys.value = new Set(tileAborts.keys())
 }
+
+/** Brick residency grid — one nBx × nBy panel per Z slice at the CURRENT level + `boundT` (via
+ *  `shownT.value` which tracks the frame actually painted). Null when brick mode is off, the meta
+ *  hasn't loaded, or the atlas hasn't ticked at least once. Template checks with `v-if`.
+ *
+ *  Grid dims are computed here from meta + `brickSizeVox` + `2^level` rather than plumbed back
+ *  from the renderer, so a level swap doesn't need a second round trip. */
+const brickMapGrid = computed(() => {
+  const m = meta.value
+  const lvl = brickCurrentLevel.value
+  if (!bricksEnabled || !m || lvl === undefined) return null
+  const [bx, by, bz] = brickSizeVox.value
+  const scale = Math.pow(2, lvl)
+  const zd = mode.value === 'plane' ? 1 : zDepth.value
+  const nBx = Math.max(1, Math.ceil(m.nX / (bx * scale)))
+  const nBy = Math.max(1, Math.ceil(m.nY / (by * scale)))
+  const nBz = Math.max(1, Math.ceil(zd / (bz * scale)))
+  return { nBx, nBy, nBz, level: lvl }
+})
+
+/** Per-Z-slice residency cells at the current level + `shownT`. One entry per slice; each entry
+ *  is the row-major nBx × nBy grid for that slice. Filters the resident + inflight snapshots
+ *  inline (cheaper than pre-computing a per-cell Set). */
+const brickMapSlices = computed(() => {
+  const g = brickMapGrid.value
+  if (!g) return []
+  const tp = shownT.value >= 0 ? shownT.value : t.value
+  const residentAtHere = new Set<string>()
+  for (const e of brickResidents.value) {
+    if (e.t === tp && e.level === g.level) residentAtHere.add(`${e.bx},${e.by},${e.bz}`)
+  }
+  const loadingAtHere = new Set<string>()
+  for (const e of brickInflight.value) {
+    if (e.t === tp && e.level === g.level) loadingAtHere.add(`${e.bx},${e.by},${e.bz}`)
+  }
+  const slices: { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] = []
+  for (let bz = 0; bz < g.nBz; bz++) {
+    const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
+    for (let by = 0; by < g.nBy; by++) {
+      for (let bx = 0; bx < g.nBx; bx++) {
+        const k = `${bx},${by},${bz}`
+        const state = loadingAtHere.has(k) ? 'loading'
+          : residentAtHere.has(k) ? 'resident' : 'absent'
+        cells.push({ key: k, state })
+      }
+    }
+    slices.push({ z: bz, cells })
+  }
+  return slices
+})
 
 /** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
  *  mode is off or the meta hasn't loaded yet, which the template checks with `v-if`. */
@@ -2008,6 +2067,17 @@ watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
  *  who never scrubs won't want it. */
 const tilesMapShown = ref(localStorage.getItem('cc.vw.tilemap') !== 'false')
 watch(tilesMapShown, v => localStorage.setItem('cc.vw.tilemap', String(v)))
+/** Brick-atlas residency mini map — spatial analog of the tile map for `?bricks=1`. Default ON so
+ *  the volume path has the same at-a-glance diagnostic the plane path does; the atlas is 3D, so
+ *  the map draws one nBx × nBy grid per Z slice. */
+const bricksMapShown = ref(localStorage.getItem('cc.vw.brickmap') !== 'false')
+watch(bricksMapShown, v => localStorage.setItem('cc.vw.brickmap', String(v)))
+/** Snapshot of the brick atlas — refreshed on the same tick that syncs the time strip. Kept as a
+ *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
+const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+const brickCurrentLevel = ref<number | undefined>(undefined)
+const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -3007,6 +3077,30 @@ onUnmounted(() => {
           </div>
         </template>
 
+        <!-- Brick residency mini map: 3D analog of the tile map. One nBx × nBy grid per Z slice
+             at the CURRENT level + timepoint. Same colour language as the tile map (blue =
+             resident, amber = fetching). Only shown for `?bricks=1` and when at least one atlas
+             tick has landed. -->
+        <template v-if="brickMapGrid">
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
+            <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
+          </div>
+          <div v-if="bricksMapShown" class="vw-brickmaprow">
+            <div v-for="s in brickMapSlices" :key="s.z" class="vw-brickmap-col">
+              <div class="vw-tilemap vw-brickmap-slice"
+                   :style="{ gridTemplateColumns: `repeat(${brickMapGrid.nBx}, 1fr)`,
+                             gridTemplateRows: `repeat(${brickMapGrid.nBy}, 1fr)`,
+                             aspectRatio: `${brickMapGrid.nBx} / ${brickMapGrid.nBy}` }">
+                <span v-for="c in s.cells" :key="c.key"
+                      class="vw-tilemap-cell" :class="'is-' + c.state" />
+              </div>
+              <span class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
+            </div>
+          </div>
+        </template>
+
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar + timestamp are burnt into the render, they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
@@ -3570,4 +3664,10 @@ onUnmounted(() => {
 .vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
 .vw-tilemap-cell.is-resident { background: var(--cc-accent); }
 .vw-tilemap-cell.is-loading { background: var(--cc-sev-warn); }
+/* Brick residency map: one Z slice per column. Slices sit side by side and each carries a small
+   z index below. Same cell language as the tile map (blue = resident, amber = fetching). */
+.vw-brickmaprow { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }
+.vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
+.vw-brickmap-zlabel { line-height: 1; }
 </style>
