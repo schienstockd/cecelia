@@ -288,6 +288,13 @@ export async function createBrickVolumeRenderer(
    *  brickZ` so plane mode sees the user's plane rather than plane 0 of the store. */
   let currentZLo = 0
   let boundT = 0
+  /** Timepoint the SHADER is currently drawing via `pageTableCpu`. Splits from `boundT` the
+   *  moment `show(t)` runs but core bricks at `t` haven't landed yet: `boundT` moves so the
+   *  scheduler fetches for the new target, but `displayT` stays at the last fully-resident
+   *  timepoint so the shader continues drawing that instead of a half-black next frame.
+   *  `displayT` catches up automatically inside `tickScheduler` once residency reaches the
+   *  threshold. `-1` before any t has been shown. */
+  let displayT = -1
   let source: BrickSource | null = null
   /** In-flight fetches keyed by brick key — the scheduler can name the same brick on consecutive
    *  ticks before its bytes have landed, and we don't want to fire the request twice. AbortController
@@ -306,6 +313,11 @@ export async function createBrickVolumeRenderer(
    *  per-timepoint slab walk (`ViewerWindow.vue:1159`). Without it the contrast slider's ceiling
    *  never adapts and dragging `hi` down locks the range at 0..initial. Null when unwired. */
   let onBrickLoaded: ((perChannelMax: number[]) => void) | null = null
+  /** Fired when displayT advances (either from `show(t)` on ready, or from tickScheduler
+   *  auto-catching-up on residency). Lets ViewerWindow sync `shownT` so overlays draw for the
+   *  same timepoint the volume is showing — otherwise a scrub-past-cold would render volume at
+   *  t=5 with overlays at t=0. Null when unwired. */
+  let onDisplayAdvanced: ((t: number) => void) | null = null
   /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
    *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
@@ -359,6 +371,9 @@ export async function createBrickVolumeRenderer(
     // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
     if (atlas.labelsEnabled) atlas.labelTexture.destroy()
     atlas = null
+    // displayT tracks pageTableCpu residency at the current atlas — a fresh atlas has neither,
+    // so reset here or the next show(t) would think it's still holding the previous image.
+    displayT = -1
   }
 
   const resize = (): boolean => {
@@ -540,7 +555,11 @@ export async function createBrickVolumeRenderer(
         // caller later `show()`s that t, `show` rebuilds pageTableCpu from resident entries and
         // the prefetched bricks light up instantly. Also gate on the current level, since a level
         // switch could have flipped between the request and the arrival.
-        const forVisibleFrame = brick.t === boundT && brick.level === atlas.currentLevel
+        // Gate on DISPLAYT (what pageTableCpu currently reflects), not boundT. When boundT has
+        // moved ahead of displayT (scrub past residency), a brick landing at the new boundT must
+        // NOT be written into pageTableCpu — that's still showing displayT. tickScheduler's
+        // auto-advance picks up the readiness threshold on the next tick and rebuilds.
+        const forVisibleFrame = brick.t === displayT && brick.level === atlas.currentLevel
         if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
         if (forVisibleFrame) {
           atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
@@ -635,6 +654,21 @@ export async function createBrickVolumeRenderer(
   /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
    *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
    *  this tick decided on. */
+  /** Rebuild `pageTableCpu` from the atlas residency at `displayT` at the current level. Called
+   *  whenever displayT changes (`show(t)` on ready, or `tickScheduler`'s auto-advance). Pure
+   *  re-index — no fetches, no atlas mutation. */
+  const rebuildPageTableForDisplayT = (): void => {
+    if (atlas === null || displayT < 0) return
+    atlas.pageTableCpu.fill(EMPTY_SLOT)
+    for (const entry of atlas.pageTable.entries()) {
+      if (entry.brick.t !== displayT || entry.brick.level !== atlas.currentLevel) continue
+      const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
+      if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
+      atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+    }
+    atlas.pageTableDirty = true
+  }
+
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
    *  `hasTimepoint(t)` so the play loop can hold on the previous frame instead of advancing
    *  into a half-loaded one. Halo bricks are NOT required — they're prefetch, and demanding
@@ -662,6 +696,16 @@ export async function createBrickVolumeRenderer(
   const tickScheduler = (): void => {
     if (atlas === null || currentMeta === null) return
     frameNow += 1
+    // Auto-advance displayT: if a landed brick pushed residency past the threshold since the
+    // last tick, promote and rebuild before we render. Without this, a scrub past residency
+    // stays stuck on the old frame indefinitely — the play loop's `show(t)=false` never
+    // re-checks after the initial call. `onDisplayAdvanced` signals ViewerWindow so it can
+    // sync `shownT` (overlays) with the new t.
+    if (boundT !== displayT && coreBricksResident(boundT)) {
+      displayT = boundT
+      rebuildPageTableForDisplayT()
+      onDisplayAdvanced?.(displayT)
+    }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
     const view = brickViewportFromCamera(
@@ -930,26 +974,29 @@ export async function createBrickVolumeRenderer(
     setCapacity(_n) { /* P5c */ },
     vramCapped: () => false,
     show(t) {
-      // The play loop uses the RETURN VALUE to decide whether to hold on the previous frame,
-      // so this can NOT be a bare `return true`. When the atlas doesn't hold the core viewport
-      // bricks for `t`, showing that t would draw partial/black bricks (the "half-black"
-      // symptom Dominik reported on fXgbTl 3D playback, 2026-08-29). Bumping boundT is still
-      // correct — the scheduler needs it to know what to fetch next — but reporting readiness
-      // is what the play loop reads. Same discipline as flat's `showT`.
-      if (boundT !== t) {
-        boundT = t
-        if (atlas !== null) {
-          atlas.pageTableCpu.fill(EMPTY_SLOT)
-          for (const entry of atlas.pageTable.entries()) {
-            if (entry.brick.t !== t || entry.brick.level !== atlas.currentLevel) continue
-            const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
-            if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
-            atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
-          }
-          atlas.pageTableDirty = true
-        }
+      // Bump the scheduler target unconditionally — the fetch loop needs to know what to fetch
+      // for next, whether or not we're ready to draw it yet.
+      boundT = t
+      // Advance the DISPLAYED timepoint only when core viewport bricks at t are resident. If
+      // they aren't, keep drawing whatever displayT already had (the previous good frame). The
+      // "half-black seam" symptom from 2026-08-29 was this being missing.
+      const ready = coreBricksResident(t)
+      if (ready && displayT !== t) {
+        displayT = t
+        rebuildPageTableForDisplayT()
+      } else if (displayT === -1 && atlas !== null) {
+        // First-ever show: even if not "ready", we DO need pageTableCpu to reflect this t so a
+        // partial-first-frame renders as SOMETHING (nothing to fall back to). displayT stays -1
+        // so hasTimepoint() reports honestly, but the shader has bytes to draw.
+        displayT = t
+        rebuildPageTableForDisplayT()
       }
-      return coreBricksResident(t)
+      // Nudge the frame loop so tickScheduler runs with the new boundT — the caller's own
+      // showT skips its `frame.redraw()` on a false return, and without this a scrub past the
+      // atlas's residency would never kick fetches for the new t (dead-atlas symptom Dominik
+      // hit 2026-08-29).
+      needsRedraw?.()
+      return ready
     },
     hasTimepoint(t) { return coreBricksResident(t) },
     residentTimepoints() {
@@ -1117,6 +1164,7 @@ export async function createBrickVolumeRenderer(
 
     setNeedsRedraw(cb) { needsRedraw = cb },
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
+    setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelOverride(level) {
       // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the
@@ -1171,6 +1219,8 @@ export async function createBrickVolumeRenderer(
         atlas.pageTableDirty = true
         atlas.currentLevel = undefined
       }
+      // pageTableCpu just went empty — displayT no longer reflects anything real.
+      displayT = -1
     },
 
     destroy() {

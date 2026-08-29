@@ -213,6 +213,14 @@ export interface VolumeRenderer {
    */
   setOnBrickLoaded?(cb: ((perChannelMax: number[]) => void) | null): void
   /**
+   * Brick renderer only: signal that the displayed timepoint just advanced (either via
+   * `show(t)` on a ready t, or via the scheduler auto-catching-up once core bricks land after
+   * a scrub-past-cold). ViewerWindow syncs `shownT` here so overlays draw at the same t the
+   * volume is currently painting — otherwise a scrub past residency draws volume at the new t
+   * with overlays still at the old one. Absent on the flat renderer.
+   */
+  setOnDisplayAdvanced?(cb: ((t: number) => void) | null): void
+  /**
    * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
    * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
    * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until

@@ -2411,6 +2411,16 @@ async function ensureRenderer() {
         // here so the strip lights up as prefetch fills.
         syncCacheState()
       })
+      // When a scrub past cold-cache advances the DISPLAYED t asynchronously (via the brick
+      // scheduler auto-catch-up), sync `shownT` so overlays match. `showT` handles the
+      // synchronous path directly; this covers the case where `show(t)` returned false and
+      // residency finished later.
+      r.setOnDisplayAdvanced?.(t => {
+        if (shownT.value !== t) {
+          shownT.value = t
+          frame.redraw()
+        }
+      })
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
