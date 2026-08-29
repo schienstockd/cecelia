@@ -127,6 +127,8 @@ const parseNumQuery = (v: unknown, fallback: number): number => {
 const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
+/** Frankenstein hole-fill: default on. `?brickFrank=0` opts back to hold-on-cold for A/B. */
+const brickKnobFrank = String(route.query.brickFrank ?? '1') !== '0'
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -1178,6 +1180,9 @@ const syncCacheState = () => {
     brickSizeVox.value = br.brickSizeVox
     brickDisplayValid.value = br.displayValid
     brickMissing.value = br.missing ?? 0
+    brickMissingAtBoundT.value = br.missingAtBoundT ?? 0
+    brickDisplayT.value = br.displayT
+    brickBoundT.value = br.boundT
   }
 }
 
@@ -1886,8 +1891,13 @@ function tick() {
       return
     }
     const r = renderer.value
-    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop,
-                                 u => r?.hasTimepoint(u) ?? false)
+    // Frankenstein mode: advance every tick regardless of residency, so the snap-to-boundT
+    // in show(t) fires and the shader draws each frame with prev-t hole-fill for whatever
+    // hasn't landed. Otherwise a not-yet-resident t stalls and Frankenstein never runs.
+    const readyProbe = brickKnobFrank && bricksEnabled
+      ? () => true
+      : (u: number) => r?.hasTimepoint(u) ?? false
+    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
     if (step.ended) { stopPlay(); return }
     if (step.stalled) {
       // Pump around the frame we WANT, not the one we are on. At the end of a loop those are the one
@@ -2279,6 +2289,15 @@ const brickCurrentLevel = ref<number | undefined>(undefined)
  *  wants that aren't in the atlas. Feeds the bench chip so we can spot the "stalled" case
  *  (missing > 0 AND inflight == 0). */
 const brickMissing = ref<number>(0)
+/** Same as `brickMissing` but at `boundT` — the timepoint the scheduler is chasing rather than
+ *  the one drawn. Splits "chip stuck because we're waiting on the target frame's bricks"
+ *  (`missingAtBoundT > 0`) from "chip stuck despite the shader having what it needs"
+ *  (both 0 → suggests the auto-advance path). */
+const brickMissingAtBoundT = ref<number>(0)
+/** Timepoint currently on the canvas (mirror of `brickResidency().displayT`). */
+const brickDisplayT = ref<number>(-1)
+/** Timepoint the scheduler is chasing (mirror of `brickResidency().boundT`). */
+const brickBoundT = ref<number>(0)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
  *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
@@ -2517,6 +2536,7 @@ async function ensureRenderer() {
       // block at the top of the module for the param names.
       r.setSchedulerKnobs?.({ maxIntersect: brickKnobThr, bias: brickKnobBias })
       r.setHoldFinerEnabled?.(brickKnobHold)
+      r.setFrankensteinEnabled?.(brickKnobFrank)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
       // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
@@ -3428,10 +3448,16 @@ onUnmounted(() => {
               <span class="cc-muted">Cam</span>
               <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
               <span class="cc-muted">Bricks</span>
-              <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }} missing</span>
+              <span v-tooltip.left="'missing@dis: bricks the shader wants at displayT · missing@bnd: bricks needed at boundT'">
+                {{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }}@dis / {{ brickMissingAtBoundT }}@bnd
+              </span>
+              <span class="cc-muted">t</span>
+              <span v-tooltip.left="'displayT (drawn) → boundT (scheduler target); divergence = hold-on-cold'">
+                {{ brickDisplayT }} → {{ brickBoundT }}
+              </span>
               <span class="cc-muted">Knobs</span>
-              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
-                thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
+              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1 · ?brickFrank=1 (hole-fill)'">
+                thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
               </span>
             </template>
             <template v-else>

@@ -258,6 +258,13 @@ export interface VolumeRenderer {
    */
   setHoldFinerEnabled?(on: boolean): void
   /**
+   * Brick renderer only: enable Frankenstein hole-fill. `true` snaps `displayT` to `boundT`
+   * on every scrub and fills brick holes with the same position at the previous displayT.
+   * `false` (default) uses the hold-on-cold rule — old frame stays until the target's core
+   * bricks land. URL knob: `?brickFrank=1`.
+   */
+  setFrankensteinEnabled?(on: boolean): void
+  /**
    * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
    * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
    * by `t + level` to draw the current-timepoint grid. Cheap (a `pageTable.entries()` walk
@@ -291,6 +298,11 @@ export interface VolumeRenderer {
      *  is on, the scheduler has stalled — the fetch loop should have called `kickFetch` for
      *  them but didn't. Used by the bench chip readout. */
     missing: number
+    /** Diagnostic: same as `missing` but at `(boundT, currentLevel)` — the timepoint the
+     *  scheduler is chasing, not the one currently drawn. Splits "hold-on-cold stall"
+     *  (missing@bound > 0 while missing@display = 0) from "actual scheduler stall"
+     *  (missing@display > 0). */
+    missingAtBoundT: number
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
