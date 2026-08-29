@@ -3,6 +3,7 @@ import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
   slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
+  shouldUseBricks, HUGE_XY_THRESHOLD_PX,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
 } from './volumeViewer'
@@ -534,6 +535,46 @@ describe('pickVolumeLevel — 3D LOD (napari-parity: coarsest by default)', () =
     expect(pickVolumeLevel(m, 2)).toBe(2)
     expect(pickVolumeLevel(m, 99)).toBe(3)      // clamped to deepest
     expect(pickVolumeLevel(m, -5)).toBe(0)      // clamped to L0
+  })
+})
+
+describe('shouldUseBricks — 3D renderer auto-select from ViewerMeta', () => {
+  // Landmarks lifted straight from `~/Downloads/TMP/bench/*.json` (2026-08-29) — the reference
+  // images this predicate has to classify correctly. Update if a new store gets added.
+  it('classifies every reference image the way BRICK_INTEGRATION_PLAN Decision 2 expects', () => {
+    // Small single-level (nLev=1): brick wins TTFF 12 ms vs flat 279 ms → brick
+    expect(shouldUseBricks(meta({ nX: 441, nY: 420 }))).toBe(true)          // fXgbTl (0.2 Mpx)
+    // Medium single-level (nLev=1, LRU thrash pre-#702): brick wins TTFF 10 ms → brick
+    expect(shouldUseBricks(meta({ nX: 1060, nY: 1039 }))).toBe(true)        // Dml3RG (1.1 Mpx)
+    // Multi-level small (nLev=4): brick wins TTFF 50 ms vs flat 294 ms → brick
+    expect(shouldUseBricks(meta({ nX: 2024, nY: 2024 }))).toBe(true)        // FtGoJO (4.1 Mpx)
+    // Multi-level huge (nLev=6): flat forced to L5, brick shows L0 in viewport → brick
+    expect(shouldUseBricks(meta({ nX: 7848, nY: 7293 }))).toBe(true)        // SispLk (57 Mpx)
+    // Multi-level XY-huge (nLev=6, nZ=1): brick's 200 ms drawP95 kills it → flat
+    expect(shouldUseBricks(meta({ nX: 20329, nY: 16898 }))).toBe(false)     // f8gzA2 (343 Mpx)
+  })
+  it('cuts on nX*nY, not nLevels or nZ', () => {
+    // A single-level nZ=1 store the same shape as SispLk should still route to brick — the
+    // gate was `nLevels > 1` in an earlier draft and `nLevels === 1` was carved out; the bench
+    // data disproved that carve-out, so this test locks the classification in.
+    expect(shouldUseBricks(meta({ nX: 7848, nY: 7293, nZ: 1, levels: undefined }))).toBe(true)
+    // A tiny multi-level store still goes to brick — nLevels doesn't get a vote.
+    expect(shouldUseBricks(meta({ nX: 100, nY: 100, levels: [{ level: 0, nX: 100, nY: 100, chunkX: 64, chunkY: 64 }, { level: 1, nX: 50, nY: 50, chunkX: 64, chunkY: 64 }] }))).toBe(true)
+  })
+  it('handles the threshold boundary without off-by-one', () => {
+    // Exactly at the threshold → flat (strict-less-than, so the boundary excludes).
+    const at = Math.floor(Math.sqrt(HUGE_XY_THRESHOLD_PX))
+    expect(shouldUseBricks(meta({ nX: at, nY: at + 1 }))).toBe(false)
+    // Just under → brick.
+    expect(shouldUseBricks(meta({ nX: at - 1, nY: at - 1 }))).toBe(true)
+  })
+  it('refuses to route degenerate meta to bricks', () => {
+    // A store that hasn't reported dimensions yet must NOT get the renderer swapped under it —
+    // the renderer is picked once at mount and the flat path is the safer default when the
+    // predicate can't decide.
+    expect(shouldUseBricks(meta({ nX: 0, nY: 100 }))).toBe(false)
+    expect(shouldUseBricks(meta({ nX: 100, nY: 0 }))).toBe(false)
+    expect(shouldUseBricks(meta({ nX: NaN, nY: 100 }))).toBe(false)
   })
 })
 

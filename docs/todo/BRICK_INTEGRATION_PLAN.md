@@ -1,8 +1,15 @@
 ## Brick renderer integration — auto-select, close the last gaps, retire flat
 
 **Status:** planning (2026-08-29) · branch `feat/brick-followup`
-**Supersedes:** [`KILN_BRICK_PLAN.md`](KILN_BRICK_PLAN.md) (P0–P5 shipped through PR #691–#704; P5d perf and
+**Supersedes:** [`KILN_BRICK_PLAN.md`](KILN_BRICK_PLAN.md) (P0–P5 shipped through PR #691–#706; P5d perf and
 P6/P7 rolled forward here on the up-to-date data).
+
+**Post-#706 note (2026-08-29):** `writeBrick` collapsed from N `writeTexture` calls per brick to ONE.
+MAP_WRITE path removed after the fair one-call comparison went the wrong way. Doesn't shift the
+auto-select math (write cost sits inside `kickFetch`, not `draw()`), and does NOT fix f8gzA2's 200 ms
+`drawP95` (that cost is in `tickScheduler` + `pageTableCpu` upload — B4 still valid). Bench blobs
+taken pre-#706 have a `writes[]` array that's populated per-channel; post-#706 it's one entry per
+brick. Diffing needs to normalise on that.
 
 ## Goal
 

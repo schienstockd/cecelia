@@ -301,6 +301,36 @@ export function pickVolumeLevel(meta: ViewerMeta, override?: number): number {
   return Math.max(0, Math.min(n - 1, Math.floor(override)))
 }
 
+/**
+ * Above this L0 pixel count, the brick renderer's per-frame cost (viewport intersect list +
+ * `pageTableCpu` upload + shader indirection) blows out — measured 200 ms drawP95 on f8gzA2
+ * (343 Mpx at L0, nZ=1) 2026-08-29, versus 4.5 ms on SispLk (57 Mpx). Under 200 Mpx every
+ * bench blob (fXgbTl 0.2, Dml3RG 1.1, FtGoJO 4.1, SispLk 57) stayed comfortably interactive.
+ * Docs/todo/BRICK_INTEGRATION_PLAN.md → Decision 2. The threshold is a placeholder from
+ * pre-#706 data — re-measure and revise once B4 (f8gzA2 diagnosis) resolves.
+ */
+export const HUGE_XY_THRESHOLD_PX = 200_000_000
+
+/**
+ * Whether the 3D path should route to the brick renderer for this image.
+ *
+ * `nLevels > 1` is NOT the gate the earlier design assumed: the 2026-08-29 bench showed brick
+ * wins time-to-first-frame on every single-level store tested (fXgbTl 12 ms vs flat 279 ms
+ * at nLev=1; Dml3RG 10 ms vs 1505 ms at nLev=1), so gating on `nLevels` would exclude the
+ * cases where brick's payoff is largest. The one honest exclusion is the shader-scaling
+ * failure — stores whose L0 XY plane is too big for the current brick renderer to keep the
+ * intersect list interactive.
+ *
+ * Pure function on `ViewerMeta`; evaluated once at mount by ViewerWindow. `?bricks=0|1`
+ * remains as a dev override in both directions (the auto-select does not surface as a
+ * user-facing toggle).
+ */
+export function shouldUseBricks(meta: ViewerMeta): boolean {
+  const pixels = meta.nX * meta.nY
+  if (!Number.isFinite(pixels) || pixels <= 0) return false
+  return pixels < HUGE_XY_THRESHOLD_PX
+}
+
 /** `X-Slab-Shape` (`nz,ny,nx`) → the three numbers, or null if the header is absent/unparseable. */
 export function parseSlabShape(header: string | null): [number, number, number] | null {
   if (!header) return null
