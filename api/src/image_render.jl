@@ -170,9 +170,21 @@ end
 resolved_display_specs(specs::AbstractVector) =
     [(; lo = s[1], hi = s[2], lut = _as_lut(s[3]), visible = s[4]) for s in specs]
 
+# sRGB piecewise transfer function (IEC 61966-2-1): linear [0,1] → sRGB-encoded [0,1]. Standard
+# gamma the browser WebGPU canvas applies for us (context configured with a `-srgb` format on Linux,
+# `getPreferredCanvasFormat` — see `frontend/src/lib/webgpu/volumeRenderer.ts`). The offline movie
+# writes 8-bit pixels straight from the linear accumulator, and the mp4 encoder + every player
+# treats those numbers AS sRGB — so mid-tones read ~2× dimmer than the viewer shows them (audit
+# 2026-08-29). Applying the encode here matches the viewer's on-screen brightness pixel-for-pixel.
+@inline function _linear_to_srgb(x::Float32)
+    x = clamp(x, 0f0, 1f0)
+    x <= 0.0031308f0 && return 12.92f0 * x
+    1.055f0 * x^(1f0 / 2.4f0) - 0.055f0
+end
+
 # Pure: composite a (C, H, W) float array + per-channel (lo, hi, colour, visible) specs → H×W RGB{N0f8}
-# via clip-to-contrast, colourise through the channel's LUT, additive blend. `colour` is a colormap
-# name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.
+# via clip-to-contrast, colourise through the channel's LUT, additive blend, then sRGB-encode. `colour`
+# is a colormap name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.
 function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
     C, H, W = size(chw)
     acc = zeros(Float32, 3, H, W)
@@ -189,7 +201,9 @@ function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
             acc[3, i, j] += b
         end
     end
-    [RGB{N0f8}(clamp(acc[1, i, j], 0, 1), clamp(acc[2, i, j], 0, 1), clamp(acc[3, i, j], 0, 1))
+    [RGB{N0f8}(_linear_to_srgb(acc[1, i, j]),
+               _linear_to_srgb(acc[2, i, j]),
+               _linear_to_srgb(acc[3, i, j]))
      for i in 1:H, j in 1:W]
 end
 
