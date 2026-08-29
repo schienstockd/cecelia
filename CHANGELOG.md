@@ -109,6 +109,20 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ### Fixed
 
+- **The task preview applied the label modifications per model group; the run applies them once, after
+  the groups merge.** So a two-pass segmentation previewed as something the run would not produce, and
+  tuning `minCellSize` against it was tuning against the wrong number. Stacking a second model group is
+  a fill-only merge (`fill_unlabelled`): the later pass keeps only the pixels the earlier one left. The
+  run merges every group into the frame and *then* runs smoothing, erosion, expansion, the size filter
+  and border clearing, so it judges each object at its clipped extent. The preview ran all of that
+  inside the group loop instead, judging pass 2's objects at their full extent before the merge shaved
+  them. Measured on `zolIMa/fXgbTl` with a real two-pass config: 52 objects in run order against 53 in
+  the preview's, with non-identical foreground — and it diverged with `minCellSize` at 0 as well,
+  because `labelSmoothing` defaults to 0.5 and is equally order-sensitive. The per-pass object counts
+  the preview reports are now recounted after filtering, so a pass whose objects the size filter
+  removed reports zero rather than the pre-filter count. Single-pass previews are unaffected: with
+  nothing to clip, the two orders agree.
+
 - **The viewer's z-plane slider only updated the image when you let go of it.** It now follows the
   drag, through the same 120 ms scheduler that shift+wheel already used, so the planes go past while
   you look for one. A drag still costs a single refetch — the scheduler collapses a burst to the

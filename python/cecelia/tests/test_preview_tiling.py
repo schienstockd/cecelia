@@ -17,7 +17,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'preview'))
-from preview_worker import _run_tile_seams, _base_groups, _merge_pass   # noqa: E402
+from preview_worker import (_run_tile_seams, _base_groups, _merge_pass,   # noqa: E402
+                            _post_process_merged)
 
 FULL = {'Y': 2048, 'X': 2048}
 
@@ -249,3 +250,121 @@ class PreviewPassCounterTest(unittest.TestCase):
         self.assertEqual([p['objects'] for p in passes], [1, 0, 1])
         # pass 3's label must not collide with pass 1's
         self.assertEqual(sorted(int(v) for v in np.unique(merged) if v), [1, 3])
+
+
+class PreviewPostProcessRunsAfterTheMergeTest(unittest.TestCase):
+    """The label modifications must be applied to the MERGED image, as the run applies them.
+
+    The bug: both preview backends called `post_process` INSIDE the model-group loop, so a two-pass
+    config was smoothed and size-filtered per pass, at each pass's FULL extent, and only then did
+    `fill_unlabelled` clip the later pass. The run does the opposite — `predict_from_zarr` merges
+    every group into the frame and calls `post_process` once afterwards — so the preview filtered
+    objects the run never sees and kept slivers the run removes.
+
+    Measured on zolIMa/fXgbTl with Dominik's own `flowTom` config: 52 objects in run order against
+    53 in the old preview order, with non-identical foreground. It diverges at `minCellSize` 0 too,
+    because `labelSmoothing` defaults to 0.5 and is just as order-sensitive — which is why this
+    pins the ORDER rather than any one parameter.
+
+    Pinned against the run's own composition rather than a hand-written expectation, so the preview
+    cannot drift from it again.
+    """
+
+    class _Ctx:
+        """`_post_process_merged` reads only these two off the context."""
+        bounds = {'Y': (0, 8), 'X': (0, 8)}
+        axis_len = {'Y': 8, 'X': 8}
+
+    @staticmethod
+    def _seg(**params):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        seg = SegmentationUtils.__new__(SegmentationUtils)      # no zarr/taskDir needed
+        for k, v in dict(label_erosion=0, label_expansion=0, label_smoothing=0.0,
+                         min_cell_size=0, cell_size_max=0,
+                         clear_depth=False, clear_touching_border=False).items():
+            setattr(seg, k, params.get(k, v))
+        return seg
+
+    @staticmethod
+    def _count(masks):
+        import numpy as np
+        return int(np.unique(masks[masks > 0]).size)
+
+    def _passes(self):
+        """Pass 0 claims a 6x4 block (24 px); pass 1 would claim 6x6 (36 px) overlapping it.
+
+        After the merge pass 1 keeps a 6x2 sliver — 12 px. A `minCellSize` of 20 therefore separates
+        the two orders exactly: the run judges the sliver (12 < 20, dropped) while the old per-pass
+        order judged the 36 px block it came from (kept). Pass 0 is 24 px so it survives either way,
+        which keeps this about the SLIVER rather than about pass 0 vanishing.
+        """
+        import numpy as np
+        p0 = np.zeros((8, 8), dtype=np.uint32); p0[1:7, 1:5] = 1
+        p1 = np.zeros((8, 8), dtype=np.uint32); p1[1:7, 1:7] = 1
+        return p0, p1
+
+    def _old_preview_order(self, seg, p0, p1):
+        """What the preview did BEFORE this fix: post_process each pass, then merge."""
+        merged, passes = None, []
+        for key, masks in (('0', p0), ('1', p1)):
+            masks = seg.post_process(masks, ['Y', 'X'], None, 1, False, real_border=None)
+            merged, passes = _merge_pass(seg, merged, masks, key, passes, self._count)
+        return merged, passes
+
+    def test_the_old_per_pass_order_really_did_differ(self):
+        """The guard on the guard. The three tests below are written against `_post_process_merged`,
+        which did not exist before the fix, so none of them can fail against the old code directly.
+        This is what pins that the old order was actually WRONG — if the fixture ever stops
+        separating the two, they are all guarding nothing."""
+        import numpy as np
+        p0, p1 = self._passes()
+        seg = self._seg(min_cell_size=20)
+        merged, passes = _merge_pass(seg, None, p0, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p1, '1', passes, self._count)
+        run_order, _ = _post_process_merged(seg, merged, passes, self._Ctx())
+        old_order, _ = self._old_preview_order(seg, *self._passes())
+        self.assertFalse(np.array_equal(run_order > 0, old_order > 0),
+                         'fixture no longer separates the two orders')
+        self.assertEqual(self._count(run_order), 1, 'the run drops the 12 px sliver')
+        self.assertEqual(self._count(old_order), 2, 'the old preview kept it')
+
+    def test_matches_the_run_composition(self):
+        import numpy as np
+        p0, p1 = self._passes()
+        seg = self._seg(min_cell_size=20)
+
+        merged, passes = _merge_pass(seg, None, p0, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p1, '1', passes, self._count)
+        got, passes = _post_process_merged(seg, merged, passes, self._Ctx())
+
+        # what the RUN does: the same merge, then post_process once over the result
+        want = np.zeros((8, 8), dtype=np.uint32); want[1:7, 1:5] = 1
+        want[1:7, 5:7] = 2
+        want = seg.post_process(want, ['Y', 'X'], None, 1, False)
+        np.testing.assert_array_equal(got, want)
+
+    def test_the_sliver_is_judged_at_its_clipped_size(self):
+        """The sliver is 12 px; the block it was clipped from is 36 px. A 10 px floor keeps it and
+        a 20 px floor drops it, while the old per-pass order judged 36 and kept it at both."""
+        for floor, survives in ((10, True), (20, False)):
+            p0, p1 = self._passes()
+            seg = self._seg(min_cell_size=floor)
+            merged, passes = _merge_pass(seg, None, p0, '0', [], self._count)
+            merged, passes = _merge_pass(seg, merged, p1, '1', passes, self._count)
+            got, passes = _post_process_merged(seg, merged, passes, self._Ctx())
+            self.assertEqual(passes[1]['objects'], 1 if survives else 0,
+                             f'pass 1 sliver at minCellSize={floor}')
+            self.assertEqual(2 in got, survives)
+
+    def test_per_pass_counts_are_recounted_after_filtering(self):
+        """`objects` must describe what is ON SCREEN. Without the recount it would still report the
+        pre-filter count, so a pass the size filter emptied would claim objects nobody can see."""
+        p0, p1 = self._passes()
+        seg = self._seg(min_cell_size=20)
+        merged, passes = _merge_pass(seg, None, p0, '0', [], self._count)
+        merged, passes = _merge_pass(seg, merged, p1, '1', passes, self._count)
+        self.assertEqual(passes[1]['objects'], 1, 'before post_process the sliver is still there')
+        _, passes = _post_process_merged(seg, merged, passes, self._Ctx())
+        self.assertEqual(passes[1]['objects'], 0)
+        # the id RANGES are untouched: post_process zeroes and reshapes, it never renumbers
+        self.assertEqual([(p['from'], p['to']) for p in passes], [(1, 1), (2, 2)])

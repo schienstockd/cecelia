@@ -1024,6 +1024,30 @@ ignored the `<group>Order` chips entirely, since `preview_params_for_run` skippe
 Both are fixed and both are ratcheted (`the preview prepares params with every step run_task uses`;
 `test_preview_tiling.PreviewMultiPassMergeTest`).
 
+A third divergence lived in the same seam and is also fixed: the preview ran `post_process` — label
+smoothing, erosion, expansion, `minCellSize`, border clearing — **inside** the group loop, while the
+run merges every group into the frame and calls it once afterwards. Order matters because
+`fill_unlabelled` clips the later pass: the run judges pass 2's objects at their clipped extent, the
+preview judged them at their full one. So the preview kept slivers the run removes, and tuning
+`minCellSize` against it was tuning against a number the run does not produce. Measured on
+`zolIMa/fXgbTl` with a real two-pass config: 52 objects in run order against 53 in the preview's, with
+non-identical foreground — and it diverged at `minCellSize` 0 as well, since `labelSmoothing` defaults
+to 0.5 and is just as order-sensitive. Single-pass configs were never affected: with nothing to clip,
+the two orders agree. `preview_worker._post_process_merged` now owns the composition, and re-counts each
+pass's `objects` from its id range afterwards — `post_process` only ever zeroes or reshapes a label, it
+never renumbers, so the ranges stay true. Ratcheted by
+`test_preview_tiling.PreviewPostProcessRunsAfterTheMergeTest`, which includes a guard on its own
+fixture: the three assertions are written against the new helper and so cannot fail against the old
+code, and a fourth test pins that the two orders really did disagree.
+
+**The merge manufactures sub-threshold objects, and `minCellSize` is what removes them.**
+`minComponentSize` is spent INSIDE a pass, in coastal's `_remove_small_components`, before
+`fill_unlabelled` has clipped anything — so a pass-2 object that mostly overlaps a pass-1 cell survives
+its own size floor and then gets shaved to the sliver outside it. On `zolIMa/fXgbTl` at `minCellSize` 0
+that puts 7.7% of objects under 1 µm², with a p10 of 1.22 µm² against a median cell of ~48; at
+`minCellSize` 1.0 the sub-1 µm² fraction is 0% and p10 is 1.72. `minCellSize` runs after the merge, so
+it is the only one of the two floors that sees the clipped size. A two-pass config wants it set.
+
 **Which pass found an object reaches the measured table as `obs['pass']`** — a categorical naming
 the pass by the number the form and the preview already show it under: `"1"`, `"2"`, one-based. The
 group key is a zero-based position on the wire, so the column is stamped through
