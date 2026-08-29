@@ -571,13 +571,35 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  whole slide is a bounded rectangle — it cannot be lost — so it passes a much smaller `min` so the
  *  user can zoom to actual pixels (`camZoom ≤ 1`) and `pickTileLevel` reaches L0. At 0.15 on a
  *  20k×17k slide, max zoom-in is `camZoom ≈ 2` — L1 is the finest level `pickTileLevel` ever picks
- *  (Dominik, 2026-08-26). */
+ *  (Dominik, 2026-08-26).
+ *
+ *  `anchor` — cursor-directed zoom (ImageJ, Fiji, QuPath). When given, the pan is shifted so the
+ *  world point under the cursor stays under the cursor after the dolly, so a wheel gesture zooms
+ *  INTO what the pointer is over rather than into the viewport centre. Without it, dominik had to
+ *  zoom-in / pan / zoom-in to reach a corner (2026-08-29). `ndcX`, `ndcY` are the cursor in NDC
+ *  (right/up positive, same convention as `screenToImagePx`), `aspect` = canvas W/H. Skipped on the
+ *  clamp edge: if the dolly hit the band and dist didn't change, don't shift the pan either — the
+ *  view would drift on further wheel notches at the clamp. */
 export function orbitZoom(
   cam: OrbitCamera, deltaY: number, fitDist: number,
   band: { min: number; max: number } = { min: 0.15, max: 6 },
+  anchor?: { ndcX: number; ndcY: number; aspect: number },
 ): OrbitCamera {
   const d = cam.dist * Math.exp(deltaY * 0.001)
-  return { ...cam, dist: Math.max(fitDist * band.min, Math.min(fitDist * band.max, d)) }
+  const nextDist = Math.max(fitDist * band.min, Math.min(fitDist * band.max, d))
+  if (!anchor || nextDist === cam.dist) return { ...cam, dist: nextDist }
+  // Keep world-under-cursor fixed: worldX = -panX + ndcX * halfW is invariant, so
+  //   panX_new = panX_old + ndcX * (halfW_new - halfW_old). Same for Y with halfH.
+  const halfH_old = cam.dist * VIEW_HALF_ANGLE
+  const halfH_new = nextDist * VIEW_HALF_ANGLE
+  const dHalfH = halfH_new - halfH_old
+  const dHalfW = dHalfH * anchor.aspect
+  return {
+    ...cam,
+    dist: nextDist,
+    panX: cam.panX + anchor.ndcX * dHalfW,
+    panY: cam.panY + anchor.ndcY * dHalfH,
+  }
 }
 
 // ── Contrast from the data the client already holds ───────────────────────────────

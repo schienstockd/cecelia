@@ -212,6 +212,40 @@ describe('orbit camera', () => {
     const far = orbitZoom({ ...fit, dist: 20 }, -100, fit.dist).dist / 20
     expect(near).toBeCloseTo(far)
   })
+  it('with a cursor anchor, keeps the world point under the pointer fixed (ImageJ)', () => {
+    // World point at the cursor before the zoom must equal the world point at the same cursor
+    // after — the pointer should feel glued to whatever it was over. Formula matches
+    // `screenToImagePx`: worldX = -panX + ndcX*halfW, worldY = -panY + ndcY*halfH.
+    const cam0 = { ...fit, dist: 100, panX: 0, panY: 0 }
+    const anchor = { ndcX: 0.6, ndcY: -0.4, aspect: 16 / 9 }
+    const worldAt = (c: typeof cam0) => {
+      const halfH = c.dist * VIEW_HALF_ANGLE
+      return { x: -c.panX + anchor.ndcX * halfH * anchor.aspect,
+               y: -c.panY + anchor.ndcY * halfH }
+    }
+    const w0 = worldAt(cam0)
+    const zin  = orbitZoom(cam0, -200, fit.dist, { min: 0.005, max: 6 }, anchor)
+    const zout = orbitZoom(cam0,  200, fit.dist, { min: 0.005, max: 6 }, anchor)
+    expect(worldAt(zin).x).toBeCloseTo(w0.x)
+    expect(worldAt(zin).y).toBeCloseTo(w0.y)
+    expect(worldAt(zout).x).toBeCloseTo(w0.x)
+    expect(worldAt(zout).y).toBeCloseTo(w0.y)
+  })
+  it('without an anchor, zoom does not touch the pan (back-compat)', () => {
+    const cam0 = { ...fit, dist: 100, panX: 7, panY: -3 }
+    const z = orbitZoom(cam0, -200, fit.dist)
+    expect(z.panX).toBe(7)
+    expect(z.panY).toBe(-3)
+  })
+  it('at the band clamp, the anchor does not drift the pan', () => {
+    // Otherwise repeated wheel notches at max zoom-out slide the image sideways.
+    const cam0 = { ...fit, dist: fit.dist * 6, panX: 0, panY: 0 }
+    const anchor = { ndcX: 0.8, ndcY: 0.8, aspect: 1 }
+    const z = orbitZoom(cam0, 1000, fit.dist, { min: 0.15, max: 6 }, anchor)
+    expect(z.dist).toBe(cam0.dist)
+    expect(z.panX).toBe(0)
+    expect(z.panY).toBe(0)
+  })
 })
 
 describe('slabView — dtype-aware wrap around the slab ArrayBuffer', () => {

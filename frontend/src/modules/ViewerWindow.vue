@@ -2108,7 +2108,20 @@ function onWheel(e: WheelEvent) {
   const band = mode.value === 'plane'
     ? { min: 0.005, max: 6 }
     : { min: 0.15, max: 6 }
-  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value, band)
+  // Cursor-anchored zoom (ImageJ): 2D plane only. The 3D wheel is a dolly on the orbit and adding
+  // a pan-shift under a rotated basis moves the volume sideways in a way the user did not ask for.
+  let anchor: { ndcX: number; ndcY: number; aspect: number } | undefined
+  const c = canvas.value
+  if (c && mode.value === 'plane') {
+    const rect = c.getBoundingClientRect()
+    const w = Math.max(rect.width, 1), h = Math.max(rect.height, 1)
+    anchor = {
+      ndcX: (2 * (e.clientX - rect.left)) / w - 1,
+      ndcY: 1 - (2 * (e.clientY - rect.top)) / h,
+      aspect: w / h,
+    }
+  }
+  cam.value = orbitZoom(cam.value, e.deltaY, fitDist.value, band, anchor)
   frame.redraw()
   // Zoom exposes/hides tiles (extent changes and level may swap). Level swap is handled by the
   // `slabLevel` watcher → `levelPump` → reallocate; the tile pump handles the same-level case where
