@@ -95,21 +95,53 @@ end
 # Read the viewer's per-channel display specs from the JSON layer-props file (Phase 0). Returns a vector
 # of (lo, hi, colour, visible) in channel order, or `nothing` if the file is missing/unreadable.
 # `colour` is the saved `colormap_lut` when present, else the `colormap` NAME (see CMAP_RGB above).
+#
+# Two on-disk shapes today, checked in preference order:
+#  1. **Legacy napari**: `Image: [{contrast_limits, colormap, colormap_lut, visible}, …]` — one entry
+#     per channel, INDEX-ORDERED. Written by the napari bridge; still the case for pre-P5 versions
+#     and every image whose viewer state predates the browser viewer.
+#  2. **Browser viewer**: `webgpu: {channels: [{visible, hex, lo, hi}, …]}` — same INDEX ORDER, but
+#     the colour is a plain `#rrggbb` hex ramp (no LUT) and lo/hi live top-level rather than under
+#     a `contrast_limits` pair. Written by the browser viewer's autosave (P5+). A sibling `layers`
+#     dict carries the same fields keyed BY NAME, but this reader has no channel-name list so
+#     `webgpu.channels` is what it can walk in order.
+#
+# If neither shape is present, return nothing — the caller (`_resolve_frame_for_record`) falls back
+# to sampled contrast with `DEFAULT_CMAPS`, which is what a cold-start image shows in the viewer too.
 function layer_display_specs(props_path::AbstractString)
     isfile(props_path) || return nothing
     try
         d = JSON3.read(read(props_path, String))
         imgs = get(d, :Image, nothing)
-        imgs === nothing && return nothing
-        specs = Tuple{Float64,Float64,Any,Bool}[]
-        for e in imgs
-            cl  = get(e, :contrast_limits, [0.0, 1.0])
-            lut = get(e, :colormap_lut, nothing)
-            colour = (lut !== nothing && !isempty(lut)) ? _as_lut(lut) :
-                     lowercase(String(get(e, :colormap, "gray")))
-            push!(specs, (Float64(cl[1]), Float64(cl[2]), colour, Bool(get(e, :visible, true))))
+        if imgs !== nothing
+            specs = Tuple{Float64,Float64,Any,Bool}[]
+            for e in imgs
+                cl  = get(e, :contrast_limits, [0.0, 1.0])
+                lut = get(e, :colormap_lut, nothing)
+                colour = (lut !== nothing && !isempty(lut)) ? _as_lut(lut) :
+                         lowercase(String(get(e, :colormap, "gray")))
+                push!(specs, (Float64(cl[1]), Float64(cl[2]), colour, Bool(get(e, :visible, true))))
+            end
+            isempty(specs) || return specs
         end
-        isempty(specs) ? nothing : specs
+        # Browser-viewer shape (P5+). `webgpu.channels` is ordered by channel index — same order
+        # the store's `c` axis walks — so no channel-name lookup is needed here.
+        wg = get(d, :webgpu, nothing)
+        if wg isa AbstractDict
+            chs = get(wg, :channels, nothing)
+            if chs isa AbstractVector && !isempty(chs)
+                specs = Tuple{Float64,Float64,Any,Bool}[]
+                for e in chs
+                    lo  = get(e, :lo, 0.0)
+                    hi  = get(e, :hi, 1.0)
+                    hex = get(e, :hex, "gray")
+                    vis = Bool(get(e, :visible, true))
+                    push!(specs, (Float64(lo), Float64(hi), lowercase(String(hex)), vis))
+                end
+                return specs
+            end
+        end
+        nothing
     catch
         nothing
     end

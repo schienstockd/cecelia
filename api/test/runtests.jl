@@ -1409,6 +1409,36 @@ end
         @test specs[2][1] == 1.0 && specs[2][2] == 5.0
     end
     @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
+
+    # Browser-viewer autosave shape (P5+) — the smoothed sidecar for zolIMa/fXgbTl has NO `Image`
+    # array; only `layers` (name-keyed) + `webgpu.channels` (index-ordered). Before this fell back
+    # to sampled contrast + `DEFAULT_CMAPS`, so the movie rendered red/green/blue/yellow instead of
+    # the viewer's palette (Dominik, 2026-08-29). Reader walks `webgpu.channels` in index order.
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((;
+            webgpu = (; channels = [
+                (; visible = false, hex = "#0000ff", lo = 0, hi =  29),   # SHG   (hidden)
+                (; visible = true,  hex = "#00ffff", lo = 0, hi = 162),   # nuc-GFP (cyan)
+                (; visible = true,  hex = "#ff00ff", lo = 0, hi = 310),   # mem-TOM (magenta)
+                (; visible = true,  hex = "#ffff00", lo = 0, hi = 194),   # CD169-Kat (yellow)
+            ]),
+            layers = Dict("SHG" => (; visible = false)),                  # ignored: name-keyed
+        )))
+        specs = layer_display_specs(p)
+        @test length(specs) == 4
+        @test specs[1] == (0.0,  29.0, "#0000ff", false)
+        @test specs[2] == (0.0, 162.0, "#00ffff", true)
+        @test specs[3] == (0.0, 310.0, "#ff00ff", true)
+        @test specs[4] == (0.0, 194.0, "#ffff00", true)
+    end
+
+    # A file with NEITHER shape returns nothing (fall through to sampled-contrast fallback).
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((; other = "unrelated")))
+        @test layer_display_specs(p) === nothing
+    end
 end
 
 # Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for
