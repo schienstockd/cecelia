@@ -69,6 +69,10 @@ export interface BenchBlob {
   bytesFetched: number
   vram: BenchVram | null
   writes: BenchWriteSample[]   // empty on flat mode
+  /** Which brick-upload path this session used — `'writeTexture'` (shipping) or `'mapWrite'`
+   *  (Session D staging variant). Absent on flat mode. Session D uses this to distinguish A/B
+   *  blobs without renaming files. */
+  uploadMode?: 'writeTexture' | 'mapWrite'
   summary: BenchSummary
 }
 
@@ -126,6 +130,7 @@ export function buildBlob(input: {
   vram: BenchVram | null
   isoDate: string
   writes?: readonly BenchWriteSample[]
+  uploadMode?: 'writeTexture' | 'mapWrite'
 }): BenchBlob {
   const sessionMs = input.savedAt - input.t0
   return {
@@ -142,6 +147,7 @@ export function buildBlob(input: {
     writes: (input.writes ?? []).map(w => ({
       atMs: w.atMs - input.t0, durationMs: w.durationMs, bytes: w.bytes,
     })),
+    ...(input.uploadMode !== undefined ? { uploadMode: input.uploadMode } : {}),
     summary: summarize(input.frames, sessionMs),
   }
 }

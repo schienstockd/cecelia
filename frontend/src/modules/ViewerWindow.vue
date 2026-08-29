@@ -115,6 +115,14 @@ const bricksEnabled = String(route.query.bricks ?? '') === '1'
  * off-line comparison of flat vs brick on the five reference images.
  */
 const benchEnabled = String(route.query.bench ?? '') === '1'
+/**
+ * `?upload=mapwrite` — Session D's experimental brick upload path. Swaps
+ * `writeBrick`'s N-per-channel `writeTexture` loop for one `MAP_WRITE` staging
+ * buffer + `copyBufferToTexture` per brick. Brick renderer only; a no-op on the
+ * flat renderer. Default `'writeTexture'` matches shipping behaviour.
+ */
+const uploadMode: 'writeTexture' | 'mapWrite' =
+  String(route.query.upload ?? '') === 'mapwrite' ? 'mapWrite' : 'writeTexture'
 const benchT0 = ref<number>(0)
 const benchFirstFrameMs = ref<number | null>(null)
 const benchFrames = shallowRef<BenchSample[]>([])
@@ -171,6 +179,7 @@ function benchSave() {
     bytesFetched: benchBytes.value,
     vram,
     writes: benchWrites.value,
+    uploadMode: bricksEnabled ? uploadMode : undefined,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -2450,6 +2459,10 @@ async function ensureRenderer() {
           }]
         })
       }
+      // ?upload=mapwrite: switch new atlases to the MAP_WRITE staging path. Set BEFORE
+      // setImage so the first atlas the renderer builds picks up the mode; mid-image toggles
+      // only take effect on the next atlas rebuild.
+      r.setUploadMode?.(uploadMode)
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
