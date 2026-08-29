@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   bricksIntersectingViewport, pickBrickLevel, scheduleBricks,
-  brickWorldFromMeta, brickViewportFromCamera,
+  brickWorldFromMeta, brickViewportFromCamera, MAX_INTERSECT_BRICKS,
   type BrickViewport, type BrickWorld,
 } from './brickScheduler'
 import { brickKey } from './pageTable'
@@ -227,35 +227,62 @@ describe('scheduleBricks', () => {
     expect(noFloor.level).toBe(coarsestFloor.level)
   })
 
-  it('over-fetch guard coarsens the level when the intersect list is too large', () => {
-    // Wide viewport at fit distance on a "huge" store — many bricks intersect at fine level.
-    // Guard should coarsen until under MAX_INTERSECT_BRICKS. Uses a big-grid world (16x16 at L0)
-    // so L0 has 256 bricks, L2 has 16 — well under the 32-brick default.
+  it('over-fetch guard coarsens the level when the CORE brick count is too large', () => {
+    // Wide viewport at fit distance on a "huge" store — many core bricks at fine level. Guard
+    // counts ring===0 bricks only (halo is prefetch, doesn't gate). Big-grid world (16×16 at L0):
+    // L0 core=256 > 64, L1 core=64, L2 core=16 — the guard walks until core is under threshold.
     const bigWorld: BrickWorld = {
       brickSizeVox: [128, 128, 4],
       voxelUmL0: [1, 1, 1],
       extentVoxL0: [128 * 16, 128 * 16, 4],
       nLevels: 4,
     }
-    // Camera close in, but viewport covers the whole store — mimics f8gzA2 fit distance.
+    // Viewport covers the whole store at L0 — mimics f8gzA2 fit distance.
     const view: BrickViewport = {
       t: 0,
       centreUm: [128 * 8, 128 * 8, 2],
       halfWUm: 128 * 8, halfHUm: 128 * 8, halfDUm: 100,
       focalPx: 512, distanceUm: 128,   // fine, so SSE wants L0
     }
-    // SSE alone would pick L0 with 256+ bricks — over MAX_INTERSECT_BRICKS.
+    // SSE alone would pick L0 with 256 core bricks — over MAX_INTERSECT_BRICKS.
     expect(pickBrickLevel(view, bigWorld, undefined)).toBe(0)
-    expect(bricksIntersectingViewport(view, bigWorld, 0).length).toBeGreaterThan(32)
-    // Guard walks up to L2 (or coarser) to stay under 32.
+    expect(bricksIntersectingViewport(view, bigWorld, 0).filter(s => s.ring === 0).length)
+      .toBeGreaterThan(MAX_INTERSECT_BRICKS)
     const dec = scheduleBricks(view, bigWorld, new Set(), undefined, 3)
     expect(dec.level).toBeGreaterThan(0)
-    expect(bricksIntersectingViewport(view, bigWorld, dec.level).length).toBeLessThanOrEqual(32)
+    expect(bricksIntersectingViewport(view, bigWorld, dec.level).filter(s => s.ring === 0).length)
+      .toBeLessThanOrEqual(MAX_INTERSECT_BRICKS)
+  })
+
+  it('over-fetch guard ignores halo — a moderate viewport zoomed in fetches finer even with halo', () => {
+    // The regression this catches: pre-2026-08-29 the guard counted total (core+halo). SispLk
+    // max-zoom L1 has ~45 core but ~77 total (halo), so a total-count threshold of 32 coarsened
+    // to L3 (Dominik screenshot). Core-only lets L1 through when the FRAME cost fits.
+    const world: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [0.5, 0.5, 3],
+      extentVoxL0: [7848, 7293, 4],   // SispLk-shape
+      nLevels: 6,
+    }
+    // Camera zoomed in — small viewport.
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [1962, 1823, 6],
+      halfWUm: 500, halfHUm: 260, halfDUm: 100,
+      focalPx: 800, distanceUm: 620,
+    }
+    // Total (core+halo) at L1 is > 32 but core is <= 64 — guard should NOT coarsen past L1.
+    const l1Total = bricksIntersectingViewport(view, world, 1).length
+    const l1Core = bricksIntersectingViewport(view, world, 1).filter(s => s.ring === 0).length
+    expect(l1Total).toBeGreaterThan(32)   // total gate would have kicked in
+    expect(l1Core).toBeLessThanOrEqual(MAX_INTERSECT_BRICKS)   // core gate does not
+    const dec = scheduleBricks(view, world, new Set(), undefined, 5)
+    expect(dec.level).toBeLessThanOrEqual(2)   // reaches L1 or L2, not L3+
   })
 
   it('over-fetch guard respects the floor — never coarsens past what the user asked', () => {
     // Same setup: even with a wide viewport, if the user pinned floor at L1, the guard cannot
-    // coarsen past L1 — even if L1 is still over MAX_INTERSECT_BRICKS.
+    // coarsen past L1 — even if L1 core count is still over MAX_INTERSECT_BRICKS.
     const bigWorld: BrickWorld = {
       brickSizeVox: [128, 128, 4],
       voxelUmL0: [1, 1, 1],

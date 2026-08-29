@@ -268,18 +268,22 @@ export function brickViewportFromCamera(
 export type FloorLevel = number | undefined
 
 /**
- * Bricks-per-frame ceiling for the over-fetch guard. Bench baseline 2026-08-29 (pre-#702):
- * f8gzA2 at fit distance intersected 200+ bricks when SSE picked L0/L1, pulling 2.85 GB — that's
- * the pathology the pin (8b780fd) was crude-fixing. Bounding on intersect count instead is more
- * honest: it targets the "wide viewport, fine level" cost directly, without blocking zoom-in on
- * moderate stores. 32 is a starting point; re-measure in B1 and tune from real data.
+ * Core-brick ceiling for the over-fetch guard. Counts ONLY `ring === 0` bricks — the ones
+ * actually inside the viewport frustum. Halo (ring === 1) is prefetch and shouldn't gate the
+ * level pick: at max zoom on SispLk, halo doubles the total count but the frame cost is the
+ * core viewport. First cut counted total (32) and coarsened SispLk max-zoom to L3 (Dominik
+ * screenshot 2026-08-29), which is exactly the pin behaviour we were replacing. Switched to
+ * core-only + 64: SispLk max-zoom lands at L1 (core=45), f8gzA2 fit stays at L5-floor (core=45,
+ * under threshold, but SSE-wanted L0-L2 all coarsen through it — the loop still hits floor).
+ * Re-measure in B1 and tune from real bench data.
  */
-export const MAX_INTERSECT_BRICKS = 32
+export const MAX_INTERSECT_BRICKS = 64
 
 /**
- * Guard the SSE-desired level against over-fetch. If the intersect list at the chosen level is
- * over `MAX_INTERSECT_BRICKS`, walk one level coarser and re-check, bounded by `floorLevel`.
- * Returns the level the scheduler should actually use.
+ * Guard the SSE-desired level against over-fetch. Counts core (ring === 0) bricks only — halo
+ * is prefetch and not part of what the frame actually samples. If the core count at the chosen
+ * level exceeds `MAX_INTERSECT_BRICKS`, walk one level coarser and re-check, bounded by
+ * `floorLevel`. Returns the level the scheduler should actually use.
  */
 export function guardIntersectCost(
   view: BrickViewport,
@@ -289,7 +293,9 @@ export function guardIntersectCost(
 ): number {
   let level = chosen
   while (level < floorLevel) {
-    if (bricksIntersectingViewport(view, world, level).length <= MAX_INTERSECT_BRICKS) break
+    const coreCount = bricksIntersectingViewport(view, world, level)
+      .filter(s => s.ring === 0).length
+    if (coreCount <= MAX_INTERSECT_BRICKS) break
     level += 1
   }
   return level
