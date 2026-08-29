@@ -577,9 +577,22 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  world point under the cursor stays under the cursor after the dolly, so a wheel gesture zooms
  *  INTO what the pointer is over rather than into the viewport centre. Without it, dominik had to
  *  zoom-in / pan / zoom-in to reach a corner (2026-08-29). `ndcX`, `ndcY` are the cursor in NDC
- *  (right/up positive, same convention as `screenToImagePx`), `aspect` = canvas W/H. Skipped on the
- *  clamp edge: if the dolly hit the band and dist didn't change, don't shift the pan either — the
- *  view would drift on further wheel notches at the clamp. */
+ *  (right/up positive), `aspect` = canvas W/H. Skipped on the clamp edge: if the dolly hit the
+ *  band and dist didn't change, don't shift the pan either — the view would drift on further wheel
+ *  notches at the clamp.
+ *
+ *  Sign convention: the SHADER (`tileShader.ts`, and mirrored by the volume shader) is the ground
+ *  truth. It computes `ndcX = (wx - panX) / halfW` and `ndcY = -(wy + panY) / halfH`, i.e. the
+ *  screen center is at world `(panX, -panY)`. So the world under the cursor is
+ *     wx = panX + ndcX * halfW
+ *     wy = -panY - ndcY * halfH
+ *  and preserving that across the dolly gives
+ *     panX_new = panX_old - ndcX * (halfW_new - halfW_old)
+ *     panY_new = panY_old - ndcY * (halfH_new - halfH_old)
+ *  The first version of this shipped inverted (dominik, 2026-08-29 — "mouse bottom left, it zooms
+ *  in top right"). The offender was following `screenToImagePx`, which uses the opposite sign for
+ *  panX from the shader — that inconsistency is its own bug (docs/TODO.md → *Picker/renderer pan
+ *  sign disagreement*), not something for the zoom to match. */
 export function orbitZoom(
   cam: OrbitCamera, deltaY: number, fitDist: number,
   band: { min: number; max: number } = { min: 0.15, max: 6 },
@@ -588,8 +601,6 @@ export function orbitZoom(
   const d = cam.dist * Math.exp(deltaY * 0.001)
   const nextDist = Math.max(fitDist * band.min, Math.min(fitDist * band.max, d))
   if (!anchor || nextDist === cam.dist) return { ...cam, dist: nextDist }
-  // Keep world-under-cursor fixed: worldX = -panX + ndcX * halfW is invariant, so
-  //   panX_new = panX_old + ndcX * (halfW_new - halfW_old). Same for Y with halfH.
   const halfH_old = cam.dist * VIEW_HALF_ANGLE
   const halfH_new = nextDist * VIEW_HALF_ANGLE
   const dHalfH = halfH_new - halfH_old
@@ -597,8 +608,8 @@ export function orbitZoom(
   return {
     ...cam,
     dist: nextDist,
-    panX: cam.panX + anchor.ndcX * dHalfW,
-    panY: cam.panY + anchor.ndcY * dHalfH,
+    panX: cam.panX - anchor.ndcX * dHalfW,
+    panY: cam.panY - anchor.ndcY * dHalfH,
   }
 }
 

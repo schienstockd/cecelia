@@ -214,14 +214,18 @@ describe('orbit camera', () => {
   })
   it('with a cursor anchor, keeps the world point under the pointer fixed (ImageJ)', () => {
     // World point at the cursor before the zoom must equal the world point at the same cursor
-    // after — the pointer should feel glued to whatever it was over. Formula matches
-    // `screenToImagePx`: worldX = -panX + ndcX*halfW, worldY = -panY + ndcY*halfH.
-    const cam0 = { ...fit, dist: 100, panX: 0, panY: 0 }
-    const anchor = { ndcX: 0.6, ndcY: -0.4, aspect: 16 / 9 }
+    // after — the pointer should feel glued to whatever it was over. Formula matches the SHADER
+    // (`tileShader.ts`): ndcX = (wx - panX) / halfW, ndcY = -(wy + panY) / halfH, so
+    //   wx = panX + ndcX*halfW,  wy = -panY - ndcY*halfH.
+    // Panning both non-zero so the wrong sign would show — the first shipped version was
+    // consistent with itself at panX = panY = 0 but mirrored the cursor across the origin
+    // (dominik, 2026-08-29: "mouse bottom left, it zooms in top right").
+    const cam0 = { ...fit, dist: 100, panX: 30, panY: -20 }
+    const anchor = { ndcX: -0.7, ndcY: -0.6, aspect: 16 / 9 } // bottom-left of a wide canvas
     const worldAt = (c: typeof cam0) => {
       const halfH = c.dist * VIEW_HALF_ANGLE
-      return { x: -c.panX + anchor.ndcX * halfH * anchor.aspect,
-               y: -c.panY + anchor.ndcY * halfH }
+      return { x:  c.panX + anchor.ndcX * halfH * anchor.aspect,
+               y: -c.panY - anchor.ndcY * halfH }
     }
     const w0 = worldAt(cam0)
     const zin  = orbitZoom(cam0, -200, fit.dist, { min: 0.005, max: 6 }, anchor)
@@ -230,6 +234,19 @@ describe('orbit camera', () => {
     expect(worldAt(zin).y).toBeCloseTo(w0.y)
     expect(worldAt(zout).x).toBeCloseTo(w0.x)
     expect(worldAt(zout).y).toBeCloseTo(w0.y)
+  })
+  it('zoom in at a bottom-left cursor drags the camera center TOWARD it, not the mirror', () => {
+    // Regression pin for "mouse bottom-left, it zooms in top-right" (dominik, 2026-08-29). The
+    // buggy version inverted panX AND panY. Screen center in world = (panX, -panY). A cursor at
+    // screen bottom-left is NDC (-,-). Zoom in ⇒ the pointed-at world moves closer to center ⇒
+    // camera center shifts toward the cursor. So panX shifts SAME SIGN as ndcX (both negative here)
+    // and -panY shifts SAME SIGN as ndcY_screen = -ndcY_ndc; equivalently panY shifts SAME SIGN
+    // as ndcY_ndc — bottom cursor (ndcY<0) ⇒ panY decreases.
+    const cam0 = { ...fit, dist: 200, panX: 0, panY: 0 }
+    const anchor = { ndcX: -0.8, ndcY: -0.8, aspect: 1 }
+    const zin = orbitZoom(cam0, -200, fit.dist, { min: 0.005, max: 6 }, anchor)
+    expect(zin.panX).toBeLessThan(0)
+    expect(zin.panY).toBeLessThan(0)
   })
   it('without an anchor, zoom does not touch the pan (back-compat)', () => {
     const cam0 = { ...fit, dist: 100, panX: 7, panY: -3 }
