@@ -3841,6 +3841,11 @@ onUnmounted(() => {
   overflow: hidden auto;
   display: flex; flex-direction: column; gap: 0.35rem;
 }
+/* Every row is its own height — no vertical shrinking. In a tall column with more content than
+   fits, the default `flex-shrink: 1` was compressing every row (the 2D/3D segmented toggle,
+   Reset view button, brick-map grid) instead of letting `.vw-side` scroll (Dominik, 2026-08-29).
+   `CollapsibleSection` already sets `flex-shrink: 0` on its own root; this covers everything else. */
+.vw-side > * { flex-shrink: 0; }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
