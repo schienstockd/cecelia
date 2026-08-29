@@ -25,7 +25,7 @@ import {
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-import { createBrickAtlasTexture, type BrickAtlasTexture, type UploadMode } from './brickAtlasTexture'
+import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
 import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
@@ -318,13 +318,8 @@ export async function createBrickVolumeRenderer(
    *  t=5 with overlays at t=0. Null when unwired. */
   let onDisplayAdvanced: ((t: number) => void) | null = null
   /** Per-writeBrick timing hook — bench harness only. Fires with the CPU-side duration of one
-   *  writeBrick call and the byte count uploaded. Session D (MAP_WRITE staging) uses this to
-   *  A/B against a copyBufferToTexture variant. Null when unwired. */
+   *  writeBrick call and the byte count uploaded. Null when unwired. */
   let onBrickWritten: ((durationMs: number, bytes: number) => void) | null = null
-  /** Which atlas upload path new atlases use. Toggled via `setUploadMode` (URL flag
-   *  `?upload=mapwrite`); takes effect on the next atlas rebuild (level swap / setImage).
-   *  See `brickAtlasTexture.ts` → `UploadMode`. */
-  let uploadMode: UploadMode = 'writeTexture'
   /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
    *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
@@ -424,7 +419,7 @@ export async function createBrickVolumeRenderer(
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
     }
-    const texture = createBrickAtlasTexture(device, layout, limits, onError, uploadMode)
+    const texture = createBrickAtlasTexture(device, layout, limits, onError)
     if (texture === null) return
 
     const capacity = atlasSlotCapacity(layout)
@@ -1216,7 +1211,6 @@ export async function createBrickVolumeRenderer(
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
-    setUploadMode(mode) { uploadMode = mode },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelOverride(level) {
       // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the

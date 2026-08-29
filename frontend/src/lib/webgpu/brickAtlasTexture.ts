@@ -21,29 +21,7 @@ import {
   atlasTextureSize, atlasSlotCapacity, validateAtlasLayout,
   type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
-import {
-  paddedBytesPerRow, paddedPerChannelBytes, stagingBufferBytes, packStaging,
-} from '../../utils/brickAtlasStaging'
 export { canReuseAtlas } from '../../utils/brickAtlas'
-
-/**
- * Which upload path `writeBrick` takes.
- *
- * `writeTexture` — the shipping path. N `device.queue.writeTexture` calls (one per
- * channel) into the slot's Z-slices. Driver does the JS→staging memcpy internally
- * and packs a variable-stride row layout for us. Cheap per byte, but per-call
- * overhead grows with N (typical `nC = 4..25`).
- *
- * `mapWrite` — Session D's experimental path. ONE `MAP_WRITE` staging buffer per
- * brick, `mappedAtCreation: true`, our own row-padded pack into `getMappedRange()`,
- * `unmap`, N `copyBufferToTexture` calls into ONE command encoder, one `submit`.
- * Fewer host→GPU stagings (1 vs N) at the cost of extra CPU-side row padding when
- * `bx * bpv` is not 256-aligned (which is the usual case). A/B against
- * `writeTexture` via `?bench=1` + the `benchRecorder.writes[]` timing hook.
- *
- * See docs/todo/WEB_VIEWER_PLAN.md → "Open, with a mechanism behind it".
- */
-export type UploadMode = 'writeTexture' | 'mapWrite'
 
 /** How many bytes one brick × all channels occupies in the atlas — the payload the caller
  *  hands to `writeBrick`. Answers `(brickX × brickY × brickZ × nC × bpv)`. */
@@ -95,7 +73,6 @@ export function createBrickAtlasTexture(
   layout: AtlasLayout,
   limits: DeviceLimits,
   onError?: (msg: string) => void,
-  uploadMode: UploadMode = 'writeTexture',
 ): BrickAtlasTexture | null {
   const err = validateAtlasLayout(layout, limits)
   if (err !== null) {
@@ -151,48 +128,22 @@ export function createBrickAtlasTexture(
       const originY = sy * by
       const originZBase = sz * bz * nc
 
-      // Per-channel writes: bytes for channel c are contiguous in the payload (see the doc
-      // above), and the channel's atlas Z slice is `originZBase + c * bz`. Same 1-writeTexture-
-      // per-channel pattern as `tileRenderer.ts:388-393`.
+      // ONE writeTexture per brick — the wire payload's (x, y, z, c) column-major layout
+      // stacks channels contiguously along z, and the atlas texture stores channel c at atlas z
+      // `originZBase + c * bz`, so the whole brick is one `[bx, by, bz * nc]` box and one
+      // upload call. The old N-per-channel loop was measured on Dml3RG with 4 channels: at
+      // ~4.85 MB per brick the per-call driver-staging overhead dominated the tail (mean
+      // 5.5 ms, p99 44 ms, max 412 ms) — collapsing to one call brought mean to 0.71 ms and
+      // eliminated the tail entirely (max 5.7 ms, zero writes >10 ms). See PR chain #703
+      // (measurement + short-lived MAP_WRITE experiment) → this PR (one-call collapse; the
+      // MAP_WRITE path measured worse on both paths' fair one-call comparison, so it went).
       const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-      if (uploadMode === 'writeTexture') {
-        for (let c = 0; c < nc; c++) {
-          const offset = c * perChannelBytes
-          const channelView = new Uint8Array(bytes.buffer, bytes.byteOffset + offset, perChannelBytes)
-          device.queue.writeTexture(
-            { texture, origin: [originX, originY, originZBase + c * bz] },
-            channelView,
-            { bytesPerRow: bx * bpv, rowsPerImage: by },
-            [bx, by, bz],
-          )
-        }
-        return true
-      }
-      // MAP_WRITE path (Session D). ONE staging buffer + ONE memcpy (via `packStaging`) into a
-      // mapped range, then N `copyBufferToTexture` calls into one encoder, one `submit`. Row
-      // stride padded to 256 because `copyBufferToTexture` requires it, unlike `writeTexture`.
-      // Buffer is destroyed synchronously after `submit` — WebGPU guarantees queued commands
-      // that reference it still execute (§Queue Copy, `GPUBuffer.destroy()`).
-      const paddedRow = paddedBytesPerRow(bx, bpv)
-      const paddedPerCh = paddedPerChannelBytes(bx, by, bz, bpv)
-      const stagingBytes = stagingBufferBytes(bx, by, bz, bpv, nc)
-      const buf = device.createBuffer({
-        size: stagingBytes,
-        usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
-        mappedAtCreation: true,
-      })
-      packStaging(new Uint8Array(buf.getMappedRange()), bytes, bx, by, bz, bpv, nc)
-      buf.unmap()
-      const enc = device.createCommandEncoder()
-      for (let c = 0; c < nc; c++) {
-        enc.copyBufferToTexture(
-          { buffer: buf, offset: c * paddedPerCh, bytesPerRow: paddedRow, rowsPerImage: by },
-          { texture, origin: [originX, originY, originZBase + c * bz] },
-          [bx, by, bz],
-        )
-      }
-      device.queue.submit([enc.finish()])
-      buf.destroy()
+      device.queue.writeTexture(
+        { texture, origin: [originX, originY, originZBase] },
+        bytes,
+        { bytesPerRow: bx * bpv, rowsPerImage: by },
+        [bx, by, bz * nc],
+      )
       return true
     },
 

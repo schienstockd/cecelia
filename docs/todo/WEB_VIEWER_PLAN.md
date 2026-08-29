@@ -623,14 +623,63 @@ measured at **2.5 ms**. GC pressure from four 81 MB allocations — **3%** of wa
 all channels instead of four — 480 vs 469 ms, no difference. Also worth knowing: parallelism barely
 works at `blosc=1` (537 ms serial vs 469 ms across 32 threads), which is what the rejected knob explains.
 
+## Upload path — measured and closed (2026-08-29)
+
+**Was open: cold path upload-dominated, reason not known.** Original suspicion (535 ms for 351 MB on
+the flat renderer) landed on the *brick* renderer instead — the same mechanism, and the path we're
+keeping past P8. Investigated in a two-PR chain via the per-`writeBrick` timing hook shipped in #702
+(`benchRecorder.BenchWriteSample`).
+
+**Cause: N `writeTexture` per brick exhausted the driver's internal staging pool.** `writeBrick` was
+issuing one `writeTexture` per channel (typical `nC = 4..25`) into distinct Z-slices of the atlas
+slot. Per-call driver-staging overhead accumulated as a heavy tail: on Dml3RG (128×128×37 bricks,
+4 channels, ~4.85 MB per brick) `writeTexture` had mean 5.5 ms / p99 44 ms / max 412 ms, with 16% of
+writes ≥ 10 ms. Median was fine (0.5 ms) — this was purely a tail catastrophe.
+
+**Fix (#706): one `writeTexture` per brick.** The wire payload's (x, y, z, c) column-major layout
+already stacks channels contiguously along z, and the atlas texture holds channel c at
+`originZBase + c*bz`. So the whole brick is one `[bx, by, bz*nc]` box and one call — no loop needed.
+On Dml3RG that dropped mean to 0.71 ms, p99 to 3.6 ms, max to 5.7 ms, and eliminated the tail (zero
+writes ≥ 10 ms).
+
+**Rejected: `MAP_WRITE` + `copyBufferToTexture` staging.** Ran as a two-hop experiment in #703 (which
+had already partly won by grouping the N calls under one submit) then compared fairly to one-call
+`writeTexture` in #706. On the fair fight, MAP_WRITE regressed both median (0.8 vs 0.5 ms) and
+throughput (6062 vs 9699 MB/s). Its ~0.3 ms fixed overhead per brick (`createBuffer` +
+`mappedAtCreation` + `packStaging` + `unmap` + encoder + `submit` + `destroy`) is pure loss once the
+`writeTexture` tail is gone — driver-managed staging is faster than ours when it isn't being
+asked to make N tiny hops per brick. Deleted; the load path is simpler than before #703.
+
+**Row alignment was measured and refuted upstream** (padding to 256 changes nothing on
+`writeTexture`), and `onSubmittedWorkDone`'s ~100 ms quantum still means anything faster than that
+is unmeasurable via a submit round-trip — irrelevant here because we now time the *CPU-side*
+`writeBrick` duration via `setOnBrickWritten`, which resolves in µs.
+
 ## Open, with a mechanism behind it
 
-**The cold path is upload-dominated and the reason is not yet known.** 535 ms for 351 MB is ~0.8 GB/s
-marginal. Row alignment was measured and **refuted** (padding to 256 changes nothing), and the GPU
-copy itself is below a ~100 ms measurement floor. The remaining candidate is the JS-heap → GPU-visible
-staging copy: use a `MAP_WRITE` buffer, write the fetched slab straight into `getMappedRange()`,
-unmap, `copyBufferToTexture`. Untested. Also unmeasured: `onSubmittedWorkDone`'s ~100 ms quantum makes
-anything faster than that unmeasurable — batch N operations per submit to get under it, as G2 did.
+**Buffer pool for a hypothetical MAP_WRITE resurrection.** Currently zero — deleted with #706. Would
+become worth building if:
+
+1. A future image drives one-call `writeTexture` mean above ~2–3 ms per `writeBrick` on Dml3RG-class
+   hardware. That would mean driver-internal staging is the bottleneck again, and an explicit pool
+   gives us control.
+2. A driver regression brings back the per-call tail on collapsed one-call `writeTexture`. Same
+   mechanism, same fix.
+3. GC pressure from a hot allocation on the load path shows up in a profile. `padBrickPayload` only
+   fires on edge bricks (last row/col of the grid) so it's a small share of writes; ruled out until
+   measured otherwise.
+
+**The pool would need to be async-aware.** `mapAsync` is inherently async — a resurrected `writeBrick`
+would either return a `Promise<boolean>` or fire-and-forget with a callback. LRU eviction on
+brick-size or atlas-layout change; `mapState` guard on every lease; care around `destroy` timing
+relative to submitted work. Non-trivial — don't pre-build.
+
+**Trigger to act:** capture a `?bench=1` blob on the offending image, diff `writes[].durationMs`
+against the Dml3RG numbers below, and confirm the median-or-tail regression before writing code.
+
+Reference numbers for one-call `writeTexture` on Dml3RG (128×128×37 bricks, 4 channels, ~4.85 MB
+per write; 411 writes over 21.7 s): median 0.5 ms, mean 0.71 ms, p95 1.5, p99 3.6, max 5.7. 9699 MB/s
+median throughput.
 
 ## The overlay pipelines could never have been created (fixed 2026-08-25)
 

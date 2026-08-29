@@ -115,20 +115,12 @@ const bricksEnabled = String(route.query.bricks ?? '') === '1'
  * off-line comparison of flat vs brick on the five reference images.
  */
 const benchEnabled = String(route.query.bench ?? '') === '1'
-/**
- * `?upload=mapwrite` — Session D's experimental brick upload path. Swaps
- * `writeBrick`'s N-per-channel `writeTexture` loop for one `MAP_WRITE` staging
- * buffer + `copyBufferToTexture` per brick. Brick renderer only; a no-op on the
- * flat renderer. Default `'writeTexture'` matches shipping behaviour.
- */
-const uploadMode: 'writeTexture' | 'mapWrite' =
-  String(route.query.upload ?? '') === 'mapwrite' ? 'mapWrite' : 'writeTexture'
 const benchT0 = ref<number>(0)
 const benchFirstFrameMs = ref<number | null>(null)
 const benchFrames = shallowRef<BenchSample[]>([])
 const benchBytes = ref(0)
 /** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
- *  renderer. Used by Session D to compare writeTexture vs MAP_WRITE staging. */
+ *  renderer. Times the atlas-upload path — durationMs is the CPU-side cost of one writeBrick. */
 const benchWrites = shallowRef<BenchWriteSample[]>([])
 /** Save-time live tally so the panel shows progress without allocating on every frame. */
 const benchLive = computed(() => {
@@ -179,7 +171,6 @@ function benchSave() {
     bytesFetched: benchBytes.value,
     vram,
     writes: benchWrites.value,
-    uploadMode: bricksEnabled ? uploadMode : undefined,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -2468,9 +2459,8 @@ async function ensureRenderer() {
           frame.redraw()
         }
       })
-      // ?bench=1: capture per-writeBrick timings so Session D can A/B MAP_WRITE against the
-      // current writeTexture-per-channel loop. Fires from inside the brick renderer, so kept
-      // gated on the harness flag — no cost when bench is off.
+      // ?bench=1: capture per-writeBrick timings. Fires from inside the brick renderer, so
+      // kept gated on the harness flag — no cost when bench is off.
       if (benchEnabled) {
         r.setOnBrickWritten?.((durationMs, bytes) => {
           benchWrites.value = [...benchWrites.value, {
@@ -2478,10 +2468,6 @@ async function ensureRenderer() {
           }]
         })
       }
-      // ?upload=mapwrite: switch new atlases to the MAP_WRITE staging path. Set BEFORE
-      // setImage so the first atlas the renderer builds picks up the mode; mid-image toggles
-      // only take effect on the next atlas rebuild.
-      r.setUploadMode?.(uploadMode)
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
