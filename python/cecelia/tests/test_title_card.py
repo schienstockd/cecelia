@@ -186,6 +186,59 @@ class WrapTests(unittest.TestCase):
         self.assertTrue(lines[0].endswith("-") or lines[0].endswith("_"))
 
 
+class FrameOverlayStyleTests(unittest.TestCase):
+    """The per-frame timestamp + scale bar should MATCH the browser volume viewer's on-image
+    overlay (`frontend/src/components/StillOverlay.vue`): white text with a dark stroke outline, a
+    white bar with a hairline dark outline, no solid backing rectangles. Regressed once already —
+    the movie had black rects while the viewer had none (Dominik, 2026-08-29 screenshot).
+    """
+
+    def test_bold_font_is_heavier_than_the_title_card_font(self):
+        # `_bold_font` picks DejaVuSans-Bold; `_font` picks the regular. If matplotlib is present,
+        # they should be structurally different at the same size — mask coverage of a solid letter
+        # is greater for the bold face.
+        import numpy as np
+        regular = tc._font(48)
+        bold    = tc._bold_font(48)
+        r_mask  = np.array(regular.getmask("H"), dtype=np.uint8)
+        b_mask  = np.array(bold.getmask("H"),    dtype=np.uint8)
+        # allow either the same fallback face (no bold available → still works) or a heavier weight.
+        self.assertTrue(b_mask.sum() >= r_mask.sum())
+
+    def test_overlays_leave_no_solid_black_box_around_the_timestamp(self):
+        # A translucent-black backing rect used to sit under the timestamp. It made the movie read
+        # differently from the viewer, whose overlay is pure text with a dark STROKE. Guard: after
+        # drawing on a bright frame, the pixels IMMEDIATELY under the glyphs must still contain
+        # some bright background — a solid rect would zero them out.
+        import numpy as np
+        base = np.full((80, 200, 3), 220, dtype=np.uint8)     # bright brightfield-like frame
+        out  = tc.draw_frame_overlays(base.copy(), timestamp="0:07:30")
+        # Sample a strip inside the timestamp's rendered footprint but AWAY from the glyphs (a solid
+        # rect would fill this too; a stroke does not). Row 0-25, columns 60-90 fall between glyphs
+        # at typical bold-sans metrics.
+        patch = out[0:25, 60:90]
+        self.assertTrue(int(patch.max()) > 180,
+                        "the timestamp overlay left a solid backing rect (viewer uses text-stroke)")
+
+    def test_scale_bar_reads_as_a_white_bar_on_the_image(self):
+        # The bar rectangle itself is drawn white with a dark hairline outline — same as the
+        # viewer's `.ovl-fill`. Confirm: the bar body reads as bright white on a dark frame, and
+        # the image above the bar (well away from the label) is untouched. Use a large frame so
+        # the bar is chunky enough that the 1 px outline doesn't dominate the sample.
+        import numpy as np
+        H, W = 800, 800
+        base = np.full((H, W, 3), 40, dtype=np.uint8)          # dark fluorescence-like frame
+        out  = tc.draw_frame_overlays(
+            base.copy(), scale_bar={"lengthPx": 200, "label": "25 µm"})
+        bar_h = max(3, int(min(H, W) * 0.006))                 # matches title_card's own maths
+        m     = 8
+        # A row inside the bar, well away from the outline hairline; slice the middle of its width.
+        bar_row     = out[H - m - bar_h // 2, W - 100:W - 20]  # centre row × middle columns
+        image_above = out[H - 200:H - 100, W - 200:W - 20]     # image region above the label
+        self.assertGreater(int(bar_row.mean()),   200)
+        self.assertLess   (int(image_above.mean()), 100)
+
+
 class PrependTests(unittest.TestCase):
     def test_prepends_card_frames(self):
         import imageio.v2 as imageio

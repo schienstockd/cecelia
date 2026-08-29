@@ -58,6 +58,20 @@ def _font_candidates():
     yield from ("DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Arial.ttf")
 
 
+#: Bold variants of the same face, in the same fallback order — used by the per-frame overlays so
+#: the elapsed-time clock and the scale bar read as "on-image" heavy text against fluorescence, the
+#: same weight the browser viewer's HTML overlay uses (``font-weight: 700`` on
+#: ``StillOverlay.vue``). Not used by the title card (which stays regular weight).
+def _bold_font_candidates():
+    try:
+        import matplotlib
+        from pathlib import Path
+        yield str(Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans-Bold.ttf")
+    except Exception:
+        pass
+    yield from ("DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "Arial-Bold.ttf")
+
+
 def _font(size):
     """A font at ``size`` px. Prefers a real TrueType with non-ASCII coverage, then the scalable
     built-in (Pillow >= 10), then the fixed default — so we never hard-depend on a font file."""
@@ -71,6 +85,19 @@ def _font(size):
         return ImageFont.load_default(size=size)          # Pillow >= 10 scales the built-in
     except TypeError:
         return ImageFont.load_default()
+
+
+def _bold_font(size):
+    """Bold sibling of ``_font`` for the encoded-frame overlays. Falls through to ``_font`` if no
+    bold TrueType is available — so a slim env without matplotlib still renders, just at regular
+    weight rather than 700."""
+    size = max(8, int(size))
+    for name in _bold_font_candidates():
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return _font(size)
 
 
 def _hex_rgb(value):
@@ -254,11 +281,13 @@ def caption_band(width, height, text):
 
 
 #: Overlay drawing colours + margins. Reused across every frame of a recording, so pinned here beside
-#: _BG/_FG. Text is white on a translucent-black rectangle for legibility against both dark
-#: fluorescence and bright brightfield; the scale bar is a solid white block above its label — same
-#: convention as napari's built-in overlays.
+#: _BG/_FG. Everything is white with a dark stroke outline — same convention as the browser volume
+#: viewer's on-image overlays (``StillOverlay.vue``: ``.ovl-ts`` text-shadow ring, ``.ovl-text``
+#: ``paint-order: stroke``, ``.ovl-fill`` white bar with a dark ``stroke``). No solid backing
+#: rectangles: they read as chrome pasted on top rather than an annotation on the image, and the
+#: viewer never had them either — matching the two surfaces was the ask (Dominik, 2026-08-29).
 _OVERLAY_TEXT      = (255, 255, 255)
-_OVERLAY_SHADOW    = (0, 0, 0)                   # background shim under text; drawn with alpha 128
+_OVERLAY_STROKE    = (0, 0, 0)                   # dark outline drawn around every white glyph + bar
 _OVERLAY_MARGIN_PX = 8
 
 
@@ -270,25 +299,28 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
     ``encode_movie_run.py`` when the offline renderer asks for napari-parity timestamp + scale bar
     overlays that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
 
-    ``timestamp`` is the string to draw top-left (e.g. ``"1m 30s"``) or ``None``. ``scale_bar`` is
+    ``timestamp`` is the string to draw top-left (e.g. ``"0:07:30"``) or ``None``. ``scale_bar`` is
     ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above
-    — or ``None``. Both can be present.
+    — or ``None``. Both can be present. Style matches ``StillOverlay.vue``: bold sans-serif, white
+    fill with a thin dark outline for legibility on both dark fluorescence and bright brightfield.
     """
     if timestamp is None and scale_bar is None:
         return frame_np
     img = Image.fromarray(frame_np).convert("RGB")
     d = ImageDraw.Draw(img, "RGB")
     W, H = img.size
-    f = _font(max(11, int(min(H, W) * 0.045)))
+    px = max(11, int(min(H, W) * 0.045))
+    f = _bold_font(px)
+    # Stroke width scales with the font — a thin hairline disappears against noisy fluorescence,
+    # but too thick and the glyphs bleed into each other. 5–6% of font size matches how the viewer's
+    # ``paint-order: stroke`` reads on-screen.
+    stroke_w = max(2, int(px * 0.06))
     m = _OVERLAY_MARGIN_PX
     if timestamp:
         s = str(timestamp)
-        box = d.textbbox((0, 0), s, font=f)
-        tw = box[2] - box[0]; th = box[3] - box[1]
-        # Shadow rectangle behind the text so it stays readable against a bright frame.
-        pad = 4
-        d.rectangle([m - pad + box[0], m - pad + box[1], m + tw + pad, m + th + pad], fill=_OVERLAY_SHADOW)
-        d.text((m - box[0], m - box[1]), s, font=f, fill=_OVERLAY_TEXT)
+        box = d.textbbox((0, 0), s, font=f, stroke_width=stroke_w)
+        d.text((m - box[0], m - box[1]), s, font=f, fill=_OVERLAY_TEXT,
+               stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
     if scale_bar:
         length_px = max(2, int(scale_bar.get("lengthPx", 0)))
         label = str(scale_bar.get("label", ""))
@@ -299,16 +331,16 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
         bar_y2 = H - m
         bar_y1 = bar_y2 - bar_h
         if bar_x1 >= 0:
-            d.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], fill=_OVERLAY_TEXT)
+            # White bar with a hairline dark outline — same as the viewer's ``.ovl-fill`` rule.
+            d.rectangle([bar_x1, bar_y1, bar_x2, bar_y2],
+                         fill=_OVERLAY_TEXT, outline=_OVERLAY_STROKE, width=1)
             if label:
-                lbox = d.textbbox((0, 0), label, font=f)
+                lbox = d.textbbox((0, 0), label, font=f, stroke_width=stroke_w)
                 lw = lbox[2] - lbox[0]; lh = lbox[3] - lbox[1]
                 lx = bar_x1 + (length_px - lw) / 2 - lbox[0]
                 ly = bar_y1 - lh - 4 - lbox[1]
-                pad = 4
-                d.rectangle([lx - pad + lbox[0], ly - pad + lbox[1],
-                             lx + lw + pad, ly + lh + pad], fill=_OVERLAY_SHADOW)
-                d.text((lx, ly), label, font=f, fill=_OVERLAY_TEXT)
+                d.text((lx, ly), label, font=f, fill=_OVERLAY_TEXT,
+                       stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
     return np.asarray(img, dtype=np.uint8)
 
 
