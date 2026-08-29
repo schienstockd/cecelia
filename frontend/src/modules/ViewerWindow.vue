@@ -1613,12 +1613,22 @@ const brickMapGrid = computed(() => {
   return { nBx, nBy, nBz, level: lvl }
 })
 
+/** Cap on the mini-map's DISPLAY grid dimension per axis. At L0 on SispLk-shape (62×57) or
+ *  f8gzA2-shape (159×132), an unaggregated map is thousands of ~1px cells — unreadable
+ *  (Dominik, 2026-08-29: "way too fine grained ... a bit more coarser when there are a ton of
+ *  brick to load"). Above this, cells aggregate `bucket × bucket` real bricks into one visual
+ *  cell. `resident` if any inside are resident, `loading` if any loading and none resident,
+ *  `absent` if all absent — biases toward "loading progress visible", same convention as the
+ *  tile map. */
+const BRICKMAP_MAX_CELLS_PER_AXIS = 8
+
 /** Per-Z-slice residency cells at the current level + target `t`. One entry per slice; each
- *  entry is the row-major nBx × nBy grid for that slice. Filters the resident + inflight
- *  snapshots inline (cheaper than pre-computing a per-cell Set). */
+ *  entry is a row-major grid, aggregated to `BRICKMAP_MAX_CELLS_PER_AXIS` per axis when the
+ *  underlying brick grid exceeds it. Also carries the display dims so the template's CSS grid
+ *  matches. */
 const brickMapSlices = computed(() => {
   const g = brickMapGrid.value
-  if (!g) return []
+  if (!g) return { displayNBx: 0, displayNBy: 0, slices: [] as { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] }
   // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
   // loading-progress indicator: what the user wants to see is bricks fetching toward the t
   // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
@@ -1635,20 +1645,35 @@ const brickMapSlices = computed(() => {
   for (const e of brickInflight.value) {
     if (e.t === tp && e.level === g.level) loadingAtHere.add(`${e.bx},${e.by},${e.bz}`)
   }
+  // Aggregation: each display cell covers `bucketX × bucketY` real bricks. `ceil` so no brick
+  // is uncounted. When the grid already fits, bucket is 1 and this is a straight passthrough.
+  const bucketX = Math.max(1, Math.ceil(g.nBx / BRICKMAP_MAX_CELLS_PER_AXIS))
+  const bucketY = Math.max(1, Math.ceil(g.nBy / BRICKMAP_MAX_CELLS_PER_AXIS))
+  const displayNBx = Math.max(1, Math.ceil(g.nBx / bucketX))
+  const displayNBy = Math.max(1, Math.ceil(g.nBy / bucketY))
   const slices: { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] = []
   for (let bz = 0; bz < g.nBz; bz++) {
     const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
-    for (let by = 0; by < g.nBy; by++) {
-      for (let bx = 0; bx < g.nBx; bx++) {
-        const k = `${bx},${by},${bz}`
-        const state = loadingAtHere.has(k) ? 'loading'
-          : residentAtHere.has(k) ? 'resident' : 'absent'
-        cells.push({ key: k, state })
+    for (let dy = 0; dy < displayNBy; dy++) {
+      for (let dx = 0; dx < displayNBx; dx++) {
+        let anyResident = false, anyLoading = false
+        const byLo = dy * bucketY, byHi = Math.min(g.nBy, byLo + bucketY)
+        const bxLo = dx * bucketX, bxHi = Math.min(g.nBx, bxLo + bucketX)
+        for (let by = byLo; by < byHi && !anyResident; by++) {
+          for (let bx = bxLo; bx < bxHi; bx++) {
+            const k = `${bx},${by},${bz}`
+            if (residentAtHere.has(k)) { anyResident = true; break }
+            if (loadingAtHere.has(k)) anyLoading = true
+          }
+        }
+        const state: 'absent' | 'loading' | 'resident' = anyResident ? 'resident'
+          : anyLoading ? 'loading' : 'absent'
+        cells.push({ key: `${dx},${dy},${bz}`, state })
       }
     }
     slices.push({ z: bz, cells })
   }
-  return slices
+  return { displayNBx, displayNBy, slices }
 })
 
 /** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
@@ -3312,11 +3337,11 @@ onUnmounted(() => {
             <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
           </div>
           <div v-if="bricksMapShown" class="vw-brickmaprow">
-            <div v-for="s in brickMapSlices" :key="s.z" class="vw-brickmap-col">
+            <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
               <div class="vw-tilemap vw-brickmap-slice"
-                   :style="{ gridTemplateColumns: `repeat(${brickMapGrid.nBx}, 1fr)`,
-                             gridTemplateRows: `repeat(${brickMapGrid.nBy}, 1fr)`,
-                             aspectRatio: `${brickMapGrid.nBx} / ${brickMapGrid.nBy}` }">
+                   :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                             gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                             aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
                 <span v-for="c in s.cells" :key="c.key"
                       class="vw-tilemap-cell" :class="'is-' + c.state" />
               </div>

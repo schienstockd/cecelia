@@ -229,9 +229,10 @@ export function brickWorldFromMeta(
  * truth for what the camera sees, so the scheduler mirrors them here rather than re-deriving.
  *
  * Simplifications for P5c (documented so P5d can revisit):
- *   - `centreUm` is the box centre in world µm. Pan moves the eye in the shader — for scheduler
- *     purposes, the visible region tracks the box centre approximately even under pan; a heavy
- *     pan can miss a brick or two that the halo picks up anyway.
+ *   - `centreUm` is the box centre + pan offset. Pan lands as `right * panX + up * panY` in the
+ *     shader; the scheduler uses the same world offset to keep its intersect list aligned with
+ *     what the shader actually draws. Rotation is not modelled — the halo covers small pitch/yaw
+ *     drift, and the current 3D orbit rarely fires with both yaw AND deep zoom.
  *   - `halfDUm` = whole box depth. Every z-slab is visited — matches the pre-3D-halo XY-only
  *     behaviour on thin-Z stores (SispLk nZ=4). Deep-Z stores get proper z scheduling once we
  *     have real data to eyeball.
@@ -249,9 +250,17 @@ export function brickViewportFromCamera(
   const [ex, ey, ez] = extentUm(meta, zDepth)
   const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
   const halfW = halfH * Math.max(aspect, 1e-3)
+  // Pan shifts the CENTRE of what the shader draws. `brickShader.ts` line 87:
+  // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`. The camera moves in world by
+  // (panX, panY, 0); its aim point (where the centre ray lands in the volume) shifts to
+  // `(ex/2 + panX, ey/2 + panY, ez/2)`. Without this, the scheduler fetches bricks around the
+  // STORE centre while the shader draws a panned region — bricks around the panned view never
+  // load and the shader renders a big black rectangle (Dominik screenshot 2026-08-29, SispLk
+  // zoomed to L0 with pan). Comment on the "heavy pan can miss a brick or two that the halo picks
+  // up anyway" line above was optimistic — at high zoom the pan CAN dominate the halfW.
   return {
     t,
-    centreUm: [ex / 2, ey / 2, ez / 2],
+    centreUm: [ex / 2 + cam.panX, ey / 2 + cam.panY, ez / 2],
     halfWUm: halfW,
     halfHUm: halfH,
     halfDUm: ez / 2,

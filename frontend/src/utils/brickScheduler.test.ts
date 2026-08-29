@@ -366,6 +366,19 @@ describe('brickViewportFromCamera', () => {
     expect(v.distanceUm).toBe(350)
   })
 
+  it('centreUm follows pan — the scheduler tracks what the shader draws', () => {
+    // brickShader.ts:87: c.ro = c.fwd * dist + c.right * panX + c.up * panY. The aim point shifts
+    // by (panX, panY) from the box centre. Without this the scheduler fetches around the box
+    // centre while the shader draws a panned region — the black-rectangle bug (Dominik 2026-08-29
+    // SispLk zoomed to L0 with pan; screenshot #29).
+    const panned = brickViewportFromCamera(
+      { ...cam, panX: 40, panY: -30 }, META, 0, 1024, 1.0, META.nZ,
+    )
+    expect(panned.centreUm[0]).toBeCloseTo(128 + 40, 6)
+    expect(panned.centreUm[1]).toBeCloseTo(128 + -30, 6)
+    expect(panned.centreUm[2]).toBeCloseTo(4, 6)
+  })
+
   it('scheduling picks L0 at dist=100, coarsens with distance', () => {
     // sseDesiredLevel(voxelXY=0.5, dist=100, focalPx≈1138) = log2(100 / (0.5 * 1138)) ≈ -2.5 → 0.
     const world = brickWorldFromMeta(META, [128, 128, 4], META.nZ)
