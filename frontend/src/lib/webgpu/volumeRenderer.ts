@@ -257,6 +257,12 @@ export interface VolumeRenderer {
     /** Brick edge in voxels — `[bx, by, bz]`. Fixed for the atlas's lifetime; the caller
      *  derives per-level grid dims from this + `meta.nX/nY` + `2^level`. */
     brickSizeVox: readonly [number, number, number]
+    /** The timepoint the shader's pageTableCpu currently addresses — what's being DRAWN.
+     *  May differ from `boundT` when the hold-on-cold rule kept the display at a resident
+     *  t while the scheduler chases the target. `-1` before any t has been shown. */
+    displayT: number
+    /** The timepoint the SCHEDULER is fetching for — what the user asked for last. */
+    boundT: number
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>

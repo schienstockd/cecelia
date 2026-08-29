@@ -1214,6 +1214,7 @@ export async function createBrickVolumeRenderer(
         return {
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
+          displayT: -1, boundT: 0,
         }
       }
       const resident = atlas.pageTable.entries().map(e => ({
@@ -1228,6 +1229,8 @@ export async function createBrickVolumeRenderer(
       return {
         resident, inflight: inflightBricks,
         currentLevel: atlas.currentLevel,
+        displayT,
+        boundT,
         brickSizeVox: atlas.layout.brickSizeVox,
       }
     },
