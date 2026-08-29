@@ -2223,6 +2223,12 @@ async function ensureRenderer() {
       // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
       // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
       r.setNeedsRedraw?.(() => frame.redraw())
+      // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
+      // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
+      // initial server-shipped `hi` and dragging `hi` below it locks the range.
+      r.setOnBrickLoaded?.(perChannelMax => {
+        seenMax.value = perChannelMax.map((v, c) => Math.max(seenMax.value[c] ?? 0, v))
+      })
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
@@ -3093,8 +3099,7 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0"
-                :max="Math.max(chMax[c] ?? 1, ch.hi, initialContrast[c]?.hi ?? 1, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />

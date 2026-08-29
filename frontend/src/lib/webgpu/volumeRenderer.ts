@@ -196,6 +196,14 @@ export interface VolumeRenderer {
    * renderer — the flat path is caller-driven end-to-end.
    */
   setNeedsRedraw?(cb: (() => void) | null): void
+  /**
+   * Brick renderer only: hook called with per-channel brightness after each landed brick, so the
+   * caller can grow `seenMax` from real data (the flat renderer does this in `uploadFrame`, but
+   * bricks stream per-viewport and never see a whole timepoint's bytes). Without it the contrast
+   * slider's ceiling stays at whatever the server first shipped, and dragging `hi` below the dtype
+   * headroom locks the range. Absent on the flat renderer.
+   */
+  setOnBrickLoaded?(cb: ((perChannelMax: number[]) => void) | null): void
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
