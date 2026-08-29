@@ -128,20 +128,22 @@ export function createBrickAtlasTexture(
       const originY = sy * by
       const originZBase = sz * bz * nc
 
-      // Per-channel writes: bytes for channel c are contiguous in the payload (see the doc
-      // above), and the channel's atlas Z slice is `originZBase + c * bz`. Same 1-writeTexture-
-      // per-channel pattern as `tileRenderer.ts:388-393`.
+      // ONE writeTexture per brick — the wire payload's (x, y, z, c) column-major layout
+      // stacks channels contiguously along z, and the atlas texture stores channel c at atlas z
+      // `originZBase + c * bz`, so the whole brick is one `[bx, by, bz * nc]` box and one
+      // upload call. The old N-per-channel loop was measured on Dml3RG with 4 channels: at
+      // ~4.85 MB per brick the per-call driver-staging overhead dominated the tail (mean
+      // 5.5 ms, p99 44 ms, max 412 ms) — collapsing to one call brought mean to 0.71 ms and
+      // eliminated the tail entirely (max 5.7 ms, zero writes >10 ms). See PR chain #703
+      // (measurement + short-lived MAP_WRITE experiment) → this PR (one-call collapse; the
+      // MAP_WRITE path measured worse on both paths' fair one-call comparison, so it went).
       const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-      for (let c = 0; c < nc; c++) {
-        const offset = c * perChannelBytes
-        const channelView = new Uint8Array(bytes.buffer, bytes.byteOffset + offset, perChannelBytes)
-        device.queue.writeTexture(
-          { texture, origin: [originX, originY, originZBase + c * bz] },
-          channelView,
-          { bytesPerRow: bx * bpv, rowsPerImage: by },
-          [bx, by, bz],
-        )
-      }
+      device.queue.writeTexture(
+        { texture, origin: [originX, originY, originZBase] },
+        bytes,
+        { bytesPerRow: bx * bpv, rowsPerImage: by },
+        [bx, by, bz * nc],
+      )
       return true
     },
 

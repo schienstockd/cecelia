@@ -16,8 +16,12 @@
 
 import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
+import { PROBE_PX } from './volumeRenderer'
 import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
-import { extentUm } from '../../utils/volumeViewer'
+import {
+  extentUm, slabMax, slabView, lutTextureBytes,
+  MAX_CHANNELS, LUT_STOPS,
+} from '../../utils/volumeViewer'
 import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
@@ -25,9 +29,18 @@ import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTex
 import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
+  bricksIntersectingViewport,
 } from '../../utils/brickScheduler'
-import { fetchBrick, brickSlabUrl, padBrickPayload } from '../../utils/brickLoader'
-import { BRICK_WGSL, BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT } from './brickShader'
+import {
+  fetchBrick, brickSlabUrl, padBrickPayload,
+  fetchLabelBrick, brickLabelSlabUrl,
+} from '../../utils/brickLoader'
+import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
+import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
+import {
+  BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
+  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
+} from './brickShader'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
  *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
@@ -36,6 +49,11 @@ export interface BrickSource {
   projectUid: string
   imageUid: string
   valueName?: string
+  /** Segmentation value_name for the mask overlay. When set, every image brick fetch fires a
+   *  parallel `labels=<name>` brick fetch and writes the u32 ids into the label atlas at the
+   *  same slot. Undefined = no labels shown; the placeholder texture stays bound and the
+   *  shader's label path is skipped via `p.lab.x == 0`. */
+  labelName?: string
 }
 
 /** Brick edge in voxels — Decision 2 in KILN_BRICK_PLAN.md. Kept a module constant so both the
@@ -46,6 +64,14 @@ const BRICK_Z_MAX = 128
 /** Default VRAM ceiling the atlas targets when `setImage`'s `budgetBytes` is zero. Same order of
  *  magnitude as the flat renderer's typical timepoint budget on Dominik's RTX 2000 Ada. */
 const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
+
+/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host
+ *  and HTTP/2 multiplexes freely; 16 gives room for both while leaving slack for prefetch t's
+ *  behind boundT's bricks. 8 (the initial pick) was too tight — the scheduler kicks the current
+ *  t's bricks first, and at 16 bricks per timepoint (fXgbTl at brickSize [128,128,32]) that
+ *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
+ *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
+const MAX_INFLIGHT = 16
 
 interface AtlasState {
   layout: AtlasLayout
@@ -69,9 +95,29 @@ interface AtlasState {
   pageTableBuffer: GPUBuffer
   pageTableCpu: Uint32Array
   pageTableDirty: boolean
+  /** Previous-level page table — the shader's fallback when the current level's lookup misses.
+   *  Populated on level switch by copying the current CPU buffer here, then clearing the current
+   *  one. Sized like the main pageTable buffer (L0 grid) so nothing reallocates on level swap. */
+  prevPageTableBuffer: GPUBuffer
+  prevPageTableCpu: Uint32Array
+  prevPageTableDirty: boolean
+  /** Grid dims for the previous level. `undefined` before the first level switch, in which case
+   *  the shader treats `prevValid=0` and skips the fallback. */
+  prevGridNx: number
+  prevGridNy: number
+  prevGridNz: number
+  /** Level index of the previous-level fallback. `undefined` when no fallback is active. */
+  prevLevel: number | undefined
   bindGroup: GPUBindGroup
   /** Currently-sourced LOD level. `undefined` before the first schedule tick. */
   currentLevel: number | undefined
+  /** Per-image label atlas (r32uint), OR the shared placeholder when the source has no
+   *  labelName. Same slot geometry as `texture` except brickZ isn't multiplied by channelsPerBrick
+   *  — labels are single-channel. Bound at binding 5. */
+  labelTexture: GPUTexture
+  /** Whether the atlas above is the real per-image r32uint atlas (true) or the placeholder
+   *  (false). Fetches use this to decide whether to fire label brick requests. */
+  labelsEnabled: boolean
 }
 
 export async function createBrickVolumeRenderer(
@@ -86,12 +132,113 @@ export async function createBrickVolumeRenderer(
   const format = navigator.gpu.getPreferredCanvasFormat()
   ctx.configure({ device, format, alphaMode: 'opaque' })
 
-  // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings.
+  // Pipeline: same one-triangle vs + raycast fs as the flat renderer, different bindings. The
+  // bind group layout is EXPLICIT (not `auto`) so the raycast, points and segments pipelines all
+  // share ONE layout — the overlays reuse the raycast's bind group verbatim so a marker sits on
+  // the cell that the raycast drew rather than beside it. Binding 0's visibility MUST include
+  // VERTEX because the overlay passes project a point in their vertex stage; missing that flag
+  // is a pipeline-creation validation error that hands back an INVALID pipeline (same trap the
+  // flat renderer already documents — see `volumeRenderer.ts:296`).
+  const bindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: 'uniform', minBindingSize: BRICK_UNIFORM_BYTES } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
+      // Label atlas + palette. ALWAYS bound (WebGPU has no optional binding); when no
+      // segmentation is picked, a 1x1x1 r32uint placeholder rides here and the shader skips the
+      // label path via `p.lab.x == 0`. Same discipline as `volumeRenderer.ts:309`.
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 6, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
+    ],
+  })
+  const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
+
   const module = device.createShaderModule({ code: BRICK_WGSL })
   const pipeline = device.createRenderPipeline({
-    layout: 'auto',
+    layout: pipelineLayout,
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  })
+
+  // Overlay pipelines share the SAME bind group layout as the raycast (they use only binding 0,
+  // but WebGPU has no partial layout — every slot must be declared). Alpha-blended over the
+  // finished raycast, in the same pass: `loadOp: 'clear'` runs once, then the raycast writes,
+  // then the overlays composite on top. See the flat renderer for the "one pass, one clear"
+  // rationale (`volumeRenderer.ts:492`).
+  const pointsModule = device.createShaderModule({ code: BRICK_POINTS_WGSL })
+  const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (pointsErrs.length) {
+    throw new WebGpuUnavailable(
+      'Brick points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const pointsPipeline = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: {
+      module: pointsModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: POINT_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
+          { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
+        ],
+      }],
+    },
+    fragment: {
+      module: pointsModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  })
+
+  const segModule = device.createShaderModule({ code: BRICK_SEGMENTS_WGSL })
+  const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
+  if (segErrs.length) {
+    throw new WebGpuUnavailable(
+      'Brick segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
+  }
+  const segPipeline = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: {
+      module: segModule, entryPoint: 'vs',
+      buffers: [{
+        arrayStride: SEG_STRIDE * 4,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from µm
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
+          { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
+          { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
+        ],
+      }],
+    },
+    fragment: {
+      module: segModule, entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
     primitive: { topology: 'triangle-list' },
   })
 
@@ -100,6 +247,29 @@ export async function createBrickVolumeRenderer(
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
   const uniformCpu = new Float32Array(BRICK_UNIFORM_BYTES / 4)
+  // LUT: same shape the flat renderer uses (MAX_CHANNELS rows × LUT_STOPS pixels wide, rgba8).
+  // Written whenever `setChannels` runs; lives for the renderer's lifetime.
+  const lutTex = device.createTexture({
+    size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  // Label palette: LABEL_PALETTE_N x 1 rgba8. Written ONCE at renderer construction — the
+  // palette is a golden-angle hue ramp keyed on `id % rows`, so it never depends on the image.
+  const palTex = device.createTexture({
+    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  device.queue.writeTexture(
+    { texture: palTex }, labelPaletteBytes(),
+    { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1],
+  )
+  // Placeholder label atlas — bound whenever a timepoint has no mask, because the bind group has
+  // to be complete. r32uint one-voxel texture whose only value is 0; the shader's `p.lab.x == 0`
+  // check short-circuits every sample of it, so it's a no-op even if the shader accidentally reads.
+  const noLabelAtlas = device.createTexture({
+    size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
+  })
 
   const setupErr = await device.popErrorScope()
   if (setupErr) {
@@ -117,6 +287,13 @@ export async function createBrickVolumeRenderer(
    *  brickZ` so plane mode sees the user's plane rather than plane 0 of the store. */
   let currentZLo = 0
   let boundT = 0
+  /** Timepoint the SHADER is currently drawing via `pageTableCpu`. Splits from `boundT` the
+   *  moment `show(t)` runs but core bricks at `t` haven't landed yet: `boundT` moves so the
+   *  scheduler fetches for the new target, but `displayT` stays at the last fully-resident
+   *  timepoint so the shader continues drawing that instead of a half-black next frame.
+   *  `displayT` catches up automatically inside `tickScheduler` once residency reaches the
+   *  threshold. `-1` before any t has been shown. */
+  let displayT = -1
   let source: BrickSource | null = null
   /** In-flight fetches keyed by brick key — the scheduler can name the same brick on consecutive
    *  ticks before its bytes have landed, and we don't want to fire the request twice. AbortController
@@ -130,6 +307,53 @@ export async function createBrickVolumeRenderer(
    *  arrival page-table → the box stays black (2026-08-28, first attempt was silent because of
    *  this exact missing signal). Null when the caller hasn't wired one yet. */
   let needsRedraw: (() => void) | null = null
+  /** Caller-supplied hook that receives per-channel MAX brightness after each landed brick, so
+   *  ViewerWindow can grow `seenMax` from real data — same discipline as the flat renderer's
+   *  per-timepoint slab walk (`ViewerWindow.vue:1159`). Without it the contrast slider's ceiling
+   *  never adapts and dragging `hi` down locks the range at 0..initial. Null when unwired. */
+  let onBrickLoaded: ((perChannelMax: number[]) => void) | null = null
+  /** Fired when displayT advances (either from `show(t)` on ready, or from tickScheduler
+   *  auto-catching-up on residency). Lets ViewerWindow sync `shownT` so overlays draw for the
+   *  same timepoint the volume is showing — otherwise a scrub-past-cold would render volume at
+   *  t=5 with overlays at t=0. Null when unwired. */
+  let onDisplayAdvanced: ((t: number) => void) | null = null
+  /** Per-writeBrick timing hook — bench harness only. Fires with the CPU-side duration of one
+   *  writeBrick call and the byte count uploaded. Null when unwired. */
+  let onBrickWritten: ((durationMs: number, bytes: number) => void) | null = null
+  /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
+   *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
+   *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
+   *  playback advances without cold-fetching each new t. Empty = current-t only. */
+  let prefetchTs: number[] = []
+  /** User-chosen level override — pins scheduler to this level, bypassing SSE. Undefined =
+   *  fall back to the SSE picker. Threaded through by ViewerWindow from its `slabLevel`
+   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). This closes the
+   *  bytes-fetched gap between the two renderers on multi-level statics — the 168× we saw on
+   *  f8gzA2 was almost entirely brick choosing L0-L1 where flat chose L5. */
+  let levelOverride: number | undefined = undefined
+
+  /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
+   *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
+   *  discipline as the flat renderer (`volumeRenderer.ts:446`). */
+  let pointBuf: GPUBuffer | null = null
+  let pointCap = 0
+  let pointFirst = 0
+  let pointCount = 0
+  let pointSizePx = 6
+  let pointPlaneLo = -1
+  let pointPlaneHi = -1
+  let segBuf: GPUBuffer | null = null
+  let segCap = 0
+  let segFirst = 0
+  let segCount = 0
+  let segWidthPx = 3
+  let segPlaneLo = -1
+  let segPlaneHi = -1
+
+  /** Label style. `setLabelStyle(0, _)` disables the label pass in the shader (via `p.lab.x`);
+   *  a non-zero opacity + zero contour = filled cells; non-zero contour = napari's outline. */
+  let labelOpacity = 0
+  let labelContourPx = 0
 
   // Uniform state shared with the Debug panel via `uniformState()`; ViewerWindow reads it, so it
   // has to stay non-NaN even when nothing's uploaded yet.
@@ -145,7 +369,13 @@ export async function createBrickVolumeRenderer(
     if (atlas === null) return
     atlas.texture.destroy()
     atlas.pageTableBuffer.destroy()
+    atlas.prevPageTableBuffer.destroy()
+    // Only destroy the real per-image label texture — the shared placeholder is renderer-lived.
+    if (atlas.labelsEnabled) atlas.labelTexture.destroy()
     atlas = null
+    // displayT tracks pageTableCpu residency at the current atlas — a fresh atlas has neither,
+    // so reset here or the next show(t) would think it's still holding the previous image.
+    displayT = -1
   }
 
   const resize = (): boolean => {
@@ -162,7 +392,7 @@ export async function createBrickVolumeRenderer(
 
   const setImage = (
     meta: ViewerMeta, budgetBytes: number, zDepth?: number, zLo?: number,
-    _withLabels?: boolean, _renderNX?: number, _renderNY?: number,
+    withLabels?: boolean, _renderNX?: number, _renderNY?: number,
   ): void => {
     currentMeta = meta
     const zd = zDepth ?? meta.nZ
@@ -207,13 +437,46 @@ export async function createBrickVolumeRenderer(
       size: Math.max(16, pageTableCpu.byteLength),   // WebGPU rejects 0-size buffers
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
+    // Prev-level fallback buffer: same size + shape as pageTableBuffer, empty until the first
+    // level switch copies the current CPU buffer here. Must be bound even when unused — WebGPU
+    // won't let a bind-group slot go absent, and `prevValid=0` in the uniform keeps the shader
+    // from reading it.
+    const prevPageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
+    const prevPageTableBuffer = device.createBuffer({
+      size: Math.max(16, prevPageTableCpu.byteLength),
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
+
+    // Label atlas: r32uint, same slot layout as the image atlas (same slotsX/Y/Z, same brickXY)
+    // but Z is `slotsZ * brickZ` — labels have no channel stacking. Only allocated when the
+    // caller flags `withLabels`; otherwise the shared placeholder rides in this slot. The atlas
+    // ALLOCATION is decoupled from whether label bytes are actually fetched — the caller has to
+    // pre-declare labels here for the same reason the flat renderer does (a texture allocation is
+    // expensive; toggling between real and placeholder without warning would drop every landed
+    // brick on the floor). Fetches then gate on `source.labelName` separately.
+    const labelsEnabled = !!withLabels
+    let labelTexture: GPUTexture
+    if (labelsEnabled) {
+      const [bx, by, bz] = layout.brickSizeVox
+      const [sx, sy, sz] = layout.atlasSlotCounts
+      labelTexture = device.createTexture({
+        size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+    } else {
+      labelTexture = noLabelAtlas
+    }
 
     const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: uniformBuf } },
         { binding: 1, resource: { buffer: pageTableBuffer } },
         { binding: 2, resource: texture.texture.createView() },
+        { binding: 3, resource: { buffer: prevPageTableBuffer } },
+        { binding: 4, resource: lutTex.createView() },
+        { binding: 5, resource: labelTexture.createView() },
+        { binding: 6, resource: palTex.createView() },
       ],
     })
 
@@ -221,16 +484,27 @@ export async function createBrickVolumeRenderer(
       layout, texture, pageTable,
       gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
       gridNxL0, gridNyL0, gridNzL0,
-      pageTableBuffer, pageTableCpu, pageTableDirty: true, bindGroup,
+      pageTableBuffer, pageTableCpu, pageTableDirty: true,
+      prevPageTableBuffer, prevPageTableCpu, prevPageTableDirty: true,   // upload the empty state
+      prevGridNx: 0, prevGridNy: 0, prevGridNz: 0,
+      prevLevel: undefined,
+      bindGroup,
       currentLevel: undefined,
+      labelTexture, labelsEnabled,
     }
     uniform.nch = nC
   }
 
   const writePageTable = () => {
-    if (atlas === null || !atlas.pageTableDirty) return
-    device.queue.writeBuffer(atlas.pageTableBuffer, 0, atlas.pageTableCpu)
-    atlas.pageTableDirty = false
+    if (atlas === null) return
+    if (atlas.pageTableDirty) {
+      device.queue.writeBuffer(atlas.pageTableBuffer, 0, atlas.pageTableCpu)
+      atlas.pageTableDirty = false
+    }
+    if (atlas.prevPageTableDirty) {
+      device.queue.writeBuffer(atlas.prevPageTableBuffer, 0, atlas.prevPageTableCpu)
+      atlas.prevPageTableDirty = false
+    }
   }
 
   /** Flat grid index at the CURRENT level. Matches the shader's `(bz * nBy + by) * nBx + bx`. */
@@ -245,6 +519,10 @@ export async function createBrickVolumeRenderer(
     if (currentMeta === null || source === null || atlas === null) return
     const key = brickKey(brick)
     if (inflight.has(key)) return
+    // Backpressure: the browser queues everything past ~6 concurrent HTTP/1.1 requests anyway,
+    // and an unbounded fan-out floods the queue with fetches the scheduler no longer wants by
+    // the time they run. Next tick picks up whatever we skipped. See MAX_INFLIGHT comment.
+    if (inflight.size >= MAX_INFLIGHT) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
@@ -268,18 +546,117 @@ export async function createBrickVolumeRenderer(
         const bytes = isEdge
           ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel)
           : payload.bytes
-        const ok = atlas.texture.writeBrick(result.entry.slot, new Uint8Array(bytes))
+        const writeT0 = onBrickWritten !== null ? performance.now() : 0
+        const brickBytes = new Uint8Array(bytes)
+        const ok = atlas.texture.writeBrick(result.entry.slot, brickBytes)
+        if (onBrickWritten !== null && ok) {
+          onBrickWritten(performance.now() - writeT0, brickBytes.byteLength)
+        }
         if (!ok) {
           atlas.pageTable.evict(key)
           return
         }
-        if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
-        atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
-        atlas.pageTableDirty = true
+        // pageTableCpu is the SHADER's map: it can only address ONE timepoint at a time (the one
+        // `boundT` names). A prefetch brick — one whose t is ahead of `boundT` — goes into the
+        // atlas + pageTable (so LRU keeps it warm) but does NOT rewrite pageTableCpu; when the
+        // caller later `show()`s that t, `show` rebuilds pageTableCpu from resident entries and
+        // the prefetched bricks light up instantly. Also gate on the current level, since a level
+        // switch could have flipped between the request and the arrival.
+        // Gate on DISPLAYT (what pageTableCpu currently reflects), not boundT. When boundT has
+        // moved ahead of displayT (scrub past residency), a brick landing at the new boundT must
+        // NOT be written into pageTableCpu — that's still showing displayT. tickScheduler's
+        // auto-advance picks up the readiness threshold on the next tick and rebuilds.
+        const forVisibleFrame = brick.t === displayT && brick.level === atlas.currentLevel
+        // The eviction wipe MUST be gated on t/level too. `evictedIdx` is a `(bx,by,bz)` grid
+        // index and ignores t — but pageTableCpu[idx] is what the shader will sample for the
+        // displayT brick at that grid position, and a resident displayT brick very often shares
+        // (bx,by,bz) with the evicted brick (the tick loop prefetches the SAME viewport bricks
+        // across t, so a cross-t eviction here is the common case, not an edge case). Wiping
+        // unconditionally would clobber a live displayT reference and paint EMPTY_SLOT — read as
+        // "half the bricks aren't loaded" even though the atlas still holds every one of them.
+        // Only wipe when the eviction actually removes the displayT brick at that position.
+        const evictedBrick = evictedIdx >= 0 ? parseBrickKey(result.evictedKey!) : null
+        const evictedWasVisible = evictedBrick !== null
+          && evictedBrick.t === displayT
+          && evictedBrick.level === atlas.currentLevel
+        if (evictedWasVisible) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
+        if (forVisibleFrame) {
+          atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
+          atlas.pageTableDirty = true
+        } else if (evictedWasVisible) {
+          atlas.pageTableDirty = true
+        }
+        // Grow `seenMax` from the actual bytes we just received — same discipline the flat
+        // renderer runs in `uploadFrame`. Compute on the RAW (un-padded) payload: padded regions
+        // are zeros and never contribute to max, so it doesn't matter, but the raw shape lets us
+        // walk fewer bytes on edge bricks.
+        if (onBrickLoaded !== null) {
+          const bpv = atlas.layout.bytesPerVoxel
+          const perChBytes = payload.shape.nz * payload.shape.ny * payload.shape.nx * bpv
+          const perChannelMax: number[] = []
+          for (let ci = 0; ci < payload.shape.nc; ci++) {
+            const slice = payload.bytes.slice(ci * perChBytes, (ci + 1) * perChBytes)
+            perChannelMax.push(slabMax(slabView(slice, bpv), payload.shape.nx))
+          }
+          onBrickLoaded(perChannelMax)
+        }
+        // Labels: fire a parallel fetch for the same brick's mask if the source names a
+        // labelName and this atlas has the real label texture bound. Written into the same slot
+        // — a resident brick has both intensity + labels, or intensity alone (opacity is 0 or the
+        // brick simply had no labels landed yet). Fire-and-forget: a label miss must not stall
+        // the image path.
+        if (atlas.labelsEnabled && source?.labelName) {
+          void kickLabelFetch(brick, result.entry.slot, ac.signal)
+        }
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
       .catch(() => { inflight.delete(key) })
+  }
+
+  /** Fire a label brick fetch alongside its intensity twin. Writes into the SAME atlas slot the
+   *  image brick just took, so the shader's one page-table lookup gates both. Discards silently on
+   *  any failure — a missed label brick leaves the shader drawing intensity, which is closer to
+   *  what a user expects than showing an outline over the wrong signal.
+   *
+   *  Kept out of `inflight` (that keys on brick identity, and a label reuses the same key). If the
+   *  slot is reassigned before the label lands, `pageTable.get(key).slot` catches the change and
+   *  the bytes drop cleanly. */
+  const kickLabelFetch = async (
+    brick: VirtualBrick, expectedSlot: number, signal: AbortSignal,
+  ): Promise<void> => {
+    if (!source?.labelName || atlas === null) return
+    const layout = atlas.layout
+    const url = brickLabelSlabUrl(source, source.labelName, brick, layout.brickSizeVox, currentZLo)
+    const payload = await fetchLabelBrick(url, layout.brickSizeVox, signal)
+    if (payload === null) return
+    if (destroyed || atlas === null || !atlas.labelsEnabled) return
+    // Slot may have been reassigned to a different brick since the image landed. Look up the
+    // resident slot and verify — a match means our bytes still target the intensity twin.
+    const key = brickKey(brick)
+    const entry = atlas.pageTable.get(key)
+    if (entry === undefined || entry.slot !== expectedSlot) return
+    const [ebx, eby, ebz] = layout.brickSizeVox
+    const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
+    // Pad through the same helper as intensity — u32 is 4 bytes/voxel, and the helper's per-c/z/y
+    // copy is bpv-agnostic. nc = 1 here.
+    const bytes = isEdge
+      ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], 4)
+      : payload.bytes
+    // Label atlas has no channel stacking — slot origin z is `sz * brickZ`, not `sz * brickZ * nC`.
+    const [sxCount] = layout.atlasSlotCounts
+    const syCount = layout.atlasSlotCounts[1]
+    const sx = expectedSlot % sxCount
+    const sy = Math.floor(expectedSlot / sxCount) % syCount
+    const sz = Math.floor(expectedSlot / (sxCount * syCount))
+    device.queue.writeTexture(
+      { texture: atlas.labelTexture,
+        origin: [sx * ebx, sy * eby, sz * ebz] },
+      new Uint8Array(bytes),
+      { bytesPerRow: ebx * 4, rowsPerImage: eby },
+      [ebx, eby, ebz],
+    )
+    needsRedraw?.()
   }
 
   /** Reverse `brickKey` back to its grid index. Uses the resident entry first (cheap) and falls
@@ -296,24 +673,107 @@ export async function createBrickVolumeRenderer(
   /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
    *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
    *  this tick decided on. */
+  /** Rebuild `pageTableCpu` from the atlas residency at `displayT` at the current level. Called
+   *  whenever displayT changes (`show(t)` on ready, or `tickScheduler`'s auto-advance). Pure
+   *  re-index — no fetches, no atlas mutation. */
+  const rebuildPageTableForDisplayT = (): void => {
+    if (atlas === null || displayT < 0) return
+    atlas.pageTableCpu.fill(EMPTY_SLOT)
+    for (const entry of atlas.pageTable.entries()) {
+      if (entry.brick.t !== displayT || entry.brick.level !== atlas.currentLevel) continue
+      const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
+      if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
+      atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+    }
+    atlas.pageTableDirty = true
+  }
+
+  /** True when the atlas holds AT LEAST ONE brick at `t` at the current level. Cheap sentinel
+   *  for "would rebuilding pageTableCpu for this t leave any non-EMPTY entry?" — if false,
+   *  rebuilding paints a fully black frame. Used to gate the "unblank" auto-advance rule so
+   *  displayT never promotes to a t whose bricks weren't fetched. */
+  const anyBricksResident = (t: number): boolean => {
+    if (atlas === null) return false
+    for (const e of atlas.pageTable.entries()) {
+      if (e.brick.t === t && e.brick.level === atlas.currentLevel) return true
+    }
+    return false
+  }
+
+  /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
+   *  `hasTimepoint(t)` so the play loop can hold on the previous frame instead of advancing
+   *  into a half-loaded one. Halo bricks are NOT required — they're prefetch, and demanding
+   *  them would stall playback on a viewport that hasn't fully warmed the ring yet, which is
+   *  the usual state during scrub.
+   *
+   *  Not free: rebuilds the intersect list every call. Called at most once per frame for
+   *  `show`, once per playback tick for `hasTimepoint` — a few hundred grid entries either way.
+   *  Cheap in absolute terms, but worth not calling in a per-brick hot loop. */
+  const coreBricksResident = (t: number): boolean => {
+    if (atlas === null || currentMeta === null) return false
+    const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+    const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+    const view = brickViewportFromCamera(
+      camState, currentMeta, t, canvas.height, aspect, currentZDepth,
+    )
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
+    for (const s of scheduled) {
+      if (s.ring !== 0) continue
+      if (!atlas.pageTable.has(brickKey(s.brick))) return false
+    }
+    return true
+  }
+
   const tickScheduler = (): void => {
     if (atlas === null || currentMeta === null) return
     frameNow += 1
+    // Auto-advance displayT under the same rule as show(t): promote when boundT is ready OR
+    // when the OLD displayT's bricks are no longer drawable (evicted, moved out of viewport).
+    // The "OR !displayDrawable" clause exists because a scrub-then-play-then-stop sequence can
+    // leave displayT pointing at a t whose bricks were LRU-evicted while playback moved past
+    // — without this the shader draws a fully black canvas from an all-EMPTY pageTableCpu
+    // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
+    // stays in sync with what the volume is drawing.
+    if (boundT !== displayT) {
+      const targetReady = coreBricksResident(boundT)
+      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
+      const canPartial = anyBricksResident(boundT)
+      if (targetReady || (!displayDrawable && canPartial)) {
+        displayT = boundT
+        rebuildPageTableForDisplayT()
+        onDisplayAdvanced?.(displayT)
+      }
+    }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
     const view = brickViewportFromCamera(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel)
+    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelOverride)
 
-    // Level switch invalidates every resident brick: (bx, by, bz) space is different at a coarser
-    // LOD. Drop the residency, clear the page-table CPU up to the LARGER of the two levels' grids
-    // so a switch coarse→fine also wipes the L0-grid stale entries.
+    // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
+    // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
+    // slots don't change — they hold whatever bricks are LRU-warm — so the prev page table just
+    // re-indexes into the same texture. The PageTable object stays too: its entries still name
+    // real slots, they're just now indexed by the OLDER grid dims.
     if (atlas.currentLevel !== dec.level) {
-      inflight.forEach(ac => ac.abort())
-      inflight.clear()
-      atlas.pageTable.clear()
+      // DON'T abort inflight: the requests are already on the wire, and cancelling only stops
+      // the CLIENT waiting — the server still ships the bytes. Let them land; the arrival
+      // guard (`atlas.currentLevel !== brick.level`) discards stale-level bytes silently, and
+      // an in-progress fetch for the LEVEL we're leaving might still be useful if the camera
+      // zooms back. Measured 2026-08-29: abort-on-swap combined with SSE hysteresis was the
+      // primary cause of the "blank canvas, never backfills" symptom on Dml3RG scrub.
+      // Only promote current → prev when there IS a current level (skip the initial
+      // undefined → 0 transition, which has nothing worth keeping around).
+      if (atlas.currentLevel !== undefined) {
+        atlas.prevPageTableCpu.set(atlas.pageTableCpu)
+        atlas.prevPageTableDirty = true
+        atlas.prevGridNx = atlas.gridNx
+        atlas.prevGridNy = atlas.gridNy
+        atlas.prevGridNz = atlas.gridNz
+        atlas.prevLevel = atlas.currentLevel
+      }
       atlas.pageTableCpu.fill(EMPTY_SLOT)
       atlas.pageTableDirty = true
       const scale = Math.pow(2, dec.level)
@@ -322,25 +782,28 @@ export async function createBrickVolumeRenderer(
       atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
       atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
       atlas.currentLevel = dec.level
-    } else {
-      for (const key of dec.toEvict) {
-        const idx = gridIndexOfKey(atlas, key)
-        atlas.pageTable.evict(key)
-        if (idx >= 0) {
-          atlas.pageTableCpu[idx] = EMPTY_SLOT
-          atlas.pageTableDirty = true
-        }
-        const ac = inflight.get(key)
-        if (ac !== undefined) { ac.abort(); inflight.delete(key) }
-      }
     }
+    // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
+    // `boundT`, but the prefetch loop below fills the atlas with bricks at other `t` values that
+    // scheduleBricks doesn't know about. Actively dropping them here would evict our own prefetch
+    // work every tick. LRU handles cache pressure once the atlas actually fills, and the atlas is
+    // big enough (thousands of slots) that pressure is rare in practice.
 
     // Load list — closer to the camera first (scheduler sorted by core-then-distance). Touch the
-    // ones already resident so they're LRU-fresh; kick fetches for the misses.
-    for (const s of dec.toLoad) {
-      const k = brickKey(s.brick)
-      if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
-      kickFetch(s.brick)
+    // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
+    // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
+    // the prefetch timepoints, dropping duplicates via `brickKey`.
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel)
+    const ts = [boundT]
+    for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
+    for (const pt of ts) {
+      for (const s of scheduled) {
+        const brickAtT: VirtualBrick = { ...s.brick, t: pt }
+        const k = brickKey(brickAtT)
+        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
+        if (inflight.has(k)) continue
+        kickFetch(brickAtT)
+      }
     }
   }
 
@@ -381,29 +844,24 @@ export async function createBrickVolumeRenderer(
     atlas.pageTableDirty = true
   }
 
-  const writeUniform = () => {
+  const writeUniform = (widthOverride?: number, heightOverride?: number) => {
     uniformCpu[BU.CAM + 0] = camState.yaw
     uniformCpu[BU.CAM + 1] = camState.pitch
     uniformCpu[BU.CAM + 2] = camState.dist
     uniformCpu[BU.CAM + 3] = uniform.steps
     uniformCpu[BU.VP + 0] = uniform.nch
-    uniformCpu[BU.VP + 1] = canvas.width
-    uniformCpu[BU.VP + 2] = canvas.height
+    // Overridable so `sampleFrame` can render into a square probe with the shader treating the
+    // aspect ratio correctly — a stretched aspect would frame the volume differently from what is
+    // on screen, and the probe's whole job is to report on the SAME framing.
+    uniformCpu[BU.VP + 1] = widthOverride ?? canvas.width
+    uniformCpu[BU.VP + 2] = heightOverride ?? canvas.height
     uniformCpu[BU.VP + 3] = uniform.ortho ? 1 : 0
     uniformCpu[BU.EXT + 0] = uniform.ext[0]
     uniformCpu[BU.EXT + 1] = uniform.ext[1]
     uniformCpu[BU.EXT + 2] = uniform.ext[2]
-    // valueMax normalises the raw u32 sample into [0,1] for the crude colour ramp. Naive full-
-    // range (255 / 65535) leaves real microscopy data — typical intensities ~1000-5000 on a
-    // uint16 store — normalised to ~0.05 and the box renders near-black. Use the MAX per-channel
-    // `hi` from the server's contrast spec so at least the visible range covers [0, 1] before
-    // the real LUT lands in P5d. Falls back to dtype max if channels haven't been set yet.
-    const bpv = atlas?.layout.bytesPerVoxel ?? 1
-    const dtypeMax = bpv === 2 ? 65535 : 255
-    const chMax = channels.length > 0
-      ? Math.max(1, ...channels.map(c => c.hi))
-      : dtypeMax
-    uniformCpu[BU.EXT + 3] = Math.max(1, Math.min(dtypeMax, chMax))
+    // Per-channel contrast windows go in `p.ch[c]` below; the leading `p.ext.w` slot is unused
+    // now that the shader normalises via each channel's own (lo, hi).
+    uniformCpu[BU.EXT + 3] = 0
     if (currentMeta !== null) {
       // Voxel dims AT THE CURRENT LOD LEVEL — the shader treats `p.dims` as "voxels along each
       // axis at this level" and `vi = uvw * dims.xyz`. Wrong dims here = wrong per-voxel address.
@@ -430,7 +888,85 @@ export async function createBrickVolumeRenderer(
     }
     uniformCpu[BU.PAN + 0] = uniform.pan[0]
     uniformCpu[BU.PAN + 1] = uniform.pan[1]
+    // pan.z/w carry the SEGMENT ribbon's plane bounds — separate from the points' bounds because
+    // a track spans several planes and often reads best with more z slack than the markers. -1 =
+    // no filter (3D volume view over the whole stack). Same convention as `mipShader.ts`.
+    uniformCpu[BU.PAN + 2] = segPlaneLo
+    uniformCpu[BU.PAN + 3] = segPlaneHi
+    // Overlay layout: (pointSizePx, pointPlaneLo, tailWidthPx, pointPlaneHi). Two plane bounds
+    // for the points share this vec4 with the two screen-space widths (points + tails).
+    uniformCpu[BU.OV + 0] = pointSizePx
+    uniformCpu[BU.OV + 1] = pointPlaneLo
+    uniformCpu[BU.OV + 2] = segWidthPx
+    uniformCpu[BU.OV + 3] = pointPlaneHi
+    // Labels: (opacity, contourPx, paletteRows, unused). Opacity 0 disables the label path in
+    // the shader without touching bindings — labels off is a uniform write, not a bind group
+    // rebuild. The palette row count is fixed at renderer construction; passed through so the
+    // shader's `id % rows` uses the same number the texture was written with.
+    uniformCpu[BU.LAB + 0] = atlas?.labelsEnabled ? labelOpacity : 0
+    uniformCpu[BU.LAB + 1] = labelContourPx
+    uniformCpu[BU.LAB + 2] = LABEL_PALETTE_N
+    uniformCpu[BU.LAB + 3] = 0
+    // Prev-level fallback fields — only meaningful when a level switch has copied the previous
+    // page table into the prev buffer. `prevValid` is a float flag the shader reads with a
+    // > 0.5 comparison (WGSL uniform floats don't do bitwise cleanly).
+    if (atlas !== null && atlas.prevLevel !== undefined && currentMeta !== null) {
+      const prevScale = Math.pow(2, atlas.prevLevel)
+      uniformCpu[BU.PREV_GRID + 0] = atlas.prevGridNx
+      uniformCpu[BU.PREV_GRID + 1] = atlas.prevGridNy
+      uniformCpu[BU.PREV_GRID + 2] = atlas.prevGridNz
+      uniformCpu[BU.PREV_GRID + 3] = 1
+      uniformCpu[BU.PREV_DIMS + 0] = Math.max(1, Math.ceil(currentMeta.nX / prevScale))
+      uniformCpu[BU.PREV_DIMS + 1] = Math.max(1, Math.ceil(currentMeta.nY / prevScale))
+      uniformCpu[BU.PREV_DIMS + 2] = Math.max(1, Math.ceil(currentZDepth / prevScale))
+    } else {
+      uniformCpu[BU.PREV_GRID + 3] = 0
+    }
+    // Per-channel (lo, hi, visible, unused). Rows past `channels.length` stay zero so the shader
+    // skips them via the `visible < 0.5` check. Same discipline as `CH0` in `volumeRenderer.ts`.
+    for (let ci = 0; ci < MAX_CHANNELS; ci++) {
+      const off = BU.CH0 + ci * 4
+      const ch = channels[ci]
+      if (ch === undefined) {
+        uniformCpu[off + 0] = 0
+        uniformCpu[off + 1] = 1
+        uniformCpu[off + 2] = 0
+        uniformCpu[off + 3] = 0
+      } else {
+        uniformCpu[off + 0] = ch.lo
+        uniformCpu[off + 1] = ch.hi
+        uniformCpu[off + 2] = ch.visible ? 1 : 0
+        uniformCpu[off + 3] = 0
+      }
+    }
     device.queue.writeBuffer(uniformBuf, 0, uniformCpu)
+  }
+
+  /**
+   * Encode the volume and, optionally, the overlays into an open pass — ONE encoder for both the
+   * canvas draw and the probe copy, so what `sampleFrame` measures cannot drift from what the
+   * screen was told to draw. Skips the overlays when the vertex buffer is empty because a
+   * zero-instance draw with a null buffer is a validation error that discards the WHOLE pass
+   * (same trap the flat renderer already documents — `volumeRenderer.ts:492`).
+   */
+  const encodePass = (pass: GPURenderPassEncoder, withOverlays: boolean) => {
+    if (atlas === null) return
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, atlas.bindGroup)
+    pass.draw(3, 1, 0, 0)
+    if (!withOverlays) return
+    if (segBuf !== null && segCount > 0) {
+      pass.setPipeline(segPipeline)
+      pass.setBindGroup(0, atlas.bindGroup)
+      pass.setVertexBuffer(0, segBuf)
+      pass.draw(6, segCount, 0, segFirst)
+    }
+    if (pointBuf !== null && pointCount > 0) {
+      pass.setPipeline(pointsPipeline)
+      pass.setBindGroup(0, atlas.bindGroup)
+      pass.setVertexBuffer(0, pointBuf)
+      pass.draw(6, pointCount, 0, pointFirst)
+    }
   }
 
   const draw = () => {
@@ -455,11 +991,7 @@ export async function createBrickVolumeRenderer(
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
       }],
     })
-    if (atlas !== null) {
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, atlas.bindGroup)
-      pass.draw(3, 1, 0, 0)
-    }
+    encodePass(pass, true)
     pass.end()
     device.queue.submit([enc.finish()])
   }
@@ -479,9 +1011,47 @@ export async function createBrickVolumeRenderer(
 
     setCapacity(_n) { /* P5c */ },
     vramCapped: () => false,
-    show(t) { boundT = t; return true },
-    hasTimepoint(_t) { return true },
-    residentTimepoints() { return atlas === null ? [] : [boundT] },
+    show(t) {
+      // Bump the scheduler target unconditionally — the fetch loop needs to know what to fetch
+      // for next, whether or not we're ready to draw it yet.
+      boundT = t
+      // Advance the DISPLAYED timepoint under two conditions, either sufficient:
+      //   (a) core bricks at t are resident (the happy path — we can draw a full frame), OR
+      //   (b) the OLD displayT can't be drawn AND the NEW t has at least SOMETHING resident
+      //       (partial frame > blank frame). Only promoting when boundT has bricks avoids the
+      //       trap where displayT jumps to a cold t and rebuildPageTableForDisplayT leaves the
+      //       page table all EMPTY_SLOT — 2026-08-29 blank-canvas symptom.
+      // First-ever show (displayT === -1) hits (b) — anyBricksResident may still be false, in
+      // which case we don't advance and the shader draws whatever the last-rendered pageTableCpu
+      // held (clear if it's the fresh atlas).
+      const ready = coreBricksResident(t)
+      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
+      const canPartial = anyBricksResident(t)
+      if ((ready || (!displayDrawable && canPartial)) && displayT !== t) {
+        displayT = t
+        rebuildPageTableForDisplayT()
+        // Fire the display-advanced hook so ViewerWindow's `shownT` follows displayT — the
+        // residency map filters by shownT, so if we advance without notifying, the map keeps
+        // showing the OLD t's residency instead of what the shader is actually drawing
+        // (Dominik, 2026-08-29: "the map stays purple even when half the bricks aren't loaded").
+        onDisplayAdvanced?.(displayT)
+      }
+      // Nudge the frame loop so tickScheduler runs with the new boundT — the caller's own
+      // showT skips its `frame.redraw()` on a false return, and without this a scrub past the
+      // atlas's residency would never kick fetches for the new t (dead-atlas symptom Dominik
+      // hit 2026-08-29).
+      needsRedraw?.()
+      return ready
+    },
+    hasTimepoint(t) { return coreBricksResident(t) },
+    residentTimepoints() {
+      // Every unique `t` currently holding at least one brick — the time strip uses this to show
+      // where prefetch has buffered. Bricks-per-t need not be complete for the strip to light up.
+      if (atlas === null) return []
+      const seen = new Set<number>()
+      for (const e of atlas.pageTable.entries()) seen.add(e.brick.t)
+      return [...seen].sort((a, b) => a - b)
+    },
     touch(_t) { /* no-op */ },
 
     cache: { capacity: 1, bytesPerTimepoint: 0, zDepth: 1 },
@@ -497,29 +1067,125 @@ export async function createBrickVolumeRenderer(
       channels.length = 0
       channels.push(...list)
       uniform.nch = Math.min(list.length, atlas?.layout.channelsPerBrick ?? list.length)
+      // Rewrite the LUT texture — one row per channel, resampled to LUT_STOPS pixels wide.
+      // Same helper the flat renderer uses so a channel that renders one way in the flat path
+      // renders identically here.
+      device.queue.writeTexture(
+        { texture: lutTex }, lutTextureBytes(list),
+        { bytesPerRow: LUT_STOPS * 4, rowsPerImage: MAX_CHANNELS },
+        [LUT_STOPS, MAX_CHANNELS],
+      )
     },
 
     setSteps(steps) { uniform.steps = steps },
     setOrthographic(on) { uniform.ortho = on },
 
-    setOverlayPoints(_data) { /* P6 */ },
-    setOverlayDraw(_first, _count, _sizePx, _planeLo, _planeHi) { /* P6 */ },
-    setOverlaySegments(_data) { /* P6 */ },
-    setOverlaySegmentDraw(_first, _count, _widthPx, _planeLo, _planeHi) { /* P6 */ },
-    setLabelStyle(_opacity, _contourPx) { /* P6 */ },
+    setOverlayPoints(data) {
+      // Grow-only: the movie's total instance count is bounded by the population data and the
+      // buffer is written once per (image, populations), not per frame. Reallocation would only
+      // happen on a population that shrank, which is not something the frame pump ever needs to
+      // do — the caller passes the whole ordered array when populations change.
+      if (destroyed) return
+      const needed = Math.max(data.byteLength, POINT_STRIDE * 4)
+      if (pointBuf === null || pointCap < needed) {
+        pointBuf?.destroy()
+        pointBuf = device.createBuffer({
+          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+        pointCap = needed
+      }
+      if (data.byteLength > 0) device.queue.writeBuffer(pointBuf, 0, data)
+    },
+    setOverlayDraw(first, count, sizePx, planeLo, planeHi) {
+      pointFirst = first
+      pointCount = count
+      pointSizePx = sizePx
+      // The caller passes one index when planeHi is undefined (2D view) — repeat it so the shader
+      // treats the range as a single plane rather than reading garbage from an unset slot.
+      pointPlaneLo = planeLo
+      pointPlaneHi = planeHi ?? planeLo
+    },
+    setOverlaySegments(data) {
+      if (destroyed) return
+      const needed = Math.max(data.byteLength, SEG_STRIDE * 4)
+      if (segBuf === null || segCap < needed) {
+        segBuf?.destroy()
+        segBuf = device.createBuffer({
+          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+        segCap = needed
+      }
+      if (data.byteLength > 0) device.queue.writeBuffer(segBuf, 0, data)
+    },
+    setOverlaySegmentDraw(first, count, widthPx, planeLo, planeHi) {
+      segFirst = first
+      segCount = count
+      segWidthPx = widthPx
+      segPlaneLo = planeLo
+      segPlaneHi = planeHi ?? planeLo
+    },
+    setLabelStyle(opacity, contourPx) {
+      labelOpacity = Math.max(0, Math.min(1, opacity))
+      labelContourPx = Math.max(0, Math.round(contourPx))
+    },
 
     resize,
     draw,
     uniformState: () => ({ ...uniform }),
 
-    async sampleFrame(_withOverlays?): Promise<FrameSample | null> {
-      // Contrast auto-sampling reads the flat renderer's probe copy. Bricks don't produce one
-      // yet — returning null tells the caller "no sample available", which is the same handshake
-      // it uses for a cold timepoint.
-      return null
+    async sampleFrame(withOverlays = false): Promise<FrameSample | null> {
+      if (destroyed || atlas === null) return null
+      // Its own square target rather than a copy of the canvas — same rationale as the flat
+      // renderer: the canvas texture is transient and copying one needs a COPY_SRC usage on the
+      // context, which would change how every real frame is presented for the sake of a
+      // diagnostic. PROBE_PX is 128 because 128 × 4 is already a 256-byte multiple, which is
+      // what copyTextureToBuffer's bytesPerRow requires.
+      const N = PROBE_PX
+      const tex = device.createTexture({
+        size: [N, N], format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      })
+      const buf = device.createBuffer({
+        size: N * N * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      })
+      // Tell the shader the target is square so `aspect` (canvas.w / canvas.h) matches. Restored
+      // AFTER the pass is encoded so nothing else draws with the probe dims.
+      writeUniform(N, N)
+      writePageTable()
+      const enc = device.createCommandEncoder()
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: tex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
+        }],
+      })
+      encodePass(pass, withOverlays)
+      pass.end()
+      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
+      device.queue.submit([enc.finish()])
+      // Real canvas dims back before the next real frame — writeUniform() with no args reads
+      // canvas.width/height.
+      writeUniform()
+      try {
+        await buf.mapAsync(GPUMapMode.READ)
+        const px = new Uint8Array(buf.getMappedRange().slice(0))
+        let max = 0, sum = 0, lit = 0
+        for (let i = 0; i < px.length; i += 4) {
+          const m = Math.max(px[i], px[i + 1], px[i + 2])
+          if (m > 0) lit++
+          if (m > max) max = m
+          sum += px[i] + px[i + 1] + px[i + 2]
+        }
+        return {
+          max: max / 255, mean: sum / (px.length / 4 * 3) / 255,
+          lit: lit / (px.length / 4), size: N,
+        }
+      } catch { return null }
+      finally { buf.destroy(); tex.destroy() }
     },
 
-    overlayCounts: (): [number, number] => [0, 0],
+    overlayCounts: (): [number, number] => [pointCount, segCount],
 
     setTestPattern(on) {
       // ViewerWindow calls this every frame with the current toggle state, not just on change —
@@ -542,15 +1208,65 @@ export async function createBrickVolumeRenderer(
     },
 
     setNeedsRedraw(cb) { needsRedraw = cb },
+    setOnBrickLoaded(cb) { onBrickLoaded = cb },
+    setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
+    setOnBrickWritten(cb) { onBrickWritten = cb },
+    setPrefetchTimepoints(list) { prefetchTs = list.slice() },
+    setLevelOverride(level) {
+      // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the
+      // brick renderer honours the same choice the flat renderer does. `undefined` re-enables
+      // the SSE picker. Same-value writes are cheap; ViewerWindow calls this unconditionally
+      // from a `slabLevel` watch.
+      levelOverride = level === undefined || level < 0 ? undefined : Math.floor(level)
+    },
+
+    brickResidency() {
+      if (atlas === null) {
+        return {
+          resident: [], inflight: [], currentLevel: undefined,
+          brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
+          displayT: -1, boundT: 0, displayValid: false,
+        }
+      }
+      const resident = atlas.pageTable.entries().map(e => ({
+        t: e.brick.t, level: e.brick.level,
+        bx: e.brick.bx, by: e.brick.by, bz: e.brick.bz,
+      }))
+      const inflightBricks: { t: number; level: number; bx: number; by: number; bz: number }[] = []
+      for (const key of inflight.keys()) {
+        const b = parseBrickKey(key)
+        if (b !== null) inflightBricks.push({ t: b.t, level: b.level, bx: b.bx, by: b.by, bz: b.bz })
+      }
+      return {
+        resident, inflight: inflightBricks,
+        currentLevel: atlas.currentLevel,
+        displayT,
+        boundT,
+        // Whether the canvas reflects the TARGET the user asked for, AND is complete. False
+        // covers both flavours of "not the whole truth":
+        //   - stale: `displayT !== boundT` (hold-on-cold keeps the shader on the last-good t
+        //     while the scheduler chases the new one — the pixels are FROM AN OLDER FRAME,
+        //     not the timepoint the user scrubbed to).
+        //   - partial: `displayT === boundT` but the "unblank" rule (ad0a20ec) advanced
+        //     without every core brick landing (holes = `EMPTY_SLOT`).
+        // Reuses the same `coreBricksResident` predicate `show(t)`'s ready-check runs.
+        displayValid: displayT >= 0 && displayT === boundT && coreBricksResident(displayT),
+        brickSizeVox: atlas.layout.brickSizeVox,
+      }
+    },
 
     setBrickSource(next: BrickSource | null) {
       // A source SWITCH invalidates every resident brick's URL — abort inflight, drop residency.
-      // Same-source repeats are cheap (compared by shallow equality on the three fields the URL
+      // Same-source repeats are cheap (compared by shallow equality on the four fields the URL
       // depends on), so ViewerWindow can call this unconditionally per frame without thrashing.
+      // labelName's equality matters too: a change in mask picker leaves the intensity bricks
+      // valid but the LABEL bricks stale, so those need re-fetching. For simplicity we treat any
+      // labelName change as a full source switch and re-fetch everything.
       const same = source !== null && next !== null
         && source.projectUid === next.projectUid
         && source.imageUid === next.imageUid
         && source.valueName === next.valueName
+        && source.labelName === next.labelName
       if (same) { source = next; return }
       source = next
       inflight.forEach(ac => ac.abort())
@@ -561,6 +1277,8 @@ export async function createBrickVolumeRenderer(
         atlas.pageTableDirty = true
         atlas.currentLevel = undefined
       }
+      // pageTableCpu just went empty — displayT no longer reflects anything real.
+      displayT = -1
     },
 
     destroy() {
@@ -569,7 +1287,12 @@ export async function createBrickVolumeRenderer(
       inflight.forEach(ac => ac.abort())
       inflight.clear()
       dropAtlas()
+      pointBuf?.destroy()
+      segBuf?.destroy()
       uniformBuf.destroy()
+      lutTex.destroy()
+      palTex.destroy()
+      noLabelAtlas.destroy()
       ctx.unconfigure()
     },
   }

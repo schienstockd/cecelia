@@ -75,6 +75,10 @@ import {
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
+import {
+  buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
+  type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
+} from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
@@ -105,6 +109,82 @@ const imageUid = String(route.query.image ?? '')
  * scaffolding for a dev-only flag.
  */
 const bricksEnabled = String(route.query.bricks ?? '') === '1'
+/**
+ * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
+ * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
+ * User drives the workload (scrubbing, zooming); Save button downloads a JSON blob for
+ * off-line comparison of flat vs brick on the five reference images.
+ */
+const benchEnabled = String(route.query.bench ?? '') === '1'
+const benchT0 = ref<number>(0)
+const benchFirstFrameMs = ref<number | null>(null)
+const benchFrames = shallowRef<BenchSample[]>([])
+const benchBytes = ref(0)
+/** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
+ *  renderer. Times the atlas-upload path — durationMs is the CPU-side cost of one writeBrick. */
+const benchWrites = shallowRef<BenchWriteSample[]>([])
+/** Save-time live tally so the panel shows progress without allocating on every frame. */
+const benchLive = computed(() => {
+  const now = performance.now()
+  const session = benchT0.value > 0 ? now - benchT0.value : 0
+  return summarizeBench(benchFrames.value, session)
+})
+/** Reset the bench counters. Called from setImage() so first-frame is measured from an honest
+ *  boundary; also from the panel's Reset button when the user wants a clean segment. */
+function benchReset() {
+  benchT0.value = performance.now()
+  benchFirstFrameMs.value = null
+  benchFrames.value = []
+  benchBytes.value = 0
+  benchWrites.value = []
+}
+/** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
+ *  so a directory of them doesn't collide across images or renderers. */
+function benchSave() {
+  const m = meta.value
+  if (!m) return
+  const iso = new Date().toISOString()
+  const benchMeta: BenchMeta = {
+    imageUid, valueName: valueName.value || '',
+    nT: m.nT, nC: m.nC, nZ: m.nZ, nY: m.nY, nX: m.nX,
+    nLevels: m.levels?.length ?? 1,
+    bytesPerVoxel: m.bytesPerVoxel,
+  }
+  const r = renderer.value
+  const br = r?.brickResidency?.()
+  const vram: BenchVram | null = r ? {
+    cacheCapacity: r.cache.capacity,
+    cacheBytesPerTimepoint: r.cache.bytesPerTimepoint,
+    cacheZDepth: r.cache.zDepth,
+    residentTimepoints: r.residentTimepoints().length,
+    brickCurrentLevel: br?.currentLevel ?? -1,
+    residentBricks: br?.resident.length ?? 0,
+    brickSizeVox: br?.brickSizeVox ?? [0, 0, 0],
+  } : null
+  const blob = buildBenchBlob({
+    mode: bricksEnabled ? 'brick' : 'flat',
+    meta: benchMeta,
+    t0: benchT0.value,
+    savedAt: performance.now(),
+    isoDate: iso,
+    firstFrameMs: benchFirstFrameMs.value,
+    frames: benchFrames.value,
+    bytesFetched: benchBytes.value,
+    vram,
+    writes: benchWrites.value,
+  })
+  const json = JSON.stringify(blob, null, 2)
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = benchFilename(blob.mode, imageUid, iso)
+  document.body.appendChild(a); a.click(); a.remove()
+  // Free after the click has been dispatched — Firefox drops the download if we revoke sync.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  vlog('info', `Bench saved: ${a.download}`,
+       `${blob.summary.nFrames} frames · ${(blob.bytesFetched / 1e6).toFixed(1)} MB · ` +
+       `first ${blob.firstFrameMs?.toFixed(0) ?? '—'} ms`)
+}
 /**
  * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
  * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
@@ -780,7 +860,21 @@ const frame = usePlotResize(canvas, () => {
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
+  // `?bench=1`: time the r.draw() submission. Only CPU-side (GPU still runs after we return),
+  // but it captures per-sample overhead like the brick renderer's page-table indirection which
+  // the flat renderer doesn't pay. First frame after setImage is recorded separately.
+  const drawT0 = benchEnabled ? performance.now() : 0
   r.draw()
+  if (benchEnabled) {
+    const drawT1 = performance.now()
+    const sample: BenchSample = { atMs: drawT1, drawMs: drawT1 - drawT0 }
+    // shallowRef on an array — replace with a new array so consumers reacting to it see the
+    // change (mutating in place wouldn't trigger the computed).
+    benchFrames.value = [...benchFrames.value, sample]
+    if (benchFirstFrameMs.value === null && benchT0.value > 0) {
+      benchFirstFrameMs.value = drawT1 - benchT0.value
+    }
+  }
   // Read back AFTER the draw, so Debug shows the numbers the frame on screen was rendered from rather
   // than the ones the next frame will use.
   const st = r.uniformState()
@@ -1056,6 +1150,16 @@ const syncCacheState = () => {
   resident.value = r?.residentTimepoints() ?? []
   loadingT.value = [...inflight.keys()]
   if (r) gpu.value = { ...r.cache, capped: r.vramCapped() }
+  // Brick renderer only: pull the atlas snapshot so the mini map redraws from the same tick as
+  // the time strip. Cheap — `brickResidency` is a `pageTable.entries()` walk plus a Set snapshot.
+  const br = r?.brickResidency?.()
+  if (br) {
+    brickResidents.value = br.resident
+    brickInflight.value = br.inflight
+    brickCurrentLevel.value = br.currentLevel
+    brickSizeVox.value = br.brickSizeVox
+    brickDisplayValid.value = br.displayValid
+  }
 }
 
 function fetchTimepoint(tp: number): Promise<boolean> {
@@ -1280,6 +1384,17 @@ function gotoT(tp: number) {
   }
   showT(tp)
   schedulePump(tp)
+  // Brick renderer only: hint the playback window so the tick loop prefetches upcoming
+  // timepoints. The flat renderer's `pump` already prefetches via `uploadFrame`; the brick
+  // renderer streams per-viewport per-t, so the hint lives here rather than inside the pump.
+  const r = renderer.value; const m = meta.value
+  if (r?.setPrefetchTimepoints && m) {
+    const dir = Math.sign(tp - lastT) || 1
+    // Small depth — atlas has plenty of room, but every extra `t` fires 16-64 fetches. 4 covers
+    // half a second of 8fps playback and lands cheaply; sane default until we measure.
+    const cap = playing.value ? 4 : 1
+    r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
+  }
 }
 
 // ── Tile mode: per-viewport fetching with a halo prefetch ────────────────────────
@@ -1480,6 +1595,63 @@ function syncTileCacheState() {
   tileLoadingKeys.value = new Set(tileAborts.keys())
 }
 
+/** Brick residency grid — one nBx × nBy panel per Z slice at the CURRENT level + `boundT` (via
+ *  `shownT.value` which tracks the frame actually painted). Null when brick mode is off, the meta
+ *  hasn't loaded, or the atlas hasn't ticked at least once. Template checks with `v-if`.
+ *
+ *  Grid dims are computed here from meta + `brickSizeVox` + `2^level` rather than plumbed back
+ *  from the renderer, so a level swap doesn't need a second round trip. */
+const brickMapGrid = computed(() => {
+  const m = meta.value
+  const lvl = brickCurrentLevel.value
+  if (!bricksEnabled || !m || lvl === undefined) return null
+  const [bx, by, bz] = brickSizeVox.value
+  const scale = Math.pow(2, lvl)
+  const zd = mode.value === 'plane' ? 1 : zDepth.value
+  const nBx = Math.max(1, Math.ceil(m.nX / (bx * scale)))
+  const nBy = Math.max(1, Math.ceil(m.nY / (by * scale)))
+  const nBz = Math.max(1, Math.ceil(zd / (bz * scale)))
+  return { nBx, nBy, nBz, level: lvl }
+})
+
+/** Per-Z-slice residency cells at the current level + target `t`. One entry per slice; each
+ *  entry is the row-major nBx × nBy grid for that slice. Filters the resident + inflight
+ *  snapshots inline (cheaper than pre-computing a per-cell Set). */
+const brickMapSlices = computed(() => {
+  const g = brickMapGrid.value
+  if (!g) return []
+  // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
+  // loading-progress indicator: what the user wants to see is bricks fetching toward the t
+  // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
+  // (the timepoint the shader currently paints) made progress invisible during scrub-past-cold
+  // — `displayT` stays on the OLD t until enough of the NEW t lands, so the map read "all
+  // resident" while fetches were firing for boundT (Dominik, 2026-08-29: "the map only shows
+  // loading progress on initial image load and never after").
+  const tp = t.value
+  const residentAtHere = new Set<string>()
+  for (const e of brickResidents.value) {
+    if (e.t === tp && e.level === g.level) residentAtHere.add(`${e.bx},${e.by},${e.bz}`)
+  }
+  const loadingAtHere = new Set<string>()
+  for (const e of brickInflight.value) {
+    if (e.t === tp && e.level === g.level) loadingAtHere.add(`${e.bx},${e.by},${e.bz}`)
+  }
+  const slices: { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] = []
+  for (let bz = 0; bz < g.nBz; bz++) {
+    const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
+    for (let by = 0; by < g.nBy; by++) {
+      for (let bx = 0; bx < g.nBx; bx++) {
+        const k = `${bx},${by},${bz}`
+        const state = loadingAtHere.has(k) ? 'loading'
+          : residentAtHere.has(k) ? 'resident' : 'absent'
+        cells.push({ key: k, state })
+      }
+    }
+    slices.push({ z: bz, cells })
+  }
+  return slices
+})
+
 /** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
  *  mode is off or the meta hasn't loaded yet, which the template checks with `v-if`. */
 const tileMapGrid = computed(() => {
@@ -1679,6 +1851,16 @@ function tick() {
       // frame 0 — playback then waits forever for something nothing is fetching.
       waitingFor.value = step.next
       schedulePump(step.next)
+      // Brick renderer only: schedulePump is a flat-renderer path — nothing on the brick side
+      // hears it. Push step.next into the prefetch window so the brick tickScheduler starts
+      // fetching for it now, or a stall never unstalls (nothing else is telling the scheduler
+      // this t matters). Under playback cap=4 so the window covers the direction of travel.
+      const m = meta.value
+      if (r?.setPrefetchTimepoints && m) {
+        const dir = Math.sign(step.next - t.value) || 1
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, 4))
+      }
+      frame.redraw()
     } else {
       waitingFor.value = -1
       gotoT(step.t)
@@ -1905,6 +2087,14 @@ watch(slabLevel, (newLvl) => {
   if (!meta.value || mode.value !== 'plane') return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
+/** Brick renderer: pin the scheduler to the user's chosen level so it matches flat's fetches
+ *  1:1. Without this the brick renderer's SSE picker chose L0-L1 while flat picked L5 by
+ *  default (`pickVolumeLevel = n-1`), and bricks pulled 168× more bytes than flat on f8gzA2.
+ *  Fires whether or not the volume path is active — the setter is a no-op when the flat
+ *  renderer is on and cheap when the value hasn't changed. */
+watch(slabLevel, (newLvl) => {
+  renderer.value?.setLevelOverride?.(newLvl)
+}, { immediate: true })
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const m = meta.value
@@ -1998,6 +2188,28 @@ watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
  *  who never scrubs won't want it. */
 const tilesMapShown = ref(localStorage.getItem('cc.vw.tilemap') !== 'false')
 watch(tilesMapShown, v => localStorage.setItem('cc.vw.tilemap', String(v)))
+/** Brick-atlas residency mini map — spatial analog of the tile map for `?bricks=1`. Default ON so
+ *  the volume path has the same at-a-glance diagnostic the plane path does; the atlas is 3D, so
+ *  the map draws one nBx × nBy grid per Z slice. */
+const bricksMapShown = ref(localStorage.getItem('cc.vw.brickmap') !== 'false')
+watch(bricksMapShown, v => localStorage.setItem('cc.vw.brickmap', String(v)))
+/** Snapshot of the brick atlas — refreshed on the same tick that syncs the time strip. Kept as a
+ *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
+const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+const brickCurrentLevel = ref<number | undefined>(undefined)
+const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
+/** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
+ *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
+ *  drawing an OLDER t while the scheduler chases the target) and unblank partial frames
+ *  (target t drawn with `EMPTY_SLOT` holes). Drives the canvas-invalid chip. Initial `true`
+ *  = we haven't drawn anything yet, so nothing to warn about. */
+const brickDisplayValid = ref<boolean>(true)
+/** Bricks path only: is the canvas out of sync with the target? True gates the amber chip.
+ *  `shownT >= 0` gate = don't fire during initial load (the "Loading timepoint…" chip
+ *  already owns that state). */
+const canvasPartial = computed(() =>
+  bricksEnabled && shownT.value >= 0 && !brickDisplayValid.value)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -2222,8 +2434,41 @@ async function ensureRenderer() {
       renderer.value = r
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
-      // cheap even with a burst of arrivals in the same tick. No-op on the flat renderer.
-      r.setNeedsRedraw?.(() => frame.redraw())
+      // cheap even with a burst of arrivals in the same tick. Also refresh the residency
+      // snapshot — otherwise the mini-map only updates on brick LAND (setOnBrickLoaded), which
+      // means the "amber = fetching" phase is invisible because syncCacheState only ever sees
+      // fetches that already resolved (Dominik, 2026-08-29). syncCacheState is a couple of
+      // linear walks; fine at rAF rate. No-op on the flat renderer.
+      r.setNeedsRedraw?.(() => { syncCacheState(); frame.redraw() })
+      // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
+      // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
+      // initial server-shipped `hi` and dragging `hi` below it locks the range.
+      r.setOnBrickLoaded?.(perChannelMax => {
+        seenMax.value = perChannelMax.map((v, c) => Math.max(seenMax.value[c] ?? 0, v))
+        // Time-strip animation reads `resident.value` from `residentTimepoints()`. Bricks land
+        // asynchronously, and the flat-path pump's `syncCacheState` calls don't run — refresh
+        // here so the strip lights up as prefetch fills.
+        syncCacheState()
+      })
+      // When a scrub past cold-cache advances the DISPLAYED t asynchronously (via the brick
+      // scheduler auto-catch-up), sync `shownT` so overlays match. `showT` handles the
+      // synchronous path directly; this covers the case where `show(t)` returned false and
+      // residency finished later.
+      r.setOnDisplayAdvanced?.(t => {
+        if (shownT.value !== t) {
+          shownT.value = t
+          frame.redraw()
+        }
+      })
+      // ?bench=1: capture per-writeBrick timings. Fires from inside the brick renderer, so
+      // kept gated on the harness flag — no cost when bench is off.
+      if (benchEnabled) {
+        r.setOnBrickWritten?.((durationMs, bytes) => {
+          benchWrites.value = [...benchWrites.value, {
+            atMs: performance.now(), durationMs, bytes,
+          }]
+        })
+      }
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
@@ -2296,12 +2541,27 @@ async function reallocate(refit = false) {
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
     const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
       viewerStore.previewLabels?.imageUid === imageUid)
+    // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
+    // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
+    // different image or a different mode swap and would poison the summary.
+    if (benchEnabled) benchReset()
     r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
     // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
     // No-op on the flat renderer via the optional chain.
-    r.setBrickSource?.({ projectUid, imageUid, valueName: valueName.value || undefined })
+    r.setBrickSource?.({
+      projectUid, imageUid,
+      valueName: valueName.value || undefined,
+      // Fire label brick fetches when the picker or the preview marks THIS image as showing
+      // labels — same predicate `wantLabels` above uses to decide whether the texture is
+      // allocated. `undefined` when no mask is picked, which lets the brick loader skip label
+      // requests entirely on projects with no segmentation.
+      labelName: wantLabels ? (labelName.value || undefined) : undefined,
+    })
+    // Pin the brick scheduler to slabLevel — the SSE default fetches an order of magnitude too
+    // much on multi-level statics. See the slabLevel watcher above.
+    r.setLevelOverride?.(slabLevel.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
@@ -2728,6 +2988,37 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 
+/**
+ * `?bench=1`: watch `PerformanceResourceTiming` entries for slab responses and add their
+ * transferred bytes to the recorder. This catches BOTH renderers without a hook in either —
+ * flat fetches, brick image bricks and brick label bricks all hit `/api/viewer/slab`. Kept
+ * outside the resource-timing buffer default (which is bounded); listen live and read
+ * `transferSize` per entry. `transferSize` is zero for a cache hit, which is the honest
+ * network cost (repeat scrubs shouldn't inflate the fetch tally).
+ */
+let benchPerfObs: PerformanceObserver | null = null
+onMounted(() => {
+  if (!benchEnabled) return
+  try {
+    benchPerfObs = new PerformanceObserver(list => {
+      let sum = 0
+      for (const e of list.getEntries()) {
+        if (!(e instanceof PerformanceResourceTiming)) continue
+        if (!e.name.includes('/api/viewer/slab')) continue
+        sum += e.transferSize || e.encodedBodySize || 0
+      }
+      if (sum > 0) benchBytes.value += sum
+    })
+    benchPerfObs.observe({ type: 'resource', buffered: false })
+  } catch (e) {
+    vlog('warn', 'Bench: PerformanceObserver unavailable',
+         e instanceof Error ? e.message : String(e))
+  }
+})
+onUnmounted(() => {
+  if (benchPerfObs) { benchPerfObs.disconnect(); benchPerfObs = null }
+})
+
 // The pop manager (in the main window) writes `pop.show` to the server and pings a localStorage
 // key; this listener is the popup's side of the P5 bridge. The tick's value is `<imageUid>:<ts>`,
 // so this window only refetches on changes to the image IT shows — a viewer on image A stays
@@ -2838,6 +3129,17 @@ onUnmounted(() => {
       <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
       <div v-else-if="shownT < 0" class="vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
+      </div>
+      <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
+           STALE (hold-on-cold keeps displayT on the last-good t while the scheduler chases
+           the new one — canvas shows an OLDER frame than the user scrubbed to) and PARTIAL
+           (unblank rule advanced displayT before every core brick landed — target frame with
+           EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
+           `shownT >= 0` so it never fights the initial-load message. -->
+      <div v-else-if="canvasPartial" class="vw-status-chip vw-status-chip-warn"
+           v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
+        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <span>Loading bricks…</span>
       </div>
       <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
            a small image still benefits from a corner reference while zoomed in (Dominik, 2026-08-26).
@@ -3024,7 +3326,14 @@ onUnmounted(() => {
               v-model.number="settings.viewerFps"
               v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
             >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerFps }}</span>
+            <!-- Playback-throttled indicator: colour the readout number itself amber. Zero layout
+                 impact vs. inserting an icon — the Fps slider already lives in a very narrow
+                 sidebar column, and adding an icon shrinks it further (Dominik, 2026-08-29). -->
+            <span class="cc-readout cc-fs-2xs vw-num"
+                  :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                  v-tooltip.left="playing && waitingFor >= 0
+                    ? 'Playback throttled — fetches are behind the requested Fps'
+                    : 'Requested playback rate'">{{ settings.viewerFps }}</span>
           </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -3063,6 +3372,60 @@ onUnmounted(() => {
               <span v-for="c in tileMapCellsView" :key="c.key"
                     class="vw-tilemap-cell" :class="'is-' + c.state" />
             </div>
+          </div>
+        </template>
+
+        <!-- Brick residency mini map: 3D analog of the tile map. One nBx × nBy grid per Z slice
+             at the CURRENT level + timepoint. Same colour language as the tile map (blue =
+             resident, amber = fetching). Only shown for `?bricks=1` and when at least one atlas
+             tick has landed. -->
+        <template v-if="brickMapGrid">
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
+            <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
+          </div>
+          <div v-if="bricksMapShown" class="vw-brickmaprow">
+            <div v-for="s in brickMapSlices" :key="s.z" class="vw-brickmap-col">
+              <div class="vw-tilemap vw-brickmap-slice"
+                   :style="{ gridTemplateColumns: `repeat(${brickMapGrid.nBx}, 1fr)`,
+                             gridTemplateRows: `repeat(${brickMapGrid.nBy}, 1fr)`,
+                             aspectRatio: `${brickMapGrid.nBx} / ${brickMapGrid.nBy}` }">
+                <span v-for="c in s.cells" :key="c.key"
+                      class="vw-tilemap-cell" :class="'is-' + c.state" />
+              </div>
+              <span class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- Bench harness — visible only under `?bench=1`. Records first-frame time, CPU draw
+             cost per frame and slab bytes fetched via a PerformanceObserver. User drives the
+             workload (scrub, zoom, spin); Save downloads a JSON blob per session. Meant for
+             flat-vs-brick timing on the five reference images. -->
+        <template v-if="benchEnabled">
+          <div class="cc-row cc-row-tight vw-bench-head">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Bench: flat vs brick timing'">Bench</span>
+            <span class="cc-muted cc-fs-3xs">{{ bricksEnabled ? 'brick' : 'flat' }}</span>
+          </div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <span class="cc-muted">First frame</span>
+            <span>{{ benchFirstFrameMs !== null ? benchFirstFrameMs.toFixed(0) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Frames</span>
+            <span>{{ benchLive.nFrames }}</span>
+            <span class="cc-muted">Draw median</span>
+            <span>{{ benchLive.drawMedianMs !== null ? benchLive.drawMedianMs.toFixed(2) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Draw p95</span>
+            <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Bytes</span>
+            <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+          </div>
+          <div class="cc-row cc-row-tight vw-bench-btns">
+            <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
+                    v-tooltip.top="'Start a new session — same as opening the image afresh'">Reset</button>
+            <button class="cc-btn cc-btn-primary cc-btn-micro" @click="benchSave"
+                    v-tooltip.top="'Download the bench JSON blob'">Save</button>
           </div>
         </template>
 
@@ -3181,8 +3544,7 @@ onUnmounted(() => {
             <div class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0"
-                :max="Math.max(chMax[c] ?? 1, ch.hi, initialContrast[c]?.hi ?? 1, 1)" :step="1"
+                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, ch.hi, 1)" :step="1"
                 @update:lo="v => { ch.lo = v; pushChannels() }"
                 @update:hi="v => { ch.hi = v; pushChannels() }"
               />
@@ -3518,6 +3880,7 @@ onUnmounted(() => {
   display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
 }
 .vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+.vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
 .vw-status-chip-icon { font-size: 1em; }
 .vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
@@ -3630,4 +3993,21 @@ onUnmounted(() => {
 .vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
 .vw-tilemap-cell.is-resident { background: var(--cc-accent); }
 .vw-tilemap-cell.is-loading { background: var(--cc-sev-warn); }
+/* Brick residency map: one Z slice per column. Slices sit side by side and each carries a small
+   z index below. Same cell language as the tile map (blue = resident, amber = fetching). */
+.vw-brickmaprow { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }
+.vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
+.vw-brickmap-zlabel { line-height: 1; }
+/* Bench harness readout — two-column grid so labels and values line up without a table. */
+.vw-bench-head { margin-top: 0.35rem; }
+.vw-bench-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  column-gap: 0.5rem; row-gap: 0.1rem;
+  padding: 0.15rem 0.25rem 0.25rem;
+}
+.vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
+/* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
+   change — the Fps slider stays the size it was. */
+.vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 </style>

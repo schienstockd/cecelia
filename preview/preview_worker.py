@@ -798,16 +798,14 @@ def _preview_cellpose(ctx):
         # result the run cannot reproduce. Cached across previews — see `PreviewState.norm_params`.
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params)
-        # The label modifications the RUN applies after inference — erosion, expansion, the size
-        # filter, border clearing. `la_t=None, T=1` is the whole-array branch the run uses per frame;
-        # `is_3d=False` because a preview is one z-plane (so `clearDepth` can never apply — the 2D
-        # warning covers that). `real_border` keeps it honest about being a CROP: see `post_process`.
-        masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
-                                 real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
     if merged is None:
         raise ValueError('no base model in preview params')
+    # The label modifications the RUN applies after inference — smoothing, erosion, expansion, the
+    # size filter, border clearing — applied ONCE to the merged image, which is where the run applies
+    # them. See `_post_process_merged` for what doing it per pass cost.
+    merged, passes = _post_process_merged(seg, merged, passes, ctx)
     counts = {'base': count_labels(merged)}
     block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 
@@ -836,6 +834,41 @@ def _base_groups(seg, models):
     """
     return [k for k in seg.model_order(models)
             if str(models[k].get('matchAs', 'base')) == 'base']
+
+
+def _post_process_merged(seg, merged, passes, ctx):
+    """`post_process` the MERGED label image, then re-count what each pass still contributes.
+
+    ORDER IS THE POINT. The run applies these steps ONCE, after every model group has been merged
+    into the frame — `SegmentationUtils.predict_from_zarr` loops the groups writing through
+    `fill_unlabelled`, and only then calls `post_process`. Both preview backends used to call it
+    per pass, INSIDE that loop, so on a two-pass config the preview and the run disagreed: the
+    preview smoothed and size-filtered each pass at its FULL extent and then let the merge clip it,
+    while the run clips first and filters the clipped result.
+
+    Measured on zolIMa/fXgbTl with his own flowTom config (seedSize 10.61/2.65, minComponentSize
+    1.1): 52 objects in run order against 53 in the old preview order, with non-identical
+    foreground — and it diverges at `minCellSize` 0 as well, because `labelSmoothing` defaults to
+    0.5 and is equally order-sensitive. A preview that cannot predict its own run is worse than no
+    preview, which is the same reason `fill_unlabelled` was extracted in the first place.
+
+    Re-counting is a range query because `post_process` only ever ZEROES a label or reshapes it — it
+    never renumbers — so the id ranges `_merge_pass` recorded are still true afterwards. Without
+    this the per-pass `objects` would be the pre-filter count and a pass whose every object the size
+    filter removed would still report them.
+
+    The call's own arguments, unchanged from when this was inline: `la_t=None, T=1` takes the
+    whole-array branch, which is the one iteration the run does per frame; `is_3d=False` because a
+    preview is a single z-plane, so `clearDepth` can never apply (the 2D warning covers that); and
+    `real_border` keeps the two crop-sensitive steps honest about looking at a CROP rather than the
+    image — see `post_process` for why both would otherwise show fewer cells than the run.
+    """
+    merged = seg.post_process(merged, ['Y', 'X'], None, 1, False,
+                              real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
+    for p in passes:
+        kept = merged[(merged >= p['from']) & (merged <= p['to'])]
+        p['objects'] = int(np.unique(kept).size)
+    return merged, passes
 
 
 def _merge_pass(seg, merged, masks, key, passes, count_labels):
@@ -955,12 +988,11 @@ def _preview_coastal(ctx):
         model_params = models[key]
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params, window)
-        masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
-                                 real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
     if merged is None:
         raise ValueError('no base model in preview params')
+    merged, passes = _post_process_merged(seg, merged, passes, ctx)
     counts = {'base': count_labels(merged)}
     block = np.reshape(np.asarray(merged, dtype=seg.LABEL_DTYPE), block_shape)
 

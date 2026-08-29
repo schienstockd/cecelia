@@ -47,7 +47,7 @@ const CH0 = 28
 const LABEL_BPV = 4
 /** Probe side for `sampleFrame`. 128 because `128 * 4` is already a multiple of the 256-byte
  *  `bytesPerRow` alignment a texture-to-buffer copy requires — no padded rows to unpick. */
-const PROBE_PX = 128
+export const PROBE_PX = 128
 
 export interface VolumeRenderer {
   readonly adapter: AdapterReport
@@ -187,7 +187,15 @@ export interface VolumeRenderer {
    * brick scheduler decides what to fetch every frame; the URL base has to be known here rather
    * than at each call site. Absent on the flat renderer — callers use `?.` to remain agnostic.
    */
-  setBrickSource?(source: { projectUid: string; imageUid: string; valueName?: string } | null): void
+  setBrickSource?(source: {
+    projectUid: string; imageUid: string
+    valueName?: string
+    /** Segmentation value_name for the mask overlay. When set, the brick renderer's fetch loop
+     *  fires a parallel `labels=<name>` request per intensity brick and writes the u32 ids into
+     *  the label atlas at the same slot. Undefined = no label fetches; the placeholder texture
+     *  stays bound and the shader skips the label path via `p.lab.x == 0`. */
+    labelName?: string
+  } | null): void
   /**
    * Brick renderer only: how to ask the caller for a redraw when a fetched brick lands. Brick
    * uploads are asynchronous — a fetch that resolves between frames updates the atlas without
@@ -196,6 +204,75 @@ export interface VolumeRenderer {
    * renderer — the flat path is caller-driven end-to-end.
    */
   setNeedsRedraw?(cb: (() => void) | null): void
+  /**
+   * Brick renderer only: hook called with per-channel brightness after each landed brick, so the
+   * caller can grow `seenMax` from real data (the flat renderer does this in `uploadFrame`, but
+   * bricks stream per-viewport and never see a whole timepoint's bytes). Without it the contrast
+   * slider's ceiling stays at whatever the server first shipped, and dragging `hi` below the dtype
+   * headroom locks the range. Absent on the flat renderer.
+   */
+  setOnBrickLoaded?(cb: ((perChannelMax: number[]) => void) | null): void
+  /**
+   * Brick renderer only: signal that the displayed timepoint just advanced (either via
+   * `show(t)` on a ready t, or via the scheduler auto-catching-up once core bricks land after
+   * a scrub-past-cold). ViewerWindow syncs `shownT` here so overlays draw at the same t the
+   * volume is currently painting — otherwise a scrub past residency draws volume at the new t
+   * with overlays still at the old one. Absent on the flat renderer.
+   */
+  setOnDisplayAdvanced?(cb: ((t: number) => void) | null): void
+  /**
+   * Brick renderer only: per-writeBrick timing hook — CPU-side duration of one writeBrick call
+   * plus its byte count. Bench harness uses this to time the atlas-upload path. Absent on the
+   * flat renderer.
+   */
+  setOnBrickWritten?(cb: ((durationMs: number, bytes: number) => void) | null): void
+  /**
+   * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
+   * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
+   * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
+   * `show(t)` swaps them onto the page table. Empty = current-t only. Absent on the flat
+   * renderer — its own timepoint cache uses `uploadFrame` + `setCapacity`.
+   */
+  setPrefetchTimepoints?(list: number[]): void
+  /**
+   * Brick renderer only: pin the scheduler to the caller's chosen LOD level, bypassing SSE.
+   * `undefined` (or a negative number) re-enables the SSE picker. Threaded from ViewerWindow's
+   * `slabLevel` computed so brick honours the same user override the flat renderer does — the
+   * bytes-fetched gap between them on multi-level statics (measured 2026-08-29: 168× on
+   * f8gzA2) was almost entirely SSE picking finer than flat's coarsest-default. Absent on the
+   * flat renderer — its `pickVolumeLevel` already picks per fetch, no runtime setter needed.
+   */
+  setLevelOverride?(level: number | undefined): void
+  /**
+   * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
+   * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
+   * by `t + level` to draw the current-timepoint grid. Cheap (a `pageTable.entries()` walk
+   * plus one `inflight.keys()` snapshot); safe to call every frame. Absent on the flat
+   * renderer, whose per-timepoint slab-cache has a different residency shape.
+   */
+  brickResidency?(): {
+    resident: { t: number; level: number; bx: number; by: number; bz: number }[]
+    inflight: { t: number; level: number; bx: number; by: number; bz: number }[]
+    currentLevel: number | undefined
+    /** Brick edge in voxels — `[bx, by, bz]`. Fixed for the atlas's lifetime; the caller
+     *  derives per-level grid dims from this + `meta.nX/nY` + `2^level`. */
+    brickSizeVox: readonly [number, number, number]
+    /** The timepoint the shader's pageTableCpu currently addresses — what's being DRAWN.
+     *  May differ from `boundT` when the hold-on-cold rule kept the display at a resident
+     *  t while the scheduler chases the target. `-1` before any t has been shown. */
+    displayT: number
+    /** The timepoint the SCHEDULER is fetching for — what the user asked for last. */
+    boundT: number
+    /** True when the canvas reflects the TARGET the user asked for AND is complete — i.e.
+     *  `displayT === boundT` and every core viewport brick at `displayT` is resident. False
+     *  covers both flavours of "canvas isn't the whole truth":
+     *    - stale: hold-on-cold keeps `displayT` at the last-good t while the scheduler
+     *      chases the new one, so pixels are FROM AN OLDER FRAME than the user scrubbed to.
+     *    - partial: the "unblank" rule (ad0a20ec) promoted `displayT` before residency
+     *      caught up, so pixels are the target frame with EMPTY_SLOT holes.
+     *  The chip in `ViewerWindow.vue` surfaces both. */
+    displayValid: boolean
+  }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
