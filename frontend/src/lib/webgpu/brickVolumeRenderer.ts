@@ -568,11 +568,23 @@ export async function createBrickVolumeRenderer(
         // NOT be written into pageTableCpu — that's still showing displayT. tickScheduler's
         // auto-advance picks up the readiness threshold on the next tick and rebuilds.
         const forVisibleFrame = brick.t === displayT && brick.level === atlas.currentLevel
-        if (evictedIdx >= 0) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
+        // The eviction wipe MUST be gated on t/level too. `evictedIdx` is a `(bx,by,bz)` grid
+        // index and ignores t — but pageTableCpu[idx] is what the shader will sample for the
+        // displayT brick at that grid position, and a resident displayT brick very often shares
+        // (bx,by,bz) with the evicted brick (the tick loop prefetches the SAME viewport bricks
+        // across t, so a cross-t eviction here is the common case, not an edge case). Wiping
+        // unconditionally would clobber a live displayT reference and paint EMPTY_SLOT — read as
+        // "half the bricks aren't loaded" even though the atlas still holds every one of them.
+        // Only wipe when the eviction actually removes the displayT brick at that position.
+        const evictedBrick = evictedIdx >= 0 ? parseBrickKey(result.evictedKey!) : null
+        const evictedWasVisible = evictedBrick !== null
+          && evictedBrick.t === displayT
+          && evictedBrick.level === atlas.currentLevel
+        if (evictedWasVisible) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
         if (forVisibleFrame) {
           atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
           atlas.pageTableDirty = true
-        } else if (evictedIdx >= 0) {
+        } else if (evictedWasVisible) {
           atlas.pageTableDirty = true
         }
         // Grow `seenMax` from the actual bytes we just received — same discipline the flat

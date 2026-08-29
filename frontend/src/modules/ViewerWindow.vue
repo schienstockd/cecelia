@@ -1157,7 +1157,6 @@ const syncCacheState = () => {
     brickInflight.value = br.inflight
     brickCurrentLevel.value = br.currentLevel
     brickSizeVox.value = br.brickSizeVox
-    brickDisplayT.value = br.displayT
   }
 }
 
@@ -1613,18 +1612,20 @@ const brickMapGrid = computed(() => {
   return { nBx, nBy, nBz, level: lvl }
 })
 
-/** Per-Z-slice residency cells at the current level + `shownT`. One entry per slice; each entry
- *  is the row-major nBx × nBy grid for that slice. Filters the resident + inflight snapshots
- *  inline (cheaper than pre-computing a per-cell Set). */
+/** Per-Z-slice residency cells at the current level + target `t`. One entry per slice; each
+ *  entry is the row-major nBx × nBy grid for that slice. Filters the resident + inflight
+ *  snapshots inline (cheaper than pre-computing a per-cell Set). */
 const brickMapSlices = computed(() => {
   const g = brickMapGrid.value
   if (!g) return []
-  // Filter by the BRICK renderer's actual displayT — the timepoint the shader's pageTableCpu
-  // currently addresses. Was `shownT`, which lagged behind displayT badly during scrub past
-  // cold (Dominik, 2026-08-29: "the map only works on the initial load never again after").
-  // Fallback: shownT / t.value while atlas hasn't shown anything yet (displayT === -1).
-  const tp = brickDisplayT.value >= 0 ? brickDisplayT.value
-    : (shownT.value >= 0 ? shownT.value : t.value)
+  // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
+  // loading-progress indicator: what the user wants to see is bricks fetching toward the t
+  // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
+  // (the timepoint the shader currently paints) made progress invisible during scrub-past-cold
+  // — `displayT` stays on the OLD t until enough of the NEW t lands, so the map read "all
+  // resident" while fetches were firing for boundT (Dominik, 2026-08-29: "the map only shows
+  // loading progress on initial image load and never after").
+  const tp = t.value
   const residentAtHere = new Set<string>()
   for (const e of brickResidents.value) {
     if (e.t === tp && e.level === g.level) residentAtHere.add(`${e.bx},${e.by},${e.bz}`)
@@ -2196,10 +2197,6 @@ const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: nu
 const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
 const brickCurrentLevel = ref<number | undefined>(undefined)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
-/** The timepoint the BRICK shader is currently drawing (from `brickResidency().displayT`).
- *  Used by the residency map so it filters by what the shader is painting, not by ViewerWindow's
- *  `shownT` (which lagged badly on scrub past cold — 2026-08-29). Initial -1 = nothing drawn. */
-const brickDisplayT = ref<number>(-1)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
