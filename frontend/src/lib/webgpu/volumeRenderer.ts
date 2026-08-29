@@ -270,6 +270,12 @@ export interface VolumeRenderer {
     displayT: number
     /** The timepoint the SCHEDULER is fetching for — what the user asked for last. */
     boundT: number
+    /** True when every CORE viewport brick at `displayT` is resident — the frame on screen
+     *  reflects the whole viewport. False when the "unblank" rule (ad0a20ec) promoted
+     *  `displayT` before residency caught up: the shader is drawing whatever bricks landed
+     *  so far and EMPTY_SLOT for the rest, so the pixels are a partial frame the user
+     *  should not read as truth. The chip in `ViewerWindow.vue` surfaces this. */
+    displayValid: boolean
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>

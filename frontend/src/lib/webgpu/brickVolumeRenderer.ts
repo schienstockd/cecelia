@@ -1231,7 +1231,7 @@ export async function createBrickVolumeRenderer(
         return {
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
-          displayT: -1, boundT: 0,
+          displayT: -1, boundT: 0, displayValid: false,
         }
       }
       const resident = atlas.pageTable.entries().map(e => ({
@@ -1248,6 +1248,10 @@ export async function createBrickVolumeRenderer(
         currentLevel: atlas.currentLevel,
         displayT,
         boundT,
+        // Whether the frame the shader is painting is COMPLETE — reused directly from the
+        // gate `show(t)` uses to advance displayT. False = the unblank rule promoted an
+        // incomplete t and the canvas is showing a partial frame.
+        displayValid: displayT >= 0 && coreBricksResident(displayT),
         brickSizeVox: atlas.layout.brickSizeVox,
       }
     },
