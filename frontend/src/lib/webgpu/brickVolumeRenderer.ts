@@ -1382,6 +1382,35 @@ export async function createBrickVolumeRenderer(
     },
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
     setFrankensteinEnabled(on) { frankensteinEnabled = !!on },
+    setZPlane(zLo) {
+      // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
+      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
+      // (Dominik 2026-08-29). The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
+      // × nch), so we can keep the texture and just invalidate every brick's contents:
+      // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
+      // same slots. Same discipline as level swap, but without the level/grid churn.
+      if (atlas === null || currentMeta === null) return
+      const newZLo = Math.max(0, Math.floor(zLo))
+      if (newZLo === currentZLo) return
+      currentZLo = newZLo
+      // Abort every request on the wire — they carry the OLD zLo in their URL and would
+      // land as stale bytes.
+      inflight.forEach(ac => ac.abort())
+      inflight.clear()
+      // Wipe both page tables so the shader sees EMPTY_SLOT everywhere until fetches land.
+      // Reset displayT/prevDisplayT since neither points at valid content anymore, and clear
+      // currentLevel so the next tickScheduler re-picks with a fresh viewport intersect.
+      atlas.pageTable.clear()
+      atlas.pageTableCpu.fill(EMPTY_SLOT)
+      atlas.prevPageTableCpu.fill(EMPTY_SLOT)
+      atlas.pageTableDirty = true
+      atlas.prevPageTableDirty = true
+      atlas.currentLevel = undefined
+      atlas.prevLevel = undefined
+      displayT = -1
+      prevDisplayT = -1
+      needsRedraw?.()
+    },
 
     brickResidency() {
       if (atlas === null) {

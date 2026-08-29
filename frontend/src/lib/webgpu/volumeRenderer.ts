@@ -258,6 +258,16 @@ export interface VolumeRenderer {
    */
   setHoldFinerEnabled?(on: boolean): void
   /**
+   * Brick renderer only: swap the z-plane baseline (2D plane view) WITHOUT tearing down the atlas
+   * texture. The atlas can be ~64 MB and its `device.createTexture` costs the main thread on the
+   * order of a second — enough to freeze the viewer visibly on every scroll wheel tick. The atlas
+   * SHAPE doesn't change on a plane switch (still [128,128,1] × nch), so we only need to invalidate
+   * every brick's CONTENTS (they hold bytes from the old plane) and let the scheduler refill from
+   * fetches — same discipline as level swap. Callers that don't have this method fall through to
+   * `setImage` and pay the full teardown.
+   */
+  setZPlane?(zLo: number): void
+  /**
    * Brick renderer only: enable Frankenstein hole-fill. `true` snaps `displayT` to `boundT`
    * on every scrub and fills brick holes with the same position at the previous displayT.
    * `false` (default) uses the hold-on-cold rule — old frame stays until the target's core

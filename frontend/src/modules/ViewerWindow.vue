@@ -591,11 +591,14 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
-// Renderer swap when the user flips the bricks mode. `bricksEnabled` is snapshotted inside
-// `ensureRenderer`, so a mid-session change without reallocate would keep drawing on the
-// previous choice. Also refetches everything on the wire — necessary because the two renderers
-// have different upload contracts (per-timepoint slab vs per-viewport bricks).
-watch(() => settings.viewerBricksMode, () => reallocate())
+// Renderer swap when the user flips the bricks mode. `ensureRenderer` has an `if
+// (renderer.value) return` short-circuit, so we have to destroy first — without this the
+// toggle changed `bricksEnabled.value` but the OLD renderer kept drawing (Dominik
+// 2026-08-29: "toggle doesn't do a full reload, need to reload the page").
+watch(() => settings.viewerBricksMode, () => {
+  if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+  reallocate()
+})
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
 // param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
 //   * `updateId` (>0) when the current preview matches this image
@@ -2149,7 +2152,20 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  * at, so a drag costs one refetch too. The time slider is deliberately NOT on this path: `gotoT`
  * paints from a cache and is cheap enough to run per pointer move.
  */
-const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
+const zPump = debouncedLatest<number>(async (zp) => {
+  // Brick renderer: setZPlane keeps the ~64 MB atlas texture allocated and just invalidates
+  // brick contents — measured 1-2 s freeze on Dml3RG 2D plane wheel (Dominik 2026-08-29) came
+  // from `dropAtlas` + `createTexture` in the reallocate path. Flat renderer has no equivalent
+  // fast path today; it still reallocates. On mode change or first mount `renderer.value` may
+  // be null → also fall through.
+  const r = renderer.value
+  if (r?.setZPlane && !useTiles.value && mode.value === 'plane') {
+    r.setZPlane(zp)
+    gotoT(t.value)
+    return
+  }
+  await reallocate()
+}, { wait: 120 })
 /** Move to a plane: the readout follows the pointer, the refetch follows the pump. */
 function stepZ(next: number) {
   if (next === zPlane.value) return
