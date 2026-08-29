@@ -1299,7 +1299,7 @@ export async function createBrickVolumeRenderer(
         return {
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
-          displayT: -1, boundT: 0, displayValid: false,
+          displayT: -1, boundT: 0, displayValid: false, missing: 0,
         }
       }
       const resident = atlas.pageTable.entries().map(e => ({
@@ -1310,6 +1310,23 @@ export async function createBrickVolumeRenderer(
       for (const key of inflight.keys()) {
         const b = parseBrickKey(key)
         if (b !== null) inflightBricks.push({ t: b.t, level: b.level, bx: b.bx, by: b.by, bz: b.bz })
+      }
+      // How many core viewport bricks at (displayT, currentLevel) are NOT in `pageTable`. If this
+      // is > 0 with inflight == 0, we've stalled — kickFetch didn't fire for bricks that need it.
+      // A specific case Dominik keeps hitting: the chip stays on "Loading bricks…" and no new
+      // requests go out. This value is the smoking gun.
+      let missing = 0
+      if (currentMeta !== null && displayT >= 0) {
+        const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+        const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+        const view = brickViewportFromCamera(
+          camState, currentMeta, displayT, canvas.height, aspect, currentZDepth,
+        )
+        const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
+        for (const s of scheduled) {
+          if (s.ring !== 0) continue
+          if (!atlas.pageTable.has(brickKey(s.brick))) missing++
+        }
       }
       return {
         resident, inflight: inflightBricks,
@@ -1326,6 +1343,7 @@ export async function createBrickVolumeRenderer(
         // Reuses the same `coreBricksResident` predicate `show(t)`'s ready-check runs.
         displayValid: displayT >= 0 && displayT === boundT && coreBricksResident(displayT),
         brickSizeVox: atlas.layout.brickSizeVox,
+        missing,
       }
     },
 

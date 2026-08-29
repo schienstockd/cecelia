@@ -1177,6 +1177,7 @@ const syncCacheState = () => {
     brickCurrentLevel.value = br.currentLevel
     brickSizeVox.value = br.brickSizeVox
     brickDisplayValid.value = br.displayValid
+    brickMissing.value = br.missing ?? 0
   }
 }
 
@@ -2274,6 +2275,10 @@ const brickInflightAtLevel = computed(() => {
   return n
 })
 const brickCurrentLevel = ref<number | undefined>(undefined)
+/** Diagnostic mirror of `brickResidency().missing` — how many CORE viewport bricks the shader
+ *  wants that aren't in the atlas. Feeds the bench chip so we can spot the "stalled" case
+ *  (missing > 0 AND inflight == 0). */
+const brickMissing = ref<number>(0)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
  *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
@@ -3423,7 +3428,7 @@ onUnmounted(() => {
               <span class="cc-muted">Cam</span>
               <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
               <span class="cc-muted">Bricks</span>
-              <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight</span>
+              <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }} missing</span>
               <span class="cc-muted">Knobs</span>
               <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
                 thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}

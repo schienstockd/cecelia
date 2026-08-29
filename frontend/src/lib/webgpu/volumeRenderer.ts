@@ -286,6 +286,11 @@ export interface VolumeRenderer {
      *      caught up, so pixels are the target frame with EMPTY_SLOT holes.
      *  The chip in `ViewerWindow.vue` surfaces both. */
     displayValid: boolean
+    /** Diagnostic: how many CORE viewport bricks at `(displayT, currentLevel)` are absent from
+     *  the atlas. If this is > 0 while `inflight.length === 0` and the "Loading bricks…" chip
+     *  is on, the scheduler has stalled — the fetch loop should have called `kickFetch` for
+     *  them but didn't. Used by the bench chip readout. */
+    missing: number
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
