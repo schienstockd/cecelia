@@ -260,13 +260,23 @@ export function brickViewportFromCamera(
   }
 }
 
+/**
+ * Level source: the user's dropdown (pinned) or the SSE picker (adaptive). Kept as one enum
+ * argument so the caller doesn't have to encode `undefined-means-adaptive` at every call site.
+ * Pinned wins so the "coarsest by default, user can override to finer" flow (mirroring flat's
+ * `pickVolumeLevel`) drops the fetch cost on multi-level statics — measured 2026-08-29: f8gzA2
+ * flat pulled 17 MB; brick with SSE pulled 2.85 GB at the same view.
+ */
 export function scheduleBricks(
   view: BrickViewport,
   world: BrickWorld,
   resident: ReadonlySet<string>,
   previousLevel: number | undefined,
+  pinLevel?: number,
 ): { level: number; toLoad: ScheduledBrick[]; toEvict: string[] } {
-  const level = pickBrickLevel(view, world, previousLevel)
+  const level = pinLevel !== undefined && Number.isFinite(pinLevel) && pinLevel >= 0
+    ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(pinLevel)))
+    : pickBrickLevel(view, world, previousLevel)
   const scheduled = bricksIntersectingViewport(view, world, level)
   const wantedKeys = new Set(scheduled.map(s => brickKey(s.brick)))
   const toLoad = scheduled.filter(s => !resident.has(brickKey(s.brick)))

@@ -2063,6 +2063,14 @@ watch(slabLevel, (newLvl) => {
   if (!meta.value || mode.value !== 'plane') return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
+/** Brick renderer: pin the scheduler to the user's chosen level so it matches flat's fetches
+ *  1:1. Without this the brick renderer's SSE picker chose L0-L1 while flat picked L5 by
+ *  default (`pickVolumeLevel = n-1`), and bricks pulled 168× more bytes than flat on f8gzA2.
+ *  Fires whether or not the volume path is active — the setter is a no-op when the flat
+ *  renderer is on and cheap when the value hasn't changed. */
+watch(slabLevel, (newLvl) => {
+  renderer.value?.setLevelOverride?.(newLvl)
+}, { immediate: true })
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const m = meta.value
@@ -2493,6 +2501,9 @@ async function reallocate(refit = false) {
       // requests entirely on projects with no segmentation.
       labelName: wantLabels ? (labelName.value || undefined) : undefined,
     })
+    // Pin the brick scheduler to slabLevel — the SSE default fetches an order of magnitude too
+    // much on multi-level statics. See the slabLevel watcher above.
+    r.setLevelOverride?.(slabLevel.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')

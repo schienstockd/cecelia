@@ -221,6 +221,15 @@ export interface VolumeRenderer {
    */
   setPrefetchTimepoints?(list: number[]): void
   /**
+   * Brick renderer only: pin the scheduler to the caller's chosen LOD level, bypassing SSE.
+   * `undefined` (or a negative number) re-enables the SSE picker. Threaded from ViewerWindow's
+   * `slabLevel` computed so brick honours the same user override the flat renderer does — the
+   * bytes-fetched gap between them on multi-level statics (measured 2026-08-29: 168× on
+   * f8gzA2) was almost entirely SSE picking finer than flat's coarsest-default. Absent on the
+   * flat renderer — its `pickVolumeLevel` already picks per fetch, no runtime setter needed.
+   */
+  setLevelOverride?(level: number | undefined): void
+  /**
    * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
    * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
    * by `t + level` to draw the current-timepoint grid. Cheap (a `pageTable.entries()` walk

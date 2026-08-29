@@ -184,6 +184,29 @@ describe('scheduleBricks', () => {
     // …and the correct-level brick is on the load list.
     expect(dec1.toLoad.some(s => s.brick.bx === dec0.toLoad[0].brick.bx)).toBe(true)
   })
+
+  it('pinLevel overrides SSE — a store with pyramid renders at the pinned level, not the picker\'s choice', () => {
+    const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 6 }
+    const view = centreView(200)
+    // SSE picker's choice at this camera might be L0 or L1; regardless, pinLevel=3 must win.
+    const dec = scheduleBricks(view, world, new Set(), undefined, 3)
+    expect(dec.level).toBe(3)
+    for (const s of dec.toLoad) expect(s.brick.level).toBe(3)
+  })
+
+  it('pinLevel clamps to [0, nLevels-1]', () => {
+    const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 3 }
+    const view = centreView(200)
+    expect(scheduleBricks(view, world, new Set(), undefined, 9).level).toBe(2)
+    expect(scheduleBricks(view, world, new Set(), undefined, -5).level).toBe(0)
+  })
+
+  it('undefined pinLevel falls back to the SSE picker (backwards compat)', () => {
+    const view = centreView(200)
+    const withPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined)
+    const noPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, undefined)
+    expect(withPin.level).toBe(noPin.level)
+  })
 })
 
 const META: ViewerMeta = {
