@@ -56,6 +56,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  shouldUseBricks,
   VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -107,7 +108,44 @@ const imageUid = String(route.query.image ?? '')
  * renderer swap on mid-session flip needs a full destroy/recreate and isn't worth the
  * scaffolding for a dev-only flag.
  */
-const bricksEnabled = String(route.query.bricks ?? '') === '1'
+/** URL override for the auto-select — ephemeral, wins over the persisted setting. `?bricks=1`
+ *  forces brick, `?bricks=0` forces flat, absent defers to `settings.viewerBricksMode` and then
+ *  the predicate. Dev-only tool for A/B side-by-side comparisons. */
+const bricksOverride = String(route.query.bricks ?? '')
+/** Reactive on `meta` (server round-trip) AND `settings.viewerBricksMode` (user toggle). Read
+ *  `.value` in script, auto-unwraps in template. Consumers that snapshot the value once (e.g.
+ *  `ensureRenderer`) see the current classification because `reallocate` guards on `meta.value`
+ *  being non-null first — and a setting flip fires the reallocate watcher below. */
+const bricksEnabled = computed<boolean>(() => {
+  if (bricksOverride === '1') return true
+  if (bricksOverride === '0') return false
+  const mode = settings.viewerBricksMode
+  if (mode === 'brick') return true
+  if (mode === 'flat') return false
+  const m = meta.value
+  return m !== null && shouldUseBricks(m)
+})
+/**
+ * Brick LOD tuning knobs — URL params for interactive feel-testing. Applied ONCE at mount to
+ * the renderer. Defaults reproduce the shipped behaviour; refresh with a new value to try
+ * something else.
+ * - `?brickThr=N`     — core intersect ceiling for the over-fetch guard (default 256).
+ * - `?brickBias=N`    — added to the SSE-picked level (positive = coarser, negative = finer).
+ * - `?brickHold=0|1`  — hold going-finer swaps until current level is stable (default 1).
+ */
+const parseNumQuery = (v: unknown, fallback: number): number => {
+  // `Number('')` returns 0 (finite), so an unset URL param would silently override the fallback
+  // with 0. Guard on the raw string being empty before converting.
+  const s = String(v ?? '')
+  if (s === '') return fallback
+  const n = Number(s)
+  return Number.isFinite(n) ? n : fallback
+}
+const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
+const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
+const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
+/** Frankenstein hole-fill: default on. `?brickFrank=0` opts back to hold-on-cold for A/B. */
+const brickKnobFrank = String(route.query.brickFrank ?? '1') !== '0'
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -161,7 +199,7 @@ function benchSave() {
     brickSizeVox: br?.brickSizeVox ?? [0, 0, 0],
   } : null
   const blob = buildBenchBlob({
-    mode: bricksEnabled ? 'brick' : 'flat',
+    mode: bricksEnabled.value ? 'brick' : 'flat',
     meta: benchMeta,
     t0: benchT0.value,
     savedAt: performance.now(),
@@ -553,6 +591,14 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
+// Renderer swap when the user flips the bricks mode. `ensureRenderer` has an `if
+// (renderer.value) return` short-circuit, so we have to destroy first — without this the
+// toggle changed `bricksEnabled.value` but the OLD renderer kept drawing (Dominik
+// 2026-08-29: "toggle doesn't do a full reload, need to reload the page").
+watch(() => settings.viewerBricksMode, () => {
+  if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+  reallocate()
+})
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
 // param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
 //   * `updateId` (>0) when the current preview matches this image
@@ -785,6 +831,14 @@ function setChannelColour(c: number, hex: string) {
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
+]
+/** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
+ *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
+ *  than "Auto-select/Force brick/Force flat" in a segmented control. */
+const BRICKS_MODES = [
+  { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
+  { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
+  { value: 'flat', label: 'Flat', tip: 'Force per-timepoint cache' },
 ]
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
@@ -1158,6 +1212,10 @@ const syncCacheState = () => {
     brickCurrentLevel.value = br.currentLevel
     brickSizeVox.value = br.brickSizeVox
     brickDisplayValid.value = br.displayValid
+    brickMissing.value = br.missing ?? 0
+    brickMissingAtBoundT.value = br.missingAtBoundT ?? 0
+    brickDisplayT.value = br.displayT
+    brickBoundT.value = br.boundT
   }
 }
 
@@ -1603,7 +1661,7 @@ function syncTileCacheState() {
 const brickMapGrid = computed(() => {
   const m = meta.value
   const lvl = brickCurrentLevel.value
-  if (!bricksEnabled || !m || lvl === undefined) return null
+  if (!bricksEnabled.value || !m || lvl === undefined) return null
   const [bx, by, bz] = brickSizeVox.value
   const scale = Math.pow(2, lvl)
   const zd = mode.value === 'plane' ? 1 : zDepth.value
@@ -1613,12 +1671,22 @@ const brickMapGrid = computed(() => {
   return { nBx, nBy, nBz, level: lvl }
 })
 
+/** Cap on the mini-map's DISPLAY grid dimension per axis. At L0 on SispLk-shape (62×57) or
+ *  f8gzA2-shape (159×132), an unaggregated map is thousands of ~1px cells — unreadable
+ *  (Dominik, 2026-08-29: "way too fine grained ... a bit more coarser when there are a ton of
+ *  brick to load"). Above this, cells aggregate `bucket × bucket` real bricks into one visual
+ *  cell. `resident` if any inside are resident, `loading` if any loading and none resident,
+ *  `absent` if all absent — biases toward "loading progress visible", same convention as the
+ *  tile map. */
+const BRICKMAP_MAX_CELLS_PER_AXIS = 8
+
 /** Per-Z-slice residency cells at the current level + target `t`. One entry per slice; each
- *  entry is the row-major nBx × nBy grid for that slice. Filters the resident + inflight
- *  snapshots inline (cheaper than pre-computing a per-cell Set). */
+ *  entry is a row-major grid, aggregated to `BRICKMAP_MAX_CELLS_PER_AXIS` per axis when the
+ *  underlying brick grid exceeds it. Also carries the display dims so the template's CSS grid
+ *  matches. */
 const brickMapSlices = computed(() => {
   const g = brickMapGrid.value
-  if (!g) return []
+  if (!g) return { displayNBx: 0, displayNBy: 0, slices: [] as { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] }
   // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
   // loading-progress indicator: what the user wants to see is bricks fetching toward the t
   // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
@@ -1635,20 +1703,35 @@ const brickMapSlices = computed(() => {
   for (const e of brickInflight.value) {
     if (e.t === tp && e.level === g.level) loadingAtHere.add(`${e.bx},${e.by},${e.bz}`)
   }
+  // Aggregation: each display cell covers `bucketX × bucketY` real bricks. `ceil` so no brick
+  // is uncounted. When the grid already fits, bucket is 1 and this is a straight passthrough.
+  const bucketX = Math.max(1, Math.ceil(g.nBx / BRICKMAP_MAX_CELLS_PER_AXIS))
+  const bucketY = Math.max(1, Math.ceil(g.nBy / BRICKMAP_MAX_CELLS_PER_AXIS))
+  const displayNBx = Math.max(1, Math.ceil(g.nBx / bucketX))
+  const displayNBy = Math.max(1, Math.ceil(g.nBy / bucketY))
   const slices: { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] = []
   for (let bz = 0; bz < g.nBz; bz++) {
     const cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] = []
-    for (let by = 0; by < g.nBy; by++) {
-      for (let bx = 0; bx < g.nBx; bx++) {
-        const k = `${bx},${by},${bz}`
-        const state = loadingAtHere.has(k) ? 'loading'
-          : residentAtHere.has(k) ? 'resident' : 'absent'
-        cells.push({ key: k, state })
+    for (let dy = 0; dy < displayNBy; dy++) {
+      for (let dx = 0; dx < displayNBx; dx++) {
+        let anyResident = false, anyLoading = false
+        const byLo = dy * bucketY, byHi = Math.min(g.nBy, byLo + bucketY)
+        const bxLo = dx * bucketX, bxHi = Math.min(g.nBx, bxLo + bucketX)
+        for (let by = byLo; by < byHi && !anyResident; by++) {
+          for (let bx = bxLo; bx < bxHi; bx++) {
+            const k = `${bx},${by},${bz}`
+            if (residentAtHere.has(k)) { anyResident = true; break }
+            if (loadingAtHere.has(k)) anyLoading = true
+          }
+        }
+        const state: 'absent' | 'loading' | 'resident' = anyResident ? 'resident'
+          : anyLoading ? 'loading' : 'absent'
+        cells.push({ key: `${dx},${dy},${bz}`, state })
       }
     }
     slices.push({ z: bz, cells })
   }
-  return slices
+  return { displayNBx, displayNBy, slices }
 })
 
 /** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
@@ -1841,8 +1924,13 @@ function tick() {
       return
     }
     const r = renderer.value
-    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop,
-                                 u => r?.hasTimepoint(u) ?? false)
+    // Frankenstein mode: advance every tick regardless of residency, so the snap-to-boundT
+    // in show(t) fires and the shader draws each frame with prev-t hole-fill for whatever
+    // hasn't landed. Otherwise a not-yet-resident t stalls and Frankenstein never runs.
+    const readyProbe = brickKnobFrank && bricksEnabled.value
+      ? () => true
+      : (u: number) => r?.hasTimepoint(u) ?? false
+    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
     if (step.ended) { stopPlay(); return }
     if (step.stalled) {
       // Pump around the frame we WANT, not the one we are on. At the end of a loop those are the one
@@ -2064,7 +2152,24 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  * at, so a drag costs one refetch too. The time slider is deliberately NOT on this path: `gotoT`
  * paints from a cache and is cheap enough to run per pointer move.
  */
-const zPump = debouncedLatest<number>(async () => reallocate(), { wait: 120 })
+const zPump = debouncedLatest<number>(async (zp) => {
+  // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
+  // (which destroys textures / atlas — the 200 ms-2 s freeze Dominik hit 2026-08-29). Abort
+  // any in-flight slab fetches first: their URLs carry the OLD zPlane and would land in a
+  // slot stamped with the NEW planeVersion, leaving wrong bytes on a "fresh" slot. Volume
+  // mode and useTiles have different geometry / cache shapes → fall through to reallocate.
+  const r = renderer.value
+  if (r?.setZPlane && !useTiles.value && mode.value === 'plane') {
+    for (const ac of aborts.values()) ac.abort()
+    aborts.clear()
+    inflight.clear()
+    pump.cancel()
+    r.setZPlane(zp)
+    gotoT(t.value)
+    return
+  }
+  await reallocate()
+}, { wait: 120 })
 /** Move to a plane: the readout follows the pointer, the refetch follows the pump. */
 function stepZ(next: number) {
   if (next === zPlane.value) return
@@ -2086,13 +2191,14 @@ watch(slabLevel, (newLvl) => {
   if (!meta.value || mode.value !== 'plane') return
   if (newLvl !== loadedLevel.value) levelPump.schedule(newLvl)
 })
-/** Brick renderer: pin the scheduler to the user's chosen level so it matches flat's fetches
- *  1:1. Without this the brick renderer's SSE picker chose L0-L1 while flat picked L5 by
- *  default (`pickVolumeLevel = n-1`), and bricks pulled 168× more bytes than flat on f8gzA2.
- *  Fires whether or not the volume path is active — the setter is a no-op when the flat
- *  renderer is on and cheap when the value hasn't changed. */
+/** Brick renderer: use the dropdown as a FLOOR (coarsest allowed), letting SSE pick finer as
+ *  the user zooms in. Auto = coarsest possible = no effective restriction. Replaces 8b780fd's
+ *  pin, which blocked adaptive LOD entirely and left SispLk stuck at L5 on deep zoom
+ *  (screenshot 2026-08-29). Over-fetch on wide viewports (f8gzA2 fit distance) is now bounded
+ *  by `MAX_INTERSECT_BRICKS` inside the scheduler. Fires whether or not the volume path is
+ *  active — the setter is a no-op when the flat renderer is on and cheap when unchanged. */
 watch(slabLevel, (newLvl) => {
-  renderer.value?.setLevelOverride?.(newLvl)
+  renderer.value?.setLevelFloor?.(newLvl)
 }, { immediate: true })
 function onWheel(e: WheelEvent) {
   e.preventDefault()
@@ -2103,11 +2209,14 @@ function onWheel(e: WheelEvent) {
     return
   }
   // 2D plane view is a bounded rectangle → wider zoom-in band so the user can reach 1:1 (and past)
-  // and `pickTileLevel` gets down to L0. 3D volume keeps the tighter default (rotation can lose it
-  // off-screen). Reset view is always one click away either way.
+  // and `pickTileLevel` gets down to L0. 3D volume band widened 0.15 → 0.05 (Dominik 2026-08-29:
+  // "can't zoom in enough for L0 to be used") — with the brick renderer honouring SSE per zoom
+  // there's a genuine payoff for going deeper, whereas the pre-brick pin made a deep zoom just
+  // slower for the same L5 pixels. Rotation can still lose the box off-screen; Reset view is one
+  // click away.
   const band = mode.value === 'plane'
     ? { min: 0.005, max: 6 }
-    : { min: 0.15, max: 6 }
+    : { min: 0.05, max: 6 }
   // Cursor-anchored zoom (ImageJ): 2D plane only. The 3D wheel is a dolly on the orbit and adding
   // a pan-shift under a rotated basis moves the volume sideways in a way the user did not ask for.
   let anchor: { ndcX: number; ndcY: number; aspect: number } | undefined
@@ -2209,7 +2318,36 @@ watch(bricksMapShown, v => localStorage.setItem('cc.vw.brickmap', String(v)))
  *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
 const brickResidents = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
 const brickInflight = shallowRef<{ t: number; level: number; bx: number; by: number; bz: number }[]>([])
+/** Bench diagnostic: how many bricks at the CURRENT atlas level are resident vs still fetching.
+ *  Filters by target `t` (matches the mini-map convention). Populated only when `bricksEnabled`. */
+const brickResidentsAtLevel = computed(() => {
+  const lv = brickCurrentLevel.value; const tp = t.value
+  if (lv === undefined) return 0
+  let n = 0
+  for (const e of brickResidents.value) if (e.level === lv && e.t === tp) n++
+  return n
+})
+const brickInflightAtLevel = computed(() => {
+  const lv = brickCurrentLevel.value; const tp = t.value
+  if (lv === undefined) return 0
+  let n = 0
+  for (const e of brickInflight.value) if (e.level === lv && e.t === tp) n++
+  return n
+})
 const brickCurrentLevel = ref<number | undefined>(undefined)
+/** Diagnostic mirror of `brickResidency().missing` — how many CORE viewport bricks the shader
+ *  wants that aren't in the atlas. Feeds the bench chip so we can spot the "stalled" case
+ *  (missing > 0 AND inflight == 0). */
+const brickMissing = ref<number>(0)
+/** Same as `brickMissing` but at `boundT` — the timepoint the scheduler is chasing rather than
+ *  the one drawn. Splits "chip stuck because we're waiting on the target frame's bricks"
+ *  (`missingAtBoundT > 0`) from "chip stuck despite the shader having what it needs"
+ *  (both 0 → suggests the auto-advance path). */
+const brickMissingAtBoundT = ref<number>(0)
+/** Timepoint currently on the canvas (mirror of `brickResidency().displayT`). */
+const brickDisplayT = ref<number>(-1)
+/** Timepoint the scheduler is chasing (mirror of `brickResidency().boundT`). */
+const brickBoundT = ref<number>(0)
 const brickSizeVox = shallowRef<readonly [number, number, number]>([128, 128, 1])
 /** Whether the canvas reflects the target the user asked for AND is complete — see the JSDoc
  *  on `brickResidency().displayValid`. False covers both hold-on-cold stale frames (shader
@@ -2221,7 +2359,7 @@ const brickDisplayValid = ref<boolean>(true)
  *  `shownT >= 0` gate = don't fire during initial load (the "Loading timepoint…" chip
  *  already owns that state). */
 const canvasPartial = computed(() =>
-  bricksEnabled && shownT.value >= 0 && !brickDisplayValid.value)
+  bricksEnabled.value && shownT.value >= 0 && !brickDisplayValid.value)
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
@@ -2438,19 +2576,23 @@ async function ensureRenderer() {
       // Same interface, different backing — the caller doesn't branch, only the constructor
       // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
       // in P5b.
-      const construct = bricksEnabled ? createBrickVolumeRenderer : createVolumeRenderer
+      const construct = bricksEnabled.value ? createBrickVolumeRenderer : createVolumeRenderer
       const r = await construct(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
+      // Apply URL-provided LOD tuning knobs. No-ops on the flat renderer. See `parseNumQuery`
+      // block at the top of the module for the param names.
+      r.setSchedulerKnobs?.({ maxIntersect: brickKnobThr, bias: brickKnobBias })
+      r.setHoldFinerEnabled?.(brickKnobHold)
+      r.setFrankensteinEnabled?.(brickKnobFrank)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
-      // its bytes render one interaction late. `frame.redraw` is a rAF coalescer so this stays
-      // cheap even with a burst of arrivals in the same tick. Also refresh the residency
-      // snapshot — otherwise the mini-map only updates on brick LAND (setOnBrickLoaded), which
-      // means the "amber = fetching" phase is invisible because syncCacheState only ever sees
-      // fetches that already resolved (Dominik, 2026-08-29). syncCacheState is a couple of
-      // linear walks; fine at rAF rate. No-op on the flat renderer.
+      // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
+      // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
+      // phase is invisible because `syncCacheState` only ever sees fetches that already
+      // resolved. `syncCacheState` is a couple of linear walks; fine at rAF rate. No-op on the
+      // flat renderer.
       r.setNeedsRedraw?.(() => { syncCacheState(); frame.redraw() })
       // Brick renderer only: grow `seenMax` from real data as bricks arrive — same discipline
       // the flat path runs in `pump`. Without it the contrast slider's ceiling stays at the
@@ -2571,9 +2713,9 @@ async function reallocate(refit = false) {
       // requests entirely on projects with no segmentation.
       labelName: wantLabels ? (labelName.value || undefined) : undefined,
     })
-    // Pin the brick scheduler to slabLevel — the SSE default fetches an order of magnitude too
-    // much on multi-level statics. See the slabLevel watcher above.
-    r.setLevelOverride?.(slabLevel.value)
+    // Brick scheduler floor = slabLevel (dropdown). SSE picks finer as user zooms in; over-fetch
+    // on wide viewports is bounded by MAX_INTERSECT_BRICKS. See the slabLevel watcher above.
+    r.setLevelFloor?.(slabLevel.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane')
@@ -3181,11 +3323,30 @@ onUnmounted(() => {
           <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
-            <option :value="-1">Auto ({{ (meta.levels?.length ?? 1) - 1 }} — coarsest)</option>
+            <!-- 3D-mode Auto: the dropdown is a FLOOR the SSE picker clamps against. On the brick
+                 renderer the atlas's active level moves with zoom; show it in the label so the
+                 3D control matches the 2D one's live readout (Dominik 2026-08-29). Flat renderer:
+                 `brickCurrentLevel` is undefined and the label collapses to plain "Auto". -->
+            <option :value="-1">Auto{{ bricksEnabled && brickCurrentLevel !== undefined
+              ? ` (L${brickCurrentLevel} — zoom-driven)` : '' }}</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
           </select>
+        </div>
+        <!-- Renderer override. Auto uses `shouldUseBricks(meta)`; Brick/Flat are safety valves for
+             images the predicate gets wrong (Dominik 2026-08-29: Dml3RG 2D is awful on bricks but
+             needed on 3D). Applies to 2D plane view too — when `useTiles === false`, the plane view
+             draws through the volume renderer, so the same override matters. `?bricks=0|1` in the
+             URL still wins over this. Flip triggers a full renderer reallocate via the watcher. -->
+        <div class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                v-tooltip.right="'Renderer — Auto picks based on movie size'">Bricks</span>
+          <ChipSelect
+            :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
+            variant="segmented" aria-label="Renderer"
+            @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
+          />
         </div>
         <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
              pixel is closest to (without going finer than) one device pixel, so we never ship pixels
@@ -3311,11 +3472,11 @@ onUnmounted(() => {
             <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
           </div>
           <div v-if="bricksMapShown" class="vw-brickmaprow">
-            <div v-for="s in brickMapSlices" :key="s.z" class="vw-brickmap-col">
+            <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
               <div class="vw-tilemap vw-brickmap-slice"
-                   :style="{ gridTemplateColumns: `repeat(${brickMapGrid.nBx}, 1fr)`,
-                             gridTemplateRows: `repeat(${brickMapGrid.nBy}, 1fr)`,
-                             aspectRatio: `${brickMapGrid.nBx} / ${brickMapGrid.nBy}` }">
+                   :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                             gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                             aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
                 <span v-for="c in s.cells" :key="c.key"
                       class="vw-tilemap-cell" :class="'is-' + c.state" />
               </div>
@@ -3345,6 +3506,30 @@ onUnmounted(() => {
             <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+            <template v-if="bricksEnabled">
+              <span class="cc-muted">Level</span>
+              <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
+              <span class="cc-muted">Cam</span>
+              <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
+              <span class="cc-muted">Bricks</span>
+              <span v-tooltip.left="'missing@dis: bricks the shader wants at displayT · missing@bnd: bricks needed at boundT'">
+                {{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }}@dis / {{ brickMissingAtBoundT }}@bnd
+              </span>
+              <span class="cc-muted">t</span>
+              <span v-tooltip.left="'displayT (drawn) → boundT (scheduler target); divergence = hold-on-cold'">
+                {{ brickDisplayT }} → {{ brickBoundT }}
+              </span>
+              <span class="cc-muted">Knobs</span>
+              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1 · ?brickFrank=1 (hole-fill)'">
+                thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
+              </span>
+            </template>
+            <template v-else>
+              <span class="cc-muted">Cache</span>
+              <span>{{ resident.length }} / {{ gpu.capacity }}{{ gpu.capped ? ' (GPU limit)' : '' }}</span>
+              <span class="cc-muted">Per-t</span>
+              <span>{{ (gpu.bytesPerTimepoint / 1e6).toFixed(1) }} MB</span>
+            </template>
           </div>
           <div class="cc-row cc-row-tight vw-bench-btns">
             <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"

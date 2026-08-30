@@ -235,14 +235,45 @@ export interface VolumeRenderer {
    */
   setPrefetchTimepoints?(list: number[]): void
   /**
-   * Brick renderer only: pin the scheduler to the caller's chosen LOD level, bypassing SSE.
-   * `undefined` (or a negative number) re-enables the SSE picker. Threaded from ViewerWindow's
-   * `slabLevel` computed so brick honours the same user override the flat renderer does — the
-   * bytes-fetched gap between them on multi-level statics (measured 2026-08-29: 168× on
-   * f8gzA2) was almost entirely SSE picking finer than flat's coarsest-default. Absent on the
-   * flat renderer — its `pickVolumeLevel` already picks per fetch, no runtime setter needed.
+   * Brick renderer only: floor for the SSE-picked LOD — coarsest level the scheduler is allowed
+   * to use. `undefined` (or a negative number) means no floor (freely SSE). Threaded from
+   * ViewerWindow's `slabLevel` computed. Replaces the 8b780fd pin: the pin blocked adaptive LOD
+   * outright (SispLk zoom-in stuck at L5, 2026-08-29 screenshot). Over-fetch protection now
+   * comes from `MAX_INTERSECT_BRICKS` inside `scheduleBricks` — coarser than picking a hard pin,
+   * but wide-viewport-on-huge-L0 (f8gzA2 fit) is exactly what the intersect count catches.
+   * Absent on the flat renderer — its `pickVolumeLevel` already picks per fetch.
    */
-  setLevelOverride?(level: number | undefined): void
+  setLevelFloor?(level: number | undefined): void
+  /**
+   * Brick renderer only: tune the LOD picker knobs at runtime. `maxIntersect` is the CORE brick
+   * ceiling for the over-fetch guard (higher = more ambitious); `bias` shifts the SSE-picked
+   * level (positive = coarser, negative = finer). Exposed as URL params for interactive tuning;
+   * see ViewerWindow's mount.
+   */
+  setSchedulerKnobs?(k: { maxIntersect?: number; bias?: number }): void
+  /**
+   * Brick renderer only: enable/disable the "hold going-finer until current stable" gate. `true`
+   * (default) protects the prev-level fallback from arriving mid-load. `false` swaps levels
+   * eagerly — useful for A/B feel testing.
+   */
+  setHoldFinerEnabled?(on: boolean): void
+  /**
+   * Fast 2D plane switch — invalidate cached bytes WITHOUT tearing down the textures. On the
+   * BRICK renderer the ~64 MB atlas texture is preserved (per-brick contents invalidated); on
+   * the FLAT renderer the per-timepoint slots stay allocated but stamped stale, so
+   * `show`/`hasTimepoint` miss and `uploadFrame` re-uploads on next visit. Both paths avoid
+   * the 200 ms+ freeze `setImage` incurs from destroying every cached texture up front — the
+   * pain Dominik hit on Dml3RG's 2D wheel (2026-08-29). Callers that don't have this method
+   * fall through to a full `setImage` reallocate.
+   */
+  setZPlane?(zLo: number): void
+  /**
+   * Brick renderer only: enable Frankenstein hole-fill. `true` snaps `displayT` to `boundT`
+   * on every scrub and fills brick holes with the same position at the previous displayT.
+   * `false` (default) uses the hold-on-cold rule — old frame stays until the target's core
+   * bricks land. URL knob: `?brickFrank=1`.
+   */
+  setFrankensteinEnabled?(on: boolean): void
   /**
    * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
    * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
@@ -272,6 +303,16 @@ export interface VolumeRenderer {
      *      caught up, so pixels are the target frame with EMPTY_SLOT holes.
      *  The chip in `ViewerWindow.vue` surfaces both. */
     displayValid: boolean
+    /** Diagnostic: how many CORE viewport bricks at `(displayT, currentLevel)` are absent from
+     *  the atlas. If this is > 0 while `inflight.length === 0` and the "Loading bricks…" chip
+     *  is on, the scheduler has stalled — the fetch loop should have called `kickFetch` for
+     *  them but didn't. Used by the bench chip readout. */
+    missing: number
+    /** Diagnostic: same as `missing` but at `(boundT, currentLevel)` — the timepoint the
+     *  scheduler is chasing, not the one currently drawn. Splits "hold-on-cold stall"
+     *  (missing@bound > 0 while missing@display = 0) from "actual scheduler stall"
+     *  (missing@display > 0). */
+    missingAtBoundT: number
   }
   /** Rejects with the reason if the device is lost — VRAM pressure is the one to watch. */
   readonly lost: Promise<GPUDeviceLostInfo>
@@ -477,7 +518,17 @@ export async function createVolumeRenderer(
   const u = new Float32Array(UNIFORM_BYTES / 4)
   /** t → its volume texture, its mask (when one is shown) and the bind group that reads them. */
   const slots = new Map<number,
-    { texture: GPUTexture; labelTexture: GPUTexture | null; bindGroup: GPUBindGroup }>()
+    { texture: GPUTexture; labelTexture: GPUTexture | null; bindGroup: GPUBindGroup;
+      /** The `planeVersion` this slot's BYTES describe. On a 2D plane switch `setZPlane`
+       *  bumps the renderer's counter; any slot stamped with the older number is stale (its
+       *  texture holds the previous plane's data) and `show`/`hasTimepoint` treat it as a
+       *  cache miss. Aged out lazily by the LRU as new t's uploads land — not `dropAll`d up
+       *  front, so a wheel scroll through many z planes doesn't freeze the main thread on the
+       *  Dml3RG-shape stores' 200+ ms texture-destroy loop. */
+      planeVersion: number }>()
+  /** Monotonically-incrementing generation counter, bumped by `setZPlane`. Matches slot
+   *  stamps to name freshness without a per-slot boolean that would need resetting. */
+  let planeVersion = 0
   /** LRU order, least recently used FIRST. */
   let order: number[] = []
   let bindGroup: GPUBindGroup | null = null
@@ -751,14 +802,16 @@ export async function createVolumeRenderer(
         ],
       })
       dropSlot(t)                                    // a re-upload replaces, never leaks
-      slots.set(t, { texture, labelTexture, bindGroup: bg })
+      slots.set(t, { texture, labelTexture, bindGroup: bg, planeVersion })
       touch(t)
       for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
     },
 
     show(t: number): boolean {
       const slot = slots.get(t)
-      if (!slot) return false
+      // A slot from an older planeVersion holds the previous plane's bytes — treat as a miss
+      // so the caller re-fetches. See `setZPlane` for the rationale.
+      if (!slot || slot.planeVersion !== planeVersion) return false
       bindGroup = slot.bindGroup
       boundT = t
       touch(t)
@@ -775,7 +828,10 @@ export async function createVolumeRenderer(
     },
     vramCapped: () => allowed !== Infinity || byteCap < requested,
 
-    hasTimepoint(t: number) { return slots.has(t) },
+    hasTimepoint(t: number) {
+      const slot = slots.get(t)
+      return slot !== undefined && slot.planeVersion === planeVersion
+    },
     residentTimepoints() { return [...order] },
     touch,
     get cache() { return { capacity, bytesPerTimepoint, zDepth: depth } },
@@ -793,6 +849,25 @@ export async function createVolumeRenderer(
     // which is that plane. So the floor is 1, not 16.
     setSteps(n: number) { steps = Math.max(1, Math.round(n)) },
     setOrthographic(on: boolean) { u[7] = on ? 1 : 0 },
+    setZPlane(zLo: number) {
+      // Fast plane switch (2D plane view). `setImage` would `dropAll` every cached texture and
+      // reallocate — measured 200+ ms of sync main-thread work on Dml3RG with Keep=all (181
+      // slots × ~1 ms per `texture.destroy()`). The texture SHAPE stays the same across plane
+      // switches (renderNX × renderNY × depth × nch — none of those move), so we only need to
+      // invalidate the CONTENTS: bump `planeVersion`, and the mismatch turns show/hasTimepoint
+      // into cache misses that route the caller through `uploadFrame` on next visit. Stale
+      // textures age out lazily via `dropSlot` inside uploadFrame's re-upload path — no
+      // upfront destroy loop.
+      if (!meta || !usable()) return
+      u[11] = Math.max(0, zLo) * (meta.voxelUm[2] || 1)
+      pushUniforms()
+      planeVersion++
+      // The currently-drawn slot is now stale — release the bind group so the next `draw` sees
+      // nothing to paint (blank canvas until show(t) rebinds a fresh slot). Caller (ViewerWindow
+      // `zPump`) fires gotoT/showT immediately after, which kicks the fetch.
+      bindGroup = null
+      boundT = -1
+    },
 
     setOverlayPoints(data: Float32Array) {
       if (!usable()) return

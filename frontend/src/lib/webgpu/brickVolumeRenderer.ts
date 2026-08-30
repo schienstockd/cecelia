@@ -29,7 +29,7 @@ import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTex
 import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
-  bricksIntersectingViewport,
+  bricksIntersectingViewport, DEFAULT_KNOBS, type SchedulerKnobs,
 } from '../../utils/brickScheduler'
 import {
   fetchBrick, brickSlabUrl, padBrickPayload,
@@ -72,6 +72,12 @@ const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
  *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
 const MAX_INFLIGHT = 16
+
+/** LRU stamp bias for bricks the shader is CURRENTLY sampling as a fallback (prev-level bricks
+ *  during a level swap, prev-t bricks during Frankenstein hole-fill). Placed well past
+ *  `frameNow` so no arbitrary tie-break can evict them under load — screenshot #35 was an
+ *  arbitrary tie-break wiping an active prev-level slot. */
+const PREV_TOUCH_BIAS = 1_000_000_000
 
 interface AtlasState {
   layout: AtlasLayout
@@ -325,12 +331,29 @@ export async function createBrickVolumeRenderer(
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
    *  playback advances without cold-fetching each new t. Empty = current-t only. */
   let prefetchTs: number[] = []
-  /** User-chosen level override — pins scheduler to this level, bypassing SSE. Undefined =
-   *  fall back to the SSE picker. Threaded through by ViewerWindow from its `slabLevel`
-   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). This closes the
-   *  bytes-fetched gap between the two renderers on multi-level statics — the 168× we saw on
-   *  f8gzA2 was almost entirely brick choosing L0-L1 where flat chose L5. */
-  let levelOverride: number | undefined = undefined
+  /** User-chosen level FLOOR — coarsest LOD the SSE picker is allowed to pick. Undefined = no
+   *  floor (SSE freely picks any). Threaded through by ViewerWindow from its `slabLevel`
+   *  computed, which itself calls `pickVolumeLevel` (default = coarsest). Replaces the 8b780fd
+   *  pin: pinning blocked zoom-in adaptive LOD outright (SispLk stuck on L5 at deep zoom).
+   *  Over-fetch protection now sits inside `scheduleBricks` via `MAX_INTERSECT_BRICKS`. */
+  let levelFloor: number | undefined = undefined
+  /** Tunable LOD knobs — `?brickThr=` and `?brickBias=` URL params override at mount. Defaults
+   *  reproduce the shipped behaviour. */
+  let schedulerKnobs: SchedulerKnobs = { ...DEFAULT_KNOBS }
+  /** Whether to hold going-finer swaps until the current level's core is fully resident. Default
+   *  true (protects prev-level fallback from arriving mid-load; the fix for the black-rectangle
+   *  pattern). URL param `?brickHold=0` disables. */
+  let holdFinerEnabled = true
+  /** Frankenstein mode: `show(t)` and the auto-advance path snap `displayT` to `boundT`
+   *  immediately, and `rebuildPageTableForDisplayT` fills any hole with the same brick position
+   *  at the PREVIOUS displayT (kept LRU-warm). Trades hold-on-cold's stale-frame chip for a
+   *  visible per-brick update — the fresh bits arrive as they land. Default on; URL param
+   *  `?brickFrank=0` opts back to hold-on-cold for A/B. */
+  let frankensteinEnabled = true
+  /** Timepoint the shader drew from BEFORE `displayT` last moved. Used for Frankenstein hole-
+   *  fill — brick positions still empty at `displayT` fall back to the same position at
+   *  `prevDisplayT` if the atlas still holds it. `-1` when there is no previous frame. */
+  let prevDisplayT = -1
 
   /** Point instance buffer, grown on demand. ONE buffer for the whole movie — the data is
    *  ordered by timepoint so a frame is a range within it (see `setOverlayDraw`). Same
@@ -532,6 +555,13 @@ export async function createBrickVolumeRenderer(
         // The atlas or the level could have changed while the request was in flight — drop the
         // bytes rather than writing them into a slot that no longer represents this brick.
         inflight.delete(key)
+        // Nudge the frame pump BEFORE any early-return path. `tickScheduler` runs inside `draw`,
+        // and `draw` only fires on `frame.redraw`. Every early-return here (bad payload,
+        // destroyed, level mismatch) skips the success-path `needsRedraw` below — so if all the
+        // in-flight fetches took an early-return path, the pump never woke and the scheduler
+        // never re-issued the missing bricks. "12 inflight forever, 5 missing, doesn't do
+        // anything" (Dominik 2026-08-29). rAF-coalesced, so calling it always is cheap.
+        needsRedraw?.()
         if (payload === null) return
         if (destroyed || atlas === null) return
         if (atlas.currentLevel !== brick.level) return
@@ -580,6 +610,22 @@ export async function createBrickVolumeRenderer(
           && evictedBrick.t === displayT
           && evictedBrick.level === atlas.currentLevel
         if (evictedWasVisible) atlas.pageTableCpu[evictedIdx] = EMPTY_SLOT
+        // Prev-level eviction: `prevPageTableCpu` may still index this slot at a different grid
+        // position (the OLD level's grid). If we don't wipe it, the shader's fallback lookup will
+        // return the slot number and sample the FRESH brick's bytes with prev-level coords —
+        // producing a scrambled block. Ring-halo-of-blank pattern (Dominik screenshot #32,
+        // 2026-08-29). Prev-level touch loop in `tickScheduler` should keep this rare, but the
+        // wipe is the safety net for when the atlas genuinely runs out.
+        if (evictedBrick !== null
+            && atlas.prevLevel !== undefined
+            && evictedBrick.level === atlas.prevLevel
+            && evictedBrick.t === displayT) {
+          const pIdx = prevGridIndexOfBrick(atlas, evictedBrick)
+          if (pIdx >= 0) {
+            atlas.prevPageTableCpu[pIdx] = EMPTY_SLOT
+            atlas.prevPageTableDirty = true
+          }
+        }
         if (forVisibleFrame) {
           atlas.pageTableCpu[gridIndex(atlas, brick.bx, brick.by, brick.bz)] = result.entry.slot >>> 0
           atlas.pageTableDirty = true
@@ -611,7 +657,12 @@ export async function createBrickVolumeRenderer(
         // Fetched between frames — the caller has to paint again for the new slot to show up.
         needsRedraw?.()
       })
-      .catch(() => { inflight.delete(key) })
+      .catch(() => {
+        inflight.delete(key)
+        // Same reason as the `.then()` early-return needsRedraw: without it, a burst of failed
+        // fetches leaves the frame pump quiescent and `tickScheduler` never re-issues them.
+        needsRedraw?.()
+      })
   }
 
   /** Fire a label brick fetch alongside its intensity twin. Writes into the SAME atlas slot the
@@ -670,6 +721,16 @@ export async function createBrickVolumeRenderer(
     return gridIndex(a, brick.bx, brick.by, brick.bz)
   }
 
+  /** Prev-page-table index for a brick belonging to the PREV level. Same shape as `gridIndex`,
+   *  but with `prevGridNx/Ny` — the OLDER level's grid dims that `prevPageTableCpu` was written
+   *  for. Returns -1 if the brick doesn't belong in the prev grid (out-of-range coord or the
+   *  prev grid isn't set up yet). */
+  const prevGridIndexOfBrick = (a: AtlasState, brick: VirtualBrick): number => {
+    if (a.prevGridNx <= 0 || a.prevGridNy <= 0 || a.prevGridNz <= 0) return -1
+    if (brick.bx >= a.prevGridNx || brick.by >= a.prevGridNy || brick.bz >= a.prevGridNz) return -1
+    return (brick.bz * a.prevGridNy + brick.by) * a.prevGridNx + brick.bx
+  }
+
   /** Drive one scheduler tick: build view + world, resolve missing/evicted bricks, kick fetches.
    *  Runs before the frame's uniform + draw so the page-table upload later carries every eviction
    *  this tick decided on. */
@@ -684,6 +745,44 @@ export async function createBrickVolumeRenderer(
       const bx = entry.brick.bx, by = entry.brick.by, bz = entry.brick.bz
       if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
       atlas.pageTableCpu[gridIndex(atlas, bx, by, bz)] = entry.slot >>> 0
+    }
+    // Frankenstein hole-fill: for every CORE viewport brick still EMPTY at displayT, sample
+    // the same grid position at `prevDisplayT`. The atlas still holds those bricks (they were
+    // just used a frame ago and are LRU-warm); pointing pageTableCpu at their slots makes the
+    // shader render "the last frame's data at that spot" for the hole, instead of black. The
+    // fresh bricks replace them slot-by-slot as they land. Touch each borrowed brick with the
+    // prev-level bias so an eviction between now and the next fetch doesn't yank a slot the
+    // shader is actively drawing from.
+    if (frankensteinEnabled && prevDisplayT >= 0 && prevDisplayT !== displayT
+        && currentMeta !== null && atlas.currentLevel !== undefined) {
+      const lvl = atlas.currentLevel
+      const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+      const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+      const view = brickViewportFromCamera(
+        camState, currentMeta, displayT, canvas.height, aspect, currentZDepth,
+      )
+      const scheduled = bricksIntersectingViewport(view, world, lvl)
+      for (const s of scheduled) {
+        if (s.ring !== 0) continue
+        const bx = s.brick.bx, by = s.brick.by, bz = s.brick.bz
+        if (bx >= atlas.gridNx || by >= atlas.gridNy || bz >= atlas.gridNz) continue
+        const idx = gridIndex(atlas, bx, by, bz)
+        if (atlas.pageTableCpu[idx] !== EMPTY_SLOT) continue
+        const prevKey = brickKey({ t: prevDisplayT, level: lvl, bx, by, bz })
+        const prevEntry = atlas.pageTable.get(prevKey)
+        if (prevEntry !== undefined) {
+          atlas.pageTableCpu[idx] = prevEntry.slot >>> 0
+          // Touch with plain `frameNow`, NOT `frameNow + PREV_TOUCH_BIAS`. The prev-LEVEL bias
+          // is legit because those bricks anchor the shader's fallback until replaced (small
+          // fixed set, held indefinitely). Prev-T bricks are transient — a full set per t —
+          // and biasing them at 1e9 permanently privileges them over CURRENT-t landings
+          // (frameNow ~1500). LRU then evicts the freshly-arrived boundT bricks to make room
+          // for MORE prev-t and prefetch, atlas can't accumulate at the current t, chip stays
+          // at "24 res / 57 needed" while bytes burn (Dominik 2026-08-29). Plain frameNow
+          // keeps prev-t bricks LRU-fresh for this frame; next scrub they naturally age out.
+          atlas.pageTable.touch(prevKey, frameNow)
+        }
+      }
     }
     atlas.pageTableDirty = true
   }
@@ -735,13 +834,23 @@ export async function createBrickVolumeRenderer(
     // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
     // stays in sync with what the volume is drawing.
     if (boundT !== displayT) {
-      const targetReady = coreBricksResident(boundT)
-      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-      const canPartial = anyBricksResident(boundT)
-      if (targetReady || (!displayDrawable && canPartial)) {
+      if (frankensteinEnabled) {
+        // Snap-advance: no hold-on-cold. Missing bricks fall back to prev-t via
+        // rebuildPageTableForDisplayT's Frankenstein second pass.
+        prevDisplayT = displayT
         displayT = boundT
         rebuildPageTableForDisplayT()
         onDisplayAdvanced?.(displayT)
+      } else {
+        const targetReady = coreBricksResident(boundT)
+        const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
+        const canPartial = anyBricksResident(boundT)
+        if (targetReady || (!displayDrawable && canPartial)) {
+          prevDisplayT = displayT
+          displayT = boundT
+          rebuildPageTableForDisplayT()
+          onDisplayAdvanced?.(displayT)
+        }
       }
     }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
@@ -750,14 +859,36 @@ export async function createBrickVolumeRenderer(
       camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
-    const dec = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelOverride)
+    const decRaw = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
 
+    // Bootstrap-to-floor: on the very first swap (currentLevel is undefined), force the initial
+    // level to `floor` regardless of what SSE picked. Every subsequent swap will then have a
+    // populated prev-page-table to fall back on — no "flash of black" during initial load while
+    // finer bricks are still fetching, because the shader can sample the floor bricks for holes.
+    // Floor is cheap: at the coarsest level of the pyramid, a store like SispLk needs 4 bricks
+    // for full coverage. Once floor is stable, the hold-going-finer gate lets SSE take over.
+    const isFirstSwap = atlas.currentLevel === undefined
+    const bootstrapLevel = levelFloor !== undefined
+      ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(levelFloor)))
+      : world.nLevels - 1
+    const dec = isFirstSwap ? { ...decRaw, level: bootstrapLevel } : decRaw
+
+    // Hold-going-finer: only advance to a finer level once the CURRENT level is fully resident
+    // at the viewport. Otherwise a rapid zoom cascades L5→L3→L1→... and each swap's prev-page-
+    // table snapshot is partial. Two swaps deep the shader has nowhere to fall back to — the
+    // "black rectangle in the middle" symptom Dominik hit 2026-08-29. Coarser is always allowed
+    // (going the other way is a viewport-widening move; the coarser bricks are cheap and the
+    // prev-page-table is definitionally more complete). Initial `undefined → floor` always fires.
+    const goingFiner = atlas.currentLevel !== undefined && dec.level < atlas.currentLevel
+    const currentStable = atlas.currentLevel !== undefined && coreBricksResident(displayT)
+    const swapAllowed = atlas.currentLevel !== dec.level
+      && (!goingFiner || !holdFinerEnabled || currentStable)
     // Level switch: MOVE the current page table into the prev-level slot (both CPU + GPU-side)
     // so the shader can keep sampling old-level bricks until the new-level bricks land. The atlas
     // slots don't change — they hold whatever bricks are LRU-warm — so the prev page table just
     // re-indexes into the same texture. The PageTable object stays too: its entries still name
     // real slots, they're just now indexed by the OLDER grid dims.
-    if (atlas.currentLevel !== dec.level) {
+    if (swapAllowed) {
       // DON'T abort inflight: the requests are already on the wire, and cancelling only stops
       // the CLIENT waiting — the server still ships the bytes. Let them land; the arrival
       // guard (`atlas.currentLevel !== brick.level`) discards stale-level bytes silently, and
@@ -774,14 +905,37 @@ export async function createBrickVolumeRenderer(
         atlas.prevGridNz = atlas.gridNz
         atlas.prevLevel = atlas.currentLevel
       }
-      atlas.pageTableCpu.fill(EMPTY_SLOT)
-      atlas.pageTableDirty = true
       const scale = Math.pow(2, dec.level)
       const [bx, by, bz] = atlas.layout.brickSizeVox
       atlas.gridNx = Math.max(1, Math.ceil(currentMeta.nX / (bx * scale)))
       atlas.gridNy = Math.max(1, Math.ceil(currentMeta.nY / (by * scale)))
       atlas.gridNz = Math.max(1, Math.ceil(currentZDepth / (bz * scale)))
       atlas.currentLevel = dec.level
+      // Rebuild pageTableCpu from any bricks already resident at the NEW level. Without this,
+      // a zoom-out-then-zoom-in leaves earlier L0 bricks in the atlas (still in `pageTable`)
+      // but with pageTableCpu[gridIndex] == EMPTY_SLOT — the fetch loop's `has(key)` check
+      // skips them, so they never get re-written and the shader falls back to prev-level (or
+      // black) at their positions. Dominik screenshot #37/#38: "when i zoom in some bricks go
+      // blank. but it thinks these were already loaded". `rebuildPageTableForDisplayT` clears
+      // to EMPTY_SLOT then re-populates for the current (displayT, currentLevel) entries.
+      rebuildPageTableForDisplayT()
+    }
+    // Keep prev-level bricks LRU-warm. The shader's fallback path samples them for holes in the
+    // current level — but they're NATURALLY the oldest bricks in the atlas after a level swap,
+    // so plain LRU picks them as eviction victims first. Ring-halo-of-blank pattern from #32:
+    // as L0 bricks arrived, they LRU-evicted L1 (prev) bricks, and the fallback lookup returned
+    // slots now holding unrelated L0 data → shader read empty. Between-tick arrivals mean the
+    // brick that JUST arrived and everything currentLevel that fetch loop touched below have
+    // `lastUsed = frameNow` — so does prev-level if we touch them with the same stamp. Ties are
+    // broken by iteration order in `evictLru`, which is arbitrary. Bumping prev's stamp WELL
+    // past `frameNow` gives them strictly-fresher ordering so no arbitrary tie-break can pick
+    // them. Screenshot #35: at L0 with 176 residents and 0 inflight, the centre still went
+    // black — a between-tick arrival tied with L1 (prev) and the arbitrary tie-break picked
+    // the L1 core, wiping the fallback.
+    if (atlas.prevLevel !== undefined) {
+      for (const e of atlas.pageTable.entries()) {
+        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
+      }
     }
     // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
     // `boundT`, but the prefetch loop below fills the atlas with bricks at other `t` values that
@@ -793,7 +947,7 @@ export async function createBrickVolumeRenderer(
     // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
     // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
     // the prefetch timepoints, dropping duplicates via `brickKey`.
-    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel)
+    const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     const ts = [boundT]
     for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
     for (const pt of ts) {
@@ -1027,7 +1181,9 @@ export async function createBrickVolumeRenderer(
       const ready = coreBricksResident(t)
       const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
       const canPartial = anyBricksResident(t)
-      if ((ready || (!displayDrawable && canPartial)) && displayT !== t) {
+      const snap = frankensteinEnabled && displayT !== t
+      if ((snap || ready || (!displayDrawable && canPartial)) && displayT !== t) {
+        prevDisplayT = displayT
         displayT = t
         rebuildPageTableForDisplayT()
         // Fire the display-advanced hook so ViewerWindow's `shownT` follows displayT — the
@@ -1212,12 +1368,48 @@ export async function createBrickVolumeRenderer(
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
-    setLevelOverride(level) {
-      // Pin the scheduler to `level` — matches the user's `viewerVolumeLevel` dropdown so the
-      // brick renderer honours the same choice the flat renderer does. `undefined` re-enables
-      // the SSE picker. Same-value writes are cheap; ViewerWindow calls this unconditionally
-      // from a `slabLevel` watch.
-      levelOverride = level === undefined || level < 0 ? undefined : Math.floor(level)
+    setLevelFloor(level) {
+      // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`
+      // dropdown: Auto = n-1 (coarsest possible, no restriction), an explicit pick = that level.
+      // `undefined` (or negative) drops the floor entirely. Same-value writes are cheap;
+      // ViewerWindow calls this unconditionally from a `slabLevel` watch.
+      levelFloor = level === undefined || level < 0 ? undefined : Math.floor(level)
+    },
+    setSchedulerKnobs(k) {
+      // Merge over the current knobs; ViewerWindow reads `?brickThr=` and `?brickBias=` on
+      // mount and calls this once. Same-tick tickScheduler picks up the change on next call.
+      schedulerKnobs = { ...schedulerKnobs, ...k }
+    },
+    setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
+    setFrankensteinEnabled(on) { frankensteinEnabled = !!on },
+    setZPlane(zLo) {
+      // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
+      // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
+      // (Dominik 2026-08-29). The atlas SHAPE hasn't changed (brickSize stays [128,128,1]
+      // × nch), so we can keep the texture and just invalidate every brick's contents:
+      // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
+      // same slots. Same discipline as level swap, but without the level/grid churn.
+      if (atlas === null || currentMeta === null) return
+      const newZLo = Math.max(0, Math.floor(zLo))
+      if (newZLo === currentZLo) return
+      currentZLo = newZLo
+      // Abort every request on the wire — they carry the OLD zLo in their URL and would
+      // land as stale bytes.
+      inflight.forEach(ac => ac.abort())
+      inflight.clear()
+      // Wipe both page tables so the shader sees EMPTY_SLOT everywhere until fetches land.
+      // Reset displayT/prevDisplayT since neither points at valid content anymore, and clear
+      // currentLevel so the next tickScheduler re-picks with a fresh viewport intersect.
+      atlas.pageTable.clear()
+      atlas.pageTableCpu.fill(EMPTY_SLOT)
+      atlas.prevPageTableCpu.fill(EMPTY_SLOT)
+      atlas.pageTableDirty = true
+      atlas.prevPageTableDirty = true
+      atlas.currentLevel = undefined
+      atlas.prevLevel = undefined
+      displayT = -1
+      prevDisplayT = -1
+      needsRedraw?.()
     },
 
     brickResidency() {
@@ -1225,7 +1417,7 @@ export async function createBrickVolumeRenderer(
         return {
           resident: [], inflight: [], currentLevel: undefined,
           brickSizeVox: [BRICK_XY, BRICK_XY, 1] as const,
-          displayT: -1, boundT: 0, displayValid: false,
+          displayT: -1, boundT: 0, displayValid: false, missing: 0, missingAtBoundT: 0,
         }
       }
       const resident = atlas.pageTable.entries().map(e => ({
@@ -1236,6 +1428,29 @@ export async function createBrickVolumeRenderer(
       for (const key of inflight.keys()) {
         const b = parseBrickKey(key)
         if (b !== null) inflightBricks.push({ t: b.t, level: b.level, bx: b.bx, by: b.by, bz: b.bz })
+      }
+      // How many core viewport bricks at (displayT, currentLevel) are NOT in `pageTable`. If this
+      // is > 0 with inflight == 0, we've stalled — kickFetch didn't fire for bricks that need it.
+      // A specific case Dominik keeps hitting: the chip stays on "Loading bricks…" and no new
+      // requests go out. This value is the smoking gun.
+      let missing = 0
+      let missingAtBoundT = 0
+      if (currentMeta !== null && displayT >= 0) {
+        const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
+        const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
+        const view = brickViewportFromCamera(
+          camState, currentMeta, displayT, canvas.height, aspect, currentZDepth,
+        )
+        const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
+        // Same viewport intersect used for both counts — geometry doesn't depend on t, only the
+        // pageTable key does. One walk instead of two keeps per-frame cost flat when the chip is up.
+        for (const s of scheduled) {
+          if (s.ring !== 0) continue
+          if (!atlas.pageTable.has(brickKey(s.brick))) missing++
+          if (boundT !== displayT
+              && !atlas.pageTable.has(brickKey({ ...s.brick, t: boundT }))) missingAtBoundT++
+        }
+        if (boundT === displayT) missingAtBoundT = missing
       }
       return {
         resident, inflight: inflightBricks,
@@ -1252,6 +1467,8 @@ export async function createBrickVolumeRenderer(
         // Reuses the same `coreBricksResident` predicate `show(t)`'s ready-check runs.
         displayValid: displayT >= 0 && displayT === boundT && coreBricksResident(displayT),
         brickSizeVox: atlas.layout.brickSizeVox,
+        missing,
+        missingAtBoundT,
       }
     },
 

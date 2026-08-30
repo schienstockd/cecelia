@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   bricksIntersectingViewport, pickBrickLevel, scheduleBricks,
-  brickWorldFromMeta, brickViewportFromCamera,
+  brickWorldFromMeta, brickViewportFromCamera, MAX_INTERSECT_BRICKS,
   type BrickViewport, type BrickWorld,
 } from './brickScheduler'
 import { brickKey } from './pageTable'
@@ -185,27 +185,120 @@ describe('scheduleBricks', () => {
     expect(dec1.toLoad.some(s => s.brick.bx === dec0.toLoad[0].brick.bx)).toBe(true)
   })
 
-  it('pinLevel overrides SSE — a store with pyramid renders at the pinned level, not the picker\'s choice', () => {
+  it('floorLevel clamps the SSE picker — SSE-desired coarser than floor still returns floor', () => {
+    // Zoomed out on a 6-level pyramid: SSE picks something coarse (~L5). Floor at L2 clamps to
+    // L2 — but the point of the FLOOR isn't to force COARSER, it's to force finer. The clamp
+    // uses min(sseLevel, floor), so a coarser SSE pick is bumped down to the floor.
     const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 6 }
-    const view = centreView(200)
-    // SSE picker's choice at this camera might be L0 or L1; regardless, pinLevel=3 must win.
-    const dec = scheduleBricks(view, world, new Set(), undefined, 3)
-    expect(dec.level).toBe(3)
-    for (const s of dec.toLoad) expect(s.brick.level).toBe(3)
+    const view: BrickViewport = { ...centreView(200), distanceUm: 32768 }
+    // SSE at distanceUm=32768 wants log2(32768/512) = 6, clamped to n-1=5.
+    expect(pickBrickLevel(view, world, undefined)).toBe(5)
+    const dec = scheduleBricks(view, world, new Set(), undefined, 2)
+    expect(dec.level).toBe(2)
+    for (const s of dec.toLoad) expect(s.brick.level).toBe(2)
   })
 
-  it('pinLevel clamps to [0, nLevels-1]', () => {
+  it('SSE finer than floor is allowed — zoom-in loads finer bricks without user changing dropdown', () => {
+    // Zoomed in on a 6-level pyramid at floor=L5 (Auto default). SSE picks L0 (close camera).
+    // Floor at L5 (coarsest possible) doesn't restrict — L0 wins.
+    const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 6 }
+    const view: BrickViewport = { ...centreView(16), distanceUm: 256 }
+    // Confirm SSE would pick a fine level here.
+    expect(pickBrickLevel(view, world, undefined)).toBeLessThan(5)
+    // Floor at coarsest (Auto default) → SSE's finer pick wins.
+    const dec = scheduleBricks(view, world, new Set(), undefined, 5)
+    expect(dec.level).toBeLessThan(5)
+  })
+
+  it('floorLevel clamps to [0, nLevels-1]', () => {
     const world: BrickWorld = { ...SISPLK_WORLD, nLevels: 3 }
-    const view = centreView(200)
+    // Zoom out enough that SSE would go for the coarsest, so out-of-range floors are the whole
+    // constraint (not just a min against SSE).
+    const view: BrickViewport = { ...centreView(200), distanceUm: 1e6 }
     expect(scheduleBricks(view, world, new Set(), undefined, 9).level).toBe(2)
-    expect(scheduleBricks(view, world, new Set(), undefined, -5).level).toBe(0)
+    // A negative floor is dropped (undefined semantics) — SSE freely picks, ends up at coarsest.
+    expect(scheduleBricks(view, world, new Set(), undefined, -5).level).toBe(2)
   })
 
-  it('undefined pinLevel falls back to the SSE picker (backwards compat)', () => {
+  it('undefined floorLevel == floor at nLevels-1 (no restriction)', () => {
     const view = centreView(200)
-    const withPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined)
-    const noPin = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, undefined)
-    expect(withPin.level).toBe(noPin.level)
+    const noFloor = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, undefined)
+    const coarsestFloor = scheduleBricks(view, SISPLK_WORLD, new Set(), undefined, SISPLK_WORLD.nLevels - 1)
+    expect(noFloor.level).toBe(coarsestFloor.level)
+  })
+
+  it('over-fetch guard coarsens the level when the CORE brick count is too large', () => {
+    // Wide viewport at fit distance on a "huge" store — many core bricks at fine level. Guard
+    // counts ring===0 bricks only (halo is prefetch, doesn't gate). Big-grid world (40×40 at L0):
+    // L0 core=1600 > 256, L1 core=400 > 256, L2 core=100 <= 256 — the guard walks until core is
+    // under threshold, landing at L2.
+    const bigWorld: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [1, 1, 1],
+      extentVoxL0: [128 * 40, 128 * 40, 4],
+      nLevels: 4,
+    }
+    // Viewport covers the whole store at L0 — mimics f8gzA2 fit distance.
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [128 * 8, 128 * 8, 2],
+      halfWUm: 128 * 8, halfHUm: 128 * 8, halfDUm: 100,
+      focalPx: 512, distanceUm: 128,   // fine, so SSE wants L0
+    }
+    // SSE alone would pick L0 with 256 core bricks — over MAX_INTERSECT_BRICKS.
+    expect(pickBrickLevel(view, bigWorld, undefined)).toBe(0)
+    expect(bricksIntersectingViewport(view, bigWorld, 0).filter(s => s.ring === 0).length)
+      .toBeGreaterThan(MAX_INTERSECT_BRICKS)
+    const dec = scheduleBricks(view, bigWorld, new Set(), undefined, 3)
+    expect(dec.level).toBeGreaterThan(0)
+    expect(bricksIntersectingViewport(view, bigWorld, dec.level).filter(s => s.ring === 0).length)
+      .toBeLessThanOrEqual(MAX_INTERSECT_BRICKS)
+  })
+
+  it('over-fetch guard ignores halo — a moderate viewport zoomed in fetches finer even with halo', () => {
+    // The regression this catches: pre-2026-08-29 the guard counted total (core+halo). SispLk
+    // max-zoom L1 has ~45 core but ~77 total (halo), so a total-count threshold of 32 coarsened
+    // to L3 (Dominik screenshot). Core-only lets L1 through when the FRAME cost fits.
+    const world: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [0.5, 0.5, 3],
+      extentVoxL0: [7848, 7293, 4],   // SispLk-shape
+      nLevels: 6,
+    }
+    // Camera zoomed in — small viewport.
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [1962, 1823, 6],
+      halfWUm: 500, halfHUm: 260, halfDUm: 100,
+      focalPx: 800, distanceUm: 620,
+    }
+    // Total (core+halo) at L1 is > 32 but core is <= 64 — guard should NOT coarsen past L1.
+    const l1Total = bricksIntersectingViewport(view, world, 1).length
+    const l1Core = bricksIntersectingViewport(view, world, 1).filter(s => s.ring === 0).length
+    expect(l1Total).toBeGreaterThan(32)   // total gate would have kicked in
+    expect(l1Core).toBeLessThanOrEqual(MAX_INTERSECT_BRICKS)   // core gate does not
+    const dec = scheduleBricks(view, world, new Set(), undefined, 5)
+    expect(dec.level).toBeLessThanOrEqual(2)   // reaches L1 or L2, not L3+
+  })
+
+  it('over-fetch guard respects the floor — never coarsens past what the user asked', () => {
+    // Same setup: even with a wide viewport, if the user pinned floor at L1, the guard cannot
+    // coarsen past L1 — even if L1 core count is still over MAX_INTERSECT_BRICKS.
+    const bigWorld: BrickWorld = {
+      brickSizeVox: [128, 128, 4],
+      voxelUmL0: [1, 1, 1],
+      extentVoxL0: [128 * 40, 128 * 40, 4],
+      nLevels: 4,
+    }
+    const view: BrickViewport = {
+      t: 0,
+      centreUm: [128 * 20, 128 * 20, 2],
+      halfWUm: 128 * 20, halfHUm: 128 * 20, halfDUm: 100,
+      focalPx: 512, distanceUm: 128,
+    }
+    // Floor = L1 — guard can walk L0 → L1 but not further.
+    const dec = scheduleBricks(view, bigWorld, new Set(), undefined, 1)
+    expect(dec.level).toBe(1)
   })
 })
 
@@ -272,6 +365,21 @@ describe('brickViewportFromCamera', () => {
   it('distanceUm mirrors cam.dist', () => {
     const v = brickViewportFromCamera({ ...cam, dist: 350 }, META, 0, 1024, 1.0, META.nZ)
     expect(v.distanceUm).toBe(350)
+  })
+
+  it('centreUm follows pan — the scheduler tracks what the shader draws', () => {
+    // brickShader.ts:87: c.ro = c.fwd * dist + c.right * panX + c.up * panY. With yaw=0 pitch=0
+    // basis, `c.up = cross(right, fwd) = (0, -1, 0)`. So the aim point shifts by (panX, -panY)
+    // in world; in scheduler world (origin at (ex/2, ey/2, ez/2)) that lands at
+    // (ex/2 + panX, ey/2 - panY, ez/2). The Y sign is what matters — first cut had `+ panY` and
+    // the top half of the canvas fetched a mirrored y-region on pan (Dominik 2026-08-29 screenshot
+    // #30/31 "still bricks missing" after zoom + pan).
+    const panned = brickViewportFromCamera(
+      { ...cam, panX: 40, panY: -30 }, META, 0, 1024, 1.0, META.nZ,
+    )
+    expect(panned.centreUm[0]).toBeCloseTo(128 + 40, 6)
+    expect(panned.centreUm[1]).toBeCloseTo(128 - -30, 6)   // ey/2 - panY, panY=-30 → +30
+    expect(panned.centreUm[2]).toBeCloseTo(4, 6)
   })
 
   it('scheduling picks L0 at dist=100, coarsens with distance', () => {

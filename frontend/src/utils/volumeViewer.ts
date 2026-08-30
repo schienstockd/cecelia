@@ -301,6 +301,40 @@ export function pickVolumeLevel(meta: ViewerMeta, override?: number): number {
   return Math.max(0, Math.min(n - 1, Math.floor(override)))
 }
 
+/**
+ * Whole-movie byte budget for the flat renderer's per-timepoint cache. When `nT * bytesPerT`
+ * fits under this, flat caches the ENTIRE movie once and playback is 0.10 ms with zero
+ * re-fetch — measured 2026-08-29 bench6 on fXgbTl (31 t × 47 MB = 1.4 GB, cap 31/31, all
+ * cached). Above this, the flat renderer still evicts on scrub (Dml3RG 181 t × 47 MB = 8.5 GB,
+ * cap 4/181) and brick's TTFF-plus-streaming design wins. 1.5 GB is a conservative middle
+ * ground between typical discrete-GPU headroom and the observed win/lose boundary.
+ * Docs/todo/BRICK_INTEGRATION_PLAN.md → Decision 2.
+ */
+export const CACHE_BUDGET_BYTES = 1_500_000_000
+
+/**
+ * Whether the 3D path should route to the brick renderer for this image.
+ *
+ * The gate is "does the whole movie fit in flat's cache" — measured on bench6 blobs
+ * 2026-08-29. Flat wins when it can hold every timepoint (fXgbTl, 1.4 GB total: cached 31/31,
+ * playback 0.10 ms, no re-fetch); brick wins when flat can't hold enough for playback to be
+ * smooth (Dml3RG, 8.5 GB total: cached 4/181, re-fetches on scrub — and brick's TTFF is 100×
+ * better anyway). Earlier draft gated on `nX * nY < HUGE_XY_THRESHOLD_PX` (huge L0 → flat),
+ * but bench5 showed the intersect guard cut f8gzA2's drawP95 from 200 ms to 2.8 ms, and flat
+ * can't hold f8gzA2 in a single volume anyway (17 GB per t), so the shader-scaling exclusion
+ * disappeared. `nLevels` doesn't get a vote — brick wins TTFF on single-level stores too.
+ *
+ * Pure function on `ViewerMeta`; evaluated by ViewerWindow reactively when meta lands.
+ * `?bricks=0|1` remains as a dev override in both directions (auto-select does not surface
+ * as a user-facing toggle).
+ */
+export function shouldUseBricks(meta: ViewerMeta): boolean {
+  const bytesPerT = meta.nX * meta.nY * meta.nZ * meta.nC * meta.bytesPerVoxel
+  if (!Number.isFinite(bytesPerT) || bytesPerT <= 0) return false
+  const nT = Math.max(meta.nT, 1)
+  return bytesPerT * nT >= CACHE_BUDGET_BYTES
+}
+
 /** `X-Slab-Shape` (`nz,ny,nx`) → the three numbers, or null if the header is absent/unparseable. */
 export function parseSlabShape(header: string | null): [number, number, number] | null {
   if (!header) return null

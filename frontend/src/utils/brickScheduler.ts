@@ -229,9 +229,10 @@ export function brickWorldFromMeta(
  * truth for what the camera sees, so the scheduler mirrors them here rather than re-deriving.
  *
  * Simplifications for P5c (documented so P5d can revisit):
- *   - `centreUm` is the box centre in world µm. Pan moves the eye in the shader — for scheduler
- *     purposes, the visible region tracks the box centre approximately even under pan; a heavy
- *     pan can miss a brick or two that the halo picks up anyway.
+ *   - `centreUm` is the box centre + pan offset. Pan lands as `right * panX + up * panY` in the
+ *     shader; the scheduler uses the same world offset to keep its intersect list aligned with
+ *     what the shader actually draws. Rotation is not modelled — the halo covers small pitch/yaw
+ *     drift, and the current 3D orbit rarely fires with both yaw AND deep zoom.
  *   - `halfDUm` = whole box depth. Every z-slab is visited — matches the pre-3D-halo XY-only
  *     behaviour on thin-Z stores (SispLk nZ=4). Deep-Z stores get proper z scheduling once we
  *     have real data to eyeball.
@@ -249,9 +250,17 @@ export function brickViewportFromCamera(
   const [ex, ey, ez] = extentUm(meta, zDepth)
   const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
   const halfW = halfH * Math.max(aspect, 1e-3)
+  // Pan shifts the CENTRE of what the shader draws. `brickShader.ts` line 87:
+  // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`, and `c.up = cross(right, fwd)`
+  // — for the default `yaw=0 pitch=0` basis (`fwd=(0,0,1)`, `right=(1,0,0)`) that resolves to
+  // `up = (0, -1, 0)`. So `up * panY` shifts world by `-panY` in Y, not `+panY`. Aim point in
+  // shader world = `(panX, -panY, 0)`; in scheduler world (origin at `(ex/2, ey/2, ez/2)`) that's
+  // `(ex/2 + panX, ey/2 - panY, ez/2)`. First-cut had `+panY` and the top half of the canvas
+  // fetched a mirrored y-region (Dominik screenshot 2026-08-29: "we still have bricks that are
+  // not being fetched" — top half of canvas black after pan).
   return {
     t,
-    centreUm: [ex / 2, ey / 2, ez / 2],
+    centreUm: [ex / 2 + cam.panX, ey / 2 - cam.panY, ez / 2],
     halfWUm: halfW,
     halfHUm: halfH,
     halfDUm: ez / 2,
@@ -261,22 +270,90 @@ export function brickViewportFromCamera(
 }
 
 /**
- * Level source: the user's dropdown (pinned) or the SSE picker (adaptive). Kept as one enum
- * argument so the caller doesn't have to encode `undefined-means-adaptive` at every call site.
- * Pinned wins so the "coarsest by default, user can override to finer" flow (mirroring flat's
- * `pickVolumeLevel`) drops the fetch cost on multi-level statics — measured 2026-08-29: f8gzA2
- * flat pulled 17 MB; brick with SSE pulled 2.85 GB at the same view.
+ * Coarsest level the caller allows. `undefined` means "no floor" (SSE freely picks any level up
+ * to `nLevels-1`). Callers usually pass the user's `viewerVolumeLevel` dropdown — Auto = `n-1`
+ * (coarsest possible, no effective restriction), an explicit dropdown pick = that level's index.
+ */
+export type FloorLevel = number | undefined
+
+/**
+ * Core-brick ceiling for the over-fetch guard. Counts ONLY `ring === 0` bricks — the ones
+ * actually inside the viewport frustum. Halo (ring === 1) is prefetch and shouldn't gate the
+ * level pick: at max zoom on SispLk, halo doubles the total count but the frame cost is the
+ * core viewport. First cut counted total (32) and coarsened SispLk max-zoom to L3 (Dominik
+ * screenshot 2026-08-29), which is exactly the pin behaviour we were replacing. Switched to
+ * core-only + 64 -> tuned to 256 after user testing. URL param `brickThr` overrides live.
+ */
+export const MAX_INTERSECT_BRICKS = 256
+
+/**
+ * Tunable knobs for the LOD picker. Exposed via URL params (see ViewerWindow) so Dominik can
+ * feel out the trade-offs live. Defaults reproduce the shipped behaviour; URL params override.
+ * - `maxIntersect` — CORE brick count ceiling for the over-fetch guard. Higher = more ambitious
+ *   (fetches finer bricks even on wider viewports); lower = safer memory but stays coarser.
+ * - `bias` — added to the SSE-picked level BEFORE floor and guard. Positive = coarser (draw less
+ *   detail than the pinhole math wants); negative = finer.
+ */
+export interface SchedulerKnobs {
+  maxIntersect: number
+  bias: number
+}
+export const DEFAULT_KNOBS: SchedulerKnobs = { maxIntersect: MAX_INTERSECT_BRICKS, bias: 0 }
+
+/**
+ * Guard the SSE-desired level against over-fetch. Counts core (ring === 0) bricks only — halo
+ * is prefetch and not part of what the frame actually samples. If the core count at the chosen
+ * level exceeds `maxIntersect`, walk one level coarser and re-check, bounded by `floorLevel`.
+ * Returns the level the scheduler should actually use.
+ */
+export function guardIntersectCost(
+  view: BrickViewport,
+  world: BrickWorld,
+  chosen: number,
+  floorLevel: number,
+  maxIntersect: number = MAX_INTERSECT_BRICKS,
+): number {
+  let level = chosen
+  while (level < floorLevel) {
+    const coreCount = bricksIntersectingViewport(view, world, level)
+      .filter(s => s.ring === 0).length
+    if (coreCount <= maxIntersect) break
+    level += 1
+  }
+  return level
+}
+
+/**
+ * Frame scheduler. Two-stage LOD pick:
+ *   1. `pickBrickLevel` — SSE picker with hysteresis, freely picking any level per viewport.
+ *   2. Clamp to `floorLevel` (user's dropdown = coarsest allowed) — never coarser than the user
+ *      asked; the SSE picker gets to go finer as the user zooms in.
+ *   3. `guardIntersectCost` — if the SSE-chosen level would fan out to too many bricks (the
+ *      wide-viewport-on-huge-L0 pathology, f8gzA2 fit distance), coarsen back toward the floor
+ *      until the intersect list fits under `MAX_INTERSECT_BRICKS`.
+ *
+ * Reversal of the 8b780fd `pinLevel` approach: pinning to the dropdown blocked zoom-in adaptive
+ * LOD entirely (SispLk stuck on L5 at deep zoom, 2026-08-29 screenshot). The floor + guard combo
+ * covers f8gzA2's over-fetch without the collateral damage.
  */
 export function scheduleBricks(
   view: BrickViewport,
   world: BrickWorld,
   resident: ReadonlySet<string>,
   previousLevel: number | undefined,
-  pinLevel?: number,
+  floorLevel?: FloorLevel,
+  knobs: SchedulerKnobs = DEFAULT_KNOBS,
 ): { level: number; toLoad: ScheduledBrick[]; toEvict: string[] } {
-  const level = pinLevel !== undefined && Number.isFinite(pinLevel) && pinLevel >= 0
-    ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(pinLevel)))
-    : pickBrickLevel(view, world, previousLevel)
+  const floor = floorLevel !== undefined && Number.isFinite(floorLevel) && floorLevel >= 0
+    ? Math.max(0, Math.min(world.nLevels - 1, Math.floor(floorLevel)))
+    : world.nLevels - 1
+  // Apply the tunable bias to the SSE pick BEFORE clamping. Positive bias coarsens (pushes
+  // toward the floor); negative bias sharpens (pushes toward L0). Clamped to the pyramid range
+  // before the floor clamp so a wild bias can't drive the picker out of bounds.
+  const raw = pickBrickLevel(view, world, previousLevel) + knobs.bias
+  const biased = Math.max(0, Math.min(world.nLevels - 1, Math.round(raw)))
+  const chosen = Math.min(biased, floor)
+  const level = guardIntersectCost(view, world, chosen, floor, knobs.maxIntersect)
   const scheduled = bricksIntersectingViewport(view, world, level)
   const wantedKeys = new Set(scheduled.map(s => brickKey(s.brick)))
   const toLoad = scheduled.filter(s => !resident.has(brickKey(s.brick)))

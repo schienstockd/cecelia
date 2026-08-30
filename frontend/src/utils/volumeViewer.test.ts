@@ -3,6 +3,7 @@ import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
   slabZ, visibleExtentUm, pickTileLevel, pickVolumeLevel,
+  shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
 } from './volumeViewer'
@@ -534,6 +535,59 @@ describe('pickVolumeLevel — 3D LOD (napari-parity: coarsest by default)', () =
     expect(pickVolumeLevel(m, 2)).toBe(2)
     expect(pickVolumeLevel(m, 99)).toBe(3)      // clamped to deepest
     expect(pickVolumeLevel(m, -5)).toBe(0)      // clamped to L0
+  })
+})
+
+describe('shouldUseBricks — 3D renderer auto-select from ViewerMeta', () => {
+  // Landmarks lifted straight from `~/Downloads/TMP/bench6/*.json` (2026-08-29) — the reference
+  // images this predicate has to classify correctly. Update if a new store gets added.
+  it('classifies every reference image the way BRICK_INTEGRATION_PLAN Decision 2 expects', () => {
+    // fXgbTl: 31 t × ~47 MB = 1.4 GB total, fits flat's cache 31/31 → flat wins scrub
+    expect(shouldUseBricks(meta({
+      nT: 31, nC: 4, nZ: 32, nY: 420, nX: 441, bytesPerVoxel: 2,
+    }))).toBe(false)
+    // Dml3RG: 181 t × ~47 MB = 8.5 GB total, flat caches 4/181 → brick wins TTFF + scrub
+    expect(shouldUseBricks(meta({
+      nT: 181, nC: 4, nZ: 37, nY: 1039, nX: 1060, bytesPerVoxel: 2,
+    }))).toBe(true)
+    // f8gzA2: 17 GB per single timepoint, flat can't upload one volume → brick
+    expect(shouldUseBricks(meta({
+      nT: 1, nC: 25, nZ: 1, nY: 16898, nX: 20329, bytesPerVoxel: 2,
+    }))).toBe(true)
+    // SispLk: 57 Mpx per plane × 6 levels × movie → brick regardless of exact nT
+    expect(shouldUseBricks(meta({
+      nT: 50, nC: 4, nZ: 20, nY: 7293, nX: 7848, bytesPerVoxel: 2,
+    }))).toBe(true)
+  })
+  it('gates on total movie bytes, not per-plane pixels', () => {
+    // A big-XY image at a SINGLE small-C timepoint that still fits the cache → flat
+    expect(shouldUseBricks(meta({
+      nT: 1, nC: 1, nZ: 1, nY: 5000, nX: 5000, bytesPerVoxel: 2,
+    }))).toBe(false)
+    // A tiny-XY image but many timepoints × many channels that overflow the cache → brick
+    expect(shouldUseBricks(meta({
+      nT: 200, nC: 10, nZ: 40, nY: 200, nX: 200, bytesPerVoxel: 2,
+    }))).toBe(true)
+  })
+  it('handles the threshold boundary without off-by-one', () => {
+    // Exactly at the budget → brick (strict >=, so the boundary tips to brick).
+    // Build meta whose bytes-per-t divides CACHE_BUDGET_BYTES cleanly.
+    const bytesPerT = 1_000_000
+    const nT = CACHE_BUDGET_BYTES / bytesPerT       // 1500
+    expect(shouldUseBricks(meta({
+      nT, nC: 1, nZ: 1, nY: 1000, nX: 500, bytesPerVoxel: 2,       // bytesPerT = 500*1000*1*1*2
+    }))).toBe(true)
+    expect(shouldUseBricks(meta({
+      nT: nT - 1, nC: 1, nZ: 1, nY: 1000, nX: 500, bytesPerVoxel: 2,
+    }))).toBe(false)
+  })
+  it('refuses to route degenerate meta to bricks', () => {
+    // A store that hasn't reported dimensions yet must NOT get the renderer swapped under it —
+    // the renderer is picked reactively and the flat path is the safer default when the
+    // predicate can't decide.
+    expect(shouldUseBricks(meta({ nX: 0, nY: 100 }))).toBe(false)
+    expect(shouldUseBricks(meta({ nX: 100, nY: 0 }))).toBe(false)
+    expect(shouldUseBricks(meta({ nX: NaN, nY: 100 }))).toBe(false)
   })
 })
 

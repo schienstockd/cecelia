@@ -1,6 +1,12 @@
 ## Kiln brick atlas — LOD-in-3D for the WebGPU viewer
 
-**Status:** planning · branch `feat/kiln-brick-port` · reference: [Kiln (mpanknin/kiln-render)](https://github.com/mpanknin/kiln-render) (GPL-3-compatible)
+**Status:** **superseded** (2026-08-29) by [`BRICK_INTEGRATION_PLAN.md`](BRICK_INTEGRATION_PLAN.md).
+P0–P5 shipped through PRs #691–#704 (see git log). The remaining work — auto-select from meta, close
+the f8gzA2 shader-scaling regression, retire the flat 3D path — moved to the successor plan, which
+is grounded in the 2026-08-29 bench blobs the old plan didn't have. Keep this file as a decision
+record for the ~30 PRs that built the renderer; do NOT continue design work here.
+
+**Original status:** planning · branch `feat/kiln-brick-port` · reference: [Kiln (mpanknin/kiln-render)](https://github.com/mpanknin/kiln-render) (GPL-3-compatible)
 
 **Goal.** Bring pyramid LOD to the **3D** path of the WebGPU viewer. The 2D tile path already loads
 one level per viewport, hysteresis-clamped ([`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md) → Decision 4,
