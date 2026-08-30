@@ -142,6 +142,10 @@ const parseNumQuery = (v: unknown, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback
 }
 const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
+// URL param present? Only then does `?brickThr` win over the persisted quality tier — an unset
+// param must NOT collapse to 256 and freeze the tier control, which is why the raw string is
+// checked here rather than trusting `brickKnobThr`'s fallback.
+const brickKnobThrFromUrl = String(route.query.brickThr ?? '') !== ''
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
 /** Frankenstein hole-fill: default on. `?brickFrank=0` opts back to hold-on-cold for A/B. */
@@ -840,6 +844,31 @@ const BRICKS_MODES = [
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
   { value: 'flat', label: 'Flat', tip: 'Force per-timepoint cache' },
 ]
+/** Brick-scheduler quality tier → `maxIntersect` (core-brick ceiling in the over-fetch guard).
+ *  Balanced = `MAX_INTERSECT_BRICKS` shipped default. Quick halves it (wider viewports stay
+ *  coarser but drop fewer bricks); Detailed doubles it — do NOT read that as a validated safe
+ *  maximum, per KILN_BRICK_PLAN.md #705 the values were tuned against two reference images and
+ *  the upper end is where f8gzA2's shader-scaling regression (200ms drawP95) lives for any large
+ *  single-level volume routed through bricks. */
+const BRICK_TIER_THRESHOLD: Record<'quick' | 'balanced' | 'detailed', number> = {
+  quick: 128,
+  balanced: 256,
+  detailed: 512,
+}
+const BRICK_TIERS = [
+  { value: 'quick', label: 'Quick', tip: 'Fewer bricks per view — faster on wide zooms, coarser' },
+  { value: 'balanced', label: 'Balanced', tip: 'Shipped default' },
+  { value: 'detailed', label: 'Detailed', tip: 'More bricks per view — finer at cost' },
+]
+/** Core-brick ceiling actually shipped to the scheduler. URL `?brickThr=N` wins so a dev
+ *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
+const effectiveMaxIntersect = computed(() =>
+  brickKnobThrFromUrl ? brickKnobThr : BRICK_TIER_THRESHOLD[settings.viewerBrickTier])
+// Live-apply the tier without reallocating the renderer. Ignored on the flat renderer (setter
+// is optional). `bias` stays URL-only, so it rides through unchanged.
+watch(effectiveMaxIntersect, v => {
+  renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: brickKnobBias })
+})
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
  *
@@ -2304,6 +2333,11 @@ const seen = ref<[number, number]>([0, 0])
  */
 const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
 watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+/** Advanced viewer popover — open state + anchor. NOT persisted: a popover that's OPEN on
+ *  reload is a distinct bug from a slider whose value should survive. Anchor is the trigger
+ *  button so `TeleportPopover` positions from its rect. */
+const advancedOpen = ref(false)
+const advancedTrigger = ref<HTMLElement | null>(null)
 /** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
  *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
  *  who never scrubs won't want it. */
@@ -2582,9 +2616,11 @@ async function ensureRenderer() {
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
-      // Apply URL-provided LOD tuning knobs. No-ops on the flat renderer. See `parseNumQuery`
-      // block at the top of the module for the param names.
-      r.setSchedulerKnobs?.({ maxIntersect: brickKnobThr, bias: brickKnobBias })
+      // Apply the initial LOD knobs. `maxIntersect` = URL override if present, else the
+      // persisted quality tier; a subsequent tier change goes through the watcher below without
+      // a reallocate. `bias`/`hold`/`frank` stay URL-only (dev knobs). No-ops on the flat
+      // renderer. See `parseNumQuery` block at the top of the module for the param names.
+      r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: brickKnobBias })
       r.setHoldFinerEnabled?.(brickKnobHold)
       r.setFrankensteinEnabled?.(brickKnobFrank)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
@@ -3283,6 +3319,43 @@ onUnmounted(() => {
           </tbody>
         </table>
       </TeleportPopover>
+      <!-- Advanced viewer popover — Renderer + brick Quality tier. Trigger is the sidebar's
+           gear (`advancedTrigger` above). Renderer flip persists in `settings.viewerBricksMode`
+           and forces a full reallocate via the existing watcher (short canvas flash). Quality
+           tier writes `settings.viewerBrickTier` and rides through `effectiveMaxIntersect` +
+           watcher — no reallocate, applies within a few scheduler ticks. Tier hidden when the
+           effective renderer is Flat (`?brickThr=` overriding is still visible in the label).
+           URL `?bricks=` / `?brickThr=` win over both controls; the tier chip shows disabled
+           with the URL value in its tooltip in that case, so the user isn't quietly ignored. -->
+      <TeleportPopover v-model="advancedOpen" :anchor="advancedTrigger" placement="bottom-end">
+        <div class="cc-eyebrow cc-fs-2xs">Advanced viewer</div>
+        <div class="vw-adv-body">
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Auto picks based on movie size vs cache'">Renderer</span>
+            <ChipSelect
+              :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
+              variant="segmented" aria-label="Renderer"
+              @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
+            />
+          </div>
+          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="brickKnobThrFromUrl
+                    ? `?brickThr=${brickKnobThr} overrides the tier`
+                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
+            <ChipSelect
+              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
+              variant="segmented" aria-label="Brick quality tier"
+              :disabled="brickKnobThrFromUrl"
+              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
+            />
+          </div>
+          <div class="cc-muted cc-fs-3xs vw-adv-note" v-else>
+            Quality tier applies to the Brick renderer.
+          </div>
+        </div>
+      </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
            ViewerPanel now (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches this
            window via the storage bridge and calls `changeVersion` internally. -->
@@ -3334,19 +3407,18 @@ onUnmounted(() => {
             </option>
           </select>
         </div>
-        <!-- Renderer override. Auto uses `shouldUseBricks(meta)`; Brick/Flat are safety valves for
-             images the predicate gets wrong (Dominik 2026-08-29: Dml3RG 2D is awful on bricks but
-             needed on 3D). Applies to 2D plane view too — when `useTiles === false`, the plane view
-             draws through the volume renderer, so the same override matters. `?bricks=0|1` in the
-             URL still wins over this. Flip triggers a full renderer reallocate via the watcher. -->
+        <!-- Advanced viewer popover — trigger. Renderer override + brick quality tier live in the
+             popover so the sidebar stays task-focused (Level, Plane, Timepoint). Popover contents
+             match the same two-axis story as the URL knobs: `?bricks=` picks the renderer,
+             `?brickThr=` caps the intersect. -->
         <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Renderer — Auto picks based on movie size'">Bricks</span>
-          <ChipSelect
-            :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
-            variant="segmented" aria-label="Renderer"
-            @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
-          />
+          <span class="cc-muted cc-fs-2xs cc-lbl-col">Advanced</span>
+          <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  aria-label="Advanced viewer settings"
+                  v-tooltip.top="'Renderer and brick quality'"
+                  @click="advancedOpen = !advancedOpen">
+            <i class="pi pi-sliders-h" />
+          </button>
         </div>
         <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
              pixel is closest to (without going finer than) one device pixel, so we never ship pixels
@@ -3521,7 +3593,7 @@ onUnmounted(() => {
               </span>
               <span class="cc-muted">Knobs</span>
               <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1 · ?brickFrank=1 (hole-fill)'">
-                thr {{ brickKnobThr }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
+                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
               </span>
             </template>
             <template v-else>
@@ -3969,6 +4041,8 @@ onUnmounted(() => {
 .vw-key { white-space: nowrap; }
 /* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
    reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
+.vw-adv-body { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 4px; min-width: 16rem; }
+.vw-adv-note { padding: 0.2rem 0 0.1rem; }
 .vw-keys { border-collapse: collapse; margin-top: 4px; }
 .vw-keys th, .vw-keys td { padding: 3px 8px 3px 0; text-align: left; vertical-align: middle; white-space: nowrap; }
 .vw-keys th { font-weight: normal; }
