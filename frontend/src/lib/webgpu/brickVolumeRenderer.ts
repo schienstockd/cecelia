@@ -41,6 +41,7 @@ import {
   BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
   BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
 } from './brickShader'
+import type { GpuFrameSample } from '../../utils/benchRecorder'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
  *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
@@ -326,6 +327,42 @@ export async function createBrickVolumeRenderer(
   /** Per-writeBrick timing hook — bench harness only. Fires with the CPU-side duration of one
    *  writeBrick call and the byte count uploaded. Null when unwired. */
   let onBrickWritten: ((durationMs: number, bytes: number) => void) | null = null
+  /** Per-frame GPU + fine-grained CPU timing hook — bench harness only. Fires asynchronously
+   *  (frame N+K) via the timestamp readback. Populates GPU-side fields only on adapters with
+   *  `timestamp-query`; CPU-side fields always populate. Null when unwired. See
+   *  `docs/todo/BRICK_OCTREE_TRANSPLANTS_PLAN.md` P1 — added to unblock diagnosing what's in
+   *  the residual post-B0 drawP95 on f8gzA2. */
+  let onFrameTimings: ((s: GpuFrameSample) => void) | null = null
+  /** Ring of query-set resolve + readback buffers used by the timestamp-query bench path.
+   *  Allocated once at device init, only when the adapter supports `timestamp-query`. Ring
+   *  size 4 covers typical GPU pipeline depth; frames that find no free slot fall back to
+   *  emitting CPU-only timings (with `gpuFrameMs: null`) so the bench never blocks the frame
+   *  loop. Null on adapters that lack the feature. */
+  interface BenchTsRing {
+    readonly querySet: GPUQuerySet
+    readonly resolveBufs: readonly GPUBuffer[]
+    readonly readbackBufs: readonly GPUBuffer[]
+    readonly inflight: boolean[]
+    readonly RING: number
+    nextSlot: number
+  }
+  const benchTs: BenchTsRing | null = report.hasTimestamps
+    ? (() => {
+        const RING = 4
+        return {
+          querySet: device.createQuerySet({ type: 'timestamp', count: 2 }),
+          resolveBufs: Array.from({ length: RING }, () => device.createBuffer({
+            size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+          })),
+          readbackBufs: Array.from({ length: RING }, () => device.createBuffer({
+            size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+          })),
+          inflight: Array.from({ length: RING }, () => false),
+          RING,
+          nextSlot: 0,
+        }
+      })()
+    : null
   /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
    *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
@@ -1128,26 +1165,105 @@ export async function createBrickVolumeRenderer(
     // Test-pattern upload is idempotent-ish (LRU updates lastUsed, but slot stays); OK per frame
     // while the flag is on — the loop only writes the atlas the first time.
     uploadTestPattern()
+    // Bench harness: CPU-side sub-frame timings are always populated when `onFrameTimings` is
+    // wired; GPU-side render pass timing is populated only when the adapter supports
+    // `timestamp-query` AND a ring slot is free. See BRICK_OCTREE_TRANSPLANTS_PLAN P1.
+    const bench = onFrameTimings !== null
+    const drawAtMs = bench ? performance.now() : 0
+
     // Schedule + fetch. The tick decides the current level, updates residency + eviction, and
     // kicks fetches; arriving payloads update `pageTableCpu` and set `pageTableDirty`. Fired
     // BEFORE the uniform + page-table upload so this frame renders with the freshest decisions.
+    const tickT0 = bench ? performance.now() : 0
     if (!testPattern) tickScheduler()
+    const tickT1 = bench ? performance.now() : 0
+
+    const wuT0 = bench ? performance.now() : 0
     writeUniform()
+    const wuT1 = bench ? performance.now() : 0
+
+    const wptT0 = bench ? performance.now() : 0
     writePageTable()
+    const wptT1 = bench ? performance.now() : 0
+
+    // Pick a ring slot for GPU timestamp write, if the harness is on AND the adapter supports
+    // it AND a slot isn't still waiting for its readback to land. If no slot is free, this
+    // frame emits CPU-only timings — the bench never blocks the frame loop.
+    let tsSlot = -1
+    if (bench && benchTs !== null) {
+      for (let i = 0; i < benchTs.RING; i++) {
+        const s = (benchTs.nextSlot + i) % benchTs.RING
+        if (!benchTs.inflight[s]) { tsSlot = s; benchTs.nextSlot = (s + 1) % benchTs.RING; break }
+      }
+    }
 
     const view = ctx.getCurrentTexture().createView()
     const enc = device.createCommandEncoder()
-    const pass = enc.beginRenderPass({
+    const passDesc: GPURenderPassDescriptor = {
       colorAttachments: [{
         view,
         loadOp: 'clear',
         storeOp: 'store',
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
       }],
-    })
+    }
+    if (tsSlot !== -1 && benchTs !== null) {
+      passDesc.timestampWrites = {
+        querySet: benchTs.querySet,
+        beginningOfPassWriteIndex: 0,
+        endOfPassWriteIndex: 1,
+      }
+    }
+    const pass = enc.beginRenderPass(passDesc)
     encodePass(pass, true)
     pass.end()
+    if (tsSlot !== -1 && benchTs !== null) {
+      enc.resolveQuerySet(benchTs.querySet, 0, 2, benchTs.resolveBufs[tsSlot], 0)
+      enc.copyBufferToBuffer(benchTs.resolveBufs[tsSlot], 0, benchTs.readbackBufs[tsSlot], 0, 16)
+    }
+
+    const esT0 = bench ? performance.now() : 0
     device.queue.submit([enc.finish()])
+    const esT1 = bench ? performance.now() : 0
+
+    if (!bench) return
+    // Narrow the callback to non-null for the delivery paths below; TS's flow analysis can't
+    // carry the earlier `onFrameTimings !== null` check across the `bench` boolean.
+    const emit = onFrameTimings!
+
+    const cpuTimings = {
+      tickSchedulerCpuMs: tickT1 - tickT0,
+      writePageTableCpuMs: wptT1 - wptT0,
+      writeUniformCpuMs: wuT1 - wuT0,
+      encoderSubmitCpuMs: esT1 - esT0,
+    }
+    if (tsSlot !== -1 && benchTs !== null) {
+      // Timestamps come back async — reserve the slot until mapAsync lands. Timestamps are
+      // written as u64 in nanoseconds per the WebGPU `timestamp-query` spec; a driver that
+      // quantises further still preserves ns semantics. Convert to ms at delivery time.
+      benchTs.inflight[tsSlot] = true
+      const capturedSlot = tsSlot
+      const capturedBench = benchTs
+      const readback = capturedBench.readbackBufs[capturedSlot]
+      readback.mapAsync(GPUMapMode.READ).then(() => {
+        if (destroyed) return
+        const arr = new BigUint64Array(readback.getMappedRange())
+        const t0 = arr[0], t1 = arr[1]
+        readback.unmap()
+        capturedBench.inflight[capturedSlot] = false
+        const gpuFrameMs = Number(t1 - t0) / 1e6
+        emit({ atMs: drawAtMs, gpuFrameMs, ...cpuTimings })
+      }).catch(() => {
+        // Map failure (device lost, unmap race) — free the slot and skip GPU timing for
+        // this frame; still emit CPU-side so the recorder keeps growing.
+        capturedBench.inflight[capturedSlot] = false
+        emit({ atMs: drawAtMs, gpuFrameMs: null, ...cpuTimings })
+      })
+    } else {
+      // Adapter lacks timestamp-query, or every ring slot is still inflight. Emit CPU-side
+      // only; the recorder still gets a sample this frame.
+      emit({ atMs: drawAtMs, gpuFrameMs: null, ...cpuTimings })
+    }
   }
 
   const r: VolumeRenderer = {
@@ -1367,6 +1483,7 @@ export async function createBrickVolumeRenderer(
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
+    setOnFrameTimings(cb) { onFrameTimings = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelFloor(level) {
       // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`

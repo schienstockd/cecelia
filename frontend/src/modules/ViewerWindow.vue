@@ -78,6 +78,7 @@ import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
+  type GpuFrameSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
@@ -164,11 +165,16 @@ const benchBytes = ref(0)
 /** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
  *  renderer. Times the atlas-upload path — durationMs is the CPU-side cost of one writeBrick. */
 const benchWrites = shallowRef<BenchWriteSample[]>([])
+/** Per-frame GPU + fine-grained CPU sub-frame samples, brick-only, best-effort. Populated
+ *  asynchronously via `setOnFrameTimings` — GPU-side `gpuFrameMs` requires the adapter's
+ *  `timestamp-query` feature; CPU-side buckets always populate. Not correlated 1:1 with
+ *  `benchFrames`; the blob stores them as a parallel stream. */
+const benchGpuFrames = shallowRef<GpuFrameSample[]>([])
 /** Save-time live tally so the panel shows progress without allocating on every frame. */
 const benchLive = computed(() => {
   const now = performance.now()
   const session = benchT0.value > 0 ? now - benchT0.value : 0
-  return summarizeBench(benchFrames.value, session)
+  return summarizeBench(benchFrames.value, session, benchGpuFrames.value)
 })
 /** Reset the bench counters. Called from setImage() so first-frame is measured from an honest
  *  boundary; also from the panel's Reset button when the user wants a clean segment. */
@@ -178,6 +184,7 @@ function benchReset() {
   benchFrames.value = []
   benchBytes.value = 0
   benchWrites.value = []
+  benchGpuFrames.value = []
 }
 /** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
  *  so a directory of them doesn't collide across images or renderers. */
@@ -213,6 +220,7 @@ function benchSave() {
     bytesFetched: benchBytes.value,
     vram,
     writes: benchWrites.value,
+    gpuFrames: benchGpuFrames.value,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -2745,6 +2753,12 @@ async function ensureRenderer() {
             atMs: performance.now(), durationMs, bytes,
           }]
         })
+        // Per-frame GPU + sub-frame CPU timings; delivered asynchronously (frame N+K) from the
+        // renderer's timestamp-query ring. GPU-side field is `null` when the adapter lacks the
+        // feature; CPU-side buckets always populate.
+        r.setOnFrameTimings?.(sample => {
+          benchGpuFrames.value = [...benchGpuFrames.value, sample]
+        })
       }
       void r.lost.then(info => {
         stopPlay()
@@ -3683,6 +3697,19 @@ onUnmounted(() => {
             <span>{{ benchLive.drawMedianMs !== null ? benchLive.drawMedianMs.toFixed(2) + ' ms' : '—' }}</span>
             <span class="cc-muted">Draw p95</span>
             <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
+            <template v-if="bricksEnabled">
+              <span class="cc-muted" v-tooltip.left="'GPU render pass p50/p95'">GPU</span>
+              <span>{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
+              <span class="cc-muted" v-tooltip.left="'CPU split p50·p95: tick / pt / submit'">CPU tick/pt/es</span>
+              <span>
+                <template v-if="benchLive.gpuSummary">
+                  {{ benchLive.gpuSummary.tickSchedulerCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.tickSchedulerCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.writePageTableCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.writePageTableCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.encoderSubmitCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.encoderSubmitCpuMs95.toFixed(2) }} ms
+                </template>
+                <template v-else>—</template>
+              </span>
+            </template>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
             <template v-if="bricksEnabled">

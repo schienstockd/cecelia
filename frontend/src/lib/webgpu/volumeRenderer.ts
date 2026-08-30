@@ -227,6 +227,14 @@ export interface VolumeRenderer {
    */
   setOnBrickWritten?(cb: ((durationMs: number, bytes: number) => void) | null): void
   /**
+   * Brick renderer only: per-frame GPU + CPU sub-frame timings. Fires asynchronously (frame N+K)
+   * from the timestamp-query readback path — GPU-side `gpuFrameMs` is populated only on adapters
+   * with the `timestamp-query` feature; CPU-side buckets always populate. Not correlated 1:1
+   * with the CPU-side `BenchSample` frames. Absent on the flat renderer. See
+   * `docs/todo/BRICK_OCTREE_TRANSPLANTS_PLAN.md` P1.
+   */
+  setOnFrameTimings?(cb: ((s: import('../../utils/benchRecorder').GpuFrameSample) => void) | null): void
+  /**
    * Brick renderer only: which timepoints to prefetch in the background. Typically the playback
    * window around the current `t` (see `prefetchWindow`). The renderer schedules a fetch per
    * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
