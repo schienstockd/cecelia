@@ -494,7 +494,7 @@ const trackSpeedRange = ref<[number, number] | null>(null)
  *  the storage bridge whenever the panel toggles the icon. */
 const popsPanelOn = computed(() => {
   const pt = gatingCurrent.value.popType || 'flow'
-  return setUid.value ? settings.getPopVisible(setUid.value, pt) : true
+  return setUid.value ? settings.getPopVisible(setUid.value, pt) : false
 })
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
@@ -1196,11 +1196,15 @@ async function loadOverlays() {
     //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
     //      on every write, so the override would be clobbered within a second anyway (Dominik,
     //      2026-08-25: "the toggles for pops and tracks dont do anything").
-    // Empty `setUid` = a viewer opened without a set context (rare — export path); default to shown.
+    // Empty `setUid` = a viewer opened without a set context (rare — export path). Default HIDDEN
+    // to match `settings.getPopVisible` (line 429) and the panel's own `popVisible` fallback (both
+    // false). Before this line defaulted to shown, which contradicted the panel — a viewer whose
+    // meta.setUid came back empty showed pop dots while every icon in the panel read as off
+    // (Dominik, 2026-08-31: "population dots still pop up despite the gating toggle being off").
     // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
     // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
     const currentPopType = gatingCurrent.value.popType || 'flow'
-    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : true
+    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : false
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
