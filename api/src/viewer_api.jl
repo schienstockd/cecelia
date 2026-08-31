@@ -942,44 +942,65 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         return (; overlays_for, mask_for, point_size_px, segment_width_px, mask_contour_px,
                   ov_diag, mask_diag)
     end
-    ov_vn = String(get(ov_raw, :valueName, ""))
+    # `ov_raw` reaches us as either symbol- OR string-keyed depending on the caller:
+    # `_overlays_raw_from_config` (`movie_rail.jl`) builds a `Dict{String,Any}`, while
+    # `record-test`'s smoke route parses JSON via JSON3 which yields symbol keys. Before this helper,
+    # every string-keyed field silently missed and returned the default — a `look`-derived movie
+    # config would read `showPopulations=true, showMask=false, allCellsColour="#9ca3af"` regardless
+    # of what the caller set. Reported 2026-08-31: cpSAM-vs-flowTom rendered pop dots on flowTom
+    # (has flow pops) and nothing on cpSAM (no flow pops), with the compare-grid rainbow outline
+    # never rendering because `showMask` was silently false. Try both key shapes; symbols first
+    # since JSON3 keys arrive that way.
+    _ov(d, k::Symbol, default) = begin
+        v = get(d, k, nothing)
+        v === nothing || return v
+        get(d, String(k), default)
+    end
+    ov_vn = String(_ov(ov_raw, :valueName, ""))
     # If the overlay caller did not name a segmentation, fall back to the ONE saved for the
     # frame (`vnn`) — a movie of the active segmentation is the expected case.
     ov_vn = isempty(ov_vn) ? something(vnn, "") : ov_vn
-    ov_pt = String(get(ov_raw, :popType, "flow"))
-    ov_paths_raw = get(ov_raw, :popPaths, nothing)
+    ov_pt = String(_ov(ov_raw, :popType, "flow"))
+    ov_paths_raw = _ov(ov_raw, :popPaths, nothing)
     ov_paths = ov_paths_raw isa AbstractVector ?
                String[String(p) for p in ov_paths_raw] : nothing
     # `showPopulations` gates the pop-dot build. Absent = true, so `record-test`'s smoke overlays
     # block (which never carried this field) keeps painting pops the way it always has. A
     # `look`-derived dict from `_overlays_raw_from_config` sets it explicitly, so a movie that only
     # asked for a mask stops leaking pop dots the user didn't select (reported by Dominik).
-    show_pops = Bool(get(ov_raw, :showPopulations, true))
-    include_tracks = Bool(get(ov_raw, :includeTracks, true))
+    show_pops = Bool(_ov(ov_raw, :showPopulations, true))
+    include_tracks = Bool(_ov(ov_raw, :includeTracks, true))
     # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
     # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
-    tail_length      = Int(get(ov_raw, :tailLength, 30))
+    tail_length      = Int(_ov(ov_raw, :tailLength, 30))
     # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
-    all_tracks       = Bool(get(ov_raw, :allTracks, false))
-    all_tracks_col   = String(get(ov_raw, :allTracksColour, "#9ca3af"))
+    all_tracks       = Bool(_ov(ov_raw, :allTracks, false))
+    all_tracks_col   = String(_ov(ov_raw, :allTracksColour, "#9ca3af"))
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
-    track_color_mode = String(get(ov_raw, :trackColorMode, "track"))
-    point_size_px    = Int(get(ov_raw, :pointSizePx, point_size_px))
-    segment_width_px = Int(get(ov_raw, :segmentWidthPx, segment_width_px))
+    track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
+    point_size_px    = Int(_ov(ov_raw, :pointSizePx, point_size_px))
+    segment_width_px = Int(_ov(ov_raw, :segmentWidthPx, segment_width_px))
     ov_diag["valueName"] = ov_vn
     ov_diag["popType"]   = ov_pt
     ov_diag["allTracks"] = all_tracks
+    # `showMask` decides the mask-outline half INDEPENDENTLY of `showPopulations` / `allTracks`.
+    # Before this hoist, mask reading lived INSIDE the `else` branch of the pop/track guard, so a
+    # mask-only render (showPopulations=false, showMask=true, e.g. the compare-grid rainbow path)
+    # never ran build_mask_for and the outline never showed. Reading it up here means the guard
+    # covers all three flags, and the mask still fires when only it is on.
+    show_mask = Bool(_ov(ov_raw, :showMask, false))
+    all_cells = Bool(_ov(ov_raw, :allCells, false))
+    mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
     elseif isempty(ov_vn)
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
-    elseif !(show_pops || all_tracks)
-        # No overlay type asked for — skip the pop-dot / track build entirely. Before this gate,
-        # `build_overlays_for` painted every pop of `pop_type` regardless of `showPopulations`, so a
-        # mask-only record (has_mask=true, showPopulations=false) rendered pop dots by accident.
-        ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
+    elseif !(show_pops || all_tracks || show_mask)
+        # No overlay type asked for — skip the pop-dot / track / mask build entirely. Before this
+        # gate, `build_overlays_for` painted every pop of `pop_type` regardless of `showPopulations`.
+        ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks + showMask all false)"
     else
         d = axis_dims(caxes, ndims(arr))
         H = haskey(d, "y") ? size(arr, d["y"]) : 0
@@ -989,55 +1010,54 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
         else
             tf = pixel_transform(H, W; crop = crop, max_px = max_px)
-            inner = try
-                build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                   transform = tf, pops_filter = ov_paths,
-                                   include_tracks = include_tracks,
-                                   tail_length = tail_length,
-                                   all_tracks = all_tracks,
-                                   all_tracks_colour = all_tracks_col,
-                                   track_color_mode = track_color_mode)
-            catch e
-                ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
-                @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
-                nothing
-            end
-            if inner !== nothing
-                if tally
-                    # Tally per-frame counts through a wrapper closure. Cheap (one integer per frame)
-                    # and answers "did overlays fire?" without a second inspection route.
-                    pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
-                    overlays_for = function(t::Int)
-                        p, s = inner(t)
-                        p === nothing || (pts_seen[]  += length(p.x))
-                        s === nothing || (segs_seen[] += length(s.x0))
-                        frames_touched[] += 1
-                        (p, s)
-                    end
-                    ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
-                else
-                    overlays_for = inner
+            if show_pops || all_tracks
+                inner = try
+                    build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
+                                       transform = tf, pops_filter = ov_paths,
+                                       include_tracks = include_tracks,
+                                       tail_length = tail_length,
+                                       all_tracks = all_tracks,
+                                       all_tracks_colour = all_tracks_col,
+                                       track_color_mode = track_color_mode)
+                catch e
+                    ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
+                    @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
+                    nothing
                 end
-                isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
+                if inner !== nothing
+                    if tally
+                        # Tally per-frame counts through a wrapper closure. Cheap (one integer per
+                        # frame) and answers "did overlays fire?" without a second inspection route.
+                        pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
+                        overlays_for = function(t::Int)
+                            p, s = inner(t)
+                            p === nothing || (pts_seen[]  += length(p.x))
+                            s === nothing || (segs_seen[] += length(s.x0))
+                            frames_touched[] += 1
+                            (p, s)
+                        end
+                        ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
+                    else
+                        overlays_for = inner
+                    end
+                    isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
+                end
+            else
+                ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
             end
             # ── Optional P4 mask outlines. Same transform, same pops_filter, same
             # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`
             # is the gate — off by default because it costs one label-store read per frame.
-            show_mask = Bool(get(ov_raw, :showMask, false))
-            all_cells = Bool(get(ov_raw, :allCells, false))
-            mask_diag["requested"] = show_mask
             if show_mask
-                all_cells_col = String(get(ov_raw, :allCellsColour, "#9ca3af"))
-                mask_contour_px = Int(get(ov_raw, :maskContourPx, mask_contour_px))
+                all_cells_col = String(_ov(ov_raw, :allCellsColour, "#9ca3af"))
+                mask_contour_px = Int(_ov(ov_raw, :maskContourPx, mask_contour_px))
                 # colourBy / colourOverrides ride on `ov_raw` (from `_overlays_raw_from_config`) —
                 # nothing to do here beyond forwarding; the author does the actual recolour. Empty
                 # / missing → pop-derived colours (pre-P5.5 behaviour).
-                cb_raw_v = get(ov_raw, :colourBy, nothing)
-                cb_raw_v === nothing && (cb_raw_v = get(ov_raw, "colourBy", nothing))
+                cb_raw_v = _ov(ov_raw, :colourBy, nothing)
                 mask_cb = (cb_raw_v isa AbstractString && !isempty(String(cb_raw_v))) ?
                             String(cb_raw_v) : nothing
-                co_raw_v = get(ov_raw, :colourOverrides, nothing)
-                co_raw_v === nothing && (co_raw_v = get(ov_raw, "colourOverrides", nothing))
+                co_raw_v = _ov(ov_raw, :colourOverrides, nothing)
                 mask_co = co_raw_v isa AbstractDict ? co_raw_v : nothing
                 mask_inner = try
                     build_mask_for(img; value_name = ov_vn, pop_type = ov_pt,

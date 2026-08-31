@@ -5470,6 +5470,84 @@ end
     end
 end
 
+@testset "API: _resolve_movie_overlays_mask honours String-keyed ov_raw" begin
+    # The bug this pins: `_resolve_movie_overlays_mask` used `get(ov_raw, :symbol, default)` to read
+    # every flag, but `_overlays_raw_from_config` (movie_rail.jl) hands over a `Dict{String,Any}`.
+    # Symbol lookups against string keys silently returned the DEFAULTS, so `showPopulations=true`,
+    # `showMask=false`, `allCellsColour="#9ca3af"` regardless of what the caller had set. Reported
+    # 2026-08-31 (Dominik): compare-grid cpSAM-vs-flowTom rendered pop dots on flowTom (its flow
+    # populations, painted because show_pops read as its default `true`) and NOTHING on cpSAM (which
+    # has no flow pops); the rainbow mask outline never showed up on either cell because show_mask
+    # read as its default `false`, skipping the whole mask branch. Julia's own key equality is what
+    # made this silent: `get(Dict{String,Any}("k"=>false), :k, true)` returns `true`.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            # Minimal label store on disk so `build_mask_for` can open it — same shape as the
+            # `build_mask_for guard` testset above uses.
+            nt, nc, ny, nx = 3, 1, 8, 8
+            labels_dir = joinpath(dir, "testpr", "1", "KDIeEm", "labels")
+            mkpath(labels_dir)
+            zp = joinpath(labels_dir, "B.zarr")
+            axes_attr = Dict("multiscales" =>
+                             [Dict("axes" => [Dict("name" => n) for n in ["t", "c", "y", "x"]])])
+            g = zgroup(Zarr.DirectoryStore(zp); attrs = axes_attr)
+            a = zcreate(UInt16, g, "0", nx, ny, nc, nt; chunks = (nx, ny, nc, nt))
+            block = zeros(UInt16, nx, ny, nc, nt)
+            block[1:3, 1:3, 1, :] .= UInt16(1)
+            block[6:8, 1:3, 1, :] .= UInt16(2)
+            block[1:8, 6:8, 1, :] .= UInt16(3)
+            a[:, :, :, :] = block
+            img.labels = Dict("B" => ["B.zarr"])
+            save!(img)
+            img, _ = _gating_image("testpr", "KDIeEm")
+
+            arr, caxes = open_level0(String(img_labels_path(img, "B")))
+
+            # STRING-keyed ov_raw (what `_overlays_raw_from_config` hands over): showPopulations=false
+            # means "don't draw pop dots". Before the fix, symbol lookup returned `true`.
+            ov_str = Dict{String,Any}(
+                "showPopulations" => false, "popType" => "flow",
+                "showMask" => true, "allCells" => true, "allCellsColour" => "rainbow",
+                "maskContourPx" => 2)
+            r = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_str, "B";
+                                              z = nothing, crop = nothing, max_px = 0)
+            @test r.overlays_for === nothing
+            @test r.mask_for !== nothing
+            @test r.mask_diag["requested"] === true
+            # rainbow paints each cell from the palette — not the default gray. A solid
+            # `#9ca3af` fallback (the pre-fix behaviour) would fail this check.
+            _, dict0 = r.mask_for(0)
+            @test dict0 !== nothing && !isempty(dict0)
+            @test any(v -> v in CECELIA_TRACK_PALETTE, values(dict0))
+
+            # Symbol-keyed ov_raw (what `record-test`'s JSON3 parse yields) must still work — the
+            # helper tries symbol first, then string, so both wire shapes converge on the same
+            # decision. Same asserts.
+            ov_sym = Dict{Symbol,Any}(
+                :showPopulations => false, :popType => "flow",
+                :showMask => true, :allCells => true, :allCellsColour => "rainbow",
+                :maskContourPx => 2)
+            r2 = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_sym, "B";
+                                               z = nothing, crop = nothing, max_px = 0)
+            @test r2.overlays_for === nothing
+            @test r2.mask_for !== nothing
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: render_view_frame — points and segments overlays" begin
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)
