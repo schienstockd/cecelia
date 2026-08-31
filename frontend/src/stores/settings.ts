@@ -71,25 +71,23 @@ export const useSettingsStore = defineStore('settings', () => {
   // `_apply_movie_config!`). With this off nothing was ever written, so that load found no file and
   // napari auto-contrasted per image — a recorded look was not reproducible.
   //
-  // Kept during P6 even though `asDask` / `labelsCache` were deleted: the animation page banks per-
-  // keyframe view state, and the persisted per-image props ARE the reference for those snapshots.
-  // PY (WebGPU per-image props) has since taken over the write side via `/api/viewer/props`, but the
-  // toggle name still says "napari" until PR 5 renames it to `viewerAutoSaveLayerProps`.
+  // Autosave the browser viewer's per-image layer props (contrast, colormap, T/Z, ndisplay) as the
+  // user changes them, so the animation page — which banks per-keyframe view state on top of these —
+  // has a durable reference. Writes go through `/api/viewer/props` (PY).
   //
-  // **The replacement is a hard P9 blocker.** VIEWER_CONTROLS_SPLIT_PLAN.md → PY defines the WebGPU
-  // per-image layer-props sink; this ref is deletable only when that lands and the animation card
-  // reads viewState from the WebGPU viewer with no bridge round-trip (Dominik, 2026-08-26: "as long
-  // as the layer autosave props lands at some point. that is ok. because it is essential").
-  const napariAutoSaveLayerProps = ref(
-    localStorage.getItem('cc.napariAutoSaveLayerProps') !== 'false'  // default true
-  )
-
-  // Render napari on the discrete GPU (hybrid-graphics machines, Linux only). Persisted here and
-  // re-asserted to the backend each session (App.vue) so the bridge launches on the right GPU; the
-  // backend holds the authoritative launch-time flag. Effective on the next bridge (re)start.
-  const napariDiscreteGpu = ref(
-    localStorage.getItem('cc.napariDiscreteGpu') === 'true'  // default false
-  )
+  // localStorage key was `cc.napariAutoSaveLayerProps` until the P9 rename; a one-time read migrates
+  // an old value into `cc.viewerAutoSaveLayerProps` so a user's saved preference doesn't reset.
+  const viewerAutoSaveLayerProps = ref((() => {
+    const cur = localStorage.getItem('cc.viewerAutoSaveLayerProps')
+    if (cur !== null) return cur !== 'false'
+    const legacy = localStorage.getItem('cc.napariAutoSaveLayerProps')
+    if (legacy !== null) {
+      localStorage.setItem('cc.viewerAutoSaveLayerProps', legacy)
+      localStorage.removeItem('cc.napariAutoSaveLayerProps')
+      return legacy !== 'false'
+    }
+    return true  // default
+  })())
 
   // Browser volume viewer (/viewer-window) — the two options that are the WINDOW's, not the image's.
   // Per-channel contrast deliberately is not here: the server answers it (napari's saved props, or a
@@ -540,8 +538,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
-  watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
-  watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
+  watch(viewerAutoSaveLayerProps, v => localStorage.setItem('cc.viewerAutoSaveLayerProps', String(v)))
   watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
   watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
   watch(viewerFps,                v => localStorage.setItem('cc.viewerFps',                String(v)))
@@ -613,7 +610,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

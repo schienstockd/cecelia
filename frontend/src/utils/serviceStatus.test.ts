@@ -1,20 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { napariState, notebooksState, previewState, stateInfo, formatUptime } from './serviceStatus'
-
-describe('napariState', () => {
-  it('maps the /api/napari/status payload', () => {
-    expect(napariState({ alive: true, starting: false })).toBe('running')
-    expect(napariState({ alive: false, starting: true })).toBe('starting')
-    expect(napariState({ alive: false, starting: false })).toBe('stopped')
-    // starting wins even if a stale alive flag lingers
-    expect(napariState({ alive: true, starting: true })).toBe('starting')
-  })
-  it('treats a missing/failed payload as stopped', () => {
-    expect(napariState(null)).toBe('stopped')
-    expect(napariState(undefined)).toBe('stopped')
-    expect(napariState({})).toBe('stopped')
-  })
-})
+import { notebooksState, previewState, stateInfo, formatUptime } from './serviceStatus'
 
 describe('notebooksState', () => {
   it('maps the /api/notebooks/status payload', () => {
@@ -50,9 +35,9 @@ describe('stateInfo', () => {
 })
 
 describe('previewState', () => {
-  it('reduces the preview worker the same way as napari — same payload shape', () => {
-    // Deliberately an alias, not a copy: /api/preview/status returns {alive,starting} like napari's.
-    // Asserted so a future divergence in either payload is caught here rather than showing a wrong pill.
+  it('reduces the preview worker payload', () => {
+    // /api/preview/status returns {alive, starting}. Kept as a shared reducer (aliveState) so a
+    // future service with the same payload shape can reuse it without a second copy.
     expect(previewState({ alive: true, starting: false })).toBe('running')
     expect(previewState({ alive: false, starting: true })).toBe('starting')
     expect(previewState({ alive: false, starting: false })).toBe('stopped')

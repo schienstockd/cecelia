@@ -5,8 +5,8 @@ import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
-import { napariState, notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
-import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
+import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
+import { notebooksApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore, type PluginEntry } from '../stores/customModules'
 import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
@@ -354,7 +354,6 @@ onMounted(loadLayout)
 // Live status of the backend's child processes + per-component and global controls. Status is
 // ephemeral UI state (polled) → plain refs, not persisted view state. Pure status→state mapping
 // lives in utils/serviceStatus.ts (unit-tested); here we only poll, act, and pick which buttons show.
-const napariRaw = ref<{ alive?: boolean; starting?: boolean; bridgeUptimeSeconds?: number | null; bridgeStale?: boolean } | null>(null)
 const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
 // The task-preview worker. It gets a row because it holds a cellpose model in GPU memory, and the
 // toggle that starts it lives on the task page — reachable only while you are there with a previewable
@@ -370,7 +369,6 @@ interface RunnerStatus {
 }
 const runnerRaw = ref<RunnerStatus | null>(null)
 const runnerSt = computed<ServiceState>(() => runnerRaw.value?.running ? 'running' : 'stopped')
-const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
 const previewSt = computed<ServiceState>(() => previewState(previewRaw.value))
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
@@ -419,44 +417,10 @@ function cancelPatch(patchId: string) {
 // controllable service, we just show it so the full picture of occupied ports is visible.
 const guiPort = computed(() => location.port || (location.protocol === 'https:' ? '443' : '80'))
 
-const svcBusy = ref('')     // which row's action is in flight ('napari' | 'notebooks' | 'app')
+const svcBusy = ref('')     // which row's action is in flight ('notebooks' | 'app')
 const svcMsg = ref('')
 
-// ── Napari discrete-GPU toggle ──────────────────────────────────────────────
-// Persisted in the settings store (localStorage); the backend holds the authoritative launch-time
-// flag. `gpuSupported` is false off Linux (there GPU choice is an OS/driver setting → toggle is a
-// no-op). Flipping it POSTs the flag and restarts napari (if running) so it takes effect now.
-const gpuSupported = ref(true)
-const gpuBusy = ref(false)
-async function loadGpu() {
-  try {
-    const d = await (await fetch('/api/napari/gpu')).json()
-    gpuSupported.value = d.supported !== false
-  } catch { /* leave optimistic default; toggle still works */ }
-}
-async function toggleGpu() {
-  gpuBusy.value = true; svcMsg.value = ''
-  const which = settings.napariDiscreteGpu ? 'discrete' : 'default'
-  try {
-    const res = await fetch('/api/napari/gpu', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: settings.napariDiscreteGpu }),
-    })
-    const d = await res.json()
-    if (d.needsRestart) {
-      await napariApi.restart()
-      svcMsg.value = `Napari restarting on the ${which} GPU — reopen the image to reload its layers.`
-    } else {
-      svcMsg.value = `Napari will use the ${which} GPU next time it starts.`
-    }
-  } catch {
-    svcMsg.value = 'Could not update the GPU setting.'
-  } finally { gpuBusy.value = false; setTimeout(pollServices, 500) }
-}
-onMounted(loadGpu)
-
 async function pollServices() {
-  try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
   try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
   try { previewRaw.value = await previewApi.status() } catch { previewRaw.value = null }
   try { runnerRaw.value = await (await fetch('/api/runner/status')).json() } catch { runnerRaw.value = null }
@@ -497,14 +461,6 @@ const { isCopied: observerCmdCopied, copy: copyCmdFlash } = useCopyFlash()
 const observerFallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
 const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
-async function napariAction(kind: 'restart' | 'stop') {
-  svcBusy.value = 'napari'; svcMsg.value = ''
-  try {
-    await (kind === 'restart' ? napariApi.restart() : napariApi.close())
-    svcMsg.value = kind === 'restart' ? 'Napari restarting — reopen the image to reload its layers.' : 'Napari stopped.'
-  } catch { svcMsg.value = 'Napari action failed.' }
-  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
-}
 // Stop only. Starting a preview means previewing SOMETHING — it needs a task's params and an open
 // image, which this panel has neither of; a Start button here would either do nothing visible or need
 // to invent params. The task page owns starting; this owns the off switch.
@@ -1045,7 +1001,7 @@ async function switchWt(path: string) {
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="armQuit(arm)"
-                    v-tooltip.top="'Stop napari, notebooks and the backend, then exit Cecelia'">
+                    v-tooltip.top="'Stop notebooks and the backend, then exit Cecelia'">
               <i class="pi pi-power-off" /> Quit
             </button>
             <template v-else>
@@ -1069,36 +1025,6 @@ async function switchWt(path: string) {
             {{ wtFolder(w.path) }} — {{ w.branch }}{{ w.primary ? ' (main)' : '' }}{{ w.current ? ' (current)' : '' }}
           </option>
         </select>
-      </div>
-
-      <div class="svc-row">
-        <span class="svc-name">Napari viewer</span>
-        <span class="svc-pill" :class="stateInfo(napariSt).tone"><span class="dot" /> {{ stateInfo(napariSt).label }}</span>
-        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Napari bridge WebSocket'">:{{ diag?.napariPort ?? '7655' }}</span>
-        <span class="svc-actions">
-          <button class="save-btn" :disabled="svcBusy === 'napari'" @click="napariAction('restart')"
-                  v-tooltip.top="'Close and relaunch the napari bridge (picks up bridge code changes)'">
-            <i :class="['pi', svcBusy === 'napari' ? 'pi-spin pi-spinner' : 'pi-refresh']" />
-            {{ napariSt === 'stopped' ? 'Start' : 'Restart' }}
-          </button>
-          <button v-if="napariSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'napari'"
-                  @click="napariAction('stop')"><i class="pi pi-stop-circle" /> Stop</button>
-        </span>
-      </div>
-
-      <!-- discrete-GPU toggle: launches the napari bridge on the dGPU (hybrid-graphics machines).
-           Linux only; disabled with a hint elsewhere. Flipping it restarts napari to apply. -->
-      <div class="field" style="margin: 0.2rem 0 0.6rem;">
-        <CcToggle class="toggle-row" :disabled="!gpuSupported || gpuBusy"
-               :model-value="settings.napariDiscreteGpu"
-               @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
-               v-tooltip.bottom="'Render napari on the discrete GPU; restarts napari (Linux only)'">
-          Use discrete GPU for napari
-          <i v-if="gpuBusy" class="pi pi-spin pi-spinner" style="font-size:var(--cc-fs-xs);" />
-        </CcToggle>
-        <span v-if="!gpuSupported" class="field-hint cc-muted cc-fs-xs">
-          Only configurable on Linux — on this system the GPU is selected by the OS/driver.
-        </span>
       </div>
 
       <div class="svc-row">
@@ -1249,15 +1175,6 @@ async function switchWt(path: string) {
           </span>
         </span>
         <span>Backend up</span><span class="mono">{{ formatUptime(diag.uptimeSeconds) }}</span>
-        <span>Napari bridge</span>
-        <span class="mono" :class="{ 'diag-stale': napariRaw?.bridgeStale }">
-          <template v-if="napariSt === 'running'">up {{ formatUptime(napariRaw?.bridgeUptimeSeconds) }}</template>
-          <template v-else>{{ stateInfo(napariSt).label }}</template>
-          <span v-if="napariRaw?.bridgeStale" class="diag-stale-note"
-                v-tooltip.bottom="'Napari is running old code — restart it (System panel above) and reopen the image'">
-            <i class="pi pi-exclamation-triangle" /> stale
-          </span>
-        </span>
         <span>Server threads</span><span class="mono">{{ diag.threads }}</span>
         <span>Julia</span><span class="mono">{{ diag.julia }}</span>
         <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>

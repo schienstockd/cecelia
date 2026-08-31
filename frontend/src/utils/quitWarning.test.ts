@@ -15,7 +15,7 @@ describe('quitTaskPhrase', () => {
 
 describe('quit tooltips', () => {
   it('keep the plain description when nothing is running', () => {
-    expect(quitConfirmTooltip(0)).toBe('Confirm quit — stops napari, notebooks and the backend')
+    expect(quitConfirmTooltip(0)).toBe('Confirm quit — stops notebooks and the backend')
     expect(quitConfirmLabel(0)).toBe('Quit everything')
   })
 

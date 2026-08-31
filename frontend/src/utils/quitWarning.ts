@@ -23,7 +23,7 @@ export function quitTaskPhrase(count: number): string {
 export function quitConfirmTooltip(count: number): string {
   const phrase = quitTaskPhrase(count)
   return phrase ? `Confirm quit — kills ${phrase}`
-                : 'Confirm quit — stops napari, notebooks and the backend'
+                : 'Confirm quit — stops notebooks and the backend'
 }
 
 /**
