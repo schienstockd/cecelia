@@ -4327,6 +4327,11 @@ onUnmounted(() => {
 .vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
 .vw-tilemap-cell.is-resident { background: var(--cc-accent); }
 .vw-tilemap-cell.is-loading { background: var(--cc-sev-warn); }
+/* Bench-chip GPU-cost budget hints — color only, no font-size change (the chip uses `cc-fs-3xs`,
+   and `cc-muted-warn`/`cc-muted-error` also bump size). Thresholds: p95 > 16 ms = 60 Hz budget
+   slipped; p95 > 33 ms = 30 Hz too. Standard fps split. */
+.vw-gpu-warn { color: var(--cc-sev-warn); }
+.vw-gpu-fail { color: var(--cc-sev-fail); }
 /* Brick residency map: one Z slice per column. Slices sit side by side and each carries a small
    z index below. Same cell language as the tile map (blue = resident, amber = fetching). */
 .vw-brickmaprow { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }
