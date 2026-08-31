@@ -17,9 +17,9 @@ import { useSettingsStore } from '../../stores/settings'
 import { useProjectStore } from '../../stores/project'
 import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
-import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { captureViewLegend } from '../../utils/napariOverlays'
-import { restoreOverlays, applyViewState } from '../../utils/napariOverlays'
+import { applyViewState } from '../../utils/napariOverlays'
+import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { suppressAutoShowOnce, releaseAutoShowSuppression } from '../../composables/useNapariAutoShow'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
@@ -231,13 +231,30 @@ async function onNapariOpened(payload: { imageUid?: string }) {
   pendingApply.value = null
   try {
     await applyViewState(p.snapshot)          // shared builder — see utils/napariOverlays
-    // re-push the tracks/pops the frame had (open only recreates channel layers; overlays come from
-    // show-tracks/show-populations, which zoom-to-source must re-request). Derived from the snapshot's
-    // overlay layer names + the captured colour-by, so the overlays reappear as they were.
+    // Overlay restore for the browser viewer. `restoreOverlays` used to re-request tracks/pops
+    // via napari's show-* commands; deleted in P9. Same intent expressed as settings-bag writes:
+    // the popup viewer subscribes via P2's storage-event bridge and re-derives its overlays off the
+    // per-image visibility bag + per-set popVis + per-set colourBy — a mask toggle in the panel
+    // takes exactly this path. The `applyViewState` call above still POSTs to napari; PR 4 replaces
+    // that with `viewerStore.setPendingViewState(p.snapshot)`.
     const cfg = overlayPushConfig(parseOverlays(p.snapshot.layers as Record<string, unknown>))
-    if (cfg.trackValueNames.length || cfg.showGatedTracks || cfg.showTrackclust || cfg.popTypes.length) {
-      const pointsSize = props.setUid ? settings.getPointSize(props.setUid) : undefined
-      await restoreOverlays(props.projectUid, p.imageUid, { ...cfg, colourBy: p.colourBy, pointsSize })
+    // trackVisibility: seed the shown vns to true without clobbering the vns not mentioned in the
+    // captured frame — the strip's cell is a subset of what an image has, not the full set.
+    if (cfg.trackValueNames.length) {
+      const cur = settings.getTrackVisibility(p.imageUid, cfg.trackValueNames)
+      const bag: Record<string, boolean> = { ...cur }
+      for (const vn of cfg.trackValueNames) bag[vn] = true
+      settings.setTrackVisibility(p.imageUid, bag)
+    }
+    const setUid = project.setUidOfImage(p.imageUid)
+    if (setUid) {
+      if (cfg.showGatedTracks) settings.setShowGatedTracks(setUid, true)
+      if (cfg.showTrackclust)  settings.setPopVisible(setUid, 'trackclust', true)
+      for (const pt of cfg.popTypes) settings.setPopVisible(setUid, pt, true)
+      if (p.colourBy) settings.setColourBy(setUid, p.colourBy)
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cc.viewerOverlaysTick', `${p.imageUid}:${Date.now()}`)
     }
   } catch { /* best-effort restore */ }
 }
