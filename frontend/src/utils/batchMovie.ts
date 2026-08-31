@@ -53,6 +53,10 @@ export interface BatchMovieCfg {
   showTrackclust?: boolean
   showPopulations?: boolean
   popType?: string
+  // Which pop paths to draw when `showPopulations` is on. Empty (or absent) = ALL pops of `popType`
+  // for the selected segmentation, which is the pre-picker behaviour every batch already had. The
+  // backend `_overlays_raw_from_config` forwards this as `popPaths` (see `_resolve_movie_overlays_mask`).
+  popsFilter?: string[]
   colourLabels?: boolean
   tailWidth?: number
   pointsSize?: number
@@ -96,6 +100,7 @@ export interface BatchMovieRequestConfig {
   showTrackclust: boolean
   showPopulations: boolean
   popType: string
+  popsFilter: string[]
   pointsSize: number
   colourLabels: boolean
   colourOverrides: Record<string, string>
@@ -152,6 +157,8 @@ export function buildBatchMovieConfig(
     showTrackclust: !!cfg.showTrackclust,
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',
+    // Empty list = ALL pops of the resolved popType (backend rule; matches the pre-picker default).
+    popsFilter: cfg.showPopulations ? [...(cfg.popsFilter ?? [])] : [],
     pointsSize: cfg.pointsSize ?? 6,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},

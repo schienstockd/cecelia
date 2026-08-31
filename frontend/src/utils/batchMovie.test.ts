@@ -36,6 +36,19 @@ describe('buildBatchMovieConfig', () => {
     expect(c.colourOverrides).toEqual({ '2': '#ff1493' })
   })
 
+  it('defaults popsFilter to [] and only emits it when populations are on', () => {
+    // showPops off ⇒ empty (the backend rule "empty = all pops" is meaningless when pops are off)
+    expect(buildBatchMovieConfig({}, [], {}).popsFilter).toEqual([])
+    // showPops on, no filter ⇒ empty (= draw ALL pops of the resolved popType)
+    expect(buildBatchMovieConfig({ showPopulations: true }, [], {}).popsFilter).toEqual([])
+    // showPops on with a filter list ⇒ passed through
+    expect(buildBatchMovieConfig({ showPopulations: true, popsFilter: ['/A', '/B/c'] }, [], {}).popsFilter)
+      .toEqual(['/A', '/B/c'])
+    // showPops off — filter list is dropped (leaked filter would be a UI trap on the next run)
+    expect(buildBatchMovieConfig({ showPopulations: false, popsFilter: ['/A'] }, [], {}).popsFilter)
+      .toEqual([])
+  })
+
   it('defaults the title card ON with a 3s duration', () => {
     const c = buildBatchMovieConfig({}, [], {})
     expect(c.titleCard).toEqual({ enabled: true, note: '', durationSec: 3 })

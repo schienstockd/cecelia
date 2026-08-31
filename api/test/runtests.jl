@@ -7021,6 +7021,18 @@ end
     ov_gated = _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true), true)
     @test ov_gated["includeTracks"] === true
     @test ov_gated["allCells"] === false
+
+    # `popsFilter` on the config surfaces as `popPaths` on the overlay dict — the batch picker's
+    # per-image subset, forwarded to `build_overlays_for` / `build_mask_for` via
+    # `_resolve_movie_overlays_mask`. Absent / empty = no filter (all pops rendered).
+    ov_no_pf = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true), false)
+    @test !haskey(ov_no_pf, "popPaths")
+    ov_empty_pf = _overlays_raw_from_config(
+        Dict{String,Any}("showPopulations" => true, "popsFilter" => String[]), false)
+    @test !haskey(ov_empty_pf, "popPaths")
+    ov_pf = _overlays_raw_from_config(
+        Dict{String,Any}("showPopulations" => true, "popsFilter" => ["/A", "/B/c"]), false)
+    @test ov_pf["popPaths"] == ["/A", "/B/c"]
 end
 
 @testset "API: movie rail — viewstate → render args (keyframe rendering)" begin

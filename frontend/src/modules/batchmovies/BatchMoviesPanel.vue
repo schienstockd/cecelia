@@ -230,6 +230,54 @@ async function loadObs() {
 }
 watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { immediate: true })
 
+// ── populations to draw (paths from the representative image's popmap) ─────────
+// The batch shares ONE config across the selection, but pop paths live per-image. Fetching the
+// representative image (first selected) is enough — the backend clamps unknown paths per image, and
+// a batch designed around a set typically has parallel pop trees. Refreshes when the image, the
+// segmentation, or the `popType` changes (each yields a different tree).
+interface PopNode { name: string; children?: PopNode[]; transient?: boolean }
+interface PopTree { populations?: PopNode[] }
+const popPaths = ref<{ path: string; label: string }[]>([])
+async function loadPopPaths() {
+  const uid = props.selectedUids[0]
+  const projectUid = projectMeta.current?.uid
+  const seg = segNames.value[0]
+  const pt = popType.value
+  if (!uid || !projectUid || !seg || !pt) { popPaths.value = []; return }
+  try {
+    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(seg)}&popType=${encodeURIComponent(pt)}`
+    const res = await fetch(`/api/gating/popmap?${q}`)
+    if (!res.ok) { popPaths.value = []; return }
+    const j = await res.json() as { tree?: PopTree }
+    const out: { path: string; label: string }[] = []
+    const walk = (nodes: PopNode[] | undefined, parent: string, depth: number) => {
+      for (const n of nodes ?? []) {
+        if (n.transient) continue                // ephemeral (napari selection), never a batch input
+        const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
+        out.push({ path, label: `${'  '.repeat(depth)}${n.name}` })
+        walk(n.children, path, depth + 1)
+      }
+    }
+    walk(j.tree?.populations, 'root', 0)
+    popPaths.value = out
+  } catch { popPaths.value = [] }
+}
+watch(() => [props.selectedUids[0], segNames.value[0], popType.value] as const, loadPopPaths, { immediate: true })
+// Selected pop paths — persist under `popsFilter`. Empty = draw ALL pops (backend rule).
+const popsFilter = computed<string[]>({
+  get: () => (cfg.value.popsFilter as string[] | undefined) ?? [],
+  set: v => patch({ popsFilter: v }),
+})
+// Prune the persisted selection to what the fetched tree offers — a pop the user deleted upstream
+// shouldn't sit in the config as a phantom filter that always misses.
+watch(popPaths, (paths) => {
+  const known = new Set(paths.map(p => p.path))
+  const kept = popsFilter.value.filter(p => known.has(p))
+  if (kept.length !== popsFilter.value.length) patch({ popsFilter: kept })
+})
+const popPathOptions = computed<ChipOption[]>(() =>
+  popPaths.value.map(p => ({ value: p.path, label: p.label.trim(), tip: p.path })))
+
 // ── seed the config so it's not blank (colours + pops of the first selected image) ─────────────
 // Prefer the first image's LIVE viewer view (its actual channel colours + shown overlays) when that
 // image is the one open; otherwise fall back to a default palette so the pickers are still populated.
@@ -474,6 +522,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
                  v-tooltip.bottom="'Diameter of the population points'" />
           <span class="bm-val">{{ pointsSize }}</span>
+        </div>
+        <div v-if="showPops" class="bm-inset">
+          <span class="bm-lbl cc-muted" v-tooltip.left="'From the first selected image; empty = all populations'">populations</span>
+          <ChipSelect v-if="popPathOptions.length" v-model="popsFilter" :options="popPathOptions"
+                      multiple aria-label="Populations to draw" />
+          <span v-else class="bm-hint cc-muted">no populations for this segmentation / type</span>
         </div>
       </section>
 
