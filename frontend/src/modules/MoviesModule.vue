@@ -9,6 +9,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
+import { useTaskStore } from '../stores/tasks'
 import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
@@ -35,6 +36,7 @@ const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
 const settings = useSettingsStore()
 const log = useLogStore()
+const tasks = useTaskStore()
 const router = useRouter()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
@@ -203,6 +205,23 @@ const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4]
 onMounted(() => { refresh(); window.addEventListener('keydown', onKey) })
 // re-list when the project changes (opening a different project) — the page can be left mounted
 watch(projectUid, refresh)
+// Auto-refresh when a movie:record/animation/batch task lands terminal — otherwise a render
+// completing while this page is open never shows up until the user navigates away and back.
+// Cheap watch: count the number of finished movie tasks for the current project; refresh when
+// it goes up. Same shape (module = 'viewer' for records/animations, 'batch' for batches).
+const finishedMovieCount = computed(() => {
+  const uid = projectUid.value
+  if (!uid) return 0
+  let n = 0
+  for (const t of tasks.tasks) {
+    if (t.projectUid !== uid) continue
+    if (t.status !== 'done') continue
+    const fn = t.funName ?? ''
+    if (fn === 'movie.record' || fn === 'movie.animation' || fn === 'movie.batch') n++
+  }
+  return n
+})
+watch(finishedMovieCount, (n, prev) => { if (n > prev) refresh() })
 
 function movieTime(mtime: number): string {
   return new Date(mtime * 1000).toLocaleString()

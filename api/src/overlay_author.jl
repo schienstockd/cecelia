@@ -855,13 +855,21 @@ function build_mask_for(img; value_name::AbstractString, pop_type::AbstractStrin
         # Paint every known cell in one colour. Enumerating labels from `label_props` costs one
         # `.h5ad` read; the alternative — scanning uniques out of the mask per frame — is nT reads
         # over the whole label store, which is what the sweep is trying to avoid in the first place.
+        #
+        # `all_cells_colour == "rainbow"` cycles `CECELIA_TRACK_PALETTE` by id — asked for by the
+        # compare-grid path where a uniform gray outline was invisible against the channels (dense
+        # segmentation collapses to identical tiny rings on the encoded frame).
         lp = label_props(img; value_name = vn)
         df = as_df(lp)
-        colour = hex_to_rgb(String(all_cells_colour))
+        is_rainbow = lowercase(String(all_cells_colour)) == "rainbow"
+        solid = is_rainbow ? nothing : hex_to_rgb(String(all_cells_colour))
+        palette = CECELIA_TRACK_PALETTE
+        pal_n   = length(palette)
         @inbounds for i in 1:size(df, 1)
             lab = df[i, :label]
             (lab isa Real && isfinite(Float64(lab))) || continue
-            id_colours[Int(round(Float64(lab)))] = colour
+            L = Int(round(Float64(lab)))
+            id_colours[L] = is_rainbow ? palette[mod(L - 1, pal_n) + 1] : solid
         end
     elseif !is_track_pt
         pops = try
