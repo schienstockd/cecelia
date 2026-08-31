@@ -7,6 +7,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
+import { openViewerWindow } from '../utils/viewerWindow'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   colourLegend, colourLegendLabels, resetColourLegend,
@@ -304,50 +305,12 @@ watch(napariImage, (img) => {
   loadObsCols()                       // colour-by options for the selected segmentation
 }, { immediate: true })
 
-async function openInNapari(valueName: string) {
-  const uid        = projectStore.napariImageUid
+function openInViewer(valueName: string) {
+  const uid        = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return
-  const autoProps = settings.napariAutoSaveLayerProps
-  const body: Record<string, unknown> = {
-    imageUid:      uid,
-    projectUid,
-    valueName:     valueName || undefined,
-    autoSaveProps: autoProps,
-    autoLoadProps: autoProps,
-    show3D:        show3D.value,
-  }
-  // Labels/branches/tracks/populations are deliberately NOT sent here. Every open broadcasts
-  // `napari:opened`, and the app-level autoshow (composables/useNapariAutoShow) restores all overlay
-  // kinds from the remembered toggles in one sequential pass. Sending labels in the open body too
-  // would load the same label pyramid twice and put two overlay pushes in flight at once — which the
-  // bridge's one-command-at-a-time layer reconciliation does not tolerate.
-  try {
-    const res = await fetch('/api/napari/open', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
-    })
-    if (!res.ok && res.status !== 202)
-      log.error(`Open in Napari failed: ${await _resError(res)}`, { source: 'napari' })
-  } catch (e) {
-    log.error(`Open in Napari failed: ${e instanceof Error ? e.message : String(e)}`,
-              { source: 'napari' })
-  }
+  openViewerWindow({ projectUid, imageUid: uid, valueName: valueName || undefined })
 }
-
-// Toggling auto-save while an image is already open should take effect immediately (not only on the
-// next open), so tell the bridge to start/stop live-saving the current image. No-op if napari isn't
-// running — the flag still applies on the next open via /api/napari/open.
-watch(() => settings.napariAutoSaveLayerProps, async enabled => {
-  try {
-    await fetch('/api/napari/configure-autosave', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    })
-  } catch { /* napari not running */ }
-})
-
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
 // populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
@@ -372,19 +335,13 @@ async function recordTimelapse() {
     // was on — but the look has to be captured whether or not the movie carries a card, and this
     // recorder records what is ON SCREEN, so the view state is the only place that look exists.
     //
-    // Prefer the browser viewer's published state (`useViewerStore.viewState`) — the popup writes
-    // it on every camera / channel change, and it's the same shape napari emits. Falls back to
-    // napari when the browser viewer isn't running (a project where napari is the only viewer
-    // open — rare after P5 but still valid).
+    // Read the browser viewer's published state (`useViewerStore.viewState`) — the popup writes it
+    // on every camera / channel change. When no popup viewer is open on this image the look is
+    // simply not banked; the card still renders (buildTitleCard tolerates a null snapshot) and the
+    // recorder captures the current channel resolution at record time.
     let snapshot: ViewStateLike | null = null
     if (viewerStore.viewState && viewerStore.openImage?.imageUid === uid) {
       snapshot = viewerStore.viewState as unknown as ViewStateLike
-    } else {
-      try {
-        const vsr = await fetch('/api/napari/view-state', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
-        if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: ViewStateLike }).viewState ?? null
-      } catch { /* best-effort — the card still renders, the look is simply not banked */ }
     }
 
     // Title card (Phase H): built via the SHARED buildTitleCard — the same path the animation page
@@ -595,13 +552,14 @@ function onValueNameChange(e: Event) {
   const name = (e.target as HTMLSelectElement).value
   selectedValueName.value = name
   loadObsCols()
-  openInNapari(name)
   // Broadcast to the popup viewer — the panel is the single source of truth for the version now
   // (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). The popup's storage-event bridge (P2) picks this
   // up via settings.setImageVersion → `cc.viewerImageVersion` and calls its `changeVersion`
-  // internally, so the two windows never disagree about the version on screen.
+  // internally, so the two windows never disagree about the version on screen. If no popup is up
+  // yet, `openInViewer` opens one on the picked version.
   const openUid = projectStore.openImageUid
   if (openUid) settings.setImageVersion(openUid, name)
+  else openInViewer(name)
 }
 
 // Fire the WebGPU-viewer overlays-refetch ping. Every panel toggle that changes what the viewer
@@ -663,7 +621,7 @@ function onTaskStatus(data: Record<string, unknown>) {
 // longer yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset /
 // uID change).
 function reloadViewer() {
-  if (settings.viewerResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
+  if (settings.viewerResetOnReload || !projectStore.openImageUid) openInViewer(selectedValueName.value)
   else pingViewerOverlays()
 }
 

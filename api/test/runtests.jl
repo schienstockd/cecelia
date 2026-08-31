@@ -4703,6 +4703,7 @@ end
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
         "/api/viewer/pick-clear",
+        "/api/viewer/overlay-legend",
         "/api/viewer/record-test",
         "/api/viewer/thumbnail",
     ]
@@ -4746,7 +4747,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 123
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 124
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6346,6 +6347,24 @@ end
         @test st == 404
         d = JSON3.read(out)
         @test occursin("no label store", d.error)
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer overlay-legend — 404 when the image doesn't exist" begin
+    # P9 replacement for `/api/napari/overlay-legend`. Same pure computation (`overlay_legend_content`
+    # walks pop maps + resolves colour-by categories against populations); the endpoint went to
+    # `viewer_api.jl` verbatim. Uses `_gating_image`, so a missing project/image is a 404 at the
+    # boundary rather than a 500 inside `load_pop_map`.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        body = JSON3.write(Dict("projectUid" => "nope", "imageUid" => "nope",
+                                "colourBy" => "", "overlayPops" => []))
+        st, out = api_viewer_overlay_legend(Vector{UInt8}(body))
+        @test st == 404
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end

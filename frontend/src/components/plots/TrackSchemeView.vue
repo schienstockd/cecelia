@@ -40,7 +40,8 @@ import { useFieldDraft } from '../../composables/useFieldDraft'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
-import { useNapariOpen } from '../../composables/useNapariOpen'
+import { useProjectMetaStore } from '../../stores/projectMeta'
+import { openViewerWindow } from '../../utils/viewerWindow'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
@@ -50,7 +51,6 @@ import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
 import PopFamilySelect from './PopFamilySelect.vue'
 import type { SeriesTarget } from '../../plots/types'
-import { centreNapariOnTrack, showTracksInNapari } from '../../lib/napariView'
 import { EMPTY_TRACK_SELECTION, type CanvasTrackSelection } from '../../lib/trackSelection'
 import {
   issueKey, KIND_LABEL, trackRows, manualActions, suggestedOps, undoLast, opDescription,
@@ -326,11 +326,11 @@ watch(filtered, () => { if (win.value.offset !== (props.state.offset ?? 0)) prop
 // it used and the panel seeds from that, so the measured numbers stay on the Julia constants where
 // they belong. Only what the user moved is sent.
 const log = useLogStore()
-// which image the VIEWER holds, and the one canonical way to change it (useNapariOpen) — a track panel
-// must not grow a second open path
+// Which image the VIEWER holds, and the one canonical way to change it (`openViewerWindow` — pops
+// the browser viewer window on the target) — a track panel must not grow a second open path.
 const project = useProjectStore()
+const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
-const { openInNapari } = useNapariOpen()
 const serverThresholds = ref<TrackThresholds>({})
 const thr = computed<TrackThresholds>({
   get: () => props.state.thr ?? {}, set: v => (props.state.thr = v),
@@ -358,7 +358,7 @@ const napariSel = ref<TrackSelection | null>(null)
 const napariSummary = computed(() => selectionSummary(napariSel.value))
 
 async function enterSelectMode() {
-  // Same reason as `showInNapari`: a region drawn on the image ON SCREEN would resolve against this
+  // Same reason as `showInViewer`: a region drawn on the image ON SCREEN would resolve against this
   // panel's labels, which is only meaningful when they are the same image.
   if (!(await ensureViewerImage())) return
   settings.viewerSelectMode = 'select'
@@ -683,48 +683,44 @@ function onClick(ev: MouseEvent) {
  */
 async function ensureViewerImage(): Promise<boolean> {
   if (!imageUid.value) return false
-  if (!project.napariImageUid) {
+  if (!project.openImageUid) {
     log.info('Open this image in the viewer first.', { source: 'tracks' })
     return false
   }
-  if (project.napariImageUid === imageUid.value) return true
-  await openInNapari(imageUid.value, props.setUid ?? '')
+  if (project.openImageUid === imageUid.value) return true
+  openViewerWindow({
+    projectUid: projectMeta.current?.uid ?? '',
+    imageUid: imageUid.value,
+    valueName: valueName.value || undefined,
+  })
   return true
 }
 
 /**
- * Send the viewer to the selected track — the escape hatch to the image.
- *
- * "The plot is for the obvious ones; the image is for the hard ones" — so the viewer has to be one
- * click away and never mandatory. Uses the first selected track's first detection.
+ * Point the viewer at the selected track's segmentation. The napari-only path "show these track ids
+ * as their own layer + centre the camera on the last detection" (`showTracksInNapari` +
+ * `centreNapariOnTrack` via `/api/napari/*`) went with P9; the browser viewer has no equivalent
+ * "explicit track-id highlight" primitive today, so this narrows to what the popup already does:
+ * make sure the right image is open on the right segmentation, and turn the segmentation's tracks
+ * on via the shared bag. The user pans/zooms to the track themselves.
  */
-async function showInNapari() {
-  const ids = [...selected.value]
-  const first = ids[0]
-  if (!first) return
-  // THE VIEWER MAY BE ON A DIFFERENT IMAGE. The bridge resolves layer paths against whatever is on
-  // screen, so asking it to draw this panel's tracks while it holds another movie is at best wrong and
-  // at worst fatal: on `fXgbTl` → `VJy1Nx` it died inside HDF5 on `VJy1Nx/labelProps/memTom.h5ad`,
-  // a file that does not exist. Open the right image first — the same follow-along the canvas's
-  // prev/next buttons already do — and only when a viewer is actually up, because "Show" must not
-  // force-launch napari.
+async function showInViewer() {
+  if (!selected.value.size) return
   if (!(await ensureViewerImage())) return
-  // the SELECTION as its own layer first — "which of these ribbons are mine" is the question, and the
-  // camera move only answers "where". Both, because a highlighted track off-screen is still invisible.
-  await showTracksInNapari({ projectUid: props.projectUid, imageUid: imageUid.value,
-                             valueName: valueName.value, trackIds: ids })
-  // The lane data is occupancy-only — it has no coordinates to fly to. Fetch just this track's
-  // geometry (`ids=` names it, so the cap is irrelevant) rather than making every load carry x/y that
-  // only a click on this button would ever use.
-  try {
-    const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}` +
-              (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '') +
-              `&ids=${encodeURIComponent(first)}`
-    const r = await fetch(`/api/tracking/paths?${q}`)
-    if (!r.ok) return
-    const d = await r.json()
-    await centreNapariOnTrack(d?.paths?.[first], 'tracks')
-  } catch { /* centreNapariOnTrack reports a viewer failure; a fetch failure is already visible */ }
+  // Turn this segmentation's ribbons on in the popup viewer. Same shape a `toggleTrack` in the
+  // panel would produce — the popup subscribes via the P2 storage bridge.
+  const uid = project.openImageUid
+  if (uid) {
+    const cur = settings.getTrackVisibility(uid, [valueName.value])
+    if (!cur[valueName.value]) {
+      settings.setTrackVisibility(uid, { ...cur, [valueName.value]: true })
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
+    }
+  }
+  log.info('Ribbons for this segmentation are on — pan to the track in the viewer.',
+           { source: 'tracks' })
 }
 
 /** Hover readout — which track, which frame, and whether the cell is even there. */
@@ -870,8 +866,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                 v-tooltip.top="'Select the tracks inside the drawn region'"
                 @click="readSelection">Read</button>
         <button class="cc-btn cc-btn-bare cc-btn-dense" :disabled="!selected.size"
-                v-tooltip.top="'Show the selected track in napari, at its last frame'"
-                @click="showInNapari"><i class="pi pi-eye" /> Show</button>
+                v-tooltip.top="'Turn this segmentation\'s ribbons on in the viewer'"
+                @click="showInViewer"><i class="pi pi-eye" /> Show</button>
         <button class="cc-btn cc-btn-bare cc-btn-dense" :disabled="!selected.size"
                 v-tooltip.top="'Clear the selection'" @click="setSelected([])">
           <i class="pi pi-times" />

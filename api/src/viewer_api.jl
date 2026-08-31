@@ -872,6 +872,27 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
 
+# ── POST /api/viewer/overlay-legend (P9) ──────────────────────────────────────────
+# Legend content for a captured viewState (analysis-board strip + movie title card). Replaces
+# `/api/napari/overlay-legend` — the computation itself is pure Julia (walks pop maps, resolves
+# colour-by categories against populations), no napari canvas required, so this reuses the same
+# `overlay_legend_content` the napari route did.
+#
+# Body: `{projectUid, imageUid, colourBy?, overlayPops?, colourOverrides?}`
+#   overlayPops = `[{valueName, popType, path}, …]` parsed from the snapshot's overlay layer names.
+# Response: `{ok, colourBy, populations}` — same shape captureViewLegend consumes.
+function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    column      = String(get(data, :colourBy, ""))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    content = overlay_legend_content(img, column, get(data, :overlayPops, nothing),
+                                     get(data, :colourOverrides, nothing))
+    200, JSON3.write((; ok = true, colourBy = content.colourBy, populations = content.populations))
+end
+
 # ── POST /api/viewer/pick-clear (P9) ──────────────────────────────────────────────
 # Empty the transient cell-selection pop for (image, valueName, popType). Replaces
 # `/api/napari/stop-selection` on the P9 retirement — the napari route also removed the Shapes

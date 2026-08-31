@@ -19,7 +19,6 @@ import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
-import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import CropDialog from './CropDialog.vue'
@@ -116,7 +115,6 @@ function pageIconFor(): { tip: string } | null {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 const selected  = ref<Set<string>>(new Set())
-const napariLoading = ref<Set<string>>(new Set())
 // Copy UID from the row's actions menu. The menu closes on click, so there's nothing to flash —
 // just the copy (via the shared helper, which keeps the non-secure-context fallback).
 const { copy: copyToClipboard } = useCopyFlash()
@@ -420,18 +418,6 @@ function openViewer(img: CciaImage) {
 }
 
 
-const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
-async function openInNapari(imageUid: string) {
-  // reload short-circuits inside the composable too; skip the loading spinner for a reload
-  if (project.napariImageUid === imageUid) { project.requestViewerReload(); return }
-  napariLoading.value = new Set([...napariLoading.value, imageUid])
-  try {
-    await napariOpen(imageUid, props.setUid)
-  } finally {
-    napariLoading.value = new Set([...napariLoading.value].filter(u => u !== imageUid))
-  }
-}
-
 // ── Status ────────────────────────────────────────────────────────────────────
 
 // imageUid → the module's tasks for that image, newest first (the store unshifts). Built once per
@@ -644,23 +630,6 @@ const unselectableUids = computed(() =>
               ? 'Currently shown in the viewer — click to reopen'
               : 'Open this image in the viewer'"
         ><i class="pi pi-eye" /></button>
-        <!-- Napari SECOND, and `pi-external-link` because that is what it is: a separate desktop
-             process, outside the app. The eye is the one that opens something here. -->
-        <button
-          class="viewer-btn cc-btn cc-btn-bare cc-btn-icon"
-          data-guide="images.napariBtn"
-          :class="{ 'viewer-active': project.napariImageUid === img.uid }"
-          :disabled="napariLoading.has(img.uid) || !isImported(img)"
-          @click.stop="openInNapari(img.uid)"
-          v-tooltip.right="!isImported(img)
-            ? 'Import this image first'
-            : project.napariImageUid === img.uid
-              ? 'Currently shown in Napari — click to reload'
-              : 'Open this image in Napari'"
-        >
-          <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
-          <i v-else class="pi pi-external-link" />
-        </button>
         <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
           @click.stop="toggleStarred(img)"
           v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">

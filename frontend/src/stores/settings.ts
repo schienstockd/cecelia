@@ -72,9 +72,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // napari auto-contrasted per image — a recorded look was not reproducible.
   //
   // Kept during P6 even though `asDask` / `labelsCache` were deleted: the animation page banks per-
-  // keyframe napari view state (POST /api/napari/screenshot → {viewState}), so the persisted per-image
-  // props ARE the reference for those snapshots. Deleting this before the WebGPU viewer grows its own
-  // per-image props sink would leave the animation page with no source of truth (Dominik, 2026-08-26).
+  // keyframe view state, and the persisted per-image props ARE the reference for those snapshots.
+  // PY (WebGPU per-image props) has since taken over the write side via `/api/viewer/props`, but the
+  // toggle name still says "napari" until PR 5 renames it to `viewerAutoSaveLayerProps`.
   //
   // **The replacement is a hard P9 blocker.** VIEWER_CONTROLS_SPLIT_PLAN.md → PY defines the WebGPU
   // per-image layer-props sink; this ref is deletable only when that lands and the animation card

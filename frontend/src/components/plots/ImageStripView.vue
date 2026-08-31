@@ -1,34 +1,35 @@
 <!--
   Image / filmstrip slot for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
   slot holding N images (a single image = a 1-cell strip) — for pipeline montages
-  (raw → denoised → segmented → tracked). Each cell's image is a napari CANVAS screenshot
-  (POST /api/napari/screenshot → JSON {assetId, viewState, imageUid}). The PNG is a SIDECAR file
-  (settings/board-assets/, served via /api/board-assets) — NOT stored inline — so the board JSON stays
-  small and autosaves cheaply; the cell keeps only the assetId + the viewState snapshot + imageUid
-  (provenance for zoom-to-source). See docs/todo/ANIMATION_PLAN.md. Orientation H/V; separators STRAIGHT
-  (gap + rule) or ANGLED (clip-path parallelograms — cheap because the slot stays rectangular, decision 10).
+  (raw → denoised → segmented → tracked). Each cell's image is a WebGPU-viewer thumbnail
+  (POST /api/viewer/thumbnail with the popup's live viewState → JSON {assetId, imageUid, width,
+  height}). The PNG is a SIDECAR file (settings/board-assets/, served via /api/board-assets) — NOT
+  stored inline — so the board JSON stays small and autosaves cheaply; the cell keeps only the
+  assetId + the viewState snapshot + imageUid (provenance for zoom-to-source). See
+  docs/todo/ANIMATION_PLAN.md. Orientation H/V; separators STRAIGHT (gap + rule) or ANGLED
+  (clip-path parallelograms — cheap because the slot stays rectangular, decision 10).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, useTemplateRef, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, useTemplateRef, nextTick, onMounted } from 'vue'
 import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
-import { useWsStore } from '../../stores/ws'
 import { useSettingsStore } from '../../stores/settings'
 import { useProjectStore } from '../../stores/project'
+import { useViewerStore } from '../../stores/viewer'
+import type { ViewerViewState } from '../../utils/viewer/viewState'
+import { openViewerWindow } from '../../utils/viewerWindow'
 import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { captureViewLegend } from '../../utils/napariOverlays'
-import { applyViewState } from '../../utils/napariOverlays'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
-import { suppressAutoShowOnce, releaseAutoShowSuppression } from '../../composables/useNapariAutoShow'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import CcToggle from '../CcToggle.vue'
 
-const ws = useWsStore()
 const settings = useSettingsStore()
 const project = useProjectStore()
+const viewer = useViewerStore()
 
 // `snapshot` (napari view state) + `imageUid` are the frame's provenance — persisted with the board so
 // zoom-to-source can reopen the image and restore the exact camera/contrast/colours months later
@@ -38,7 +39,7 @@ const project = useProjectStore()
 // only for back-compat (migrated to a sidecar on load). `snapshot`+`imageUid` are the view provenance
 // for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
-// captured overlay legend (populations + colour-by), fetched at capture from /api/napari/overlay-legend
+// captured overlay legend (populations + colour-by), fetched at capture from /api/viewer/overlay-legend
 interface OverlaysLegend {
   colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
   populations?: { name: string; colour: string }[]
@@ -105,25 +106,43 @@ const err = ref('')
 // (network) <img> src, so we temporarily inline each sidecar frame as a data URL for the capture.
 const exportSrcs = ref<Record<string, string>>({})
 
-// capture the current napari canvas into cell i. The endpoint returns JSON { png(base64), viewState,
-// imageUid } — the view snapshot is captured atomically with the shot, so the frame carries its exact
-// provenance (for zoom-to-source / animation). See docs/todo/ANIMATION_PLAN.md.
+// Capture the current browser viewer into cell i. Reads the viewer's published viewState
+// (`viewerStore.viewState` — the popup writes it on every camera / channel change) and POSTs it to
+// /api/viewer/thumbnail, which renders one frame through the same offline path the movie recorder
+// uses so the thumbnail matches what a movie made from this look would produce.
+//
+// Fails cleanly when no browser viewer is open on this image: the caller cannot capture what they
+// cannot see. `settings.cleanCapture` used to strip napari's baked scale bar / timestamp from the
+// screenshot; the browser thumbnail renders channels-only for MVP so there is nothing to strip and
+// the setting is ignored on this path (its legacy meaning is preserved for the movie recorder).
 async function capture(i: number) {
   capturing.value = i
   err.value = ''
   try {
-    const res = await fetch('/api/napari/screenshot', {
+    const openImage = viewer.openImage
+    const snapshot = viewer.viewState as ViewerViewState | null
+    const imageUid = openImage?.imageUid ?? null
+    const projectUid = openImage?.projectUid ?? props.projectUid
+    if (!imageUid || !snapshot) {
+      err.value = 'Open the image in the viewer first to capture a frame.'
+      return
+    }
+    const valueName = openImage?.valueName || undefined
+    const res = await fetch('/api/viewer/thumbnail', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, clean: settings.cleanCapture }),
+      body: JSON.stringify({ projectUid, imageUid, valueName, viewState: snapshot }),
     })
-    if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Screenshot failed'; return }
-    const data = (await res.json()) as { assetId?: string; png?: string; viewState?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null }
+    if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Thumbnail render failed'; return }
+    const data = (await res.json()) as { ok?: boolean; assetId?: string; imageUid?: string; width?: number; height?: number }
     const c = cells.value[i]
-    if (data.assetId) { c.assetId = data.assetId; c.src = undefined }         // sidecar PNG (normal path)
-    else if (data.png) { c.src = 'data:image/png;base64,' + data.png; c.assetId = undefined }  // inline fallback
-    c.snapshot = data.viewState
-    c.imageUid = data.imageUid ?? null
-    c.extentUm = data.extentUm ?? null            // physical size → still scale bar (E2)
+    if (data.assetId) { c.assetId = data.assetId; c.src = undefined }
+    c.snapshot = snapshot as unknown as Record<string, unknown>
+    c.imageUid = imageUid
+    // Physical extent for a still scale bar (E2). Derived from the viewState's canvas + the image's
+    // voxel size, both of which the browser viewer already carries in its snapshot; the endpoint's
+    // MVP doesn't echo it back yet, so leave it unset — the still falls back to a screen-space
+    // scale bar drawn from the canvas dimensions rather than physical units.
+    c.extentUm = null
     // remember the colour-by measure so zoom-to-source restores overlays in the same colours (it isn't
     // encoded in the snapshot's layer names). Per the open image's set.
     c.colourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
@@ -190,76 +209,57 @@ async function migrateLegacyAssets() {
   }
 }
 // ── Zoom to source ──────────────────────────────────────────────────────────
-// Reopen the frame's source image in napari and re-apply its saved snapshot (camera + T/Z + per-layer
-// contrast/colours) — the "reconstruct my figure months later" path. Open is async (napari may need to
-// start), and both open paths broadcast `napari:opened`, so we apply on that event (handles the already-
-// running AND cold-start cases uniformly) rather than racing the open response. See ANIMATION_PLAN B.
+// Reopen the frame's source image in the browser viewer and re-apply its saved snapshot
+// (camera + T/Z + per-layer contrast/colours + overlay visibility) — the "reconstruct my figure
+// months later" path. Two writes, no wait:
+//  1. `setPendingViewState(snapshot)` — the store persists to localStorage; the popup viewer's
+//     watcher applies as soon as its meta and canvas are ready. If the popup is already up, the
+//     `storage` event fires immediately; if not, the popup seeds from localStorage on mount and
+//     applies then. The store consumes the entry after applying so a later reload doesn't reapply.
+//  2. `openViewerWindow({...})` — opens or focuses the popup on the target image. No-op when it's
+//     already showing this uid (the popout registry keys by name; see `lib/popout.ts`).
+// Overlays travel through the shared settings bag (P2 storage bridge), same shape a panel toggle
+// would produce, so the popup re-derives its overlay set on the next tick.
 const zooming = ref(-1)
-const pendingApply = ref<{ imageUid: string; snapshot: Record<string, unknown>; colourBy?: string } | null>(null)
 
 async function zoomToSource(i: number) {
   const c = cells.value[i]
   if (!c.imageUid || !c.snapshot) return
   zooming.value = i
   err.value = ''
-  pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot, colourBy: c.colourBy }
-  // we reproduce the CAPTURED frame below, so the app-level autoshow must not restore the user's
-  // remembered toggles over it on this open (see composables/useNapariAutoShow)
-  suppressAutoShowOnce(c.imageUid)
   try {
-    const res = await fetch('/api/napari/open', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid }),
-    })
-    if (!res.ok && res.status !== 202) {
-      pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
-      err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Open in Napari failed'
+    const snapshot = c.snapshot as unknown as ViewerViewState
+    viewer.setPendingViewState(snapshot)
+    openViewerWindow({ projectUid: props.projectUid, imageUid: c.imageUid })
+    // Overlay restore: parse the captured snapshot's overlay layer names and write the shared bag
+    // the popup viewer subscribes to. Trans-window via `storage` events (P2), so a viewer opened
+    // on a different image than the one being zoomed to sees the setting change but not the tick,
+    // and doesn't redraw.
+    const cfg = overlayPushConfig(parseOverlays((snapshot.layers ?? {}) as Record<string, unknown>))
+    if (cfg.trackValueNames.length) {
+      const cur = settings.getTrackVisibility(c.imageUid, cfg.trackValueNames)
+      const bag: Record<string, boolean> = { ...cur }
+      for (const vn of cfg.trackValueNames) bag[vn] = true
+      settings.setTrackVisibility(c.imageUid, bag)
+    }
+    const setUid = project.setUidOfImage(c.imageUid)
+    if (setUid) {
+      if (cfg.showGatedTracks) settings.setShowGatedTracks(setUid, true)
+      if (cfg.showTrackclust)  settings.setPopVisible(setUid, 'trackclust', true)
+      for (const pt of cfg.popTypes) settings.setPopVisible(setUid, pt, true)
+      if (c.colourBy) settings.setColourBy(setUid, c.colourBy)
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cc.viewerOverlaysTick', `${c.imageUid}:${Date.now()}`)
     }
   } catch (e) {
-    pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
     err.value = e instanceof Error ? e.message : String(e)
   } finally {
     zooming.value = -1
   }
 }
 
-// napari finished opening — if it's the image we're zooming to, apply the saved snapshot now (layers
-// exist). Fire-and-forget; the bridge skips any layers not present.
-async function onNapariOpened(payload: { imageUid?: string }) {
-  const p = pendingApply.value
-  if (!p || !payload?.imageUid || payload.imageUid !== p.imageUid) return
-  pendingApply.value = null
-  try {
-    await applyViewState(p.snapshot)          // shared builder — see utils/napariOverlays
-    // Overlay restore for the browser viewer. `restoreOverlays` used to re-request tracks/pops
-    // via napari's show-* commands; deleted in P9. Same intent expressed as settings-bag writes:
-    // the popup viewer subscribes via P2's storage-event bridge and re-derives its overlays off the
-    // per-image visibility bag + per-set popVis + per-set colourBy — a mask toggle in the panel
-    // takes exactly this path. The `applyViewState` call above still POSTs to napari; PR 4 replaces
-    // that with `viewerStore.setPendingViewState(p.snapshot)`.
-    const cfg = overlayPushConfig(parseOverlays(p.snapshot.layers as Record<string, unknown>))
-    // trackVisibility: seed the shown vns to true without clobbering the vns not mentioned in the
-    // captured frame — the strip's cell is a subset of what an image has, not the full set.
-    if (cfg.trackValueNames.length) {
-      const cur = settings.getTrackVisibility(p.imageUid, cfg.trackValueNames)
-      const bag: Record<string, boolean> = { ...cur }
-      for (const vn of cfg.trackValueNames) bag[vn] = true
-      settings.setTrackVisibility(p.imageUid, bag)
-    }
-    const setUid = project.setUidOfImage(p.imageUid)
-    if (setUid) {
-      if (cfg.showGatedTracks) settings.setShowGatedTracks(setUid, true)
-      if (cfg.showTrackclust)  settings.setPopVisible(setUid, 'trackclust', true)
-      for (const pt of cfg.popTypes) settings.setPopVisible(setUid, pt, true)
-      if (p.colourBy) settings.setColourBy(setUid, p.colourBy)
-    }
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('cc.viewerOverlaysTick', `${p.imageUid}:${Date.now()}`)
-    }
-  } catch { /* best-effort restore */ }
-}
-onMounted(() => { ws.on('napari:opened', onNapariOpened); migrateLegacyAssets() })
-onUnmounted(() => ws.off('napari:opened', onNapariOpened))
+onMounted(() => { migrateLegacyAssets() })
 
 function addCell() { cells.value.push({}) }
 function removeCell(i: number) {
