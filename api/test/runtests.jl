@@ -4613,8 +4613,7 @@ end
         "/api/logs/recent", "/api/maintenance/patches",
         "/api/mcp/connections",
         "/api/movies", "/api/movies/meta",
-        "/api/napari/gpu",
-        "/api/napari/status", "/api/notebooks",
+        "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
         "/api/observer/labarchives",
@@ -4660,18 +4659,7 @@ end
         "/api/images/version/remove",
         "/api/import/register-legacy", "/api/import/scan-legacy",
         "/api/lablog/append", "/api/lablog/capture",
-        "/api/lablog/dismiss", "/api/napari/apply-movie-config",
-        "/api/napari/apply-view-state", "/api/napari/close",
-        "/api/napari/colour-branch-labels", "/api/napari/colour-labels",
-        "/api/napari/configure-autosave", "/api/napari/event",
-        "/api/napari/gpu", "/api/napari/open",
-        "/api/napari/overlay-legend", "/api/napari/refresh-labels",
-        "/api/napari/restart", "/api/napari/screenshot",
-        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level", "/api/napari/centre",
-        "/api/napari/show-labels",
-        "/api/napari/show-populations", "/api/napari/show-tracks",
-        "/api/napari/start-selection", "/api/napari/stop-selection",
-        "/api/napari/view-state",
+        "/api/lablog/dismiss",
         "/api/movies/delete", "/api/movies/meta",
         "/api/notebooks/build-sysimage",
         "/api/notebooks/create", "/api/notebooks/delete",
@@ -4710,8 +4698,6 @@ end
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
         "/api/import/register-legacy", "/api/import/scan-legacy",
-        "/api/napari/apply-movie-config", "/api/napari/apply-view-state",
-        "/api/napari/restart", "/api/napari/stop-selection",
         "/api/notebooks/build-sysimage", "/api/notebooks/launch",
         "/api/notebooks/restart", "/api/notebooks/shutdown",
         "/api/preview/run", "/api/preview/start",
@@ -4747,7 +4733,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 124
+    @test length(GET_ROUTES) == 83 && length(POST_ROUTES) == 101
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
