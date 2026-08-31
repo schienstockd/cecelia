@@ -42,6 +42,10 @@ const UNIFORM_BYTES = 7 * 16 + MAX_CHANNELS * 16
 /** Float index of channel slot 0 — seven vec4s in. Written out because getting it wrong shifts every
  *  channel's contrast window by one slot, which renders as the wrong channel being bright. */
 const CH0 = 28
+/** Float index of the labels vec4 (opacity, contourPx, LABEL_PALETTE_N). Named because the harness
+ *  reads it — a NEW leading vec4 added AFTER this one shifts everything downstream and used to be
+ *  silent (labels wrote into pan.x/pan.y and nothing drew). See `docs/todo/spike/webgpu/shader_check.mjs`. */
+const LAB0 = 20
 /** Label ids are UInt32 on disk and `r32uint` on the GPU. Anything narrower is widened client-side
  *  (`utils/viewerLabels.ts`) rather than given a second texture format. */
 const LABEL_BPV = 4
@@ -920,9 +924,9 @@ export async function createVolumeRenderer(
     },
 
     setLabelStyle(opacity: number, contourPx: number) {
-      u[20] = Math.max(0, Math.min(1, opacity))
-      u[21] = Math.max(0, Math.round(contourPx))
-      u[22] = LABEL_PALETTE_N
+      u[LAB0] = Math.max(0, Math.min(1, opacity))
+      u[LAB0 + 1] = Math.max(0, Math.round(contourPx))
+      u[LAB0 + 2] = LABEL_PALETTE_N
     },
 
     async sampleFrame(withOverlays = false) {
