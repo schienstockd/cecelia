@@ -57,6 +57,12 @@ const style = computed(() => ({ position: 'fixed' as const, top: `${pos.value.to
 function onDocPointer(e: PointerEvent) {
   const t = e.target as Node
   if (popEl.value?.contains(t) || props.anchor?.contains(t)) return   // click inside popover / anchor
+  // A NESTED popover (SuggestInput inside MovieOptionsButton) teleports to body as our SIBLING, so
+  // `popEl.contains(t)` reads its button as "outside". Closing us here also unmounts the nested one
+  // before its click ever fires — the reported "the popover disappears and the name isn't filled".
+  // Any open `.cc-popover` counts as popover space, and popover-on-popover clicks don't dismiss us.
+  const el = t.nodeType === Node.ELEMENT_NODE ? (t as Element) : t.parentElement
+  if (el?.closest('.cc-popover')) return
   emit('update:modelValue', false)
 }
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('update:modelValue', false) }

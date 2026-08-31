@@ -150,11 +150,17 @@ const show3D = computed<boolean>({
   set: v => {
     if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
   } })
-// Which z slice a 2D recording pins. null = whatever is showing, which is what every recording did
-// before the setting existed. Persisted for the next Record; the LIVE plane is chosen in the
-// WebGPU viewer itself (its own `zPlane`), so setting this here no longer needs a mirror push.
+// Which z slice a 2D recording pins. The LIVE viewer's current z wins over any stored value — a
+// movie captures the plane the user is looking at, so scrubbing z in the viewer moves the movie
+// form's slider too (reported: "the zslice is still not updating in the popover when i scrub in
+// the viewer"). Stored value is the fallback for when no viewer is publishing (fresh session,
+// closed viewer). The LIVE plane is chosen in the WebGPU viewer itself (its own `zPlane`), so
+// setting this here doesn't need a mirror push.
 const zSlice = computed<number | null>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null,
+  get: () => {
+    if (viewerZ.value != null) return viewerZ.value
+    return currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null
+  },
   set: v => {
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { zSlice: v })
   } })
@@ -657,7 +663,7 @@ watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 // Placeholder defaults for the movie size fields + level range for the 3D detail control. Sourced
 // from the browser volume viewer's own published state (see useViewerMovieDefaults) — the canvas is
 // what a movie records at when no size is asked for.
-const { canvasSizeX, canvasSizeY, multiscaleLevels } = useViewerMovieDefaults()
+const { canvasSizeX, canvasSizeY, multiscaleLevels, viewerZ } = useViewerMovieDefaults()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
@@ -862,7 +868,7 @@ onUnmounted(() => {
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
-                                 v-model:zSlice="zSlice"
+                                 v-model:zSlice="zSlice" :default-z="viewerZ"
                                  :levels="multiscaleLevels" v-model:detail3d="detail3d" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
             <MovieTimeRange v-if="(napariImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
