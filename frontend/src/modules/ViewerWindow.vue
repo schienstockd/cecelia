@@ -3699,7 +3699,10 @@ onUnmounted(() => {
             <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
             <template v-if="bricksEnabled">
               <span class="cc-muted" v-tooltip.left="'GPU render pass p50/p95'">GPU</span>
-              <span>{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
+              <span :class="benchLive.gpuSummary?.gpuFrameMs95 != null
+                  ? (benchLive.gpuSummary.gpuFrameMs95 > 33 ? 'vw-gpu-fail'
+                    : benchLive.gpuSummary.gpuFrameMs95 > 16 ? 'vw-gpu-warn' : '')
+                  : ''">{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
               <span class="cc-muted" v-tooltip.left="'CPU split p50·p95: tick / pt / submit'">CPU tick/pt/es</span>
               <span>
                 <template v-if="benchLive.gpuSummary">
