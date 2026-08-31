@@ -4746,7 +4746,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 122
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 123
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
