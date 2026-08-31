@@ -471,6 +471,26 @@ function crop_from_view_state(vs::Union{Nothing,AbstractDict}, native_h::Int, na
     (; x = x1:x2, y = y1:y2)
 end
 
+# The plane a 2D snapshot is looking at, or `nothing`. The one-shot record reads this to match the
+# viewer's ONE-plane look — a 2D viewer shows a single z, so a movie that MIPs the whole stack for
+# lack of an explicit `zSlice` diverges from what the user was watching when they hit Record.
+# Returns `nothing` for 3D snapshots (where the whole volume renders) and for anything that isn't a
+# usable 2D viewState. Read from `dims.current_step[1]` — the same field `viewstate_to_render_args`
+# reads for keyframe animations, so the two paths stay consistent.
+function z_from_view_state(vs::Union{Nothing,AbstractDict})
+    vs isa AbstractDict || return nothing
+    dims = get(vs, "dims", nothing)
+    dims isa AbstractDict || return nothing
+    nd_raw = get(dims, "ndisplay", nothing)
+    ndisplay = (nd_raw isa Real && Int(round(Float64(nd_raw))) == 3) ? 3 : 2
+    ndisplay == 3 && return nothing
+    step = get(dims, "current_step", nothing)
+    (step isa AbstractVector && length(step) >= 2) || return nothing
+    z_raw = step[2]
+    z_raw isa Real || return nothing
+    max(0, Int(round(Float64(z_raw))))
+end
+
 # ── Overlay-context resolvers used by record_keyframes_view_movie ──────────────────
 # `overlays_config` (an animation request) resolves to two per-t closures — one 2D (drawn-pixel
 # coords) and one 3D (native voxel coords) — driven by the SAME `build_overlays*_for` authors.

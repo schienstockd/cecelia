@@ -286,6 +286,12 @@ function handle_movie_record(ws, data)
         ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
         return
     end
+    # The browser viewer's viewState snapshot rides on the record request when it's the source
+    # (`ViewerPanel.recordTimelapse` publishes it). Threaded to every recorder that crops against
+    # the visible rectangle — single, compare grid, and keyframe animation (which reads it per
+    # keyframe). Absent snapshot (an old client) leaves the record path at whole-image aspect.
+    view_state_raw = get(data, :viewState, nothing)
+    view_state     = view_state_raw isa AbstractDict ? view_state_raw : nothing
     # What produced this movie, banked into settings/movies.json once the bytes land (Phase 4 of
     # docs/todo/MOVIE_MANAGEMENT_PLAN.md). Assembled HERE rather than inside the recorder, so the
     # recorder keeps knowing nothing about the request shape. `look` is the viewer's live channels +
@@ -384,6 +390,7 @@ function handle_movie_record(ws, data)
                                     share_contrast = share_ctr, layout = layout,
                                     t_start = t_start, t_end = t_end,
                                     show_timestamp = show_ts, show_scale_bar = show_sb,
+                                    view_state = view_state,
                                     movie_config = movie_config)
         catch e
             @warn "offline compare grid crashed" exception = e
@@ -396,12 +403,6 @@ function handle_movie_record(ws, data)
     first_lvn = (label_vns !== nothing && !isempty(label_vns)) ? String(first(label_vns)) : nothing
     first_vn  = isempty(value_names) ? "" : String(first(value_names))
     overlays_raw = get(data, :overlays, nothing)
-    # The browser viewer's viewState snapshot rides on the record request when it's the source
-    # (`ViewerPanel.recordTimelapse` publishes it). Threaded to `run_single_offline` so the movie
-    # renders the SAME rectangle the user is looking at — a viewer zoomed into a corner shouldn't
-    # produce a full-image movie at a different aspect. Absent snapshot (an old client) leaves the
-    # record path at whole-image / native aspect.
-    view_state = get(data, :viewState, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,
                            size_x = size_x, size_y = size_y, suffix = suffix,
@@ -413,7 +414,7 @@ function handle_movie_record(ws, data)
                            t_start = t_start, t_end = t_end,
                            show_timestamp = show_ts, show_scale_bar = show_sb,
                            overlays_raw = overlays_raw,
-                           view_state = view_state isa AbstractDict ? view_state : nothing,
+                           view_state = view_state,
                            movie_config = movie_config)
     catch e
         @warn "offline record crashed" exception = e
