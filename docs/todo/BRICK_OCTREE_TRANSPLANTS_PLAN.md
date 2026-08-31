@@ -114,7 +114,7 @@ Explicit non-goals — the parts of octree work the audit rejected:
 
 ## References
 
-- Origin audit: [`docs/archive/octree-rendering-audit.md`](../archive/octree-rendering-audit.md) —
+- Origin audit: `docs/archive/octree-rendering-audit.md` (to be committed) —
   §Recommendation, §Conditional flip #3, "biggest unresolved measurement gap"
 - Renderer plans: [`KILN_BRICK_PLAN.md`](KILN_BRICK_PLAN.md),
   [`BRICK_INTEGRATION_PLAN.md`](BRICK_INTEGRATION_PLAN.md) (§Decision 2 / B4 — the intersect guard
