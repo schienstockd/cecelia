@@ -125,7 +125,7 @@ export const importImagesGuide: GuideDef = {
       when: c => c.images.some(isImported),
     },
     {
-      anchor: 'images.napariBtn',
+      anchor: 'images.viewerBtn',
       route: '/manage-images',
       placement: 'right',
       title: 'Check it opened correctly',
