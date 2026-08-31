@@ -149,8 +149,6 @@ const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobThrFromUrl = String(route.query.brickThr ?? '') !== ''
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
-/** Frankenstein hole-fill: default on. `?brickFrank=0` opts back to hold-on-cold for A/B. */
-const brickKnobFrank = String(route.query.brickFrank ?? '1') !== '0'
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -2048,10 +2046,10 @@ function tick() {
       return
     }
     const r = renderer.value
-    // Frankenstein mode: advance every tick regardless of residency, so the snap-to-boundT
-    // in show(t) fires and the shader draws each frame with prev-t hole-fill for whatever
-    // hasn't landed. Otherwise a not-yet-resident t stalls and Frankenstein never runs.
-    const readyProbe = brickKnobFrank && bricksEnabled.value
+    // Brick renderer: advance every tick regardless of residency, so show(t) fires its
+    // snap-to-boundT and the shader draws each frame with prev-t hole-fill for whatever hasn't
+    // landed. Flat renderer: gate on cache residency (its frames are all-or-nothing).
+    const readyProbe = bricksEnabled.value
       ? () => true
       : (u: number) => r?.hasTimepoint(u) ?? false
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
@@ -2713,11 +2711,10 @@ async function ensureRenderer() {
       renderer.value = r
       // Apply the initial LOD knobs. `maxIntersect` = URL override if present, else the
       // persisted quality tier; a subsequent tier change goes through the watcher below without
-      // a reallocate. `bias`/`hold`/`frank` stay URL-only (dev knobs). No-ops on the flat
-      // renderer. See `parseNumQuery` block at the top of the module for the param names.
+      // a reallocate. `bias`/`hold` stay URL-only (dev knobs). No-ops on the flat renderer.
+      // See `parseNumQuery` block at the top of the module for the param names.
       r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: brickKnobBias })
       r.setHoldFinerEnabled?.(brickKnobHold)
-      r.setFrankensteinEnabled?.(brickKnobFrank)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
       // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
@@ -3746,8 +3743,8 @@ onUnmounted(() => {
                 {{ brickDisplayT }} → {{ brickBoundT }}
               </span>
               <span class="cc-muted">Knobs</span>
-              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1 · ?brickFrank=1 (hole-fill)'">
-                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
+              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
+                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
               </span>
             </template>
             <template v-else>

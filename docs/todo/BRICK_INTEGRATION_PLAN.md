@@ -103,8 +103,7 @@ path snap `displayT` to `boundT` immediately; `rebuildPageTableForDisplayT`'s se
 grid cell still EMPTY with the same brick position at the previous displayT (LRU-touched with plain
 `frameNow` — NOT the `PREV_TOUCH_BIAS` used for prev-level, which was ruinous for prev-t; it evicted
 freshly-landed boundT bricks and produced the constant-refresh loop from screenshot #49). Under
-playback the readiness probe returns true so scrub never stalls. `?brickFrank=0` opts back to
-hold-on-cold for A/B; hold-on-cold code path stays as dead-code candidate for B8.
+playback the readiness probe returns true so scrub never stalls. Hold-on-cold path retired in B8.
 
 **B1 — SKIPPED** by Dominik 2026-08-29. Bench6 blobs (fXgbTl, Dml3RG, f8gzA2) enough evidence.
 
@@ -135,15 +134,16 @@ drawP95 dropped from 200 ms → 2.8 ms without any further shader-scaling work. 
 flat" outcome is off the table anyway — flat can't render it. No separate B4 write-up needed;
 Decision 2 already reflects the fact.
 
-**B5 — P5d perf pass on the "brick default" cases.** Formal bench blob per reference image AFTER
-B3 lands. Record numbers in this doc under a **Perf ledger** section. Threshold: brick's CPU-side
-`r.draw()` p95 must not exceed 5 ms on any store where the predicate says "use brick" (Sispk-shape
-being the hard case). If it does, either the shader path needs more work (Session E / F) or the
-threshold has to exclude that store.
+**B5 ✅ shipped 2026-08-31** — Perf blobs recorded on the reference set (bench7). fXgbTl (flat),
+Dml3RG (brick L0), f8gzA2 (brick L1); all under the 5 ms `r.draw()` p95 threshold. Details in Perf
+ledger below.
 
-**B6 — P6 overlay parity check.** Points, tracks, tails, masks position-match the flat renderer to
-sub-pixel on zolIMa and fXgbTl. Open both renderers side-by-side (two windows, one `?bricks=0`, one
-`?bricks=1`, same image + timepoint). Anything that jumps between the two is a bug.
+**B6 — overlay parity check.** Static-analysis parity confirmed 2026-08-31: brick renderer exposes
+the same `setOverlayPoints`/`setOverlaySegments`/`setLabelStyle` interface as flat; label path fetches
+a `u32` brick alongside every intensity brick and writes into a 3D `r32uint` atlas texture with
+identical slot geometry, silent fallback to intensity-only on miss. Full side-by-side visual sweep
+(open the same image in two popups, one `?bricks=0`, one `?bricks=1`, sub-pixel position match on
+zolIMa and fXgbTl) still owed and needs Dominik's eyes.
 
 **B7 — STRUCK.** Not a real task after B2+B3+the toggle: auto-select routes small movies to flat
 (fXgbTl) and everything else to brick, and the Bricks Auto/Brick/Flat toggle lets the user override
@@ -151,10 +151,15 @@ per session for images the predicate gets wrong (Dml3RG 2D is the recorded case)
 left to "retire" — flat is a legitimate renderer for real cases. The `bricksEnabled === false`
 branch stays load-bearing.
 
-**B8 — Delete hold-on-cold code path.** Follow-up once Frankenstein has weeks in Dominik's daily
-use with no regressions. Remove the `frankensteinEnabled = false` branch in `show()` and the auto-
-advance block, remove `?brickFrank=0` toggle, drop the `prevDisplayT` guard on the second pass.
-Cost: ~20 lines out. Waiting on confidence, not a technical block.
+**B8 ✅ shipped 2026-08-31** — Hold-on-cold code path deleted. Frankenstein is now the only mode:
+`frankensteinEnabled` variable removed; `show(t)` unconditionally snaps `displayT` on any `t` change
+(still reports `coreBricksResident(t)` so the caller can distinguish complete vs holey frames);
+`tickScheduler` auto-advance always snaps; `rebuildPageTableForDisplayT`'s second pass keeps the
+`prevDisplayT >= 0` sanity check (dropping it would build a `brickKey({t:-1, …})` on the initial
+frame). `setFrankensteinEnabled` removed from the interface; `?brickFrank` URL knob and the chip's
+`frank on/off` readout gone. `anyBricksResident` (only referenced by the hold-on-cold branches) also
+removed. Frankenstein confirmed stable across daily use (Dominik, 2026-08-31: "frank works fine.
+hold on cold is out"). Retired PRs: this branch.
 
 **B9 ✅ shipped 2026-08-29** — Bricks Auto/Brick/Flat toggle in the VIEW panel + reactive
 renderer swap. `settings.viewerBricksMode` persisted to localStorage. Watcher explicitly destroys
@@ -170,9 +175,16 @@ in-flight slab fetches before firing `setZPlane` — otherwise old-plane bytes c
 slot stamped fresh. `useTiles` and volume mode fall through to full reallocate (different
 geometry). Together closes the 1-2 s plane-wheel freeze Dominik hit on Dml3RG 2D.
 
-## Perf ledger (populated in B5)
+## Perf ledger (B5, bench7 2026-08-31)
 
-*Pending B5.*
+| Image | Predicate → mode | nT | Bytes/t | Draw p50 | Draw p95 | Resident | Level |
+|---|---|---|---|---|---|---|---|
+| fXgbTl | flat (1.4 GB total, fits budget) | 31 | 47 MB | 0.10 ms | 0.20 ms | 31/31 t | — |
+| Dml3RG | brick (8.5 GB movie) | 181 | 47 MB | 0.60 ms | 0.90 ms | 214 bricks | L0 |
+| f8gzA2 | brick (17 GB/t) | 1 | 17 GB | 1.20 ms | 2.30 ms | 459 bricks | L1 |
+
+All three land under the 5 ms `r.draw()` p95 threshold. Predicate lands each image on the intended
+renderer. Bench blobs: `~/Downloads/TMP/bench7/*.json`.
 
 ## Open questions
 

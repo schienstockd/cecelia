@@ -381,12 +381,6 @@ export async function createBrickVolumeRenderer(
    *  true (protects prev-level fallback from arriving mid-load; the fix for the black-rectangle
    *  pattern). URL param `?brickHold=0` disables. */
   let holdFinerEnabled = true
-  /** Frankenstein mode: `show(t)` and the auto-advance path snap `displayT` to `boundT`
-   *  immediately, and `rebuildPageTableForDisplayT` fills any hole with the same brick position
-   *  at the PREVIOUS displayT (kept LRU-warm). Trades hold-on-cold's stale-frame chip for a
-   *  visible per-brick update — the fresh bits arrive as they land. Default on; URL param
-   *  `?brickFrank=0` opts back to hold-on-cold for A/B. */
-  let frankensteinEnabled = true
   /** Timepoint the shader drew from BEFORE `displayT` last moved. Used for Frankenstein hole-
    *  fill — brick positions still empty at `displayT` fall back to the same position at
    *  `prevDisplayT` if the atlas still holds it. `-1` when there is no previous frame. */
@@ -790,7 +784,7 @@ export async function createBrickVolumeRenderer(
     // fresh bricks replace them slot-by-slot as they land. Touch each borrowed brick with the
     // prev-level bias so an eviction between now and the next fetch doesn't yank a slot the
     // shader is actively drawing from.
-    if (frankensteinEnabled && prevDisplayT >= 0 && prevDisplayT !== displayT
+    if (prevDisplayT >= 0 && prevDisplayT !== displayT
         && currentMeta !== null && atlas.currentLevel !== undefined) {
       const lvl = atlas.currentLevel
       const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
@@ -822,18 +816,6 @@ export async function createBrickVolumeRenderer(
       }
     }
     atlas.pageTableDirty = true
-  }
-
-  /** True when the atlas holds AT LEAST ONE brick at `t` at the current level. Cheap sentinel
-   *  for "would rebuilding pageTableCpu for this t leave any non-EMPTY entry?" — if false,
-   *  rebuilding paints a fully black frame. Used to gate the "unblank" auto-advance rule so
-   *  displayT never promotes to a t whose bricks weren't fetched. */
-  const anyBricksResident = (t: number): boolean => {
-    if (atlas === null) return false
-    for (const e of atlas.pageTable.entries()) {
-      if (e.brick.t === t && e.brick.level === atlas.currentLevel) return true
-    }
-    return false
   }
 
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
@@ -871,24 +853,14 @@ export async function createBrickVolumeRenderer(
     // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
     // stays in sync with what the volume is drawing.
     if (boundT !== displayT) {
-      if (frankensteinEnabled) {
-        // Snap-advance: no hold-on-cold. Missing bricks fall back to prev-t via
-        // rebuildPageTableForDisplayT's Frankenstein second pass.
-        prevDisplayT = displayT
-        displayT = boundT
-        rebuildPageTableForDisplayT()
-        onDisplayAdvanced?.(displayT)
-      } else {
-        const targetReady = coreBricksResident(boundT)
-        const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-        const canPartial = anyBricksResident(boundT)
-        if (targetReady || (!displayDrawable && canPartial)) {
-          prevDisplayT = displayT
-          displayT = boundT
-          rebuildPageTableForDisplayT()
-          onDisplayAdvanced?.(displayT)
-        }
-      }
+      // Snap-advance: displayT tracks boundT immediately. Any brick position still empty at the
+      // new displayT falls back to the same position at prevDisplayT via
+      // rebuildPageTableForDisplayT's hole-fill pass — the shader draws prev-t data for holes
+      // rather than a stale full frame or a black frame.
+      prevDisplayT = displayT
+      displayT = boundT
+      rebuildPageTableForDisplayT()
+      onDisplayAdvanced?.(displayT)
     }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
@@ -1285,20 +1257,12 @@ export async function createBrickVolumeRenderer(
       // Bump the scheduler target unconditionally — the fetch loop needs to know what to fetch
       // for next, whether or not we're ready to draw it yet.
       boundT = t
-      // Advance the DISPLAYED timepoint under two conditions, either sufficient:
-      //   (a) core bricks at t are resident (the happy path — we can draw a full frame), OR
-      //   (b) the OLD displayT can't be drawn AND the NEW t has at least SOMETHING resident
-      //       (partial frame > blank frame). Only promoting when boundT has bricks avoids the
-      //       trap where displayT jumps to a cold t and rebuildPageTableForDisplayT leaves the
-      //       page table all EMPTY_SLOT — 2026-08-29 blank-canvas symptom.
-      // First-ever show (displayT === -1) hits (b) — anyBricksResident may still be false, in
-      // which case we don't advance and the shader draws whatever the last-rendered pageTableCpu
-      // held (clear if it's the fresh atlas).
+      // Snap-advance displayT to t. Missing bricks fall back to prevDisplayT via
+      // rebuildPageTableForDisplayT's hole-fill pass. The return value still reports whether
+      // t's core is fully resident so the caller can distinguish a "done" frame from a
+      // "drawing with holes" one — but the advance itself is unconditional.
       const ready = coreBricksResident(t)
-      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-      const canPartial = anyBricksResident(t)
-      const snap = frankensteinEnabled && displayT !== t
-      if ((snap || ready || (!displayDrawable && canPartial)) && displayT !== t) {
+      if (displayT !== t) {
         prevDisplayT = displayT
         displayT = t
         rebuildPageTableForDisplayT()
@@ -1498,7 +1462,6 @@ export async function createBrickVolumeRenderer(
       schedulerKnobs = { ...schedulerKnobs, ...k }
     },
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
-    setFrankensteinEnabled(on) { frankensteinEnabled = !!on },
     setZPlane(zLo) {
       // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
       // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D
