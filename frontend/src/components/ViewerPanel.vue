@@ -657,7 +657,7 @@ watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 // Placeholder defaults for the movie size fields + level range for the 3D detail control. Sourced
 // from the browser volume viewer's own published state (see useViewerMovieDefaults) — the canvas is
 // what a movie records at when no size is asked for.
-const { canvasSizeX, canvasSizeY, multiscaleLevels } = useViewerMovieDefaults()
+const { canvasSizeX, canvasSizeY, multiscaleLevels, viewerZ } = useViewerMovieDefaults()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
@@ -862,7 +862,7 @@ onUnmounted(() => {
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
-                                 v-model:zSlice="zSlice"
+                                 v-model:zSlice="zSlice" :default-z="viewerZ"
                                  :levels="multiscaleLevels" v-model:detail3d="detail3d" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
             <MovieTimeRange v-if="(napariImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"

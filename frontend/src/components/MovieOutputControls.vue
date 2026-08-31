@@ -46,6 +46,10 @@ const props = withDefaults(defineProps<{
   sizeZ?: number | null
   show3D?: boolean
   zSlice?: number | null
+  // Fallback the slider snaps to when `zSlice` is null — the browser viewer's current z, so opening
+  // the form shows the plane the user is already looking at rather than plane 0. Null = no fallback
+  // (batch surface has no single viewer to inherit from).
+  defaultZ?: number | null
   // multiscale levels the open image has. >1 makes the 3D detail control meaningful (and visible);
   // omit it, or pass 0/1, and the row is exactly what it was.
   levels?: number | null
@@ -158,9 +162,9 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
                   @update:model-value="$emit('update:show3D', $event === '3d')" />
       <template v-if="!show3D">
         <input type="range" min="0" :max="(sizeZ ?? 1) - 1" step="1" class="mo-range"
-               :value="zSlice ?? 0" v-tooltip.bottom="'Which z slice to record'"
+               :value="zSlice ?? defaultZ ?? 0" v-tooltip.bottom="'Which z slice to record'"
                @input="$emit('update:zSlice', ($event.target as HTMLInputElement).valueAsNumber)" />
-        <span class="mo-val cc-readout">{{ zSlice ?? 0 }}</span>
+        <span class="mo-val cc-readout">{{ zSlice ?? defaultZ ?? 0 }}</span>
       </template>
     </span>
 
