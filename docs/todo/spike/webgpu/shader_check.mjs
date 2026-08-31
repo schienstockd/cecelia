@@ -75,6 +75,15 @@ const CH0 = (() => {
 if (CH0 !== LEADING_VEC4S * 4) {
   throw new Error(`CH0 (${CH0}) disagrees with UNIFORM_BYTES (${LEADING_VEC4S} vec4s)`)
 }
+// The labels vec4's float index. Read, not derived — this used to be `(LEADING_VEC4S - 1) * 4` on the
+// assumption that labels is the LAST leading vec4, and a 7th leading vec4 (pan + tail-plane clip)
+// added AFTER it shifted the harness silently: label opacity was writing into pan.x, so every label
+// test drew nothing. Now `const LAB0` in the renderer is the ONE source of truth, mirrored here.
+const LAB0 = (() => {
+  const m = VR.match(/const LAB0 = (\d+)/)
+  if (!m) throw new Error('could not read LAB0 from volumeRenderer.ts')
+  return Number(m[1])
+})()
 
 // The three shaders share an interpolated prelude (one camera, one uniform layout — there were three
 // copies and that is how a sign convention drifts). Resolve it first, or every body arrives with an
@@ -183,8 +192,8 @@ const PWGSL = ${JSON.stringify(pwgsl)}
 const SWGSL = ${JSON.stringify(swgsl)}
 const HA = ${VIEW_HALF_ANGLE}
 const MAX_CHANNELS = ${MAX_CHANNELS}, LUT_STOPS = ${LUT_STOPS}, NCH = ${NCH}
-// The uniform layout, read out of the renderer at generation time — see LEADING_VEC4S/CH0 above.
-const LEADING_VEC4S = ${LEADING_VEC4S}, CH0 = ${CH0}
+// The uniform layout, read out of the renderer at generation time — see LEADING_VEC4S/CH0/LAB0 above.
+const LEADING_VEC4S = ${LEADING_VEC4S}, CH0 = ${CH0}, LAB0 = ${LAB0}
 const N = 64                                     // phantom is N x N x N per channel
 
 try {
@@ -286,7 +295,6 @@ try {
     {binding: 4, resource: palTex.createView()}]})
 
   const u = new Float32Array(U / 4)
-  const LAB0 = (LEADING_VEC4S - 1) * 4          // the labels vec4 is the LAST leading one
   function setUniforms(w, h, chVisible) {
     u[0] = 0.7; u[1] = 0.35; u[2] = N * 1.7; u[3] = 256          // yaw, pitch, dist, steps
     u[4] = NCH; u[5] = w; u[6] = h                                // nch, viewport
@@ -727,7 +735,7 @@ const script = page.slice(page.indexOf('<script type="module">') + '<script type
 // `CH0` were both missing for the whole life of the uniform-layout extraction, which meant every check
 // after the uniform buffer — orientation, overlays, labels — had never once run.
 const bare = script.replace(/\/\/[^\n]*/g, '')
-for (const name of ['MAX_CHANNELS', 'LUT_STOPS', 'NCH', 'HA', 'LEADING_VEC4S', 'CH0']) {
+for (const name of ['MAX_CHANNELS', 'LUT_STOPS', 'NCH', 'HA', 'LEADING_VEC4S', 'CH0', 'LAB0']) {
   const used = new RegExp('(?<![.\\w])' + name + '(?![\\w])').test(bare)
   const declared = new RegExp('(?:const|let|var)\\s+[^;\\n]*\\b' + name + '\\s*=').test(bare)
   if (used && !declared) {
