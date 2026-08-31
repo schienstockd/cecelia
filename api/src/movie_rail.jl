@@ -50,6 +50,21 @@ end
 _max_px_from_size(size_x, size_y) =
     max(size_x === nothing ? 0 : Int(size_x), size_y === nothing ? 0 : Int(size_y))
 
+# The size-fields' placeholder is "canvas", but the request only sends numbers when the user typed
+# them. When they didn't, the movie used to encode at NATIVE crop resolution — which for a zoomed-in
+# view is a tiny mp4, and for a zoomed-out view is a huge one, neither matching what the user was
+# watching. Fall back to the viewer's canvas long side so the mp4 caps at what the viewer showed
+# (aspect stays native — `max_px` is a stride cap, not an exact resize). Returns 0 for a snapshot
+# without a usable canvas, which leaves the previous behaviour intact.
+function _max_px_from_view_state(vs::Union{Nothing,AbstractDict})
+    vs isa AbstractDict || return 0
+    canv = get(vs, "canvas", nothing)
+    canv isa AbstractDict || return 0
+    cw = get(canv, "width", 0); ch = get(canv, "height", 0)
+    (cw isa Real && ch isa Real) || return 0
+    max(Int(round(Float64(cw))), Int(round(Float64(ch))))
+end
+
 # JSON3 hands back Symbol keys; the movie_config/batch config path handles either — same `_to_str_dict`
 # gotcha the rest of the code lives with. Two accessors so callers can be terse.
 _cfg_get(cfg, k, default) =
@@ -190,6 +205,9 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     max_px = _max_px_from_size(size_x, size_y)
+    # Blank size fields → fall back to the viewer's canvas long side, so the mp4 caps at the size the
+    # viewer showed rather than at the native crop's pixel count. See `_max_px_from_view_state`.
+    max_px == 0 && (max_px = _max_px_from_view_state(view_state))
     # Viewer crop: pull the visible rectangle out of the snapshot and pass it to the encoder as
     # `crop`. Native H/W come from the store, not from the snapshot's canvas — `crop_from_view_state`
     # clamps against these so a stale snapshot can't index off the edge of the image. `nothing` here
@@ -198,6 +216,14 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
     view_crop = (native_h > 0 && native_w > 0) ?
         crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
+    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z, so
+    # a movie that MIPs the whole stack for lack of an explicit `zSlice` diverges from what the user
+    # was looking at when they hit Record. `z_from_view_state` returns `nothing` for 3D and for
+    # snapshots without a usable step, leaving the render at its previous all-Z MIP fallback.
+    if z_slice === nothing
+        derived_z = z_from_view_state(view_state)
+        derived_z === nothing || (z_slice = derived_z)
+    end
 
     # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
     # the on-screen `look` (banked in `movie_config`) into that shape so the offline record doesn't
@@ -487,7 +513,8 @@ end
 # a version comparison reads on ONE ruler.
 function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
                             first_specs = nothing, share_contrast::Bool = true,
-                            max_px::Int = 0)
+                            max_px::Int = 0,
+                            view_state::Union{Nothing,AbstractDict} = nothing)
     vn = String(get(cfg, :valueName, ""))
     frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn)
     frame[5] === nothing || throw(ArgumentError(String(frame[5])))
@@ -508,12 +535,26 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     has_mask = label_vn !== nothing
     overlays_dict = _overlays_raw_from_config(cfg, has_mask)
     vnn = isempty(vn) ? nothing : vn
-    ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
-                                       label_vn === nothing ? vnn : label_vn;
-                                       z = z_slice, crop = nothing, max_px = max_px, tally = false)
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
-    (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc,
+    # Viewer crop — same rule as `run_single_offline`. Computed per cell against THIS cell's arr
+    # shape: versions almost always share pixel dims, but a downsampled/derived version could differ,
+    # and `crop_from_view_state` clamps to whatever it is handed. 3D snapshots return `nothing`,
+    # leaving the cell at whole-image aspect.
+    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
+    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
+    view_crop = (native_h > 0 && native_w > 0) ?
+        crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
+    # Match the viewer's plane when the cell's config didn't pin one (same rule as
+    # `run_single_offline`). Every cell of a compare grid shares the viewer's one z-plane view.
+    if z_slice === nothing
+        derived_z = z_from_view_state(view_state)
+        derived_z === nothing || (z_slice = derived_z)
+    end
+    ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
+                                       label_vn === nothing ? vnn : label_vn;
+                                       z = z_slice, crop = view_crop, max_px = max_px, tally = false)
+    (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc, view_crop,
        banked_specs = picked_specs)
 end
 
@@ -530,13 +571,16 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                               title_card = nothing,
                               share_contrast::Bool = true,
                               layout::AbstractString = "row",
-                              t_start::Int = 0, t_end::Union{Int,Nothing} = nothing)
+                              t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
+                              view_state::Union{Nothing,AbstractDict} = nothing)
     rows       = _wrap_grid(rows, String(layout))
     row_layout = layout == "grid" ? "row" : String(layout)
     n_rows     = length(rows)
     cells      = sum(length(r.columns) for r in rows)
     cells > 0 || error("compare grid has no cells")
     max_px     = _max_px_from_size(size_x, size_y)
+    # Same "blank → viewer canvas" fallback as the single-record path. See `_max_px_from_view_state`.
+    max_px == 0 && (max_px = _max_px_from_view_state(view_state))
     per_pass   = _t_sweep_frames(img, t_start, t_end)
     total_units = cells + (n_rows > 1 ? n_rows : 0) + (n_rows > 1 ? 1 : 0)
     # A one-cell row is its own strip — no compose slot. Mirror `_record_grid!`'s counter.
@@ -561,7 +605,8 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                 cell = _resolve_grid_cell(pu, iu, img, col.config;
                                           first_specs = banked_specs,
                                           share_contrast = share_contrast,
-                                          max_px = max_px)
+                                          max_px = max_px,
+                                          view_state = view_state)
                 banked_specs === nothing && (banked_specs = cell.banked_specs)
                 ts = _record_ts_range(cell.arr, cell.caxes, t_start, t_end)
                 if isempty(ts)
@@ -578,7 +623,7 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  ts = ts, fps = fps,
                                                  z = cell.z_slice, channels = 0:(cell.nc - 1),
                                                  specs = cell.specs,
-                                                 crop = nothing, max_px = max_px,
+                                                 crop = cell.view_crop, max_px = max_px,
                                                  title_card = nothing,           # applied at end
                                                  overlays_for = cell.ov.overlays_for,
                                                  mask_for     = cell.ov.mask_for,
@@ -661,6 +706,13 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                   layout::AbstractString = "row",
                                   t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
                                   show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                                  # The viewer's captured `viewState` snapshot — same purpose as on
+                                  # `run_single_offline`: crop every cell to the visible rectangle
+                                  # the user is looking at, not the whole image. Applied per cell
+                                  # against the cell version's own arr shape (see
+                                  # `_resolve_grid_cell`). 3D snapshots return `nothing`, leaving
+                                  # the cell at whole-image aspect.
+                                  view_state::Union{Nothing,AbstractDict} = nothing,
                                   movie_config = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -680,7 +732,8 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                        fps = fps, size_x = size_x, size_y = size_y,
                                        title_card = title_card,
                                        share_contrast = share_contrast, layout = layout,
-                                       t_start = t_start, t_end = t_end)
+                                       t_start = t_start, t_end = t_end,
+                                       view_state = view_state)
         frames = Int(result.frames)
         if result.cancelled
             status = "cancelled"

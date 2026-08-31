@@ -7055,6 +7055,60 @@ end
         100, 100) === nothing                                                    # no canvas
 end
 
+@testset "API: z_from_view_state — one-shot record matches the viewer's plane" begin
+    # A 2D browser viewer shows ONE z; when the request doesn't pin `zSlice`, the movie fell back to
+    # an all-Z MIP of the same timepoint — which is a very different picture from what the user was
+    # watching when they hit Record. Pin the plane pick here so a future drift is a failing test.
+    vs2 = Dict{String,Any}(
+        "dims"   => Dict("ndisplay" => 2, "current_step" => [0, 7]),
+        "camera" => Dict("center" => [0.0, 50.0, 50.0], "zoom" => 1.0),
+        "canvas" => Dict("width" => 40, "height" => 40),
+    )
+    @test z_from_view_state(vs2) == 7
+
+    # Non-integer plane (a Float32 landed in JSON) → rounded to the nearest int. The viewer's slider
+    # is integer, but a snapshot can serialise as float — don't drop it on that.
+    vs2f = Dict{String,Any}(
+        "dims" => Dict("ndisplay" => 2, "current_step" => [0, 3.4]),
+    )
+    @test z_from_view_state(vs2f) == 3
+    vs2fh = Dict{String,Any}(
+        "dims" => Dict("ndisplay" => 2, "current_step" => [0, 3.6]),
+    )
+    @test z_from_view_state(vs2fh) == 4
+
+    # 3D → nothing (whole volume is rendered, so no single plane to pick).
+    vs3 = Dict{String,Any}("dims" => Dict("ndisplay" => 3, "current_step" => [0, 5]))
+    @test z_from_view_state(vs3) === nothing
+
+    # Nothing / empty / no dims / short current_step → nothing (falls through to previous behaviour).
+    @test z_from_view_state(nothing) === nothing
+    @test z_from_view_state(Dict{String,Any}()) === nothing
+    @test z_from_view_state(Dict{String,Any}("dims" => Dict("ndisplay" => 2))) === nothing
+    @test z_from_view_state(
+        Dict{String,Any}("dims" => Dict("ndisplay" => 2, "current_step" => [0]))) === nothing
+end
+
+@testset "API: _max_px_from_view_state — blank size fields cap at the viewer canvas" begin
+    # Blank size fields used to leave the mp4 at native crop resolution: tiny for a zoomed-in view,
+    # huge for a zoomed-out one, neither matching what the viewer showed. Cap at the viewer canvas
+    # long side. Aspect stays native — `max_px` is a stride cap, not an exact resize.
+    vs = Dict{String,Any}("canvas" => Dict("width" => 900, "height" => 600))
+    @test _max_px_from_view_state(vs) == 900
+    # Portrait canvas → long side is the height.
+    @test _max_px_from_view_state(
+        Dict{String,Any}("canvas" => Dict("width" => 400, "height" => 800))) == 800
+    # Float canvas dims (JSON) → rounded, so a 799.6 canvas doesn't cap the mp4 at 799.
+    @test _max_px_from_view_state(
+        Dict{String,Any}("canvas" => Dict("width" => 799.6, "height" => 600.0))) == 800
+
+    # Nothing / no canvas / zero canvas → 0 (previous native-crop behaviour).
+    @test _max_px_from_view_state(nothing) == 0
+    @test _max_px_from_view_state(Dict{String,Any}()) == 0
+    @test _max_px_from_view_state(
+        Dict{String,Any}("canvas" => Dict("width" => 0, "height" => 0))) == 0
+end
+
 @testset "API: movie overlays — clock timestamp + scale-bar picker match the viewer" begin
     # The Julia encoder-side overlays and the browser volume viewer's on-screen overlays draw the
     # SAME frame at the same time — if their formatters drift, a movie captured from the viewer
