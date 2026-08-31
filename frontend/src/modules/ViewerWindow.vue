@@ -1586,7 +1586,12 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     if (!ok || !isCurrent()) return
     // Only paints when the walk is still the current one, so a frame the user has already left cannot
     // land on the canvas; playback's own tick paints whatever became resident meanwhile.
-    if (u === t.value && shownT.value !== u) showT(u)
+    // No `shownT !== u` guard: after `r.setZPlane` bumps `planeVersion`, every slot is stale so
+    // showT(t.value) failed (shownT stayed on the OLD-plane t.value), and skipping here left the
+    // new bytes bound but unpainted — the z slider looked dead until the user nudged t (Dominik
+    // 2026-08-31). showT is idempotent for an already-bound slot, and this line only runs when
+    // u === t.value, so playback's per-tick paint isn't disturbed.
+    if (u === t.value) showT(u)
   }
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
@@ -2357,6 +2362,14 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
  * at, so a drag costs one refetch too. The time slider is deliberately NOT on this path: `gotoT`
  * paints from a cache and is cheap enough to run per pointer move.
  */
+// `maxWait` is the "planes go past while I scrub" cadence: a plain trailing debounce (what this
+// was) resets its timer on every `@input` event, so a continuous drag never fires until the pointer
+// stops — the release-only symptom Dominik hit 2026-08-31. `maxWait: 220` fires at most once per
+// ~220 ms during a sustained drag with the latest z, which is long enough that the average slab
+// fetch (~50-150 ms) has a chance to complete before the next `setZPlane` aborts inflight, and
+// short enough that the user sees planes moving past rather than a step-then-freeze. Canonical
+// primitive — do not hand-roll a scrub throttle. See `utils/debouncedLatest.ts` and docs/UI.md →
+// *Continuous controls*.
 const zPump = debouncedLatest<number>(async (zp) => {
   // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
   // (which destroys textures / atlas — the 200 ms-2 s freeze Dominik hit 2026-08-29). Abort
@@ -2374,7 +2387,7 @@ const zPump = debouncedLatest<number>(async (zp) => {
     return
   }
   await reallocate()
-}, { wait: 120 })
+}, { wait: 120, maxWait: 220 })
 /** Move to a plane: the readout follows the pointer, the refetch follows the pump. */
 function stepZ(next: number) {
   if (next === zPlane.value) return
@@ -3809,83 +3822,93 @@ onUnmounted(() => {
               <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
             </div>
           </div>
-          <div class="vw-cap">
-            <span class="cc-muted cc-fs-2xs">Fps</span>
-            <!-- Playback-throttled indicator: colour the readout number itself amber. -->
-            <span class="cc-readout cc-fs-2xs"
-                  :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
-                  v-tooltip.left="playing && waitingFor >= 0
-                    ? 'Playback throttled — fetches are behind the requested Fps'
-                    : 'Requested playback rate'">{{ settings.viewerFps }}</span>
-          </div>
-          <input
-            type="range" class="vw-grow" :min="1" :max="30" :step="1"
-            v-model.number="settings.viewerFps"
-            v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
-          >
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
-            <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
-          </div>
         </template>
 
-        <div class="cc-row cc-row-tight">
-          <button class="cc-btn cc-btn-ghost" @click="resetView"
-                  v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
-        </div>
-        <!-- Overview minimap, offered for any 2D plane view — small images benefit too once you
-             zoom in. Volume mode has no minimap: a rotated MIP has no useful "where am I" answer. -->
-        <div v-if="mode === 'plane'" class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
-          <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
-        </div>
-
-        <!-- Tile residency mini map: the spatial analog of the timecourse strip above. One cell per
-             tile at the current level; blue = in the atlas, amber = fetching, empty = absent. Only
-             offered in tile mode — the volume path has no per-tile cache. Collapsible because tile-
-             heavy views make it visually busy; state persisted in localStorage. -->
-        <template v-if="tileMapGrid">
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
-            <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
+        <!-- Compact controls block: toggles column on the left, Reset view button on the right with
+             the tile/brick residency map slotted directly under it. Reset used to sit BETWEEN Loop
+             and Overview, and the residency maps landed at the bottom after every other section,
+             so the reset action was in the middle of a row of switches and the map wasn't visibly
+             tied to Reset's siblings (Dominik 2026-08-31). Left column carries a compact `Fps`
+             control too — no need to spend a full sidebar row on a 1–30 slider. -->
+        <div class="vw-compact">
+          <div class="vw-compact-left">
+            <div v-if="nT > 1" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
+              <input
+                type="range" class="vw-grow" :min="1" :max="30" :step="1"
+                v-model.number="settings.viewerFps"
+                v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
+                aria-label="Playback rate (fps)"
+              >
+              <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
+                   slider have the plain description so a hover on either still explains the
+                   control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
+              <span class="cc-readout cc-fs-2xs vw-fps-val"
+                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                    v-tooltip.left="playing && waitingFor >= 0
+                      ? 'Playback throttled — fetches are behind the requested Fps'
+                      : 'Requested playback rate'">{{ settings.viewerFps }}</span>
+            </div>
+            <div v-if="nT > 1" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
+              <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
+            </div>
+            <!-- Overview minimap, offered for any 2D plane view — small images benefit too once
+                 you zoom in. Volume mode has no minimap: a rotated MIP has no useful "where am I"
+                 answer. -->
+            <div v-if="mode === 'plane'" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
+              <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
+            </div>
+            <div v-if="tileMapGrid" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
+              <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
+            </div>
+            <div v-if="brickMapGrid" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
+              <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
+            </div>
           </div>
-          <div v-if="tilesMapShown" class="vw-tilemaprow">
-            <div class="vw-tilemap"
+          <div class="vw-compact-right">
+            <button class="cc-btn cc-btn-ghost vw-reset"
+                    @click="resetView"
+                    v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
+            <!-- Tile residency mini map: the spatial analog of the timecourse strip above. One
+                 cell per tile at the current level; blue = in the atlas, amber = fetching, empty
+                 = absent. Only shown when its toggle in the left column is on. -->
+            <div v-if="tilesMapShown && tileMapGrid" class="vw-tilemap"
                  :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
                            gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
                            aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}` }">
               <span v-for="c in tileMapCellsView" :key="c.key"
                     class="vw-tilemap-cell" :class="'is-' + c.state" />
             </div>
-          </div>
-        </template>
-
-        <!-- Brick residency mini map: 3D analog of the tile map. One nBx × nBy grid per Z slice
-             at the CURRENT level + timepoint. Same colour language as the tile map (blue =
-             resident, amber = fetching). Only shown for `?bricks=1` and when at least one atlas
-             tick has landed. -->
-        <template v-if="brickMapGrid">
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
-            <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
-          </div>
-          <div v-if="bricksMapShown" class="vw-brickmaprow">
-            <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
-              <div class="vw-tilemap vw-brickmap-slice"
-                   :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
-                             gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
-                             aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
-                <span v-for="c in s.cells" :key="c.key"
-                      class="vw-tilemap-cell" :class="'is-' + c.state" />
+            <!-- Brick residency mini map: 3D analog of the tile map. One nBx × nBy grid per Z
+                 slice at the CURRENT level + timepoint. Same colour language as the tile map
+                 (blue = resident, amber = fetching). -->
+            <div v-if="bricksMapShown && brickMapGrid" class="vw-brickmaprow">
+              <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
+                <div class="vw-tilemap vw-brickmap-slice"
+                     :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                               gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                               aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
+                  <span v-for="c in s.cells" :key="c.key"
+                        class="vw-tilemap-cell" :class="'is-' + c.state" />
+                </div>
+                <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D plane
+                     mode `nBz === 1` so a single "z0" label just added a row of vertical space
+                     under the grid with nothing to compare it against (Dominik 2026-08-31). -->
+                <span v-if="brickMapSlices.slices.length > 1"
+                      class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
               </div>
-              <span class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
             </div>
           </div>
-        </template>
+        </div>
 
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar + timestamp are burnt into the render, they are not a layer whose
@@ -4497,12 +4520,17 @@ onUnmounted(() => {
    Reset view button, brick-map grid) instead of letting `.vw-side` scroll (Dominik, 2026-08-29).
    `CollapsibleSection` already sets `flex-shrink: 0` on its own root; this covers everything else.
    `flex-grow: 0` for the mirror case: the Depth range slider (`.rs` has `flex: 1` so it grows in
-   its intended horizontal `.cc-row` parent) and the Timepoint / Plane / Fps `<input type=range>`
-   (`.vw-grow` is `flex: 1` for the same horizontal fill) are direct children of `.vw-side`
-   in the current template. In a column flex parent, `flex-grow: 1` stretches them along the
-   VERTICAL axis, leaving huge gaps between the caption and the slider, and the slider and the
-   next control (Dominik, 2026-08-31). */
+   its intended horizontal `.cc-row` parent) and the Plane / Fps `<input type=range>` (`.vw-grow`
+   is `flex: 1` for the same horizontal fill) are direct children of `.vw-side` in the current
+   template. In a column flex parent, `flex-grow: 1` stretches them along the VERTICAL axis,
+   leaving huge gaps between the caption and the slider, and the slider and the next control
+   (Dominik, 2026-08-31). The `.vw-side > .vw-grow`/`.rs` overrides carry a third simple selector
+   so they beat `.vw-grow { flex: 1 }` on specificity — under Vue scoped compilation only the LAST
+   simple selector gets the `[data-v-…]` suffix, so `.vw-side > *` and `.vw-grow` tied at (0,2,0)
+   and declaration order let `.vw-grow` win, which is why the earlier `.vw-side > * { flex-grow: 0 }`
+   didn't actually take (Dominik 2026-08-31, follow-up). */
 .vw-side > * { flex-shrink: 0; flex-grow: 0; }
+.vw-side > .vw-grow, .vw-side > .rs { flex-grow: 0; }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
@@ -4578,6 +4606,16 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
 .vw-brickmap-zlabel { line-height: 1; }
+/* Compact controls block — toggles (Fps, Loop, Overview, Tiles, Bricks) stacked on the left,
+   Reset view on the right with residency maps nested directly below it. Right column takes its
+   own width from the button + map so the left column can grow to fill the rest of the sidebar. */
+.vw-compact { display: flex; gap: 0.5rem; align-items: flex-start; }
+.vw-compact-left { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; min-width: 0; }
+.vw-compact-right { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex: 0 0 auto; min-width: 0; }
+.vw-reset { white-space: nowrap; }
+/* Compact Fps readout — same size language as `.cc-readout` but with a fixed slot so the digits
+   don't jitter the slider on every playback tick. */
+.vw-fps-val { min-width: 1.4rem; text-align: right; flex: none; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. */
 .vw-bench-grid {

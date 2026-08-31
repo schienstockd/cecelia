@@ -28,6 +28,16 @@
 //  3. State is observable (`idle` | `pending` | `running`), because fire-and-forget reads as broken:
 //     the user needs to see that a preview is coming.
 //
+// **`maxWait` — the scrub knob.** A plain trailing debounce is the wrong shape for a slider whose
+// user wants to see PLANES GO PAST while they drag: `schedule` restarts the timer on every event, so
+// a continuous drag never fires until the pointer stops. Set `maxWait` and a second timer starts on
+// the first event of a burst, does NOT reset on subsequent events, and fires with the latest arg
+// when it elapses — so a long drag gets a run every `maxWait` ms with the current position, while
+// short drags still coalesce cleanly through `wait`. Same one-at-a-time and same `isCurrent()`
+// semantics; the difference is just how often work is allowed to START during a sustained burst.
+// Written for the volume viewer's z-slider, which without it only painted the release plane
+// (Dominik 2026-08-31). The canonical shape for a scrub — no hand-rolled fourth timer.
+//
 // Deliberately framework-agnostic (same as `coalesce.ts`) — the caller maps `onState` onto a ref.
 
 export type RunState = 'idle' | 'pending' | 'running'
@@ -35,6 +45,12 @@ export type RunState = 'idle' | 'pending' | 'running'
 export interface DebouncedLatestOptions {
   /** Trailing debounce window, ms. */
   wait: number
+  /**
+   * Maximum time a burst can hold `fire` off, ms. Timer starts on the first `schedule` of a burst
+   * and does NOT reset on subsequent schedules, so a sustained drag gets a run every `maxWait` ms
+   * with the latest arg — the "scrub" cadence. Omit for a plain trailing debounce.
+   */
+  maxWait?: number
   /** Called on every state transition (never with the state it is already in). */
   onState?: (state: RunState) => void
   /**
@@ -74,9 +90,14 @@ export interface DebouncedLatest<A> {
  */
 export function debouncedLatest<A>(
   work: (arg: A, isCurrent: () => boolean) => Promise<void>,
-  { wait, onState, onError }: DebouncedLatestOptions,
+  { wait, maxWait, onState, onError }: DebouncedLatestOptions,
 ): DebouncedLatest<A> {
+  // `timer` is the trailing debounce — reset per `schedule`, fires when the burst pauses for `wait`.
+  // `maxTimer` is the scrub cap — set on the FIRST schedule of a burst and NOT reset by subsequent
+  // schedules, so a sustained drag still fires every `maxWait` ms with the latest arg. Both share
+  // the same `fire` sink; whichever elapses first wins and the other is cleared inside `fire`.
   let timer: ReturnType<typeof setTimeout> | null = null
+  let maxTimer: ReturnType<typeof setTimeout> | null = null
   let pending: { arg: A } | null = null
   let running = false
   let token = 0
@@ -88,12 +109,16 @@ export function debouncedLatest<A>(
     onState?.(s)
   }
 
-  const clearTimer = () => {
+  const clearTrailing = () => {
     if (timer !== null) { clearTimeout(timer); timer = null }
+  }
+  const clearAll = () => {
+    clearTrailing()
+    if (maxTimer !== null) { clearTimeout(maxTimer); maxTimer = null }
   }
 
   async function fire(): Promise<void> {
-    timer = null
+    clearAll()   // whichever timer called us, ensure the OTHER cannot fire during work
     // A run is already going: leave `pending` alone — the running call's `finally` picks it up. Without
     // this the queued request would be lost and the view would keep a mask for a region left behind.
     if (running) return
@@ -114,7 +139,13 @@ export function debouncedLatest<A>(
       running = false
       if (pending !== null) {
         setState('pending')
+        // Restart both timers for the NEXT burst — `maxTimer` starts fresh here rather than
+        // continuing from the previous burst's start, so the scrub cadence is one run per maxWait
+        // rather than a hard ceiling that would fire immediately after work returned.
         if (timer === null) timer = setTimeout(() => { void fire() }, wait)
+        if (maxWait !== undefined && maxTimer === null) {
+          maxTimer = setTimeout(() => { void fire() }, maxWait)
+        }
       } else {
         setState('idle')
       }
@@ -124,24 +155,29 @@ export function debouncedLatest<A>(
   return {
     schedule(arg: A) {
       pending = { arg }
-      clearTimer()
+      clearTrailing()
       timer = setTimeout(() => { void fire() }, wait)
+      // maxWait: arm on the FIRST schedule of a burst, and while nothing is in flight — a mid-run
+      // schedule's cap is enforced by the `finally` block's re-arm above.
+      if (maxWait !== undefined && maxTimer === null && !running) {
+        maxTimer = setTimeout(() => { void fire() }, maxWait)
+      }
       // stay 'running' while a call is in flight — a queued request is not a new visible state
       if (!running) setState('pending')
     },
     flush() {
       if (pending === null) return
-      clearTimer()
+      clearAll()
       void fire()
     },
     cancel() {
-      clearTimer()
+      clearAll()
       pending = null
       token++                      // any in-flight run is now superseded
       if (!running) setState('idle')
     },
     dropPending() {
-      clearTimer()
+      clearAll()
       pending = null               // note: `token` untouched — the in-flight run stays current
       if (!running) setState('idle')
     },
