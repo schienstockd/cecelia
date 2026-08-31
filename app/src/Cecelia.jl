@@ -159,7 +159,7 @@ export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixel
 # The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
 # `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
 # the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
-export ngff_group_attrs, ngff_multiscales, zarr_array_meta, ngff_version
+export ngff_attrs, ngff_multiscales, zarr_array_meta, ngff_version
 export resync_ome_meta!
 export RemoveImage
 export CellposeSegment

@@ -110,15 +110,18 @@ This is the Julia half of the v2-vs-v3 question, and it lives next to `series_ba
 resolver per question per language (docs/ARCHITECTURE.md → **OME-ZARR dual-format**). Do NOT add a parallel set
 of v3 readers — route through here.
 
+Name matches the Python twin (`zarr_utils.ngff_attrs`) on purpose — the cross-language contract on
+this question is by name.
+
 * zarr v2 / NGFF 0.4 — `.zattrs`, attributes at the **top level**
 * zarr v3 / NGFF 0.5 — `zarr.json` → `attributes`, everything nested one level down under **`ome`**
 
 The *content* is identical in both (same axes, datasets, coordinateTransformations), which is why
 unwrapping is the whole difference. Python gets this cheaper because `zarr-python`'s `Group.attrs`
-already hides the file-level half (`zarr_utils.ngff_attrs`); Julia reads the JSON itself, so it
-handles both halves here.
+already hides the file-level half (its `ngff_attrs` takes an `attrs` object); Julia reads the JSON
+itself, so it handles both halves here and takes a directory path.
 """
-function ngff_group_attrs(group_dir::AbstractString)
+function ngff_attrs(group_dir::AbstractString)
     zattrs = joinpath(group_dir, ".zattrs")
     if isfile(zattrs)
         try
@@ -140,10 +143,10 @@ function ngff_group_attrs(group_dir::AbstractString)
 end
 
 """
-`multiscales` list of a zarr group directory, or `nothing` — version-agnostic (see `ngff_group_attrs`).
+`multiscales` list of a zarr group directory, or `nothing` — version-agnostic (see `ngff_attrs`).
 """
 function ngff_multiscales(group_dir::AbstractString)
-    attrs = ngff_group_attrs(group_dir)
+    attrs = ngff_attrs(group_dir)
     isnothing(attrs) && return nothing
     ms = get(attrs, :multiscales, nothing)
     (isnothing(ms) || isempty(ms)) ? nothing : ms
@@ -157,12 +160,12 @@ together in practice: the zarr format is how the bytes and metadata files are la
 version is which image-metadata spec those attributes follow. Reported side by side in the image
 metadata modal so "what is this store?" is answerable without opening a terminal.
 
-0.5 carries it on the `ome` group attribute (which `ngff_group_attrs` has already unwrapped by the
+0.5 carries it on the `ome` group attribute (which `ngff_attrs` has already unwrapped by the
 time we see it); 0.4 and earlier carry it per-multiscales-entry.
 """
 function ngff_version(zarr_path::AbstractString)
     base  = series_base(zarr_path)
-    attrs = ngff_group_attrs(base)
+    attrs = ngff_attrs(base)
     isnothing(attrs) && return nothing
     v = get(attrs, :version, nothing)                     # NGFF 0.5 (on the `ome` attribute)
     isnothing(v) || return string(v)
@@ -209,7 +212,7 @@ coordinate transform — read here so `img_physical_sizes` is a pure-Julia `meta
 function read_ome_metadata(zarr_path::String)::Dict{String,Any}
     result = Dict{String,Any}()
     base  = series_base(zarr_path)
-    zattrs = ngff_group_attrs(base)          # v2 `.zattrs` or v3 `zarr.json`→attributes[→ome]
+    zattrs = ngff_attrs(base)          # v2 `.zattrs` or v3 `zarr.json`→attributes[→ome]
     isnothing(zattrs) && return result
 
     try
