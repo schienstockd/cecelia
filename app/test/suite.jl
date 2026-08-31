@@ -14024,14 +14024,14 @@ end
 
         # the one resolver: attributes come back unwrapped regardless of the `ome` nesting
         for p in (v2, v3)
-            attrs = ngff_group_attrs(joinpath(p, "0"))
+            attrs = ngff_attrs(joinpath(p, "0"))
             @test !isnothing(attrs)
             @test haskey(attrs, :multiscales)          # NOT nested under :ome by the time we see it
             ms = ngff_multiscales(joinpath(p, "0"))
             @test !isnothing(ms) && !isempty(ms)
         end
         # a directory with no zarr metadata answers nothing rather than throwing
-        @test isnothing(ngff_group_attrs(joinpath(v2, "does-not-exist")))
+        @test isnothing(ngff_attrs(joinpath(v2, "does-not-exist")))
         # array metadata resolves for both; a GROUP dir must NOT be mistaken for an array (v3 shares
         # the filename `zarr.json` between the two)
         @test !isnothing(zarr_array_meta(joinpath(v3, "0", "0")))
@@ -14386,6 +14386,91 @@ end
     end
     # The scan must actually find tasks; a rename that silently matched nothing would "pass".
     @test length(checked) >= 8
+end
+
+@testset "zarr access routes through the canonical helpers" begin
+    # OME-ZARR is the same rule as `.h5ad`: one set of readers per language, and re-opening a store
+    # by hand is how the two variants drift (CLAUDE.md → *Image / OME-ZARR access*). Julia has a
+    # metadata tier in `app/src/tasks/importImages/omezarr.jl` (`series_base`, `ngff_attrs`,
+    # `ngff_multiscales`, `zarr_array_meta`, `ngff_version` — exported through `Cecelia.jl`) and a
+    # narrow display-only pixel tier in `api/src/image_geometry.jl` (`open_level` / `open_level0` /
+    # `read_native`). Every other caller routes through those helpers.
+    #
+    # Two ways this rule is bypassed in practice — a bare `zopen(...)` / `Zarr.open(...)`, and a
+    # `joinpath(..., ".zattrs" | ".zarray" | "zarr.json")` that reads the JSON itself instead of
+    # going through `ngff_attrs`/`zarr_array_meta`. Both regressions have shipped before (the
+    # `read_ngff_axes` note in `image_geometry.jl` records the second: reading `.zattrs` directly
+    # made every v3 store answer EMPTY).
+    #
+    # Docstring mentions use backticks (`` `.zattrs` ``), which don't match the double-quoted literal.
+    #
+    # Sanctioned owners:
+    #   * `omezarr.jl` defines all metadata helpers, so it is the one file allowed to read the raw
+    #     `.zattrs` / `.zarray` / `zarr.json` files.
+    #   * `image_geometry.jl` defines `open_level`, so it is the one file allowed to call `zopen`.
+
+    # ".zattrs", ".zarray", "zarr.json" as a code literal (a path join into a store) — but not the
+    # docstring form `` `.zattrs` ``. `\\.` in raw-string form is the literal dot.
+    literal_re = r"""\"\.zattrs\"|\"\.zarray\"|\"zarr\.json\""""
+    # `zopen(...)` or `Zarr.open(...)` — the two ways a store gets opened via `Zarr.jl`.
+    open_re    = r"\bzopen\s*\(|\bZarr\.open\s*\("
+
+    allowed_literal = Set([joinpath("importImages", "omezarr.jl")])
+    allowed_open    = Set(["image_geometry.jl"])
+
+    literal_hits = String[]
+    open_hits    = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f)
+            # rel key is enough to distinguish siblings — importImages/omezarr.jl vs the base name.
+            rel  = occursin(joinpath("importImages", "omezarr.jl"), path) ?
+                       joinpath("importImages", "omezarr.jl") : f
+            for (i, ln) in enumerate(eachline(path))
+                startswith(strip(ln), "#") && continue          # comments don't count
+                if occursin(literal_re, ln) && !(rel in allowed_literal)
+                    push!(literal_hits, "$rel:$i  $(strip(ln))")
+                end
+                if occursin(open_re, ln) && !(rel in allowed_open)
+                    push!(open_hits, "$rel:$i  $(strip(ln))")
+                end
+            end
+        end
+    end
+
+    isempty(literal_hits) || error(
+        "bare `.zattrs` / `.zarray` / `zarr.json` read outside `importImages/omezarr.jl`:\n  " *
+        join(literal_hits, "\n  ") *
+        "\nRoute through `ngff_attrs` / `ngff_multiscales` / `zarr_array_meta` / `ngff_version` — " *
+        "reading `.zattrs` directly made every v3 store answer EMPTY once already " *
+        "(see docs/todo/ZARR_V3_PLAN.md and CLAUDE.md → *Image / OME-ZARR access*).")
+
+    isempty(open_hits) || error(
+        "bare `zopen` / `Zarr.open` outside `api/src/image_geometry.jl`:\n  " *
+        join(open_hits, "\n  ") *
+        "\nOpen a store through `open_level` / `open_level0` and read pixels with `read_native` — " *
+        "the display-only carve-out. Anything that PROCESSES data reads through Python `zarr_utils` " *
+        "(CLAUDE.md → *Image / OME-ZARR access*).")
+
+    @test isempty(literal_hits) && isempty(open_hits)
+
+    # The scan must actually reach the sanctioned owners; a wrong root would let a real offender
+    # slip through with an empty offender list.
+    saw_literal_owner = false
+    saw_open_owner    = false
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src")),
+        (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        occursin(joinpath("importImages", "omezarr.jl"), path) &&
+            occursin(literal_re, read(path, String)) && (saw_literal_owner = true)
+        f == "image_geometry.jl" &&
+            occursin(open_re, read(path, String)) && (saw_open_owner = true)
+    end
+    @test saw_literal_owner
+    @test saw_open_owner
 end
 
 @testset "a process exit check also checks termsignal" begin
