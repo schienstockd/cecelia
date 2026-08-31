@@ -5,9 +5,9 @@ than left to the three surfaces that ask for one: clamp per axis, force even (h.
 odd dimensions outright, and we write with macro_block_size=1 so imageio will NOT quietly rescale for
 us), and treat blank/zero as "the canvas size".
 
-The last test is the title-card contract (docs/NAPARI.md → *Movie output size*): the card is rendered
-from the recorded movie's own frame size and concatenated onto it, so if the two ever disagreed ffmpeg
-would rescale one half of the file. That one encodes for real (imageio-ffmpeg is in the env).
+The last test is the title-card contract: the card is rendered from the recorded movie's own frame
+size and concatenated onto it, so if the two ever disagreed ffmpeg would rescale one half of the
+file. That one encodes for real (imageio-ffmpeg is in the env).
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
 """

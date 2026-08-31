@@ -55,7 +55,7 @@ end
 # or non-positive — which means "record at the napari canvas size" (the default, and what every movie was
 # before the size fields existed). ONE reader for all three surfaces (single record, animation, batch) so
 # "blank = canvas" is defined once; the pixel-level validation (clamp, even axes) lives in Python's
-# `movie_io.coerce_movie_size`. See docs/NAPARI.md.
+# `movie_io.coerce_movie_size`.
 function _movie_size_params(data)
     read_axis(key) = begin
         raw = get(data, key, nothing)

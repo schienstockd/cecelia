@@ -28,7 +28,7 @@ end
 # changes the extent, so it can't be a version of the source — it's a new image). The box (full-res
 # pixels, half-open) comes from the napari 3D-crop draw (bridge `crop_box`); z0/z1/t0/t1 are -1 when
 # that axis isn't cropped. Combines the correction runners' "read→transform→write zarr" pattern with
-# the import route's `add_image!` registration. See docs/NAPARI.md → "3D crop".
+# the import route's `add_image!` registration.
 # QC-EXEMPT: a crop is a deterministic geometric subset with no measurement output. The output
 # extent is a correctness property of the crop itself (asserted by the task, not scored), and the
 # new image gets its own calibration QC on import — the sanctioned "no objective signal" case.

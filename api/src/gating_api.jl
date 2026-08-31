@@ -514,8 +514,8 @@ function api_gating_channels(req::HTTP.Request)
         v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
     display = get(versions, _matching_channel_version(versions, length(chans)), String[])
     # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
-    # aren't in the cell obs, but the napari colour-by broadcasts them to cells via track_id so you can
-    # colour tracks by their cluster/population (see docs/NAPARI.md). Offered alongside cell obs columns.
+    # aren't in the cell obs, but the viewer colour-by broadcasts them to cells via track_id so you
+    # can colour tracks by their cluster/population. Offered alongside cell obs columns.
     tpath = img_track_props_path(img, vn)
     trackObs = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
     trackColourColumns = String[c for c in trackObs if startswith(c, "clusters.")]

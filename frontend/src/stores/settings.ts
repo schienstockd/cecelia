@@ -471,8 +471,8 @@ export const useSettingsStore = defineStore('settings', () => {
     // The 3D half is the EXISTING per-set `show3D` pref — one stored value, so the viewer's 3D button
     // and the movie's z control cannot disagree.
     zSlice: _setPrefs.value[setUid]?.movie?.zSlice ?? null,
-    // 0 = full resolution. napari's own 3D choice is the COARSEST level, which erases a strided label
-    // pyramid — so the default is full and the cost is a visible control (docs/NAPARI.md → 3D detail).
+    // 0 = full resolution. The default is full because the coarsest level erases a strided label
+    // pyramid — the cost is a visible control.
     detail3d: _setPrefs.value[setUid]?.movie?.detail3d ?? 0,
     compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,

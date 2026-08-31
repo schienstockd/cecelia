@@ -531,7 +531,7 @@ def store_format(path):
 
     DISCOVERED, never assumed or configured. Both formats coexist on disk indefinitely —
     bioformats2raw never rewrites its output, so every store imported before the 0.12 upgrade stays
-    v2 (and big-endian, see `docs/NAPARI.md` → *Byte order*). Consumers that must know ask here;
+    v2 (and big-endian). Consumers that must know ask here;
     nothing keys off a setting or a path suffix.
     """
     for base in (series_base(path), path):

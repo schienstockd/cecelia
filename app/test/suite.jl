@@ -271,9 +271,8 @@ end
                     if !isempty(strip(l)) && !startswith(strip(l), "#")]
         @test length(required) >= 10        # a truncated/emptied list must not pass silently
 
-        # The two spawned processes are pinned to the constants that spawn them, so moving either
-        # file fails HERE (pointing at the list) instead of at a user's first launch.
-        @test rel(Cecelia.NAPARI_BRIDGE) in required
+        # The spawned process is pinned to the constant that spawns it, so moving the file fails
+        # HERE (pointing at the list) instead of at a user's first launch.
         @test rel(Cecelia.PREVIEW_WORKER) in required
 
         for p in required

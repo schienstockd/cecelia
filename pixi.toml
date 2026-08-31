@@ -65,6 +65,10 @@ pyproj = ">=3.7"
 # disjoint-sets split — every pin in exactly one file; see docs/todo/PY_PACKAGING_PLAN.md).
 cecelia      = { path = "python", editable = true }
 websockets   = ">=16.0"
+# Movie writer backend for imageio.mimwrite/get_writer(fps=…). Was pulled in transitively via napari
+# → napari-animation until P9; declared here now that napari is gone. Tests in test_movie_io.py
+# encode short mp4s for real, so this needs to be present, not optional.
+imageio-ffmpeg = ">=0.4"
 # Cellpose v4 (Cellpose-SAM). v4 has no `DenoiseModel` — the v3 pin existed to keep
 # `cleanupImages.cellposeCorrect` alive, and that task is retired: `cleanupImages.smooth` (coastal's
 # model-free restorers) and `coastal.denoise` (the Cellpose-3 net re-implemented, no `cellpose`

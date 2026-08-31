@@ -126,7 +126,7 @@ end
     @test !isempty(String(d.julia))
     @test haskey(d, :replAvailable) && haskey(d, :loopback) && haskey(d, :replEnabled)
     # service ports surfaced for the System panel
-    @test d.port > 0 && d.napariPort == 7655 && d.previewPort == 7656 && d.notebooksPort == 7660
+    @test d.port > 0 && d.previewPort == 7656 && d.notebooksPort == 7660
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
@@ -1488,7 +1488,7 @@ Base.getindex(a::FakeZArray, ::Colon) = a.block
     # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
     # version read with plain `arr[...]` is byte-swapped garbage that renders as saturated white noise
     # (a true 63 reads as 16128; 98% of a real frame exceeded a contrast ceiling that should clip none).
-    # Silent, and invisible in Python, which honours the descriptor. See docs/NAPARI.md → Byte order.
+    # Silent, and invisible in Python, which honours the descriptor.
     # DETECTOR for the single Zarr.jl internal this depends on. `_zarr_byte_order` reads the raw numpy
     # dtype descriptor out of `arr.metadata.dtype`; if a Zarr.jl upgrade changes that field's shape the
     # guard falls back to '|' (never swap) and the big-endian bug returns. The swap assertions below DO
