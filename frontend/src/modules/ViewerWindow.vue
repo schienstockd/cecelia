@@ -57,7 +57,7 @@ import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks,
-  VIEW_HALF_ANGLE, MAX_CHANNELS, SAFE_CACHE_BYTES,
+  VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
@@ -603,6 +603,13 @@ watch(() => settings.viewerBricksMode, () => {
   if (renderer.value) { renderer.value.destroy(); renderer.value = null }
   reallocate()
 })
+// Cache size change → full reallocate (atlas / timepoint textures resize). Keep the renderer
+// instance — only `setImage` needs to re-run at the new byte budget; the eviction/growth path is
+// what `setImage` was written to do. Skips URL-override case since that's frozen at mount.
+watch(() => settings.viewerCacheMB, () => {
+  if (cacheMBFromUrl) return
+  reallocate()
+})
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
 // param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
 //   * `updateId` (>0) when the current preview matches this image
@@ -864,10 +871,46 @@ const BRICK_TIERS = [
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
 const effectiveMaxIntersect = computed(() =>
   brickKnobThrFromUrl ? brickKnobThr : BRICK_TIER_THRESHOLD[settings.viewerBrickTier])
+/** Cache size options — chips, not a spinner. Bytes are the honest currency (unlike Quality tier,
+ *  where the safe range isn't measured), but a spinner offering arbitrary MB values implies
+ *  "any value is fine" — same trap. Five named steps: Auto is what shipped before this setting
+ *  existed (1500 MB = `SAFE_CACHE_BYTES`); the rest are round doubles. */
+const AUTO_CACHE_MB = 1500
+// ChipSelect takes string values; the setting stores a number. Convert at the boundary. The
+// Auto label carries the resolved value inline (matches the Level dropdown's "Auto (L4 —
+// zoom-driven)" idiom — 2026-08-31 Dominik: "when we say auto, we should say what was picked").
+const CACHE_MB_OPTIONS = [
+  { value: 'auto', label: 'Auto', tip: 'The shipped default' },
+  { value: '512', label: '512 MB', tip: 'Small — leaves VRAM for other apps' },
+  { value: '1024', label: '1 GB', tip: '' },
+  { value: '2048', label: '2 GB', tip: 'Large — more timepoints / bricks resident' },
+  { value: '4096', label: '4 GB', tip: 'Aggressive — only on discrete GPU with headroom' },
+]
+/** Human-readable resolved values for the "Using: X" captions under the Advanced chips. Applies
+ *  whether the user picked Auto or forced a value — a caption that only appears under Auto would
+ *  jump the layout on every flip. */
+const effectiveRendererLabel = computed(() => bricksEnabled.value ? 'Brick' : 'Flat')
+const effectiveCacheMBLabel = computed(() =>
+  `${Math.round(effectiveCacheBytes.value / (1024 * 1024))} MB`)
+const cacheMBAsString = computed(() =>
+  settings.viewerCacheMB > 0 ? String(settings.viewerCacheMB) : 'auto')
+/** URL override for the cache size. `?cacheMB=N` wins over the persisted setting (same shape as
+ *  `?brickThr=`). Empty = defer to setting. */
+const cacheMBFromUrl = String(route.query.cacheMB ?? '') !== ''
+const cacheMBUrl = parseNumQuery(route.query.cacheMB, AUTO_CACHE_MB)
+/** Effective VRAM budget in BYTES for `setImage`. URL wins, then the persisted setting, then Auto. */
+const effectiveCacheBytes = computed(() => {
+  if (cacheMBFromUrl) return Math.max(1, cacheMBUrl) * 1024 * 1024
+  const mb = settings.viewerCacheMB
+  return (mb > 0 ? mb : AUTO_CACHE_MB) * 1024 * 1024
+})
 // Live-apply the tier without reallocating the renderer. Ignored on the flat renderer (setter
-// is optional). `bias` stays URL-only, so it rides through unchanged.
+// is optional). `bias` stays URL-only, so it rides through unchanged. Nudge the frame pump so
+// the new threshold takes effect on the next draw — otherwise `tickScheduler` doesn't re-run
+// until the user moves the camera (2026-08-31 Dominik: "are you sure you're reloading").
 watch(effectiveMaxIntersect, v => {
   renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: brickKnobBias })
+  frame.redraw()
 })
 /**
  * The renderer's own numbers, SNAPSHOT into a ref rather than read through a computed.
@@ -2716,7 +2759,7 @@ async function reallocate(refit = false) {
     if (!tr) return
     const lvl = levelMeta(m, slabLevel.value)
     const nch = Math.min(m.nC, MAX_CHANNELS)
-    tr.setImage(m, slabLevel.value, SAFE_CACHE_BYTES,
+    tr.setImage(m, slabLevel.value, effectiveCacheBytes.value,
                 lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch)
     tr.setChannels(m.channels)
     tr.resize()
@@ -2735,7 +2778,7 @@ async function reallocate(refit = false) {
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
     if (benchEnabled) benchReset()
-    r.setImage(m, SAFE_CACHE_BYTES, zDepth.value,
+    r.setImage(m, effectiveCacheBytes.value, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
     // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
@@ -3273,30 +3316,10 @@ onUnmounted(() => {
          controls and the module page's task list hold different things, and sharing meant every
          collapse fold both. -->
     <CollapsiblePanel storage-key="viewerWindowSide" label="viewer controls"
-                      :default-width="240" :min="200" :max="480"
+                      :default-width="290" :min="240" :max="480"
                       collapsed-key="viewerWindowSideCollapsed">
       <div class="vw-side">
-      <div class="cc-row cc-row-tight">
-        <div class="vw-title cc-fs-sm vw-grow">{{ imageName || imageUid }}</div>
-        <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
-             (click does nothing, drag pans/rotates). One click flips it — same knob the pop-manager
-             pencil writes, so the user can stay in the viewer without reaching back to the module
-             page (Dominik, 2026-08-26). Icon shows the CURRENT mode, not the ACTION — reading is
-             what the user needs from a glance. -->
-        <button class="cc-btn cc-btn-ghost cc-btn-icon"
-                :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
-                @click="toggleSelectMode"
-                v-tooltip.left="selectModeActive
-                  ? 'Selection mode — click for pan mode'
-                  : 'Pan mode — click for selection mode'"
-                aria-label="Toggle selection mode">
-          <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
-        </button>
-        <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
-                v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
-          <i class="pi pi-question-circle" />
-        </button>
-      </div>
+      <div class="vw-title cc-fs-sm">{{ imageName || imageUid }}</div>
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
         <!-- Table with a column per mode: same gesture does different things in pan vs select
@@ -3339,6 +3362,7 @@ onUnmounted(() => {
               @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
             />
           </div>
+          <div class="cc-muted cc-fs-3xs vw-adv-using">Using: {{ effectiveRendererLabel }}</div>
           <div class="cc-row cc-row-tight" v-if="bricksEnabled">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="brickKnobThrFromUrl
@@ -3354,6 +3378,22 @@ onUnmounted(() => {
           <div class="cc-muted cc-fs-3xs vw-adv-note" v-else>
             Quality tier applies to the Brick renderer.
           </div>
+          <!-- Cache size — one budget for both renderers. Flat uses it as its timepoint-cache
+               ceiling; brick uses it as its atlas ceiling. Auto = 1500 MB, the pre-setting default.
+               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="cacheMBFromUrl
+                    ? `?cacheMB=${cacheMBUrl} overrides the setting`
+                    : 'VRAM the viewer may hold — bigger = smoother scrub'">Cache</span>
+            <ChipSelect
+              :options="CACHE_MB_OPTIONS" :model-value="cacheMBAsString"
+              variant="segmented" aria-label="Viewer cache size"
+              :disabled="cacheMBFromUrl"
+              @update:model-value="v => (settings.viewerCacheMB = v === 'auto' ? -1 : Number(v))"
+            />
+          </div>
+          <div class="cc-muted cc-fs-3xs vw-adv-using">Using: {{ effectiveCacheMBLabel }}</div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
@@ -3370,14 +3410,49 @@ onUnmounted(() => {
 
       <template v-if="meta">
         <div class="cc-eyebrow cc-fs-2xs">View</div>
-        <ChipSelect
-          :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
-          @update:model-value="v => { mode = v as 'plane' | 'volume'; reallocate(true) }"
-        />
-        <!-- The 3D view's own depth control. `@change`, not `@update:*`: the range reallocates every
-             cached texture, so it commits on release rather than per pointer move. -->
-        <div v-if="mode === 'volume' && meta.nZ > 1" class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Depth</span>
+        <div class="cc-row cc-row-tight">
+          <ChipSelect
+            :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
+            @update:model-value="v => { mode = v as 'plane' | 'volume'; reallocate(true) }"
+          />
+          <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
+               (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
+               user can stay in the viewer without reaching back to the module page (Dominik,
+               2026-08-26). Icon shows the CURRENT mode, not the ACTION. -->
+          <button class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
+                  @click="toggleSelectMode"
+                  v-tooltip.top="selectModeActive
+                    ? 'Selection mode — click for pan mode'
+                    : 'Pan mode — click for selection mode'"
+                  aria-label="Toggle selection mode">
+            <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
+          </button>
+          <!-- Advanced viewer popover — Renderer + brick quality tier. Grouped with the mode
+               toggle so all viewer-wide controls sit next to the 2D/3D chip. -->
+          <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  aria-label="Advanced viewer settings"
+                  v-tooltip.top="'Renderer and brick quality'"
+                  @click="advancedOpen = !advancedOpen">
+            <i class="pi pi-sliders-h" />
+          </button>
+          <!-- Shortcuts sits at the far right — a reference popover, not a live control, so it
+               reads as separate from the mode/renderer group (Dominik 2026-08-31). -->
+          <div class="vw-grow" />
+          <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
+                  v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
+            <i class="pi pi-question-circle" />
+          </button>
+        </div>
+        <!-- The 3D view's own depth control. Caption row (label + readout) above; slider on its
+             own row so it can span the sidebar (Dominik 2026-08-31: "they should take the whole
+             width"). `@change`, not `@update:*`: the range reallocates every cached texture, so
+             it commits on release rather than per pointer move. -->
+        <template v-if="mode === 'volume' && meta.nZ > 1">
+          <div class="vw-cap">
+            <span class="cc-muted cc-fs-2xs">Depth</span>
+            <span class="cc-readout cc-fs-2xs">{{ zRange[0] }}–{{ zRange[1] }}</span>
+          </div>
           <RangeSlider
             v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
             :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
@@ -3385,8 +3460,7 @@ onUnmounted(() => {
             @update:hi="v => (zRange = [zRange[0], v])"
             @change="reallocate()"
           />
-          <span class="cc-readout cc-fs-2xs vw-num">{{ zRange[0] }}–{{ zRange[1] }}</span>
-        </div>
+        </template>
         <!-- 3D pyramid level. napari also renders 3D at the coarsest resolution, and a full-res volume
              of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
              So auto = the deepest level; the dropdown lets a user step finer if their card can hold it.
@@ -3407,19 +3481,6 @@ onUnmounted(() => {
             </option>
           </select>
         </div>
-        <!-- Advanced viewer popover — trigger. Renderer override + brick quality tier live in the
-             popover so the sidebar stays task-focused (Level, Plane, Timepoint). Popover contents
-             match the same two-axis story as the URL knobs: `?bricks=` picks the renderer,
-             `?brickThr=` caps the intersect. -->
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Advanced</span>
-          <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
-                  aria-label="Advanced viewer settings"
-                  v-tooltip.top="'Renderer and brick quality'"
-                  @click="advancedOpen = !advancedOpen">
-            <i class="pi pi-sliders-h" />
-          </button>
-        </div>
         <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
              pixel is closest to (without going finer than) one device pixel, so we never ship pixels
              the screen cannot show. At fit-to-window on a 20k×17k image that is L4 or L5; as the user
@@ -3437,20 +3498,25 @@ onUnmounted(() => {
             </option>
           </select>
         </div>
-        <div v-if="mode === 'plane' && meta.nZ > 1" class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
+        <template v-if="mode === 'plane' && meta.nZ > 1">
+          <div class="vw-cap">
+            <span class="cc-muted cc-fs-2xs">Plane</span>
+            <span class="cc-readout cc-fs-2xs">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
+          </div>
           <input
             type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
             :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
             v-tooltip.bottom="'Which z plane to show — changing it reloads the timecourse'"
           >
-          <span class="cc-readout cc-fs-2xs vw-num">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
-        </div>
+        </template>
 
         <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
              `nT == 1` slider stuck at "0 / 0" looks broken. -->
         <template v-if="nT > 1">
-          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
+          <div class="vw-cap">
+            <span class="cc-eyebrow cc-fs-2xs">Timepoint</span>
+            <span class="cc-readout cc-fs-2xs">{{ t }} / {{ nT - 1 }}</span>
+          </div>
           <div class="cc-row cc-row-tight">
             <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
                     v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
@@ -3462,7 +3528,6 @@ onUnmounted(() => {
               @input="gotoT(Number(($event.target as HTMLInputElement).value))"
               v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
             >
-            <span class="cc-readout cc-fs-2xs vw-num">{{ t }} / {{ nT - 1 }}</span>
           </div>
 
           <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
@@ -3477,22 +3542,20 @@ onUnmounted(() => {
               <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
             </div>
           </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Fps</span>
-            <input
-              type="range" class="vw-grow" :min="1" :max="30" :step="1"
-              v-model.number="settings.viewerFps"
-              v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
-            >
-            <!-- Playback-throttled indicator: colour the readout number itself amber. Zero layout
-                 impact vs. inserting an icon — the Fps slider already lives in a very narrow
-                 sidebar column, and adding an icon shrinks it further (Dominik, 2026-08-29). -->
-            <span class="cc-readout cc-fs-2xs vw-num"
+          <div class="vw-cap">
+            <span class="cc-muted cc-fs-2xs">Fps</span>
+            <!-- Playback-throttled indicator: colour the readout number itself amber. -->
+            <span class="cc-readout cc-fs-2xs"
                   :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
                   v-tooltip.left="playing && waitingFor >= 0
                     ? 'Playback throttled — fetches are behind the requested Fps'
                     : 'Requested playback rate'">{{ settings.viewerFps }}</span>
           </div>
+          <input
+            type="range" class="vw-grow" :min="1" :max="30" :step="1"
+            v-model.number="settings.viewerFps"
+            v-tooltip.bottom="'Playback rate — it waits rather than skip an uncached frame'"
+          >
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
@@ -4041,6 +4104,12 @@ onUnmounted(() => {
 .vw-key { white-space: nowrap; }
 /* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
    reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
+/* Caption row above a full-width slider — label on left, readout on right. Compact so it
+   reads as a slider title, not another row of controls (Dominik 2026-08-31). */
+.vw-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+/* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
+   line, "Using: X" — Dominik 2026-08-31: an Auto option must show what was picked. */
+.vw-adv-using { margin: -0.15rem 0 0.15rem calc(var(--cc-lbl-col) + 0.4rem); }
 .vw-adv-body { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 4px; min-width: 16rem; }
 .vw-adv-note { padding: 0.2rem 0 0.1rem; }
 .vw-keys { border-collapse: collapse; margin-top: 4px; }

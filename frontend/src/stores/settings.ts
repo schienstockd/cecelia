@@ -169,6 +169,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // `setSchedulerKnobs`; no reallocate. Hidden when the effective renderer is Flat.
   const viewerBrickTier = ref<'quick' | 'balanced' | 'detailed'>(
     (localStorage.getItem('cc.viewerBrickTier') as 'quick' | 'balanced' | 'detailed') || 'balanced')
+  // Viewer VRAM budget in MB. `-1` = Auto (currently 1500 MB — the shipped `SAFE_CACHE_BYTES`
+  // default from before this setting existed). Applies to both renderers: flat's timepoint cache
+  // and brick's atlas both read this via `setImage`'s `budgetBytes`. Changing it triggers a
+  // reallocate — the atlas texture has to be rebuilt at the new size. `?cacheMB=N` in the URL
+  // still wins over this (dev override).
+  const viewerCacheMB = ref(Number(localStorage.getItem('cc.viewerCacheMB') ?? '-1'))
 
   // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, end mode. Persisted
   // globally (not per-set): they're a viewing preference, not a project attribute, and the player is a
@@ -545,6 +551,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerPlaneLevel,         v => localStorage.setItem('cc.viewerPlaneLevel',         String(v)))
   watch(viewerBricksMode,         v => localStorage.setItem('cc.viewerBricksMode',         v))
   watch(viewerBrickTier,          v => localStorage.setItem('cc.viewerBrickTier',          v))
+  watch(viewerCacheMB,            v => localStorage.setItem('cc.viewerCacheMB',            String(v)))
   watch(viewerScaleBar,           v => localStorage.setItem('cc.viewerScaleBar',           String(v)))
   watch(viewerTimestamp,          v => localStorage.setItem('cc.viewerTimestamp',          String(v)))
   watch(viewerPointSize,          v => localStorage.setItem('cc.viewerPointSize',          String(v)))
@@ -606,7 +613,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, napariAutoSaveLayerProps, napariDiscreteGpu, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
