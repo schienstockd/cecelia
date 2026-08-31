@@ -54,7 +54,7 @@ describe('summarize', () => {
 })
 
 const meta: BenchMeta = {
-  imageUid: 'fXgbTl', valueName: 'smoothed',
+  projectUid: 'zolIMa', imageUid: 'fXgbTl', valueName: 'smoothed',
   nT: 31, nC: 4, nZ: 32, nY: 420, nX: 441,
   nLevels: 1, bytesPerVoxel: 1,
 }
