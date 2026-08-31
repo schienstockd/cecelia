@@ -675,6 +675,16 @@ watch(() => settings.viewerCacheMB, () => {
   if (cacheMBFromUrl) return
   reallocate()
 })
+// 3D projection flip is a uniform write — cheap. No reallocate: the shader already contains both
+// paths and `setOrthographic` just flips the `ortho` bit. In 2D the value is fixed to orthographic
+// by `reallocate`, so this watcher is a no-op there.
+watch(() => settings.viewerVolumeProjection, v => {
+  if (mode.value !== 'volume') return
+  const r = renderer.value
+  if (!r) return
+  r.setOrthographic(v === 'ortho')
+  frame.redraw()
+})
 // P7: refetch whenever the preview labels for THIS image change — a fresh reply (plane change /
 // param edit / toggle-on) or a toggle-off. Watch a NUMERIC key derived from `previewLabels`:
 //   * `updateId` (>0) when the current preview matches this image
@@ -907,6 +917,14 @@ function setChannelColour(c: number, hex: string) {
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
+]
+// 3D projection toggle — Imaris-style. Ortho is the default (matches the offline movie renderer and
+// reads more head-on for intravital movies, Dominik 2026-09-01); Persp adds foreshortening depth cue.
+const PROJECTIONS = [
+  // Flat square = head-on / no depth cue; angled box = converging depth. Tooltips carry the
+  // full name — the glyphs are the recognisable shortcut once you know which is which.
+  { value: 'ortho', label: '', icon: 'pi pi-stop', tip: 'Orthographic — head-on, no foreshortening (matches movie output)' },
+  { value: 'persp', label: '', icon: 'pi pi-box', tip: 'Perspective — closer geometry looks larger' },
 ]
 /** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
  *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
@@ -2757,9 +2775,13 @@ const canvasAspect = () => {
 }
 const reload = () => location.reload()
 /** The framing for the CURRENT mode. Three callers needed the same three arguments, and the third —
- *  the projection — is the one that is easy to forget and shows up as a 3D reset that clips. */
+ *  the projection — is the one that is easy to forget and shows up as a 3D reset that clips.
+ *  Perspective flag has to match the shader's projection: 3D+Persp needs the near-face margin, but
+ *  3D+Ortho (Imaris-style head-on, no depth foreshortening) does NOT — passing `true` there leaves
+ *  black margins around the volume (Dominik 2026-09-01). 2D is always ortho. */
 const fitNow = (m: ViewerMeta) =>
-  fitCamera(extentUm(m, zDepth.value), canvasAspect(), mode.value === 'volume')
+  fitCamera(extentUm(m, zDepth.value), canvasAspect(),
+            mode.value === 'volume' && settings.viewerVolumeProjection === 'persp')
 function resetView() {
   cam.value = { ...fitNow(meta.value!) }
   frame.redraw()
@@ -2950,7 +2972,7 @@ async function reallocate(refit = false) {
     r.setLevelFloor?.(slabLevel.value)
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
-    r.setOrthographic(mode.value === 'plane')
+    r.setOrthographic(mode.value === 'plane' || settings.viewerVolumeProjection === 'ortho')
     r.setSteps(mode.value === 'plane' ? 1 : settings.viewerSteps)
     syncCacheState()
     gotoT(t.value)
@@ -3715,6 +3737,15 @@ onUnmounted(() => {
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
             @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
+          />
+          <!-- 3D projection: Ortho (default) matches the offline movie renderer's parallel-ray MIP
+               and reads head-on; Persp adds foreshortening. Hidden in 2D because the plane view is
+               always orthographic (perspective would foreshorten a flat plane). Imaris analogue. -->
+          <ChipSelect
+            v-if="mode === 'volume'"
+            :options="PROJECTIONS" :model-value="settings.viewerVolumeProjection"
+            variant="segmented" aria-label="3D projection"
+            @update:model-value="v => (settings.viewerVolumeProjection = v as 'ortho' | 'persp')"
           />
           <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
                (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
