@@ -24,7 +24,7 @@ import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useNapariOpen } from '../../composables/useNapariOpen'
+import { openViewerWindow } from '../../utils/viewerWindow'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useViewState } from '../../composables/useViewState'
@@ -58,7 +58,6 @@ const isTrack = computed(() => props.popType === 'track')
 const g = useGatingStore()
 const ws = useWsStore()
 const project = useProjectStore()
-const { openInNapari } = useNapariOpen()
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
 // EVERY manager option (highlighted pops, gate labels, line width, axis) obeys this:
@@ -325,9 +324,11 @@ function navTo(delta: number) {
   if (i < 0 || i >= props.orderedUids.length) return
   const uid = props.orderedUids[i]
   props.selectUids?.([uid])                    // switch the gating plots to the next image
-  // follow along in the viewer IF napari is currently showing an image — so gating a batch keeps the
-  // image in sync too, not just the plot. Don't force-launch napari when it isn't open.
-  if (project.napariImageUid) openInNapari(uid, setUid.value)
+  // Follow along in the viewer IF a browser viewer is currently open — so gating a batch keeps the
+  // image in sync too, not just the plot. Don't force-launch a popup when it isn't open.
+  if (project.openImageUid) {
+    openViewerWindow({ projectUid: projectMeta.current?.uid ?? '', imageUid: uid })
+  }
 }
 
 // "Copy gating strategy to other images" dialog (per current pop type; see GatingCopyDialog).

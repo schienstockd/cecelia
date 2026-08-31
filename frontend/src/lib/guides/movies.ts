@@ -23,7 +23,7 @@ export const recordMovieGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'images.napariBtn',
+      anchor: 'images.viewerBtn',
       placement: 'right',
       title: 'Set the shot up first',
       text: 'A recording captures exactly what the viewer is showing — so get the view right before you record.',

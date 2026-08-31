@@ -3222,7 +3222,12 @@ watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|$
 // (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
 // the publisher immediately re-emits from the applied state, which is exactly what the user
 // wants (the animation page's next capture would see the new state anyway).
-watch(() => viewerStore.pendingViewState?.updateId, async () => {
+// Re-fires on updateId change (a fresh setPendingViewState arriving through the store setter or the
+// storage bridge) AND on meta/canvas becoming ready — the store may seed pendingViewState from
+// localStorage on init (an openViewerWindow handoff wrote it before the popup mounted), and the
+// apply has to happen once the renderer's ready, not when the ref was seeded. `immediate: true` so
+// a fresh popup with a seed applies as soon as meta and canvas resolve; the guard bails otherwise.
+watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.value] as const, async () => {
   const pending = viewerStore.pendingViewState
   if (!pending) return
   const vs = pending.viewState as ViewerViewState | null
@@ -3230,6 +3235,7 @@ watch(() => viewerStore.pendingViewState?.updateId, async () => {
   const m = meta.value
   const c = canvas.value
   if (!m || !c) return
+  const applyingId = pending.updateId
   const canvasH = Math.max(1, c.clientHeight)
   const applied = applyViewStateToBrowser({
     vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
@@ -3267,7 +3273,10 @@ watch(() => viewerStore.pendingViewState?.updateId, async () => {
 
   if (t.value !== applied.t) gotoT(applied.t)
   pushChannels()
-})
+  // Consume the seed so a popup reload doesn't silently re-apply it. Idempotent: if a fresh
+  // pending arrived mid-apply, `consumePendingViewState` sees a different `updateId` and no-ops.
+  viewerStore.consumePendingViewState(applyingId)
+}, { immediate: true })
 
 // Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
 // same route as the pixels: the meta response is the one authoritative resolution of an image

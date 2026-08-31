@@ -108,11 +108,13 @@ export const useViewerStore = defineStore('viewer', () => {
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
   const viewState        = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
-  // Not seeded from localStorage — a pending is a one-shot APPLY; a reload that surfaced the old
-  // pending would silently re-move the camera on window open. Seed keeps `null` so a stale write
-  // never fires. Actual pending values arrive through the setter (main window) or the storage
-  // event (popup viewer).
-  const pendingViewState = ref<PendingViewState | null>(null)
+  // Seeded from localStorage: `openViewerWindow` handoffs (analysis-strip zoom-to-source) may write
+  // the pending BEFORE the popup mounts, and a popup that started null would never see it.
+  // The popup viewer's watcher clears the entry after applying (`consumePendingViewState`), so a
+  // reload doesn't silently re-move the camera. The FRESHNESS guard is the seed's own `updateId` +
+  // consumption pattern — the setter writes, whoever applies calls `consumePendingViewState()`, and
+  // a straggler entry from a crashed apply expires when the next explicit call overwrites it.
+  const pendingViewState = ref<PendingViewState | null>(_readJson<PendingViewState>(K_PENDING_VIEW))
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
 
@@ -139,14 +141,23 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_VIEW_STATE, next)
   }
 
-  /** AnimationPanel calls this to ask the ViewerWindow to jump to a captured keyframe. Stamped
-   *  with a monotonic `updateId` so a re-click of the same keyframe fires the storage event
-   *  (identical writes are suppressed — see `PendingViewState`). ViewerWindow watches
-   *  `pendingViewState`, applies, and does not clear — the value is a signal, not a queue. */
+  /** AnimationPanel + ImageStripView.zoomToSource call this to ask the ViewerWindow to jump to a
+   *  captured keyframe. Stamped with a monotonic `updateId` so a re-click of the same keyframe
+   *  fires the storage event (identical writes are suppressed — see `PendingViewState`).
+   *  ViewerWindow watches `pendingViewState`, applies, then calls `consumePendingViewState()` so a
+   *  later reload of the popup doesn't silently re-move the camera to a stale seed. */
   function setPendingViewState(vs: ViewerViewState | null) {
     const stamped: PendingViewState | null = vs ? { viewState: vs, updateId: ++_updateIdSeq } : null
     pendingViewState.value = stamped
     _writeJson(K_PENDING_VIEW, stamped)
+  }
+  /** ViewerWindow calls this AFTER applying a pending, so the seed doesn't survive to the next
+   *  popup reload. Only clears when the caller reports the id it just applied — a concurrent
+   *  setPendingViewState (a follow-up jump arriving mid-apply) is preserved. */
+  function consumePendingViewState(appliedUpdateId: number) {
+    if (pendingViewState.value?.updateId !== appliedUpdateId) return
+    pendingViewState.value = null
+    _writeJson(K_PENDING_VIEW, null)
   }
 
   /** taskPreview calls this after a run: `next` non-null flips the viewer window's labels slab
@@ -198,7 +209,7 @@ export const useViewerStore = defineStore('viewer', () => {
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
-           setPreviewLabels, setPreviewImages }
+           consumePendingViewState, setPreviewLabels, setPreviewImages }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
