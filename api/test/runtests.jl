@@ -5438,6 +5438,21 @@ end
             @test !isempty(dict_all)
             @test all(v -> v == grey, values(dict_all))
 
+            # `all_cells_colour = "rainbow"` cycles `CECELIA_TRACK_PALETTE` by label id — asked
+            # for by the compare-grid path (a uniform gray outline was invisible against the
+            # coloured channels). Same closure shape as the solid path; the assertion is that
+            # the dict picks its colour from the palette per id, and that different ids can get
+            # different palette entries.
+            mask_rb = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                      all_cells = true, all_cells_colour = "rainbow")
+            _, dict_rb = mask_rb(0)
+            @test !isempty(dict_rb)
+            pal = CECELIA_TRACK_PALETTE
+            @test all(v -> v in pal, values(dict_rb))
+            for (id, c) in dict_rb
+                @test c == pal[mod(Int(id) - 1, length(pal)) + 1]
+            end
+
             # A `pops_filter` that matches nothing yields an EMPTY dict → the closure short-
             # circuits to `(nothing, nothing)` so the primitive isn't asked to draw a mask with
             # no colours (which would still cost a per-frame Zarr read).
@@ -7058,6 +7073,29 @@ end
     @test args_crop.crop !== nothing
     @test first(args_crop.crop.y) >= 0
     @test last(args_crop.crop.y)  <= 99
+
+    # Snapshot's own `canvas` wins over the caller's `canvas_h/canvas_w` kwargs — the crop must
+    # match the VIEWER'S visible rectangle at capture time, not the OUTPUT mp4 size. Bug (2026-08-31,
+    # Dominik): an animation recorded at 512×512 with a captured 656×831 canvas produced a
+    # 126×126 mp4 (cropped to the OUTPUT size instead of the viewer's actual canvas), losing zoom
+    # and aspect. Matches `crop_from_view_state`.
+    vs_c = Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0),
+                             "canvas" => Dict("height" => 80, "width" => 80),
+                             "dims"   => Dict("ndisplay" => 2, "current_step" => [0, 0]))
+    args_snap = viewstate_to_render_args(vs_c, ["CH1"], nothing, 100, 100;
+                                          canvas_h = 40, canvas_w = 40)
+    @test args_snap.crop !== nothing
+    # 80 / (2 × 2) = 20 half-width → x = 30:70; not 40:60 (which would use canvas_h/w).
+    @test collect(args_snap.crop.x) == collect(30:70)
+    @test collect(args_snap.crop.y) == collect(30:70)
+
+    # No snapshot canvas → falls back to the caller's kwargs (legacy behaviour).
+    vs_nocanv = Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0),
+                                  "dims"   => Dict("ndisplay" => 2, "current_step" => [0, 0]))
+    args_fb = viewstate_to_render_args(vs_nocanv, ["CH1"], nothing, 100, 100;
+                                        canvas_h = 40, canvas_w = 40)
+    @test args_fb.crop !== nothing
+    @test collect(args_fb.crop.x) == collect(40:60)
 end
 
 @testset "API: crop_from_view_state — one-shot record uses the viewer's rectangle" begin

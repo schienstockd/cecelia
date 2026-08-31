@@ -423,11 +423,24 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
         z_raw = get(camera, "zoom", nothing)
         (z_raw isa Real && Float64(z_raw) > 0) && (zoom_val = Float64(z_raw))
         # 2D crop only when we're NOT going to the 3D renderer.
-        if ndisplay != 3 && canvas_h !== nothing && canvas_w !== nothing &&
+        #
+        # The crop rectangle is the VIEWER'S visible rectangle in native pixels — so it uses the
+        # state's own `canvas.height/width` (the browser viewer's popped-out canvas at capture
+        # time), NOT the caller's `canvas_h/canvas_w` kwargs (which size the OUTPUT mp4 for the 3D
+        # renderer and would produce a much smaller square when they differ). Falls back to the
+        # kwargs only when the snapshot predates the canvas field. Matches `crop_from_view_state`.
+        snap_canv = get(vs, "canvas", nothing)
+        snap_ch = snap_canv isa AbstractDict ? get(snap_canv, "height", nothing) : nothing
+        snap_cw = snap_canv isa AbstractDict ? get(snap_canv, "width",  nothing) : nothing
+        eff_ch = (snap_ch isa Real && Float64(snap_ch) > 0) ? Float64(snap_ch) :
+                 (canvas_h === nothing ? nothing : Float64(canvas_h))
+        eff_cw = (snap_cw isa Real && Float64(snap_cw) > 0) ? Float64(snap_cw) :
+                 (canvas_w === nothing ? nothing : Float64(canvas_w))
+        if ndisplay != 3 && eff_ch !== nothing && eff_cw !== nothing &&
            center3d !== nothing && zoom_val !== nothing
             cy = center3d[2]; cx = center3d[3]
-            half_h = Float64(canvas_h) / (2.0 * zoom_val)
-            half_w = Float64(canvas_w) / (2.0 * zoom_val)
+            half_h = eff_ch / (2.0 * zoom_val)
+            half_w = eff_cw / (2.0 * zoom_val)
             y1 = max(0, floor(Int, cy - half_h))
             y2 = min(native_h - 1, ceil(Int, cy + half_h))
             x1 = max(0, floor(Int, cx - half_w))

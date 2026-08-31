@@ -3213,6 +3213,18 @@ watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
       () => publishViewStateSink.schedule(undefined))
 watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
       () => publishViewStateSink.schedule(undefined))
+// Canvas size is a viewState field (`canvas.width/height`), which the movie surfaces read as the
+// size fields' placeholder. Without this a popout resize wouldn't refresh the placeholder — the
+// existing watchers only cover cam / t / z / mode / meta / channel changes, and `usePlotResize` owns
+// only its own render loop. Dedicated observer; the sink is `debouncedLatest`, so multiple sources
+// coalesce.
+let publishResizeObs: ResizeObserver | null = null
+onMounted(() => {
+  if (!canvas.value || typeof ResizeObserver === 'undefined') return
+  publishResizeObs = new ResizeObserver(() => publishViewStateSink.schedule(undefined))
+  publishResizeObs.observe(canvas.value)
+})
+onUnmounted(() => { publishResizeObs?.disconnect(); publishResizeObs = null })
 
 // ── Consume a pending viewState from the AnimationPanel ──────────────────────
 // AnimationPanel writes a `PendingViewState` when the user clicks a keyframe (Sync napari on) or

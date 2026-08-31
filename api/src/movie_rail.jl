@@ -389,12 +389,19 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                 if is_compare
                     # Per-image compare grid — versions across cols, masks down rows.
                     grid = _compare_grid(config)
+                    # Same physical calibration the single (non-compare) batch branch reads.
+                    px_g, tsm_g = img_physical_sizes(img)
+                    pixel_size_um_g = (length(px_g) >= 3 && px_g[3] > 0) ? px_g[3] : nothing
+                    time_step_min_g = tsm_g > 0 ? tsm_g : nothing
                     gres = _render_grid_offline(task_id, project_uid, uid, img, grid, out_path;
                                                  fps = fps, size_x = size_x, size_y = size_y,
                                                  title_card = tcard,
                                                  share_contrast = grid_share,
                                                  layout = grid_layout,
-                                                 t_start = t_start, t_end = t_end)
+                                                 t_start = t_start, t_end = t_end,
+                                                 show_timestamp = show_ts, show_scale_bar = show_sb,
+                                                 pixel_size_um  = pixel_size_um_g,
+                                                 time_step_min  = time_step_min_g)
                     cancelled_here = gres.cancelled
                 else
                     frame = _resolve_frame_for_record(project_uid, uid, value_name)
@@ -534,6 +541,14 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     z_slice = get(cfg, :zSlice, nothing) === nothing ? nothing : Int(get(cfg, :zSlice, 0))
     has_mask = label_vn !== nothing
     overlays_dict = _overlays_raw_from_config(cfg, has_mask)
+    # Compare-grid mask outlines default to per-id rainbow. Gray on top of coloured channels was
+    # invisible on cpSAM (large blobs, magenta) and looked like undifferentiated dots on flowTom
+    # (35k tiny cells collapsed to 2-px rings at 512×512). See docs/todo/MOVIE_COMPARE_PLAN.md and
+    # the 2026-08-31 report from Dominik. `build_mask_for` reads "rainbow" as a sentinel and cycles
+    # `CECELIA_TRACK_PALETTE` by label id.
+    if overlays_dict isa AbstractDict && get(overlays_dict, "allCells", false) === true
+        overlays_dict["allCellsColour"] = "rainbow"
+    end
     vnn = isempty(vn) ? nothing : vn
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
@@ -572,6 +587,14 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                               share_contrast::Bool = true,
                               layout::AbstractString = "row",
                               t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
+                              # Encoder-side timestamp + scale bar. Baked into EACH cell — every cell
+                              # in a compare grid shares the same crop and max_px, so the scale bars
+                              # match by construction and the timestamps agree per-frame. Redundant
+                              # (identical caption in every cell) but visible; a compose-time overlay
+                              # would need a stitcher-side overlays block that doesn't exist yet.
+                              show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                              pixel_size_um::Union{Nothing,Real} = nothing,
+                              time_step_min::Union{Nothing,Real} = nothing,
                               view_state::Union{Nothing,AbstractDict} = nothing)
     rows       = _wrap_grid(rows, String(layout))
     row_layout = layout == "grid" ? "row" : String(layout)
@@ -630,6 +653,10 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  point_size_px    = cell.ov.point_size_px,
                                                  segment_width_px = cell.ov.segment_width_px,
                                                  mask_contour_px  = cell.ov.mask_contour_px,
+                                                 show_timestamp = show_timestamp,
+                                                 show_scale_bar = show_scale_bar,
+                                                 pixel_size_um  = pixel_size_um,
+                                                 time_step_min  = time_step_min,
                                                  on_log      = line -> ws_log(nothing, task_id, line),
                                                  on_progress = (n, t) ->
                                                      ws_progress(nothing, task_id,
@@ -724,6 +751,11 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
     grid = _compare_grid(compare_config)
     out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
+    # Physical calibration for the encoder-side timestamp + scale bar (same reader
+    # `run_single_offline` uses). Absent metadata → 1.0 fallback = pixel-space bar.
+    pxsz, ts_min = img_physical_sizes(img)
+    pixel_size_um = (length(pxsz) >= 3 && pxsz[3] > 0) ? pxsz[3] : nothing
+    time_step_min = ts_min > 0 ? ts_min : nothing
     start_job!(task_id)
     status = "done"
     frames = 0
@@ -733,6 +765,10 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                        title_card = title_card,
                                        share_contrast = share_contrast, layout = layout,
                                        t_start = t_start, t_end = t_end,
+                                       show_timestamp = show_timestamp,
+                                       show_scale_bar = show_scale_bar,
+                                       pixel_size_um  = pixel_size_um,
+                                       time_step_min  = time_step_min,
                                        view_state = view_state)
         frames = Int(result.frames)
         if result.cancelled
