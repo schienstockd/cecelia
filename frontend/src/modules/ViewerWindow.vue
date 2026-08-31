@@ -873,36 +873,76 @@ const effectiveMaxIntersect = computed(() =>
   brickKnobThrFromUrl ? brickKnobThr : BRICK_TIER_THRESHOLD[settings.viewerBrickTier])
 /** Cache size options — chips, not a spinner. Bytes are the honest currency (unlike Quality tier,
  *  where the safe range isn't measured), but a spinner offering arbitrary MB values implies
- *  "any value is fine" — same trap. Five named steps: Auto is what shipped before this setting
- *  existed (1500 MB = `SAFE_CACHE_BYTES`); the rest are round doubles. */
-const AUTO_CACHE_MB = 1500
-// ChipSelect takes string values; the setting stores a number. Convert at the boundary. The
-// Auto label carries the resolved value inline (matches the Level dropdown's "Auto (L4 —
-// zoom-driven)" idiom — 2026-08-31 Dominik: "when we say auto, we should say what was picked").
-const CACHE_MB_OPTIONS = [
-  { value: 'auto', label: 'Auto', tip: 'The shipped default' },
-  { value: '512', label: '512 MB', tip: 'Small — leaves VRAM for other apps' },
-  { value: '1024', label: '1 GB', tip: '' },
-  { value: '2048', label: '2 GB', tip: 'Large — more timepoints / bricks resident' },
-  { value: '4096', label: '4 GB', tip: 'Aggressive — only on discrete GPU with headroom' },
+ *  "any value is fine" — same trap. */
+/** Fallback for Auto when no adapter is known yet (renderer not constructed). Conservative;
+ *  matches `webgpuProbe`'s pattern of "never claim a value you don't have." */
+const AUTO_CACHE_MB_FALLBACK = 512
+/** Auto derivation: integrated → 512 MB, discrete → 2 GB. Both capped at 70% of the browser's
+ *  `maxBufferSize` — the atlas is one big 3D texture and can't exceed the biggest allocatable
+ *  buffer. 0.7 is a safety margin against soft OOM from other tabs; tune when we've measured. */
+const AUTO_CACHE_SAFETY = 0.7
+const AUTO_CACHE_MB = computed(() => {
+  const a = activeAdapter.value
+  if (!a) return AUTO_CACHE_MB_FALLBACK
+  const target = a.looksDiscrete ? 2048 : 512
+  const cap = Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024))
+  return Math.min(target, Math.max(128, cap))
+})
+// ChipSelect takes string values; the setting stores a number. Convert at the boundary.
+// Options list is a computed — the numeric chips get `disabled` when they exceed what the
+// browser's `maxBufferSize` will actually allocate (0.7 safety margin, same as `AUTO_CACHE_MB`),
+// so a user on a 256-MB-buffer laptop can't pick 4 GB and hit the renderer's own OOM guard.
+// Renderers self-guard: `volumeRenderer.ts:729` and `brickAtlasTexture.ts:87` both catch
+// `out-of-memory` on the underlying texture allocation. Disabling oversized chips is UX (don't
+// let the user pick a value that WILL trip that guard), not correctness.
+const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip: string }> = [
+  { value: 'auto', label: 'Auto', mb: 0, tip: 'The shipped default' },
+  { value: '512', label: '512 MB', mb: 512, tip: 'Small — leaves VRAM for other apps' },
+  { value: '1024', label: '1 GB', mb: 1024, tip: '' },
+  { value: '2048', label: '2 GB', mb: 2048, tip: 'Large — more timepoints / bricks resident' },
+  { value: '4096', label: '4 GB', mb: 4096, tip: 'Aggressive — only on discrete GPU with headroom' },
 ]
+const cacheHardCapMB = computed(() => {
+  const a = activeAdapter.value
+  return a ? Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024)) : Infinity
+})
+const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
+  const overCap = o.mb > 0 && o.mb > cacheHardCapMB.value
+  return {
+    value: o.value,
+    label: o.label,
+    disabled: overCap,
+    tip: overCap
+      ? `Beyond this GPU's buffer cap (${cacheHardCapMB.value} MB)`
+      : o.tip,
+  }
+}))
 /** Human-readable resolved values for the "Using: X" captions under the Advanced chips. Applies
  *  whether the user picked Auto or forced a value — a caption that only appears under Auto would
  *  jump the layout on every flip. */
 const effectiveRendererLabel = computed(() => bricksEnabled.value ? 'Brick' : 'Flat')
 const effectiveCacheMBLabel = computed(() =>
   `${Math.round(effectiveCacheBytes.value / (1024 * 1024))} MB`)
+/** Colour class for the cache-size caption: green when the pick is comfortably below the GPU's
+ *  buffer cap, amber when it's within the top half of the safe range. Chips above `cacheHardCapMB`
+ *  are already disabled, so amber flags "you're picking large for this GPU", not "you'll crash". */
+const cacheSeverity = computed(() => {
+  const cap = cacheHardCapMB.value
+  if (!Number.isFinite(cap)) return 'ok'
+  const pickedMB = effectiveCacheBytes.value / (1024 * 1024)
+  return pickedMB > cap * 0.5 ? 'warn' : 'ok'
+})
 const cacheMBAsString = computed(() =>
   settings.viewerCacheMB > 0 ? String(settings.viewerCacheMB) : 'auto')
 /** URL override for the cache size. `?cacheMB=N` wins over the persisted setting (same shape as
  *  `?brickThr=`). Empty = defer to setting. */
 const cacheMBFromUrl = String(route.query.cacheMB ?? '') !== ''
-const cacheMBUrl = parseNumQuery(route.query.cacheMB, AUTO_CACHE_MB)
+const cacheMBUrl = parseNumQuery(route.query.cacheMB, AUTO_CACHE_MB_FALLBACK)
 /** Effective VRAM budget in BYTES for `setImage`. URL wins, then the persisted setting, then Auto. */
 const effectiveCacheBytes = computed(() => {
   if (cacheMBFromUrl) return Math.max(1, cacheMBUrl) * 1024 * 1024
   const mb = settings.viewerCacheMB
-  return (mb > 0 ? mb : AUTO_CACHE_MB) * 1024 * 1024
+  return (mb > 0 ? mb : AUTO_CACHE_MB.value) * 1024 * 1024
 })
 // Live-apply the tier without reallocating the renderer. Ignored on the flat renderer (setter
 // is optional). `bias` stays URL-only, so it rides through unchanged. Nudge the frame pump so
@@ -3362,7 +3402,7 @@ onUnmounted(() => {
               @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
             />
           </div>
-          <div class="cc-muted cc-fs-3xs vw-adv-using">Using: {{ effectiveRendererLabel }}</div>
+          <div class="cc-fs-3xs vw-adv-using cc-sev-ok">{{ effectiveRendererLabel }}</div>
           <div class="cc-row cc-row-tight" v-if="bricksEnabled">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="brickKnobThrFromUrl
@@ -3393,7 +3433,7 @@ onUnmounted(() => {
               @update:model-value="v => (settings.viewerCacheMB = v === 'auto' ? -1 : Number(v))"
             />
           </div>
-          <div class="cc-muted cc-fs-3xs vw-adv-using">Using: {{ effectiveCacheMBLabel }}</div>
+          <div class="cc-fs-3xs vw-adv-using" :class="`cc-sev-${cacheSeverity}`">{{ effectiveCacheMBLabel }}</div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
@@ -4110,6 +4150,8 @@ onUnmounted(() => {
 /* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
    line, "Using: X" — Dominik 2026-08-31: an Auto option must show what was picked. */
 .vw-adv-using { margin: -0.15rem 0 0.15rem calc(var(--cc-lbl-col) + 0.4rem); }
+.vw-adv-using.cc-sev-ok { color: var(--cc-sev-ok); }
+.vw-adv-using.cc-sev-warn { color: var(--cc-sev-warn); }
 .vw-adv-body { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 4px; min-width: 16rem; }
 .vw-adv-note { padding: 0.2rem 0 0.1rem; }
 .vw-keys { border-collapse: collapse; margin-top: 4px; }
