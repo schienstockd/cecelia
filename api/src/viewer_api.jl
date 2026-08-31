@@ -800,9 +800,12 @@ end
 # transient population. Same registry / broadcast path as `api_viewer_pick_cell`, so the two share
 # the linked-brushing pop and can compose (a rect drag then a shift+click adds one more cell).
 #
-# Body: {projectUid, imageUid, valueName, popType, t, z, x1, y1, x2, y2, mode?}
+# Body: {projectUid, imageUid, valueName, popType, t, z, x1, y1, x2, y2, mode?, zLo?, zHi?}
 #   (x1, y1) / (x2, y2) are the low/high corners in IMAGE PIXEL coords (client normalises before
-#   POST). z is the plane the rect was drawn on; a future z-window feature will multi-plane it.
+#   POST). z is the plane the rect was drawn on. When BOTH `zLo` and `zHi` are supplied (`slice`
+#   scope in the gating store's cell-selection tools), the read spans that inclusive z-range
+#   instead of a single plane — the multi-plane path CellSelectionTools' "Z ±N" writes into. When
+#   they are absent, the reader reads one plane (`z`), same as before.
 #   mode = 'replace' | 'add' | 'toggle' (as pick-cell).
 #
 # Reads the mask over the rect in ONE `read_slab` call — same reader the pixel path uses, so the
@@ -831,10 +834,23 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     lvl_req = _to_int(get(body, "level", 0))
     nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
     lvl     = clamp(lvl_req, 0, nlvl - 1)
+    # Z range: an Int for one plane, or a UnitRange for `slice ± N`. Clamp to `[0, nZ - 1]` after
+    # reading the store's z dim — a stale client sending a range past the top of the stack would
+    # otherwise land on `read_slab`'s error path. `nZ` is available via `open_level` here but we
+    # avoid opening twice: `read_slab` handles clipping when the range is inside; a caller-provided
+    # range that goes negative or wraps is caller-side wrong and returns no rows either way.
+    zsel_raw = get(body, "zLo", nothing)
+    zsel = if zsel_raw !== nothing && get(body, "zHi", nothing) !== nothing
+        zlo = _to_int(zsel_raw); zhi = _to_int(get(body, "zHi", 0))
+        zlo <= zhi ? (zlo:zhi) : (zhi:zlo)
+    else
+        zint
+    end
     labels_uniq = try
-        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xlo:xhi, y = ylo:yhi, level = lvl)
-        # `vol` is `(x, y, z)` column-major, one voxel per pixel of the rect (z drops because zint
-        # is an Int). Flatten + unique + drop 0 (background). Keep as Int for JSON.
+        vol, _, _, _ = read_slab(String(zp), tint, 0; z = zsel, x = xlo:xhi, y = ylo:yhi, level = lvl)
+        # `vol` is `(x, y, z)` column-major, one voxel per pixel of the rect (z drops when `zsel` is
+        # an Int; stays as a dim when `zsel` is a range). Flatten + unique + drop 0 (background).
+        # Keep as Int for JSON.
         Int[Int(l) for l in unique(vec(vol)) if l != 0]
     catch e
         return 500, JSON3.write((; error = "rect read failed: " * sprint(showerror, e)))
@@ -854,6 +870,30 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     _inject_napari_pop!(m, img)
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
+end
+
+# ── POST /api/viewer/pick-clear (P9) ──────────────────────────────────────────────
+# Empty the transient cell-selection pop for (image, valueName, popType). Replaces
+# `/api/napari/stop-selection` on the P9 retirement — the napari route also removed the Shapes
+# layer, which is meaningless now the browser viewer owns picking. Same registry / broadcast path
+# as pick-cell / pick-rect (they all `_set_napari_selection!` + `_inject_napari_pop!` + broadcast);
+# clearing is `_set_napari_selection!` with an empty label list.
+#
+# Body: {projectUid, imageUid, valueName?, popType?} — same shape as pick-cell / pick-rect so a
+# frontend caller can reuse its existing body builder. Response: {nSelected: 0}.
+function api_viewer_pick_clear(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu   = String(get(body, "projectUid", ""))
+    iu   = String(get(body, "imageUid", ""))
+    pt   = String(get(body, "popType", "flow"))
+    img, err = _gating_image(pu, iu)
+    err === nothing || return err
+    vn   = _resolve_vn(img, String(get(body, "valueName", "")))
+    _set_napari_selection!(img._dir, vn, Int[])
+    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _inject_napari_pop!(m, img)                               # no-op now (selection gone)
+    _broadcast_popmap(pu, iu, vn, pt, m)
+    200, JSON3.write((; nSelected = 0))
 end
 
 # ── Shared: request-overlay dict → (overlays_for, mask_for) closures ─────────────

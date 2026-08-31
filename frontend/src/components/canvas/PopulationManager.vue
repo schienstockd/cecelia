@@ -108,11 +108,12 @@ const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
 const isLit = (p: FlatPop) => props.highlighted.includes(p.path)
 const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
 
-// per-pop napari visibility: flip the persisted `show` flag, then re-push to napari (silent
-// if napari isn't open). Routes to the right overlay for the popType (Tracks layers vs Points).
+// Per-pop visibility: flip the persisted `show` flag, then ping the WebGPU viewer so it re-derives
+// the overlay set from the shared bag. The viewer routes to the right overlay for the popType
+// (Tracks layers vs Points) internally.
 async function toggleNapari(p: FlatPop) {
   await g.updatePop(p.path, { show: !p.show })
-  g.refreshNapari()
+  g.refreshOverlays()
 }
 
 // ── Undo / redo ───────────────────────────────────────────────────────────────
@@ -656,11 +657,11 @@ function moveTo(target: string) {
                 {{ armed ? 'Click again to delete' : (childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population') }}
               </button>
             </ConfirmButton>
-            <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
-                 linger forever; there's no persisted pop to delete. -->
+            <!-- The cell-selection pop is transient (never persisted) — this clears it so it
+                 doesn't linger forever; there's no persisted pop to delete. -->
             <button v-if="actionsPop.transient && !readonly" class="cc-actions-item danger"
-                    @click.stop="runAction(() => g.clearNapariSelection())">
-              <i class="pi pi-trash" /> Clear napari selection
+                    @click.stop="runAction(() => g.clearSelection())">
+              <i class="pi pi-trash" /> Clear selection
             </button>
           </template>
         </div>
@@ -717,11 +718,11 @@ function moveTo(target: string) {
             <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>viewer</span></div>
             <!-- napari point size (re-renders the napari overlay on release) -->
             <div class="pm-opt-row">
-              <span class="pm-opt-label cc-muted cc-fs-xs">Napari dots</span>
+              <span class="pm-opt-label cc-muted cc-fs-xs">Point size</span>
               <input type="range" min="1" max="20" step="1" :value="napariPointSize"
-                     v-tooltip.top="'Population point size in napari (per experiment/set)'"
+                     v-tooltip.top="'Population point size on the viewer (per experiment/set)'"
                      @input="napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
-                     @change="g.refreshNapariPops()" />
+                     @change="g.refreshPops()" />
               <span class="pm-opt-val cc-readout cc-fs-xs">{{ napariPointSize }}</span>
             </div>
           </template>

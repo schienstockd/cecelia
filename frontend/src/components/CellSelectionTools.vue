@@ -6,10 +6,10 @@
       pan/rotate mode and clicks do nothing (Dominik, 2026-08-26: "clear. pan around mode. and
       clear selection mode. otherwise i'm confused what mode i'm in").
     • Clear (×) — empties any transient cell selection (through the gating store's
-      `clearNapariSelection`; the endpoint predates the P9 napari removal but survives — the
-      registry it clears is the same one the WebGPU picker writes to).
-    • Z scope — whole stack (default) vs current z-slice ± N. Only bites when a rectangle /
-      polygon selection spans planes (follow-up); kept here so the selection UI is one visual unit.
+      `clearSelection`, which POSTs `/api/viewer/pick-clear` and re-broadcasts the tree).
+    • Z scope — whole stack (default) vs current z-slice ± N. Read by `ViewerWindow`'s
+      `pickRectAt`: when 'slice', the rect POST carries `zLo`/`zHi` and the reader spans that
+      inclusive z-range; when 'stack' the endpoint reads just the viewer's current z-plane.
 
   Why a shared component: the same buttons need to appear on every gating-capable module page —
   Gate, Cluster, Tracking, and whatever's added next. Duplicating four `<button>` blocks per page
@@ -44,18 +44,18 @@ const g = useGatingStore()
     </button>
     <button class="cc-btn cc-btn-bare cc-btn-icon"
             v-tooltip.bottom="'Clear the current cell selection'"
-            @click="g.clearNapariSelection"><i class="pi pi-times" /></button>
+            @click="g.clearSelection"><i class="pi pi-times" /></button>
     <button class="cc-btn cc-btn-bare"
-            :class="{ 'cc-btn-on cc-btn-on-tint': g.napariZMode === 'slice' }"
-            v-tooltip.bottom="g.napariZMode === 'slice'
-              ? `Selecting cells from the current z-slice ±${g.napariZWindow} — click for the whole stack`
+            :class="{ 'cc-btn-on cc-btn-on-tint': g.pickZMode === 'slice' }"
+            v-tooltip.bottom="g.pickZMode === 'slice'
+              ? `Selecting cells from the current z-slice ±${g.pickZWindow} — click for the whole stack`
               : 'Selecting cells across the whole z-stack — click to restrict to the current z-slice'"
-            @click="g.napariZMode = g.napariZMode === 'slice' ? 'stack' : 'slice'">
+            @click="g.pickZMode = g.pickZMode === 'slice' ? 'stack' : 'slice'">
       <i class="pi pi-clone" /> Z
     </button>
   </div>
-  <label v-if="(show ?? true) && g.napariZMode === 'slice'" class="zwin"
+  <label v-if="(show ?? true) && g.pickZMode === 'slice'" class="zwin"
          v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
-    ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
+    ±<input type="number" min="0" max="50" step="1" v-model.number="g.pickZWindow" />
   </label>
 </template>

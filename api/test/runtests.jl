@@ -4702,6 +4702,7 @@ end
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
+        "/api/viewer/pick-clear",
         "/api/viewer/record-test",
         "/api/viewer/thumbnail",
     ]
@@ -6345,6 +6346,25 @@ end
         @test st == 404
         d = JSON3.read(out)
         @test occursin("no label store", d.error)
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end
+
+@testset "API: viewer pick-clear — 404 when the image doesn't exist" begin
+    # P9 replacement for `/api/napari/stop-selection`. Same registry / broadcast path as pick-cell
+    # and pick-rect, so it goes through `_gating_image` and answers 404 on an unknown project/image
+    # before touching the label store. No mask store is needed to clear — an unsegmented image can
+    # still have had a stale registry entry — so the ONLY failure mode at the boundary is the
+    # image not existing at all.
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        body = JSON3.write(Dict("projectUid" => "nope", "imageUid" => "nope",
+                                "valueName" => "default", "popType" => "flow"))
+        st, out = api_viewer_pick_clear(Vector{UInt8}(body))
+        @test st == 404
     finally
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end

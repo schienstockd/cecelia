@@ -2294,16 +2294,36 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
   const y2 = Math.max(cl(p1.y, ny), cl(p2.y, ny))
   if (x1 === x2 && y1 === y2) return
   const gc = gatingCurrent.value
+  const zc = Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value)))
+  // Z scope for the rect: the gating store publishes `cc.pickZScope = {mode, window}`; 'slice'
+  // adds `zLo`/`zHi` to the POST so the reader spans that inclusive range instead of just `z`.
+  // 'stack' or an absent bag falls through to the single-plane read. Read on demand — the scope
+  // rarely changes during a single drag, and a per-frame subscription for a value we only need at
+  // release is churn we don't need. See `CellSelectionTools.vue`.
+  let zLo: number | undefined
+  let zHi: number | undefined
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const s = JSON.parse(localStorage.getItem('cc.pickZScope') ?? '{}') as
+                { mode?: string; window?: number }
+      if (s.mode === 'slice') {
+        const w = Math.max(0, Math.floor(Number(s.window) || 0))
+        zLo = Math.max(0, zc - w)
+        zHi = Math.min(m.nZ - 1, zc + w)
+      }
+    } catch { /* garbage bag → single-plane read */ }
+  }
   // `valueName` = the pop manager's seg (which IS the plot's seg) — see the note in `pickCellAt`.
   const body = {
     projectUid, imageUid,
     valueName: gc.valueName || undefined,
     popType:   gc.popType   || 'flow',
     t: Math.max(0, Math.round(t.value)),
-    z: Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value))),
+    z: zc,
     x1, y1, x2, y2,
     level: lvl,
     mode: pickMode,
+    ...(zLo !== undefined && zHi !== undefined ? { zLo, zHi } : {}),
   }
   try {
     const res = await fetch('/api/viewer/pick-rect', {
