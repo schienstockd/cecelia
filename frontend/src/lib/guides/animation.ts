@@ -4,13 +4,13 @@
 //
 // The distinction that the guide has to land: the Viewer recorder and Batch movies SWEEP the time axis
 // with a fixed look, whereas an animation TWEENS between views you captured by hand. A keyframe is a
-// whole napari view — camera, channels, populations, and where you are in the timelapse — so an
+// whole viewer view — camera, channels, populations, and where you are in the timelapse — so an
 // animation can move the camera, fade a channel in, and travel through time at once. It therefore does
 // NOT need a time series: a keyframed move over a z-stack or a single frame is perfectly valid, which is
 // why the prereqs stop at an imported image.
 //
-// Not a `moduleTaskGuide`: the captures read the live napari viewer, and rendering is the panel's own
-// button, not a TaskRunner function.
+// Not a `moduleTaskGuide`: the captures read the live viewer, and rendering is the panel's own button,
+// not a TaskRunner function.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
@@ -20,7 +20,7 @@ export const animationGuide: GuideDef = {
   title: 'Build an animation',
   group: 'Analysis',
   icon: 'pi-images',
-  summary: 'Capture napari views as keyframes and tween between them — a camera move, not a time sweep.',
+  summary: 'Capture viewer views as keyframes and tween between them — a camera move, not a time sweep.',
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
 
   steps: [
@@ -47,8 +47,8 @@ export const animationGuide: GuideDef = {
       anchor: 'animation.open',
       route: '/animation',
       placement: 'left',
-      title: 'Open it in napari',
-      text: 'Every capture reads the live viewer, so napari has to be showing the image.',
+      title: 'Open it in the viewer',
+      text: 'Every capture reads the live viewer, so the viewer has to be showing the image.',
       bullets: ['This button disappears once it is open.'],
       reveal: {
         needed: c => c.rightPanelCollapsed,
@@ -63,7 +63,7 @@ export const animationGuide: GuideDef = {
       route: '/animation',
       placement: 'left',
       title: 'Set the view up, then capture',
-      text: 'Arrange it in napari exactly as you want the shot to start — then take the keyframe.',
+      text: 'Arrange it in the viewer exactly as you want the shot to start — then take the keyframe.',
       bullets: [
         'Camera angle, zoom, channels, contrast, overlays, timepoint: all recorded.',
         'This first one is your base look.',
@@ -87,10 +87,10 @@ export const animationGuide: GuideDef = {
       route: '/animation',
       placement: 'left',
       title: 'Add the next one',
-      text: 'Two ways: duplicate the last keyframe and vary it in the rows, or re-capture from napari.',
+      text: 'Two ways: duplicate the last keyframe and vary it in the rows, or re-capture from the viewer.',
       bullets: [
         'Add keyframe — duplicates, for a small change you make in the timeline.',
-        'Update selected — replaces a keyframe with the current napari view.',
+        'Update selected — replaces a keyframe with the current viewer view.',
       ],
       reveal: {
         needed: c => c.rightPanelCollapsed,

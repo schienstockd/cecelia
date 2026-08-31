@@ -33,6 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
+import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { usePlotResize } from '../composables/usePlotResize'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -3128,6 +3129,93 @@ watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
        zPlane, t, mode, meta],
       () => publishRegionSink.schedule(undefined))
 
+// ── Publish a napari-shaped viewState alongside the visibleRegion ─────────────
+// Same signal set + same debounce as the region sink — a keyframe capture (AnimationPanel) or a
+// title-card reader is a downstream subscriber of the SAME viewer state the region publishes,
+// so they should coalesce identically. Shape lives in `utils/viewer/viewState.ts` so a bug in the
+// arithmetic is a unit-test failure rather than a rendered-mp4 discovery. Emits `null` when meta /
+// canvas aren't ready — same guard as the region sink.
+const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) { viewerStore.setViewState(null); return }
+  const canvasW = Math.max(1, c.clientWidth)
+  const canvasH = Math.max(1, c.clientHeight)
+  const vs = buildViewState({
+    cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value,
+    ndisplay: mode.value === 'plane' ? 2 : 3,
+    canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+  })
+  viewerStore.setViewState(vs)
+}, { wait: 100 })
+
+// Watch the SAME signals as the region sink, PLUS the per-channel contrast/visibility, because
+// contrast_limits + visible are the two layer fields the offline renderer reads. `meta.channels`
+// mutations in place fire meta reactively; the deep watch on channels catches the lo/hi updates
+// that don't replace the array reference.
+watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
+       () => cam.value.yaw, () => cam.value.pitch,
+       zPlane, t, mode, meta],
+      () => publishViewStateSink.schedule(undefined))
+watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
+      () => publishViewStateSink.schedule(undefined))
+
+// ── Consume a pending viewState from the AnimationPanel ──────────────────────
+// AnimationPanel writes a `PendingViewState` when the user clicks a keyframe (Sync napari on) or
+// toggles Sync while a keyframe is selected. We convert the napari-shaped snapshot back to the
+// orbit-camera form via the SAME `applyViewStateToBrowser` reader the unit tests exercise, then
+// apply — mutating cam / t / zPlane / mode / channels in place so the existing renderer paths
+// (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
+// the publisher immediately re-emits from the applied state, which is exactly what the user
+// wants (the animation page's next capture would see the new state anyway).
+watch(() => viewerStore.pendingViewState?.updateId, async () => {
+  const pending = viewerStore.pendingViewState
+  if (!pending) return
+  const vs = pending.viewState as ViewerViewState | null
+  if (!vs) return
+  const m = meta.value
+  const c = canvas.value
+  if (!m || !c) return
+  const canvasH = Math.max(1, c.clientHeight)
+  const applied = applyViewStateToBrowser({
+    vs, meta: m, currentCam: cam.value, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+  })
+
+  // Per-channel state first so the reallocated GPU pipeline picks up the visibility / contrast on
+  // the next fetch — same order the initial mount uses (contrast/vis applied around reallocate).
+  for (const src of applied.channels) {
+    const dst = m.channels.find(ch => ch.name === src.name)
+    if (!dst) continue
+    dst.lo = src.lo
+    dst.hi = src.hi
+    dst.visible = src.visible
+  }
+
+  // Camera pose is cheap — one write + a redraw; the draw loop reads `cam.value` inside.
+  cam.value = applied.cam
+
+  // Mode switch (2D ↔ 3D) needs a `reallocate` — the tile vs volume renderer chain is picked at
+  // that moment (`ensureRenderer`). A bare `mode.value = ...` writes the ref but leaves the wrong
+  // renderer active, which is what the user hit: controls updated but the canvas never redrew
+  // because the plane renderer's watchers didn't fire for the new mode.
+  const modeChanged = mode.value !== (applied.ndisplay === 3 ? 'volume' : 'plane')
+  mode.value = applied.ndisplay === 3 ? 'volume' : 'plane'
+
+  // z uses the canonical `stepZ` (writes the ref + schedules the reallocate pump); a bare
+  // `zPlane.value = …` moves the number but leaves the tile atlas / volume texture on the old
+  // plane. `gotoT` is the canonical t-setter for the same reason: it schedules the tile pump or
+  // the timepoint pump depending on the render path, then redraws.
+  if (modeChanged) {
+    await reallocate(false)
+  } else if (zPlane.value !== applied.zPlane) {
+    stepZ(applied.zPlane)
+  }
+
+  if (t.value !== applied.t) gotoT(applied.t)
+  pushChannels()
+})
+
 // Open image → the store. Published from meta so `zarrPath`/`taskDir` reach the browser through the
 // same route as the pixels: the meta response is the one authoritative resolution of an image
 // version.
@@ -3138,6 +3226,7 @@ watch(meta, m => {
     valueName: m.valueName ?? valueName.value ?? '',
     zarrPath: m.zarrPath ?? '',
     taskDir: m.taskDir ?? '',
+    nLevels: m.levels?.length ?? 1,
   })
 })
 

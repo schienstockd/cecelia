@@ -75,10 +75,24 @@ function draw_segments!(frame::AbstractMatrix{<:RGB}, segments::NamedTuple; widt
     width_px <= 0 && return frame
     H, W = size(frame)
     half = max(0, width_px ÷ 2)                     # width 1 → half = 0 (single-pixel Bresenham)
+    # Optional per-segment `alpha`. Present → blend `alpha * col + (1 - alpha) * existing` per pixel,
+    # same slope the 3D PIL rasteriser uses (`0.2 + 0.8 * clamp(1 - age/tail, 0, 1)` — Julia-side),
+    # so a 2D and 3D animation of the same tail fade at the same rate. Absent → opaque draw (the
+    # pre-alpha behaviour; every existing caller sees no change).
+    has_alpha = hasproperty(segments, :alpha)
+    has_alpha && length(segments.alpha) == n ||
+        (has_alpha && throw(ArgumentError("draw_segments!: alpha length $(length(segments.alpha)) ≠ $n")))
     @inbounds for k in 1:n
         col = convert(RGB{N0f8}, segments.colour[k])
-        _bresenham!(frame, Int(segments.x0[k]), Int(segments.y0[k]),
-                    Int(segments.x1[k]), Int(segments.y1[k]), col, half, H, W)
+        if has_alpha
+            a = clamp(Float64(segments.alpha[k]), 0.0, 1.0)
+            _bresenham_blend!(frame, Int(segments.x0[k]), Int(segments.y0[k]),
+                              Int(segments.x1[k]), Int(segments.y1[k]),
+                              col, a, half, H, W)
+        else
+            _bresenham!(frame, Int(segments.x0[k]), Int(segments.y0[k]),
+                        Int(segments.x1[k]), Int(segments.y1[k]), col, half, H, W)
+        end
     end
     frame
 end
@@ -96,6 +110,39 @@ function _bresenham!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::Int, y1
         for py in (y - half):(y + half), px in (x - half):(x + half)
             (1 <= py <= H && 1 <= px <= W) || continue
             @inbounds frame[py, px] = col
+        end
+        (x == x1 && y == y1) && break
+        e2 = 2 * err
+        if e2 >= dy
+            err += dy; x += sx
+        end
+        if e2 <= dx
+            err += dx; y += sy
+        end
+    end
+    frame
+end
+
+# Alpha-blended Bresenham — `frame[y, x] = a * col + (1 - a) * frame[y, x]` per stamped pixel.
+# Matches the PIL alpha-blend the 3D renderer uses on the same segment shape.
+function _bresenham_blend!(frame::AbstractMatrix{<:RGB}, x0::Int, y0::Int, x1::Int, y1::Int,
+                            col::RGB{N0f8}, a::Float64, half::Int, H::Int, W::Int)
+    dx = abs(x1 - x0); sx = x0 < x1 ? 1 : -1
+    dy = -abs(y1 - y0); sy = y0 < y1 ? 1 : -1
+    err = dx + dy
+    x, y = x0, y0
+    cr = Float64(col.r); cg = Float64(col.g); cb = Float64(col.b)
+    ia = 1.0 - a
+    while true
+        for py in (y - half):(y + half), px in (x - half):(x + half)
+            (1 <= py <= H && 1 <= px <= W) || continue
+            @inbounds begin
+                p = frame[py, px]
+                pr = Float64(p.r); pg = Float64(p.g); pb = Float64(p.b)
+                frame[py, px] = RGB{N0f8}(clamp(a * cr + ia * pr, 0.0, 1.0),
+                                           clamp(a * cg + ia * pg, 0.0, 1.0),
+                                           clamp(a * cb + ia * pb, 0.0, 1.0))
+            end
         end
         (x == x1 && y == y1) && break
         e2 = 2 * err

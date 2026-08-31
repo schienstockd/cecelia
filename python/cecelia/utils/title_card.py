@@ -1,11 +1,11 @@
 """Movie title card — render a description slide and prepend it to a recorded .mp4.
 
-Part of the animation title-card feature (docs/todo/ANIMATION_PLAN.md → Phase H). A recorded movie is
-written by napari-animation's ``Animation.animate()`` (frames not exposed), so the card is composited
-as a POST-record step here: render N = ``duration × fps`` still frames of a dark slide (image name +
-attributes, channel/population/colour-by legend rows with colour swatches, an optional note) at the
-movie's exact resolution, then rewrite the file with those frames prepended. The rewrite re-encodes
-the clip once (acceptable for short movies).
+Part of the animation title-card feature (docs/todo/ANIMATION_PLAN.md → Phase H). Every recorder
+writes its mp4 frame by frame before this runs, so the card is composited as a POST-record step
+here: render N = ``duration × fps`` still frames of a dark slide (image name + attributes,
+channel/population/colour-by legend rows with colour swatches, an optional note) at the movie's
+exact resolution, then rewrite the file with those frames prepended. The rewrite re-encodes the
+clip once (acceptable for short movies).
 
 Content is passed in as a plain dict (assembled by the caller from the CANONICAL legend source — see
 Phase H, decision 4; channels are added by the recorder from the live viewer, decision 5):
@@ -20,7 +20,7 @@ Phase H, decision 4; channels are added by the recorder from the live viewer, de
       ],
     }
 
-Pure + testable without napari (only PIL + numpy for rendering; imageio only for the prepend, both
+Pure + testable without a viewer (only PIL + numpy for rendering; imageio only for the prepend, both
 already in the env via scikit-image / imageio-ffmpeg). See python/cecelia/tests/test_title_card.py.
 """
 import os
@@ -40,7 +40,7 @@ _SWATCH_BORDER = (255, 255, 255)
 #: A real TrueType is tried BEFORE Pillow's built-in, and the order matters. `load_default(size=…)`
 #: succeeds on every Pillow >= 10, so putting it first made the TrueType branch below dead code — and
 #: the built-in (Aileron) covers little more than ASCII. Titles are `name — attr — attr` (EM DASH,
-#: U+2014, from `_title_card_content` in api/src/napari_api.jl), so every real title card rendered
+#: U+2014, from the frontend's title assembly), so every real title card rendered
 #: `.notdef` boxes where the separators were: Aileron's mask for `—` is bitmap-identical to its mask
 #: for `中`, which is how a missing glyph looks. Notes and attribute values are user text and can hold
 #: anything (µm, °, accents), so ASCII-only was never enough here.
@@ -58,6 +58,20 @@ def _font_candidates():
     yield from ("DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Arial.ttf")
 
 
+#: Bold variants of the same face, in the same fallback order — used by the per-frame overlays so
+#: the elapsed-time clock and the scale bar read as "on-image" heavy text against fluorescence, the
+#: same weight the browser viewer's HTML overlay uses (``font-weight: 700`` on
+#: ``StillOverlay.vue``). Not used by the title card (which stays regular weight).
+def _bold_font_candidates():
+    try:
+        import matplotlib
+        from pathlib import Path
+        yield str(Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans-Bold.ttf")
+    except Exception:
+        pass
+    yield from ("DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "Arial-Bold.ttf")
+
+
 def _font(size):
     """A font at ``size`` px. Prefers a real TrueType with non-ASCII coverage, then the scalable
     built-in (Pillow >= 10), then the fixed default — so we never hard-depend on a font file."""
@@ -71,6 +85,19 @@ def _font(size):
         return ImageFont.load_default(size=size)          # Pillow >= 10 scales the built-in
     except TypeError:
         return ImageFont.load_default()
+
+
+def _bold_font(size):
+    """Bold sibling of ``_font`` for the encoded-frame overlays. Falls through to ``_font`` if no
+    bold TrueType is available — so a slim env without matplotlib still renders, just at regular
+    weight rather than 700."""
+    size = max(8, int(size))
+    for name in _bold_font_candidates():
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return _font(size)
 
 
 def _hex_rgb(value):
@@ -250,6 +277,70 @@ def caption_band(width, height, text):
         box = d.textbbox((0, 0), s, font=f)
         d.text(((width - (box[2] - box[0])) / 2 - box[0], (height - (box[3] - box[1])) / 2 - box[1]),
                s, font=f, fill=_FG_LABEL)
+    return np.asarray(img, dtype=np.uint8)
+
+
+#: Overlay drawing colours + margins. Reused across every frame of a recording, so pinned here beside
+#: _BG/_FG. Everything is white with a dark stroke outline — same convention as the browser volume
+#: viewer's on-image overlays (``StillOverlay.vue``: ``.ovl-ts`` text-shadow ring, ``.ovl-text``
+#: ``paint-order: stroke``, ``.ovl-fill`` white bar with a dark ``stroke``). No solid backing
+#: rectangles: they read as chrome pasted on top rather than an annotation on the image, and the
+#: viewer never had them either — matching the two surfaces was the ask (Dominik, 2026-08-29).
+_OVERLAY_TEXT      = (255, 255, 255)
+_OVERLAY_STROKE    = (0, 0, 0)                   # dark outline drawn around every white glyph + bar
+_OVERLAY_MARGIN_PX = 8
+
+
+def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
+    """Draw per-frame overlays (timestamp + scale bar) onto an (H, W, 3) uint8 RGB frame in-place-ish.
+
+    Returns the modified frame. ONE font stack, ONE colour palette, ONE renderer for every text glyph
+    on a movie frame — same rule as ``caption_band`` and the title card. Used by
+    ``encode_movie_run.py`` when the offline renderer asks for the timestamp + scale-bar overlays
+    that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
+
+    ``timestamp`` is the string to draw top-left (e.g. ``"0:07:30"``) or ``None``. ``scale_bar`` is
+    ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above
+    — or ``None``. Both can be present. Style matches ``StillOverlay.vue``: bold sans-serif, white
+    fill with a thin dark outline for legibility on both dark fluorescence and bright brightfield.
+    """
+    if timestamp is None and scale_bar is None:
+        return frame_np
+    img = Image.fromarray(frame_np).convert("RGB")
+    d = ImageDraw.Draw(img, "RGB")
+    W, H = img.size
+    px = max(11, int(min(H, W) * 0.045))
+    f = _bold_font(px)
+    # Stroke width scales with the font — a thin hairline disappears against noisy fluorescence,
+    # but too thick and the glyphs bleed into each other. 5–6% of font size matches how the viewer's
+    # ``paint-order: stroke`` reads on-screen.
+    stroke_w = max(2, int(px * 0.06))
+    m = _OVERLAY_MARGIN_PX
+    if timestamp:
+        s = str(timestamp)
+        box = d.textbbox((0, 0), s, font=f, stroke_width=stroke_w)
+        d.text((m - box[0], m - box[1]), s, font=f, fill=_OVERLAY_TEXT,
+               stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
+    if scale_bar:
+        length_px = max(2, int(scale_bar.get("lengthPx", 0)))
+        label = str(scale_bar.get("label", ""))
+        bar_h = max(3, int(min(H, W) * 0.006))
+        # Bar bottom-right; label centred above the bar.
+        bar_x2 = W - m
+        bar_x1 = bar_x2 - length_px
+        bar_y2 = H - m
+        bar_y1 = bar_y2 - bar_h
+        if bar_x1 >= 0:
+            # White bar with a hairline dark outline — same as the viewer's ``.ovl-fill`` rule.
+            d.rectangle([bar_x1, bar_y1, bar_x2, bar_y2],
+                         fill=_OVERLAY_TEXT, outline=_OVERLAY_STROKE, width=1)
+            if label:
+                lbox = d.textbbox((0, 0), label, font=f, stroke_width=stroke_w)
+                lw = lbox[2] - lbox[0]; lh = lbox[3] - lbox[1]
+                lx = bar_x1 + (length_px - lw) / 2 - lbox[0]
+                ly = bar_y1 - lh - 4 - lbox[1]
+                d.text((lx, ly), label, font=f, fill=_OVERLAY_TEXT,
+                       stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
     return np.asarray(img, dtype=np.uint8)
 
 

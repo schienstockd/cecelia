@@ -19,6 +19,14 @@ export function napariColormapHex(name: string | null | undefined): string | nul
   return NAPARI_COLORMAP_HEX[name] ?? NAPARI_COLORMAP_HEX[name.toLowerCase()] ?? null
 }
 
+// Reverse of `napariColormapHex`. The browser viewer stores channel colour as a 2-stop black→hex LUT
+// and drops the colormap NAME, so a viewState snapshot has to reverse-lookup: what named palette is
+// this hex? Feeds `buildViewState` → so a snapshot can carry a real colormap name that
+// `seedConfigFromViewState` can read, instead of the always-null we used to emit (which made the
+// batch/one-shot "fill from view" produce an empty channels map). Preference order matters — several
+// names share a hex ('gray'/'grey', 'i red'/'red', …); the picker's canonical names are looked up
+// first so a reverse from the palette round-trips.
+
 export interface ColormapOption { value: string; label: string; hex: string }
 
 /** A small, standard channel-colour palette for the batch-movie picker, rendered as swatches. Ordered
@@ -33,3 +41,23 @@ export const CHANNEL_COLORMAP_OPTIONS: ColormapOption[] = (
     ['bop purple', 'purple'], ['gray', 'gray'],
   ] as [string, string][]
 ).map(([value, label]) => ({ value, label, hex: napariColormapHex(value) ?? '#888888' }))
+
+// Hex → colormap name. Built from the picker's palette first (so those canonical names win when
+// several map to the same hex — 'gray' over 'grey', 'red' over 'i red'), then padded with any names
+// that AREN'T in the picker so a bop/i-colour still resolves.
+const HEX_TO_NAPARI_COLORMAP: Record<string, string> = (() => {
+  const out: Record<string, string> = {}
+  for (const o of CHANNEL_COLORMAP_OPTIONS) out[o.hex.toLowerCase()] = o.value
+  for (const [name, hex] of Object.entries(NAPARI_COLORMAP_HEX)) {
+    const k = hex.toLowerCase()
+    if (!(k in out)) out[k] = name
+  }
+  return out
+})()
+
+/** Napari colormap NAME for a hex (case-insensitive), or null if unknown. Exact match only — a
+ *  "close" match would silently rewrite the user's colour. */
+export function napariColormapForHex(hex: string | null | undefined): string | null {
+  if (!hex) return null
+  return HEX_TO_NAPARI_COLORMAP[hex.toLowerCase()] ?? null
+}

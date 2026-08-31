@@ -32,6 +32,7 @@ import {
   type ViewerMeta, type ViewerChannel, type OrbitCamera,
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
+import { pickSrgbCanvasFormats } from './canvasFormat'
 export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
@@ -374,7 +375,11 @@ export async function createVolumeRenderer(
   device.pushErrorScope('validation')
   const ctx = canvas.getContext('webgpu')
   if (!ctx) throw new WebGpuUnavailable('Canvas gave no WebGPU context')
-  const format = navigator.gpu.getPreferredCanvasFormat()
+  // sRGB canvas policy — one helper across every WebGPU renderer here. See `./canvasFormat.ts`.
+  // `format` is what the render pipelines target AND what the pass color-attachment view uses; the
+  // canvas itself is configured at the linear base, with the sRGB view format declared as
+  // compatible so `createView({ format })` at draw time gives the pipeline an sRGB attachment.
+  const { base: canvasFormat, viewFormat: format } = pickSrgbCanvasFormats()
   /**
    * How the canvas composites with the page. Flippable at runtime (see `setAlphaMode`) so
    * the two paths can be compared without an app rebuild.
@@ -388,7 +393,9 @@ export async function createVolumeRenderer(
    * canvas stayed black), because the first `configure` had happened at the default 300x150 and
    * nothing reattached it afterwards. Reconfiguring is cheap and idempotent.
    */
-  const configureCtx = () => ctx.configure({ device, format, alphaMode })
+  const configureCtx = () => ctx.configure({
+    device, format: canvasFormat, viewFormats: [format], alphaMode,
+  })
   configureCtx()
 
   const module = device.createShaderModule({ code: MIP_WGSL })
@@ -1018,7 +1025,10 @@ export async function createVolumeRenderer(
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({
         colorAttachments: [{
-          view: ctx.getCurrentTexture().createView(),
+          // Explicit sRGB view over the linear canvas base — gamma-encodes the shader's linear
+          // output at write time so the on-screen frame matches the offline movie renderer's
+          // `_linear_to_srgb`. Same reasoning as the pipeline `targets: [{ format }]` above.
+          view: ctx.getCurrentTexture().createView({ format }),
           // Magenta, and nothing drawn over it — see `setTestPattern`. A colour no image contains, so
           // "did it work" needs no interpretation.
           clearValue: testPattern ? { r: 1, g: 0, b: 1, a: 1 } : { r: 0, g: 0, b: 0, a: 1 },

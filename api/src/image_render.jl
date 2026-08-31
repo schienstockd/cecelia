@@ -50,12 +50,34 @@ const DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
 const Lut = Vector{NTuple{3,Float32}}
 
 # Resolve a spec's colour field to a LUT. A Vector of stops (from `colormap_lut`) is used as-is; a
-# String is a colormap NAME resolved through CMAP_RGB into a 2-stop black→base ramp.
+# String is EITHER a colormap NAME resolved through CMAP_RGB, OR a `#rrggbb`/`#rgb` hex — the browser
+# viewer sends hex when the user's live picker colour isn't in CMAP_RGB (see
+# `frontend/src/utils/viewer/viewState.ts`). Either way it becomes a 2-stop black→base ramp.
 _as_lut(v::Lut) = v
-_as_lut(name::AbstractString) =
-    NTuple{3,Float32}[(0f0, 0f0, 0f0), get(CMAP_RGB, lowercase(name), (1f0, 1f0, 1f0))]
+function _as_lut(s::AbstractString)
+    rgb = _hex_to_rgb01(s)
+    rgb === nothing || return NTuple{3,Float32}[(0f0, 0f0, 0f0), rgb]
+    NTuple{3,Float32}[(0f0, 0f0, 0f0), get(CMAP_RGB, lowercase(s), (1f0, 1f0, 1f0))]
+end
 _as_lut(v::AbstractVector) = NTuple{3,Float32}[
     (Float32(s[1]), Float32(s[2]), Float32(s[3])) for s in v]
+
+# `#rrggbb` / `#rgb` → 0-1 RGB. Nothing means it isn't a hex literal (`_as_lut` then tries CMAP_RGB).
+function _hex_to_rgb01(s::AbstractString)
+    m = match(r"^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$", strip(s))
+    m === nothing && return nothing
+    h = m.captures[1]
+    if length(h) == 3
+        r = parse(Int, string(h[1], h[1]); base = 16)
+        g = parse(Int, string(h[2], h[2]); base = 16)
+        b = parse(Int, string(h[3], h[3]); base = 16)
+    else
+        r = parse(Int, h[1:2]; base = 16)
+        g = parse(Int, h[3:4]; base = 16)
+        b = parse(Int, h[5:6]; base = 16)
+    end
+    (Float32(r) / 255f0, Float32(g) / 255f0, Float32(b) / 255f0)
+end
 
 # Sample a LUT at `n` ∈ [0,1] with linear interpolation between stops. A 2-stop black→base ramp reduces
 # to exactly `n .* base`, which is what the additive channel primaries need.
@@ -73,21 +95,53 @@ end
 # Read the viewer's per-channel display specs from the JSON layer-props file (Phase 0). Returns a vector
 # of (lo, hi, colour, visible) in channel order, or `nothing` if the file is missing/unreadable.
 # `colour` is the saved `colormap_lut` when present, else the `colormap` NAME (see CMAP_RGB above).
+#
+# Two on-disk shapes today, checked in preference order:
+#  1. **Legacy napari**: `Image: [{contrast_limits, colormap, colormap_lut, visible}, …]` — one entry
+#     per channel, INDEX-ORDERED. Written by the napari bridge; still the case for pre-P5 versions
+#     and every image whose viewer state predates the browser viewer.
+#  2. **Browser viewer**: `webgpu: {channels: [{visible, hex, lo, hi}, …]}` — same INDEX ORDER, but
+#     the colour is a plain `#rrggbb` hex ramp (no LUT) and lo/hi live top-level rather than under
+#     a `contrast_limits` pair. Written by the browser viewer's autosave (P5+). A sibling `layers`
+#     dict carries the same fields keyed BY NAME, but this reader has no channel-name list so
+#     `webgpu.channels` is what it can walk in order.
+#
+# If neither shape is present, return nothing — the caller (`_resolve_frame_for_record`) falls back
+# to sampled contrast with `DEFAULT_CMAPS`, which is what a cold-start image shows in the viewer too.
 function layer_display_specs(props_path::AbstractString)
     isfile(props_path) || return nothing
     try
         d = JSON3.read(read(props_path, String))
         imgs = get(d, :Image, nothing)
-        imgs === nothing && return nothing
-        specs = Tuple{Float64,Float64,Any,Bool}[]
-        for e in imgs
-            cl  = get(e, :contrast_limits, [0.0, 1.0])
-            lut = get(e, :colormap_lut, nothing)
-            colour = (lut !== nothing && !isempty(lut)) ? _as_lut(lut) :
-                     lowercase(String(get(e, :colormap, "gray")))
-            push!(specs, (Float64(cl[1]), Float64(cl[2]), colour, Bool(get(e, :visible, true))))
+        if imgs !== nothing
+            specs = Tuple{Float64,Float64,Any,Bool}[]
+            for e in imgs
+                cl  = get(e, :contrast_limits, [0.0, 1.0])
+                lut = get(e, :colormap_lut, nothing)
+                colour = (lut !== nothing && !isempty(lut)) ? _as_lut(lut) :
+                         lowercase(String(get(e, :colormap, "gray")))
+                push!(specs, (Float64(cl[1]), Float64(cl[2]), colour, Bool(get(e, :visible, true))))
+            end
+            isempty(specs) || return specs
         end
-        isempty(specs) ? nothing : specs
+        # Browser-viewer shape (P5+). `webgpu.channels` is ordered by channel index — same order
+        # the store's `c` axis walks — so no channel-name lookup is needed here.
+        wg = get(d, :webgpu, nothing)
+        if wg isa AbstractDict
+            chs = get(wg, :channels, nothing)
+            if chs isa AbstractVector && !isempty(chs)
+                specs = Tuple{Float64,Float64,Any,Bool}[]
+                for e in chs
+                    lo  = get(e, :lo, 0.0)
+                    hi  = get(e, :hi, 1.0)
+                    hex = get(e, :hex, "gray")
+                    vis = Bool(get(e, :visible, true))
+                    push!(specs, (Float64(lo), Float64(hi), lowercase(String(hex)), vis))
+                end
+                return specs
+            end
+        end
+        nothing
     catch
         nothing
     end
@@ -116,9 +170,33 @@ end
 resolved_display_specs(specs::AbstractVector) =
     [(; lo = s[1], hi = s[2], lut = _as_lut(s[3]), visible = s[4]) for s in specs]
 
+# sRGB piecewise transfer function (IEC 61966-2-1): linear [0,1] → sRGB-encoded [0,1]. This is
+# what the browser volume viewer's WebGPU canvas applies for us — the canvas is now pinned to an
+# sRGB view (`frontend/src/lib/webgpu/canvasFormat.ts`), so the shader's linear accumulator gets
+# gamma-encoded at write time. Every consumer here that hands a byte to a display device / codec
+# has to do the same explicit encode, or the linear numbers would be interpreted AS sRGB — mid-
+# tones ~2× dimmer than the viewer shows (audit 2026-08-29). Kept as a standalone helper so a
+# caller that needs LINEAR pixels (a numeric readout, an image-processing step) can skip it.
+@inline function _linear_to_srgb(x::Float32)
+    x = clamp(x, 0f0, 1f0)
+    x <= 0.0031308f0 && return 12.92f0 * x
+    1.055f0 * x^(1f0 / 2.4f0) - 0.055f0
+end
+
+# Apply sRGB encoding to an already-composited RGB frame. Callers that write pixels to disk / into
+# an mp4 must call this on the `composite_rgb` result; the tests on `composite_rgb` stay in the
+# LINEAR space (which is what the LUT + blend policy asserts). One caller each way, one function
+# each way — no in-place mutation, so the linear frame stays available if a caller wants both.
+srgb_encode(img::AbstractMatrix{RGB{N0f8}}) =
+    [RGB{N0f8}(_linear_to_srgb(Float32(red(p))),
+               _linear_to_srgb(Float32(green(p))),
+               _linear_to_srgb(Float32(blue(p))))
+     for p in img]
+
 # Pure: composite a (C, H, W) float array + per-channel (lo, hi, colour, visible) specs → H×W RGB{N0f8}
 # via clip-to-contrast, colourise through the channel's LUT, additive blend. `colour` is a colormap
-# name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.
+# name or a LUT (see `_as_lut`). Output is LINEAR — callers writing pixels for display / codec must
+# wrap with `srgb_encode`. Unit-testable without any IO/zarr.
 function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
     C, H, W = size(chw)
     acc = zeros(Float32, 3, H, W)
@@ -189,7 +267,9 @@ function render_preview_frame(zarr_path::AbstractString, props_path::AbstractStr
     if specs === nothing || length(specs) < size(chw, 1)
         specs = [percentile_spec(view(chw, c, :, :), DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
     end
-    img = composite_rgb(chw, specs)
+    # sRGB-encode before writing PNG bytes — every image viewer treats an 8-bit PNG as sRGB, so a
+    # linear composite would read ~2× dimmer than the WebGPU volume viewer's canvas shows.
+    img = srgb_encode(composite_rgb(chw, specs))
 
     io = IOBuffer()
     PNGFiles.save(io, img)
@@ -319,7 +399,146 @@ function render_view_frame(arr, caxes, t::Int;
     end
     segments === nothing || draw_segments!(frame, segments; width_px = segment_width_px)
     points === nothing   || draw_points!(frame, points; size_px = point_size_px)
-    frame
+    # sRGB encoding AFTER overlays: the overlay drawers write in the composite's colour space, so
+    # encoding pre-overlay would give the tracks / masks a different gamma than the pixels around
+    # them. One transfer at the end, one uniform sRGB output — same reasoning as the browser
+    # viewer's sRGB canvas view (`frontend/src/lib/webgpu/canvasFormat.ts`).
+    srgb_encode(frame)
+end
+
+# ── 3D rotation-MIP renderer (P5-a Stage C / animation) ─────────────────────────
+#
+# `render_view_frame_3d` is the offline counterpart to `render_view_frame` for the 3D animation case.
+# Instead of projecting the volume axially (`z = nothing`), it applies a camera rotation to the volume
+# and MIPs along the rotated view-Z. NO Qt/vispy/GL: pure Julia trilinear interp + ray-cast MIP —
+# what the toy demo of 2026-08-27 (scratchpad/rotate_demo.jl) proved viable on fXgbTl.
+#
+# Rotation is Euler `(rx, ry, rz)` in degrees, matching napari's `camera.angles` docstring
+# (`vispy.scene.cameras.turntable`; the same field `capture_view_state` writes). The rotation matrix
+# is `R = Rz * Ry * Rx` — rotate around X first, then Y, then Z — which is vispy's default when its
+# `Base3DRotationCamera` applies the transform to the volume before projection.
+#
+# `z_aniso = physical_z / physical_x` corrects for anisotropic voxels. Without it, a rotated 90° view
+# of a stack with `PhysicalSizeZ=2 µm`, `PhysicalSizeX=0.33 µm` would look ~6× squashed. The world is
+# stretched so xy and (z × z_aniso) are isotropic BEFORE the rotation is applied.
+#
+# `render_quality` picks how many samples per ray we take along view-Z:
+#   * `:draft`    — 0.5× the diagonal of the volume (fast previews)
+#   * `:standard` — 1.0× (default)
+#   * `:high`     — 2.0× (final render)
+# Trilinear interp only — tricubic wasn't visibly better in testing and pays 8× the lookups.
+#
+# `zoom` = canvas-px-per-world-unit (napari `camera.zoom`). Higher is more zoomed in. `center = (cz,
+# cy, cx)` in native voxels, or `nothing` for the volume midpoint.
+#
+# Volume load: one full (C, Y, X, Z) read per call. The keyframe renderer memoises on `(t, channels)`
+# so consecutive same-t frames reuse the volume (a rotation animation typically holds t constant).
+function render_view_frame_3d(arr, caxes, t::Int;
+                              channels::Union{Nothing,AbstractVector{<:Integer}} = nothing,
+                              specs = nothing,
+                              angles::NTuple{3,<:Real} = (0.0, 0.0, 0.0),
+                              center::Union{Nothing,NTuple{3,<:Real}} = nothing,
+                              zoom::Real = 1.0,
+                              z_aniso::Real = 1.0,
+                              canvas_h::Int = 512, canvas_w::Int = 512,
+                              render_quality::Symbol = :standard,
+                              volume_cache::Union{Nothing,Ref{Any}} = nothing)
+    nd    = ndims(arr)
+    dims  = axis_dims(caxes, nd)
+    nc    = haskey(dims, "c") ? size(arr, dims["c"]) : 1
+    chans = channels === nothing ? collect(0:(nc - 1)) : collect(Int, channels)
+    isempty(chans) && throw(ArgumentError("render_view_frame_3d: no channels selected"))
+    haskey(dims, "z") || throw(ArgumentError("render_view_frame_3d: image has no z axis (2D store — use render_view_frame)"))
+
+    # Load full volume as (C, Y, X, Z) Float32. Memoise on (t, chans) if the caller passed a cache.
+    ck = (t, Tuple(chans))
+    V = if volume_cache !== nothing && volume_cache[] isa Tuple && volume_cache[][1] == ck
+        volume_cache[][2]
+    else
+        nZ = size(arr, dims["z"]); nY = size(arr, dims["y"]); nX = size(arr, dims["x"])
+        Vloc = Array{Float32,4}(undef, length(chans), nY, nX, nZ)
+        for (k, c) in enumerate(chans)
+            for zi in 0:(nZ - 1)
+                pl, = read_slab(arr, caxes, t, c; z = zi)
+                Vloc[k, :, :, zi + 1] .= Float32.(permutedims(pl, (2, 1)))
+            end
+        end
+        volume_cache === nothing || (volume_cache[] = (ck, Vloc))
+        Vloc
+    end
+    C, nY, nX, nZ = size(V)
+    cz, cy, cx = center === nothing ? (Float64(nZ - 1) / 2, Float64(nY - 1) / 2, Float64(nX - 1) / 2) :
+                                       (Float64(center[1]), Float64(center[2]), Float64(center[3]))
+
+    # Rotation matrix R = Rz * Ry * Rx (vispy Base3DRotationCamera convention).
+    rx, ry, rz = deg2rad(Float64(angles[1])), deg2rad(Float64(angles[2])), deg2rad(Float64(angles[3]))
+    sx, cxs = sin(rx), cos(rx)
+    sy, cys = sin(ry), cos(ry)
+    sz, czs = sin(rz), cos(rz)
+    # Composed R applied to a column vector (world = R * view).
+    R11 = czs * cys;                 R12 = czs * sy * sx - sz * cxs;  R13 = czs * sy * cxs + sz * sx
+    R21 = sz  * cys;                 R22 = sz  * sy * sx + czs * cxs; R23 = sz  * sy * cxs - czs * sx
+    R31 = -sy;                       R32 = cys * sx;                  R33 = cys * cxs
+
+    # Isotropic world extents. zoom scales canvas-px-per-world-unit; higher zoom = zoomed in.
+    ext_y = Float64(nY)
+    ext_x = Float64(nX)
+    ext_z = Float64(nZ) * Float64(z_aniso)
+    canvas_span = max(ext_x, ext_y)
+    world_per_px = canvas_span / (Float64(zoom) * Float64(canvas_w))    # world units per canvas pixel
+
+    # Sample density along the ray. Diagonal (X + Z) is what a 45° tilt sees end-to-end.
+    diag = sqrt(ext_x^2 + ext_z^2)
+    q_mult = render_quality === :draft ? 0.5 :
+             render_quality === :high  ? 2.0 : 1.0
+    n_samples = max(4, ceil(Int, diag * q_mult))
+    step_v    = diag / n_samples                          # step in world units along view-Z
+
+    out = zeros(Float32, C, canvas_h, canvas_w)
+    @inbounds Threads.@threads for j in 1:canvas_w
+        xv = (j - (canvas_w + 1) / 2) * world_per_px
+        for i in 1:canvas_h
+            yv = (i - (canvas_h + 1) / 2) * world_per_px
+            for c in 1:C
+                m = 0.0f0
+                for s in 1:n_samples
+                    zv = (s - (n_samples + 1) / 2) * step_v
+                    # world = R * (xv, yv, zv)  (view-Y stays "up" because napari's canvas Y is world-Y).
+                    xw = R11 * xv + R12 * yv + R13 * zv
+                    yw = R21 * xv + R22 * yv + R23 * zv
+                    zw = R31 * xv + R32 * yv + R33 * zv
+                    vy = yw + cy
+                    vx = xw + cx
+                    vz = (zw / Float64(z_aniso)) + cz
+                    (vy < 0 || vy > nY - 1 || vx < 0 || vx > nX - 1 || vz < 0 || vz > nZ - 1) && continue
+                    y0 = floor(Int, vy); y1 = min(nY - 1, y0 + 1); fy = Float32(vy - y0)
+                    x0 = floor(Int, vx); x1 = min(nX - 1, x0 + 1); fx = Float32(vx - x0)
+                    z0 = floor(Int, vz); z1 = min(nZ - 1, z0 + 1); fz = Float32(vz - z0)
+                    c000 = V[c, y0 + 1, x0 + 1, z0 + 1]
+                    c100 = V[c, y1 + 1, x0 + 1, z0 + 1]
+                    c010 = V[c, y0 + 1, x1 + 1, z0 + 1]
+                    c110 = V[c, y1 + 1, x1 + 1, z0 + 1]
+                    c001 = V[c, y0 + 1, x0 + 1, z1 + 1]
+                    c101 = V[c, y1 + 1, x0 + 1, z1 + 1]
+                    c011 = V[c, y0 + 1, x1 + 1, z1 + 1]
+                    c111 = V[c, y1 + 1, x1 + 1, z1 + 1]
+                    v = (1 - fy) * ((1 - fx) * ((1 - fz) * c000 + fz * c001) +
+                                          fx  * ((1 - fz) * c010 + fz * c011)) +
+                          fy   * ((1 - fx) * ((1 - fz) * c100 + fz * c101) +
+                                          fx  * ((1 - fz) * c110 + fz * c111))
+                    v > m && (m = v)
+                end
+                out[c, i, j] = m
+            end
+        end
+    end
+
+    sp = specs === nothing ?
+        [percentile_spec(view(out, k, :, :), DEFAULT_CMAPS[mod1(k, 4)]) for k in 1:C] : specs
+    # sRGB-encode the composite for display, matching the browser viewer's sRGB canvas. The 3D
+    # renderer doesn't draw overlays (they're stitched in by the caller via `render_view_frame`'s
+    # 2D path), so encoding here is the last step before the frame is handed to the encoder.
+    srgb_encode(composite_rgb(out, sp))
 end
 
 # A 0-based inclusive pixel range → the 1-based Julia range it selects, clamped to `n`. `nothing` (or a

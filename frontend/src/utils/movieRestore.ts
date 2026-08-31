@@ -1,6 +1,6 @@
 // Reading a movie's saved generation config BACK into the page that authors it — Phase 6 of
 // docs/todo/MOVIE_MANAGEMENT_PLAN.md. The write side is `register_movie!` (api/src/movies_api.jl); this
-// is the read side, kept pure so the shape-juggling below is testable without a napari or a project.
+// is the read side, kept pure so the shape-juggling below is testable without a viewer or a project.
 //
 // The one rule from Decision 6: **read tolerantly, report what could not be restored, never reject.**
 // Every field goes through a default, an entry from before a field existed simply has none, and a

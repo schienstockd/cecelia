@@ -2,8 +2,8 @@
   Batch-movie authoring + run (F1.3 "make a movie for all images", docs/todo/ANIMATION_PLAN.md → F1).
   Author ONE config — which channels + colormap, which overlays (tracks / track-clusters / populations),
   a colour-by measure, fps, and which attributes name the output file — then Generate one attr-named
-  mp4 per selected image. The batch drives the single shared napari viewer sequentially (see
-  api/src/napari_api.jl → run_batch_movies): it TAKES OVER the viewer for a while, so we warn while it runs.
+  mp4 per selected image. The batch runs through the offline renderer (see api/src/movie_rail.jl →
+  run_batch_offline), one image at a time.
 
   Two stacked halves like the module pages' TaskRunner — the movie CONFIG as the top half, the batch's
   task list as the bottom — sharing the same `PaneExpandBar` primitive (`utils/paneExpand.ts`), so either
@@ -19,6 +19,7 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useSettingsStore } from '../../stores/settings'
 import { useTaskStore } from '../../stores/tasks'
+import { useViewerStore } from '../../stores/viewer'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
@@ -38,7 +39,7 @@ import TitleCardControls from '../../components/TitleCardControls.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
 import MovieTimeRange from '../../components/MovieTimeRange.vue'
 import { movieSizeParams } from '../../utils/movieSize'
-import { useNapariStatus } from '../../composables/useNapariStatus'
+import { useViewerMovieDefaults } from '../../composables/useViewerMovieDefaults'
 import { lookRestore, missingRefs, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import RestoreNotice from '../../components/RestoreNotice.vue'
@@ -55,9 +56,10 @@ const { suffixes: movieSuffixes, ensure: ensureMovieSuffixes } = useMovieSuffixe
 watch(() => projectMeta.current?.uid ?? '', (uid: string) => { void ensureMovieSuffixes(uid) }, { immediate: true })
 const settings    = useSettingsStore()
 const tasks       = useTaskStore()
+const viewer      = useViewerStore()
 const ws          = useWsStore()
-// the canvas size napari would record at, for the size fields' placeholder (shared poll)
-const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
+// the browser viewer's canvas size, for the size fields' placeholder (see useViewerMovieDefaults)
+const { canvasSizeX, canvasSizeY, multiscaleLevels } = useViewerMovieDefaults()
 const log         = useLogStore()
 
 const uniq = (xs: string[]) => [...new Set(xs)]
@@ -76,7 +78,7 @@ const segNames     = computed(() => uniq(imgs.value.flatMap(i => Object.keys(i.l
 // ── persisted config (per set) ────────────────────────────────────────────────
 const cfg = computed(() => setUid.value ? settings.getBatchMovieConfig(setUid.value) : {})
 function patch(p: Record<string, unknown>) { if (setUid.value) settings.setBatchMovieConfig(setUid.value, p) }
-// fps + output size reuse the ViewerPanel recorder's per-set config (null size = the napari canvas size)
+// fps + output size reuse the ViewerPanel recorder's per-set config (null size = the viewer's canvas size)
 const movie = computed(() => setUid.value
   ? settings.getMovieConfig(setUid.value)
   // no set open yet — the store's own defaults, so every reader below sees the same shape
@@ -105,15 +107,15 @@ const compareSegmentations = computed<string[]>({
   set: v => patch({ labelValueNames: v }),
 })
 // Mask outline width (0 = filled). Persisted only — unlike the viewer's recorder this page drives no
-// live layers of its own; the value reaches napari when the batch applies the config per image.
+// live layers of its own; the value is applied per image when the batch renders it.
 const labelContour = computed<number>({
   get: () => clampContour(cfg.value.labelContour), set: v => patch({ labelContour: clampContour(v) }) })
 // Whole z stack (3D) or one slice. Authored per SET here rather than read from the live viewer — the
 // batch opens each image itself, so there is no "what is on screen" to inherit.
 const show3D = computed<boolean>({ get: () => !!cfg.value.show3D, set: v => patch({ show3D: v }) })
 // 3D detail (multiscale level, 0 = full resolution). Stored in the batch config and applied per image
-// by the recorder; the RANGE comes from the image currently open in napari, so the control only offers
-// itself when there is something on screen to judge it against.
+// by the recorder; the RANGE comes from the image currently open in the viewer, so the control only
+// offers itself when there is something on screen to judge it against.
 const detail3d = computed<number>({
   get: () => (cfg.value.detail3d as number | undefined) ?? 0, set: v => patch({ detail3d: v }) })
 const zSlice = computed<number | null>({
@@ -132,7 +134,7 @@ const tStart = computed<number>({
 const tEnd = computed<number | null>({
   get: () => cfg.value.tEnd ?? null, set: v => patch({ tEnd: v }) })
 const tFrames = computed(() => Math.max(1, ...imgs.value.map(i => i.sizeT ?? 1)))
-// napari's baked overlays, burnt into every frame (per set, like fps/size)
+// baked overlays, burnt into every frame (per set, like fps/size)
 const movieTimestamp = computed<boolean>({
   get: () => movie.value.showTimestamp,
   set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showTimestamp: v }) } })
@@ -229,7 +231,7 @@ async function loadObs() {
 watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { immediate: true })
 
 // ── seed the config so it's not blank (colours + pops of the first selected image) ─────────────
-// Prefer the first image's LIVE napari view (its actual channel colours + shown overlays) when that
+// Prefer the first image's LIVE viewer view (its actual channel colours + shown overlays) when that
 // image is the one open; otherwise fall back to a default palette so the pickers are still populated.
 // The set's last colour-by seeds `colourBy`. Only fills EMPTY fields — never clobbers the user's edits.
 const seeding = ref(false)
@@ -241,16 +243,20 @@ async function fillFromView(force = false) {
   if (!force && Object.keys(channels.value).length) return   // already authored → leave alone
   seeding.value = true
   let seed: BatchMovieCfg = {}
-  try {
-    const res = await fetch('/api/napari/view-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }),
-    })
-    if (res.ok) {
-      const j = await res.json() as { viewState?: ViewStateLike; imageUid?: string }
-      // auto: only trust the live view when the OPEN image is the first selected one
-      if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState, rep.channelNames ?? [])
-    }
-  } catch { /* fall through to the palette default */ }
+  // Read the browser volume viewer's published viewState (`useViewerStore.viewState`). The popup
+  // writes it on every camera / channel change. Auto-seed only trusts the source when its OPEN image
+  // is the first selected one; forced (button click) reads whatever the browser viewer currently
+  // has. If the browser viewer isn't open yet, `seed` stays empty and the palette default below
+  // kicks in.
+  const browserOpenUid = viewer.openImage?.imageUid
+  if (viewer.viewState && (force || browserOpenUid === first)) {
+    seed = seedConfigFromViewState(viewer.viewState as unknown as ViewStateLike, rep.channelNames ?? [])
+  } else if (force) {
+    // User pressed the button expecting a fill — tell them why nothing changed rather than
+    // silently defaulting.
+    log.info('Open the image in the viewer first — fill-from-view reads the live view.',
+             { source: 'movies' })
+  }
   // no usable live channels → default palette so the picker isn't blank
   if (!Object.keys(seed.channels ?? {}).length) {
     seed = { channels: defaultChannelSeed(rep.channelNames ?? [], CHANNEL_COLORMAP_OPTIONS.map(o => o.value)) }
@@ -299,20 +305,7 @@ function generate() {
     fileAttrs: fileAttrs.value, fps: fps.value, suffix: suffix.value,
     ...movieSizeParams(sizeX.value, sizeY.value),
   })
-  log.info(`Batch movies started for ${uids.length} image(s) — napari will be busy for a bit`, { source: 'napari' })
-}
-
-async function previewOpen() {
-  const uid = project.napariImageUid
-  const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid) { log.warn('Open an image in napari first to preview the look', { source: 'napari' }); return }
-  try {
-    const res = await fetch('/api/napari/apply-movie-config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, config: buildConfig() }),
-    })
-    if (!res.ok) log.warn(`Preview failed: ${(await res.json())?.error ?? res.status}`, { source: 'napari' })
-  } catch (e) { log.warn(`Preview failed: ${e}`, { source: 'napari' }) }
+  log.info(`Batch movies started for ${uids.length} image(s)`, { source: 'movies' })
 }
 
 // ── Editing a movie's saved config (Phase 6, docs/todo/MOVIE_MANAGEMENT_PLAN.md) ───────────────
@@ -382,7 +375,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     settings.replaceBatchMovieConfig(set, r.cfg)
     // `titleCard` deliberately NOT patched into the per-set `movie` bag: this page reads its card from
     // its OWN config (`cfg.titleCard`), and that bag is the viewer recorder's card. Restoring a batch
-    // would otherwise silently rewrite the title card of the napari Record button.
+    // would otherwise silently rewrite the title card of the ViewerPanel Record button.
     const { titleCard: _card, ...output } = r.output
     settings.setMovieConfig(set, output)
     // AFTER the current tick, because arriving here is a NAVIGATION: `ImageTable` seeds its checkboxes
@@ -432,10 +425,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         @toggle="togglePane"
       />
 
-      <!-- BUSY banner: the batch takes over the single napari viewer -->
+      <!-- BUSY banner: the batch is running -->
       <div v-if="running" class="bm-busy">
         <i class="pi pi-spin pi-spinner" />
-        <span>Napari is busy generating movies…</span>
+        <span>Generating batch movies…</span>
       </div>
 
       <!-- ── The CONFIG half ── every `.bm-sec` below, plus the actions row: hidden as a group by the
@@ -446,8 +439,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <section class="bm-sec">
         <h4>
           Channels <span class="bm-sub cc-muted">shown channels + colormap (others hidden)</span>
-          <button class="bm-link" :disabled="seeding || !project.napariImageUid" @click="fillFromView(true)"
-                  title="Copy the channel colours + overlays from the image currently open in napari">
+          <button class="bm-link" :disabled="seeding || !viewer.openImage?.imageUid"
+                  @click="fillFromView(true)"
+                  title="Copy the channel colours + overlays from the image currently open in the viewer">
             <i class="pi pi-sync" /> fill from view
           </button>
         </h4>
@@ -540,10 +534,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 
       <!-- Actions -->
       <div class="bm-actions cc-row">
-        <button class="cc-btn cc-btn-ghost" :disabled="!project.napariImageUid" @click="previewOpen"
-                title="Apply this config to the currently open napari image (no recording)">
-          <i class="pi pi-eye" /> Preview on open image
-        </button>
         <button class="cc-btn cc-btn-primary" data-guide="batchMovies.generate" :disabled="!canRun" @click="generate"
                 v-tooltip.top="compareActionTip(compareShapeNow, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
@@ -566,7 +556,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 /* Which half is showing, declared once per half — the same mechanism TaskRunner uses. Every config
    member is a direct `.bm-sec` child plus the actions row, so one rule covers the group AND a section
    added later, which a per-element guard would miss. The busy banner is in neither half on purpose:
-   "napari is taken over" matters MOST while you are watching the task list. */
+   the running state matters MOST while you are watching the task list. */
 .bm.pane-bottom > .bm-sec,
 .bm.pane-bottom > .bm-actions { display: none; }
 .bm.pane-top    > .bm-tasks   { display: none; }
@@ -586,9 +576,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 }
 /* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
 .bm.pane-bottom > .bm-tasks { min-height: 0; }
-/* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
-   progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
-   a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */
+/* A "batch running" advisory — NOT the job's progress (the scheduler reports that in TasksModule). It
+   states the condition of a resource, so it is a severity and takes the CVD-safe amber. */
 .bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: var(--cc-radius-md);
   background: color-mix(in srgb, var(--cc-sev-warn) 16%, transparent); border: 1px solid var(--cc-sev-warn);
   color: var(--cc-text); font-size: var(--cc-fs-md); }

@@ -1409,6 +1409,77 @@ end
         @test specs[2][1] == 1.0 && specs[2][2] == 5.0
     end
     @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
+
+    # Browser-viewer autosave shape (P5+) — the smoothed sidecar for zolIMa/fXgbTl has NO `Image`
+    # array; only `layers` (name-keyed) + `webgpu.channels` (index-ordered). Before this fell back
+    # to sampled contrast + `DEFAULT_CMAPS`, so the movie rendered red/green/blue/yellow instead of
+    # the viewer's palette (Dominik, 2026-08-29). Reader walks `webgpu.channels` in index order.
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((;
+            webgpu = (; channels = [
+                (; visible = false, hex = "#0000ff", lo = 0, hi =  29),   # SHG   (hidden)
+                (; visible = true,  hex = "#00ffff", lo = 0, hi = 162),   # nuc-GFP (cyan)
+                (; visible = true,  hex = "#ff00ff", lo = 0, hi = 310),   # mem-TOM (magenta)
+                (; visible = true,  hex = "#ffff00", lo = 0, hi = 194),   # CD169-Kat (yellow)
+            ]),
+            layers = Dict("SHG" => (; visible = false)),                  # ignored: name-keyed
+        )))
+        specs = layer_display_specs(p)
+        @test length(specs) == 4
+        @test specs[1] == (0.0,  29.0, "#0000ff", false)
+        @test specs[2] == (0.0, 162.0, "#00ffff", true)
+        @test specs[3] == (0.0, 310.0, "#ff00ff", true)
+        @test specs[4] == (0.0, 194.0, "#ffff00", true)
+    end
+
+    # A file with NEITHER shape returns nothing (fall through to sampled-contrast fallback).
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((; other = "unrelated")))
+        @test layer_display_specs(p) === nothing
+    end
+end
+
+@testset "API: sRGB encode matches the browser viewer's canvas gamma" begin
+    # The offline movie renderer and the browser volume viewer both need to hand the display /
+    # codec pixels in sRGB — otherwise the movie reads ~2× dimmer than the viewer at the same
+    # specs (audit 2026-08-29). Pin the transfer function's known values + the whole pipeline's
+    # mid-tone lift; a regression that silently reverts to linear output would drop these back.
+    r = p -> Float64(red(p)); g = p -> Float64(green(p)); b = p -> Float64(blue(p))
+
+    # `_linear_to_srgb` on canonical points (IEC 61966-2-1 piecewise curve).
+    @test _linear_to_srgb(0f0) == 0f0
+    @test isapprox(_linear_to_srgb(1f0), 1f0; atol = 1e-6)          # Float32 arithmetic loses 1 ulp
+    # Mid-tone: 0.5 linear → ~0.735 sRGB. This is the entire visual difference between the linear
+    # movie and the viewer, so keep the tolerance tight.
+    @test isapprox(_linear_to_srgb(0.5f0), 0.7353569f0; atol = 5e-4)
+    # Piecewise segment near zero (linear × 12.92), below the 0.0031308 threshold.
+    @test isapprox(_linear_to_srgb(0.001f0), 0.001f0 * 12.92f0; atol = 1e-6)
+
+    # `srgb_encode` on an already-composited frame — mid-grey lifts, white stays white.
+    lut_r = [(0f0, 0f0, 0f0), (1f0, 0f0, 0f0)]
+    half  = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut_r, true)])
+    @test isapprox(r(half[1, 1]), 0.5; atol = 0.01)                # linear composite still 0.5
+    lifted = srgb_encode(half)
+    @test isapprox(r(lifted[1, 1]), 0.7353; atol = 0.01)           # sRGB-encoded, mid-tones up
+    @test g(lifted[1, 1]) == 0.0 && b(lifted[1, 1]) == 0.0         # zero channels stay zero
+    white = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, [(0f0,0f0,0f0),(1f0,1f0,1f0)], true)])
+    @test all(c -> isapprox(c(srgb_encode(white)[1, 1]), 1.0; atol = 1e-3), (r, g, b))
+
+    # `render_view_frame` bakes the encode in — the same specs the viewer draws with produce a
+    # frame whose mid-tone channel reads ABOVE the linear composite. This is what closes the
+    # visual gap between the movie and the on-screen canvas.
+    mktempdir() do dir
+        # A 1-t, 1-c, 1-z, 4-y, 4-x store filled at mid intensity; contrast 0..1 → composite 0.5.
+        arr = fill(Float32(0.5), 1, 1, 1, 4, 4)
+        caxes = ["t", "c", "z", "y", "x"]
+        frame = render_view_frame(arr, caxes, 0; z = 0, channels = 0:0,
+                                    specs = [(lo = 0.0, hi = 1.0,
+                                                lut = [(0f0,0f0,0f0),(1f0,0f0,0f0)],
+                                                visible = true)])
+        @test isapprox(r(frame[1, 1]), 0.7353; atol = 0.01)         # sRGB, not 0.5
+    end
 end
 
 # Minimal stand-in for a Zarr array: `read_native` only ever asks it for `arr[idx...]` and for
@@ -4632,6 +4703,7 @@ end
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
         "/api/viewer/record-test",
+        "/api/viewer/thumbnail",
     ]
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
@@ -4673,7 +4745,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 121
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 122
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -4934,6 +5006,33 @@ end
     zero_px = copy(black)
     draw_points!(zero_px, (; x = [10], y = [10], colour = [RGB{N0f8}(1, 0, 0)]); size_px = 0)
     @test zero_px == black
+
+    # ── per-segment alpha — track-tail fade parity with the 3D PIL rasteriser.
+    # A segment with alpha = 1 paints the pure colour (same as no alpha). alpha = 0.5 blends
+    # 50/50 with the underlying frame. alpha = 0 leaves the frame untouched.
+    bg = fill(RGB{N0f8}(0.2, 0.0, 0.0), 20, 20)   # dark red background
+    fade = copy(bg)
+    draw_segments!(fade,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.5]);
+        width_px = 1)
+    # 0.5 * white + 0.5 * (0.2, 0, 0) → (0.6, 0.5, 0.5). N0f8 rounds each channel to /255.
+    r = Float64(fade[10, 9].r); g = Float64(fade[10, 9].g); b = Float64(fade[10, 9].b)
+    @test isapprox(r, 0.6; atol = 0.01)
+    @test isapprox(g, 0.5; atol = 0.01)
+    @test isapprox(b, 0.5; atol = 0.01)
+    # alpha = 0 → frame unchanged
+    zero_alpha = copy(bg)
+    draw_segments!(zero_alpha,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.0]);
+        width_px = 1)
+    @test zero_alpha == bg
+    # Alpha length mismatch → error early
+    @test_throws ArgumentError draw_segments!(bg,
+        (; x0 = [3], y0 = [10], x1 = [15], y1 = [10],
+           colour = [RGB{N0f8}(1, 1, 1)], alpha = [0.5, 0.5]);
+        width_px = 1)
 
     # ── mask outlines ────────────────────────────────────────────────────────────
     # A 2x2 block of id=1 in the middle of an otherwise empty frame. Its outline is the whole 2x2
@@ -5344,6 +5443,24 @@ end
                                        pops_filter = String["/no-such"])
             mn, dn = mask_none(0)
             @test mn === nothing && dn === nothing
+
+            # colour_labels — recolour every id in the mask by an obs column. Total overrides
+            # → every id gets the same colour, proving the resolver hits every id in the dict
+            # (and picks up the DEFAULT colour when overrides don't match). Same `_cb_prepare`
+            # helper the overlay author uses; matching palettes across labels + points is the point.
+            lp2 = label_props(img; value_name = "B")
+            df2 = as_df(lp2)
+            ts_all = unique(Int[Int(round(Float64(v))) for v in df2.centroid_t
+                                 if v isa Real && isfinite(Float64(v))])
+            ov = Dict{String,String}(string(t) => "#00ff00" for t in ts_all)
+            mask_cb = build_mask_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                      all_cells = true, all_cells_colour = "#9ca3af",
+                                      colour_by = "centroid_t",
+                                      colour_overrides = ov)
+            _, dict_cb = mask_cb(0)
+            green = RGB{N0f8}(hex_to_rgb("#00ff00"))
+            @test !isempty(dict_cb)
+            @test all(v -> v == green, values(dict_cb))
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
@@ -6252,6 +6369,30 @@ end
     @test st == 404
 end
 
+@testset "API: /api/viewer/thumbnail — input guards" begin
+    # Same validation pattern as record-test: a well-shaped 400 rather than a 500 out of the
+    # renderer. Full end-to-end (viewState → PNG → assetId) needs a fixture image which the
+    # smoke suites don't run here; the request-shape guards are what protect the panel from
+    # rendering a broken thumbnail on a typo'd payload.
+    st, out = api_viewer_thumbnail(Vector{UInt8}("not json at all"))
+    @test st == 400
+    @test occursin("invalid JSON", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(Vector{UInt8}(JSON3.write(Dict("imageUid" => "x"))))
+    @test st == 400
+    @test occursin("projectUid", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(
+        Vector{UInt8}(JSON3.write(Dict("projectUid" => "p", "imageUid" => "i"))))
+    @test st == 400
+    @test occursin("viewState", JSON3.read(out).error)
+
+    st, out = api_viewer_thumbnail(
+        Vector{UInt8}(JSON3.write(Dict("projectUid" => "no-such", "imageUid" => "nope",
+                                        "viewState" => Dict{String,Any}()))))
+    @test st == 404
+end
+
 @testset "API: a napari selection resolves to TRACKS" begin
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
@@ -6816,6 +6957,358 @@ end
     end
 end
 
+@testset "API: movie rail — offline overlay-config translator" begin
+    # `_overlays_raw_from_config` turns a viewer `look` / batch config into the smoke-route overlay
+    # shape. If it drifts, the record button silently regresses to channels-only movies.
+    @test _overlays_raw_from_config(Dict{String,Any}(), false) === nothing
+    @test _overlays_raw_from_config(nothing, false) === nothing
+    ov = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "popType" => "flow",
+                                                     "pointsSize" => 8), false)
+    @test ov isa AbstractDict
+    @test ov["popType"] == "flow"
+    @test ov["pointSizePx"] == 8
+    @test ov["allTracks"] === false
+    @test ov["includeTracks"] === false
+    # showTracks = whole-segmentation tracks, ignoring pops (napari's ribbon).
+    ov_all = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
+    @test ov_all["allTracks"] === true
+    # A mask fills the mask branch AND flips `allCells` on when there are no pops/gated to filter by.
+    ov_mask = _overlays_raw_from_config(Dict{String,Any}("labelContour" => 3), true)
+    @test ov_mask["showMask"] === true
+    @test ov_mask["maskContourPx"] == 3
+    @test ov_mask["allCells"] === true
+    # Gated tracks ON → the mask filters by those pops rather than showing every cell.
+    ov_gated = _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true), true)
+    @test ov_gated["includeTracks"] === true
+    @test ov_gated["allCells"] === false
+end
+
+@testset "API: movie rail — viewstate → render args (keyframe rendering)" begin
+    # `viewstate_to_render_args` is the single translator every keyframe of an offline animation
+    # runs through — if a Layer entry's `visible` or `contrast_limits` stopped surfacing, the movie
+    # would lose intent silently. Pin the four things a keyframe controls.
+    args = viewstate_to_render_args(
+        Dict{String,Any}("dims" => Dict("current_step" => [5, 2, 0, 0])),
+        ["CH1", "CH2"], nothing, 100, 100)
+    @test args.t == 5
+    @test args.z == 2
+    @test args.crop === nothing            # no canvas hints → no crop
+
+    # Missing viewState fields fall back to defaults.
+    args2 = viewstate_to_render_args(Dict{String,Any}(), ["CH1"],
+                                      [(0.0, 100.0, "red", true)], 100, 100)
+    @test args2.t == 0
+    @test args2.z === nothing
+    @test length(args2.specs) == 1
+    @test args2.specs[1] == (0.0, 100.0, "red", true)
+
+    # Layer entries overlay onto defaults (lookup by CHANNEL NAME, so a re-ordered image is safe).
+    args3 = viewstate_to_render_args(
+        Dict{String,Any}("layers" => Dict("CH2" => Dict("visible" => false,
+                                                          "contrast_limits" => [10, 200],
+                                                          "colormap" => "blue"))),
+        ["CH1", "CH2"], [(0.0, 100.0, "red", true), (0.0, 100.0, "green", true)],
+        100, 100)
+    @test args3.specs[1] == (0.0, 100.0, "red", true)
+    @test args3.specs[2] == (10.0, 200.0, "blue", false)
+
+    # Camera → crop only when canvas hints are given.
+    args_crop = viewstate_to_render_args(
+        Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0)),
+        ["CH1"], nothing, 100, 100; canvas_h = 40, canvas_w = 40)
+    @test args_crop.crop !== nothing
+    @test first(args_crop.crop.y) >= 0
+    @test last(args_crop.crop.y)  <= 99
+end
+
+@testset "API: crop_from_view_state — one-shot record uses the viewer's rectangle" begin
+    # The one-shot record needs the SAME visible rectangle the viewer is looking at, or it renders
+    # a full-image movie at native aspect regardless of the user's zoom + pan (bug 2026-08-29). Pin
+    # the crop maths in isolation — matches the crop half of `viewstate_to_render_args`, but the
+    # one-shot path doesn't own per-frame arg resolution and only needs this piece.
+    vs = Dict{String,Any}(
+        "dims"   => Dict("ndisplay" => 2, "current_step" => [0, 0]),
+        "camera" => Dict("center" => [0.0, 50.0, 50.0], "zoom" => 2.0),
+        "canvas" => Dict("width" => 40, "height" => 40),
+    )
+    c = crop_from_view_state(vs, 100, 100)
+    @test c !== nothing
+    @test first(c.x) >= 0
+    @test last(c.x)  <= 99
+    @test first(c.y) >= 0
+    @test last(c.y)  <= 99
+    # canvas 40 px / (2 × zoom 2) = 10 px half-width around cx = 50 → x = 40:60 (inclusive).
+    @test collect(c.x) == collect(40:60)
+    @test collect(c.y) == collect(40:60)
+
+    # 3D → no 2D crop.
+    vs3 = Dict{String,Any}("dims" => Dict("ndisplay" => 3),
+                            "camera" => Dict("center" => [5.0, 50.0, 50.0], "zoom" => 2.0),
+                            "canvas" => Dict("width" => 40, "height" => 40))
+    @test crop_from_view_state(vs3, 100, 100) === nothing
+
+    # Missing canvas / camera / zoom → nothing (falls through to whole-image behaviour).
+    @test crop_from_view_state(nothing,                   100, 100) === nothing
+    @test crop_from_view_state(Dict{String,Any}(),        100, 100) === nothing
+    @test crop_from_view_state(
+        Dict{String,Any}("camera" => Dict("center" => [50.0, 50.0], "zoom" => 2.0)),
+        100, 100) === nothing                                                    # no canvas
+end
+
+@testset "API: movie overlays — clock timestamp + scale-bar picker match the viewer" begin
+    # The Julia encoder-side overlays and the browser volume viewer's on-screen overlays draw the
+    # SAME frame at the same time — if their formatters drift, a movie captured from the viewer
+    # reads "7m 30s / 20 µm" while the viewer itself reads "0:07:30 / 50 µm". Pin the two policies
+    # here so a future drift is a failing test, not a screenshot comparison.
+    #
+    # Timestamp: "H:MM:SS", zero-padded — matches `elapsedLabel(...,'clock')` in
+    # `frontend/src/utils/stillOverlay.ts`.
+    @test _format_ts(0,   0.5) == "0:00:00"
+    @test _format_ts(15,  0.5) == "0:07:30"       # 15 frames × 30 s
+    @test _format_ts(120, 1.0) == "2:00:00"       # 2 hours
+    @test _format_ts(1,   1/60) == "0:00:01"      # 1 s
+
+    # Scale bar: largest step ≤ 30 % of the frame's µm-extent, roll to mm at ≥ 1000 — matches
+    # `niceScaleBar` in `frontend/src/utils/stillOverlay.ts`.
+    #  600 px × 0.5 µm/px = 300 µm extent → 30 % = 90 µm → largest fitting step is 50 µm.
+    sb = _pick_scale_bar(0.5, 600)
+    @test sb !== nothing
+    @test sb[1] == 50.0
+    @test _scale_bar_label(sb[1]) == "50 µm"
+    #  A big frame rolls up to mm.
+    @test _scale_bar_label(1000.0) == "1 mm"
+    @test _scale_bar_label(2000.0) == "2 mm"
+    #  A tiny frame (too small for the smallest step) returns nothing.
+    @test _pick_scale_bar(0.001, 10) === nothing
+end
+
+@testset "API: interpolate_keyframes reaches the incoming keyframe exactly" begin
+    # The offline animation renderer relies on the last tween frame BEING the arrival state — not a
+    # half-step short. The napari path had this contract already; the offline sibling has to match.
+    kfs = [Dict("viewState" => Dict("dims" => Dict("current_step" => [0, 0])), "steps" => 1),
+           Dict("viewState" => Dict("dims" => Dict("current_step" => [10, 0])), "steps" => 5)]
+    frames = interpolate_keyframes(kfs)
+    @test length(frames) == 6              # 1 + 5
+    @test frames[end]["dims"]["current_step"][1] == 10
+end
+
+@testset "API: overlay_author — build_overlays3d_for on the labelProps fixture" begin
+    # 3D analogue of build_overlays_for. Same fixture, same wide-open pop, but NATIVE VOXEL coords
+    # (no `PixelTransform`) and a `z` field on both points AND segments. Bug this catches: the 3D
+    # author silently drops the z column on a 2D-segmented image, OR emits drawn-pixel coords by
+    # accident — either would visually work in the smoke script but render wrong under a rotation.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "all3d", "colour" => "#00ff00", "gate" => gate)))))
+
+            per_t = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
+                                          include_tracks = false)
+            # Identity view: R = I, cx/cy/cz = 0, zoom scale = 1 → projected (u, v) = native (x + 0.5, y + 0.5).
+            # This is the "drift guarantee" from a caller's POV: no rotation, no offset, dots land
+            # where the cell is.
+            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+            canvas_h, canvas_w = 100, 100
+            pts0, segs0 = per_t(0, R0, 0.0, 0.0, 0.0, 1.0, canvas_h, canvas_w, 1.0)
+            @test pts0 !== nothing
+            @test length(pts0.u) > 0
+            @test length(pts0.u) == length(pts0.v)
+            @test length(pts0.colour) == length(pts0.u)
+            # Every point paints in the pop's colour — the resolver honoured the gate.
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts0.colour)
+            # No tracks requested → no segments even if the fixture has `track_id`.
+            @test segs0 === nothing
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: movie rail — overlay context resolver + JSON serialisation" begin
+    # `_resolve_keyframe_overlay_builders` gates the whole overlay pipeline; `_overlays2d_state`
+    # is the JSON contract the Python renderer reads. Julia projects; Python rasterises. Pins the
+    # four decision points that could drift.
+
+    # No image → no builders (channels-only movie).
+    b2d, b3d = _resolve_keyframe_overlay_builders(nothing, nothing)
+    @test b2d === nothing
+    @test b3d === nothing
+    # Image but empty config → still nothing (no draw-request flags).
+    b2d2, b3d2 = _resolve_keyframe_overlay_builders(nothing,
+        Dict{String,Any}("valueName" => "B", "popType" => "flow"))
+    @test b2d2 === nothing && b3d2 === nothing
+    # Serialisation: a `nothing` closure → nothing, so the state dict stays terse.
+    @test _overlays2d_state(nothing, 0, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
+    # Empty points-and-segments → nothing (skip the frame's overlay pass).
+    empty_closure = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (nothing, nothing)
+    @test _overlays2d_state(empty_closure, 5, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2) === nothing
+    # A non-empty payload → JSON-safe primitives (Vector{Float64}, no RGB objects at rest).
+    pts = (; u = [50.5, 60.0], v = [40.0, 45.0],
+             colour = [RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0)])
+    segs = (; u0 = [50.5], v0 = [40.0], u1 = [60.0], v1 = [45.0],
+              colour = [RGB{N0f8}(1, 0, 0)], alpha = [0.8])
+    non_empty = (t, R, cx, cy, cz, wpp, ch, cw, za) -> (pts, segs)
+    dct = _overlays2d_state(non_empty, 5, (0.0, 0.0, 0.0), nothing, 1.0,
+                              100, 100, 10, 1.0, 100, 100, 30, 6, 2)
+    @test dct isa AbstractDict
+    @test dct["pointSize"] == 6
+    @test dct["segmentWidth"] == 2
+    @test dct["tailLength"] == 30
+    @test dct["points"]["u"] == [50.5, 60.0]
+    @test dct["points"]["v"] == [40.0, 45.0]
+    @test dct["points"]["colour"][1] == Float64[1.0, 0.0, 0.0]
+    @test dct["segments"]["u0"] == [50.5]
+    @test dct["segments"]["alpha"] == [0.8]
+    # Round-trips through JSON3 — the actual over-the-wire test.
+    j = JSON3.read(JSON3.write(dct))
+    @test j.pointSize == 6
+    @test collect(j.points.u) == [50.5, 60.0]
+    @test collect(j.segments.alpha) == [0.8]
+end
+
+@testset "API: overlay_author — colourBy + colourOverrides recolour via shared state" begin
+    # The drift-guarantee payoff: `colour_by` + `colour_overrides` plug in ONCE at
+    # `_build_overlay_state`, so pointing 2D and 3D authors at the same column produces the same
+    # per-vertex colours. Fixture is `testpr`/`KDIeEm` with a wide-open pop; we override the
+    # `centroid_t` column so every cell falls to a known value → override wins uniformly.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle",
+                                    "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9,
+                                    "y_min" => -1e9, "y_max" => 1e9)
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "cb", "colour" => "#000000", "gate" => gate)))))
+
+            # Which column to colour by — pick something guaranteed present, `centroid_t`. Discover
+            # its values to build a total-override map, so EVERY dot gets a known colour.
+            lp = label_props(img; value_name = "B")
+            view_centroid_cols(lp; order = [:x, :y, :z])
+            df = as_df(lp)
+            ts = unique(Int[Int(round(Float64(v))) for v in df.centroid_t
+                             if v isa Real && isfinite(Float64(v))])
+            overrides = Dict{String,String}(string(t) => "#00ff00" for t in ts)
+
+            # 2D author with colourBy = centroid_t + total overrides → all points paint green.
+            H = ceil(Int, maximum(Float64.(df.centroid_y))) + 8
+            W = ceil(Int, maximum(Float64.(df.centroid_x))) + 8
+            tf = pixel_transform(H, W)
+            per_t_2d = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                           colour_by = "centroid_t",
+                                           colour_overrides = overrides)
+            pts, _ = per_t_2d(0)
+            @test pts !== nothing
+            @test length(pts.colour) > 0
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts.colour)
+
+            # 3D author, same colourBy + overrides — same colours per vertex.
+            per_t_3d = build_overlays3d_for(img; value_name = "B", pop_type = "flow",
+                                             colour_by = "centroid_t",
+                                             colour_overrides = overrides)
+            R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+            pts3d, _ = per_t_3d(0, R0, 0.0, 0.0, 0.0, 1.0, 100, 100, 1.0)
+            @test pts3d !== nothing
+            @test length(pts3d.colour) > 0
+            @test all(c -> c == RGB{N0f8}(0, 1, 0), pts3d.colour)
+
+            # Partial override — one value overridden, the rest fall to Okabe-Ito. The overridden
+            # value's colour matches; some non-overridden values differ.
+            partial = Dict{String,String}(string(first(ts)) => "#0000ff")
+            per_t_2d_p = build_overlays_for(img; value_name = "B", pop_type = "flow", transform = tf,
+                                             colour_by = "centroid_t",
+                                             colour_overrides = partial)
+            pts_p, _ = per_t_2d_p(first(ts))
+            @test pts_p !== nothing
+            @test all(c -> c == RGB{N0f8}(0, 0, 1), pts_p.colour)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: overlay_author — rotation_matrix_from_angles matches vispy convention" begin
+    # The rotation-matrix convention is REPLICATED in three places: `render_view_frame_3d` (Julia
+    # CPU fallback), `render_animation_run.py::_rotation_matrix` (GPU raycast), and
+    # `rotation_matrix_from_angles` (overlay projection). ALL THREE must agree — if the overlay
+    # matrix drifts from the ray one, dots and the volume rotate in different directions.
+    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+    @test isapprox(R0, [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]; atol = 1e-9)
+    R90y = rotation_matrix_from_angles((0.0, 90.0, 0.0))
+    # Ry(90°) sends x → -z, z → x, y → y (standard right-hand rule). Check three column vectors.
+    @test isapprox(R90y * [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]; atol = 1e-9)
+    @test isapprox(R90y * [0.0, 1.0, 0.0], [0.0, 1.0,  0.0]; atol = 1e-9)
+    @test isapprox(R90y * [0.0, 0.0, 1.0], [1.0, 0.0,  0.0]; atol = 1e-9)
+end
+
+@testset "API: movie rail — 2D↔3D overlay projection agrees at identity view" begin
+    # The DRIFT GUARANTEE. At angles=(0,0,0), zoom=1, the 3D projection reduces to an axial
+    # projection: (x, y, z) → (u, v) = (x - cx + (W+1)/2 * something, y - cy + ...). We test that
+    # a point at native voxel (cx, cy, cz) projects to the CANVAS CENTRE, and that swapping angles
+    # for the same identity view produces the SAME screen coords whether we go through the 2D
+    # `pixel_transform` path (which draws at native pixel + offset) or the 3D projection. The two
+    # authors read from ONE `_build_overlay_state` and use the same collection; the projection
+    # math must round-trip to the same drawn pixel for identity views.
+    R0 = rotation_matrix_from_angles((0.0, 0.0, 0.0))
+    canvas_h, canvas_w = 100, 100
+    # Volume extents matching a 100×100×20 image (so ext_x = ext_y and z_aniso = 1 collapses to
+    # canvas coordinates that equal the world coordinates plus a centre offset).
+    native_w, native_h, nZ = 100, 100, 20
+    z_aniso = 1.0
+    cx, cy, cz = 49.5, 49.5, 9.5
+    wpp = _world_per_px_3d(native_w, native_h, nZ, z_aniso, 1.0, canvas_w)
+    @test isapprox(wpp, 1.0; atol = 1e-9)   # canvas span == native extent → 1 world unit / pixel
+    u, v = _project_3d_point(R0, cx, cy, cz, z_aniso, wpp,
+                                       canvas_h, canvas_w, cx, cy, cz)
+    # Centre of volume projects to centre of canvas ((W + 1) / 2, (H + 1) / 2 — 0-based).
+    @test isapprox(u, (canvas_w + 1) / 2; atol = 1e-9)
+    @test isapprox(v, (canvas_h + 1) / 2; atol = 1e-9)
+    # Same world point projected at Ry(90°) rotation — the point at the volume centre should STILL
+    # project to the canvas centre (rotation about a point through the centre leaves the centre
+    # fixed). This proves the projection actually uses cx/cy/cz as the rotation origin.
+    R90 = rotation_matrix_from_angles((0.0, 90.0, 0.0))
+    u90, v90 = _project_3d_point(R90, cx, cy, cz, z_aniso, wpp,
+                                           canvas_h, canvas_w, cx, cy, cz)
+    @test isapprox(u90, (canvas_w + 1) / 2; atol = 1e-9)
+    @test isapprox(v90, (canvas_h + 1) / 2; atol = 1e-9)
+end
 # ── VIEWER_PARITY phases 1 + 2: overlay_author reads the same JSON the browser reads ─────────────
 # The house palette, the three track-colour-mode names, and the heat-ramp anchors used by the
 # offline movie renderer all live in one JSON asset (`frontend/src/plots/palettes.json`) that the

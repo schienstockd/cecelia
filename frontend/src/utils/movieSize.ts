@@ -2,8 +2,6 @@
  * Movie output size, frontend half. The pixel-level rules (clamp, even axes) live in Python
  * (`cecelia/utils/movie_io.py`) because that is where the frame is rendered and where h.264 rejects an
  * odd dimension — this only turns what the user typed into "a size" or "blank = the canvas size".
- *
- * See docs/NAPARI.md → *Movie output size*.
  */
 
 /** The per-axis ceiling; mirrors `movie_io.MAX_MOVIE_AXIS` so the field can't ask for a clamp. */
@@ -11,7 +9,7 @@ export const MAX_MOVIE_AXIS = 4096
 
 /**
  * A typed axis value → a positive integer, or null for "unset" (blank, zero, junk).
- * Null is not an error state: an empty field means "record at the napari canvas size", which is the
+ * Null is not an error state: an empty field means "record at the viewer's canvas size", which is the
  * default and what every movie was before these fields existed.
  */
 export function parseMovieAxis(value: string | number | null | undefined): number | null {
@@ -22,8 +20,8 @@ export function parseMovieAxis(value: string | number | null | undefined): numbe
 }
 
 /**
- * What to show in an empty size field: the canvas size when napari has told us, else a word.
- * The point is that the default is VISIBLE — a movie has always come out at the canvas size, and a
+ * What to show in an empty size field: the browser viewer's current canvas size when we have one,
+ * else a word. The point is that the default is VISIBLE — a movie records at the canvas size, and a
  * blank field that says nothing makes that look like "no size at all".
  */
 export function movieAxisPlaceholder(canvasAxis: number | null | undefined): string {

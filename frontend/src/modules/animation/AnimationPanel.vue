@@ -16,13 +16,16 @@ import { useAnimationStore, type AnimSnapshot } from '../../stores/animation'
 import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
-import { buildTitleCard, unionViewSnapshot, applyViewState, type TitleCardPayload } from '../../utils/napariOverlays'
+import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../../utils/titleCard'
 import { framesFor, activeAnimationUid } from '../../utils/animationTimeline'
 import { movieSizeParams } from '../../utils/movieSize'
+import { seedConfigFromViewState, type ViewStateLike } from '../../utils/batchMovie'
+import { useViewerStore } from '../../stores/viewer'
+import type { ViewerViewState } from '../../utils/viewer/viewState'
+import { openViewerWindow } from '../../utils/viewerWindow'
 import { keyframeRestore, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
-import { useNapariStatus } from '../../composables/useNapariStatus'
-import { useNapariOpen } from '../../composables/useNapariOpen'
+import { useViewerMovieDefaults } from '../../composables/useViewerMovieDefaults'
 import { usePaneExpand } from '../../composables/usePaneExpand'
 import CcToggle from '../../components/CcToggle.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
@@ -46,47 +49,82 @@ const anim = useAnimationStore()
 const tasks = useTaskStore()
 const ws = useWsStore()
 const log = useLogStore()
-// the canvas size napari would record at, for the size fields' placeholder (shared poll)
-const { canvasSizeX, canvasSizeY } = useNapariStatus()
-const { openInNapari } = useNapariOpen()
+// The browser viewer's canvas size, used as the size fields' placeholder (see
+// useViewerMovieDefaults). The viewer publishes canvas dims on every pan/zoom/resize; when no viewer
+// is open the placeholder is blank and the user types explicit sizes.
+const { canvasSizeX, canvasSizeY } = useViewerMovieDefaults()
+const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
-// The image this page is working on: the table's selection, falling back to whatever napari has open.
-const activeUid = computed(() => activeAnimationUid(props.selectedUids, project.napariImageUid))
+// The image this page is working on: the table's selection, falling back to whatever the browser
+// viewer has open (routed through `openImage` so a viewer-driven capture works when no image is
+// picked in the table).
+const openViewerUid = computed(() => viewer.openImage?.imageUid ?? '')
+const activeUid = computed(() => activeAnimationUid(props.selectedUids, openViewerUid.value))
 const activeImage = computed(() => (activeUid.value ? project.imageByUid(activeUid.value) : null))
 const imageName = (uid: string) => project.imageByUid(uid)?.name ?? uid
 const frames = computed(() => framesFor(anim.snapshots, activeUid.value))
 const selected = computed(() => frames.value.find(f => f.id === anim.selectedId) ?? null)
 
-// Capture screenshots the LIVE viewer, so the page's image has to be the one napari is showing. The
-// table's eye opens it; this button is the same call, within reach of the controls that need it.
-const isOpen = computed(() => !!activeUid.value && activeUid.value === project.napariImageUid)
+// Capture reads the LIVE viewer — the browser volume viewer publishes its state into
+// `viewerStore.viewState` on every pan/zoom/z/t/channel change, so this reflects what the user is
+// looking at. `isOpen` becomes: the browser viewer has THIS image on screen.
+const isOpen = computed(() => !!activeUid.value && viewer.openImage?.imageUid === activeUid.value)
 const opening = ref(false)
-async function openActive() {
-  const setUid = props.setUid ?? (activeUid.value ? project.setUidOfImage(activeUid.value) : null)
-  if (!activeUid.value || !setUid || opening.value) return
+function openActive() {
+  if (!activeUid.value || opening.value) return
   opening.value = true
-  try { await openInNapari(activeUid.value, setUid) } finally { opening.value = false }
+  // Popout is synchronous once its URL is built; the flag exists so the button spinner has a
+  // frame to render before the popup opens. The pop-out only needs project + image now — the
+  // set and display name moved into `/api/viewer/meta` (2026-08-28, feat/kiln-brick-viewer).
+  try {
+    openViewerWindow({ projectUid: projectUid.value, imageUid: activeUid.value })
+  } finally { opening.value = false }
 }
 
 const capturing = ref(false)
 const updating = ref(false)
 const rendering = ref(false)
 
-/** One screenshot of the live viewer → the sidecar PNG id + the view state behind it. */
-async function screenshot(what: string) {
-  const res = await fetch('/api/napari/screenshot', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid: projectUid.value }),
-  })
-  if (!res.ok) {
-    log.error(`${what} failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'napari' })
+/** Capture the current browser-viewer state → { assetId, viewState, imageUid }. Reads viewState
+ *  from the store (the popup viewer publishes it) and asks the API to render a still through the
+ *  same code path the movie renderer uses — see `POST /api/viewer/thumbnail`. Returns null on any
+ *  failure (an error is logged; the caller aborts). */
+async function screenshot(what: string): Promise<{ assetId?: string; viewState?: Record<string, unknown>; imageUid?: string } | null> {
+  const vs = viewer.viewState
+  const uid = activeUid.value
+  if (!vs || !uid || !projectUid.value) {
+    log.error(`${what} failed: no viewer state to read — open the image in the viewer first`, { source: 'movies' })
     return null
   }
-  return (await res.json()) as { assetId?: string; viewState?: Record<string, unknown>; imageUid?: string }
+  try {
+    const res = await fetch('/api/viewer/thumbnail', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid: projectUid.value, imageUid: uid,
+        valueName: activeImage.value?.activeValueName, viewState: vs,
+      }),
+    })
+    if (!res.ok) {
+      log.error(`${what} failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'movies' })
+      return null
+    }
+    const j = (await res.json()) as { assetId?: string; imageUid?: string }
+    // Freeze a deep clone of the viewer state HERE so a subsequent viewer edit doesn't mutate the
+    // captured keyframe (the store's ref is the live view — a Pinia reactive proxy that isn't
+    // safe to hand out by reference). Use a JSON round-trip rather than `structuredClone`: the
+    // proxy carries a getter chain that structuredClone rejects with "could not be cloned" (a
+    // real error reported on the browser volume viewer), and every field in `ViewerViewState` is
+    // JSON-safe by construction, so the round-trip is lossless.
+    const snapshot: Record<string, unknown> = JSON.parse(JSON.stringify(vs)) as Record<string, unknown>
+    return { assetId: j.assetId, imageUid: j.imageUid ?? uid, viewState: snapshot }
+  } catch (e) {
+    log.error(`${what} failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+    return null
+  }
 }
 
-// capture the CURRENT napari view as a new keyframe (a base "look")
+// capture the CURRENT viewer view as a new keyframe (a base "look")
 async function capture() {
   if (!isOpen.value || !projectUid.value || capturing.value) return
   capturing.value = true
@@ -98,7 +136,7 @@ async function capture() {
                original: JSON.parse(JSON.stringify(j.viewState ?? {})),   // reset target
                imageUid: uid, imageName: imageName(uid), duration: 1 })
   } catch (e) {
-    log.error(`Capture failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Capture failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { capturing.value = false }
 }
 
@@ -115,8 +153,8 @@ function addKeyframe() {
   })
 }
 
-// Update the selected keyframe FROM the current napari view — re-screenshot and replace its snapshot +
-// thumbnail (and reset its baseline). This is how you "change" a snapshot: sync it, tweak in napari, save.
+// Update the selected keyframe FROM the current viewer view — re-screenshot and replace its snapshot +
+// thumbnail (and reset its baseline). This is how you "change" a snapshot: sync it, tweak in the viewer, save.
 async function updateSelected() {
   const sel = selected.value
   if (!sel || !isOpen.value || !projectUid.value || updating.value) return
@@ -135,14 +173,18 @@ async function updateSelected() {
       }).catch(() => {})
     }
   } catch (e) {
-    log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { updating.value = false }
 }
 
-// toggling Sync on immediately mirrors the selected keyframe into napari
+// toggling Sync on immediately mirrors the selected keyframe into the browser viewer via the store's
+// pending-viewState bridge — ViewerWindow consumes `pendingViewState` and re-applies with
+// `applyViewStateToBrowser`.
 function onToggleSync(on: boolean) {
   settings.animationSyncNapari = on
-  if (on && selected.value?.snapshot) applyViewState(selected.value.snapshot)
+  if (on && selected.value?.snapshot) {
+    viewer.setPendingViewState(selected.value.snapshot as unknown as ViewerViewState)
+  }
 }
 
 const canRender = computed(() => !!activeUid.value && frames.value.length >= 2 && !rendering.value)
@@ -150,7 +192,7 @@ async function render() {
   if (!canRender.value) return
   const uid = activeUid.value
   rendering.value = true
-  log.info('Rendering animation… (this can take a moment)', { source: 'napari' })
+  log.info('Rendering animation… (this can take a moment)', { source: 'movies' })
   try {
     const keyframes = frames.value.map(f => ({
       viewState: f.snapshot,
@@ -163,19 +205,33 @@ async function render() {
     const keyframeMeta = frames.value.map(f => ({
       assetId: f.assetId, title: f.title, duration: f.duration ?? 1,
     }))
-    // Title card (Phase H4): describe everything shown "at some point" across the animation — build from
-    // a UNION of all keyframes' views (channels + overlays merged), via the SHARED buildTitleCard. It
-    // includes the Channels section itself (from the union), since the recorder can't reconstruct the
-    // union from one live view.
+    // The union of every keyframe's viewState — a layer is "shown" if visible in any keyframe. Same
+    // union the title card reads, so the recorder gets ONE consistent picture of "what this animation
+    // shows across its life". Fed into `seedConfigFromViewState` to derive the `look` (channels +
+    // showTracks/showPopulations/popType), so the offline renderer's overlay author sees the same
+    // populations/tracks/colours the live viewer is currently drawing.
+    const setUid   = project.setUidOfImage(uid) ?? ''
+    const colourBy = setUid ? settings.getColourBy(setUid) : ''
+    const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
+    const union = unionViewSnapshot(frames.value.map(f => f.snapshot as ViewStateLike | undefined))
+
     let titleCard: TitleCardPayload | undefined
     if (anim.titleCard.enabled && frames.value.length) {
-      const setUid   = project.setUidOfImage(uid) ?? ''
-      const colourBy = setUid ? settings.getColourBy(setUid) : ''
-      const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
-      const union = unionViewSnapshot(frames.value.map(f => f.snapshot as { layers?: Record<string, unknown> } | undefined))
       titleCard = await buildTitleCard(projectUid.value, uid, union, activeImage.value,
         { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides, includeChannels: true })
     }
+
+    // The look — same shape ViewerPanel emits for single-record. `seedConfigFromViewState` reads the
+    // union's `layers` bag (channel colormaps + which overlays are present); colour-by rides along
+    // from per-set settings because it isn't in the snapshot. The overlay author's `valueName` needs
+    // the active segmentation — animations run against one segmentation at a time.
+    const look = {
+      ...seedConfigFromViewState(union as ViewStateLike, activeImage.value?.channelNames ?? []),
+      ...(colourBy ? { colourBy } : {}),
+      ...(Object.keys(overrides).length ? { colourOverrides: overrides } : {}),
+      valueName: activeImage.value?.activeValueName ?? '',
+    }
+
     // Over the task rail (`movie:record` with keyframes), like the viewer's Record and the batch: the
     // render shows up in the task list with a progress bar and a Cancel instead of blocking here.
     const t = tasks.add({
@@ -186,11 +242,11 @@ async function render() {
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: uid,
       keyframes, keyframeMeta, fps: anim.fps, suffix: anim.suffix, titleCard,
-      apiUrl: window.location.origin,
+      apiUrl: window.location.origin, look,
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {
-    log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { rendering.value = false }
 }
 
@@ -299,15 +355,15 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
           <span class="ap-name" :title="activeImage?.name">{{ activeImage?.name ?? activeUid }}</span>
           <button v-if="!isOpen" class="cc-btn cc-btn-ghost cc-btn-micro" data-guide="animation.open"
                   :disabled="opening" @click="openActive"
-                  v-tooltip.left="'Open this image in napari'">
+                  v-tooltip.left="'Open this image in the viewer'">
             <i :class="['pi', opening ? 'pi-spin pi-spinner' : 'pi-eye']" /> Open
           </button>
         </div>
         <div class="ap-btns">
           <button class="cc-btn cc-btn-ghost" data-guide="animation.capture"
                   :disabled="capturing || !isOpen" @click="capture"
-                  v-tooltip.left="isOpen ? 'Capture the current napari view as a keyframe (a base look)'
-                                         : 'Open this image in napari first'">
+                  v-tooltip.left="isOpen ? 'Capture the current viewer view as a keyframe (a base look)'
+                                         : 'Open this image in the viewer first'">
             <i :class="['pi', capturing ? 'pi-spin pi-spinner' : 'pi-camera']" /> Capture view
           </button>
           <button class="cc-btn cc-btn-ghost" data-guide="animation.addKeyframe"
@@ -316,13 +372,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
             <i class="pi pi-plus" /> Add keyframe
           </button>
           <button class="cc-btn cc-btn-ghost" :disabled="!selected || updating || !isOpen" @click="updateSelected"
-                  v-tooltip.left="'Replace the selected keyframe with the current napari view (re-capture)'">
+                  v-tooltip.left="'Replace the selected keyframe with the current viewer view (re-capture)'">
             <i :class="['pi', updating ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Update selected
           </button>
         </div>
-        <CcToggle class="ap-sync" label="Sync napari"
+        <CcToggle class="ap-sync" label="Sync viewer"
                   :model-value="settings.animationSyncNapari" @update:model-value="onToggleSync($event)"
-                  v-tooltip.bottom="'Show the selected keyframe in napari when you click it'" />
+                  v-tooltip.bottom="'Show the selected keyframe in the viewer when you click it'" />
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the batch page -->

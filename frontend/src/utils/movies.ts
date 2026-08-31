@@ -141,7 +141,7 @@ export function movieChannelCells(imageChannels: string[], movieChannels: string
   return cells
 }
 
-// Channel names are matched leniently (trimmed, case-insensitive): the recorder banks what the napari
+// Channel names are matched leniently (trimmed, case-insensitive): the recorder banks what the viewer
 // layer was called, and that has been through a round trip the image's own list has not.
 const _chKey = (s: string): string => s.trim().toLowerCase()
 const _unmatchedChannels = (imageChannels: string[], movieChannels: string[]): string[] =>

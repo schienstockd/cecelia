@@ -1,8 +1,8 @@
 <!--
   The animation timeline — a row/track matrix over one image's keyframes. Columns = keyframes (the
-  captured napari view + its duration); rows = channels / populations / camera, all INFERRED from each
-  keyframe's viewState rather than configured (utils/animationTimeline.ts). A cell toggle overrides
-  that keyframe's layer.visible; the render interpolates between the columns.
+  captured viewer view + its duration); rows = channels / populations / camera, all INFERRED from
+  each keyframe's viewState rather than configured (utils/animationTimeline.ts). A cell toggle
+  overrides that keyframe's layer.visible; the render interpolates between the columns.
 
   Lives in ModuleLayout's #plots slot, the same consistent collapsible canvas every module page hosts
   its plots in — the controls that ACT on this (capture, render, output) are in the side panel next to
@@ -14,7 +14,8 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import { useAnimationStore, type AnimSnapshot } from '../../stores/animation'
-import { applyViewState } from '../../utils/napariOverlays'
+import { useViewerStore } from '../../stores/viewer'
+import type { ViewerViewState } from '../../utils/viewer/viewState'
 import { napariColormapHex } from '../../utils/napariColormap'
 import { framesFor, layersOf, channelRows, popRows, cellState, cellToggle, cameraZoom, isEdited,
          keyframeTime, type Layers } from '../../utils/animationTimeline'
@@ -27,6 +28,7 @@ const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
 const settings = useSettingsStore()
 const anim = useAnimationStore()
+const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const image = computed(() => (props.imageUid ? project.imageByUid(props.imageUid) : null))
@@ -39,12 +41,15 @@ const assetUrl = (s: AnimSnapshot) =>
 const frameTime = (s: AnimSnapshot) =>
   keyframeTime(s, image.value?.timeIncrement, image.value?.timeIncrementUnit)
 
-// select a keyframe; with Sync on, push its saved view into napari so you SEE that snapshot (and can
-// then tweak it there and Update). `applyViewState` is the shared builder — it swallows a network
-// error, so a napari that isn't running is a no-op, not a failure.
+// select a keyframe; with Sync on, push its saved view into the browser viewer so you SEE that
+// snapshot (and can then tweak it there and Update). Writes to the store's `pendingViewState`
+// bridge — ViewerWindow watches, applies through `applyViewStateToBrowser`. A closed viewer is a
+// no-op by construction (nothing consumes the pending), not a failure.
 function selectKeyframe(s: AnimSnapshot) {
   anim.selectedId = s.id
-  if (settings.animationSyncNapari && s.snapshot) applyViewState(s.snapshot)
+  if (settings.animationSyncNapari && s.snapshot) {
+    viewer.setPendingViewState(s.snapshot as unknown as ViewerViewState)
+  }
 }
 
 // ── drag-to-reorder ───────────────────────────────────────────────────────────
@@ -79,9 +84,9 @@ function toggleCell(s: AnimSnapshot, name: string) {
 }
 
 // ── the row-label column ──────────────────────────────────────────────────────
-// Drag-resizable and persisted, the same primitive the image and movie tables use. An overlay's napari
-// name is long by construction — "(track) (memTom) Tracks /…" — and a fixed label column ellipsised
-// exactly the part that says WHICH one (Dominik, 2026-08-10).
+// Drag-resizable and persisted, the same primitive the image and movie tables use. An overlay's
+// layer name is long by construction — "(track) (memTom) Tracks /…" — and a fixed label column
+// ellipsised exactly the part that says WHICH one (Dominik, 2026-08-10).
 const LABEL_KEY = 'label'
 const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   defaultWidth: () => 190, min: 90, storageKey: 'cc.anim.labelw',
@@ -106,8 +111,8 @@ async function deleteKeyframe(s: AnimSnapshot) {
 
 <template>
   <p v-if="!imageUid" class="cc-empty">Select an image to see its timeline.</p>
-  <p v-else-if="!frames.length" class="cc-empty">No keyframes yet — set up the view in napari and
-    <strong>Capture view</strong>.</p>
+  <p v-else-if="!frames.length" class="cc-empty">No keyframes yet — set up the view in the viewer
+    and <strong>Capture view</strong>.</p>
 
   <div v-else class="anim-timeline" data-guide="animation.timeline">
     <table class="tl" :style="{ '--tl-label-w': widthOf(LABEL_KEY) }">

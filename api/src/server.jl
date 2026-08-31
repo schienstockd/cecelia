@@ -35,6 +35,7 @@ include("overlay_author.jl") # resolves populations/tracks into the primitives' 
 include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
+include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
@@ -331,6 +332,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),
+    "/api/viewer/thumbnail" => (req, body_bytes) -> (api_viewer_thumbnail(body_bytes)),
     "/api/napari/open" => (req, body_bytes) -> (api_napari_open(body_bytes)),
     "/api/napari/close" => (req, body_bytes) -> (api_napari_close(body_bytes)),
     "/api/napari/screenshot" => (req, body_bytes) -> (api_napari_screenshot(body_bytes)),

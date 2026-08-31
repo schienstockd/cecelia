@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Frame rate + output size for a rendered movie. ONE implementation for the three places that produce
-// one — the napari ViewerPanel recorder, BatchMoviesPanel and AnimationModule.
+// one — the ViewerPanel recorder, BatchMoviesPanel and AnimationModule.
 //
-// The size is two explicit pixel fields, not a multiplier. A 1-3x `res` slider used to live here and was
-// removed: napari-animation screenshots the canvas and then `ndi.zoom`s the frame, so it bought 4x the
-// pixels and no detail. A multiplier is also the wrong shape even done right — its base is the live
-// canvas, so the same "2x" gives a different movie on a laptop and a desktop, while a journal asks for
-// absolute dimensions. Blank = the napari canvas size (the default), shown as the placeholder so the
-// honest default is visible. See docs/NAPARI.md.
+// The size is two explicit pixel fields, not a multiplier. A 1-3x `res` slider used to live here and
+// was removed: an earlier recorder screenshotted the canvas and then upscaled the frame, so it bought
+// 4x the pixels and no detail. A multiplier is also the wrong shape even done right — its base is the
+// live canvas, so the same "2x" gives a different movie on a laptop and a desktop, while a journal
+// asks for absolute dimensions. Blank = the viewer's canvas size (the default), shown as the
+// placeholder so the honest default is visible.
 //
 // Named v-models rather than one config object, because the three sites store these differently: the
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
@@ -27,12 +27,12 @@ const props = withDefaults(defineProps<{
   // suffixes already used in this project, offered as you type (`useMovieSuffixes`). Optional: omit
   // it and the field is exactly the plain input it was.
   suffixOptions?: string[]
-  // what napari would record at right now (GET /api/napari/status), for the placeholder
+  // the browser viewer's canvas size (via useViewerMovieDefaults), used as the placeholder
   canvasX?: number | null
   canvasY?: number | null
-  // napari's BAKED overlays — drawn into the canvas, so they are burnt into every frame and can only
-  // be left out by hiding them for the render. Optional: pass them and the chips appear, omit them
-  // (the Animation page) and the row is exactly what it was.
+  // BAKED overlays — drawn into the canvas, so they are burnt into every frame and can only be left
+  // out by hiding them for the render. Optional: pass them and the chips appear, omit them (the
+  // Animation page) and the row is exactly what it was.
   //
   // `boolean | null`, and NOT a bare `boolean`, because absence is the whole signal here. Vue casts an
   // optional Boolean prop with no default to `false` when the parent omits it, so `!== undefined` was
@@ -148,7 +148,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
     </span>
 
     <!-- How much of the z stack the movie shows. ONE switch for both the image and the mask layers:
-         napari cannot project a Labels layer at all, so "the whole stack" for a mask can only mean the
+         a Labels layer can't be projected, so "the whole stack" for a mask can only mean the
          volumetric render. Hidden entirely for an image with no z depth. -->
     <span v-if="(sizeZ ?? 0) > 1" class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">z</span>
@@ -164,7 +164,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
       </template>
     </span>
 
-    <!-- How much detail the 3D render uses. napari's own choice in 3D is the COARSEST pyramid level,
+    <!-- How much detail the 3D render uses. The renderer's default in 3D is a coarse pyramid level,
          which erases a segmentation; full resolution costs memory on a big volume. Only the person
          looking at the image can weigh that, so it is a control. -->
     <span v-if="hasDetail" class="cc-row-group">
@@ -180,7 +180,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Drawn into the recorded frames'">show</span>
       <ChipSelect multiple :options="OVERLAY_OPTIONS" v-model="overlays"
                   aria-label="Overlays burnt into the movie"
-                  v-tooltip.bottom="'Napari overlays burnt into every frame'" />
+                  v-tooltip.bottom="'Overlays burnt into every frame'" />
     </span>
   </div>
 </template>
