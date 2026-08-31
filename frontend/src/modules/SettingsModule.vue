@@ -298,7 +298,7 @@ interface Diag {
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean; dev: boolean
-  napariPort: number; previewPort: number; notebooksPort: number; runnerPort: number
+  previewPort: number; notebooksPort: number; runnerPort: number
 }
 const diag = ref<Diag | null>(null)
 const diagBusy = ref(false)

@@ -482,11 +482,6 @@ function python_bin_path()::String
     isempty(conf) ? "python3" : conf
 end
 
-# Default for launching the napari bridge on the discrete GPU (hybrid-graphics machines). Reads
-# `[napari].discreteGpu`; the api layer holds the runtime toggle (Settings) and seeds it from this.
-napari_discrete_gpu()::Bool =
-    Bool(get(get(cecelia_conf(), "napari", Dict{String,Any}()), "discreteGpu", false))
-
 tasks_concurrent_limit()::Int =
     Int(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "concurrentLimit", 4))
 

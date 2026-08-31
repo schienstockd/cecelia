@@ -13,7 +13,6 @@
     @test !isempty(projects_dir())
     @test !isempty(python_bin_path())
     @test tasks_concurrent_limit() >= 1
-    @test napari_discrete_gpu() isa Bool   # [napari].discreteGpu, default false
 end
 
 # ── Fixture size ratchet ─────────────────────────────────────────────────────
@@ -843,12 +842,9 @@ end
     # never wider than the machine, however many tasks are assumed concurrent
     @test Cecelia.default_task_worker_threads() <= max(Sys.CPU_THREADS, 1)
 
-    # The preview worker runs the tasks' OWN compute, so it inherits the same budget. Napari
-    # deliberately does not — un-pooled interactive viewer, not BLAS-bound, unmeasured.
+    # The preview worker runs the tasks' OWN compute, so it inherits the same budget.
     prev = read(joinpath(Cecelia._app_dir(), "src", "preview.jl"), String)
     @test occursin("OPENBLAS_NUM_THREADS", prev)
-    @test !occursin("OPENBLAS_NUM_THREADS",
-                    read(joinpath(Cecelia._app_dir(), "src", "napari.jl"), String))
 end
 
 @testset "widening a linear stage needs BOTH conditions" begin
@@ -915,40 +911,16 @@ end
     end
 end
 
-# ── Napari discrete-GPU launch env ──────────────────────────────────────────
-# The bridge command gains the offload env only when discrete_gpu is on (Linux). DRI_PRIME is
-# always applied (safe on single-GPU); the NVIDIA GLX vendor var only when NVIDIA is present.
-@testset "Napari discrete-GPU command" begin
-    plain = Cecelia._bridge_cmd(false)
-    gpu   = Cecelia._bridge_cmd(true)
-    for cmd in (plain, gpu)
-        @test cmd.env !== nothing
-        @test any(==("PYTHONPATH=$(Cecelia._python_dir())"), cmd.env)
-    end
-    if Sys.islinux()
-        @test any(==("DRI_PRIME=1"), gpu.env)             # always safe → always applied
-        # nvidia GLX vendor var is gated on detection (forcing it without NVIDIA breaks GL)
-        has_nvidia = any(startswith("__GLX_VENDOR_LIBRARY_NAME=nvidia"), gpu.env)
-        @test has_nvidia == Cecelia._nvidia_present()
-    else
-        @test !any(==("DRI_PRIME=1"), gpu.env)            # no GPU offload off Linux
-    end
-end
-
-# ── Resident Python processes resolve `cecelia` from THIS checkout ──────────
-# The bridge and the preview worker are launched by PATH but import `cecelia` by NAME, so without an
-# explicit PYTHONPATH they use whatever pip has installed — in dev an editable install pointing at the
-# MAIN checkout. A worktree then runs its own `napari_bridge.py`/`preview_worker.py` against another
-# checkout's library, and the halves drift with no error until one calls something the other lacks
-# (observed: `module 'cecelia.utils.correction_utils' has no attribute 'af_derived_values'`, raised by a
-# worker whose own file did have the caller). `run_py` always set PYTHONPATH; these two did not.
-@testset "resident python processes pin PYTHONPATH" begin
+# ── Resident preview worker resolves `cecelia` from THIS checkout ───────────
+# The worker is launched by PATH but imports `cecelia` by NAME, so without an explicit PYTHONPATH
+# it uses whatever pip has installed — in dev an editable install pointing at the MAIN checkout.
+# A worktree would then run its own `preview_worker.py` against another checkout's library and the
+# halves drift with no error until one calls something the other lacks. `run_py` always set
+# PYTHONPATH; the resident preview worker's `launch!` does too. (The napari bridge used to be
+# subject to the same rule; retired in P9.)
+@testset "resident preview worker pins PYTHONPATH" begin
     pyroot = Cecelia._python_dir()
     @test isdir(joinpath(pyroot, "cecelia"))              # the dir we are pinning really is the package
-
-    for cmd in (Cecelia._bridge_cmd(false), Cecelia._bridge_cmd(true))
-        @test any(==("PYTHONPATH=$pyroot"), cmd.env)
-    end
 
     # the worker's launch is inside `launch!` (which spawns), so assert on the source rather than run it
     src = read(joinpath(dirname(pathof(Cecelia)), "preview.jl"), String)
@@ -1071,11 +1043,11 @@ end
 
 @testset "long-lived children are spawned onto the log rail, never swallowed" begin
     # `run(cmd; wait = false)` sends BOTH streams to devnull (spawn_opts_swallow), which is how the
-    # napari bridge's ~20 prints and the preview worker's traceback.print_exc() reached nothing at all
-    # — not the console, not the terminal. This is a convention test: the three spawn sites must use
-    # `spawn_logged`, because the failure it prevents is invisible by construction.
+    # preview worker's traceback.print_exc() reached nothing at all — not the console, not the
+    # terminal. This is a convention test: the two remaining spawn sites must use `spawn_logged`,
+    # because the failure it prevents is invisible by construction.
     src = dirname(pathof(Cecelia))
-    for (file, what) in (("napari.jl", "napari bridge"), ("preview.jl", "preview worker"))
+    for (file, what) in (("preview.jl", "preview worker"),)
         body = read(joinpath(src, file), String)
         @test occursin("spawn_logged(", body)
         @test !occursin(r"\.proc = run\(", body)          # the swallowing shape, gone
@@ -13746,8 +13718,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     end
 
     @testset "the preview worker gets its own port" begin
-        # a second resident process must not collide with the napari bridge (7655) or Pluto (7660)
-        @test Cecelia.PREVIEW_PORT != Cecelia.NAPARI_PORT
+        # must not collide with Pluto (7660), the historic napari bridge port (7655), the API
+        # server (8080) or the frontend dev server (5173).
         @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
         # not alive until launched — `preview_alive` must never report true for a null process
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
@@ -13797,7 +13769,6 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         boundaries = [
             # (what,            python file,                          python const,       julia value)
             ("preview worker",  "preview/preview_worker.py",           "PROTOCOL",         Cecelia.PREVIEW_PROTOCOL),
-            ("napari bridge",   "napari/napari_bridge.py",             "PROTOCOL",         Cecelia.NAPARI_PROTOCOL),
             ("params contract", "python/cecelia/utils/script_utils.py", "CONTRACT_VERSION", Cecelia.PY_CONTRACT_VERSION),
         ]
         for (what, rel, const_name, julia_value) in boundaries
@@ -13822,8 +13793,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # every image except the small one it was built against. Nothing named the cap.
         repo = joinpath(dirname(dirname(pathof(Cecelia))), "..")
         mib = Cecelia.WS_MAX_FRAME_SIZE ÷ (1024 * 1024)
-        for (what, rel) in (("napari bridge", "napari/napari_bridge.py"),
-                            ("preview worker", "preview/preview_worker.py"))
+        for (what, rel) in (("preview worker", "preview/preview_worker.py"),)
             path = joinpath(repo, rel)
             @test isfile(path)
             src = read(path, String)
@@ -13837,9 +13807,9 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # and it must actually reach the server, not merely be defined
             @test occursin("max_size=WS_MAX_SIZE", src)
         end
-        # Julia is a CLIENT on both legs, so the cap is a keyword on the open — the default is what was
-        # wrong, so an unqualified `WebSockets.open` here is the bug returning.
-        for rel in ("napari.jl", "preview.jl")
+        # Julia is a CLIENT on this leg, so the cap is a keyword on the open — the default is what
+        # was wrong, so an unqualified `WebSockets.open` here is the bug returning.
+        for rel in ("preview.jl",)
             src = read(joinpath(dirname(pathof(Cecelia)), rel), String)
             @test occursin("maxframesize = WS_MAX_FRAME_SIZE", src)
         end

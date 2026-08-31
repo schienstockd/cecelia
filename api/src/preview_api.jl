@@ -1,16 +1,14 @@
 # ── Task preview — the API layer ───────────────────────────────────────────────
 #
-# Routes for the resident preview worker (`preview/preview_worker.py`, :7656). Deliberately shaped
-# like `napari_api.jl`'s viewer lifecycle — one adopted-or-launched process behind a reentrant lock,
-# an async launch with a `starting` flag, a status route — because "a resident Python process we talk
-# to over WS" already has one way to be done here.
+# Routes for the resident preview worker (`preview/preview_worker.py`, :7656). "A resident Python
+# process we talk to over WS" is shaped with one adopted-or-launched process behind a reentrant
+# lock, an async launch with a `starting` flag, and a status route — the same shape the napari
+# bridge used before it was retired.
 #
 # The one rule this file exists to enforce: **a preview never guesses which image it is looking at.**
 # The browser viewer sends its open image (`zarrPath`, `taskDir`, `imageUid`) and its visible region
 # in the POST body, and the API checks that against the store the task would read. A mismatch is a
 # 409 with the version to open, never a silent switch. See docs/todo/WEB_VIEWER_PLAN.md → P7.
-# `current_napari_image()` remains a transitional fallback while other callers still route through
-# napari; a body-first client is authoritative.
 
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
 const _preview_starting = Ref(false)
@@ -73,9 +71,9 @@ Launch the worker if it isn't up. Returns true when it is ready NOW, false when 
 flight — the caller reports `starting` rather than blocking, because the worker pays 17.7 s of torch
 and cellpose imports before it can answer (that cost is the whole reason it is resident).
 
-Adopts a worker already listening on the port, like `_ensure_viewer!` — one that survived a backend
-restart is still perfectly good, and a second process on the port would just fail to bind. It is adopted
-only when its `PREVIEW_PROTOCOL` matches: a worker running older code pings fine and then fails the real
+Adopts a worker already listening on the port — one that survived a backend restart is still
+perfectly good, and a second process on the port would just fail to bind. It is adopted only when
+its `PREVIEW_PROTOCOL` matches: a worker running older code pings fine and then fails the real
 request, so a mismatch is STOPPED and replaced rather than trusted.
 """
 function _ensure_preview!()::Bool
@@ -96,8 +94,7 @@ function _ensure_preview!()::Bool
                 # Kill by PORT, not `close!(probe)` — the probe was only ever pinged, so its `proc` is
                 # nothing and `close!` is a silent no-op. The stale worker then keeps the port, the
                 # replacement cannot bind, and its readiness ping is answered by the very process we
-                # meant to remove: a relaunch loop that serves the old code. Same reason and same
-                # helper as the napari bridge in `_ensure_viewer!`.
+                # meant to remove: a relaunch loop that serves the old code.
                 Cecelia._kill_listeners_on_port(PREVIEW_PORT)
                 # …and WAIT for it to let go. The kill is asynchronous, so launching straight away races
                 # the old process's exit: the replacement loses the bind and dies, which `launch!` reports
@@ -130,16 +127,17 @@ end
 # The route that answers "what is the viewer looking at?" — previously knowable only by guessing.
 # Also reports the worker's state so the toggle can show starting/ready without a second call.
 function api_preview_status(req::HTTP.Request)
-    open_image = current_napari_image()
+    # Server-side "open image" fields were populated by the napari bridge until P9; the browser
+    # viewer is authoritative for what's on screen now (client posts `zarrPath`/`taskDir`/
+    # `imageUid` on `/api/preview/run`), so this route reports the worker's state only. Kept as
+    # null fields so any client relying on the shape still parses.
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
         starting = _preview_starting[],
         port     = PREVIEW_PORT,
-        # what the VIEWER has open. null everywhere until an image is opened — a client seeing nulls
-        # must prompt the user to open an image, never fall back to a guess.
-        imageUid = open_image.imageUid,
-        zarrPath = open_image.zarrPath,
-        taskDir  = open_image.taskDir,
+        imageUid = nothing,
+        zarrPath = nothing,
+        taskDir  = nothing,
     ))
 end
 
@@ -180,10 +178,9 @@ end
 # real compute over the visible region THE BROWSER VIEWER REPORTED IN THE BODY and writes the mask
 # to a scratch labels store the browser fetches via `/api/viewer/slab?labels=<vn>&preview=1`.
 #
-# `region` (level-0 pixel bounds) and the open-image fields come from the browser viewer directly —
-# a POST detour through `current_napari_image()` (and the corresponding napari-bridge `preview_region`
-# call) belonged to the era where napari owned "the view", and is now transitional: the fallback
-# stays only so that existing tests keep working while the browser viewer settles in.
+# `region` (level-0 pixel bounds) and the open-image fields come from the browser viewer directly.
+# The old napari-bridge detour is gone: the client posts what it's looking at, the server checks it
+# against the store the task would read.
 #
 # `imageUid`/`valueName` are still CHECKED (against the store version the task would read), not used
 # to pick one. A version-mismatch is a 409, because the alternatives are both silently wrong: acting

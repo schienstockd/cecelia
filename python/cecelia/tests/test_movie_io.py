@@ -300,12 +300,5 @@ class TestStitchMovies(unittest.TestCase):
             with self.assertRaises(ValueError):
                 movie_io.stitch_movies([a], out, fps=10, labels=['one', 'too many'])
 
-    def test_the_cancel_exception_is_the_recorders_own(self):
-        # the bridge catches napari_utils.RecordCancelled; a stitch cancel must be that same class,
-        # not a lookalike, or it would escape as an unhandled error
-        from cecelia.utils import napari_utils
-        self.assertIs(napari_utils.RecordCancelled, movie_io.RecordCancelled)
-
-
 if __name__ == '__main__':
     unittest.main()
