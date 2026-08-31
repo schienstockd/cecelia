@@ -28,6 +28,9 @@ export interface OpenImage {
   zarrPath: string
   /** the image's meta dir on disk (`project/0/<uid>/`). Body-carried too. */
   taskDir: string
+  /** how many multiscale levels the OPEN IMAGE has — the range the 3D detail control offers on
+   *  movie surfaces. 0 or 1 = no choice to make, so the control hides. */
+  nLevels?: number
 }
 
 const K_OPEN_IMAGE       = 'cc.viewer.openImage'

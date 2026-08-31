@@ -112,9 +112,9 @@ there — **pass `specs`**, or every frame gets its own percentile contrast and 
 frames, so it costs at most one frame; a cancelled run writes nothing to `out_path` and leaves no temp
 behind, which is the same guarantee `movie_writer` makes on its side.
 
-`title_card` is the same dict shape `_title_card_content` in `napari_api.jl` produces (`title`, `note`,
-`sections`, `durationSec`) — passed through to the encoder runner and prepended to the mp4 by the
-shared `title_card.prepend_title_to_movie` helper. `nothing` = no card.
+`title_card` is a dict of the shape the frontend produces (`title`, `note`, `sections`,
+`durationSec`) — passed through to the encoder runner and prepended to the mp4 by the shared
+`title_card.prepend_title_to_movie` helper. `nothing` = no card.
 
 `overlays_for(t::Int) -> (points, segments)` is called per frame to paint P3 content onto the CPU
 frame. Return `(nothing, nothing)` for a frame with no overlays. `points`/`segments` are the
@@ -257,10 +257,9 @@ end
 
 # ── Keyframe animation ────────────────────────────────────────────────────────────
 #
-# napari-animation does this today (`napari_utils.record_keyframes`), and it is the one part of that
-# dependency worth keeping: a keyframe is a saved VIEW STATE plus a number of steps to reach it from
-# the one before, and the movie tweens between them. The offline renderer has to answer the same contract,
-# because the animation page already speaks it and every saved animation config is a list of these.
+# A keyframe is a saved VIEW STATE plus a number of steps to reach it from the one before, and the
+# movie tweens between them. The offline renderer answers the same contract the animation page and
+# every saved animation config already speak.
 
 """
     interpolate_keyframes(keyframes) -> Vector{Dict{String,Any}}
@@ -268,8 +267,7 @@ end
 One view state per frame, tweened between the keyframes. `keyframes` is the animation page's own
 shape: `[(; viewState, steps), …]` or the equivalent `Dict`s, where `steps` is how many frames it takes
 to reach THAT keyframe from the previous one. The first keyframe's `steps` is ignored — it starts the
-sequence rather than arriving from anywhere — which is napari-animation's rule and therefore what every
-saved config already means.
+sequence rather than arriving from anywhere — which is the rule every saved animation config assumes.
 
 **Numbers tween, everything else steps.** A contrast limit, a zoom, a slider position and a camera
 angle all have a meaningful half-way point; a colormap NAME and a visibility flag do not, and inventing
@@ -331,18 +329,18 @@ _kf_lerp(a, b, f) = f >= 1 ? b : a          # strings, symbols, anything with no
 
 # ── View state → `render_view_frame` args ──────────────────────────────────────
 #
-# One viewState (a napari `capture_view_state` snapshot, or one frame of `interpolate_keyframes`) →
-# the args `render_view_frame` needs. Pure and tested: the animation renderer calls this per frame.
+# One viewState snapshot (a captured view state, or one frame of `interpolate_keyframes`) → the args
+# `render_view_frame` needs. Pure and tested: the animation renderer calls this per frame.
 #
-# Where things come from (mirrors `napari_utils.apply_view_state`):
-#   * `dims.current_step[0]` → `t`; `dims.current_step[1]` → `z` (napari's default axis order).
+# Where things come from:
+#   * `dims.current_step[0]` → `t`; `dims.current_step[1]` → `z` (T, Z axis order).
 #   * `layers` (dict keyed by channel name) → per-channel visibility + contrast_limits + colormap →
 #     an offline `specs` vector in native channel order (channels absent from the snapshot fall back
 #     to `default_specs`, so a snapshot that predates a channel — or drops one — degrades gracefully
 #     rather than mis-mapping colours).
 #   * `camera.center` + `camera.zoom` + the target canvas size → a `crop` in native pixels. Camera
-#     centre is `(z_center, y_center, x_center)` (napari 3D) or `(y_center, x_center)` (2D); we read
-#     the last two dims. The visible rect in world coords is `canvas_size / (2 * zoom)` half-widths.
+#     centre is `(z_center, y_center, x_center)` (3D) or `(y_center, x_center)` (2D); we read the
+#     last two dims. The visible rect in world coords is `canvas_size / (2 * zoom)` half-widths.
 #
 # `default_specs` is what to fall back to when a channel has no entry in the snapshot (typically the
 # resolved viewer props for the frame's zarr) — it keeps a keyframe animation that only touched the
@@ -412,8 +410,8 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
             az = length(a_raw) >= 3 && a_raw[3] isa Real ? Float64(a_raw[3]) : 0.0
             angles = (ax, ay, az)
         end
-        # center = (cz, cy, cx) — napari 3D convention (docstring: "In 2D viewing the last two values
-        # are used"). Kept as a 3-tuple for the 3D path; the 2D crop path uses only cy, cx.
+        # center = (cz, cy, cx) — 3D convention ("In 2D viewing the last two values are used"). Kept
+        # as a 3-tuple for the 3D path; the 2D crop path uses only cy, cx.
         c_raw = get(camera, "center", nothing)
         if c_raw isa AbstractVector && length(c_raw) >= 2
             if length(c_raw) >= 3
@@ -674,7 +672,7 @@ of a fixed sweep.
      `angles`/`center`/`zoom`, `dims.ndisplay`, and per-layer `contrast_limits`/`visible`/`colormap`.
      Interpolated by `interpolate_keyframes` so a keyframe pair carries the animation.
   3. **Saved viewer_props** — arrives here as `default_specs` (from `_resolve_frame_for_record`,
-     the same JSON napari's viewer auto-saves). Fills any channel a snapshot doesn't restate — a
+     the same JSON the browser viewer auto-saves). Fills any channel a snapshot doesn't restate — a
      keyframe with only camera moves keeps the current colours instead of every channel going grey.
   4. **Per-set overlay settings** — arrives here as `overlays_config` (a Dict shaped by
      `_overlays_raw_from_config` on the request's `look`): `pointSizePx`, `segmentWidthPx`,
@@ -736,8 +734,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
 
     # Resolve every state's render args upfront: overlays need it for per-frame t indices, and it lets
     # us decide 2D vs 3D dispatch from ONE inspection of the interpolated states (a mid-animation
-    # transition between ndisplay=2 and ndisplay=3 is not a real case — napari authors either mode
-    # throughout — so 'any state is 3D' → route the whole animation to the GPU renderer).
+    # transition between ndisplay=2 and ndisplay=3 is not a real case — animations author either
+    # mode throughout — so 'any state is 3D' → route the whole animation to the GPU renderer).
     args_per_frame = [viewstate_to_render_args(st, channel_names, default_specs,
                                                  native_h, native_w;
                                                  canvas_h = canvas_h, canvas_w = canvas_w)

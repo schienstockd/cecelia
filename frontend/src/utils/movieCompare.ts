@@ -10,7 +10,7 @@
 // rows. Two of one and one of the other degenerates to a single row (a plain side-by-side comparison,
 // whichever list it came from); two of BOTH is the cross-product. There is no mode to choose: the two
 // selections fully determine the layout, which is `compareShape` below and `_compare_grid` in Julia
-// (api/src/napari_api.jl). The recording machinery under that is blind to what made two cells differ.
+// (api/src/movie_rail.jl). The recording machinery under that is blind to what made two cells differ.
 //
 // Everything here is derivation the components would otherwise inline: what the persisted selection
 // means against the items an image actually has, what the movie gets called, and how much work the
@@ -21,7 +21,7 @@
  *  directions — see `compareShape`. */
 export type CompareLayout = 'row' | 'column' | 'grid'
 /** D4 — `reference`: the first cell's contrast is applied to every cell (one ruler for a correction).
- *  `version`: each cell keeps the napari settings saved for its own version. */
+ *  `version`: each cell keeps the settings saved for its own version. */
 export type CompareContrast = 'reference' | 'version'
 
 export const COMPARE_LAYOUT_DEFAULT: CompareLayout = 'row'
@@ -51,7 +51,7 @@ export function normaliseItems(selected: string[] | undefined, available: string
  * is doing the comparing. `grid` says the RESULT is two-dimensional — either because the cross
  * product made it so, or because the user asked for the cells to be wrapped.
  *
- * Mirrors `_compare_grid` + `_wrap_grid` (api/src/napari_api.jl).
+ * Mirrors `_compare_grid` + `_wrap_grid` (api/src/movie_rail.jl).
  */
 export interface CompareShape { rows: number; cols: number; cells: number; grid: boolean; fixed: boolean }
 export function compareShape(versions: string[], segmentations: string[],

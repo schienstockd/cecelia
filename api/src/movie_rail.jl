@@ -1,20 +1,18 @@
-# ── movie_rail.jl — the record button + batch-movie config, routed off napari ────
+# ── movie_rail.jl — the record button + batch-movie config, driven by the offline renderer ────
 #
-# The offline renderer (`record_view_movie`) drives the same movie rail (`task:status`, `task:progress`,
-# `task:log`, `task:result`, working Cancel) that `run_single_movie` / `run_batch_movies` used to drive
-# through napari. Same rail, no napari — which is what `docs/todo/WEB_VIEWER_PLAN.md` P5 asks for.
+# The offline renderer (`record_view_movie`) drives the movie rail (`task:status`, `task:progress`,
+# `task:log`, `task:result`, working Cancel). Single-shot record, batch, and keyframe animations all
+# route here.
 #
 # **Whose responsibility.** The overlay/mask CLOSURES come from `_resolve_movie_overlays_mask`
 # (`viewer_api.jl`) — the ONE reader shared with the smoke route. Cancel goes through `jobs.jl`
 # (`start_job!` / `track_job!` / `job_cancelled`), which `sockets.jl` already dispatches to on
-# `task:cancel`. Config storage goes through `register_movie!` (`movies_api.jl`), exactly as the napari
-# path does.
+# `task:cancel`. Config storage goes through `register_movie!` (`movies_api.jl`).
 #
-# **Scope of this file.** Timelapse T-sweeps (single-cell) and compare grids (versions × masks).
-# Keyframe animations still fall to napari for now (`record_keyframes!`); that migration is the
-# last stage of P5. The compare grid renders each cell as a temp mp4 through `record_view_movie`
-# and composes them via `stitch_movies_run.py` — the SAME `cecelia.utils.movie_io.stitch_movies`
-# the napari bridge invokes, so captions + separators are identical.
+# **Scope of this file.** Timelapse T-sweeps (single-cell), compare grids (versions × masks), and
+# keyframe animations. The compare grid renders each cell as a temp mp4 through `record_view_movie`
+# and composes them via `stitch_movies_run.py` (`cecelia.utils.movie_io.stitch_movies`) so captions +
+# separators stay identical across surfaces.
 
 # ── Small helpers used by both single + batch offline paths ───────────────────────
 
@@ -45,9 +43,10 @@ function _record_ts_range(arr, caxes, t_start::Int, t_end)
     hi < lo ? Int[] : collect(lo:hi)
 end
 
-# napari sends canvas H/W here, which the offline renderer has no viewer for — but max(H, W) is a
-# reasonable `max_px` cap, so a UI that sized down for a smaller mp4 still gets a smaller mp4. `0` = no
-# downsample (`render_view_frame`'s own default), which is what happens when the UI leaves them blank.
+# The frontend sends canvas H/W here (a viewer's own dimensions, or a user override), which the
+# offline renderer has no viewer for — but max(H, W) is a reasonable `max_px` cap, so a UI that sized
+# down for a smaller mp4 still gets a smaller mp4. `0` = no downsample (`render_view_frame`'s own
+# default), which is what happens when the UI leaves them blank.
 _max_px_from_size(size_x, size_y) =
     max(size_x === nothing ? 0 : Int(size_x), size_y === nothing ? 0 : Int(size_y))
 
@@ -62,15 +61,14 @@ _cfg_int(cfg, k, default::Int) = (v = _cfg_get(cfg, k, default); v isa Integer ?
 # ── Apply the batch/`look` channel picks on top of the props-derived specs ───────
 #
 # `resolved_display_specs(props, nc)` reads whatever colormap the viewer autosaved for the image;
-# a batch config / single-record `look` carries the user's PICKS ({name → colormap}) — the offline
-# counterpart of `_apply_movie_config!` (napari_api.jl). Without this override, a compare grid
-# across versions rendered whatever colours the props file happened to carry, ignoring the picker
-# on the batch panel (reported by Dominik).
+# a batch config / single-record `look` carries the user's PICKS ({name → colormap}). Without this
+# override, a compare grid across versions rendered whatever colours the props file happened to
+# carry, ignoring the picker on the batch panel (reported by Dominik).
 #
-# Same rule napari uses: a channel named in `cfg.channels` gets its picked colormap and is visible;
-# every other channel is hidden. lo/hi stay from the props, so contrast is still whatever the viewer
-# measured. `cfg` without `channels` → specs unchanged (channels-only movie the recorder would
-# render before this override existed).
+# A channel named in `cfg.channels` gets its picked colormap and is visible; every other channel is
+# hidden. lo/hi stay from the props, so contrast is still whatever the viewer measured. `cfg`
+# without `channels` → specs unchanged (channels-only movie the recorder would render before this
+# override existed).
 function _apply_channel_picks(specs, cfg, img, vnn::Union{Nothing,AbstractString})
     (specs === nothing) && return specs
     chans = cfg isa AbstractDict ? get(cfg, :channels, get(cfg, "channels", nothing)) : nothing
@@ -94,8 +92,8 @@ end
 # popPaths, includeTracks, …}` block; it carries fields like `showPopulations` / `showTracks` /
 # `showGatedTracks` / `popType` / `pointsSize` (see `frontend/src/utils/batchMovie.ts` →
 # `BatchMovieRequestConfig`, and `seedConfigFromViewState` for the viewer's `look`). One translator so
-# offline record + batch don't regress from what napari draws — the alternative would be a per-panel
-# frontend refactor, per surface, all reading the same set of live-view keys.
+# offline record + batch stay consistent — the alternative would be a per-panel frontend refactor,
+# per surface, all reading the same set of live-view keys.
 #
 # `has_mask` tells the translator whether the caller has resolved a mask value_name to draw. `nothing`
 # means "no overlays to draw"; the caller drops that straight through to `_resolve_movie_overlays_mask`.
@@ -116,7 +114,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "showPopulations"  => show_pops,
         "includeTracks"    => show_gated,       # gated tracks alongside the pop points
         "allTracks"        => show_tracks,      # whole-segmentation tracks, ignoring pops
-        "tailLength"       => 30,               # napari default; the batch config doesn't author it
+        "tailLength"       => 30,               # legacy default; the batch config doesn't author it
         "trackColorMode"   => "track",
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
@@ -158,8 +156,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
                             show_timestamp::Bool = true, show_scale_bar::Bool = true,
                             overlays_raw = nothing,
-                            # The viewer's captured `viewState` snapshot (napari-shape;
-                            # `frontend/src/utils/viewer/viewState.ts`). Threaded in so the offline
+                            # The viewer's captured `viewState` snapshot
+                            # (`frontend/src/utils/viewer/viewState.ts`). Threaded in so the offline
                             # record picks up the viewer's CROP — the visible rectangle the user is
                             # looking at, in native pixels — rather than always recording the whole
                             # image at native aspect. Without this, a viewer zoomed in on a corner
@@ -311,8 +309,8 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     end
     ws_status(nothing, task_id, "running", rep; fun = "movie:batch", pool = "job")
     ws_progress(nothing, task_id, 0, n)
-    # Read the range/mask/pop config the same way the napari batch does, so a saved batch config drives
-    # both renderers identically until the napari path is retired.
+    # Read the range/mask/pop config in the same shape the frontend authors, so a saved batch config
+    # drives every renderer identically.
     t_start, t_end = _t_range(config)
     by_image       = Bool(get(config, :nameByImage, false))
     show_ts        = Bool(get(config, :showTimestamp, true))
@@ -321,8 +319,7 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     value_name     = String(vn_raw)
     lvns_raw       = get(config, :labelValueNames, nothing)
     label_vn = if lvns_raw isa AbstractVector && !isempty(lvns_raw)
-        # For the simple (single-cell) batch, the first label VN is what the offline mask overlay uses;
-        # compare grids stay on napari for now (docs/todo/WEB_VIEWER_PLAN.md P5-a, follow-up stage).
+        # For the simple (single-cell) batch, the first label VN is what the offline mask overlay uses.
         String(first(lvns_raw))
     else
         nothing
@@ -458,12 +455,10 @@ end
 
 # ── Compare grid — versions × masks, composed into one file ──────────────────────
 #
-# Structure and progress arithmetic mirror `_record_grid!` (napari_api.jl:1280): render each cell as a
-# temp mp4, stitch the row's cells side-by-side, stack the row strips. Same `Vector{MovieRow}`, same
-# nested compose, same wrap for the `grid` layout. The DIFFERENCE is that every recording goes through
-# `record_view_movie` (offline renderer) and every stitch goes through `writers/stitch_movies_run.py`
-# (which calls the SAME `movie_io.stitch_movies` the napari bridge used to invoke), so captions +
-# separators are pixel-identical.
+# Render each cell as a temp mp4, stitch the row's cells side-by-side, stack the row strips. Each
+# recording goes through `record_view_movie` (offline renderer) and each stitch through
+# `writers/stitch_movies_run.py` (`movie_io.stitch_movies`), so captions + separators are
+# pixel-identical across compare grid, single record, and batch.
 #
 # Cancel: the single `job_cancelled` flag stops the render loop between cells, and each render/stitch
 # subprocess registers via `on_process → track_job!` so `cancel_job!` kills whichever is running.
@@ -486,11 +481,10 @@ function _stitch_offline_call(task_id::AbstractString, out_path::AbstractString,
                    on_process = p    -> track_job!(String(task_id), p))
 end
 
-# Resolve one cell config (`MovieColumn.config`) into the record args `record_view_movie` needs. This
-# is the offline analogue of `_apply_movie_config!` (napari_api.jl): a napari version pushes the config
-# to the live viewer to reconfigure layers; offline, "applying" means BUILDING the specs + overlay/mask
-# closures the recorder consumes for THIS cell. `first_specs` supports `share_contrast`: column 1
-# passes its resolved specs to column 2+, so a version comparison reads on ONE ruler.
+# Resolve one cell config (`MovieColumn.config`) into the record args `record_view_movie` needs.
+# "Applying" here means BUILDING the specs + overlay/mask closures the recorder consumes for THIS
+# cell. `first_specs` supports `share_contrast`: column 1 passes its resolved specs to column 2+, so
+# a version comparison reads on ONE ruler.
 function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
                             first_specs = nothing, share_contrast::Bool = true,
                             max_px::Int = 0)
@@ -797,7 +791,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
         else
             # `channels` deliberately left unset — an animation's channel visibility can change across
             # keyframes, so no single channel list describes the whole movie. `register_movie!` leaves
-            # the field alone rather than banking a snapshot of only frame 0 (matches napari path).
+            # the field alone rather than banking a snapshot of only frame 0.
             register_movie!(project_uid, basename(out_path);
                             produced_by = "animation", image_uid = image_uid,
                             suffix = suffix,

@@ -16,7 +16,7 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # function for the 10-attempts pattern (chain nodes already carry `fn`; module tasks didn't).
 # `pool` ATTRIBUTES the work to what governs it — scheduler tasks get theirs from the /api/tasks
 # snapshot (cpu/gpu/io/network), but non-scheduler producers (batch movies, background jobs) never
-# hit that snapshot, so they pass it here ("viewer" for the napari viewer, "job" for jobs.jl work).
+# hit that snapshot, so they pass it here ("viewer" for a UI-serial viewer, "job" for jobs.jl work).
 # Without it those show a BLANK pool in the task console. NOT a real scheduler pool (no slot budget) —
 # purely a label so they read as intentional instead of floating unattributed. The frontend ignores
 # both extra fields.
@@ -235,16 +235,16 @@ end
 
 # A SINGLE recording (the viewer's Record button, or the animation page's render) on the same rail as
 # the batch below: async, `task:progress` per frame, `task:status`/`task:result`, and a Cancel that works.
-# All three shapes run through the offline renderer (`api/src/movie_rail.jl`) — plain timelapse (`run_
-# single_offline`), compare grid (`run_single_grid_offline`), keyframe animation
-# (`run_single_keyframes_offline`) — so the record path never touches napari.
+# All three shapes run through the offline renderer (`api/src/movie_rail.jl`) — plain timelapse
+# (`run_single_offline`), compare grid (`run_single_grid_offline`), keyframe animation
+# (`run_single_keyframes_offline`).
 function handle_movie_record(ws, data)
     task_id     = _wstr(data, :taskId)
     project_uid = _wstr(data, :projectUid)
     image_uid   = _wstr(data, :imageUid)
     isempty(task_id) && return
     fps         = Int(get(data, :fps, 15))
-    size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
+    size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
     api_url     = _wstr(data, :apiUrl, "http://localhost:8080")
     kf_raw      = get(data, :keyframes, nothing)
@@ -273,7 +273,7 @@ function handle_movie_record(ws, data)
     z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
     layout      = _wstr(data, :compareLayout, "row")
-    # napari's baked overlays, burnt into every frame. Default true = what every movie was.
+    # Baked overlays, burnt into every frame. Default true = what every movie was.
     show_ts     = Bool(get(data, :showTimestamp, true))
     show_sb     = Bool(get(data, :showScaleBar, true))
     if isempty(image_uid)
@@ -306,8 +306,8 @@ function handle_movie_record(ws, data)
         "compareLayout" => layout, "compareContrast" => get(data, :compareContrast, ""),
         "showTimestamp" => show_ts, "showScaleBar" => show_sb,
         "look" => get(data, :look, nothing), "keyframes" => keyframes)
-    # Route decision: everything is now offline — plain timelapse, compare grids, and keyframe
-    # animations. Napari is not touched on the record path.
+    # Route decision: everything runs through the offline renderer — plain timelapse, compare grids,
+    # and keyframe animations.
     n_vns = max(1, length(value_names))
     n_lvns = label_vns === nothing ? 0 : length(label_vns)
     n_bvns = branch_vns === nothing ? 0 : length(branch_vns)
@@ -329,8 +329,8 @@ function handle_movie_record(ws, data)
         # — the author reads them all from `overlays_config`, so seed it here from `look`.
         if ovs_cfg !== nothing
             ovs_cfg["valueName"] = _ov_look_str(look_cfg, "valueName", first_vn)
-            # `look` carries the resolved per-set settings; a missing tailLength means "napari
-            # default", which is 30 (matches `_overlays_raw_from_config`).
+            # `look` carries the resolved per-set settings; a missing tailLength defaults to 30
+            # (matches `_overlays_raw_from_config`).
             ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)
             # `colourBy` + `colourOverrides` — per-set settings the animation-page emit resolved at
             # snapshot time (frontend's AnimationPanel.vue pulls `settings.getColourBy(setUid)`
@@ -396,11 +396,11 @@ function handle_movie_record(ws, data)
     first_lvn = (label_vns !== nothing && !isempty(label_vns)) ? String(first(label_vns)) : nothing
     first_vn  = isempty(value_names) ? "" : String(first(value_names))
     overlays_raw = get(data, :overlays, nothing)
-    # The browser viewer's napari-shape snapshot rides on the record request when it's the source
+    # The browser viewer's viewState snapshot rides on the record request when it's the source
     # (`ViewerPanel.recordTimelapse` publishes it). Threaded to `run_single_offline` so the movie
     # renders the SAME rectangle the user is looking at — a viewer zoomed into a corner shouldn't
-    # produce a full-image movie at a different aspect. Absent snapshot (an old client, or the
-    # napari-still fallback) leaves the record path at whole-image / native aspect.
+    # produce a full-image movie at a different aspect. Absent snapshot (an old client) leaves the
+    # record path at whole-image / native aspect.
     view_state = get(data, :viewState, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,
@@ -423,11 +423,10 @@ function handle_movie_record(ws, data)
 end
 
 # F1.3 batch movies: apply one authored config across the selected images → one attr-named mp4 each,
-# recorded on the single shared napari viewer. Runs async (recording is minutes-long) and reports over
-# the normal task events (task:progress/log/status/result) keyed by the client's taskId, so it appears
-# in the task list with a progress bar + a working Cancel (see request_batch_cancel!). Orchestrated in
-# api/ (napari_api.jl) because the viewer + its lock live there; not a scheduler task (it's UI-serial,
-# not pooled headless compute). See docs/todo/ANIMATION_PLAN.md → F1.3.
+# through the offline renderer. Runs async (recording is minutes-long) and reports over the normal
+# task events (task:progress/log/status/result) keyed by the client's taskId, so it appears in the
+# task list with a progress bar + a working Cancel (see request_batch_cancel!). See
+# docs/todo/ANIMATION_PLAN.md → F1.3.
 function handle_movie_batch(ws, data)
     task_id     = _wstr(data, :taskId)
     project_uid = _wstr(data, :projectUid)
@@ -438,7 +437,7 @@ function handle_movie_batch(ws, data)
     attrs_raw   = get(data, :fileAttrs, nothing)
     file_attrs  = attrs_raw === nothing ? String[] : collect(String, attrs_raw)
     fps         = Int(get(data, :fps, 15))
-    size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
+    size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
     if isempty(image_uids)
         ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
@@ -451,8 +450,7 @@ function handle_movie_batch(ws, data)
     movie_config = Dict{String,Any}("config" => config, "fileAttrs" => file_attrs, "fps" => fps,
                                     "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
                                     "imageUids" => image_uids)
-    # Batch is entirely off napari — `run_batch_offline` detects compare grid per image and dispatches
-    # to `_render_grid_offline`. There is no napari fallback for the batch any more.
+    # `run_batch_offline` detects a compare grid per image and dispatches to `_render_grid_offline`.
     @async try
         run_batch_offline(task_id, project_uid, image_uids, config, file_attrs, fps;
                           size_x = size_x, size_y = size_y, suffix = suffix,

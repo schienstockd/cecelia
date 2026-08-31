@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The title-card control row: on/off, duration, and an optional note. ONE implementation for the three
-// places that record a movie — the napari ViewerPanel recorder, BatchMoviesPanel, and AnimationModule.
+// places that record a movie — the ViewerPanel recorder, BatchMoviesPanel, and AnimationModule.
 //
 // All three already shared the MODEL: the same `TitleCardCfg`, the same 1-10s clamp, and the same
 // `buildTitleCard` payload builder. Only the widgets were hand-rolled, three times, and they had

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Which stretch of a timelapse a movie records — the shared control for the two surfaces that sweep T
-// (the napari recorder and the Batch page). The Animation page deliberately does NOT get one: its
+// (the viewer's recorder and the Batch page). The Animation page deliberately does NOT get one: its
 // keyframes carry their own dims, so the timeline already IS the range.
 //
 // FRAME INDICES, not a percentage. The 3D crop's z/t ranges are percentages because a crop is one
 // image's own geometry; a recording range is the recorders' contract all the way down (`_t_range` →
-// `_t_sweep_frames` → the bridge → `napari_utils.record_timelapse`), and every one of them CLAMPS to
-// the image's length. So one range across a batch of unequal timelapses records to the end of each.
+// `_t_sweep_frames` → the offline renderer), and every one of them CLAMPS to the image's length. So
+// one range across a batch of unequal timelapses records to the end of each.
 //
 // `tEnd === null` means "the last frame", and is what a full-range selection WRITES — so the config
 // stays clean, an image longer than the one it was authored on still records in full, and a movie

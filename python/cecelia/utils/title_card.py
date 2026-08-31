@@ -1,11 +1,11 @@
 """Movie title card — render a description slide and prepend it to a recorded .mp4.
 
-Part of the animation title-card feature (docs/todo/ANIMATION_PLAN.md → Phase H). A recorded movie is
-written by napari-animation's ``Animation.animate()`` (frames not exposed), so the card is composited
-as a POST-record step here: render N = ``duration × fps`` still frames of a dark slide (image name +
-attributes, channel/population/colour-by legend rows with colour swatches, an optional note) at the
-movie's exact resolution, then rewrite the file with those frames prepended. The rewrite re-encodes
-the clip once (acceptable for short movies).
+Part of the animation title-card feature (docs/todo/ANIMATION_PLAN.md → Phase H). Every recorder
+writes its mp4 frame by frame before this runs, so the card is composited as a POST-record step
+here: render N = ``duration × fps`` still frames of a dark slide (image name + attributes,
+channel/population/colour-by legend rows with colour swatches, an optional note) at the movie's
+exact resolution, then rewrite the file with those frames prepended. The rewrite re-encodes the
+clip once (acceptable for short movies).
 
 Content is passed in as a plain dict (assembled by the caller from the CANONICAL legend source — see
 Phase H, decision 4; channels are added by the recorder from the live viewer, decision 5):
@@ -20,7 +20,7 @@ Phase H, decision 4; channels are added by the recorder from the live viewer, de
       ],
     }
 
-Pure + testable without napari (only PIL + numpy for rendering; imageio only for the prepend, both
+Pure + testable without a viewer (only PIL + numpy for rendering; imageio only for the prepend, both
 already in the env via scikit-image / imageio-ffmpeg). See python/cecelia/tests/test_title_card.py.
 """
 import os
@@ -40,7 +40,7 @@ _SWATCH_BORDER = (255, 255, 255)
 #: A real TrueType is tried BEFORE Pillow's built-in, and the order matters. `load_default(size=…)`
 #: succeeds on every Pillow >= 10, so putting it first made the TrueType branch below dead code — and
 #: the built-in (Aileron) covers little more than ASCII. Titles are `name — attr — attr` (EM DASH,
-#: U+2014, from `_title_card_content` in api/src/napari_api.jl), so every real title card rendered
+#: U+2014, from the frontend's title assembly), so every real title card rendered
 #: `.notdef` boxes where the separators were: Aileron's mask for `—` is bitmap-identical to its mask
 #: for `中`, which is how a missing glyph looks. Notes and attribute values are user text and can hold
 #: anything (µm, °, accents), so ASCII-only was never enough here.
@@ -296,8 +296,8 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
 
     Returns the modified frame. ONE font stack, ONE colour palette, ONE renderer for every text glyph
     on a movie frame — same rule as ``caption_band`` and the title card. Used by
-    ``encode_movie_run.py`` when the offline renderer asks for napari-parity timestamp + scale bar
-    overlays that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
+    ``encode_movie_run.py`` when the offline renderer asks for the timestamp + scale-bar overlays
+    that the Julia-side kernel can't draw itself (no anti-aliased text primitive in Julia).
 
     ``timestamp`` is the string to draw top-left (e.g. ``"0:07:30"``) or ``None``. ``scale_bar`` is
     ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above

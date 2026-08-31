@@ -1,20 +1,13 @@
 """One writer and one size policy for every `.mp4` Cecelia produces.
 
-Two paths write movie frames — the napari recorders (`napari_utils.record_timelapse`/`record_keyframes`)
-and the title-card prepend (`title_card.prepend_title_to_movie`) — and they must agree on the encode,
-because the card is concatenated onto the recording. They did not: the recorders went through
-napari-animation's `animate()`, which takes imageio's defaults (quality 5, and **macro_block_size 16**,
-which silently rescales every frame up to the next multiple of 16), while the card wrote
-libx264/yuv420p/quality 8/macro_block_size 1. So a movie "at the canvas size" was never quite the canvas
-size, and the two halves of the same file were encoded differently.
+Every recorder shares `movie_writer` so the encode is one decision (libx264/yuv420p/quality 8/
+macro_block_size 1 — exact frame dimensions, no silent rescale). `coerce_movie_size` is the only
+place a requested output size is validated, so a "canvas size" recording and a title-card prepend
+land at identical dimensions and cannot go out of step.
 
-`movie_writer` is now the only writer, so the encode is one decision. `coerce_movie_size` is the only
-place a requested output size is validated. Full rationale: docs/NAPARI.md → *Movie output size*.
-
-`stitch_movies` is the third producer: it composes several finished recordings into one frame
-(side-by-side version comparison — docs/todo/MOVIE_COMPARE_PLAN.md). It lives here, and not in
-`napari_utils`, because it needs no viewer at all — and because a composed file must encode exactly
-like the recordings it is made of.
+`stitch_movies` composes several finished recordings into one frame (side-by-side version
+comparison — docs/todo/MOVIE_COMPARE_PLAN.md); it needs no viewer, and it must encode exactly like
+the recordings it is made of.
 """
 import contextlib
 import os
@@ -38,9 +31,9 @@ class RecordCancelled(Exception):
     An exception rather than a return value so no caller can mistake a cancelled render for a
     finished one — the title card must not be prepended, and the staged file must not be promoted.
 
-    Defined here rather than in `napari_utils` (which re-exports it, and where it used to live)
-    because both frame loops raise it and `napari_utils` imports THIS module, not the other way
-    round. One exception type for "the user stopped it", whichever loop was running."""
+    Defined here rather than in a recorder module because both frame loops raise it and the
+    recorders import THIS module, not the other way round. One exception type for "the user stopped
+    it", whichever loop was running."""
 
     def __init__(self, frames):
         super().__init__(f"recording cancelled after {frames} frame(s)")
@@ -50,12 +43,11 @@ class RecordCancelled(Exception):
 def coerce_movie_size(size):
     """Validate a requested movie size. Returns ``((height, width), notes)``, or ``(None, notes)``.
 
-    ``size`` is ``(height, width)`` — **napari's** order, since it goes straight to
-    ``Viewer.screenshot(size=…)``. The UI and the Julia routes speak X/Y (width/height) and swap at the
-    bridge boundary; do the swap once, there.
+    ``size`` is ``(height, width)`` — the encoder's row-major order. The UI and the Julia routes
+    speak X/Y (width/height) and swap at the boundary; do the swap once, there.
 
-    ``None`` (or a zero/blank axis) means "the napari canvas size", which is the default and what every
-    movie was before this existed.
+    ``None`` (or a zero/blank axis) means "the viewer's canvas size", which is the default and what
+    every movie was before this existed.
 
     ``notes`` are human-readable strings for the log — a clamp or an odd-axis fix must be VISIBLE, not
     silent, or the user believes they got the size they typed.
@@ -85,9 +77,9 @@ def coerce_movie_size(size):
 def size_from_xy(x, y):
     """``(height, width)`` for a requested X/Y (width/height) pair, or None if either is blank.
 
-    The axis-order boundary, kept separate from `coerce_movie_size` (which validates): X/Y is how the UI,
-    the Julia routes and the bridge command speak, ``(height, width)`` is how napari does. Flip once,
-    here, so no other layer has to remember which way round it is.
+    The axis-order boundary, kept separate from `coerce_movie_size` (which validates): X/Y is how
+    the UI and the Julia routes speak, ``(height, width)`` is the encoder's row-major order. Flip
+    once, here, so no other layer has to remember which way round it is.
     """
     try:
         w = int(x) if x not in (None, "") else 0
@@ -100,10 +92,10 @@ def size_from_xy(x, y):
 def crop_to_even(frame):
     """Drop a trailing row/column so the frame has even dimensions. A cheap view, no copy.
 
-    Needed even when the request was even: napari divides the requested size by the display's
-    ``devicePixelRatio`` and truncates to int before resizing the canvas, so on a HiDPI screen the
-    frame that comes back can be a pixel off the request. The writer's frame size is taken from the
-    first frame, so every frame gets the same treatment and they stay consistent.
+    Needed even when the request was even: a HiDPI canvas divides by ``devicePixelRatio`` and
+    truncates to int before resizing, so the frame that comes back can be a pixel off the request.
+    The writer's frame size is taken from the first frame, so every frame gets the same treatment
+    and they stay consistent.
     """
     h, w = frame.shape[:2]
     return frame[: h - h % _EVEN, : w - w % _EVEN]
@@ -123,9 +115,9 @@ def movie_writer(path, fps):
     (``if value is None: self.close()``), so a cancel or an error left the writer open; ffmpeg then
     finalised the staged ``.tmp.mp4`` moments later — *after* the caller's cleanup had already looked
     for it and found nothing. Every cancelled render therefore leaked a staged temp that only
-    ``napari_utils._clear_stale_staging`` would collect, an hour later. Closing here makes the staged
-    file real before the caller's ``except`` runs, which is what makes "a cancel leaves nothing
-    behind" true rather than aspirational.
+    a stale-staging sweep would collect an hour later. Closing here makes the staged file real
+    before the caller's ``except`` runs, which is what makes "a cancel leaves nothing behind" true
+    rather than aspirational.
     """
     import imageio.v2 as imageio   # local: keeps the import off any path that only needs the helpers
 
@@ -189,7 +181,7 @@ def encode_raw_frames(raw_path, out_path, *, width, height, frames, fps, log=Non
 # ── Side-by-side composition (version comparison) ────────────────────────────
 # One movie per image VERSION is recorded by the normal path, then the finished files are composed
 # here into a single frame each. Composing at the frame level (rather than loading several versions
-# into one napari canvas) is what keeps every recording invariant intact — see
+# into one viewer canvas) is what keeps every recording invariant intact — see
 # docs/todo/MOVIE_COMPARE_PLAN.md D1/D2.
 
 #: Height of a column's caption strip, as a fraction of the tile height (floored at 14 px so it is
@@ -252,9 +244,8 @@ def stitch_movies(paths, out_path, *, fps, labels=None, layout="row",
     ``labels``, when given, must be one caption per input and is drawn as a strip under each tile
     (`title_card.caption_band` — one font stack and one truncation rule for all text on a movie
     frame). ``on_progress(i, total)`` is called per frame and ``should_cancel()`` polled per frame;
-    a true reading raises `RecordCancelled` — the same contract as
-    ``napari_utils._render_animation``, because from the user's side this is the tail of the same
-    render.
+    a true reading raises `RecordCancelled` — the same contract every recorder uses, because from
+    the user's side this is the tail of the same render.
 
     Inputs of unequal length hold their last frame until the longest one ends, rather than truncating
     to the shortest: a comparison that silently loses the end of a timecourse is worse than one that
@@ -263,7 +254,7 @@ def stitch_movies(paths, out_path, *, fps, labels=None, layout="row",
     **Staged**: frames go to a ``.tmp.mp4`` sibling and are promoted onto ``out_path`` only once the
     last one is written, so a cancel or a crash never replaces a good movie with a file that has no
     moov atom. Same scheme (and the same reason for keeping the ``.mp4`` extension on the temp) as
-    ``napari_utils._render_animation`` and ``title_card.prepend_title_to_movie``.
+    every other recorder + ``title_card.prepend_title_to_movie``.
     """
     import imageio.v2 as imageio   # local: keeps the import off any path that only needs the helpers
     import numpy as np

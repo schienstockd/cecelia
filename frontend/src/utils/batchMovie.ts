@@ -1,7 +1,7 @@
 // Pure helpers for the Batch Movies page (F1.3). Kept out of the SFC so they're unit-testable:
-//  - buildBatchMovieConfig: the persisted per-set config → the `config` object the backend's
-//    _apply_movie_config! consumes (api/src/napari_api.jl). Tracks are shown for ALL segmentations
-//    when `showTracks` is on (the backend skips ones without a track_id column).
+//  - buildBatchMovieConfig: the persisted per-set config → the `config` object the backend's batch
+//    renderer consumes (api/src/movie_rail.jl). Tracks are shown for ALL segmentations when
+//    `showTracks` is on (the backend skips ones without a track_id column).
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
 //    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
@@ -17,7 +17,7 @@ export interface TitleCardCfg {
 
 /**
  * The AUTHORED movie config — what the Batch page's controls edit and what the settings store persists
- * per set (`NapariSetPrefs.batchMovie` is this type, not a copy of it). Distinct from
+ * per set (`MovieSetPrefs.batchMovie` is this type, not a copy of it). Distinct from
  * `BatchMovieRequestConfig` below, which is what `buildBatchMovieConfig` turns it into for the wire:
  * everything here is optional and means "not chosen", everything there is resolved and always present.
  *
@@ -33,15 +33,15 @@ export interface BatchMovieCfg {
   // The segmentation masks each movie draws, in order. 2+ makes them the grid's ROWS (with the
   // versions as its columns); one draws it in every cell. Read via `segmentationsFromConfig`.
   labelValueNames?: string[]
-  // Mask outline width in px — 0 draws them filled (napari's default), N draws an N-px contour so the
-  // channel signal underneath stays readable. Clamped to 0..LABEL_CONTOUR_MAX.
+  // Mask outline width in px — 0 draws them filled, N draws an N-px contour so the channel signal
+  // underneath stays readable. Clamped to 0..LABEL_CONTOUR_MAX.
   labelContour?: number
   // How much of the z stack a movie shows: the whole thing as a 3D render, or one slice in 2D.
   // `show3D` wins; `zSlice` undefined means "whatever is showing", which is what every recording did
-  // before the setting existed. One switch for both layer kinds — see `set_z_view` in the bridge.
+  // before the setting existed. One switch for both layer kinds — image and mask.
   show3D?: boolean
   zSlice?: number | null
-  // 3D multiscale detail: level index (0 = full resolution, higher = coarser), null = napari's choice
+  // 3D multiscale detail: level index (0 = full resolution, higher = coarser), null = renderer default
   detail3d?: number | null
   compareLayout?: CompareLayout
   compareContrast?: CompareContrast
@@ -59,7 +59,7 @@ export interface BatchMovieCfg {
   titleCard?: TitleCardCfg
   // Which stretch of the timelapse each movie sweeps, as FRAME INDICES; `tEnd` null/absent = the last
   // frame, which is what every recording did before the control existed. Applied across a batch of
-  // unequal timelapses it CLAMPS per image (`_t_range`/`_t_sweep_frames` in api/src/napari_api.jl), so
+  // unequal timelapses it CLAMPS per image (`_t_range`/`_t_sweep_frames` in api/src/movie_rail.jl), so
   // a range longer than a given image records to its end rather than failing.
   tStart?: number
   tEnd?: number | null
@@ -69,8 +69,8 @@ export interface BatchMovieCfg {
   fileAttrs?: string[]
   // Terminate the filename with the IMAGE NAME instead of its uid. Off by default — the uid is unique
   // by construction, while two images in a set can share a name and would overwrite each other. On, a
-  // batch names its files exactly the way a single viewer recording does, which is what makes a
-  // restored viewer config regenerate the SAME file rather than a uid-named twin.
+  // batch names its files exactly the way a single recording does, which is what makes a restored
+  // config regenerate the SAME file rather than a uid-named twin.
   nameByImage?: boolean
 }
 
@@ -106,7 +106,7 @@ export interface BatchMovieRequestConfig {
 export const TITLE_CARD_DEFAULT: TitleCardCfg = { enabled: true, note: '', durationSec: 3 }
 
 /** Mask outline width, clamped. 0 = filled. Mirrors `LABEL_CONTOUR_MAX` / `_label_contour`
- *  (api/src/napari_api.jl) — both ends clamp rather than reject, since a bad value here is a display
+ *  (api/src/movie_rail.jl) — both ends clamp rather than reject, since a bad value here is a display
  *  nicety and must not fail a whole batch. */
 export const LABEL_CONTOUR_MAX = 10
 export const clampContour = (v: number | undefined): number =>
@@ -132,8 +132,8 @@ export function buildBatchMovieConfig(
     // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it
     // (`_z_slice`), and sending null rather than dropping the key keeps the two ends reading alike
     zSlice: cfg.show3D ? null : (cfg.zSlice ?? null),
-    // only meaningful in 3D; sent as 0 (full resolution) by default, because napari's own 3D choice is
-    // the coarsest level and that erases a strided label pyramid (docs/NAPARI.md → 3D detail)
+    // only meaningful in 3D; sent as 0 (full resolution) by default, because a coarser level erases a
+    // strided label pyramid
     detail3d: cfg.show3D ? (cfg.detail3d ?? 0) : null,
     compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
@@ -166,7 +166,7 @@ export function buildBatchMovieConfig(
 // Sentinel token that can appear in the ordered `fileAttrs` list to mean "the displayed channel
 // names, joined by '-'" — so channel names can be positioned in the filename like any attribute
 // (drag-reorderable). Chosen to not collide with a real user attribute key. Mirrored in the backend
-// `_movie_basename` (api/src/napari_api.jl) — keep the two in sync.
+// `_movie_basename` (api/src/movie_rail.jl) — keep the two in sync.
 export const MOVIE_CHANNELS_TOKEN = '__channels__'
 
 /** Output filename for one image — mirrors the backend `_movie_basename`. `fileAttrs` is the ordered
@@ -193,7 +193,7 @@ export function movieFilename(
   return safeNamePart(parts.join('_')) + '.mp4'
 }
 
-/** One filename-safe fragment — mirrors `_safe_name_part` (api/src/napari_api.jl); keep the two in
+/** One filename-safe fragment — mirrors `_safe_name_part` (api/src/movie_rail.jl); keep the two in
  *  sync. Keeps [A-Za-z0-9._-], collapses every other run to `_`, and drops the separators that
  *  collapse leaves at the EDGES: an image called "… -res (cropped)" ends in `)`, so sanitising alone
  *  produced a name ending in `_`. */
@@ -226,15 +226,15 @@ export const storeFrameEnd = (hi: number, frames: number): number | null =>
   hi >= Math.max(0, Math.round(frames) - 1) ? null : Math.max(0, Math.round(hi))
 
 // ── seeding (so the config isn't blank) ────────────────────────────────────────
-// napari view snapshot shape we read (subset of capture_view_state): per-layer colormap + visibility.
-/** The part of a napari view state this reads. Exported so a caller can TYPE its fetch instead of
- *  casting through `never` at the call site — two sites now read a live view into a config. */
+// The view-snapshot shape we read (subset of the captured view state): per-layer colormap + visibility.
+/** The part of a view state this reads. Exported so a caller can TYPE its fetch instead of casting
+ *  through `never` at the call site — two sites now read a live view into a config. */
 export interface ViewStateLike { layers?: Record<string, { colormap?: unknown; visible?: unknown }> }
 
-/** Seed a config from the FIRST selected image's live napari view: which channels are shown + their
- *  colormap, and which overlays are present (tracks / track-clusters / population points). Channel layers
- *  are plain-named; overlays are parenthesised `(popType) …` (see the bridge naming). Colour-by isn't in
- *  the snapshot — the caller supplies it (the set's last colour-by). Pure → testable. */
+/** Seed a config from the FIRST selected image's live view: which channels are shown + their
+ *  colormap, and which overlays are present (tracks / track-clusters / population points). Channel
+ *  layers are plain-named; overlays are parenthesised `(popType) …`. Colour-by isn't in the
+ *  snapshot — the caller supplies it (the set's last colour-by). Pure → testable. */
 export function seedConfigFromViewState(vs: ViewStateLike | null | undefined, channelNames: string[]): BatchMovieCfg {
   const layers = vs?.layers ?? {}
   const channels: Record<string, string> = {}

@@ -16,7 +16,7 @@ import { useAnimationStore, type AnimSnapshot } from '../../stores/animation'
 import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
-import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../../utils/napariOverlays'
+import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../../utils/titleCard'
 import { framesFor, activeAnimationUid } from '../../utils/animationTimeline'
 import { movieSizeParams } from '../../utils/movieSize'
 import { seedConfigFromViewState, type ViewStateLike } from '../../utils/batchMovie'
@@ -25,7 +25,7 @@ import type { ViewerViewState } from '../../utils/viewer/viewState'
 import { openViewerWindow } from '../../utils/viewerWindow'
 import { keyframeRestore, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
-import { useNapariStatus } from '../../composables/useNapariStatus'
+import { useViewerMovieDefaults } from '../../composables/useViewerMovieDefaults'
 import { usePaneExpand } from '../../composables/usePaneExpand'
 import CcToggle from '../../components/CcToggle.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
@@ -49,16 +49,16 @@ const anim = useAnimationStore()
 const tasks = useTaskStore()
 const ws = useWsStore()
 const log = useLogStore()
-// the canvas size napari would record at, for the size fields' placeholder (shared poll). Napari is
-// still consulted here purely as the movie-output-size default; when napari is off the placeholder
-// is empty and the user types explicit sizes — a soft dependency, not a blocker.
-const { canvasSizeX, canvasSizeY } = useNapariStatus()
+// The browser viewer's canvas size, used as the size fields' placeholder (see
+// useViewerMovieDefaults). The viewer publishes canvas dims on every pan/zoom/resize; when no viewer
+// is open the placeholder is blank and the user types explicit sizes.
+const { canvasSizeX, canvasSizeY } = useViewerMovieDefaults()
 const viewer = useViewerStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 // The image this page is working on: the table's selection, falling back to whatever the browser
-// viewer has open (was napari — routed through `openImage` so a viewer-driven capture works even
-// when napari isn't running).
+// viewer has open (routed through `openImage` so a viewer-driven capture works when no image is
+// picked in the table).
 const openViewerUid = computed(() => viewer.openImage?.imageUid ?? '')
 const activeUid = computed(() => activeAnimationUid(props.selectedUids, openViewerUid.value))
 const activeImage = computed(() => (activeUid.value ? project.imageByUid(activeUid.value) : null))
@@ -68,8 +68,7 @@ const selected = computed(() => frames.value.find(f => f.id === anim.selectedId)
 
 // Capture reads the LIVE viewer — the browser volume viewer publishes its state into
 // `viewerStore.viewState` on every pan/zoom/z/t/channel change, so this reflects what the user is
-// looking at. `isOpen` becomes: the browser viewer has THIS image on screen. Napari is no longer
-// on the capture path.
+// looking at. `isOpen` becomes: the browser viewer has THIS image on screen.
 const isOpen = computed(() => !!activeUid.value && viewer.openImage?.imageUid === activeUid.value)
 const opening = ref(false)
 function openActive() {
@@ -179,8 +178,8 @@ async function updateSelected() {
 }
 
 // toggling Sync on immediately mirrors the selected keyframe into the browser viewer via the store's
-// pending-viewState bridge (was: POST /api/napari/apply-view-state; ViewerWindow now consumes
-// `pendingViewState` and re-applies with `applyViewStateToBrowser`).
+// pending-viewState bridge — ViewerWindow consumes `pendingViewState` and re-applies with
+// `applyViewStateToBrowser`.
 function onToggleSync(on: boolean) {
   settings.animationSyncNapari = on
   if (on && selected.value?.snapshot) {
@@ -193,7 +192,7 @@ async function render() {
   if (!canRender.value) return
   const uid = activeUid.value
   rendering.value = true
-  log.info('Rendering animation… (this can take a moment)', { source: 'napari' })
+  log.info('Rendering animation… (this can take a moment)', { source: 'movies' })
   try {
     const keyframes = frames.value.map(f => ({
       viewState: f.snapshot,
@@ -247,7 +246,7 @@ async function render() {
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {
-    log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   } finally { rendering.value = false }
 }
 

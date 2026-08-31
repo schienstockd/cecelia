@@ -2,13 +2,13 @@
 // result, which is exactly why it needs a guide (Dominik, 2026-08-12).
 //
 // The three routes, as the /movies empty state itself lists them: the Viewer panel (records the current
-// napari view — what you see is what you get), Batch movies (the same config across a whole selection),
-// and Animation (a keyframed timeline). This guide teaches the first two: one movie to get the look
-// right, then the same look across the set. Animation is a different job — a crafted camera move — and
+// view — what you see is what you get), Batch movies (the same config across a whole selection), and
+// Animation (a keyframed timeline). This guide teaches the first two: one movie to get the look right,
+// then the same look across the set. Animation is a different job — a crafted camera move — and
 // belongs in its own guide rather than as a coda to this one.
 //
 // Neither route is a TaskRunner function, so this is not a `moduleTaskGuide`: the Viewer records what
-// napari is showing right now, and Batch movies has its own config panel with its own task list.
+// the viewer is showing right now, and Batch movies has its own config panel with its own task list.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
@@ -18,7 +18,7 @@ export const recordMovieGuide: GuideDef = {
   title: 'Record a movie',
   group: 'Analysis',
   icon: 'pi-video',
-  summary: 'Record what napari is showing as an mp4, then repeat the same look across a whole set.',
+  summary: 'Record what the viewer is showing as an mp4, then repeat the same look across a whole set.',
   prereqs: [PREREQ.projectOpen, PREREQ.timeSeries],
 
   steps: [
@@ -26,7 +26,7 @@ export const recordMovieGuide: GuideDef = {
       anchor: 'images.napariBtn',
       placement: 'right',
       title: 'Set the shot up first',
-      text: 'A recording captures exactly what napari is showing — so get the view right before you record.',
+      text: 'A recording captures exactly what the viewer is showing — so get the view right before you record.',
       bullets: [
         'Open the image with the ↗ beside it.',
         'Channels, contrast, masks, tracks, populations: all of it is recorded as shown.',
@@ -69,7 +69,7 @@ export const recordMovieGuide: GuideDef = {
       text: 'The render runs as a task, so progress and Cancel are in the task list.',
       bullets: [
         'The mp4 lands in the project\'s movies/ folder.',
-        'napari renders one frame at a time — leave it alone while it sweeps.',
+        'The renderer processes one frame at a time — leave it alone while it sweeps.',
       ],
       clickAnchor: true,
     },
@@ -116,7 +116,7 @@ export const recordMovieGuide: GuideDef = {
     },
     {
       title: 'Two more things worth knowing',
-      text: 'Movies are rendered by napari, so they cost real time on long timelapses.',
+      text: 'Movies are rendered frame by frame, so they cost real time on long timelapses.',
       bullets: [
         'Everything lands in movies/ and is playable on the Movies page.',
         'Want a camera move instead of a straight sweep? See the "Build an animation" guide.',

@@ -2873,6 +2873,7 @@ watch(meta, m => {
     valueName: m.valueName ?? valueName.value ?? '',
     zarrPath: m.zarrPath ?? '',
     taskDir: m.taskDir ?? '',
+    nLevels: m.levels?.length ?? 1,
   })
 })
 

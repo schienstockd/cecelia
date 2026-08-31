@@ -7,8 +7,8 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
-import { pushLabels as apiPushLabels, buildTitleCard, pushZView, pushLabelContour, pushDetail3d,
-         type TitleCardPayload } from '../utils/napariOverlays'
+import { pushLabels as apiPushLabels, pushZView, pushLabelContour, pushDetail3d } from '../utils/napariOverlays'
+import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
   colourLegend, colourLegendLabels, resetColourLegend,
@@ -27,7 +27,7 @@ import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../ut
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
-import { useNapariStatus } from '../composables/useNapariStatus'
+import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
 
 const projectStore = useProjectStore()
@@ -756,11 +756,10 @@ function onTaskResult(data: Record<string, unknown>) {
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
 watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 
-// Bridge status (shared poll — see useNapariStatus): the canvas size is what a movie records at when
-// no size is asked for, shown as the size fields' placeholder. The `bridgeStale` warning + Restart
-// button were removed in P6 — the bridge is a legacy sink now, and users should not be nudged to
-// respawn a process that goes away in P9.
-const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
+// Placeholder defaults for the movie size fields + level range for the 3D detail control. Sourced
+// from the browser volume viewer's own published state (see useViewerMovieDefaults) — the canvas is
+// what a movie records at when no size is asked for.
+const { canvasSizeX, canvasSizeY, multiscaleLevels } = useViewerMovieDefaults()
 
 onMounted(() => {
   ws.on('task:status', onTaskStatus)
