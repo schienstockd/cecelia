@@ -7,7 +7,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
-import { pushLabels as apiPushLabels, pushZView, pushLabelContour, pushDetail3d } from '../utils/napariOverlays'
+import { pushLabels as apiPushLabels } from '../utils/napariOverlays'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
@@ -156,17 +156,14 @@ const show3D = computed<boolean>({
   get: () => currentSetUid.value ? settings.getShow3D(currentSetUid.value) : false,
   set: v => {
     if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
-    pushZView(v, zSlice.value)
   } })
 // Which z slice a 2D recording pins. null = whatever is showing, which is what every recording did
-// before the setting existed.
+// before the setting existed. Persisted for the next Record; the LIVE plane is chosen in the
+// WebGPU viewer itself (its own `zPlane`), so setting this here no longer needs a mirror push.
 const zSlice = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null,
   set: v => {
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { zSlice: v })
-    // Apply the z choice to the LIVE viewer, so it is chosen by looking at it rather than by watching a
-    // render finish. Coalesced in `napariOverlays` — a drag is a burst, and each push costs a plane load.
-    pushZView(show3D.value, v)
   } })
 // Which stretch of the timelapse the Record button sweeps (frame indices; null end = the last frame).
 // Persisted per set like fps/size — the same pair the Batch page authors, read by the same `_t_range`.
@@ -207,12 +204,12 @@ const movieSuffix = computed<string>({
   },
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { suffix: v }) } })
 // How much detail the 3D render uses — a multiscale LEVEL index (0 = full resolution, higher =
-// coarser). Pushed live like the z choice: it is a display property you judge by looking at it.
+// coarser). The WebGPU viewer picks its own detail level (`pickVolumeLevel`); persisted here as a
+// per-set MOVIE parameter, not a live-viewer knob.
 const detail3d = computed<number>({
   get: () => currentSetUid.value ? (settings.getMovieConfig(currentSetUid.value).detail3d ?? 0) : 0,
   set: v => {
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { detail3d: v })
-    pushDetail3d(v)
   } })
 
 // Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
@@ -229,16 +226,15 @@ const compareSegmentations = computed<string[]>({
     ? normaliseItems(settings.getMovieConfig(currentSetUid.value).compareSegmentations, labelNames.value)
     : [],
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareSegmentations: v }) } })
-// Mask outline width. Pushed to the LIVE viewer as well as persisted: it is a display property of the
-// layers already on screen, so seeing it is how you choose it — a value you can only judge by watching
-// a render finish is not a setting, it's a guess.
+// Mask outline width for the NEXT recording (persisted per-set). The live WebGPU viewer draws
+// its outline from `settings.viewerLabelContour` (global), which is a separate control; two knobs
+// that used to converge on the napari canvas and now don't. Kept as-is: unifying them is a
+// panel-UX call, not a P9-scope change.
 const labelContour = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).labelContour : 0,
   set: v => {
     const n = clampContour(v)
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { labelContour: n })
-    // Apply the outline to every mask layer currently on screen. Coalesced in `napariOverlays`.
-    pushLabelContour(labelNames.value.filter(vn => visibleLabels.value[vn]), n)
   } })
 // What the recording draws as masks. An explicit pick wins; otherwise the label sets the user has
 // toggled on in this panel, so a version comparison keeps the masks that are on screen instead of

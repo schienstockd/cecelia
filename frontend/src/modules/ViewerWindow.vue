@@ -3094,6 +3094,26 @@ watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
 
+// The panel's 3D button (`ViewerPanel.vue` → `settings.setShow3D`) used to flip napari between 2D
+// and 3D via `pushZView`; with the napari mirror gone, that write reaches the popup viewer through
+// the `cc.napariSetPrefs` bag sync (see `utils/viewerBagChannel.ts`). Watch the setter's derived
+// value here so a panel-side flip drives THIS viewer's mode as it used to drive napari's. Guarded
+// on a real change to avoid re-entrant loops with `onModeChange` (chip → setShow3D).
+watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
+  if (want === null) return
+  const next: 'plane' | 'volume' = want ? 'volume' : 'plane'
+  if (mode.value !== next) { mode.value = next; reallocate(true) }
+})
+
+/** View chip handler — flip the popup's mode AND reverse-sync to the panel's per-set setting so
+ *  the two stay in lockstep (`settings.getShow3D` on the panel side, the watcher above on this
+ *  side). The watcher short-circuits when `mode` already matches, so this write can't loop. */
+function onModeChange(v: 'plane' | 'volume'): void {
+  mode.value = v
+  reallocate(true)
+  if (setUid.value) settings.setShow3D(setUid.value, v === 'volume')
+}
+
 // ── Task-preview integration (P7) ─────────────────────────────────────────────
 // One scheduler per this specific emit: pan/zoom fires per frame, but the preview API is expensive
 // and its own store already debounces. This coalesces bursts so the store doesn't schedule per event.
@@ -3640,7 +3660,7 @@ onUnmounted(() => {
         <div class="cc-row cc-row-tight">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
-            @update:model-value="v => { mode = v as 'plane' | 'volume'; reallocate(true) }"
+            @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
           />
           <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
                (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the

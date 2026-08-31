@@ -5,64 +5,10 @@
 // callers can still harvest the legend from the reply; it does not read/parse the body itself.
 import { parseOverlays, type OverlayPushConfig } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
-import { debouncedLatest } from './debouncedLatest'
 
 const _post = (path: string, body: unknown): Promise<Response | undefined> =>
   fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .catch(() => undefined)
-
-// ── Live view-property pushes (coalesced — see docs/UI.md → "Continuous controls") ──────────────
-// The pushes a SLIDER drives, as opposed to the one-shot overlay builders below.
-//
-// `<input type="range">` emits an event per pixel of travel — a short drag is 20–60 events — and each
-// of these lands a napari command that costs a plane load or a layer-props apply. The bridge processes
-// one command at a time (see `restoreOverlays`), so pushing per event queues seconds of already-
-// superseded work: the viewer keeps stepping through z slices long after the mouse was released.
-//
-// So each live push owns ONE module-level `debouncedLatest`. A burst collapses to a single call; an
-// event arriving mid-flight REPLACES the pending argument instead of queueing behind it; and because
-// the scheduler will not start a second call while one is in flight, it self-paces to however slow
-// napari actually is on this image. The scheduler is module-level on purpose — there is one viewer, so
-// one scheduler per endpoint, and a second call site cannot reintroduce the spam.
-//
-// The wait is short deliberately: these are settings you judge by WATCHING the viewer, so the push has
-// to track the drag rather than wait for it to finish. Coalescing, not deferral.
-const LIVE_PUSH_WAIT = 80
-
-const _zViewPush = debouncedLatest<{ show3D: boolean; zSlice: number | null }>(
-  async a => { await _post('/api/napari/set-z-view', { show3D: a.show3D, zSlice: a.show3D ? null : a.zSlice }) },
-  { wait: LIVE_PUSH_WAIT },
-)
-/** Whole stack in 3D, or one z slice in 2D. Fire-and-forget: napari not running is not an error here —
- *  the value is persisted by the caller and applies on the next open. */
-export function pushZView(show3D: boolean, zSlice: number | null): void {
-  _zViewPush.schedule({ show3D, zSlice })
-}
-
-const _contourPush = debouncedLatest<Record<string, { contour: number }>>(
-  async layers => { await _post('/api/napari/apply-view-state', { viewState: { layers } }) },
-  { wait: LIVE_PUSH_WAIT },
-)
-/** Mask outline width on the label layers currently on screen. `contour` is a captured view prop
- *  (`napari_utils._VIEW_LAYER_KEYS`), so a PARTIAL view-state apply is enough — the layer keeps its
- *  data, position and colouring, where a show-labels rebuild would re-read the store. */
-export function pushLabelContour(valueNames: string[], contour: number): void {
-  if (!valueNames.length) return
-  const layers: Record<string, { contour: number }> = {}
-  for (const vn of valueNames) layers[`(${vn}) Labels`] = { contour }
-  _contourPush.schedule(layers)
-}
-
-const _detailPush = debouncedLatest<number | null>(
-  async level => { await _post('/api/napari/set-3d-level', { level }) },
-  { wait: LIVE_PUSH_WAIT },
-)
-/** How much detail the 3D view renders: a multiscale level index (0 = full resolution, higher =
- *  coarser), or null for napari's own choice. Coalesced — it is a slider, and each change re-slices
- *  every multiscale layer in the viewer. */
-export function pushDetail3d(level: number | null): void {
-  _detailPush.schedule(level)
-}
 
 /** Apply a WHOLE captured view snapshot (keyframe select, zoom-to-source). One-shot and awaited — it
  *  answers a click, not a drag, so it is deliberately NOT coalesced: the caller wants this exact
