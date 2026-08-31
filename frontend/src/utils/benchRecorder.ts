@@ -57,8 +57,23 @@ export interface BenchWriteSample {
   bytes: number           // payload byte count for this brick
 }
 
+/** GPU + fine-grained CPU timings for one frame. `gpuFrameMs` is null on adapters that lack the
+ *  `timestamp-query` feature — the CPU-side buckets always populate. Emitted async (frame N+K) via
+ *  the renderer's `setOnFrameTimings` hook, so these are NOT correlated 1:1 with `BenchSample`
+ *  entries; the blob stores them as a parallel stream and the summariser reports p50/p95 across
+ *  the session. Split rationale: `octree-rendering-audit.md` §2 flagged whole-`drawMs` as too
+ *  coarse to decide any future perf move on. */
+export interface GpuFrameSample {
+  atMs: number                       // performance.now() at the CPU side of the frame, relative to t0
+  gpuFrameMs: number | null          // GPU-side end-to-end render pass (raycast + overlays)
+  tickSchedulerCpuMs: number         // CPU-side scheduler tick (fetch decisions, residency)
+  writePageTableCpuMs: number        // CPU-side page-table upload (both current + prev tables)
+  writeUniformCpuMs: number          // CPU-side uniform buffer upload
+  encoderSubmitCpuMs: number         // CPU-side `enc.finish()` + `queue.submit()`
+}
+
 export interface BenchBlob {
-  version: 1
+  version: 1 | 2
   mode: 'flat' | 'brick'
   savedAtIso: string
   sessionMs: number         // performance.now() at save, minus t0
@@ -68,6 +83,9 @@ export interface BenchBlob {
   bytesFetched: number
   vram: BenchVram | null
   writes: BenchWriteSample[]   // empty on flat mode
+  /** v2 only — parallel stream of GPU + CPU sub-frame timings. Empty on v1 blobs and on renderers
+   *  that don't populate it. Not correlated with `frames[i]`. */
+  gpuFrames: GpuFrameSample[]
   summary: BenchSummary
 }
 
@@ -78,6 +96,24 @@ export interface BenchSummary {
   drawP95Ms: number | null
   drawMeanMs: number | null
   framesPerSecond: number | null
+  /** v2 only — p50/p95 per GPU/CPU sub-frame bucket. Null when `gpuFrames` is empty. */
+  gpuSummary: GpuBucketSummary | null
+}
+
+/** Per-bucket p50/p95 across the session. `gpuFrameMs50/95` are null on adapters without
+ *  `timestamp-query`; the CPU-side buckets are populated whenever `gpuFrames` has any samples. */
+export interface GpuBucketSummary {
+  nGpuFrames: number
+  gpuFrameMs50: number | null
+  gpuFrameMs95: number | null
+  tickSchedulerCpuMs50: number
+  tickSchedulerCpuMs95: number
+  writePageTableCpuMs50: number
+  writePageTableCpuMs95: number
+  writeUniformCpuMs50: number
+  writeUniformCpuMs95: number
+  encoderSubmitCpuMs50: number
+  encoderSubmitCpuMs95: number
 }
 
 /** Median of a numeric array. Returns null for an empty input (a session with zero frames is
@@ -97,7 +133,37 @@ export function percentile95(xs: readonly number[]): number | null {
   return s[Math.max(0, Math.min(s.length - 1, rank))]
 }
 
-export function summarize(frames: readonly BenchSample[], sessionMs: number): BenchSummary {
+/** GPU-side samples that arrived — always a subset (or superset) of the CPU-side per-frame
+ *  count because delivery is async. `null` return when no GPU sample has landed yet. */
+function summarizeGpu(gpuFrames: readonly GpuFrameSample[]): GpuBucketSummary | null {
+  if (gpuFrames.length === 0) return null
+  const gpu = gpuFrames.map(f => f.gpuFrameMs).filter((x): x is number => x !== null)
+  const tick = gpuFrames.map(f => f.tickSchedulerCpuMs)
+  const wpt = gpuFrames.map(f => f.writePageTableCpuMs)
+  const wu = gpuFrames.map(f => f.writeUniformCpuMs)
+  const es = gpuFrames.map(f => f.encoderSubmitCpuMs)
+  const p50CpuBucket = (xs: number[]): number => median(xs) ?? 0
+  const p95CpuBucket = (xs: number[]): number => percentile95(xs) ?? 0
+  return {
+    nGpuFrames: gpuFrames.length,
+    gpuFrameMs50: median(gpu),
+    gpuFrameMs95: percentile95(gpu),
+    tickSchedulerCpuMs50: p50CpuBucket(tick),
+    tickSchedulerCpuMs95: p95CpuBucket(tick),
+    writePageTableCpuMs50: p50CpuBucket(wpt),
+    writePageTableCpuMs95: p95CpuBucket(wpt),
+    writeUniformCpuMs50: p50CpuBucket(wu),
+    writeUniformCpuMs95: p95CpuBucket(wu),
+    encoderSubmitCpuMs50: p50CpuBucket(es),
+    encoderSubmitCpuMs95: p95CpuBucket(es),
+  }
+}
+
+export function summarize(
+  frames: readonly BenchSample[],
+  sessionMs: number,
+  gpuFrames: readonly GpuFrameSample[] = [],
+): BenchSummary {
   const draws = frames.map(f => f.drawMs)
   const mean = draws.length === 0 ? null : draws.reduce((a, b) => a + b, 0) / draws.length
   // Frames per second: only meaningful when the session actually ran long enough that a
@@ -111,6 +177,7 @@ export function summarize(frames: readonly BenchSample[], sessionMs: number): Be
     drawP95Ms: percentile95(draws),
     drawMeanMs: mean,
     framesPerSecond: fps,
+    gpuSummary: summarizeGpu(gpuFrames),
   }
 }
 
@@ -125,10 +192,21 @@ export function buildBlob(input: {
   vram: BenchVram | null
   isoDate: string
   writes?: readonly BenchWriteSample[]
+  gpuFrames?: readonly GpuFrameSample[]
 }): BenchBlob {
   const sessionMs = input.savedAt - input.t0
+  const gpuFrames = (input.gpuFrames ?? []).map(g => ({
+    atMs: g.atMs - input.t0,
+    gpuFrameMs: g.gpuFrameMs,
+    tickSchedulerCpuMs: g.tickSchedulerCpuMs,
+    writePageTableCpuMs: g.writePageTableCpuMs,
+    writeUniformCpuMs: g.writeUniformCpuMs,
+    encoderSubmitCpuMs: g.encoderSubmitCpuMs,
+  }))
   return {
-    version: 1,
+    // v2 whenever any GPU/CPU sub-frame samples landed; keeps v1 shape otherwise so an old
+    // reader that never looks at `gpuFrames` still parses cleanly.
+    version: gpuFrames.length > 0 ? 2 : 1,
     mode: input.mode,
     savedAtIso: input.isoDate,
     sessionMs,
@@ -141,7 +219,8 @@ export function buildBlob(input: {
     writes: (input.writes ?? []).map(w => ({
       atMs: w.atMs - input.t0, durationMs: w.durationMs, bytes: w.bytes,
     })),
-    summary: summarize(input.frames, sessionMs),
+    gpuFrames,
+    summary: summarize(input.frames, sessionMs, gpuFrames),
   }
 }
 

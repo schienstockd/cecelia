@@ -141,7 +141,14 @@ export async function acquireGpuDevice(): Promise<{
     maxTextureDimension3D: adapter.limits.maxTextureDimension3D,
     maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
   }
-  const device = await adapter.requestDevice({ requiredLimits })
+  // Best-effort: request `timestamp-query` when the adapter has it, so the bench harness can split
+  // whole-`drawMs` into GPU render vs CPU scheduler/upload/submit. The probe already reports this
+  // as `hasTimestamps`, but until we ask for it in `requiredFeatures` the device won't actually
+  // expose the querySet path. Silently omitted when unsupported — no throw, and the renderer
+  // handles the missing case by not creating a query set.
+  const requiredFeatures: GPUFeatureName[] = []
+  if (adapter.features.has('timestamp-query')) requiredFeatures.push('timestamp-query')
+  const device = await adapter.requestDevice({ requiredLimits, requiredFeatures })
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
     maxBufferSize: device.limits.maxBufferSize,

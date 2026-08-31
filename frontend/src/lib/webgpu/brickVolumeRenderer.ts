@@ -41,6 +41,7 @@ import {
   BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
   BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
 } from './brickShader'
+import type { GpuFrameSample } from '../../utils/benchRecorder'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
  *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
@@ -326,6 +327,42 @@ export async function createBrickVolumeRenderer(
   /** Per-writeBrick timing hook — bench harness only. Fires with the CPU-side duration of one
    *  writeBrick call and the byte count uploaded. Null when unwired. */
   let onBrickWritten: ((durationMs: number, bytes: number) => void) | null = null
+  /** Per-frame GPU + fine-grained CPU timing hook — bench harness only. Fires asynchronously
+   *  (frame N+K) via the timestamp readback. Populates GPU-side fields only on adapters with
+   *  `timestamp-query`; CPU-side fields always populate. Null when unwired. See
+   *  `docs/todo/BRICK_OCTREE_TRANSPLANTS_PLAN.md` P1 — added to unblock diagnosing what's in
+   *  the residual post-B0 drawP95 on f8gzA2. */
+  let onFrameTimings: ((s: GpuFrameSample) => void) | null = null
+  /** Ring of query-set resolve + readback buffers used by the timestamp-query bench path.
+   *  Allocated once at device init, only when the adapter supports `timestamp-query`. Ring
+   *  size 4 covers typical GPU pipeline depth; frames that find no free slot fall back to
+   *  emitting CPU-only timings (with `gpuFrameMs: null`) so the bench never blocks the frame
+   *  loop. Null on adapters that lack the feature. */
+  interface BenchTsRing {
+    readonly querySet: GPUQuerySet
+    readonly resolveBufs: readonly GPUBuffer[]
+    readonly readbackBufs: readonly GPUBuffer[]
+    readonly inflight: boolean[]
+    readonly RING: number
+    nextSlot: number
+  }
+  const benchTs: BenchTsRing | null = report.hasTimestamps
+    ? (() => {
+        const RING = 4
+        return {
+          querySet: device.createQuerySet({ type: 'timestamp', count: 2 }),
+          resolveBufs: Array.from({ length: RING }, () => device.createBuffer({
+            size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+          })),
+          readbackBufs: Array.from({ length: RING }, () => device.createBuffer({
+            size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+          })),
+          inflight: Array.from({ length: RING }, () => false),
+          RING,
+          nextSlot: 0,
+        }
+      })()
+    : null
   /** Timepoints the caller wants prefetched in the background (typically `t±1..t±N` around
    *  `boundT` in the playback direction). Fetched but NOT wired into `pageTableCpu` until
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
@@ -344,12 +381,6 @@ export async function createBrickVolumeRenderer(
    *  true (protects prev-level fallback from arriving mid-load; the fix for the black-rectangle
    *  pattern). URL param `?brickHold=0` disables. */
   let holdFinerEnabled = true
-  /** Frankenstein mode: `show(t)` and the auto-advance path snap `displayT` to `boundT`
-   *  immediately, and `rebuildPageTableForDisplayT` fills any hole with the same brick position
-   *  at the PREVIOUS displayT (kept LRU-warm). Trades hold-on-cold's stale-frame chip for a
-   *  visible per-brick update — the fresh bits arrive as they land. Default on; URL param
-   *  `?brickFrank=0` opts back to hold-on-cold for A/B. */
-  let frankensteinEnabled = true
   /** Timepoint the shader drew from BEFORE `displayT` last moved. Used for Frankenstein hole-
    *  fill — brick positions still empty at `displayT` fall back to the same position at
    *  `prevDisplayT` if the atlas still holds it. `-1` when there is no previous frame. */
@@ -753,7 +784,7 @@ export async function createBrickVolumeRenderer(
     // fresh bricks replace them slot-by-slot as they land. Touch each borrowed brick with the
     // prev-level bias so an eviction between now and the next fetch doesn't yank a slot the
     // shader is actively drawing from.
-    if (frankensteinEnabled && prevDisplayT >= 0 && prevDisplayT !== displayT
+    if (prevDisplayT >= 0 && prevDisplayT !== displayT
         && currentMeta !== null && atlas.currentLevel !== undefined) {
       const lvl = atlas.currentLevel
       const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
@@ -785,18 +816,6 @@ export async function createBrickVolumeRenderer(
       }
     }
     atlas.pageTableDirty = true
-  }
-
-  /** True when the atlas holds AT LEAST ONE brick at `t` at the current level. Cheap sentinel
-   *  for "would rebuilding pageTableCpu for this t leave any non-EMPTY entry?" — if false,
-   *  rebuilding paints a fully black frame. Used to gate the "unblank" auto-advance rule so
-   *  displayT never promotes to a t whose bricks weren't fetched. */
-  const anyBricksResident = (t: number): boolean => {
-    if (atlas === null) return false
-    for (const e of atlas.pageTable.entries()) {
-      if (e.brick.t === t && e.brick.level === atlas.currentLevel) return true
-    }
-    return false
   }
 
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
@@ -834,24 +853,14 @@ export async function createBrickVolumeRenderer(
     // (Dominik, 2026-08-29). `onDisplayAdvanced` signals ViewerWindow so `shownT` (overlays)
     // stays in sync with what the volume is drawing.
     if (boundT !== displayT) {
-      if (frankensteinEnabled) {
-        // Snap-advance: no hold-on-cold. Missing bricks fall back to prev-t via
-        // rebuildPageTableForDisplayT's Frankenstein second pass.
-        prevDisplayT = displayT
-        displayT = boundT
-        rebuildPageTableForDisplayT()
-        onDisplayAdvanced?.(displayT)
-      } else {
-        const targetReady = coreBricksResident(boundT)
-        const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-        const canPartial = anyBricksResident(boundT)
-        if (targetReady || (!displayDrawable && canPartial)) {
-          prevDisplayT = displayT
-          displayT = boundT
-          rebuildPageTableForDisplayT()
-          onDisplayAdvanced?.(displayT)
-        }
-      }
+      // Snap-advance: displayT tracks boundT immediately. Any brick position still empty at the
+      // new displayT falls back to the same position at prevDisplayT via
+      // rebuildPageTableForDisplayT's hole-fill pass — the shader draws prev-t data for holes
+      // rather than a stale full frame or a black frame.
+      prevDisplayT = displayT
+      displayT = boundT
+      rebuildPageTableForDisplayT()
+      onDisplayAdvanced?.(displayT)
     }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
@@ -1128,26 +1137,105 @@ export async function createBrickVolumeRenderer(
     // Test-pattern upload is idempotent-ish (LRU updates lastUsed, but slot stays); OK per frame
     // while the flag is on — the loop only writes the atlas the first time.
     uploadTestPattern()
+    // Bench harness: CPU-side sub-frame timings are always populated when `onFrameTimings` is
+    // wired; GPU-side render pass timing is populated only when the adapter supports
+    // `timestamp-query` AND a ring slot is free. See BRICK_OCTREE_TRANSPLANTS_PLAN P1.
+    const bench = onFrameTimings !== null
+    const drawAtMs = bench ? performance.now() : 0
+
     // Schedule + fetch. The tick decides the current level, updates residency + eviction, and
     // kicks fetches; arriving payloads update `pageTableCpu` and set `pageTableDirty`. Fired
     // BEFORE the uniform + page-table upload so this frame renders with the freshest decisions.
+    const tickT0 = bench ? performance.now() : 0
     if (!testPattern) tickScheduler()
+    const tickT1 = bench ? performance.now() : 0
+
+    const wuT0 = bench ? performance.now() : 0
     writeUniform()
+    const wuT1 = bench ? performance.now() : 0
+
+    const wptT0 = bench ? performance.now() : 0
     writePageTable()
+    const wptT1 = bench ? performance.now() : 0
+
+    // Pick a ring slot for GPU timestamp write, if the harness is on AND the adapter supports
+    // it AND a slot isn't still waiting for its readback to land. If no slot is free, this
+    // frame emits CPU-only timings — the bench never blocks the frame loop.
+    let tsSlot = -1
+    if (bench && benchTs !== null) {
+      for (let i = 0; i < benchTs.RING; i++) {
+        const s = (benchTs.nextSlot + i) % benchTs.RING
+        if (!benchTs.inflight[s]) { tsSlot = s; benchTs.nextSlot = (s + 1) % benchTs.RING; break }
+      }
+    }
 
     const view = ctx.getCurrentTexture().createView()
     const enc = device.createCommandEncoder()
-    const pass = enc.beginRenderPass({
+    const passDesc: GPURenderPassDescriptor = {
       colorAttachments: [{
         view,
         loadOp: 'clear',
         storeOp: 'store',
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
       }],
-    })
+    }
+    if (tsSlot !== -1 && benchTs !== null) {
+      passDesc.timestampWrites = {
+        querySet: benchTs.querySet,
+        beginningOfPassWriteIndex: 0,
+        endOfPassWriteIndex: 1,
+      }
+    }
+    const pass = enc.beginRenderPass(passDesc)
     encodePass(pass, true)
     pass.end()
+    if (tsSlot !== -1 && benchTs !== null) {
+      enc.resolveQuerySet(benchTs.querySet, 0, 2, benchTs.resolveBufs[tsSlot], 0)
+      enc.copyBufferToBuffer(benchTs.resolveBufs[tsSlot], 0, benchTs.readbackBufs[tsSlot], 0, 16)
+    }
+
+    const esT0 = bench ? performance.now() : 0
     device.queue.submit([enc.finish()])
+    const esT1 = bench ? performance.now() : 0
+
+    if (!bench) return
+    // Narrow the callback to non-null for the delivery paths below; TS's flow analysis can't
+    // carry the earlier `onFrameTimings !== null` check across the `bench` boolean.
+    const emit = onFrameTimings!
+
+    const cpuTimings = {
+      tickSchedulerCpuMs: tickT1 - tickT0,
+      writePageTableCpuMs: wptT1 - wptT0,
+      writeUniformCpuMs: wuT1 - wuT0,
+      encoderSubmitCpuMs: esT1 - esT0,
+    }
+    if (tsSlot !== -1 && benchTs !== null) {
+      // Timestamps come back async — reserve the slot until mapAsync lands. Timestamps are
+      // written as u64 in nanoseconds per the WebGPU `timestamp-query` spec; a driver that
+      // quantises further still preserves ns semantics. Convert to ms at delivery time.
+      benchTs.inflight[tsSlot] = true
+      const capturedSlot = tsSlot
+      const capturedBench = benchTs
+      const readback = capturedBench.readbackBufs[capturedSlot]
+      readback.mapAsync(GPUMapMode.READ).then(() => {
+        if (destroyed) return
+        const arr = new BigUint64Array(readback.getMappedRange())
+        const t0 = arr[0], t1 = arr[1]
+        readback.unmap()
+        capturedBench.inflight[capturedSlot] = false
+        const gpuFrameMs = Number(t1 - t0) / 1e6
+        emit({ atMs: drawAtMs, gpuFrameMs, ...cpuTimings })
+      }).catch(() => {
+        // Map failure (device lost, unmap race) — free the slot and skip GPU timing for
+        // this frame; still emit CPU-side so the recorder keeps growing.
+        capturedBench.inflight[capturedSlot] = false
+        emit({ atMs: drawAtMs, gpuFrameMs: null, ...cpuTimings })
+      })
+    } else {
+      // Adapter lacks timestamp-query, or every ring slot is still inflight. Emit CPU-side
+      // only; the recorder still gets a sample this frame.
+      emit({ atMs: drawAtMs, gpuFrameMs: null, ...cpuTimings })
+    }
   }
 
   const r: VolumeRenderer = {
@@ -1169,20 +1257,12 @@ export async function createBrickVolumeRenderer(
       // Bump the scheduler target unconditionally — the fetch loop needs to know what to fetch
       // for next, whether or not we're ready to draw it yet.
       boundT = t
-      // Advance the DISPLAYED timepoint under two conditions, either sufficient:
-      //   (a) core bricks at t are resident (the happy path — we can draw a full frame), OR
-      //   (b) the OLD displayT can't be drawn AND the NEW t has at least SOMETHING resident
-      //       (partial frame > blank frame). Only promoting when boundT has bricks avoids the
-      //       trap where displayT jumps to a cold t and rebuildPageTableForDisplayT leaves the
-      //       page table all EMPTY_SLOT — 2026-08-29 blank-canvas symptom.
-      // First-ever show (displayT === -1) hits (b) — anyBricksResident may still be false, in
-      // which case we don't advance and the shader draws whatever the last-rendered pageTableCpu
-      // held (clear if it's the fresh atlas).
+      // Snap-advance displayT to t. Missing bricks fall back to prevDisplayT via
+      // rebuildPageTableForDisplayT's hole-fill pass. The return value still reports whether
+      // t's core is fully resident so the caller can distinguish a "done" frame from a
+      // "drawing with holes" one — but the advance itself is unconditional.
       const ready = coreBricksResident(t)
-      const displayDrawable = displayT >= 0 && coreBricksResident(displayT)
-      const canPartial = anyBricksResident(t)
-      const snap = frankensteinEnabled && displayT !== t
-      if ((snap || ready || (!displayDrawable && canPartial)) && displayT !== t) {
+      if (displayT !== t) {
         prevDisplayT = displayT
         displayT = t
         rebuildPageTableForDisplayT()
@@ -1367,6 +1447,7 @@ export async function createBrickVolumeRenderer(
     setOnBrickLoaded(cb) { onBrickLoaded = cb },
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
+    setOnFrameTimings(cb) { onFrameTimings = cb },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelFloor(level) {
       // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`
@@ -1381,7 +1462,6 @@ export async function createBrickVolumeRenderer(
       schedulerKnobs = { ...schedulerKnobs, ...k }
     },
     setHoldFinerEnabled(on) { holdFinerEnabled = !!on },
-    setFrankensteinEnabled(on) { frankensteinEnabled = !!on },
     setZPlane(zLo) {
       // Fast plane switch. `setImage` would `dropAtlas()` (destroys a ~64 MB 3D texture) then
       // reallocate — measured 1-2 s of main-thread freeze per wheel tick on Dml3RG 2D

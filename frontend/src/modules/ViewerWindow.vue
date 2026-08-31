@@ -78,6 +78,7 @@ import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
+  type GpuFrameSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
@@ -148,8 +149,6 @@ const brickKnobThr = parseNumQuery(route.query.brickThr, 256)
 const brickKnobThrFromUrl = String(route.query.brickThr ?? '') !== ''
 const brickKnobBias = parseNumQuery(route.query.brickBias, 0)
 const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
-/** Frankenstein hole-fill: default on. `?brickFrank=0` opts back to hold-on-cold for A/B. */
-const brickKnobFrank = String(route.query.brickFrank ?? '1') !== '0'
 /**
  * `?bench=1` — turn on the debug bench harness. Records first-frame time, per-frame CPU
  * draw cost and bytes fetched via a `PerformanceObserver` on `/api/viewer/slab` responses.
@@ -164,11 +163,16 @@ const benchBytes = ref(0)
 /** Per-writeBrick timing samples, brick-only. Populated via `setOnBrickWritten` on the
  *  renderer. Times the atlas-upload path — durationMs is the CPU-side cost of one writeBrick. */
 const benchWrites = shallowRef<BenchWriteSample[]>([])
+/** Per-frame GPU + fine-grained CPU sub-frame samples, brick-only, best-effort. Populated
+ *  asynchronously via `setOnFrameTimings` — GPU-side `gpuFrameMs` requires the adapter's
+ *  `timestamp-query` feature; CPU-side buckets always populate. Not correlated 1:1 with
+ *  `benchFrames`; the blob stores them as a parallel stream. */
+const benchGpuFrames = shallowRef<GpuFrameSample[]>([])
 /** Save-time live tally so the panel shows progress without allocating on every frame. */
 const benchLive = computed(() => {
   const now = performance.now()
   const session = benchT0.value > 0 ? now - benchT0.value : 0
-  return summarizeBench(benchFrames.value, session)
+  return summarizeBench(benchFrames.value, session, benchGpuFrames.value)
 })
 /** Reset the bench counters. Called from setImage() so first-frame is measured from an honest
  *  boundary; also from the panel's Reset button when the user wants a clean segment. */
@@ -178,6 +182,7 @@ function benchReset() {
   benchFrames.value = []
   benchBytes.value = 0
   benchWrites.value = []
+  benchGpuFrames.value = []
 }
 /** Save the current bench state as a JSON download. Filename encodes mode + image + iso date
  *  so a directory of them doesn't collide across images or renderers. */
@@ -213,6 +218,7 @@ function benchSave() {
     bytesFetched: benchBytes.value,
     vram,
     writes: benchWrites.value,
+    gpuFrames: benchGpuFrames.value,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -494,7 +500,7 @@ const trackSpeedRange = ref<[number, number] | null>(null)
  *  the storage bridge whenever the panel toggles the icon. */
 const popsPanelOn = computed(() => {
   const pt = gatingCurrent.value.popType || 'flow'
-  return setUid.value ? settings.getPopVisible(setUid.value, pt) : true
+  return setUid.value ? settings.getPopVisible(setUid.value, pt) : false
 })
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
@@ -1196,11 +1202,15 @@ async function loadOverlays() {
     //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
     //      on every write, so the override would be clobbered within a second anyway (Dominik,
     //      2026-08-25: "the toggles for pops and tracks dont do anything").
-    // Empty `setUid` = a viewer opened without a set context (rare — export path); default to shown.
+    // Empty `setUid` = a viewer opened without a set context (rare — export path). Default HIDDEN
+    // to match `settings.getPopVisible` (line 429) and the panel's own `popVisible` fallback (both
+    // false). Before this line defaulted to shown, which contradicted the panel — a viewer whose
+    // meta.setUid came back empty showed pop dots while every icon in the panel read as off
+    // (Dominik, 2026-08-31: "population dots still pop up despite the gating toggle being off").
     // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
     // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
     const currentPopType = gatingCurrent.value.popType || 'flow'
-    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : true
+    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : false
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
     overlays.value = p
@@ -2036,10 +2046,10 @@ function tick() {
       return
     }
     const r = renderer.value
-    // Frankenstein mode: advance every tick regardless of residency, so the snap-to-boundT
-    // in show(t) fires and the shader draws each frame with prev-t hole-fill for whatever
-    // hasn't landed. Otherwise a not-yet-resident t stalls and Frankenstein never runs.
-    const readyProbe = brickKnobFrank && bricksEnabled.value
+    // Brick renderer: advance every tick regardless of residency, so show(t) fires its
+    // snap-to-boundT and the shader draws each frame with prev-t hole-fill for whatever hasn't
+    // landed. Flat renderer: gate on cache residency (its frames are all-or-nothing).
+    const readyProbe = bricksEnabled.value
       ? () => true
       : (u: number) => r?.hasTimepoint(u) ?? false
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
@@ -2701,11 +2711,10 @@ async function ensureRenderer() {
       renderer.value = r
       // Apply the initial LOD knobs. `maxIntersect` = URL override if present, else the
       // persisted quality tier; a subsequent tier change goes through the watcher below without
-      // a reallocate. `bias`/`hold`/`frank` stay URL-only (dev knobs). No-ops on the flat
-      // renderer. See `parseNumQuery` block at the top of the module for the param names.
+      // a reallocate. `bias`/`hold` stay URL-only (dev knobs). No-ops on the flat renderer.
+      // See `parseNumQuery` block at the top of the module for the param names.
       r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: brickKnobBias })
       r.setHoldFinerEnabled?.(brickKnobHold)
-      r.setFrankensteinEnabled?.(brickKnobFrank)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
       // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
@@ -2740,6 +2749,12 @@ async function ensureRenderer() {
           benchWrites.value = [...benchWrites.value, {
             atMs: performance.now(), durationMs, bytes,
           }]
+        })
+        // Per-frame GPU + sub-frame CPU timings; delivered asynchronously (frame N+K) from the
+        // renderer's timestamp-query ring. GPU-side field is `null` when the adapter lacks the
+        // feature; CPU-side buckets always populate.
+        r.setOnFrameTimings?.(sample => {
+          benchGpuFrames.value = [...benchGpuFrames.value, sample]
         })
       }
       void r.lost.then(info => {
@@ -3239,10 +3254,26 @@ function onSlabsTick(e: StorageEvent) {
   const [uid, vn] = e.newValue.split(':')
   if (uid === imageUid && vn === labelName.value) reallocate()
 }
+// Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
+// toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
+// clicked. Mirrors the napari path, where `napariImageUid` is set by napari's WS `open` event so
+// panel + napari always agree on WHICH image the toggles govern. Written on mount + on every focus
+// so switching between several open popups follows attention (Dominik, 2026-08-31: "popup shows
+// dots despite panel off" — panel keyed to M2b, popup to fXgbTl).
+function publishViewerFocus() {
+  if (imageUid && typeof localStorage !== 'undefined') {
+    // Timestamp suffix so repeat focuses on the same popup fire the storage event too — the browser
+    // only fires on VALUE CHANGE, and re-focusing the fXgbTl popup after clicking M2b's eye needs
+    // to bounce the panel back to fXgbTl even though the payload is unchanged.
+    localStorage.setItem('cc.viewerFocus', `${imageUid}:${Date.now()}`)
+  }
+}
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSlabsTick)
   window.addEventListener('storage', onSelectModeTick)
+  window.addEventListener('focus', publishViewerFocus)
+  publishViewerFocus()
 })
 
 onUnmounted(() => {
@@ -3250,6 +3281,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onOverlaysTick)
   window.removeEventListener('storage', onSlabsTick)
   window.removeEventListener('storage', onSelectModeTick)
+  window.removeEventListener('focus', publishViewerFocus)
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -3679,6 +3711,22 @@ onUnmounted(() => {
             <span>{{ benchLive.drawMedianMs !== null ? benchLive.drawMedianMs.toFixed(2) + ' ms' : '—' }}</span>
             <span class="cc-muted">Draw p95</span>
             <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
+            <template v-if="bricksEnabled">
+              <span class="cc-muted" v-tooltip.left="'GPU render pass p50/p95'">GPU</span>
+              <span :class="benchLive.gpuSummary?.gpuFrameMs95 != null
+                  ? (benchLive.gpuSummary.gpuFrameMs95 > 33 ? 'vw-gpu-fail'
+                    : benchLive.gpuSummary.gpuFrameMs95 > 16 ? 'vw-gpu-warn' : '')
+                  : ''">{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
+              <span class="cc-muted" v-tooltip.left="'CPU split p50·p95: tick / pt / submit'">CPU tick/pt/es</span>
+              <span>
+                <template v-if="benchLive.gpuSummary">
+                  {{ benchLive.gpuSummary.tickSchedulerCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.tickSchedulerCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.writePageTableCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.writePageTableCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.encoderSubmitCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.encoderSubmitCpuMs95.toFixed(2) }} ms
+                </template>
+                <template v-else>—</template>
+              </span>
+            </template>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
             <template v-if="bricksEnabled">
@@ -3695,8 +3743,8 @@ onUnmounted(() => {
                 {{ brickDisplayT }} → {{ brickBoundT }}
               </span>
               <span class="cc-muted">Knobs</span>
-              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1 · ?brickFrank=1 (hole-fill)'">
-                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }} · frank {{ brickKnobFrank ? 'on' : 'off' }}
+              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
+                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
               </span>
             </template>
             <template v-else>
@@ -4293,6 +4341,11 @@ onUnmounted(() => {
 .vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
 .vw-tilemap-cell.is-resident { background: var(--cc-accent); }
 .vw-tilemap-cell.is-loading { background: var(--cc-sev-warn); }
+/* Bench-chip GPU-cost budget hints — color only, no font-size change (the chip uses `cc-fs-3xs`,
+   and `cc-muted-warn`/`cc-muted-error` also bump size). Thresholds: p95 > 16 ms = 60 Hz budget
+   slipped; p95 > 33 ms = 30 Hz too. Standard fps split. */
+.vw-gpu-warn { color: var(--cc-sev-warn); }
+.vw-gpu-fail { color: var(--cc-sev-fail); }
 /* Brick residency map: one Z slice per column. Slices sit side by side and each carries a small
    z index below. Same cell language as the tile map (blue = resident, amber = fetching). */
 .vw-brickmaprow { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }

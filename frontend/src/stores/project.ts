@@ -338,6 +338,23 @@ export const useProjectStore = defineStore('project', () => {
     for (const s of sets.value) { const im = s.images.find(i => i.uid === uid); if (im) return im.attr ?? {} }
     return {}
   }
+  // Cross-window focus bridge. The WebGPU viewer runs in a popup with its own Pinia store, so a
+  // focus change there doesn't reach `openImageUid` here. Mirrors the napari path (`napariImageUid`
+  // is set by the WS `open` event whenever napari opens an image, so panel + napari agree on WHICH
+  // image the toggles govern). The popup writes `cc.viewerFocus = imageUid` on mount and window
+  // focus; this listener picks it up. Without it, the panel keeps controlling the last-eye-clicked
+  // image while a stranded popup shows a different image (Dominik, 2026-08-31: "popup shows dots
+  // even though every panel toggle is off" — panel keyed to M2b, popup to fXgbTl).
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', e => {
+      if (e.key !== 'cc.viewerFocus' || !e.newValue) return
+      // Payload: `<imageUid>:<ts>`. The timestamp is there to defeat same-value writes — every focus
+      // fires the event, whether the imageUid changed or not.
+      const [uid] = e.newValue.split(':')
+      if (uid) openImageUid.value = uid
+    })
+  }
+
   // union of attribute names (+ their distinct non-empty values) across the given images — the SAME
   // client-side source `imageAttr` colours from, so a picker built on this can't offer an attr the
   // colouring can't resolve (no setUid dependency, unlike GET /api/plots/attrs). First-appearance order.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   median, percentile95, summarize, buildBlob, benchFilename,
-  type BenchSample, type BenchMeta,
+  type BenchSample, type BenchMeta, type GpuFrameSample,
 } from './benchRecorder'
 
 describe('median', () => {
@@ -87,5 +87,80 @@ describe('benchFilename', () => {
   it('encodes mode + image + iso date, safe for shell paste', () => {
     const f = benchFilename('brick', 'fXgbTl', '2026-08-29T10:15:23.456Z')
     expect(f).toBe('bench-fXgbTl-brick-2026-08-29_10-15-23-456Z.json')
+  })
+})
+
+// GPU/CPU sub-frame timings — added for BRICK_OCTREE_TRANSPLANTS_PLAN P1. `summarize` must
+// tolerate an empty gpuFrames array (v1 shape) and populate `gpuSummary` on v2. `buildBlob`
+// bumps the version tag on v2 and normalises `atMs` the same way as `frames[i]`.
+const gpuFrame = (atMs: number, gpuFrameMs: number | null, cpuScale = 1): GpuFrameSample => ({
+  atMs, gpuFrameMs,
+  tickSchedulerCpuMs: 0.1 * cpuScale,
+  writePageTableCpuMs: 0.2 * cpuScale,
+  writeUniformCpuMs: 0.05 * cpuScale,
+  encoderSubmitCpuMs: 0.3 * cpuScale,
+})
+
+describe('summarize with gpuFrames', () => {
+  it('reports gpuSummary null when the parallel stream is empty (v1 shape)', () => {
+    const s = summarize([sample(0, 5)], 1000, [])
+    expect(s.gpuSummary).toBeNull()
+  })
+  it('populates GPU + CPU-bucket p50/p95 when the stream has samples', () => {
+    const gpu: GpuFrameSample[] = [
+      gpuFrame(10, 1.0, 1),
+      gpuFrame(20, 2.0, 1),
+      gpuFrame(30, 3.0, 1),
+      gpuFrame(40, 4.0, 1),
+    ]
+    const s = summarize([sample(0, 5)], 1000, gpu)
+    expect(s.gpuSummary).not.toBeNull()
+    expect(s.gpuSummary!.nGpuFrames).toBe(4)
+    // Even length → median averages the two middles.
+    expect(s.gpuSummary!.gpuFrameMs50).toBe(2.5)
+    // p95 uses nearest-rank; ceil(0.95*4)-1 = 3 → the top sample.
+    expect(s.gpuSummary!.gpuFrameMs95).toBe(4.0)
+    // CPU-side buckets always populate (never null).
+    expect(s.gpuSummary!.tickSchedulerCpuMs50).toBeCloseTo(0.1)
+    expect(s.gpuSummary!.writePageTableCpuMs50).toBeCloseTo(0.2)
+    expect(s.gpuSummary!.encoderSubmitCpuMs95).toBeCloseTo(0.3)
+  })
+  it('leaves gpuFrameMs50/95 null when every sample has gpuFrameMs=null (adapter had no timestamp-query)', () => {
+    const gpu: GpuFrameSample[] = [
+      gpuFrame(10, null, 1), gpuFrame(20, null, 1), gpuFrame(30, null, 1),
+    ]
+    const s = summarize([sample(0, 5)], 1000, gpu)
+    expect(s.gpuSummary!.gpuFrameMs50).toBeNull()
+    expect(s.gpuSummary!.gpuFrameMs95).toBeNull()
+    // CPU buckets still populate — the audit's split needs those even without the GPU side.
+    expect(s.gpuSummary!.tickSchedulerCpuMs50).toBeCloseTo(0.1)
+  })
+})
+
+describe('buildBlob with gpuFrames', () => {
+  it('tags version=1 and empties gpuFrames when the stream is absent (backward-compatible v1 shape)', () => {
+    const b = buildBlob({
+      mode: 'brick', meta, t0: 1000, savedAt: 5000, isoDate: '2026-08-29T10:00:00Z',
+      firstFrameMs: 210,
+      frames: [sample(1050, 3)],
+      bytesFetched: 0, vram: null,
+    })
+    expect(b.version).toBe(1)
+    expect(b.gpuFrames).toEqual([])
+    expect(b.summary.gpuSummary).toBeNull()
+  })
+  it('tags version=2 and normalises gpuFrames[i].atMs relative to t0', () => {
+    const b = buildBlob({
+      mode: 'brick', meta, t0: 1000, savedAt: 5000, isoDate: '2026-08-29T10:00:00Z',
+      firstFrameMs: 210,
+      frames: [sample(1050, 3)],
+      bytesFetched: 0, vram: null,
+      gpuFrames: [gpuFrame(1100, 1.5), gpuFrame(1200, 2.5)],
+    })
+    expect(b.version).toBe(2)
+    expect(b.gpuFrames[0]!.atMs).toBe(100)
+    expect(b.gpuFrames[1]!.atMs).toBe(200)
+    expect(b.gpuFrames[0]!.gpuFrameMs).toBe(1.5)
+    expect(b.summary.gpuSummary!.nGpuFrames).toBe(2)
   })
 })
