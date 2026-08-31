@@ -1446,7 +1446,9 @@ export async function createBrickVolumeRenderer(
       }
     },
     setAlphaMode(mode: GPUCanvasAlphaMode) {
-      ctx.configure({ device, format, alphaMode: mode })
+      // Reconfigure must mirror the initial configure at line 144 — linear base + sRGB viewFormat.
+      // Passing the sRGB view format as `format` throws "Unsupported canvas context format".
+      ctx.configure({ device, format: canvasFormat, viewFormats: [format], alphaMode: mode })
     },
 
     setNeedsRedraw(cb) { needsRedraw = cb },

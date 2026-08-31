@@ -4455,8 +4455,14 @@ onUnmounted(() => {
 /* Every row is its own height — no vertical shrinking. In a tall column with more content than
    fits, the default `flex-shrink: 1` was compressing every row (the 2D/3D segmented toggle,
    Reset view button, brick-map grid) instead of letting `.vw-side` scroll (Dominik, 2026-08-29).
-   `CollapsibleSection` already sets `flex-shrink: 0` on its own root; this covers everything else. */
-.vw-side > * { flex-shrink: 0; }
+   `CollapsibleSection` already sets `flex-shrink: 0` on its own root; this covers everything else.
+   `flex-grow: 0` for the mirror case: the Depth range slider (`.rs` has `flex: 1` so it grows in
+   its intended horizontal `.cc-row` parent) and the Timepoint / Plane / Fps `<input type=range>`
+   (`.vw-grow` is `flex: 1` for the same horizontal fill) are direct children of `.vw-side`
+   in the current template. In a column flex parent, `flex-grow: 1` stretches them along the
+   VERTICAL axis, leaving huge gaps between the caption and the slider, and the slider and the
+   next control (Dominik, 2026-08-31). */
+.vw-side > * { flex-shrink: 0; flex-grow: 0; }
 .vw-title { font-weight: 600; word-break: break-word; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
