@@ -1,8 +1,9 @@
-// One home for the backend service-control endpoints — the Pluto notebooks server and the napari
-// bridge. Both the Settings service panel (SettingsModule) and the Notebooks page (NotebooksModule)
-// drive these; route through here so an endpoint string / request shape lives in exactly ONE place
-// (the same reason app quit goes through the appControl store). App-level lifecycle (quit / update /
-// dev restart) stays in appControl — this is only the per-service start/stop/restart controls.
+// One home for the backend service-control endpoints — the Pluto notebooks server and the task-
+// preview worker. Both the Settings service panel (SettingsModule) and the Notebooks page
+// (NotebooksModule) drive these; route through here so an endpoint string / request shape lives in
+// exactly ONE place (the same reason app quit goes through the appControl store). App-level
+// lifecycle (quit / update / dev restart) stays in appControl — this is only the per-service
+// start/stop/restart controls.
 
 /**
  * A failed service call. `code` is the backend's machine-readable reason (see docs/API.md); a caller
@@ -57,12 +58,6 @@ export const notebooksApi = {
   shutdown: () => svcPost('/api/notebooks/shutdown'),
 }
 
-/** Napari bridge (port 7655). */
-export const napariApi = {
-  restart: () => svcPost('/api/napari/restart'),
-  close: () => svcPost('/api/napari/close'),
-}
-
 /**
  * Task-preview worker (port 7656) — the resident process that runs a task's real compute over the
  * region the viewer is showing.
@@ -90,7 +85,7 @@ export const previewApi = {
    * import shows up as an immediate `starting` reply, not a slow one), so hitting it means stuck.
    *
    * `region` and the open-image fields come from the browser viewer (P7): the API uses them as source
-   * of truth for what's on screen rather than asking napari.
+   * of truth for what's on screen.
    */
   run: (body: {
     projectUid: string

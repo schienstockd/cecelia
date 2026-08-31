@@ -5,19 +5,20 @@
 export type ServiceState = 'running' | 'starting' | 'stopped'
 export type Tone = 'ok' | 'warn' | 'idle'
 
-/** GET /api/napari/status → { alive, starting } */
-export function napariState(s: { alive?: boolean; starting?: boolean } | null | undefined): ServiceState {
+/** `{alive, starting}` → running/starting/stopped. Shared by services that report health as an
+ *  alive flag plus a start-in-progress flag (the preview worker; historically napari too). */
+function aliveState(s: { alive?: boolean; starting?: boolean } | null | undefined): ServiceState {
   if (!s) return 'stopped'
   if (s.starting) return 'starting'
   return s.alive ? 'running' : 'stopped'
 }
 
-/** GET /api/preview/status → { alive, starting, … } — same shape as napari's, so same reducer.
+/** GET /api/preview/status → { alive, starting, … }.
  *
  *  Worth a service row of its own even though the toggle lives on the task page: a warm cellpose model
  *  holds GPU memory, and the task page's toggle is only reachable while you are ON that page with a
  *  previewable task selected. Without a row here, a preview left on has no off switch at all. */
-export const previewState = napariState
+export const previewState = aliveState
 
 /** GET /api/notebooks/status → { running, starting, … } */
 export function notebooksState(s: { running?: boolean; starting?: boolean } | null | undefined): ServiceState {
@@ -26,8 +27,8 @@ export function notebooksState(s: { running?: boolean; starting?: boolean } | nu
   return s.running ? 'running' : 'stopped'
 }
 
-/** Human uptime from a whole-second count: "45s", "12m", "3h 4m". "—" for missing/invalid. Used to show
- *  how long the backend / napari bridge has been up (spotting a stale process that didn't restart). */
+/** Human uptime from a whole-second count: "45s", "12m", "3h 4m". "—" for missing/invalid. Used to
+ *  show how long the backend has been up (spotting a stale process that didn't restart). */
 export function formatUptime(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—'
   const s = Math.floor(seconds)

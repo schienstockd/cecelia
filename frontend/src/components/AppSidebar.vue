@@ -196,7 +196,7 @@ function isNavDisabled(item: NavItem): boolean {
                invite this particular click. -->
           <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" data-guide="sidebar.quit"
                   :disabled="appCtl.busy" @click="armQuit(arm)"
-                  v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
+                  v-tooltip.right="'Quit Cecelia — stop notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>
           <template v-else>

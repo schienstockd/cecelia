@@ -690,8 +690,8 @@ onUnmounted(() => {
         ><i class="pi pi-image" /></button>
 
         <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAutoSaveLayerProps }"
-          @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerAutoSaveLayerProps }"
+          @click="settings.viewerAutoSaveLayerProps = !settings.viewerAutoSaveLayerProps"
           v-tooltip.bottom="'Save contrast, colormap and T/Z as you change them'"
         ><i class="pi pi-bookmark" /></button>
 

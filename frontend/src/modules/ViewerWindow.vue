@@ -3000,7 +3000,7 @@ function autoAllContrast() {
 // trip these same watchers. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
 const propsSink = debouncedSave(async () => {
   const m = meta.value
-  if (!m || !settings.napariAutoSaveLayerProps) return
+  if (!m || !settings.viewerAutoSaveLayerProps) return
   const vs = captureViewState({
     meta: m, channels: m.channels, cam: cam.value,
     mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
@@ -3046,7 +3046,7 @@ async function loadVersion(refit: boolean) {
   // pipeline picked for a whole-slide plane would be wrong and would need a second reallocate.
   // Post-alloc bits (channels, camera pose, T) go through `duringRestore` AFTER, since they don't
   // change which renderer gets built. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
-  const saved = settings.napariAutoSaveLayerProps
+  const saved = settings.viewerAutoSaveLayerProps
     ? await loadViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined })
     : null
   if (saved) {
