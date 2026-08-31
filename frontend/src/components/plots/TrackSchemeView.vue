@@ -39,6 +39,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
+import { useSettingsStore } from '../../stores/settings'
 import { useNapariOpen } from '../../composables/useNapariOpen'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
@@ -328,6 +329,7 @@ const log = useLogStore()
 // which image the VIEWER holds, and the one canonical way to change it (useNapariOpen) — a track panel
 // must not grow a second open path
 const project = useProjectStore()
+const settings = useSettingsStore()
 const { openInNapari } = useNapariOpen()
 const serverThresholds = ref<TrackThresholds>({})
 const thr = computed<TrackThresholds>({
@@ -355,20 +357,12 @@ const knobDrafts = Object.fromEntries(
 const napariSel = ref<TrackSelection | null>(null)
 const napariSummary = computed(() => selectionSummary(napariSel.value))
 
-async function drawInNapari() {
-  // same reason as `showInNapari`: a region drawn on the image ON SCREEN would resolve against this
-  // panel's labels, which is only meaningful when they are the same image
+async function enterSelectMode() {
+  // Same reason as `showInNapari`: a region drawn on the image ON SCREEN would resolve against this
+  // panel's labels, which is only meaningful when they are the same image.
   if (!(await ensureViewerImage())) return
-  try {
-    await fetch('/api/napari/start-selection', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, imageUid: imageUid.value,
-                             valueName: valueName.value }),
-    })
-    log.info('Draw a region in napari, then press Read selection.', { source: 'tracks' })
-  } catch (e) {
-    log.warn(`Could not start the napari selection: ${e}`, { source: 'tracks' })
-  }
+  settings.viewerSelectMode = 'select'
+  log.info('Drag a rectangle on the viewer, then press Read.', { source: 'tracks' })
 }
 
 /** Read what was drawn and SELECT those lanes — the timeline then shows when each of them existed. */
@@ -868,7 +862,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 
       <div class="cc-btn-group">
         <button class="cc-btn cc-btn-bare cc-btn-dense"
-                v-tooltip.top="'Select tracks by drawing a region in napari'" @click="drawInNapari">
+                v-tooltip.top="'Select tracks by dragging a rectangle in the viewer'"
+                @click="enterSelectMode">
           <i class="pi pi-pencil" /> Draw
         </button>
         <button class="cc-btn cc-btn-bare cc-btn-dense"

@@ -58,7 +58,7 @@ describe('rangeControls', () => {
     expect(rangeControls('<input type="text" @input="go()" />')).toEqual([])
   })
   it('flags a side-effecting drag handler', () => {
-    expect(undeclaredControls('<input type="range" @input="refreshNapari()" />')).toHaveLength(1)
+    expect(undeclaredControls('<input type="range" @input="refreshOverlays()" />')).toHaveLength(1)
   })
 })
 

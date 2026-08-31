@@ -331,6 +331,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_post(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
+    "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),
     "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),
     "/api/viewer/thumbnail" => (req, body_bytes) -> (api_viewer_thumbnail(body_bytes)),
     "/api/napari/open" => (req, body_bytes) -> (api_napari_open(body_bytes)),
