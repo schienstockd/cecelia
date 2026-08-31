@@ -10,8 +10,11 @@
 //
 // The pure parts (summary math, JSON shape) live here so they can be tested without a browser.
 
-/** Descriptor for the image the session is measuring. Nulls when meta hasn't loaded yet. */
+/** Descriptor for the image the session is measuring. Nulls when meta hasn't loaded yet.
+ *  projectUid is the enclosing context so a saved blob is self-locating without needing to
+ *  cross-reference the filename or the projects tree. */
 export interface BenchMeta {
+  projectUid: string
   imageUid: string
   valueName: string
   nT: number
@@ -86,6 +89,11 @@ export interface BenchBlob {
   /** v2 only — parallel stream of GPU + CPU sub-frame timings. Empty on v1 blobs and on renderers
    *  that don't populate it. Not correlated with `frames[i]`. */
   gpuFrames: GpuFrameSample[]
+  /** Optional snapshot of the rest of the Debug panel at save time — shader uniform state, brick
+   *  residency, image + cache readouts, render knobs. Shape is loose because the source of each
+   *  field owns its own type; a downstream reader can inspect field by field. Omitted when the
+   *  caller didn't pass one; a v1 or v2 reader that doesn't know about this field ignores it. */
+  debug?: Record<string, unknown>
   summary: BenchSummary
 }
 
@@ -193,6 +201,7 @@ export function buildBlob(input: {
   isoDate: string
   writes?: readonly BenchWriteSample[]
   gpuFrames?: readonly GpuFrameSample[]
+  debug?: Record<string, unknown>
 }): BenchBlob {
   const sessionMs = input.savedAt - input.t0
   const gpuFrames = (input.gpuFrames ?? []).map(g => ({
@@ -220,6 +229,7 @@ export function buildBlob(input: {
       atMs: w.atMs - input.t0, durationMs: w.durationMs, bytes: w.bytes,
     })),
     gpuFrames,
+    ...(input.debug !== undefined ? { debug: input.debug } : {}),
     summary: summarize(input.frames, sessionMs, gpuFrames),
   }
 }

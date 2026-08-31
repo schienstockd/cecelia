@@ -155,7 +155,15 @@ const brickKnobHold = String(route.query.brickHold ?? '1') !== '0'
  * User drives the workload (scrubbing, zooming); Save button downloads a JSON blob for
  * off-line comparison of flat vs brick on the five reference images.
  */
-const benchEnabled = String(route.query.bench ?? '') === '1'
+/** Bench harness state — initial value from the URL query, then toggleable from the Debug panel
+ *  so a session can be turned into a saveable full-history capture without editing the URL. Not
+ *  persisted: bench mode is a per-session diagnostic, not a preference. Reactive so the wiring
+ *  and the Save/Reset chrome update as the toggle flips. */
+const benchEnabled = ref(String(route.query.bench ?? '') === '1')
+/** Ring size for perf recording (Debug panel Perf block) when Debug is open. Under `?bench=1`
+ *  the arrays grow unbounded so a full session can be saved. Otherwise held at the last ~200
+ *  samples — enough for p50/p95 to stabilise, small enough to be cheap. */
+const PERF_RING = 200
 const benchT0 = ref<number>(0)
 const benchFirstFrameMs = ref<number | null>(null)
 const benchFrames = shallowRef<BenchSample[]>([])
@@ -176,6 +184,26 @@ const benchLive = computed(() => {
 })
 /** Reset the bench counters. Called from setImage() so first-frame is measured from an honest
  *  boundary; also from the panel's Reset button when the user wants a clean segment. */
+/** Rendererref that `wireFrameTimings` retargets when Debug opens/closes. Held as a module-scope
+ *  reference so the watcher on `openSection` (declared later, once that ref exists) can flip the
+ *  wiring without needing the renderer handle passed in. */
+let lastWiredRenderer: VolumeRenderer | null = null
+/** Wire or unwire the renderer's per-frame GPU/CPU sub-frame callback based on whether the
+ *  Debug section is currently open (or `?bench=1` is set). Skipping the wire means the renderer
+ *  never creates the query-set write into the render pass, so the whole timestamp path is
+ *  zero-cost for a normal viewer session. Called from `ensureRenderer` (initial wire) and from
+ *  a watch on `openSection` (state change). */
+function wireFrameTimings(r: VolumeRenderer | null) {
+  lastWiredRenderer = r
+  if (r?.setOnFrameTimings === undefined) return
+  const on = benchEnabled.value || openSection.value === 'debug'
+  if (!on) { r.setOnFrameTimings(null); return }
+  r.setOnFrameTimings(sample => {
+    benchGpuFrames.value = benchEnabled.value
+      ? [...benchGpuFrames.value, sample]
+      : [...benchGpuFrames.value.slice(-(PERF_RING - 1)), sample]
+  })
+}
 function benchReset() {
   benchT0.value = performance.now()
   benchFirstFrameMs.value = null
@@ -191,7 +219,7 @@ function benchSave() {
   if (!m) return
   const iso = new Date().toISOString()
   const benchMeta: BenchMeta = {
-    imageUid, valueName: valueName.value || '',
+    projectUid, imageUid, valueName: valueName.value || '',
     nT: m.nT, nC: m.nC, nZ: m.nZ, nY: m.nY, nX: m.nX,
     nLevels: m.levels?.length ?? 1,
     bytesPerVoxel: m.bytesPerVoxel,
@@ -207,6 +235,35 @@ function benchSave() {
     residentBricks: br?.resident.length ?? 0,
     brickSizeVox: br?.brickSizeVox ?? [0, 0, 0],
   } : null
+  // Full Debug-panel snapshot — everything else the panel currently shows, so the saved blob is
+  // self-contained rather than "here are numbers, ask the user what they were looking at".
+  const debug: Record<string, unknown> = {
+    shader: shader.value,
+    bricks: br ?? null,
+    imageInfo: {
+      slabLevel: slabLevel.value,
+      renderNX: renderNX.value,
+      renderNY: renderNY.value,
+      resident: resident.value.length,
+      capacity: gpu.value.capacity,
+      capped: gpu.value.capped,
+      hits: hits.value,
+      misses: misses.value,
+      lastMissMs: lastMissMs.value,
+      lastTiming: timing.value,
+      contrastSource: m.contrastSource ?? null,
+    },
+    knobs: {
+      viewerSteps: settings.viewerSteps,
+      viewerCacheFrames: settings.viewerCacheFrames,
+      viewerCompress: settings.viewerCompress,
+      opaqueCanvas: opaqueCanvas.value,
+      testPattern: testPattern.value,
+      brickKnobThr, brickKnobBias, brickKnobHold,
+      brickKnobThrFromUrl, effectiveMaxIntersect: effectiveMaxIntersect.value,
+      viewerBrickTier: settings.viewerBrickTier,
+    },
+  }
   const blob = buildBenchBlob({
     mode: bricksEnabled.value ? 'brick' : 'flat',
     meta: benchMeta,
@@ -219,6 +276,7 @@ function benchSave() {
     vram,
     writes: benchWrites.value,
     gpuFrames: benchGpuFrames.value,
+    debug,
   })
   const json = JSON.stringify(blob, null, 2)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -1031,17 +1089,21 @@ const frame = usePlotResize(canvas, () => {
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
-  // `?bench=1`: time the r.draw() submission. Only CPU-side (GPU still runs after we return),
-  // but it captures per-sample overhead like the brick renderer's page-table indirection which
-  // the flat renderer doesn't pay. First frame after setImage is recorded separately.
-  const drawT0 = benchEnabled ? performance.now() : 0
+  // Draw-time recording is gated on Debug being open (or `?bench=1` for the full-session
+  // workflow). Debug is a diagnostic surface — no reason to pay per-frame `performance.now()`
+  // + a GPU timestamp-query resolve when the panel isn't visible. Under `?bench=1` arrays grow
+  // unbounded; otherwise they roll over PERF_RING.
+  const recording = benchEnabled.value || openSection.value === 'debug'
+  const drawT0 = recording ? performance.now() : 0
   r.draw()
-  if (benchEnabled) {
+  if (recording) {
     const drawT1 = performance.now()
     const sample: BenchSample = { atMs: drawT1, drawMs: drawT1 - drawT0 }
     // shallowRef on an array — replace with a new array so consumers reacting to it see the
     // change (mutating in place wouldn't trigger the computed).
-    benchFrames.value = [...benchFrames.value, sample]
+    benchFrames.value = benchEnabled.value
+      ? [...benchFrames.value, sample]
+      : [...benchFrames.value.slice(-(PERF_RING - 1)), sample]
     if (benchFirstFrameMs.value === null && benchT0.value > 0) {
       benchFirstFrameMs.value = drawT1 - benchT0.value
     }
@@ -2393,6 +2455,10 @@ const keysBtn = ref<HTMLElement | null>(null)
  */
 const openSection = ref(localStorage.getItem('cc.vw.section') ?? 'channels')
 watch(openSection, v => localStorage.setItem('cc.vw.section', v))
+// Re-wire the renderer's frame-timings callback when Debug opens/closes OR when the bench
+// toggle flips, so the query-set resolve path is only paid when someone is looking at the
+// readouts. The bench toggle also gates whether the arrays grow unbounded (save-blob) or roll.
+watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
 /**
  * Takes the key AND the event, rather than returning a handler.
  *
@@ -2742,21 +2808,19 @@ async function ensureRenderer() {
           frame.redraw()
         }
       })
-      // ?bench=1: capture per-writeBrick timings. Fires from inside the brick renderer, so
-      // kept gated on the harness flag — no cost when bench is off.
-      if (benchEnabled) {
+      // Per-writeBrick timings: only useful for save-blob analysis, kept gated on `?bench=1`.
+      if (benchEnabled.value) {
         r.setOnBrickWritten?.((durationMs, bytes) => {
           benchWrites.value = [...benchWrites.value, {
             atMs: performance.now(), durationMs, bytes,
           }]
         })
-        // Per-frame GPU + sub-frame CPU timings; delivered asynchronously (frame N+K) from the
-        // renderer's timestamp-query ring. GPU-side field is `null` when the adapter lacks the
-        // feature; CPU-side buckets always populate.
-        r.setOnFrameTimings?.(sample => {
-          benchGpuFrames.value = [...benchGpuFrames.value, sample]
-        })
       }
+      // Per-frame GPU + sub-frame CPU timings: wired only when the Debug section is open (or
+      // `?bench=1` is set). Wiring/unwiring lets the renderer skip the GPU query-set resolve
+      // entirely when nothing is watching — Debug is a developer diagnostic surface, not
+      // something a normal viewer session pays for. Delivered asynchronously (frame N+K).
+      wireFrameTimings(r)
       void r.lost.then(info => {
         stopPlay()
         pump.cancel()
@@ -2832,7 +2896,7 @@ async function reallocate(refit = false) {
     // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
-    if (benchEnabled) benchReset()
+    if (benchEnabled.value) benchReset()
     r.setImage(m, effectiveCacheBytes.value, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
@@ -3199,7 +3263,9 @@ onMounted(() => window.addEventListener('keydown', onKey))
  */
 let benchPerfObs: PerformanceObserver | null = null
 onMounted(() => {
-  if (!benchEnabled) return
+  // Attached unconditionally: bytes-fetched tallies for the Debug panel's Bytes readout, which
+  // is visible even when the bench harness toggle is off. The observer filters to slab URLs so
+  // it doesn't count other network traffic; overhead is a callback per slab response.
   try {
     benchPerfObs = new PerformanceObserver(list => {
       let sum = 0
@@ -3692,76 +3758,6 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- Bench harness — visible only under `?bench=1`. Records first-frame time, CPU draw
-             cost per frame and slab bytes fetched via a PerformanceObserver. User drives the
-             workload (scrub, zoom, spin); Save downloads a JSON blob per session. Meant for
-             flat-vs-brick timing on the five reference images. -->
-        <template v-if="benchEnabled">
-          <div class="cc-row cc-row-tight vw-bench-head">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Bench: flat vs brick timing'">Bench</span>
-            <span class="cc-muted cc-fs-3xs">{{ bricksEnabled ? 'brick' : 'flat' }}</span>
-          </div>
-          <div class="vw-bench-grid cc-fs-3xs">
-            <span class="cc-muted">First frame</span>
-            <span>{{ benchFirstFrameMs !== null ? benchFirstFrameMs.toFixed(0) + ' ms' : '—' }}</span>
-            <span class="cc-muted">Frames</span>
-            <span>{{ benchLive.nFrames }}</span>
-            <span class="cc-muted">Draw median</span>
-            <span>{{ benchLive.drawMedianMs !== null ? benchLive.drawMedianMs.toFixed(2) + ' ms' : '—' }}</span>
-            <span class="cc-muted">Draw p95</span>
-            <span>{{ benchLive.drawP95Ms !== null ? benchLive.drawP95Ms.toFixed(2) + ' ms' : '—' }}</span>
-            <template v-if="bricksEnabled">
-              <span class="cc-muted" v-tooltip.left="'GPU render pass p50/p95'">GPU</span>
-              <span :class="benchLive.gpuSummary?.gpuFrameMs95 != null
-                  ? (benchLive.gpuSummary.gpuFrameMs95 > 33 ? 'vw-gpu-fail'
-                    : benchLive.gpuSummary.gpuFrameMs95 > 16 ? 'vw-gpu-warn' : '')
-                  : ''">{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
-              <span class="cc-muted" v-tooltip.left="'CPU split p50·p95: tick / pt / submit'">CPU tick/pt/es</span>
-              <span>
-                <template v-if="benchLive.gpuSummary">
-                  {{ benchLive.gpuSummary.tickSchedulerCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.tickSchedulerCpuMs95.toFixed(2) }}
-                  / {{ benchLive.gpuSummary.writePageTableCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.writePageTableCpuMs95.toFixed(2) }}
-                  / {{ benchLive.gpuSummary.encoderSubmitCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.encoderSubmitCpuMs95.toFixed(2) }} ms
-                </template>
-                <template v-else>—</template>
-              </span>
-            </template>
-            <span class="cc-muted">Bytes</span>
-            <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
-            <template v-if="bricksEnabled">
-              <span class="cc-muted">Level</span>
-              <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
-              <span class="cc-muted">Cam</span>
-              <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
-              <span class="cc-muted">Bricks</span>
-              <span v-tooltip.left="'missing@dis: bricks the shader wants at displayT · missing@bnd: bricks needed at boundT'">
-                {{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }}@dis / {{ brickMissingAtBoundT }}@bnd
-              </span>
-              <span class="cc-muted">t</span>
-              <span v-tooltip.left="'displayT (drawn) → boundT (scheduler target); divergence = hold-on-cold'">
-                {{ brickDisplayT }} → {{ brickBoundT }}
-              </span>
-              <span class="cc-muted">Knobs</span>
-              <span v-tooltip.left="'?brickThr=N (guard) · ?brickBias=N (±SSE) · ?brickHold=0|1'">
-                thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}
-              </span>
-            </template>
-            <template v-else>
-              <span class="cc-muted">Cache</span>
-              <span>{{ resident.length }} / {{ gpu.capacity }}{{ gpu.capped ? ' (GPU limit)' : '' }}</span>
-              <span class="cc-muted">Per-t</span>
-              <span>{{ (gpu.bytesPerTimepoint / 1e6).toFixed(1) }} MB</span>
-            </template>
-          </div>
-          <div class="cc-row cc-row-tight vw-bench-btns">
-            <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
-                    v-tooltip.top="'Start a new session — same as opening the image afresh'">Reset</button>
-            <button class="cc-btn cc-btn-primary cc-btn-micro" @click="benchSave"
-                    v-tooltip.top="'Download the bench JSON blob'">Save</button>
-          </div>
-        </template>
-
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar + timestamp are burnt into the render, they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
@@ -4097,10 +4093,13 @@ onUnmounted(() => {
           </div>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Debug" tip="Render knobs and cache diagnostics"
+        <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
                             :open="openSection === 'debug'"
                             @update:open="v => setSection('debug', v)" max-height="none">
-          <!-- Ray steps mean nothing for a one-plane box: a single sample lands on the plane. -->
+          <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
+               measure. Steps + Keep for volume mode, then three toggles. Eyebrow matches the
+               readouts below so the whole panel reads as one column of labelled sub-blocks. -->
+          <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Render</div>
           <div class="cc-row cc-row-tight" v-if="mode === 'volume'">
             <span class="cc-muted cc-fs-2xs cc-lbl-col">Steps</span>
             <input
@@ -4138,37 +4137,129 @@ onUnmounted(() => {
             <CcToggle :model-value="testPattern" aria-label="Fill the canvas with a test colour"
                       @update:modelValue="v => { testPattern = v; frame.redraw(); void checkFill() }" />
           </div>
-          <div class="cc-eyebrow cc-fs-2xs">Image</div>
-          <div class="cc-muted cc-fs-3xs">
-            {{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch<br>
-            <template v-if="slabLevel > 0">L{{ slabLevel }} @ {{ renderNX }}×{{ renderNY }} ·</template>
-            {{ (renderNX * renderNY * gpu.zDepth * meta!.bytesPerVoxel / 1e6).toFixed(1) }} MB / channel ·
-            contrast {{ meta!.contrastSource }}<br>
-            cache {{ resident.length }} / {{ gpu.capacity }}
-            <template v-if="gpu.capped">(GPU limit)</template>
-            <template v-else-if="gpu.capacity >= nT && nT > 0">(whole movie fits)</template><br>
-            {{ hits }} hit / {{ misses }} miss<template v-if="lastMissMs"> · last miss {{ lastMissMs }} ms</template><br>
-            <template v-if="timing">
-              fetch {{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Uncap perf arrays for a full-session Save (default is a 200-frame rolling snapshot)'">Bench</span>
+            <CcToggle v-model="benchEnabled" aria-label="Bench harness — uncap perf arrays" />
+          </div>
+
+          <!-- ── Perf — always-on p50/p95 for CPU draw + GPU render pass (brick only for GPU).
+               Under `?bench=1` the arrays grow unbounded (Save covers the full session); otherwise
+               they roll over a fixed window. -->
+          <div class="cc-eyebrow cc-fs-2xs vw-debug-head">
+            Perf <span class="cc-muted cc-fs-3xs">· {{ bricksEnabled ? 'brick' : 'flat' }}</span>
+            <span v-if="benchEnabled" class="vw-rec-pill cc-fs-3xs"
+                  v-tooltip.top="'Bench on: uncapped arrays, Save covers the whole session'">● REC</span>
+          </div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <span class="cc-muted">First frame</span>
+            <span>{{ benchFirstFrameMs !== null ? benchFirstFrameMs.toFixed(0) + ' ms' : '—' }}</span>
+            <span class="cc-muted">Frames</span>
+            <span>{{ benchLive.nFrames }}
+              <span v-if="benchEnabled" class="vw-rec cc-fs-3xs">(session)</span>
+              <span v-else class="cc-muted cc-fs-3xs">(rolling {{ PERF_RING }})</span>
+            </span>
+            <span class="cc-muted" v-tooltip.left="'CPU-side draw() submission — GPU still runs after we return'">Draw p50/p95</span>
+            <span>
+              <template v-if="benchLive.drawMedianMs !== null">
+                {{ benchLive.drawMedianMs.toFixed(2) }} / {{ benchLive.drawP95Ms!.toFixed(2) }} ms
+              </template>
+              <template v-else>—</template>
+            </span>
+            <template v-if="bricksEnabled">
+              <span class="cc-muted" v-tooltip.left="'GPU render pass p50/p95 (raycast + overlays)'">GPU p50/p95</span>
+              <span :class="benchLive.gpuSummary?.gpuFrameMs95 != null
+                  ? (benchLive.gpuSummary.gpuFrameMs95 > 33 ? 'vw-gpu-fail'
+                    : benchLive.gpuSummary.gpuFrameMs95 > 16 ? 'vw-gpu-warn' : '')
+                  : ''">{{ benchLive.gpuSummary?.gpuFrameMs50 != null ? benchLive.gpuSummary.gpuFrameMs50.toFixed(2) + ' / ' + benchLive.gpuSummary.gpuFrameMs95!.toFixed(2) + ' ms' : (benchLive.gpuSummary ? 'n/a' : '—') }}</span>
+              <span class="cc-muted" v-tooltip.left="'CPU split p50·p95: scheduler tick / page-table upload / encoder+submit'">CPU tick/pt/es</span>
+              <span>
+                <template v-if="benchLive.gpuSummary">
+                  {{ benchLive.gpuSummary.tickSchedulerCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.tickSchedulerCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.writePageTableCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.writePageTableCpuMs95.toFixed(2) }}
+                  / {{ benchLive.gpuSummary.encoderSubmitCpuMs50.toFixed(2) }}·{{ benchLive.gpuSummary.encoderSubmitCpuMs95.toFixed(2) }} ms
+                </template>
+                <template v-else>—</template>
+              </span>
+            </template>
+            <span class="cc-muted">Bytes</span>
+            <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+          </div>
+
+          <!-- ── Cache / bricks — mode-conditional state. -->
+          <template v-if="bricksEnabled">
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Bricks</div>
+            <div class="vw-bench-grid cc-fs-3xs">
+              <span class="cc-muted">Level</span>
+              <span>{{ brickCurrentLevel !== undefined ? 'L' + brickCurrentLevel : '—' }}</span>
+              <span class="cc-muted">Cam</span>
+              <span>d {{ cam.dist.toFixed(0) }} / p {{ cam.panX.toFixed(0) }},{{ cam.panY.toFixed(0) }}</span>
+              <span class="cc-muted" v-tooltip.left="'missing@dis: bricks the shader wants at displayT · missing@bnd: bricks needed at boundT'">Bricks</span>
+              <span>{{ brickResidentsAtLevel }} res / {{ brickInflightAtLevel }} inflight / {{ brickMissing }}@dis / {{ brickMissingAtBoundT }}@bnd</span>
+              <span class="cc-muted" v-tooltip.left="'displayT (drawn) → boundT (scheduler target); divergence = hold-on-cold'">t</span>
+              <span>{{ brickDisplayT }} → {{ brickBoundT }}</span>
+              <span class="cc-muted" v-tooltip.left="'?brickThr=N · ?brickBias=N · ?brickHold=0|1'">Knobs</span>
+              <span>thr {{ effectiveMaxIntersect }}{{ brickKnobThrFromUrl ? '' : ` (${settings.viewerBrickTier})` }} · bias {{ brickKnobBias }} · hold {{ brickKnobHold ? 'on' : 'off' }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Cache</div>
+            <div class="vw-bench-grid cc-fs-3xs">
+              <span class="cc-muted">Timepoints</span>
+              <span>{{ resident.length }} / {{ gpu.capacity }}{{ gpu.capped ? ' (GPU limit)' : '' }}</span>
+              <span class="cc-muted">Per-t</span>
+              <span>{{ (gpu.bytesPerTimepoint / 1e6).toFixed(1) }} MB</span>
+              <span class="cc-muted" v-tooltip.left="'Cache hits / misses / last miss cost'">Hits</span>
+              <span>{{ hits }} / {{ misses }}<template v-if="lastMissMs"> · miss {{ lastMissMs }} ms</template></span>
+              <template v-if="timing">
+                <span class="cc-muted">Last fetch</span>
+                <span>{{ timing.fetchMs }} ms (server {{ timing.serverMs }}) · upload {{ timing.uploadMs }} ms</span>
+              </template>
+            </div>
+          </template>
+
+          <!-- ── Image — dims, level, MB/channel, contrast. -->
+          <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Image</div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <span class="cc-muted">Dims</span>
+            <span>{{ meta!.nX }} × {{ meta!.nY }} × {{ meta!.nZ }} · {{ meta!.nT }} t · {{ meta!.nC }} ch</span>
+            <span class="cc-muted">Level</span>
+            <span>
+              <template v-if="slabLevel > 0">L{{ slabLevel }} @ {{ renderNX }}×{{ renderNY }}</template>
+              <template v-else>L0</template>
+              · {{ (renderNX * renderNY * gpu.zDepth * meta!.bytesPerVoxel / 1e6).toFixed(1) }} MB/ch
+            </span>
+            <span class="cc-muted">Contrast</span>
+            <span>{{ meta!.contrastSource }}</span>
+          </div>
+
+          <!-- ── Shader — what the WGSL saw on the last frame. -->
+          <div v-if="shader" class="cc-eyebrow cc-fs-2xs vw-debug-head">Shader</div>
+          <div v-if="shader" class="vw-bench-grid cc-fs-3xs">
+            <span class="cc-muted">Box</span>
+            <span>{{ shader.ext[0].toFixed(0) }} × {{ shader.ext[1].toFixed(0) }} × {{ shader.ext[2].toFixed(1) }} µm · {{ shader.nch }} ch</span>
+            <span class="cc-muted">Camera</span>
+            <span>{{ shader.dist.toFixed(0) }} µm · pan {{ shader.pan[0].toFixed(0) }},{{ shader.pan[1].toFixed(0) }} · {{ shader.steps }} step{{ shader.steps === 1 ? '' : 's' }} · {{ shader.ortho ? 'ortho' : 'perspective' }}</span>
+            <span class="cc-muted">Canvas</span>
+            <span>{{ shader.canvas[0] }} × {{ shader.canvas[1] }}</span>
+            <template v-if="probe">
+              <span class="cc-muted">Shader probe</span>
+              <span>{{ (probe.lit * 100).toFixed(1) }}% lit · {{ (probe.max * 100).toFixed(1) }}% max</span>
+            </template>
+            <template v-if="canvasProbe">
+              <span class="cc-muted">Canvas probe</span>
+              <span>{{ (canvasProbe.lit * 100).toFixed(1) }}% lit · {{ (canvasProbe.max * 100).toFixed(1) }}% max</span>
             </template>
           </div>
-          <!-- What the shader was ACTUALLY told for the frame on screen. The readouts above can all be
-               perfect while the box is the wrong size or the camera is somewhere else, and a frame that
-               draws nothing offers no other evidence. -->
-          <div v-if="shader" class="cc-muted cc-fs-3xs">
-            box {{ shader.ext[0].toFixed(0) }} × {{ shader.ext[1].toFixed(0) }} ×
-            {{ shader.ext[2].toFixed(1) }} µm · {{ shader.nch }} ch<br>
-            camera {{ shader.dist.toFixed(0) }} µm · pan {{ shader.pan[0].toFixed(0) }},
-            {{ shader.pan[1].toFixed(0) }} · {{ shader.steps }} step{{ shader.steps === 1 ? '' : 's' }}
-            · {{ shader.ortho ? 'ortho' : 'perspective' }}<br>
-            canvas {{ shader.canvas[0] }} × {{ shader.canvas[1] }}
-            <template v-if="probe"><br>
-              shader {{ (probe.lit * 100).toFixed(1) }}% lit / {{ (probe.max * 100).toFixed(1) }}%
-            </template>
-            <template v-if="canvasProbe"><br>
-              canvas {{ (canvasProbe.lit * 100).toFixed(1) }}% lit /
-              {{ (canvasProbe.max * 100).toFixed(1) }}%
-            </template>
+
+          <!-- ── Save / Reset — always visible. Save downloads the current perf arrays plus the
+               shader/bricks/image/knobs snapshot; when Bench is off that's the 200-frame rolling
+               window, when Bench is on it's the full session. Reset clears the arrays either way. -->
+          <div class="cc-row cc-row-tight vw-bench-btns">
+            <button class="cc-btn cc-btn-bare cc-btn-micro" @click="benchReset"
+                    v-tooltip.top="benchEnabled ? 'Restart the session capture' : 'Clear the rolling window'">Reset</button>
+            <button class="cc-btn cc-btn-primary cc-btn-micro" @click="benchSave"
+                    v-tooltip.top="benchEnabled ? 'Download the full session as JSON' : 'Download the rolling snapshot as JSON'">Save</button>
           </div>
         </CollapsibleSection>
       </template>
@@ -4352,14 +4443,27 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
 .vw-brickmap-zlabel { line-height: 1; }
-/* Bench harness readout — two-column grid so labels and values line up without a table. */
-.vw-bench-head { margin-top: 0.35rem; }
+/* Debug panel readout — two-column grid so labels and values line up without a table. Flush
+   with the controls above (no horizontal inset), consistent vertical rhythm. */
 .vw-bench-grid {
   display: grid; grid-template-columns: auto 1fr;
-  column-gap: 0.5rem; row-gap: 0.1rem;
-  padding: 0.15rem 0.25rem 0.25rem;
+  column-gap: 0.5rem; row-gap: 0.15rem;
+  padding: 0.1rem 0 0.2rem;
 }
-.vw-bench-btns { justify-content: flex-end; gap: 0.3rem; }
+/* Every eyebrow inside the Debug section gets the same top rhythm. Scoped via `.vw-debug-head`
+   so it doesn't reach the other sidebar sections. The first eyebrow inside CollapsibleSection
+   drops its top gap so the section header isn't followed by dead space. */
+.vw-debug-head { margin-top: 0.55rem; }
+.vw-debug-head:first-child { margin-top: 0.2rem; }
+.vw-bench-btns { justify-content: flex-end; gap: 0.3rem; margin-top: 0.55rem; }
+/* Bench-recording state visibility. `.vw-rec-pill` sits inline in the Perf eyebrow — a small
+   amber dot + "REC" that's hard to miss without stealing space. `.vw-rec` tints the "(session)"
+   suffix on the Frames row so the mode is legible from the number itself. */
+.vw-rec-pill {
+  color: var(--cc-sev-warn); font-weight: 700; letter-spacing: 0.04em;
+  margin-left: 0.4rem;
+}
+.vw-rec { color: var(--cc-sev-warn); }
 /* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
    change — the Fps slider stays the size it was. */
 .vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
