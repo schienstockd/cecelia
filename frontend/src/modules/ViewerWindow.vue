@@ -3794,17 +3794,21 @@ onUnmounted(() => {
           <div class="vw-compact-left">
             <div v-if="nT > 1" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
-                    v-tooltip.right="playing && waitingFor >= 0
-                      ? 'Playback throttled — fetches are behind the requested Fps'
-                      : 'Playback rate — waits rather than skip an uncached frame'">Fps</span>
+                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
               <input
                 type="range" class="vw-grow" :min="1" :max="30" :step="1"
                 v-model.number="settings.viewerFps"
+                v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
                 aria-label="Playback rate (fps)"
               >
+              <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
+                   slider have the plain description so a hover on either still explains the
+                   control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
               <span class="cc-readout cc-fs-2xs vw-fps-val"
-                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">{{ settings.viewerFps }}</span>
+                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                    v-tooltip.left="playing && waitingFor >= 0
+                      ? 'Playback throttled — fetches are behind the requested Fps'
+                      : 'Requested playback rate'">{{ settings.viewerFps }}</span>
             </div>
             <div v-if="nT > 1" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col"
