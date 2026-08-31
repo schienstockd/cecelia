@@ -226,4 +226,87 @@ describe('debouncedLatest', () => {
     await vi.advanceTimersByTimeAsync(50)
     expect(s.state()).toBe('idle')
   })
+
+  // maxWait — the scrub knob. A slider whose user wants to see intermediate positions during a
+  // drag needs a burst to fire periodically, not only on release. The knob does not change the
+  // one-at-a-time or `isCurrent` guarantees; it only lifts the "wait for the burst to pause" rule.
+
+  it('maxWait fires periodically through a sustained burst', async () => {
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100, maxWait: 150 })
+    // A drag: keep scheduling before `wait` can ever elapse — a plain trailing debounce would never
+    // fire until we stop.
+    for (let i = 1; i <= 8; i++) {
+      s.schedule(i)
+      await vi.advanceTimersByTimeAsync(50)     // total 400 ms of continuous scheduling
+    }
+    // maxWait=150 should have fired at 150 ms (arg=3) — one run, latest arg at that moment.
+    // (The second maxWait window won't fire while the first run is still inflight.)
+    expect(r.ran).toEqual([3])
+    // Finish the in-flight run, then the finally-block re-armed timers pick up the latest arg.
+    await r.finish()
+    await vi.advanceTimersByTimeAsync(150)
+    expect(r.ran).toEqual([3, 8])
+  })
+
+  it('maxWait does not reset on subsequent schedules within a burst', async () => {
+    // The whole point of a max: a burst that keeps scheduling faster than `wait` must still see
+    // the timer count down instead of being pushed back forever.
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100, maxWait: 200 })
+    s.schedule(1)
+    await vi.advanceTimersByTimeAsync(80)
+    s.schedule(2)                                  // resets `wait` — trailing debounce restarts
+    await vi.advanceTimersByTimeAsync(80)
+    s.schedule(3)                                  // resets `wait` again
+    // Total 160 ms — trailing timer has been reset twice; maxWait has been running the whole time.
+    expect(r.ran).toEqual([])
+    await vi.advanceTimersByTimeAsync(40)          // 200 ms since first schedule → maxWait elapses
+    expect(r.ran).toEqual([3])
+  })
+
+  it('maxWait: without it, a sustained burst never fires (regression baseline)', async () => {
+    // Pins the shape the knob exists to fix. Same drag as above, plain trailing debounce = no runs.
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100 })
+    for (let i = 1; i <= 8; i++) {
+      s.schedule(i)
+      await vi.advanceTimersByTimeAsync(50)
+    }
+    expect(r.ran).toEqual([])                      // 400 ms of dragging, zero runs
+  })
+
+  it('maxWait: trailing wait still fires when the burst pauses inside the max window', async () => {
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100, maxWait: 500 })
+    s.schedule(1)
+    s.schedule(2)
+    await vi.advanceTimersByTimeAsync(100)         // burst paused → trailing fires first
+    expect(r.ran).toEqual([2])
+    await r.finish()
+    // maxTimer was cleared inside fire — no phantom fire after settling.
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(r.ran).toEqual([2])
+  })
+
+  it('cancel() clears the maxWait timer', async () => {
+    // Same guarantee as the trailing timer — a cancelled scheduler must not fire from a still-armed
+    // scrub cap.
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 500, maxWait: 100 })
+    s.schedule(1)
+    s.cancel()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(r.ran).toEqual([])
+    expect(s.state()).toBe('idle')
+  })
+
+  it('flush() bypasses both wait and maxWait', async () => {
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 500, maxWait: 500 })
+    s.schedule(9)
+    s.flush()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(r.ran).toEqual([9])
+  })
 })
