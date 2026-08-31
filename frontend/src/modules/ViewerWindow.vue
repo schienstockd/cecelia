@@ -3257,10 +3257,26 @@ function onSlabsTick(e: StorageEvent) {
   const [uid, vn] = e.newValue.split(':')
   if (uid === imageUid && vn === labelName.value) reallocate()
 }
+// Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
+// toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
+// clicked. Mirrors the napari path, where `napariImageUid` is set by napari's WS `open` event so
+// panel + napari always agree on WHICH image the toggles govern. Written on mount + on every focus
+// so switching between several open popups follows attention (Dominik, 2026-08-31: "popup shows
+// dots despite panel off" — panel keyed to M2b, popup to fXgbTl).
+function publishViewerFocus() {
+  if (imageUid && typeof localStorage !== 'undefined') {
+    // Timestamp suffix so repeat focuses on the same popup fire the storage event too — the browser
+    // only fires on VALUE CHANGE, and re-focusing the fXgbTl popup after clicking M2b's eye needs
+    // to bounce the panel back to fXgbTl even though the payload is unchanged.
+    localStorage.setItem('cc.viewerFocus', `${imageUid}:${Date.now()}`)
+  }
+}
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSlabsTick)
   window.addEventListener('storage', onSelectModeTick)
+  window.addEventListener('focus', publishViewerFocus)
+  publishViewerFocus()
 })
 
 onUnmounted(() => {
@@ -3268,6 +3284,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onOverlaysTick)
   window.removeEventListener('storage', onSlabsTick)
   window.removeEventListener('storage', onSelectModeTick)
+  window.removeEventListener('focus', publishViewerFocus)
   stopPlay()
   pump.cancel()
   zPump.cancel()
