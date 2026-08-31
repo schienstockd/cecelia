@@ -3,7 +3,6 @@ import { ref, computed, watch } from 'vue'
 import { useLogStore } from './log'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
-import { useSettingsStore } from './settings'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { popPath } from '../utils/popName'
@@ -91,7 +90,6 @@ export const useGatingStore = defineStore('gating', () => {
   const log = useLogStore()
   const meta = useProjectMetaStore()
   const projStore = useProjectStore()
-  const settings = useSettingsStore()
 
   const imageUid  = ref<string | null>(null)
   const valueName = ref<string>('default')
