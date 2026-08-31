@@ -49,12 +49,6 @@ const recordingTask = computed(() => taskStore.tasks.some(t =>
   (t.funName ?? '').startsWith('movie.') && (t.status === 'queued' || t.status === 'running')
 ))
 
-// Pull the error message out of a non-ok response (the API sends { error: "..." }).
-async function _resError(res: Response): Promise<string> {
-  try { const j = await res.json(); return j?.error ?? `HTTP ${res.status}` }
-  catch { return `HTTP ${res.status}` }
-}
-
 const selectedValueName = ref('')
 const visibleLabels     = ref<Record<string, boolean>>({})
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
