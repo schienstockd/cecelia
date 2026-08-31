@@ -461,7 +461,6 @@ function togglePopType(popType: string) {
 }
 
 // Tracks: the WebGPU viewer draws per-segmentation ribbons off `settings.getTrackVisibility` (P7).
-const onTrackVns = computed(() => Object.keys(trackVns.value).filter(vn => trackVns.value[vn]))
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, ping the viewer.
 function toggleTrack(vn: string) {
