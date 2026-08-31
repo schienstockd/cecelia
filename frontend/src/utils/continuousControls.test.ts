@@ -258,6 +258,11 @@ const RO_EXEMPT: Record<string, string> = {
   'components/plots/GateOverlay.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
   'components/plots/PlotLayers.vue': 'draws to a <canvas> of fixed size — a canvas paint cannot change layout',
   'components/plots/UmapView.vue': 'redraws a WebGL canvas at the box size; no element is appended',
+  // Observes the WebGPU canvas so the popout's `viewState.canvas.{width,height}` follows a resize —
+  // the movie surfaces read those fields as the size fields' placeholder. Callback body is a single
+  // `publishViewStateSink.schedule(undefined)`: no DOM write to the observed element, so no
+  // self-resize loop is possible.
+  'modules/ViewerWindow.vue': 'schedules a debouncedLatest publish; callback writes no DOM',
 }
 
 describe('no plot re-renders into the element it observes', () => {
