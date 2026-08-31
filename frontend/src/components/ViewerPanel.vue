@@ -7,10 +7,8 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { useViewerStore } from '../stores/viewer'
-import { pushLabels as apiPushLabels } from '../utils/napariOverlays'
 import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
-  pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
   colourLegend, colourLegendLabels, resetColourLegend,
   livePreviews, previewShown, togglePreview,
 } from '../composables/useNapariAutoShow'
@@ -293,10 +291,9 @@ watch(napariImage, (img) => {
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   labelsExpanded.value = false                 // a different image is a different list
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
-  // Tracks are seeded over BOTH registries — a points-only set is exactly the one whose tracks you
-  // want. Through the shared helper, because `pushTracksNow` must seed from the SAME list: it once
-  // re-derived it from `labels` alone, so an imported set's toggle stored `true` and was then dropped
-  // on the way to napari. Label visibility below is NOT unioned — there are no pixels to show.
+  // Tracks are seeded over BOTH registries (labels ∪ branchLabels) — a points-only set is exactly
+  // the one whose tracks you want. Label visibility below is NOT unioned — there are no pixels to
+  // show for a set with no `labels` registry.
   trackVns.value = settings.getTrackVisibility(img.uid, trackableValueNames(img))
   branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
   // Default to the active version (the `_active` key from the versioned filepath dict) — this is what
@@ -453,92 +450,62 @@ async function recordTimelapse() {
 // Push a pop type's populations to napari as centroid points. The server shows EVERY segmentation's
 // pops at once (each as its own value_name-tagged layer), so `valueName` no longer selects which pops
 // appear — the overlay is independent of which segmentation is "active" (opening the image shows all,
-// not just the active/first one). The bridge namespaces layers by `(popType) (valueName)`, so
-// flow/clust overlays across segmentations coexist. `valueName` is still forwarded as the bridge's
-// per-pop default for older senders; blank is fine.
-const pushPopulations = pushPopulationsNow
+// not just the active/first one). The `valueName` used to be forwarded as the bridge's per-pop
+// default; the WebGPU viewer reads pop visibility off the shared settings bag now (P5).
 
-// Per-pop-type visibility toggle. Persists FIRST (so a hidden panel state survives a napari-down
-// window) and pings the WebGPU viewer to re-derive its hidden-pop set; the napari push is a silent
-// shadow. Previously this only persisted on a successful push, so a napari-down window read every
-// popType as ticked while none of them actually reached the viewer.
-async function togglePopType(popType: string) {
-  const next = !popVisible(popType)
-  setPopVisible(popType, next)
+// Per-pop-type visibility toggle. Persist + ping the WebGPU viewer to re-derive its hidden-pop set.
+// Was dual-write to napari; the mirror went with the P9 slice.
+function togglePopType(popType: string) {
+  setPopVisible(popType, !popVisible(popType))
   pingViewerOverlays()
-  try { await pushPopulations(popType, next) } catch { /* napari down — the WebGPU viewer already knows */ }
 }
 
-// Push the tracks for the currently-toggled-on segmentations (one Tracks layer per segmentation,
-// named by its value_name). `valueNames` = the segmentations whose "directions" toggle is on; empty
-// → the bridge clears all track layers. `colorBy` shades vertices by the chosen obs column.
-const onTrackVns = computed(() => Object.keys(trackVns.value).filter(vn => trackVns.value[vn]))
-// Delegates: every toggle below persists to `settings` BEFORE pushing, so the shared push (which reads
-// settings) sees the new value. It also harvests the colour-by legend into the shared refs.
-const pushTracks = pushTracksNow
+// Tracks: the WebGPU viewer draws per-segmentation ribbons off `settings.getTrackVisibility` (P7).
 
-// Per-segmentation toggle: flip this segmentation's track overlay, persist, re-push the on-set.
-// Pings the WebGPU viewer too — the tracks path is P7-shadowed today (the viewer draws ribbons for
-// every gated track), but persisting + pinging keeps this ready for the P7 rewire.
-async function toggleTrack(vn: string) {
-  // `openImageUid`, not `napariImageUid`: this write must land whether or not napari is running.
-  // Before P6 it was napari-only and `napariImageUid=null` short-circuited the persist — which then
-  // meant the WebGPU viewer never saw the write and kept drawing (or not drawing) tracks by default
-  // (Dominik, 2026-08-26: "i can toggle. but nothing happens"). The napari-only push below still
-  // reads its own uid; that path stays a silent shadow.
+// Per-segmentation toggle: flip this segmentation's track overlay, persist, ping the viewer.
+function toggleTrack(vn: string) {
+  // `openImageUid`, not `napariImageUid`: this write must land whether or not any legacy napari WS
+  // event has fired. Before P6 the persist was gated on `napariImageUid=null`, which meant the
+  // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
   pingViewerOverlays()
-  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
-// Per-segmentation toggle: flip this segmentation's branch (skeleton) label overlay. Uses
-// `allBranchLabels` on show-labels so the bridge routes to `branchLabels/` + names the layer
-// `({vn}) Branches` (kept out of the generic labels picker — BRANCHING_PLAN Decision 6).
-async function toggleBranch(vn: string) {
-  const uid   = projectStore.napariImageUid
+// Per-segmentation toggle: flip this segmentation's branch (skeleton) label overlay. Persist +
+// ping; the WebGPU viewer reads `settings.getBranchVisibility` (via P4-style store).
+function toggleBranch(vn: string) {
+  const uid   = projectStore.openImageUid
   const files = napariImage.value?.branchLabels?.[vn] ?? []
   if (!files.length) {
-    log.error(`No branch label files registered for "${vn}"`, { source: 'napari' })
+    log.error(`No branch label files registered for "${vn}"`, { source: 'viewer' })
     return
   }
   const wasVisible = branchVns.value[vn] ?? true
-  try {
-    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible })
-    if (res?.ok) {
-      branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
-      if (uid) settings.setBranchVisibility(uid, branchVns.value)
-    } else {
-      log.error(`Show branches "${vn}" failed: ${res ? await _resError(res) : 'network error'}`,
-                { source: 'napari' })
-    }
-  } catch (e) {
-    log.error(`Show branches "${vn}" failed: ${e instanceof Error ? e.message : String(e)}`,
-              { source: 'napari' })
-  }
+  branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
+  if (uid) settings.setBranchVisibility(uid, branchVns.value)
+  pingViewerOverlays()
 }
 
 // Master toggle for the gated track populations (TEST/SDGF), like the Show populations toggle.
-async function toggleGatedTracks() {
+function toggleGatedTracks() {
   const next = !gatedTracksShown.value
   gatedTracksShown.value = next
   if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, next)
   pingViewerOverlays()
-  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // Master toggle for the trackclust (track-cluster) populations as ribbons. Persisted per pop type
-// (per-set popVis['trackclust']); re-pushes the track overlays (one call covers all ribbons).
-async function toggleTrackclust() {
+// (per-set popVis['trackclust']); ping so the viewer re-derives.
+function toggleTrackclust() {
   setPopVisible('trackclust', !popVisible('trackclust'))
   pingViewerOverlays()
-  try { await pushTracks() } catch { /* napari down — expected */ }
 }
 
 // ── Colour-by an obs column (tracks + labels) ──────────────────────────────────
-// Tracks: pushTracks already sends `colorBy`. Labels: recolour the Labels layer via a
-// DirectLabelColormap (column='' resets). Options are the open segmentation's obs columns.
+// The WebGPU viewer reads `settings.getColourBy(setUid)` and re-derives colours on the overlay
+// tick; the panel writes the setting and pings. Options are the open segmentation's obs columns.
 async function loadObsCols() {
   const uid = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
@@ -560,35 +527,28 @@ async function loadObsCols() {
   if (colourByCol.value && !obsCols.value.includes(colourByCol.value)) colourByCol.value = ''
 }
 
-// Delegate, but against the panel's SELECTED version rather than the image's active one — the user may
-// be viewing a different version in the dropdown than the one the server would open by default.
-const pushColourLabels = (column: string): Promise<boolean> =>
-  pushColourLabelsNow(column, selectedValueName.value)
-
-// user picked a colour-by column: persist, recolour the tracks (if shown) and the labels layer
+// User picked a colour-by column: persist per-set; the WebGPU viewer picks it up via the overlay
+// tick and re-derives label + track colours from the settings bag.
 function onColourBy(e: Event) {
   const col = (e.target as HTMLSelectElement).value
   colourByCol.value = col
   if (currentSetUid.value) settings.setColourBy(currentSetUid.value, col)   // per-set
-  resetColourLegend()                       // clear old column's legend; pushes below repopulate
-  if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()   // re-push tracks w/ new color_by
-  pushColourLabels(col)                       // recolour labels (or reset when col === '')
+  resetColourLegend()
+  pingViewerOverlays()
 }
 
-// recolour a category value that has no population (its colour isn't defined anywhere) and re-push both
-// layers so the new colour shows immediately; persisted per set + column.
+// Recolour a category value that has no population (its colour isn't defined anywhere) and ping so
+// the viewer redraws; persisted per set + column.
 function onRecolour(value: string, hex: string) {
   if (!currentSetUid.value || !colourByCol.value) return
   settings.setColourOverride(currentSetUid.value, colourByCol.value, value, hex)
-  if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()
-  pushColourLabels(colourByCol.value)
+  pingViewerOverlays()
 }
-// clear this column's user recolours → back to population colours / the default palette
+// Clear this column's user recolours → back to population colours / the default palette.
 function resetColours() {
   if (!currentSetUid.value || !colourByCol.value) return
   settings.clearColourOverrides(currentSetUid.value, colourByCol.value)
-  if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()
-  pushColourLabels(colourByCol.value)
+  pingViewerOverlays()
 }
 
 // Legend rows to render: pop-backed values are DEDUPED by population name — one population can be
@@ -654,17 +614,14 @@ function pingViewerOverlays() {
   localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
 }
 
-async function toggleLabel(valueName: string) {
-  // Write the settings bag FIRST — the WebGPU viewer reads it via `storage` events and is the primary
-  // sink now. The napari push runs after as a shadow (silent on failure): if napari isn't running,
-  // that's expected in the WebGPU era, not an error. See VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+function toggleLabel(valueName: string) {
+  // Write the settings bag; the WebGPU viewer reads it via `storage` events.
   //
   // Radio-like: the WebGPU viewer draws one label mask at a time (r32uint, single-slot bind group;
   // multi-mask is deferred to PX). Ticking a segmentation UNticks the others so what you see in the
   // panel matches what you see in the viewer, instead of the viewer silently picking one of several
   // ticked (Dominik, 2026-08-25: "dont just show the last one clicked").
   const uid = projectStore.openImageUid
-  const files = napariImage.value?.labels?.[valueName] ?? []
   const wasVisible = visibleLabels.value[valueName] ?? false
   const next = !wasVisible
   // Every label name gets an EXPLICIT boolean — `settings.getLabelVisibility` defaults unknown
@@ -680,12 +637,7 @@ async function toggleLabel(valueName: string) {
   for (const n of allNames) bag[n] = next && n === valueName
   visibleLabels.value = bag
   if (uid) settings.setLabelVisibility(uid, bag)
-  if (!files.length) return   // nothing on disk to push to napari; the bag write above is enough
-  try {
-    // legacy shadow: keep napari in sync if it happens to be up (P9 removes this)
-    await apiPushLabels({ labels: { [valueName]: files }, show: next,
-                          labelContour: labelContour.value })
-  } catch { /* napari down — expected; the WebGPU viewer already got the update */ }
+  pingViewerOverlays()
 }
 
 function onTaskStatus(data: Record<string, unknown>) {
@@ -705,17 +657,14 @@ function onTaskStatus(data: Record<string, unknown>) {
   }
 }
 
-// Refresh the SHOWN image. Data-only by default (re-push overlays, re-read from disk — the pyramid and
-// camera stay); only reopen the whole image when the user ticked reset, or nothing is shown yet. This
-// is what the eye (on the already-open image) and finished tasks call, so a plain reload no longer
-// yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset / uID change).
-//
-// The overlay re-push itself is NOT this panel's job — it lives in composables/useNapariAutoShow,
-// mounted app-level, because this panel is `v-if`'d in App.vue and so cannot be relied on to exist
-// when an image opens. Read the rules in that file before adding another overlay kind here.
+// Refresh the SHOWN image. Data-only by default (ping the viewer to refetch overlays; the pyramid
+// and camera stay); only reopen the whole image when the user ticked reset, or nothing is shown yet.
+// This is what the eye (on the already-open image) and finished tasks call, so a plain reload no
+// longer yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset /
+// uID change).
 function reloadViewer() {
   if (settings.viewerResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
-  else void pushAllOverlays()
+  else pingViewerOverlays()
 }
 
 function onTaskResult(data: Record<string, unknown>) {
@@ -738,14 +687,15 @@ function onTaskResult(data: Record<string, unknown>) {
                           `${imageUid}:${labelValueName}:${Date.now()}`)
   }
   if (labelValueName && settings.viewerAutoUpdate) {
-    // Mark newly added label as visible and show it in napari
-    visibleLabels.value = { ...visibleLabels.value, [labelValueName]: true }
-    nextTick(() => {
-      const files = napariImage.value?.labels?.[labelValueName] ?? []
-      if (files.length) {
-        void apiPushLabels({ labels: { [labelValueName]: files }, show: true })
-      }
-    })
+    // Mark newly added label as visible; the WebGPU viewer picks it up via the overlay tick
+    // fired by pingViewerOverlays. Radio-like — clear the others so only this new one is on.
+    const uid = projectStore.openImageUid
+    const bag: Record<string, boolean> = {}
+    for (const n of Object.keys(napariImage.value?.labels ?? {})) bag[n] = n === labelValueName
+    bag[labelValueName] = true
+    visibleLabels.value = bag
+    if (uid) settings.setLabelVisibility(uid, bag)
+    nextTick(() => pingViewerOverlays())
   }
 }
 
