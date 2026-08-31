@@ -149,6 +149,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     co_raw = get(cfg, "colourOverrides", nothing)
     co_raw === nothing && (co_raw = get(cfg, :colourOverrides, nothing))
     co_raw isa AbstractDict && (out["colourOverrides"] = co_raw)
+    # `popsFilter` — restrict pop-dot + all_cells=false mask to a subset of pop paths. Absent / empty
+    # = "no filter" = draw every visible pop of `popType`. `_resolve_movie_overlays_mask` reads this
+    # as `popPaths` and threads it into `build_overlays_for` + `build_mask_for` as `pops_filter`.
+    pf_raw = get(cfg, "popsFilter", nothing)
+    pf_raw === nothing && (pf_raw = get(cfg, :popsFilter, nothing))
+    if pf_raw isa AbstractVector && !isempty(pf_raw)
+        out["popPaths"] = String[String(p) for p in pf_raw]
+    end
     out
 end
 
