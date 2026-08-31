@@ -150,11 +150,17 @@ const show3D = computed<boolean>({
   set: v => {
     if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
   } })
-// Which z slice a 2D recording pins. null = whatever is showing, which is what every recording did
-// before the setting existed. Persisted for the next Record; the LIVE plane is chosen in the
-// WebGPU viewer itself (its own `zPlane`), so setting this here no longer needs a mirror push.
+// Which z slice a 2D recording pins. The LIVE viewer's current z wins over any stored value — a
+// movie captures the plane the user is looking at, so scrubbing z in the viewer moves the movie
+// form's slider too (reported: "the zslice is still not updating in the popover when i scrub in
+// the viewer"). Stored value is the fallback for when no viewer is publishing (fresh session,
+// closed viewer). The LIVE plane is chosen in the WebGPU viewer itself (its own `zPlane`), so
+// setting this here doesn't need a mirror push.
 const zSlice = computed<number | null>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null,
+  get: () => {
+    if (viewerZ.value != null) return viewerZ.value
+    return currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null
+  },
   set: v => {
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { zSlice: v })
   } })
