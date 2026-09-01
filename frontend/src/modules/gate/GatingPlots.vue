@@ -335,13 +335,17 @@ function navTo(delta: number) {
 const showCopy = ref(false)
 const setUid = computed(() => g.napariSetUid())   // the set the gated image belongs to
 
-// Defining-plot: open the plot where a pop's gate was drawn — a new single panel showing the pop's
-// PARENT (the cloud the gate was drawn on) on the gate's own channels + transforms. The gate outline
-// appears automatically (it's a child of that parent, server-projected). Works for flow or track.
+// Defining-plot: retune a single-scatter plot to the pop's PARENT (the cloud the gate was drawn on)
+// on the gate's own channels + transforms. The gate outline appears automatically (it's a child of
+// that parent, server-projected). Works for flow or track. Retunes the ACTIVE single plot when
+// there is one, else adds a new one — pop-manager clicks route to the currently-picked scatter
+// rather than piling up new panels every time.
 function showDefiningPlot(pop: FlatPop) {
   if (!pop.gate) return
-  const id = add()
-  const p = panels.value.find(x => x.id === id)
+  const active = activePanel.value
+  const p = active && active.state.kind === 'single'
+    ? active
+    : (() => { const id = add(); return panels.value.find(x => x.id === id) })()
   if (!p) return
   p.state.kind = 'single'
   p.state.parent = pop.parent
@@ -351,9 +355,27 @@ function showDefiningPlot(pop: FlatPop) {
   p.state.yt = pop.gate.y_transform.kind
 }
 
-async function load() {
-  if (props.imageUid) await g.selectImage(props.imageUid, g.valueName, props.popType)
+// Remember the segmentation this page was last on, per (popType, image). The canvas key includes
+// value_name (gates are per-segmentation), so a shared `g.valueName` changed by another page —
+// the cluster page's `g.selectImage(uid, resolvedVn, 'clust')` runs on every remount — would send
+// us to a different (empty) canvas entry on return, silently seeding two fresh plots. Restoring
+// the gating page's own last pick before selectImage keeps the panels the user left.
+const _lastVnKey = (uid: string) => `cc.gate.lastVn.${props.popType}.${uid}`
+const _readLastVn = (): string | null =>
+  props.imageUid ? localStorage.getItem(_lastVnKey(props.imageUid)) : null
+const _writeLastVn = (vn: string) => {
+  if (props.imageUid && vn) localStorage.setItem(_lastVnKey(props.imageUid), vn)
 }
+async function load() {
+  if (!props.imageUid) return
+  // Prefer this page's own last pick; if the store already agrees (fresh session where the user
+  // hasn't been on this image yet), fall through to what's there. The server falls back an
+  // unknown vn to the active segmentation, so a stale save is self-correcting.
+  const vn = _readLastVn() || g.valueName
+  await g.selectImage(props.imageUid, vn, props.popType)
+}
+// Persist the segmentation the user actually landed on (server-resolved, from fetchChannels).
+watch(() => g.valueName, vn => _writeLastVn(vn))
 function onBroadcast(d: unknown) { g.applyBroadcast(d as any) }
 
 watch(() => props.imageUid, load)
