@@ -26,6 +26,10 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
 
     # Resolve gated-population membership in-process (Julia is the gate evaluator).
     label_ids = nothing
+    # `trackSource` is the STABLE key `_write_back` uses to delete this pop's rows on a re-run —
+    # the pop's UID (unchanged by rename/move) for a gated run, `"whole_seg"` when tracking the
+    # whole segmentation. See MULTI_POP_TRACKING_PLAN.md Decision 1.
+    track_source = "whole_seg"
     if pops_to_track != "NONE"
         m = load_pop_map(img; value_name = value_name, pop_type = "flow")
         if !has_pop(m, pops_to_track)
@@ -35,7 +39,8 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
         recompute!(m, cols -> (label_props(img; value_name = value_name) |>
                                lp -> select_cols(lp, cols) |> as_df))
         label_ids = collect(Int, cells_in_pop(m, pops_to_track))
-        on_log("[INFO] Tracking $(length(label_ids)) cells from population '$pops_to_track'")
+        track_source = pop_uid(m, pops_to_track)
+        on_log("[INFO] Tracking $(length(label_ids)) cells from population '$pops_to_track' (uid=$track_source)")
         if isempty(label_ids)
             on_log("[ERROR] Population '$pops_to_track' is empty — nothing to track")
             return nothing
@@ -56,6 +61,7 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
            physicalSizes        = pixel_res,
            valueName            = value_name,
            labelIds             = label_ids,                          # null = whole segmentation
+           trackSource          = track_source,                       # pop UID or "whole_seg"
            maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
            maxLost              = Int(get(params, "maxLost", 3)),
            trackBranching       = Bool(get(params, "trackBranching", false)),
