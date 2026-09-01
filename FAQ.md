@@ -6,149 +6,72 @@ it is, and how the pieces fit. Deeper reasoning lives in [`docs/`](docs/); this 
 ## Languages & architecture
 
 **Why three languages — Julia, Python, and Vue?**
-Each one does a job the others can't do as well. Python handles image I/O and machine learning
-(napari, Cellpose, btrack, PyTorch), because that ecosystem only really exists in Python. Julia
-handles orchestration, gating, and statistics, because the analysis ported cleanly from the original
-R and runs fast without a C extension layer. Vue is the interface and nothing more. The split
-between them is a firm rule, documented in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Each does a job the others can't do as well: Python for image I/O and ML (napari, Cellpose, btrack,
+PyTorch), Julia for orchestration, gating, and statistics (ported cleanly from the original R and
+fast without a C extension layer), Vue for the interface. The split is a firm rule — see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 **Why not Rust?**
-Rust is worth reaching for when you have a systems-performance problem. Cecelia doesn't. The
-expensive work is imaging and ML (already in Python) and research statistics (already in Julia,
-which is close to C speed). A fourth language would add real build and interop cost in exchange for
-performance the current stack already delivers.
+Cecelia doesn't have a systems-performance problem to solve. The expensive work is imaging + ML
+(already in Python) and research statistics (already in Julia, close to C speed); a fourth language
+would add build and interop cost for performance the current stack already delivers.
 
-**Why Julia rather than doing everything in Python?**
-The statistical work — gating, tracking measures, spatial stats, clustering — maps almost directly
-from the original R into Julia, and Julia runs it fast without dropping into C. Keeping Python only
-for imaging and ML means each language stays in the domain where it's strongest.
-
-**Why not finish the job — port the rest of Python to Julia (or Rust) and drop a language?**
-Because the Python that remains isn't there for the *language*, it's there for *libraries* with no
-equivalent in any other ecosystem: Cellpose, btrack, scanpy/Leiden clustering, napari. "Porting"
-those wouldn't mean rewriting glue — it would mean reimplementing published algorithms, the hardest
-work there is, and the ecosystem best at that is Python, then Julia, and (distantly) Rust. The few
-pieces that genuinely *could* move to Julia are numeric image-correction steps, and moving them buys
-tidiness, not a smaller install — the multi-gigabyte weight (PyTorch, Cellpose) is exactly the part
-that can't move. So the remaining Python is a deliberate, permanent rim, not unfinished business. And
-the `.h5ad` files aren't the lock-in people assume: that format is the one both Julia and Python read
-natively, which is *why* it stays — what keeps Python in the loop is the clustering algorithm, not
-the file format. Full breakdown in
-[`docs/archive/python-audit-report.md`](docs/archive/python-audit-report.md).
-
-**Julia is fast — so why did the server take a minute to answer its first request?**
-It wasn't running anything; it was *compiling*. Two separate slowdowns turned out to be the same
-bug wearing different clothes: **one oversized unit that Julia has to compile in full before any of
-it runs.** The test suite was a single 8,000-line `@testset`, so the whole thing was compiled before
-the first assertion (~90 s of a 200 s run). The HTTP router was a single 156-branch `if/elseif`,
-which forces the compiler to infer *every* handler even though one route runs (42 s of a 53 s boot).
-Both fixes are the same move — stop putting everything in one unit: the suite body moved behind an
-`include`, and the router became a lookup table, so only the handler you actually hit gets compiled.
-Test suite 214 s → 78 s, server start 57 s → 11 s, CI 17.6 min → ~5.5 min. The lesson that keeps
-paying: measure where the time goes before optimising. Splitting the router into smaller *functions*
-changed nothing — it was still one compilation request — and an earlier plan to restructure the whole
-API layer was abandoned once the profiler showed it would have bought seconds.
+**Why not port the remaining Python to Julia and drop a language?**
+The Python that remains is there for *libraries* with no equivalent in another ecosystem — Cellpose,
+btrack, scanpy/Leiden, napari — so "porting" would mean reimplementing published algorithms. Full
+audit: [`docs/archive/python-audit-report.md`](docs/archive/python-audit-report.md).
 
 **Why keep all analysis out of the frontend?**
-So the core package can run and be tested from the Julia REPL with no interface attached. The same
-task code runs identically whether it's called from a test, the REPL, or the GUI. The API is a thin
-layer on top; the UI is just a view.
+So the core package can run and be tested from the Julia REPL with no interface attached. The API is
+a thin layer on top; the UI is just a view.
 
 ## Distribution
 
 **Why is the app just a web browser instead of a desktop app?**
 The Julia server serves its own frontend, and the window you see is your default browser pointed at
-`localhost:8080`. That avoids bundling Electron, Tauri, or a copy of Chromium, and it means there's
-no second runtime to ship or maintain. More in [`docs/SHIPPING.md`](docs/SHIPPING.md).
+`localhost:8080`. No Electron, Tauri, or bundled Chromium — no second runtime to ship or maintain.
+More in [`docs/SHIPPING.md`](docs/SHIPPING.md).
 
 **Why is there no traditional per-OS installer?**
-The genuinely hard part of shipping this kind of software is provisioning a multi-gigabyte
-Julia + Python + CUDA environment on someone else's machine. A single bootstrap command sets up Pixi
-and Juliaup and builds that environment reproducibly; only the install script differs per platform.
+The hard part is provisioning a multi-gigabyte Julia + Python + CUDA environment. A single bootstrap
+command sets up Pixi and Juliaup and builds that environment reproducibly; only the install script
+differs per platform.
 
 **Do I have to choose GPU or CPU?**
-No. It's detected at runtime (CUDA, Apple MPS, or CPU). There's deliberately no GPU checkbox — it's
-one less setting a user can get wrong.
-
-**Why is Cellpose pinned to version 3?**
-Version 4 removed the denoising models, which Cecelia's pipeline relies on. Until that changes, v3
-is a hard pin rather than an oversight.
+No — it's detected at runtime (CUDA, Apple MPS, or CPU). Deliberately no checkbox: one less setting
+to get wrong.
 
 ## Image processing
 
 **Everyone says "use Dask" for out-of-memory images. Why doesn't Cecelia?**
-Because the OOM problem and the *access pattern* problem have different answers, and Dask solves the
-first by making the second worse. Dask's default chunking packs the whole timecourse into one ~128 MB
-block, so reading a single 512×512 tile over-fetches the entire block — and Cecelia's hot paths are
-all tiled or per-plane (segmentation tiles, napari slicing one z per frame). The original code worked
-around that by loading whole images into RAM, which is what actually caused the OOM: one channel's
-timecourse as float64 is ~47 GB on a large movie.
-
-The fix wasn't laziness, it was **granularity**. Every image task now holds exactly one frame at a
-time and writes it straight into the output store. Bounded memory *and* fast in-RAM tiling. Measured
-on a real 0.78 GB store, copying per-timepoint from plain zarr takes 2.71 s at 1.2 GB peak RSS;
-the same copy from a Dask array takes 6.09 s, and `da.store` with the required rechunk takes 8.31 s
-at 3.6 GB. Dask lost 3× on speed and 3× on memory in its own best case.
-
-There's a correctness edge too. `da.store(lock=False)` silently corrupts output when the source
-blocks straddle the destination's chunk grid — two tasks read-modify-write the same chunk file. We
-reproduced that 10 times out of 10. It's fixable by rechunking first, and the one place Cecelia still
-uses `da.store` does exactly that, but it's a footgun a sequential per-frame write doesn't have.
-
-Dask hasn't been thrown out — it's still the lazy container that napari renders from. It's just not
-the compute engine. Full rationale and the numbers:
+Dask's default block layout over-fetches for the tiled/per-plane access Cecelia's hot paths use, and
+going per-frame (one frame in memory, written straight to the output store) beats it on both speed
+and peak RAM. Dask still backs napari rendering; it just isn't the compute engine. Numbers and the
+`da.store` correctness edge case in
 [`docs/todo/ZARR_STREAMING_PLAN.md`](docs/todo/ZARR_STREAMING_PLAN.md).
 
-**Then how do the live task previews work, if not by re-evaluating a lazy graph?**
-By splitting each task into the part that needs the whole image and the part that doesn't. The
-expensive global statistic — a normalisation window, a background level — is computed once and
-cached; the per-pixel work is then applied to just the region you're looking at. That's why changing
-Cellpose's diameter re-previews in 0.14 s while changing its input channel costs a fresh statistic.
-
-A lazy graph over the visible region would be simpler *and wrong*: it would recompute those
-statistics from the crop, so the preview would be normalised differently from the run it is
-supposed to be previewing. Being fast is not the hard part — agreeing with the real run is.
-See [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Previewing params BEFORE a run*.
+**Then how do live task previews work, if not by re-evaluating a lazy graph?**
+Each task splits into a global part (normalisation window, background level — computed once and
+cached) and a per-pixel part applied only to the visible region. A lazy graph over the crop would
+recompute the statistic *from* the crop, so the preview would disagree with the real run. See
+[`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Previewing params BEFORE a run*.
 
 **Why does autofluorescence correction have almost no settings?**
-Because it used to have a dozen, and that was the bug. Two background percentiles, a rescale ceiling, a
-median filter, a Gaussian, a rolling ball, a wavelet denoiser — each one added while fitting somebody's
-particular dataset, none of them revisited afterwards. A parameter that exists because one image once
-needed it is not a setting, it's a fossil.
-
-They're gone. You pick which channel to correct and which channels compete with it; each channel's
-background level is derived from its own histogram (triangle thresholding, Zack et al. 1977). The one
-surviving knob chooses *how* that's derived, not what it is.
-
-The reason to prefer derivation over a knob is that nobody can set these by eye. There used to be a
-rescale ceiling — "the brightest real voxel" — and on one test image a **single** voxel out of 5.88
-billion was setting it. A value you cannot see, cannot guess, and would get wrong on the next image in
-the set.
-
-That ceiling is now gone too, along with the division it scaled. Correction keeps the share of each
-voxel that a channel dominates — `out = b × b²/Σbᵢ²` over the competing channels — so the output stays
-in input counts and there is nothing left to normalise. Dividing had a structural flaw: it goes to zero
-wherever the target isn't brighter than the reference, so a cell carrying **two** reporters was hollowed
-into a dim rim, its centre — where both channels are bright and the ratio sits at 1 — pushed to zero. A
-hollow cell doesn't segment, and segmentation runs next.
-
-**Why isn't the exponent a setting?** Because that's how the dozen fossils got in. p=2 was compared
-against p=1 and p=8 on real overlapping cells; if a dataset ever genuinely needs a different value, that
-measurement is the trigger to expose it, not a guess in advance.
+Because a knob nobody can set by eye is a fossil, not a setting. Background levels are derived per
+channel from the image itself (triangle thresholding, Zack et al. 1977), and competing channels
+share credit via `out = b × b²/Σbᵢ²` — no scale, no ceiling, output in input counts.
 
 ## How it was built
 
 **Was this really written by an AI?**
-Almost all of the source, yes — written by Claude Code under Dominik's direction. What makes that
-workable is that Cecelia is a port of an existing, peer-reviewed tool (the R/Shiny `cecelia`,
-published in *Nature Communications* in 2025). The design and the science already existed and had
-been validated; the work was translating them into the new stack.
+Almost all of the source, yes — by Claude Code under Dominik's direction. Cecelia is a port of an
+existing peer-reviewed tool (the R/Shiny `cecelia`, *Nature Communications* 2025), so the design and
+the science were already validated; the work was translating them into the new stack.
 
 **Then who verified the science?**
-Dominik. The AI never had access to a microscope, the running GUI, or real imaging data beyond small
-test fixtures, so it couldn't judge whether a result was biologically correct. All scientific and
-visual validation was done by the human author. Early releases haven't yet been independently tested
-by other users, so treat them accordingly.
+Dominik. The AI never had access to a microscope or real imaging data beyond small test fixtures,
+so all scientific and visual validation was done by the human author. Early releases haven't yet
+been independently tested by other users — treat them accordingly.
 
 **What license is it under?**
 GPL-3.0-or-later, inherited from the original `cecelia` R package rather than chosen fresh.
