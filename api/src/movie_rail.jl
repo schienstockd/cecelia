@@ -127,7 +127,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
         # and any `ov_raw` dict leaked pop dots.
         "showPopulations"  => show_pops,
-        "includeTracks"    => show_gated,       # gated tracks alongside the pop points
+        "includeTracks"    => show_gated,       # cell-track ribbons alongside the pop points
         "allTracks"        => show_tracks,      # whole-segmentation tracks, ignoring pops
         "tailLength"       => 30,               # legacy default; the batch config doesn't author it
         "trackColorMode"   => "track",
@@ -137,7 +137,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     if has_mask
         out["showMask"]        = true
         out["maskContourPx"]   = _cfg_int(cfg, "labelContour", 1)
-        # `allCells` = whole-segmentation mask (every id painted). If neither pops nor gated tracks are
+        # `allCells` = whole-segmentation mask (every id painted). If neither pops nor cell tracks are
         # on, that IS the intended mask; else the mask filters by the same pops the points would draw.
         out["allCells"]        = !(show_pops || show_gated)
     end

@@ -283,10 +283,13 @@ function _config_overlay_pops(img, config)
             Bool(get(config, :showGatedTracks, false)) && _append_config_pop_paths!(out, img, vn, "track")
             Bool(get(config, :showTrackclust, false))  && _append_config_pop_paths!(out, img, vn, "trackclust")
         end
-        # Ribbon-drawable FLOW pops (data flag `has_tracks`): a hand-drawn flow gate on cells that
-        # have since been tracked. `_build_overlay_state` already renders these as ribbons under
-        # Decision 2 — the legend picks the same set up here so the title card names every ribbon
-        # the movie will actually draw. Gated by `showGatedTracks` (the master ribbon toggle).
+        # Cell-track ribbons — flow pops whose cells hold `track_id > 0` (data flag `has_tracks`):
+        # a hand-drawn cell gate over cells that were later tracked. `_build_overlay_state` already
+        # renders these as ribbons under Decision 2 — the legend picks the same set up here so the
+        # title card names every ribbon the movie will actually draw. Gated by `showGatedTracks`
+        # (the master ribbon toggle — internal key kept for continuity; the UI label is "Show
+        # cell-track ribbons"). Distinct from "gated tracks" — a future track-poptype pop gated on
+        # TRACK measures; see docs/TRACKING.md → deferred 3d/3e.
         if Bool(get(config, :showGatedTracks, false))
             pt = String(get(config, :popType, "flow"))
             for vn in segs

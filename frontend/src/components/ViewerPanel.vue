@@ -51,7 +51,12 @@ const recordingTask = computed(() => taskStore.tasks.some(t =>
 
 const selectedValueName = ref('')
 const visibleLabels     = ref<Record<string, boolean>>({})
-const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
+// Master "show cell-track ribbons" toggle: draws ribbons for flow pops whose cells have
+// `track_id > 0` (a hand-drawn cell gate over cells that were later tracked). Distinct from
+// "gated tracks" — a future track-poptype pop gated on TRACK measures (speed, straightness);
+// see docs/TRACKING.md → "Track-property gating — backend done, frontend/napari deferred".
+// The internal setting key is still `showGatedTracks` for continuity with persisted user state.
+const gatedTracksShown  = ref(false)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
@@ -445,7 +450,7 @@ function toggleBranch(vn: string) {
   pingViewerOverlays()
 }
 
-// Master toggle for the gated track populations (TEST/SDGF), like the Show populations toggle.
+// Master toggle for cell-track ribbons (see the ref comment above), matching the Show populations toggle.
 function toggleGatedTracks() {
   const next = !gatedTracksShown.value
   gatedTracksShown.value = next
@@ -794,7 +799,7 @@ onUnmounted(() => {
 
     <!-- ── Populations & tracks: overlays on the open image ────────────────── -->
     <!-- pop toggles show coloured centroid POINTS (layers namespaced by pop type, so they coexist);
-         the ribbon toggles show gated / cluster track populations as napari Tracks layers. -->
+         the ribbon toggles show cell-track / cluster-track populations as Tracks layers. -->
     <div class="viewer-section">
       <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Populations &amp; tracks</div>
       <div class="viewer-opts cc-row cc-row-tight">
@@ -804,12 +809,12 @@ onUnmounted(() => {
           @click="togglePopType(pt.key)"
           v-tooltip.bottom="`${popVisible(pt.key) ? 'Hide' : 'Show'} ${pt.label} (points)`"
         ><i :class="['pi', pt.icon]" /></button>
-        <!-- Tracks as ribbons (TEST/SDGF gated track pops); per-segmentation _tracked toggles live
-             in the Segmentations list above (directions icon per row) -->
+        <!-- Cell-track ribbons: flow pops whose cells hold `track_id > 0`. Per-segmentation
+             `_tracked` toggles live in the Segmentations list above (directions icon per row). -->
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': gatedTracksShown }"
           @click="toggleGatedTracks"
-          v-tooltip.bottom="gatedTracksShown ? 'Hide track-pop ribbons' : 'Show track populations as ribbons (track-measure gates)'"
+          v-tooltip.bottom="gatedTracksShown ? 'Hide cell-track ribbons' : 'Show cell-track ribbons'"
         ><i class="pi pi-share-alt" /></button>
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': popVisible('trackclust') }"

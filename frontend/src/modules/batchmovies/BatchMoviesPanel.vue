@@ -201,7 +201,7 @@ const shownChannels = computed(() => channelList.value.filter(c => channels.valu
 const OVERLAY_OPTIONS: ChipOption[] = [
   { value: 'tracks',     label: '', icon: 'pi pi-directions',     tip: 'Tracks — all tracked segmentations' },
   { value: 'trackclust', label: '', icon: 'pi pi-sitemap',        tip: 'Track-cluster populations' },
-  { value: 'gated',      label: '', icon: 'pi pi-filter',         tip: 'Gated track populations' },
+  { value: 'gated',      label: '', icon: 'pi pi-filter',         tip: 'Cell-track ribbons' },
   { value: 'pops',       label: '', icon: 'pi pi-chart-scatter',  tip: 'Populations (points)' },
   { value: 'labels',     label: '', icon: 'pi pi-palette',        tip: 'Colour the drawn masks by the colour-by measure' },
 ]

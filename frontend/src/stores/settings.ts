@@ -347,7 +347,7 @@ export const useSettingsStore = defineStore('settings', () => {
   interface ViewerSetPrefs {
     colourBy?: string                       // obs column to colour labels/tracks by ('' = default)
     show3D?: boolean                        // open images volumetric (only applied where a z-axis exists)
-    showGatedTracks?: boolean               // overlay gated track populations
+    showGatedTracks?: boolean               // master for cell-track ribbons (label: "Show cell-track ribbons"); key kept for continuity
     pointSize?: number                      // population centroid point size in the viewer
     pointBorder?: number                    // black outline width (screen px) around every point, 0 = none
     popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
