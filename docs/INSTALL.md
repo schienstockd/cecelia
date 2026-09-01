@@ -194,6 +194,24 @@ Administrator). It installs to `/opt/cecelia` · `/Applications/cecelia` · `%Pr
 with a shared runtime; config + projects stay per-user (`~/.cecelia`), and updates are admin-only.
 See `docs/SHIPPING.md` → *Install scope* for the full model and its verification status.
 
+## Custom install location
+
+`CECELIA_HOME=<dir>` overrides the default install directory in either scope — the whole runtime
+(Pixi, Juliaup, the multi-GB env) lands inside it. Leading `~` / `~/…` (Unix) and `~` / `~/…` / `~\…`
+(Windows PowerShell) are expanded by the installer, so quoted-tilde values still work.
+
+```sh
+# Linux / macOS — user scope, custom directory
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_HOME=~/apps/cecelia sh
+
+# Windows — PowerShell
+$env:CECELIA_HOME='D:\apps\cecelia'
+irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
+```
+
+Launch with `cd <CECELIA_HOME> && pixi run app` (or point the desktop launcher at that path). Config
+and projects still live in `~/.cecelia`; only the install moves.
+
 ---
 
 ## Platform notes
