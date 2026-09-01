@@ -1164,6 +1164,50 @@ end
     @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
 end
 
+@testset "API: preview-labels slab resolves an UNREGISTERED vn" begin
+    # A first-time segmentation preview writes `<img_labels_dir>/<vn>__preview.ome.zarr` BEFORE any
+    # ccid.json entry exists — registration only happens on a successful RUN. The `preview=1` slab
+    # branch must therefore not go through `label_store_path`, which enforces `haskey(img.labels, vn)`
+    # and would 404 the mask fetch for the exact case preview is most useful for. Regression:
+    # `Viewer timepoint N: Mask failed: 404` on fXgbTl while previewing `flowKat` — a coastal-family
+    # segmentation whose vn had never been registered on this image.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-preview-slab-vn")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        # labels registry is DELIBERATELY empty here — the preview lookup must not depend on it
+        img.labels = Dict{String,Vector{String}}()
+        save!(img)
+
+        # Missing preview store on disk → err (the FE re-fetches; this is the "worker's promote hasn't
+        # landed" race, and the finished-store path answers the same way).
+        _, err = preview_labels_store_path(proj.uid, img.uid, "flowKat")
+        @test err !== nothing && occursin("preview labels store not on disk", err)
+
+        # Put the scratch store where the worker's convention says it goes — the labels DIR of the
+        # image's meta dir. No ccid.json entry needed.
+        labels_dir = joinpath(img._dir, "labels"); mkpath(labels_dir)
+        scratch = joinpath(labels_dir, "flowKat__preview.ome.zarr"); mkpath(scratch)
+
+        zp, err = preview_labels_store_path(proj.uid, img.uid, "flowKat")
+        @test err === nothing
+        @test zp == scratch
+
+        # Belt-and-braces: `label_store_path` (the finished-store helper the non-preview branch uses)
+        # still refuses this vn — the fix is that the preview branch takes a different route, not that
+        # the registration guard was relaxed.
+        _, lerr = label_store_path(proj.uid, img.uid, "flowKat")
+        @test lerr !== nothing && occursin("no label store named", lerr)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: preview stop sweeps the scratch labels store" begin
     # A preview writes `<vn>__preview.ome.zarr` under `{taskDir}/labels/`; a stop must clear it so
     # a subsequent session doesn't inherit stale bytes over the `preview=1` slab route. The worker
