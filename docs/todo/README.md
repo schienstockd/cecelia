@@ -94,6 +94,7 @@ disagree, the plan's header wins — and fix the row.
 | [`REMOTE_ACCESS_PLAN.md`](REMOTE_ACCESS_PLAN.md) | planning (2026-08-27) · no branch | Cross-OS SSH-tunnel launcher for reaching a Cecelia VM install: user double-clicks a per-OS icon, tunnel opens, browser opens at `localhost`. Free, cloud-vendor-agnostic, rate-limit-free. Server stays loopback-bound — no app-layer auth needed. Reshaped 2026-08-27 from an earlier token-based URL-auth design; that path was killed by the shared-bucket Let's Encrypt rate limit on nip.io (see file's git history for the reasoning trail) |
 | [`OBSERVER_DATA_ACCESS_PLAN.md`](OBSERVER_DATA_ACCESS_PLAN.md) | parked (scoped, not started) | Let the observer read actual cell data, not just QC/logs/meta |
 | [`QC_OBSERVER_PLAN.md`](QC_OBSERVER_PLAN.md) | parked | Observer-side QC surface; supersedes three exploratory prompts in `docs/ai-assist/` |
+| [`MULTI_POP_TRACKING_PLAN.md`](MULTI_POP_TRACKING_PLAN.md) | planning (2026-09-01) · no branch | Reintroduce stable population UIDs (per the R version's `popID`, dropped in the Julia port); provenance-aware `_write_back` in tracking (`track_source` obs column carrying the pop UID + delete-then-compact-then-write); a per-pop `hasTracks` payload flag + per-pop track-layer rows in the viewer. So running `bayesian_tracking` on two gated pops shows both as separate ribbon layers, re-running one pop replaces its own rows, and renaming a pop doesn't orphan its tracks |
 
 ### Built — the plan is a record of *why*, not a spec of *what is*
 
