@@ -53,6 +53,13 @@ class BayesianTrackingUtils:
         self.btrack_config_path = params["btrackConfig"]
         # explicit gated-population label IDs (None = track the whole segmentation)
         self.label_ids  = params.get("labelIds", None)
+        # Stable per-pop provenance stamped on every row this run writes: the gated pop's UID from
+        # the gating sidecar, or `"whole_seg"` for the un-gated whole-segmentation run. `_write_back`
+        # uses it to delete PRIOR rows written by this same source before laying down the new ones
+        # — so re-tracking a pop replaces its own tracks, without touching cells tracked under
+        # another pop. See docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 1. Missing → "whole_seg"
+        # so an older Julia handler that hasn't been updated still lands somewhere sensible.
+        self.track_source = str(params.get("trackSource", "whole_seg"))
 
         self.max_search_radius   = params["maxSearchRadius"]
         # [sz, sy, sx] in µm — skimage axis order, matching the centroid columns, the same shape
@@ -202,33 +209,140 @@ class BayesianTrackingUtils:
         return track_df.rename(columns={"ID": "track_id"})
 
     # ── write lineage back into obs (our AnnData convention) ────────────────────────
+    #
+    # PROVENANCE-AWARE MERGE. Sequential runs of `bayesian_tracking` on the SAME segmentation used to
+    # overwrite `track_id`: `add_obs` builds a full-length column filled with NaN for labels not in
+    # the current run, so tracking `/qc/CD169-/fragments` after `/qc/CD169-/cells` NaN-ed out the
+    # cells rows and left only fragments' tracks. The new contract, per
+    # docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 1:
+    #
+    #   1. DELETE prior rows written by THIS run's source (`track_source == self.track_source`) —
+    #      re-running one pop removes its own previous tracks as a unit, wherever those cells now
+    #      sit (a re-gated pop's edge doesn't leak old ids).
+    #   2. COMPACT surviving `track_id`s to `1..N` and remap `track_parent`/`track_root` through the
+    #      same permutation — every id space is renumbered together, so a chain of tracking runs
+    #      doesn't grow ids without bound.
+    #   3. WRITE new run's rows with `track_id` starting at `N+1` and stamp `track_source` on them.
+    #
+    # Non-symmetry with whole-seg: `whole_seg`-sourced rows aren't matched by a per-pop delete step,
+    # so `track whole_seg → track pop A` refines A's cells but leaves the rest of the segmentation's
+    # tracks intact. That's the intended "prime everything, refine one pop" mode.
     def _write_back(self, track_df: pd.DataFrame):
-        # one row per tracked cell, keyed by label; write through the LabelPropsView chain
-        # (add_obs aligns by label, cells without a track get NaN). Same idiom as Julia's
-        # LabelProps add_obs/save! — the single H5AD write path (docs/DATAMODEL.md).
-        lineage = track_df[
-            ["label_id", "track_id", "parent", "root", "state", "generation", "cell_id"]
-        ].rename(columns={
-            "label_id":   "label",
-            "parent":     "track_parent",
-            "root":       "track_root",
-            "state":      "track_state",
-            "generation": "track_generation",
-        })
-
         view = label_props_utils.LabelPropsView(self.props_path)
+        obs = view.adata.obs
+        labels_all = obs.index.astype(np.int64).to_numpy()
+        n_labels   = len(labels_all)
 
-        # invalidate stale track measures: new tracks make any cached live.cell.* / live.track.*
-        # columns (written by tracking.track_measures against the *previous* tracking) wrong.
-        # The tracking task owns this invalidation (docs/TRACKING.md, porting spec Step 5).
-        stale = [c for c in view.adata.obs.columns
+        # ── 1. read the existing lineage into aligned float arrays ──────────────────
+        def _read_float(col: str) -> np.ndarray:
+            return (obs[col].to_numpy(dtype=np.float64, copy=True)
+                    if col in obs.columns else np.full(n_labels, np.nan))
+        cur_id     = _read_float("track_id")
+        cur_parent = _read_float("track_parent")
+        cur_root   = _read_float("track_root")
+        cur_state  = _read_float("track_state")
+        cur_gen    = _read_float("track_generation")
+        cur_cellid = _read_float("cell_id")
+        # `track_source` is a categorical/string column; read as strings ("" for missing) so the
+        # delete-mask comparison below is a plain equality (never NaN-vs-string).
+        if "track_source" in obs.columns:
+            src_series = obs["track_source"]
+            src_obj = src_series.astype(object).where(src_series.notna(), None).to_numpy(copy=True)
+        else:
+            src_obj = np.array([None] * n_labels, dtype=object)
+
+        # ── 2. delete prior rows this same source authored ─────────────────────────
+        del_mask = np.array([s == self.track_source for s in src_obj])
+        if del_mask.any():
+            for arr in (cur_id, cur_parent, cur_root, cur_state, cur_gen, cur_cellid):
+                arr[del_mask] = np.nan
+            for i in np.where(del_mask)[0]:
+                src_obj[i] = None
+            self.log.log(f">> Delete {int(del_mask.sum())} rows previously written by "
+                         f"track_source='{self.track_source}'")
+
+        # ── 3. compact surviving track_ids to 1..N (with parent/root remapped) ─────
+        survivor_mask = ~np.isnan(cur_id)
+        n_surviving = 0
+        if survivor_mask.any():
+            unique_old = np.unique(cur_id[survivor_mask].astype(np.int64))
+            n_surviving = len(unique_old)
+            id_map = {int(old): new for new, old in enumerate(unique_old, start=1)}
+
+            def _remap(arr: np.ndarray) -> np.ndarray:
+                out = np.full_like(arr, np.nan)
+                nz = ~np.isnan(arr)
+                for i in np.where(nz)[0]:
+                    m = id_map.get(int(arr[i]))
+                    # A parent/root that pointed at a deleted track has no image in id_map → NaN.
+                    if m is not None:
+                        out[i] = m
+                return out
+            cur_id     = _remap(cur_id)
+            cur_parent = _remap(cur_parent)
+            cur_root   = _remap(cur_root)
+
+        # ── 4. write the run's rows: new track_ids from n_surviving + 1 ────────────
+        # Renumber the whole run atomically so internal parent/root references stay intact after the
+        # shift.
+        run_uniq = np.unique(track_df["track_id"].to_numpy(dtype=np.int64))
+        offset   = n_surviving
+        run_map  = {int(old): offset + i + 1 for i, old in enumerate(run_uniq)}
+
+        def _offset_series(s: pd.Series) -> np.ndarray:
+            vals = s.to_numpy()
+            out  = np.full(len(vals), np.nan)
+            for i, v in enumerate(vals):
+                # NaN check tolerates both numeric NaN and pandas' None (btrack root == track_id
+                # by construction, so `root`/`parent` are never NaN here — the guard is defensive).
+                try:
+                    iv = int(v)
+                except (TypeError, ValueError):
+                    continue
+                m = run_map.get(iv)
+                if m is not None:
+                    out[i] = m
+            return out
+
+        run_new_id     = _offset_series(track_df["track_id"])
+        run_new_parent = _offset_series(track_df["parent"])
+        run_new_root   = _offset_series(track_df["root"])
+        run_state      = track_df["state"].to_numpy(dtype=np.float64)
+        run_gen        = track_df["generation"].to_numpy(dtype=np.float64)
+        run_cellid     = track_df["cell_id"].to_numpy(dtype=np.float64)
+        run_labels     = track_df["label_id"].to_numpy(dtype=np.int64)
+
+        rowof = {int(l): i for i, l in enumerate(labels_all)}
+        for i in range(len(track_df)):
+            r = rowof.get(int(run_labels[i]))
+            if r is None:
+                continue
+            cur_id[r]     = run_new_id[i]
+            cur_parent[r] = run_new_parent[i]
+            cur_root[r]   = run_new_root[i]
+            cur_state[r]  = run_state[i]
+            cur_gen[r]    = run_gen[i]
+            cur_cellid[r] = run_cellid[i]
+            src_obj[r]    = self.track_source
+
+        # ── 5. invalidate stale track measures + write ─────────────────────────────
+        # Same policy as the pre-provenance path: any cached `live.cell.*` / `live.track.*` was
+        # computed against the previous tracking output and is now wrong.
+        stale = [c for c in obs.columns
                  if c.startswith("live.cell.") or c.startswith("live.track.")]
         if stale:
             self.log.log(f">> Invalidate {len(stale)} stale track-measure columns")
 
-        n_tracked = int(track_df["track_id"].notna().sum())
-        self.log.log(f">> Save {n_tracked} tracked cells -> {self.props_path}")
-        view.drop_obs(stale).add_obs(lineage).save()
+        n_written = int(np.sum(~np.isnan(cur_id)))
+        self.log.log(f">> Save {n_written} tracked cells -> {self.props_path}")
+        view.drop_obs(stale).add_obs({
+            "track_id":         cur_id,
+            "track_parent":     cur_parent,
+            "track_root":       cur_root,
+            "track_state":      cur_state,
+            "track_generation": cur_gen,
+            "cell_id":          cur_cellid,
+        }).add_categorical_obs("track_source", labels_all, src_obj).save()
 
 
 def write_track_props(params: dict, log):
