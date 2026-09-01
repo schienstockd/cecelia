@@ -161,7 +161,7 @@ function paintValueCells() {
 // The "dim under pop overlays" backdrop goes through plots/dimLayer: a dot plot CANNOT be dimmed by
 // setting globalAlpha and then stamping ~10k dots, because that dims each DOT and overlaps composite
 // back up to 1-(1-alpha)^k. The dense core returned to full opacity, so the wash disappeared exactly
-// where the cells are — a napari selection lit up cyan over a base that was supposed to grey out. (The
+// where the cells are — a pick selection lit up cyan over a base that was supposed to grey out. (The
 // raster renderer this replaced got it right for free: it was a single drawImage.)
 function drawDensityDots(points: Float32Array, alpha = 1) {
   // one paint for either base — speckle or binned field — so both dim through the same single composite
@@ -271,7 +271,7 @@ function paintContent() {
   // child POPULATION overlays — ALWAYS DOTS, whatever the base mode is. The render mode answers "what
   // shape is this cloud", which is a question about a distribution; an overlay answers "where are THESE
   // cells", which is per-cell. Contouring a small overlay produces rings around individual points — a
-  // 3-cell napari selection came out as three sets of concentric circles — and a KDE of a handful of
+  // 3-cell pick selection came out as three sets of concentric circles — and a KDE of a handful of
   // events is not a density estimate. Dots also keep the categorical layer true-vector on SVG export in
   // every mode. The base keeps its rings (and its outlier tail), so a contour figure stays a contour figure.
   if (props.showPops) for (const pop of props.popLayers) {

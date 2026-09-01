@@ -321,7 +321,7 @@ function openInViewer(valueName: string) {
 // mistake. The button no longer owns the "in progress" state either; the task list does.
 async function recordTimelapse() {
   // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whether the popup
-  // browser viewer OR napari has the image. Was `napariImageUid`, which stayed null when only the
+  // browser viewer OR napari has the image. Was `viewerImageUid`, which stayed null when only the
   // browser viewer was open, so the Record button silently early-returned (a regression the user
   // hit after napari was retired from the record path).
   const uid        = projectStore.openImageUid
@@ -421,8 +421,8 @@ function togglePopType(popType: string) {
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, ping the viewer.
 function toggleTrack(vn: string) {
-  // `openImageUid`, not `napariImageUid`: this write must land whether or not any legacy napari WS
-  // event has fired. Before P6 the persist was gated on `napariImageUid=null`, which meant the
+  // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy napari WS
+  // event has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
@@ -464,7 +464,7 @@ function toggleTrackclust() {
 // The WebGPU viewer reads `settings.getColourBy(setUid)` and re-derives colours on the overlay
 // tick; the panel writes the setting and pings. Options are the open segmentation's obs columns.
 async function loadObsCols() {
-  const uid = projectStore.napariImageUid
+  const uid = projectStore.viewerImageUid
   const projectUid = projectMeta.current?.uid
   const vn = selectedValueName.value
   if (!uid || !projectUid || !vn) { obsCols.value = []; return }

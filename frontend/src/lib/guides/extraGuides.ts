@@ -138,7 +138,7 @@ export const behaviourStatesGuide = moduleTaskGuide({
       anchor: 'sidebar.viewerCta',
       placement: 'right',
       title: 'Colour tracks by state',
-      text: 'The Viewer panel can colour tracks by the new state column in napari.',
+      text: 'The Viewer panel can colour tracks by the new state column.',
       bullets: ['That is the quickest sanity check that the states mean something.'],
     },
   ],
@@ -185,7 +185,7 @@ const clusterToPops = (route: string, what: string): GuideStep[] => [
     title: 'Now it behaves like any population',
     text: `Your ${what} populations are usable everywhere a gated one is.`,
     bullets: [
-      'Plot them on the analysis board, show them in napari, use them as an input.',
+      'Plot them on the analysis board, show them in the viewer, use them as an input.',
       'Populations are per clustering run — they follow that run\'s suffix.',
     ],
   },

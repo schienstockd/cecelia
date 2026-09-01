@@ -1,7 +1,7 @@
 # Cecelia Feijoa — Project Guide
 
 Cecelia is an immunological image analysis tool (Nature Communications 2025).
-Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend) · **Python/Napari** (image viewer)
+Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend, WebGPU browser viewer) · **Python** (analysis env: cellpose/btrack/scanpy)
 
 ## How to read the docs without burning the context window
 

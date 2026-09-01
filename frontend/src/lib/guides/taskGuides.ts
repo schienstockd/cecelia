@@ -21,13 +21,13 @@ import type { GuideStep } from './types'
 
 // Where segmentation and tracking both end up: the mask/tracks are only trustworthy once you have
 // LOOKED at them. So we point at the control that puts them on screen and say what to look for.
-const napariCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
+const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
   {
     anchor: 'images.viewerBtn',
     placement: 'right',
     title: 'Open it in the viewer',
     text: 'The ↗ opens the image itself — the overlay is a separate switch.',
-    when: c => c.napariImageUid !== null,
+    when: c => c.viewerImageUid !== null,
   },
   {
     anchor: 'sidebar.viewerCta',
@@ -166,7 +166,7 @@ export const segmentGuide = moduleTaskGuide({
         'A weird size distribution almost always means the diameter was off.',
       ],
     },
-    ...napariCheck('mask', 'viewer.toggleLabels', [
+    ...viewerCheck('mask', 'viewer.toggleLabels', [
       'Are single cells one label, or is a clump merged into one?',
       'Are the outlines on the cells, or offset from them?',
     ]),
@@ -214,7 +214,7 @@ export const trackCellsGuide = moduleTaskGuide({
     'Motion dimensions — 2D or 3D for the measures; it detects and recommends one.',
   ],
   after: [
-    ...napariCheck('tracks', 'viewer.toggleTracks', [
+    ...viewerCheck('tracks', 'viewer.toggleTracks', [
       'Do the trails follow single cells, or jump between neighbours?',
       'Jumping usually means the search radius is too generous.',
     ]),
@@ -333,7 +333,7 @@ export const segmentByMotionGuide = moduleTaskGuide({
       text: 'Same plots as any segmentation — too few cells, implausible sizes, edge artefacts.',
       bullets: ['Compare it against a cellpose run on the same image if you have one.'],
     },
-    ...napariCheck('mask', 'viewer.toggleLabels', [
+    ...viewerCheck('mask', 'viewer.toggleLabels', [
       'Do the labels stay on the same cell as it moves?',
       'Is a moving cell one object, or does it break up between frames?',
     ]),

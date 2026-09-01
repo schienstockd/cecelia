@@ -1293,7 +1293,7 @@ is setup the user can already see: no image open, no model chosen. Amber for tho
 people to ignore amber.
 
 **Two things the preview must never do: keep previewing forever, and look busy forever.** The re-preview
-trigger is deduped at its source (`docs/NAPARI.md` → `viewChanged`), the pin drops the queue the moment
+trigger is deduped at its source (the viewer's view-change events), the pin drops the queue the moment
 it is set (`dropPending`, not `cancel` — the run in flight is the freshest and its mask is the one on
 screen), and `/api/preview/run` is deadlined at `PREVIEW_RUN_TIMEOUT_MS` so a wedged worker or viewer
 surfaces as *"Preview timed out"* instead of a permanent "Previewing…".

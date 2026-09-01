@@ -256,7 +256,7 @@ function handle_movie_record(ws, data)
     value_names = vns_raw === nothing ? String[] : collect(String, vns_raw)
     # The segmentation masks to show. ABSENT and EMPTY differ: absent leaves the canvas alone (what a
     # plain "record what's on screen" wants), empty is an explicit no-masks. 2+ also makes them the
-    # grid's ROWS. See `_config_label_value_names`.
+    # grid's ROWS.
     lvns_raw    = get(data, :labelValueNames, nothing)
     label_vns   = lvns_raw === nothing ? nothing : collect(String, lvns_raw)
     # skeletons (`segment.branching`) — a separate registry and a separate picker, same three-valued

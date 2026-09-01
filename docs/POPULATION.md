@@ -616,20 +616,17 @@ later phase needs to derive track aggregates and build the per-track gating view
 Julia is the **sole evaluator**. Membership is never written to the H5AD and there is no
 per-pop CSV.
 
-- **Napari** is a pure consumer — it never evaluates gates. Two linked directions
-  (`docs/NAPARI.md`):
-  - *show populations*: `POST /api/napari/show-populations` → Julia resolves the in-scope
-    segmentation(s) via `resolve_pops` (per-pop `value_name` + label IDs + colours) → bridge colours
-    centroid Points layers (reads centroids locally, per value_name), layer per (segmentation, pop).
-    A blank scope shows ALL segmentations (overlay independent of the "active" one); a live gate edit
-    scopes to the edited segmentation (bridge prunes only within it) so it stays cheap. `resolve_pops`
-    is **cached** per `(value_name, pop_type, gating-map mtime, h5ad mtime)` — same auto-invalidation
-    trick as `pop_df` (`_pop_df_cache`), so an unchanged segmentation is free even on a full refresh.
-    The transient "Napari selection" pop is **excluded** here (it's the selection *source*; rendering
-    it back stole napari's active layer mid-draw).
-  - *cell selection (linked brushing)*: user draws a region on the image → bridge POSTs the
-    inside cells' label IDs to `/api/napari/event` → Julia stores them and broadcasts the tree
-    with a **transient selection population** so the flow plots highlight exactly those cells.
+- **The viewer** is a pure consumer — it never evaluates gates. Two linked directions:
+  - *show populations*: Julia resolves the in-scope segmentation(s) via `resolve_pops` (per-pop
+    `value_name` + label IDs + colours); the viewer paints centroid points per (segmentation, pop).
+    A blank scope shows ALL segmentations; a live gate edit scopes to the edited segmentation so it
+    stays cheap. `resolve_pops` is **cached** per `(value_name, pop_type, gating-map mtime, h5ad mtime)`
+    — same auto-invalidation trick as `pop_df` (`_pop_df_cache`), so an unchanged segmentation is free
+    even on a full refresh. The transient "Pick selection" pop is **excluded** here (it's the selection
+    *source*; rendering it back would loop through the picker).
+  - *cell selection (linked brushing)*: user picks a cell / draws a rectangle in the viewer →
+    `POST /api/viewer/pick-cell` or `/api/viewer/pick-rect` → Julia stores the label ids and broadcasts
+    the tree with a **transient selection population** so the flow plots highlight exactly those cells.
 - **Python tasks / notebooks** get membership via a thin HTTP client
   (`python/cecelia/cecelia_client.py`) → `GET /api/gating/membership` (label IDs only; the
   bulk measurement columns are read locally from the H5AD via `python/cecelia/utils/label_props_utils.py`).
@@ -843,28 +840,20 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   and sets its parent so the manager selection "shows up on the plot".
 - **PopulationManager drag is clamped** to its offset-parent (keeps a 24px grab strip on every
   edge, never above the top) so the floating window can't be dragged off-frame and lost.
-- **Napari linked brushing.** The gating bar has a `pi-pencil` *select in napari* button
-  (`store.startCellSelection`) that adds a draw layer in napari, plus a **Z toggle** beside it
-  (`store.napariZMode` `'stack'`/`'slice'`) and, in slice mode, a **±N stepper**
-  (`store.napariZWindow`) — `slice` restricts the spatial selection to cells within ±N z-slices of
-  the live napari z, `stack` selects across the whole stack. Changing either **re-evaluates the
-  active selection live** (`store.updateSelectionScope` → `/api/napari/selection-scope`) and applies
-  to the next one. (The old gating-bar `pi-palette`
-  *show populations* button was removed — it duplicated the ViewerPanel master toggle and confused
-  users; showing pops is now the ViewerPanel toggle alone, remembered via
-  `settings.napariShowPopulations`.) Drawing a region selects those cells spatially → they arrive
-  back (via `gating:popmap`) as a **transient "Napari selection" population** (cyan `pi-map-marker`
-  row, no rename) which `GatingPlots` auto-adds to the highlight set, so the spatially-selected
-  cells light up in channel space. Its row has a **trash button** (`store.clearNapariSelection` →
-  `/api/napari/stop-selection`) that clears the selection, removes its `Cell selection` Shapes
-  layer from napari, and is then pruned from every plot's highlight set (so a plot with no other
-  selection reverts from the dimmed backdrop to normal pseudocolour/contour). It's never persisted,
-  so there's no pop to delete. The manager's per-pop `pi-images` column toggles a pop's napari visibility
-  (its `show` flag) and re-pushes via `store.refreshNapariPops` (silent); the Options box has a
-  **Napari dots** size slider (per-set `settings.get/setPointSize(setUid)`, re-pushes on release). The
-  *Show populations* preference re-pushes live on every `gating:popmap` while on, so the napari overlay
-  tracks gate edits / pop add-remove as you gate — driven by `handleGatingChange` in
-  `composables/useNapariAutoShow`, which `App.vue` mounts app-level, so it works whether or not the
-  floating Viewer panel is open (it used to live in the panel, and silently did nothing when closed). The transient selection pop is **not**
-  pushed back into napari (it would steal the active layer mid-draw). See `docs/NAPARI.md` and
-  `docs/POPULATION.md`.
+- **Linked brushing.** The gating bar has `pi-pencil` *pick cell* and *pick rectangle* buttons
+  that hand a click / drag off to the browser viewer's picker
+  (`/api/viewer/pick-cell`, `/api/viewer/pick-rect`). The picked cells arrive back (via
+  `gating:popmap`) as a **transient "Pick selection" population** (cyan `pi-map-marker` row, no
+  rename) which `GatingPlots` auto-adds to the highlight set, so the spatially-selected cells light
+  up in channel space. Its row has a **trash button** (`store.clearSelection` →
+  `/api/viewer/pick-clear`) that clears the selection and prunes it from every plot's highlight set
+  (so a plot with no other selection reverts from the dimmed backdrop to normal pseudocolour /
+  contour). It is never persisted, so there is no pop to delete. The manager's per-pop `pi-images`
+  column toggles a pop's viewer visibility (its `show` flag) and re-pushes via
+  `store.refreshNapariPops` (silent); the Options box has a **Point size** slider (per-set
+  `settings.get/setPointSize(setUid)`, re-pushes on release). The *Show populations* preference
+  re-pushes live on every `gating:popmap` while on, so the viewer overlay tracks gate edits / pop
+  add-remove as you gate — driven by `handleGatingChange` in `composables/useNapariAutoShow`, which
+  `App.vue` mounts app-level, so it works whether or not the floating Viewer panel is open. The
+  transient selection pop is **not** pushed back to the viewer (it is the selection *source* — a
+  round trip would loop through the picker).

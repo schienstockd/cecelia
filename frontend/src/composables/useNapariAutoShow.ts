@@ -60,7 +60,7 @@ const _lastRefreshAt: Record<string, number> = {}
 // it changed.
 export async function refreshLivePreviews(): Promise<void> {
   const project  = useProjectStore()
-  const imageUid = project.napariImageUid
+  const imageUid = project.viewerImageUid
   if (!imageUid) { livePreviews.value = []; return }
   let tasks: TaskListEntry[] = []
   try {

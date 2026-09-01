@@ -115,7 +115,7 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
         p = m.pops[path]
         parent_mask = get(memb, p.parent, trues(n))
         mask = if p.explicit_labels !== nothing
-            # membership IS this label set (∩ parent) — the napari selection (docs/POPULATION.md)
+            # membership IS this label set (∩ parent) — the pick selection (docs/POPULATION.md)
             sel = Set(p.explicit_labels)
             parent_mask .& BitVector(l in sel for l in labels)
         elseif p.boolean_op !== nothing

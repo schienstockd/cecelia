@@ -73,10 +73,10 @@ export const useProjectStore = defineStore('project', () => {
   // `belongsToOpenProject` and its use in `projectMeta.openProject`.
   const loadedProjectUid = ref<string | null>(null)
   const activeSetUid = ref<string | null>(null)
-  const napariImageUid = ref<string | null>(null)
+  const viewerImageUid = ref<string | null>(null)
   // WHICH image the user is currently focused on IN A VIEWER — napari or the browser (WebGPU) viewer.
   // The panel treats this as "the image whose controls I show"; napari-specific state (whether napari
-  // itself has this image open) stays on `napariImageUid`. See
+  // itself has this image open) stays on `viewerImageUid`. See
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1 for the split; when napari retires (P9) the two merge.
   //
   // Writers: the napari WS `open` event (setting both fields — napari opened X, that IS the current
@@ -173,7 +173,7 @@ export const useProjectStore = defineStore('project', () => {
     sets.value = []
     loadedProjectUid.value = null
     activeSetUid.value = null
-    napariImageUid.value = null
+    viewerImageUid.value = null
     openImageUid.value = null
     imageSelection.value = {}
     imageSort.value = {}
@@ -339,7 +339,7 @@ export const useProjectStore = defineStore('project', () => {
     return {}
   }
   // Cross-window focus bridge. The WebGPU viewer runs in a popup with its own Pinia store, so a
-  // focus change there doesn't reach `openImageUid` here. Mirrors the napari path (`napariImageUid`
+  // focus change there doesn't reach `openImageUid` here. Mirrors the napari path (`viewerImageUid`
   // is set by the WS `open` event whenever napari opens an image, so panel + napari agree on WHICH
   // image the toggles govern). The popup writes `cc.viewerFocus = imageUid` on mount and window
   // focus; this listener picks it up. Without it, the panel keeps controlling the last-eye-clicked
@@ -369,7 +369,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

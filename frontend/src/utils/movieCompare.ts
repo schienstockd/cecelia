@@ -143,7 +143,7 @@ export function versionsFromConfig(
  *
  * No migration twin to `versionsFromConfig`: no config ever carried masks (the movie path could not
  * show them at all), so absent means absent. That distinction survives to Julia, where an absent list
- * leaves the canvas alone and an empty one means "no masks" — see `_config_label_value_names`.
+ * leaves the canvas alone and an empty one means "no masks".
  */
 export function segmentationsFromConfig(
   cfg: { labelValueNames?: string[] }, available: string[],

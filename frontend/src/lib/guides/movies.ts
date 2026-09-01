@@ -31,7 +31,7 @@ export const recordMovieGuide: GuideDef = {
         'Open the image with the ↗ beside it.',
         'Channels, contrast, masks, tracks, populations: all of it is recorded as shown.',
       ],
-      when: c => c.napariImageUid !== null,
+      when: c => c.viewerImageUid !== null,
     },
     {
       anchor: 'sidebar.viewerCta',

@@ -5,7 +5,7 @@
 // is TWO steps — "Add images" registers rows (`POST /api/images/register`), and converting them to
 // OME-Zarr is an ordinary task run (`importImages.omezarr`) you dispatch yourself. The first version of
 // this guide claimed conversion "starts straight away" and then sent the user to open the image in
-// napari, which cannot work: the eye is disabled until the image HAS a converted file (Dominik,
+// the viewer, which cannot work: the eye is disabled until the image HAS a converted file (Dominik,
 // 2026-08-12) — `isImported`, which is what the table itself uses.
 // That convert phase is the shared `taskRunSteps` block, the same furniture every module page uses.
 

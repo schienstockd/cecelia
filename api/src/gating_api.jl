@@ -9,32 +9,33 @@
 
 _gerr(status, msg) = (status, JSON3.write((; error = msg)))
 
-# ── Napari cell-selection registry (linked brushing) ──────────────────────────
-# A spatial selection drawn in napari is mirrored onto the flow plots as a transient
-# population ("see those XY cells in channel space"). The selection is ephemeral server
-# state keyed by (task_dir, value_name) — never persisted (docs/POPULATION.md). It is
-# injected as a transient `Population` (explicit-label membership) into every map served
-# or broadcast, so it reuses all existing plotdata/stats/highlight machinery unchanged.
-const NAPARI_SEL_PATH   = "/" * "Napari selection"
-const NAPARI_SEL_NAME   = "Napari selection"
-const NAPARI_SEL_COLOUR = "#22d3ee"                     # cyan, distinct from gate pops
-const _napari_sel       = Dict{Tuple{String,String},Vector{Int}}()
-const _napari_sel_lock  = ReentrantLock()
+# ── Pick-selection registry (linked brushing) ────────────────────────────────
+# A spatial selection made in the viewer (pick-cell / pick-rect) is mirrored onto the
+# flow plots as a transient population ("see those XY cells in channel space"). The
+# selection is ephemeral server state keyed by (task_dir, value_name) — never persisted
+# (docs/POPULATION.md). It is injected as a transient `Population` (explicit-label
+# membership) into every map served or broadcast, so it reuses all existing
+# plotdata/stats/highlight machinery unchanged.
+const PICK_SEL_PATH   = "/" * "Pick selection"
+const PICK_SEL_NAME   = "Pick selection"
+const PICK_SEL_COLOUR = "#22d3ee"                       # cyan, distinct from gate pops
+const _pick_sel       = Dict{Tuple{String,String},Vector{Int}}()
+const _pick_sel_lock  = ReentrantLock()
 
-_set_napari_selection!(task_dir::AbstractString, vn::AbstractString, labels::Vector{Int}) =
-    lock(_napari_sel_lock) do
-        isempty(labels) ? delete!(_napari_sel, (String(task_dir), String(vn))) :
-                           (_napari_sel[(String(task_dir), String(vn))] = labels)
+_set_pick_selection!(task_dir::AbstractString, vn::AbstractString, labels::Vector{Int}) =
+    lock(_pick_sel_lock) do
+        isempty(labels) ? delete!(_pick_sel, (String(task_dir), String(vn))) :
+                           (_pick_sel[(String(task_dir), String(vn))] = labels)
     end
-_get_napari_selection(task_dir::AbstractString, vn::AbstractString) =
-    lock(_napari_sel_lock) do; get(_napari_sel, (String(task_dir), String(vn)), nothing); end
+_get_pick_selection(task_dir::AbstractString, vn::AbstractString) =
+    lock(_pick_sel_lock) do; get(_pick_sel, (String(task_dir), String(vn)), nothing); end
 
-# add the transient napari-selection pop to a freshly-loaded map (no-op when no selection)
-function _inject_napari_pop!(m::PopulationMap, img::CciaImage)
-    labs = _get_napari_selection(img._dir, m.value_name)
+# add the transient pick-selection pop to a freshly-loaded map (no-op when no selection)
+function _inject_pick_pop!(m::PopulationMap, img::CciaImage)
+    labs = _get_pick_selection(img._dir, m.value_name)
     (labs === nothing || isempty(labs)) && return m
-    has_pop(m, NAPARI_SEL_PATH) && return m
-    add_pop!(m, NAPARI_SEL_NAME; parent = ROOT, colour = NAPARI_SEL_COLOUR,
+    has_pop(m, PICK_SEL_PATH) && return m
+    add_pop!(m, PICK_SEL_NAME; parent = ROOT, colour = PICK_SEL_COLOUR,
              explicit_labels = labs, transient = true)
     m
 end
@@ -109,13 +110,13 @@ _track_fetch(img, vn) = cols -> track_props(img; value_name = vn,
     cell_measures = track_cell_measures(cols, _track_free_cols(img, vn)))
 
 # load + recompute a map (membership ready). For `flow`/`live` the data source is the cell table
-# and the transient napari-selection pop is injected so it is queryable like any population; for
-# `track` the source is the per-track table and the napari selection (cell labels, not track_ids)
+# and the transient pick-selection pop is injected so it is queryable like any population; for
+# `track` the source is the per-track table and the pick selection (cell labels, not track_ids)
 # does not apply, so it is not injected.
 function _live_map(img, vn, pop_type)
     m = load_pop_map(img; value_name = vn, pop_type = pop_type)
     is_track = _track_grained(pop_type)
-    is_track || _inject_napari_pop!(m, img)
+    is_track || _inject_pick_pop!(m, img)
     recompute!(m, is_track ? _track_fetch(img, vn) : _fetch(img, vn))
     m
 end
@@ -211,8 +212,8 @@ function _plot_cols_stored(img, vn, pop_type, cols, pop)
     if !is_root(pop)
         m = _live_map(img, vn, pop_type)
         # the pop may have vanished since the client last rendered (e.g. a plot/highlight still
-        # pointing at a napari selection that has since been cleared) — return empty data rather
-        # than letting cells_in_pop throw a 500 ("pop_membership: not found: /Napari selection").
+        # pointing at a pick selection that has since been cleared) — return empty data rather
+        # than letting cells_in_pop throw a 500 ("pop_membership: not found: /Pick selection").
         has_pop(m, pop) || return empty
         filter_rows(lp, cells_in_pop(m, pop); by = :label)
     end
@@ -285,7 +286,7 @@ const _GATING_HISTORY = Dict{String,NamedTuple{(:undo, :redo),Tuple{Vector{_Gati
 _history_key(proj, image_uid, vn, pop_type) = join((proj, image_uid, vn, pop_type), '\u0000')
 _history_for(key) = get!(() -> (undo = _GatingSnapshot[], redo = _GatingSnapshot[]), _GATING_HISTORY, key)
 
-# The tree as it would be READ BACK from disk. `include_transient=false` keeps the napari selection
+# The tree as it would be READ BACK from disk. `include_transient=false` keeps the pick selection
 # out of history — it is ephemeral server state that is re-injected on every read, and restoring a
 # stale one would resurrect a selection the user has since cleared.
 _gating_snapshot(img::CciaImage, vn, pop_type)::Dict{String,Any} =
@@ -318,7 +319,7 @@ function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop
     proj, image_uid = String(body["projectUid"]), String(body["imageUid"])
     _history_record!(proj, image_uid, vn, pop_type, img)
     save_pop_map!(m, img)
-    _inject_napari_pop!(m, img)
+    _inject_pick_pop!(m, img)
     _broadcast_popmap(proj, image_uid, vn, pop_type, m)
     (; tree = to_tree(m),
        canUndo = _can_undo(proj, image_uid, vn, pop_type),
@@ -348,12 +349,12 @@ function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
             push!(counter, (uid, _gating_snapshot(timg, vn, pt)))
             save_pop_map!(from_tree(tree), timg)
             m = load_pop_map(timg; value_name = vn, pop_type = pt)
-            _inject_napari_pop!(m, timg)
+            _inject_pick_pop!(m, timg)
             _broadcast_popmap(proj, uid, vn, pt, m)
         end
         push!(to, counter)
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        _inject_napari_pop!(m, img)
+        _inject_pick_pop!(m, img)
         200, JSON3.write((; tree = to_tree(m),
                             canUndo = !isempty(h.undo), canRedo = !isempty(h.redo)))
     end
@@ -557,7 +558,7 @@ function api_gating_popmap(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pt = get(q, "popType", "flow")
     m = load_pop_map(img; value_name = vn, pop_type = pt)
-    _inject_napari_pop!(m, img)
+    _inject_pick_pop!(m, img)
     proj, image_uid = get(q, "projectUid", ""), get(q, "imageUid", "")
     200, JSON3.write((; tree = to_tree(m),
                         canUndo = _can_undo(proj, image_uid, vn, pt),

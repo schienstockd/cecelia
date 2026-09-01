@@ -37,7 +37,7 @@ Both are enforced by tests, so skipping them fails the build.
 **Neighbouring docs — this one does not restate them.** `docs/PLOTS.md` (plot-spec schema, chart
 types), `docs/ANALYSIS.md` (the Analysis board: tabs, plates, export), `docs/POPULATION.md` (gating
 model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param widgets),
-`docs/NAPARI.md` (viewer process + layers), `docs/todo/UX_PRIMITIVES_PLAN.md` (unification status).
+`docs/todo/UX_PRIMITIVES_PLAN.md` (unification status).
 
 ---
 
@@ -2280,7 +2280,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   the next navigation / input change instead.
 
 This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old R app's success-time
-`retrieveState`. The **napari viewer** refresh is a separate, data-vs-image path — see `docs/NAPARI.md`.
+`retrieveState`. The **image viewer** refresh is a separate, data-vs-image path.
 
 ---
 
@@ -2392,8 +2392,8 @@ are track-grained (membership is track_ids, not cell labels) so points would be 
 trackclust cluster pops; both route through `pushTracks`, which sends `showGatedTracks` +
 `showTrackclust` in one call, and the bridge namespaces Tracks layers by `(popType)`). Per-pop
 visibility and the dot-size slider live in the population manager — see the gating section.
-(`docs/NAPARI.md` — linked brushing.) **Icon convention**: append new toggles at the end of the
-row; group unrelated toggles behind an `.opt-sep` divider.
+**Icon convention**: append new toggles at the end of the row; group unrelated toggles behind an
+`.opt-sep` divider.
 
 ---
 

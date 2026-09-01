@@ -169,17 +169,6 @@ end
 # Unregistered names are dropped rather than passed on to the bridge, which would log a skip per
 # frameless store; the frontend's `normaliseItems` drops them too, so both ends agree on a deleted set.
 
-# The registries, read defensively: `img.labels`/`img.branch_labels` exist on a CciaImage, but these
-# helpers are also exercised against light NamedTuple stand-ins in the tests.
-_label_registry(img)::Dict{String,Vector{String}} =
-    hasproperty(img, :labels) && img.labels isa AbstractDict ?
-        Dict{String,Vector{String}}(String(k) => collect(String, v) for (k, v) in img.labels) :
-        Dict{String,Vector{String}}()
-_branch_registry(img)::Dict{String,Vector{String}} =
-    hasproperty(img, :branch_labels) && img.branch_labels isa AbstractDict ?
-        Dict{String,Vector{String}}(String(k) => collect(String, v) for (k, v) in img.branch_labels) :
-        Dict{String,Vector{String}}()
-
 # One reader for both keys — `:labelValueNames` against the mask registry, `:branchValueNames`
 # against the skeleton one.
 function _config_set_names(config, key::Symbol, known::AbstractDict)::Union{Nothing,Vector{String}}
@@ -190,14 +179,11 @@ function _config_set_names(config, key::Symbol, known::AbstractDict)::Union{Noth
            if haskey(known, v) && !(v in seen) && (push!(seen, v); true)]
 end
 
-_config_label_value_names(config, img)  = _config_set_names(config, :labelValueNames,  _label_registry(img))
-_config_branch_value_names(config, img) = _config_set_names(config, :branchValueNames, _branch_registry(img))
-
-# Label OUTLINE width in pixels: 0 = filled (napari's default), N = an N-px contour, which is what lets
+# Label OUTLINE width in pixels: 0 = filled, N = an N-px contour, which is what lets
 # the channel signal under a mask stay readable. Read from a request body or a movie config through the
 # one accessor so the routes and the recorder cannot disagree about the key or its floor. Clamped
-# rather than validated — a negative contour is meaningless to napari, and failing a whole batch over a
-# display nicety would be the wrong trade.
+# rather than validated — a negative contour is meaningless to the renderer, and failing a whole batch
+# over a display nicety would be the wrong trade.
 const LABEL_CONTOUR_MAX = 10
 _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_CONTOUR_MAX)
 
@@ -237,17 +223,6 @@ function _t_range(src)::Tuple{Int,Union{Int,Nothing}}
     t1  = raw === nothing ? nothing : max(t0, _to_int(raw))
     (t0, t1)
 end
-
-# {valueName => [store files]} for `vns`, the shape `_parse_all_labels`/`_show_all_labels!` consume.
-# `nothing` (an agnostic config) and an empty list both give an empty map — the caller pairs it with a
-# `showLabels` flag, which is what distinguishes them on the wire.
-_files_for(known::AbstractDict, vns::Union{Nothing,AbstractVector})::Dict{String,Vector{String}} =
-    vns === nothing ? Dict{String,Vector{String}}() :
-        Dict{String,Vector{String}}(String(v) => known[String(v)] for v in vns
-                                    if haskey(known, String(v)))
-
-_label_files_for(img, vns)  = _files_for(_label_registry(img), vns)
-_branch_files_for(img, vns) = _files_for(_branch_registry(img), vns)
 
 # Full attr-named output path under {proj}/movies/.
 function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[];
@@ -469,10 +444,9 @@ function _config_value_names(config)::Vector{String}
     isempty(names) ? [String(get(config, :valueName, ""))] : names
 end
 
-# The segmentations a config splits into columns. Deliberately NOT `_config_label_value_names`: that
-# one is image-scoped (it drops names this image doesn't have) and three-valued, while the column list
-# is authored once for a whole batch and must not vary per image — an image missing one of the sets
-# would otherwise get a different number of columns than its neighbours.
+# The segmentations a config splits into columns. Authored once for a whole batch and must not vary
+# per image — an image missing one of the sets would otherwise get a different number of columns
+# than its neighbours.
 function _config_compare_segmentations(config)::Vector{String}
     raw = get(config, :labelValueNames, nothing)
     raw === nothing && return String[]
@@ -520,12 +494,3 @@ function _grid_frame_total(rows::Vector{MovieRow}, per_pass::Int)::Int
     (cells <= 1 || per_pass <= 0) && return 0
     (cells + count(r -> length(r.columns) > 1, rows) + (length(rows) > 1 ? 1 : 0)) * per_pass
 end
-# The single-row case by its old name — a 1xN grid, which is what every comparison was until masks
-# became a second dimension.
-_comparison_frame_total(n_columns::Int, per_pass::Int)::Int = _grid_frame_total(1, n_columns, per_pass)
-
-# A captured view WITHOUT its per-layer props — the camera and the timepoint, nothing about intensity.
-# What "each version keeps its own saved napari settings" (D4) applies to the later columns.
-_camera_only(snapshot) =
-    Dict{String,Any}(String(k) => v for (k, v) in pairs(snapshot) if String(k) != "layers")
-
