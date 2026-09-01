@@ -27,9 +27,9 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     # Resolve gated-population membership in-process (Julia is the gate evaluator).
     label_ids = nothing
     # `trackSource` is the STABLE key `_write_back` uses to delete this pop's rows on a re-run —
-    # the pop's UID (unchanged by rename/move) for a gated run, `"whole_seg"` when tracking the
-    # whole segmentation. See MULTI_POP_TRACKING_PLAN.md Decision 1.
-    track_source = "whole_seg"
+    # the pop's UID (unchanged by rename/move) for a gated run, `WHOLE_SEG_TRACK_SOURCE` when tracking
+    # the whole segmentation. See MULTI_POP_TRACKING_PLAN.md Decision 1.
+    track_source = WHOLE_SEG_TRACK_SOURCE
     if pops_to_track != "NONE"
         m = load_pop_map(img; value_name = value_name, pop_type = "flow")
         if !has_pop(m, pops_to_track)
