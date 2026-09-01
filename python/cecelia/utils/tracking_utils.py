@@ -41,6 +41,13 @@ from cecelia.utils.atomic_io import write_h5ad_atomic
 # btrack Track.to_dict() fields we keep (per-timepoint rows; ID == btrack track number)
 _TRACK_COLS = ("ID", "parent", "root", "state", "generation", "t", "label_id")
 
+# `track_source` sentinel written when tracking runs on the whole segmentation, not on a gated pop.
+# Bypasses the pop→pop conflict/attribution rules (whole-seg is the documented "prime everything"
+# mode, docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 1). Kept as a module-level const so the
+# conflict detector, `_write_back`, and the Julia writer's mirror (`WHOLE_SEG_TRACK_SOURCE` in
+# `app/src/gating/population_manager.jl`) all agree on the string.
+WHOLE_SEG_TRACK_SOURCE = "whole_seg"
+
 
 class BayesianTrackingUtils:
     def __init__(self, params: dict, logger):
@@ -59,7 +66,12 @@ class BayesianTrackingUtils:
         # — so re-tracking a pop replaces its own tracks, without touching cells tracked under
         # another pop. See docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 1. Missing → "whole_seg"
         # so an older Julia handler that hasn't been updated still lands somewhere sensible.
-        self.track_source = str(params.get("trackSource", "whole_seg"))
+        self.track_source = str(params.get("trackSource", WHOLE_SEG_TRACK_SOURCE))
+        # Override the P1 conflict detector — write over labels that are currently owned by a
+        # different pop's `track_source`. Never set implicitly. Used by the intentional pop→pop
+        # refinement idiom (see MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 2); the whole-seg
+        # non-symmetry doesn't need it because whole_seg is already treated as bypass.
+        self.force_track_source = bool(params.get("trackSourceForce", False))
 
         self.max_search_radius   = params["maxSearchRadius"]
         # [sz, sy, sx] in µm — skimage axis order, matching the centroid columns, the same shape
@@ -261,6 +273,40 @@ class BayesianTrackingUtils:
             self.log.log(f">> Delete {int(del_mask.sum())} rows previously written by "
                          f"track_source='{self.track_source}'")
 
+        # Row lookup by label id, shared between the conflict check below and the WRITE step. Both
+        # want "which row is label L on" — before the guard, we didn't need it here.
+        rowof = {int(l): i for i, l in enumerate(labels_all)}
+
+        # ── 2b. conflict detector (MULTI_POP_TRACKING_ORPHANS_PLAN P1) ─────────────
+        # After DELETE, any row still stamped with a track_source other than {None, whole_seg,
+        # self.track_source} is currently owned by a DIFFERENT live pop. Writing over it would
+        # silently transfer lineage ownership and leave the previous owner's DELETE step unable to
+        # find it on a future re-run. Fail by default and name the labels; the caller passes
+        # `trackSourceForce=true` to override (the intentional pop→pop refinement idiom — whole-seg
+        # → pop is already bypass because whole_seg is treated as "prime everything, refine one pop"
+        # and doesn't count as a conflict).
+        conflicts = []
+        for lbl in track_df["label_id"].to_numpy(dtype=np.int64):
+            r = rowof.get(int(lbl))
+            if r is None:
+                continue
+            s = src_obj[r]
+            if s is None or s == WHOLE_SEG_TRACK_SOURCE or s == self.track_source:
+                continue
+            conflicts.append((int(lbl), str(s)))
+        if conflicts:
+            sample = conflicts[:5]
+            tail = f" (and {len(conflicts) - 5} more)" if len(conflicts) > 5 else ""
+            pairs = ", ".join(f"label={l} source='{s}'" for l, s in sample)
+            msg = (f"track_source='{self.track_source}': {len(conflicts)} labels already owned by "
+                   f"other pop(s). First: {pairs}{tail}. "
+                   f"Re-track the owning pops first, adjust pop definitions to remove overlap, "
+                   f"or pass trackSourceForce=true.")
+            if self.force_track_source:
+                self.log.log(f">> [WARN] {msg} — proceeding under trackSourceForce=true")
+            else:
+                raise ValueError(msg)
+
         # ── 3. compact surviving track_ids to 1..N (with parent/root remapped) ─────
         survivor_mask = ~np.isnan(cur_id)
         n_surviving = 0
@@ -312,7 +358,7 @@ class BayesianTrackingUtils:
         run_cellid     = track_df["cell_id"].to_numpy(dtype=np.float64)
         run_labels     = track_df["label_id"].to_numpy(dtype=np.int64)
 
-        rowof = {int(l): i for i, l in enumerate(labels_all)}
+        # `rowof` is built once above (before the conflict check) and reused here.
         for i in range(len(track_df)):
             r = rowof.get(int(run_labels[i]))
             if r is None:
