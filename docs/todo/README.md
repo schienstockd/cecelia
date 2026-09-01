@@ -94,7 +94,7 @@ disagree, the plan's header wins — and fix the row.
 | [`REMOTE_ACCESS_PLAN.md`](REMOTE_ACCESS_PLAN.md) | planning (2026-08-27) · no branch | Cross-OS SSH-tunnel launcher for reaching a Cecelia VM install: user double-clicks a per-OS icon, tunnel opens, browser opens at `localhost`. Free, cloud-vendor-agnostic, rate-limit-free. Server stays loopback-bound — no app-layer auth needed. Reshaped 2026-08-27 from an earlier token-based URL-auth design; that path was killed by the shared-bucket Let's Encrypt rate limit on nip.io (see file's git history for the reasoning trail) |
 | [`OBSERVER_DATA_ACCESS_PLAN.md`](OBSERVER_DATA_ACCESS_PLAN.md) | parked (scoped, not started) | Let the observer read actual cell data, not just QC/logs/meta |
 | [`QC_OBSERVER_PLAN.md`](QC_OBSERVER_PLAN.md) | parked | Observer-side QC surface; supersedes three exploratory prompts in `docs/ai-assist/` |
-| [`MULTI_POP_TRACKING_PLAN.md`](MULTI_POP_TRACKING_PLAN.md) | planning (2026-09-01) · no branch | Reintroduce stable population UIDs (per the R version's `popID`, dropped in the Julia port); provenance-aware `_write_back` in tracking (`track_source` obs column carrying the pop UID + delete-then-compact-then-write); a per-pop `hasTracks` payload flag + per-pop track-layer rows in the viewer. So running `bayesian_tracking` on two gated pops shows both as separate ribbon layers, re-running one pop replaces its own rows, and renaming a pop doesn't orphan its tracks |
+| [`MULTI_POP_TRACKING_ORPHANS_PLAN.md`](MULTI_POP_TRACKING_ORPHANS_PLAN.md) | planning (2026-09-02) · no branch | Follow-up to the shipped `MULTI_POP_TRACKING_PLAN.md`: attribution guard on `has_tracks` (silences ribbons a deleted pop's rows would bleed into another pop), tracking-time conflict detector on `_write_back` (raise on cross-pop label overlap, force-override for the rare intentional refine), retired-UID set on the population map (closes the silent surface where `gen_uid` could reissue a deleted pop's UID), and a tracking-time orphan sweep against the live UID set |
 
 ### Built — the plan is a record of *why*, not a spec of *what is*
 
@@ -130,6 +130,7 @@ For how these actually work, read the permanent `docs/<AREA>.md`. A built plan d
 | [`ONBOARDING_PLAN.md`](ONBOARDING_PLAN.md) | BUILT (confirmed 2026-08-20) | First-launch setup wizard removing the `custom.toml` wall; `config_dir()` is the one resolver it uses |
 | [`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md) | BUILT (confirmed 2026-08-20) | Pluto notebooks as the structured home for downstream analysis. As-built: `docs/NOTEBOOKS.md` |
 | [`ANIMATION_PLAN.md`](ANIMATION_PLAN.md) | BUILT — A–G + F1/F2 + Phase H all done (2026-07-24) | Publication figures and movies: channel layers, colours, tracks, title cards, on the shared snapshot foundation |
+| [`MULTI_POP_TRACKING_PLAN.md`](MULTI_POP_TRACKING_PLAN.md) | **shipped** #741–#746 (2026-09-01) | Stable population UIDs, provenance-aware `_write_back` (`track_source` obs column), per-pop `hasTracks` payload flag + per-pop track-layer rows in the viewer. Follow-up gaps (orphan cleanup, cross-pop collision) in [`MULTI_POP_TRACKING_ORPHANS_PLAN.md`](MULTI_POP_TRACKING_ORPHANS_PLAN.md) |
 
 ### Trackers and audits — not plans
 
