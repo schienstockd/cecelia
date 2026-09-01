@@ -480,11 +480,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         @toggle="togglePane"
       />
 
-      <!-- BUSY banner: the batch is running -->
-      <div v-if="running" class="bm-busy">
-        <i class="pi pi-spin pi-spinner" />
-        <span>Generating batch movies…</span>
-      </div>
+      <!-- Batch progress lives in the runner (this panel's own task list + TasksModule), so no
+           in-panel busy banner — one place per event, no redundant chrome. -->
 
       <!-- ── The CONFIG half ── every `.bm-sec` below, plus the actions row: hidden as a group by the
            `pane-bottom` rule in this file's CSS rather than a guard on each one, so a section added
@@ -514,12 +511,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
                     aria-label="Movie overlays" />
-        <div v-if="showTracks" class="bm-inset">
-          <span class="bm-lbl cc-muted">tail</span>
-          <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
-                 v-tooltip.bottom="'Thickness of the track tail'" />
-          <span class="bm-val">{{ tailWidth }}</span>
-        </div>
+        <!-- popType + segmentation picks share one row; tail + size sliders share a second one. Each
+             range is width-capped (`.bm-range`) so a lone tail slider doesn't stretch to eat the row
+             (old layout gave `tail` 4× the width of `size` for that reason — both are 1..20). -->
         <div v-if="showPops" class="bm-inset">
           <select v-model="popType" class="bm-mini" v-tooltip.bottom="'Which population type to draw as points'">
             <option value="flow">gating</option>
@@ -529,10 +523,20 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                   v-tooltip.bottom="'Segmentation whose pop tree to draw from'">
             <option v-for="s in segNames" :key="s" :value="s">{{ s }}</option>
           </select>
-          <span class="bm-lbl cc-muted">size</span>
-          <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
-                 v-tooltip.bottom="'Diameter of the population points'" />
-          <span class="bm-val">{{ pointsSize }}</span>
+        </div>
+        <div v-if="showTracks || showPops" class="bm-inset">
+          <template v-if="showTracks">
+            <span class="bm-lbl cc-muted">tail</span>
+            <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
+                   class="bm-range" v-tooltip.bottom="'Thickness of the track tail'" />
+            <span class="bm-val">{{ tailWidth }}</span>
+          </template>
+          <template v-if="showPops">
+            <span class="bm-lbl cc-muted">size</span>
+            <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
+                   class="bm-range" v-tooltip.bottom="'Diameter of the population points'" />
+            <span class="bm-val">{{ pointsSize }}</span>
+          </template>
         </div>
         <div v-if="showPops" class="bm-inset">
           <span class="bm-lbl cc-muted" v-tooltip.left="'From the first selected image; empty = all populations'">populations</span>
@@ -641,11 +645,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 }
 /* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
 .bm.pane-bottom > .bm-tasks { min-height: 0; }
-/* A "batch running" advisory — NOT the job's progress (the scheduler reports that in TasksModule). It
-   states the condition of a resource, so it is a severity and takes the CVD-safe amber. */
-.bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: var(--cc-radius-md);
-  background: color-mix(in srgb, var(--cc-sev-warn) 16%, transparent); border: 1px solid var(--cc-sev-warn);
-  color: var(--cc-text); font-size: var(--cc-fs-md); }
 .bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
@@ -663,6 +662,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 /* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so a slider sharing a row
    with the size fields overflows the sidebar. Let it flex down to share the available width. */
 .bm-inset input[type="range"] { flex: 1; min-width: 0; }
+/* Cap tail / size slider width — both are 1..20, so both should look the same width regardless of
+   whether they share the row with a select. Without this the flex:1 above lets a lone `tail` slider
+   stretch to ~4× the `size` slider (which shares its row with two selects). */
+.bm-inset .bm-range { flex: 0 1 9rem; min-width: 4rem; }
 
 .bm-val { font-size: var(--cc-fs-sm); min-width: 1.6rem; }
 .bm-attrs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
