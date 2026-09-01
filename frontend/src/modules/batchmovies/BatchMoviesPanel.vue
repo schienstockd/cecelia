@@ -30,6 +30,8 @@ import { versionsFromConfig, compareSuffix, compareActionTip,
          type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
+import SceneAid from '../../components/SceneAid.vue'
+import { buildOverlayScene, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskList from '../../tasks/TaskList.vue'
@@ -285,6 +287,23 @@ watch(popPaths, (paths) => {
 const popPathOptions = computed<ChipOption[]>(() =>
   popPaths.value.map(p => ({ value: p.path, label: p.label.trim(), tip: p.path })))
 
+// Overlay preview — a schematic frame that shows what the batch's overlay config will draw,
+// without generating a real movie. Deterministic scene (see modules/batchmovies/overlayPreview.ts),
+// so two toggles-of-the-same-config produce the same picture; every branch rule locked with the
+// backend `_overlays_raw_from_config` (api/src/movie_rail.jl) via the producer's tests.
+const _previewScene = buildOverlayScene()
+const overlayPreview = computed(() => renderOverlayPreview({
+  showPopulations: cfg.value.showPopulations,
+  showTracks: cfg.value.showTracks,
+  showGatedTracks: cfg.value.showGatedTracks,
+  showTrackclust: cfg.value.showTrackclust,
+  labelValueNames: cfg.value.labelValueNames,
+  showTimestamp: movie.value.showTimestamp,
+  showScaleBar: movie.value.showScaleBar,
+  titleCard: cfg.value.titleCard,
+  popsFilter: cfg.value.popsFilter,
+}, _previewScene))
+
 // ── seed the config so it's not blank (colours + pops of the first selected image) ─────────────
 // Prefer the first image's LIVE viewer view (its actual channel colours + shown overlays) when that
 // image is the one open; otherwise fall back to a default palette so the pickers are still populated.
@@ -511,6 +530,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
                     aria-label="Movie overlays" />
+        <!-- Schematic frame that shows what the current config will draw, live-updating as toggles
+             flip. Not a preview of the user's data (that would need per-image plot fetches); a
+             deterministic schematic whose branch rules mirror the backend overlay author. See
+             modules/batchmovies/overlayPreview.ts. -->
+        <div class="bm-preview-row">
+          <SceneAid :render="overlayPreview" :size="180" />
+        </div>
         <!-- popType + segmentation picks share one row; tail + size sliders share a second one. Each
              range is width-capped (`.bm-range`) so a lone tail slider doesn't stretch to eat the row
              (old layout gave `tail` 4× the width of `size` for that reason — both are 1..20). -->
@@ -646,6 +672,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 /* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
 .bm.pane-bottom > .bm-tasks { min-height: 0; }
 .bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
+/* Centred wrapper for the schematic overlay preview — small margin below the chip row so the
+   frame reads as a separate element rather than part of the toggle row. */
+.bm-preview-row { display: flex; justify-content: center; margin: 6px 0 2px; }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
 .bm-sub { margin-left: 6px; }
