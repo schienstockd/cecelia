@@ -97,6 +97,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // Overlay point size, in SCREEN px — a cell marker is annotation, so it stays legible zoomed out and
   // must not swallow the cell zoomed in. Default 6 (inherited from the R-Shiny era).
   const viewerPointSize = ref(Number(localStorage.getItem('cc.viewerPointSize') ?? '6') || 6)
+  // Optional black outline around every population point, in SCREEN px. 0 = no border (the old
+  // rendering), > 0 grows the quad by `border` px and paints the outer ring black — a crowded
+  // multi-population view separates the categories more clearly against a busy MIP.
+  const viewerPointBorder = ref(Number(localStorage.getItem('cc.viewerPointBorder') ?? '0') || 0)
   // Track tails. `viewerTailLength` is in FRAMES (default 30) and `viewerTailWidth` in screen px
   // (default 4). 0 length hides them.
   const viewerTailLength = ref(Number(localStorage.getItem('cc.viewerTailLength') ?? '30') || 30)
@@ -345,6 +349,7 @@ export const useSettingsStore = defineStore('settings', () => {
     show3D?: boolean                        // open images volumetric (only applied where a z-axis exists)
     showGatedTracks?: boolean               // overlay gated track populations
     pointSize?: number                      // population centroid point size in the viewer
+    pointBorder?: number                    // black outline width (screen px) around every point, 0 = none
     popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
     // How the viewer colours track ribbons — 'track' (palette by track id), 'speed' (heat ramp by
     // per-hop distance), 'solid' (one palette colour per source vn, so multiple track sources are
@@ -412,6 +417,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const setShowGatedTracks = (setUid: string, v: boolean) => _patchSet(setUid, { showGatedTracks: v })
   const getPointSize = (setUid: string): number => _setPrefs.value[setUid]?.pointSize ?? 6   // old GUI default 6
   const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
+  const getPointBorder = (setUid: string): number => _setPrefs.value[setUid]?.pointBorder ?? 0   // 0 = no outline (the old rendering)
+  const setPointBorder = (setUid: string, v: number) => _patchSet(setUid, { pointBorder: v })
   const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' =>
     _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
   const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid') =>
@@ -538,6 +545,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerScaleBar,           v => localStorage.setItem('cc.viewerScaleBar',           String(v)))
   watch(viewerTimestamp,          v => localStorage.setItem('cc.viewerTimestamp',          String(v)))
   watch(viewerPointSize,          v => localStorage.setItem('cc.viewerPointSize',          String(v)))
+  watch(viewerPointBorder,        v => localStorage.setItem('cc.viewerPointBorder',        String(v)))
   watch(viewerTailLength,         v => localStorage.setItem('cc.viewerTailLength',         String(v)))
   watch(viewerTailWidth,          v => localStorage.setItem('cc.viewerTailWidth',          String(v)))
   watch(viewerLabelOpacity,       v => localStorage.setItem('cc.viewerLabelOpacity',       String(v)))
@@ -596,7 +604,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncViewer, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncViewer, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

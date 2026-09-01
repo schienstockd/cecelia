@@ -53,7 +53,7 @@ struct P {
   ext:  vec4<f32>,                       // physical extent x, y, z; w = z origin of the loaded slab (µm)
   dims: vec4<f32>,                       // nx, ny, nz, z-planes per channel
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
-  lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, unused
+  lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, POINT border width (px, 0 = no outline)
   pan:  vec4<f32>,                       // pan xy (screen µm), then z/w = track ribbon planeLo/planeHi
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
@@ -299,7 +299,9 @@ struct POut {
   let ndc = project(centre - boxCentre(), c, aspect);
   // Pixels → NDC. The quad is square ON SCREEN, so the x offset divides by the canvas WIDTH and the y
   // by the height; using one for both stretches the marker with the window's aspect.
-  let px = p.ov.x;
+  // The quad is grown by the black-outline width so the border sits OUTSIDE the fill — a fill radius
+  // of p.ov.x px and an outer radius of (p.ov.x + p.lab.w) px. Zero border keeps the old quad size.
+  let px = p.ov.x + max(p.lab.w, 0.0);
   o.pos = vec4(ndc.x + corner.x * (2.0 * px / max(p.vp.y, 1.0)),
                ndc.y + corner.y * (2.0 * px / max(p.vp.z, 1.0)),
                0.0, 1.0);
@@ -312,6 +314,14 @@ struct POut {
   let r = length(in.local);
   let a = 1.0 - smoothstep(0.75, 1.0, r);
   if (a <= 0.001) { discard; }
+  // Fill/border seam. local runs -1..1 across a quad of outer radius (size + border) px, so the
+  // fill ends at ratio size/(size+border). Sharp on purpose: a soft ring against a coloured fill
+  // reads as blur, not as an outline.
+  let border = max(p.lab.w, 0.0);
+  if (border > 0.0) {
+    let inner = p.ov.x / max(p.ov.x + border, 0.0001);
+    if (r > inner) { return vec4(0.0, 0.0, 0.0, a); }
+  }
   return vec4(in.rgb, a);
 }
 `

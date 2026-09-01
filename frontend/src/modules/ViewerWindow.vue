@@ -630,6 +630,12 @@ const pointSize = computed({
   get: () => (setUid.value ? settings.getPointSize(setUid.value) : settings.viewerPointSize),
   set: (v: number) => setUid.value ? settings.setPointSize(setUid.value, v) : (settings.viewerPointSize = v),
 })
+// Screen-px width of the black outline drawn around every point. 0 disables it, so the default keeps
+// the existing rendering pixel-identical. Shares `pointSize`'s per-set/global fallback.
+const pointBorder = computed({
+  get: () => (setUid.value ? settings.getPointBorder(setUid.value) : settings.viewerPointBorder),
+  set: (v: number) => setUid.value ? settings.setPointBorder(setUid.value, v) : (settings.viewerPointBorder = v),
+})
 /**
  * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
  * locked decision 3: the viewer has no selectors. The CHOICE lives in `ViewerPanel`, keyed per set
@@ -1087,7 +1093,7 @@ const frame = usePlotResize(canvas, () => {
   // is still available.
   const tol = Math.max(0, settings.viewerPointZTol)
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
-                   pointSize.value, pLo - tol, pHi + tol)
+                   pointSize.value, pLo - tol, pHi + tol, pointBorder.value)
   // A tail of N frames ENDING at the frame on screen. Contiguous in the segment buffer by construction,
   // so this is two array reads rather than a per-frame filter.
   const tail = shownT.value >= 0 && settings.viewerTailLength > 0
@@ -4210,6 +4216,15 @@ onUnmounted(() => {
                   v-tooltip.bottom="'Marker size on screen, not in µm'"
                 >
                 <span class="cc-readout cc-fs-2xs vw-num">{{ pointSize }}</span>
+              </div>
+              <div class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col">Border</span>
+                <input
+                  type="range" class="vw-grow" :min="0" :max="6" :step="1"
+                  v-model.number="pointBorder" @input="frame.redraw()"
+                  v-tooltip.bottom="'Black outline around every point (0 = none)'"
+                >
+                <span class="cc-readout cc-fs-2xs vw-num">{{ pointBorder }}</span>
               </div>
               <div class="cc-muted cc-fs-3xs">
                 <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
