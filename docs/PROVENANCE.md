@@ -71,8 +71,7 @@ standard.
   unhelpful, and the AI proposed dropping it. Visual inspection on real intravital output showed
   the temporal-smoothed model was in fact what captured the cells being analysed — the metric had
   been optimising something other than the biological signal. The final choice was made on the
-  images. A proper ground-truth benchmark using confetti data is a wanted-but-not-yet piece; when
-  the data becomes available, add a benchmark task under `python/cecelia/tasks/segment/`.
+  images.
 - **Gating — population plausibility.** Beyond the logicle golden values, gated populations were
   checked on real projects by looking at where the gated cells land in the image — sitting on the
   correct cells, in the correct compartments. This is additional to the numeric transform check

@@ -216,7 +216,6 @@ fine while measuring fit to the wrong thing**. Two cases from Cecelia's own deve
   dropping it. On real intravital output, the temporal-smoothed model was in fact what captured
   the cells Dominik was analysing — the metric had been optimising something other than the
   biological signal. The final choice was made on what the images looked like, not on the number.
-  Confetti data as a proper ground-truth benchmark is a wanted-but-not-yet piece.
 - **coastal** (a sibling project that reuses Cecelia's helpers). Same shape in a different
   setting: automated optimisation numbers looked acceptable while the segmentation was missing the
   signal Dominik cared about. Visual inspection caught it.
