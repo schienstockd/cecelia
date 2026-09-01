@@ -7834,6 +7834,70 @@ end
     @test Set(pop_paths(load_pop_map(td, "B"))) == Set(["/qc", "/qc/B", "/qc/B/mem+"])
 end
 
+# ── Pop UIDs — the stable id every outside reference (obs columns, external notes) points at ─────
+# Reintroduces the R version's `popID` (MULTI_POP_TRACKING_PLAN.md Decision 0). Path is the DISPLAY
+# identity (what the UI shows); UID is the DURABLE one that outlives a rename. Two invariants matter
+# and are pinned here: UID survives rename_pop!/move_pop! (rename ≠ new pop), and a legacy sidecar
+# without any UIDs is one-shot-backfilled at load and saved so the next load gets the SAME uids.
+@testset "population UIDs survive rename + move + save/load round-trips" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    uid4 = pop_uid(m, "/cd4"); uid8 = pop_uid(m, "/cd4/cd8")
+    @test length(uid4) == 6 && length(uid8) == 6 && uid4 != uid8
+    # reverse lookup
+    @test pop_path_by_uid(m, uid4) == "/cd4"
+    @test pop_by_uid(m, uid4).path == "/cd4"
+    @test pop_path_by_uid(m, "missing") === nothing
+    # rename: uid stays, path shifts, index updates
+    rename_pop!(m, "/cd4", "tcell")
+    @test pop_uid(m, "/tcell") == uid4
+    @test pop_uid(m, "/tcell/cd8") == uid8            # descendant's uid unchanged
+    @test pop_path_by_uid(m, uid4) == "/tcell"
+    # move: uid stays, path shifts, index updates
+    add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    move_pop!(m, "/tcell", "/qc")
+    @test pop_uid(m, "/qc/tcell") == uid4
+    @test pop_path_by_uid(m, uid4) == "/qc/tcell"
+    # save/load round-trip preserves uids AS-IS (no reroll)
+    td = mktempdir(); save_pop_map!(m, td)
+    m2 = load_pop_map(td, "B")
+    @test pop_uid(m2, "/qc/tcell") == uid4
+    @test pop_uid(m2, "/qc/tcell/cd8") == uid8
+    # delete drops the reverse-lookup entry so a stale uid resolves to nothing rather than a valid path
+    del_pop!(m2, "/qc/tcell")
+    @test pop_path_by_uid(m2, uid4) === nothing
+    @test pop_path_by_uid(m2, uid8) === nothing       # descendants dropped along with the parent
+end
+
+@testset "legacy sidecar without UIDs is backfilled and saved on first load" begin
+    td = mktempdir()
+    mkpath(joinpath(td, "gating"))
+    # a hand-written sidecar carrying no `uid` on any node — what every project shipped before this
+    write(joinpath(td, "gating", "B.json"), """
+    {"pop_type":"flow","value_name":"B","populations":[
+      {"name":"cd4","colour":"#f00","show":true,
+       "gate":{"kind":"rectangle","x_channel":"x","y_channel":"y",
+               "x_transform":{"kind":"linear"},"y_transform":{"kind":"linear"},
+               "x_min":0,"x_max":1,"y_min":0,"y_max":1},
+       "children":[
+         {"name":"cd8","colour":"#0f0","show":true,
+          "gate":{"kind":"rectangle","x_channel":"x","y_channel":"y",
+                  "x_transform":{"kind":"linear"},"y_transform":{"kind":"linear"},
+                  "x_min":0,"x_max":1,"y_min":0,"y_max":1},"children":[]}
+       ]}
+    ]}
+    """)
+    # first load backfills + saves; a second load reads back the SAME uids (stable across sessions)
+    m1 = load_pop_map(td, "B")
+    u4a = pop_uid(m1, "/cd4"); u8a = pop_uid(m1, "/cd4/cd8")
+    @test length(u4a) == 6 && length(u8a) == 6
+    m2 = load_pop_map(td, "B")
+    @test pop_uid(m2, "/cd4") == u4a
+    @test pop_uid(m2, "/cd4/cd8") == u8a
+    @test m2._uid_backfilled == false                 # nothing to backfill this time
+end
+
 @testset "move_pop! rejects a cycle, a collision and an unknown target" begin
     m = PopulationMap(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))

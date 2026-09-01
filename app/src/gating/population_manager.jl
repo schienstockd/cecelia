@@ -41,6 +41,12 @@ end
 
 # ── Population ───────────────────────────────────────────────────────────────────
 mutable struct Population
+    # Stable identity — 6-char `gen_uid`, assigned at creation, persisted in the gating JSON, unchanged
+    # by rename/move. `path` is the display identity (what the UI shows, what boolean references cite);
+    # `uid` is the durable one that outlives a rename — the R version had this as `popID` and the port
+    # dropped it, which is why per-pop obs like `track_source` (docs/todo/MULTI_POP_TRACKING_PLAN.md
+    # Decision 0) couldn't be kept coherent across a rename by any amount of `_repath!` cascading.
+    uid::String
     name::String
     path::String
     parent::String
@@ -83,6 +89,16 @@ mutable struct PopulationMap
     value_name::String
     pops::Dict{String,Population}          # path → Population
     order::Vector{String}                  # insertion order (parents before children)
+    # uid → path lookup: kept in sync with `pops` by add_pop!/rename_pop!/move_pop!/del_pop! so a
+    # per-pop obs column (`track_source`, docs/todo/MULTI_POP_TRACKING_PLAN.md) can resolve back to the
+    # currently-named pop after a rename. The primary map stays keyed by path — the UI still reads by
+    # path — this is the reverse index for outside references.
+    uid_index::Dict{String,String}
+    # Load-time backfill flag: `true` if any pop's uid was auto-generated during `from_tree` because
+    # the source dict didn't carry one. `load_pop_map(task_dir, …)` uses this to `save_pop_map!`
+    # immediately so the freshly-assigned uids become the STABLE ids across sessions rather than being
+    # rerolled on every load. See MULTI_POP_TRACKING_PLAN.md Decision 0 (migration).
+    _uid_backfilled::Bool
     # Which unit the SPATIAL gate coordinates (on `centroid_x`/`_y`/`_z` axes) are stored in:
     # "um" or "px". Persisted in the gating file; **absent ⇒ "px"**, which is every file written
     # before spatial gates moved to µm, so an unmigrated project keeps evaluating correctly
@@ -107,7 +123,9 @@ PopulationMap(; pop_type::AbstractString="flow", value_name::AbstractString="def
               spatial_unit::AbstractString=SPATIAL_UNIT_PX,
               physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing) =
     PopulationMap(String(pop_type), String(value_name),
-                  Dict{String,Population}(), String[], String(spatial_unit),
+                  Dict{String,Population}(), String[],
+                  Dict{String,String}(), false,
+                  String(spatial_unit),
                   physical_sizes === nothing ? nothing : Vector{Float64}(physical_sizes),
                   nothing, nothing)
 
@@ -115,6 +133,35 @@ Base.length(m::PopulationMap) = length(m.order)
 pop_at(m::PopulationMap, path::AbstractString) = m.pops[String(path)]
 has_pop(m::PopulationMap, path::AbstractString) = haskey(m.pops, String(path))
 pop_paths(m::PopulationMap) = copy(m.order)
+
+"""The stable UID of the population at `path` (see the `Population.uid` docstring)."""
+pop_uid(m::PopulationMap, path::AbstractString) = m.pops[String(path)].uid
+
+"""The path currently held by the population with the given UID, or `nothing` if unknown.
+Use this to resolve a UID stored in an outside table (an obs column, another sidecar) back to the
+currently-named pop after a rename/move."""
+pop_path_by_uid(m::PopulationMap, uid::AbstractString) = get(m.uid_index, String(uid), nothing)
+
+"""The `Population` with the given UID, or `nothing` if unknown."""
+function pop_by_uid(m::PopulationMap, uid::AbstractString)
+    p = pop_path_by_uid(m, uid)
+    p === nothing ? nothing : m.pops[p]
+end
+
+# Pick a UID not already used in this map. Callers can pass an explicit `preferred` (deserialisation
+# from disk) — that is honoured when free; a collision reroll runs the same generator until a fresh
+# one lands. UIDs are 6-char `[A-Za-z0-9]` (see `gen_uid` in `app/src/utils.jl`); with the map's
+# active-pop counts (single- to low-hundreds), the birthday probability of ever needing a reroll is
+# vanishing — this exists so a hand-edited sidecar with two identical UIDs doesn't shadow one pop.
+function _fresh_pop_uid(m::PopulationMap; preferred::AbstractString="")::String
+    if !isempty(preferred) && !haskey(m.uid_index, String(preferred))
+        return String(preferred)
+    end
+    while true
+        candidate = gen_uid()
+        haskey(m.uid_index, candidate) || return candidate
+    end
+end
 
 """
     has_spatial_gate(m) -> Bool
@@ -277,6 +324,11 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                   filter_default_all::Bool=false, filter_conditions=nothing, is_track::Bool=false,
                   boolean_op=nothing, boolean_pops=nothing, boolean_not=nothing,
                   explicit_labels=nothing, transient::Bool=false,
+                  # UID for outside references (`track_source`, MULTI_POP_TRACKING_PLAN.md Decision 0).
+                  # Empty ⇒ generated fresh; explicit ⇒ used on load (round-trip stability) but rerolled
+                  # if it collides with another pop's UID in this map. Never reflect this back to the
+                  # caller as anything other than the freshly-picked one.
+                  uid::AbstractString="",
                   reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
@@ -303,12 +355,15 @@ function add_pop!(m::PopulationMap, name::AbstractString;
     if conds !== nothing
         filter_measure = conds[1].measure; filter_fun = conds[1].fun; filter_values = conds[1].values
     end
-    m.pops[path] = Population(String(name), path, parent, String(colour), show,
+    resolved_uid = _fresh_pop_uid(m; preferred = String(uid))
+    m.pops[path] = Population(resolved_uid,
+                              String(name), path, parent, String(colour), show,
                               m.pop_type, m.value_name, gate,
                               filter_measure === nothing ? nothing : String(filter_measure),
                               filter_fun === nothing ? nothing : String(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : collect(explicit_labels), transient)
+    m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)
     path
@@ -403,6 +458,9 @@ function _repath!(m::PopulationMap, path::AbstractString, newpath::AbstractStrin
         pop.parent = _replace_prefix(pop.parent, path, newpath)
         pop.name = pop_name(np)
         pop.value_name = m.value_name
+        # uid_index tracks CURRENT path — update every affected pop's mapping. UID itself is unchanged
+        # (that is the point: rename/move preserves identity).
+        m.uid_index[pop.uid] = np
         if np != old
             m.pops[np] = pop
             delete!(m.pops, old)
@@ -441,6 +499,9 @@ end
 
 function _del_paths!(m::PopulationMap, targets::Set{String})
     for t in targets
+        # drop the reverse-lookup entry first so `uid_index` never points at a deleted path
+        p = get(m.pops, t, nothing)
+        p === nothing || delete!(m.uid_index, p.uid)
         delete!(m.pops, t)
     end
     filter!(p -> !(p in targets), m.order)
@@ -455,7 +516,9 @@ _invalidate!(m::PopulationMap) = (m._labels = nothing; m._membership = nothing; 
 # they never reach disk; the broadcast/serve path keeps them so the client stays in sync.
 function _node_dict(m::PopulationMap, path::AbstractString; include_transient::Bool=true)::Dict{String,Any}
     p = m.pops[path]
-    d = Dict{String,Any}("name" => p.name, "colour" => p.colour, "show" => p.show)
+    # UID is emitted BEFORE `colour`/`show` so a diff of the sidecar names the identity of each node
+    # up front rather than buried after the tree ornaments.
+    d = Dict{String,Any}("name" => p.name, "uid" => p.uid, "colour" => p.colour, "show" => p.show)
     p.gate !== nothing && (d["gate"] = gate_spec(p.gate))
     if p.filter_measure !== nothing
         d["filter"] = Dict{String,Any}("measure" => p.filter_measure, "fun" => p.filter_fun,
@@ -501,7 +564,13 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
     gate = g("gate") === nothing ? nothing : gate_from_spec(g("gate"))
     flt = g("filter")
     bl = g("boolean")
+    # UID pass-through: honour the sidecar's own uid when present (stable across sessions), else
+    # let `add_pop!` generate one AND record that this map needs saving so the freshly-picked uid
+    # doesn't get rerolled on every load. See MULTI_POP_TRACKING_PLAN.md Decision 0 (migration).
+    raw_uid = String(g("uid", ""))
+    isempty(raw_uid) && (m._uid_backfilled = true)
     path = add_pop!(m, String(g("name")); parent=parent, gate=gate, reserved_ok=true,
+                    uid=raw_uid,
                     colour=String(g("colour", "#ffffff")), show=Bool(g("show", true)),
                     filter_measure = flt === nothing ? nothing : get(flt, "measure", get(flt, :measure, nothing)),
                     filter_fun     = flt === nothing ? nothing : get(flt, "fun", get(flt, :fun, nothing)),
@@ -566,15 +635,25 @@ function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
     # write uses. The load→mutate→save critical section is separately serialised by `_POPMAP_LOCK`
     # in the gating API handlers (against lost updates); this guards the file itself.
     write_json_atomic(path, to_tree(m; include_transient = false))
+    m._uid_backfilled = false   # the just-saved sidecar now carries every uid
     m
 end
 
-"""Load the map from `{task_dir}/gating/{value_name}[__tracks].json` (empty map if absent)."""
+"""Load the map from `{task_dir}/gating/{value_name}[__tracks].json` (empty map if absent).
+
+**One-shot UID backfill**: a sidecar written before UIDs shipped (MULTI_POP_TRACKING_PLAN.md
+Decision 0) has no `uid` on any node — `_add_node!` generates them and flips
+`m._uid_backfilled = true`. This function then runs a `save_pop_map!` before returning so the
+freshly-picked UIDs are stable across sessions (a next load would otherwise reroll them and any
+outside reference — a `track_source` obs value, a lab-log capture — would drift). Once the sidecar
+is UID-complete this branch never fires again."""
 function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
                       pop_type::AbstractString="flow")::PopulationMap
     path = gating_path(task_dir, value_name; pop_type=pop_type)
     isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
-    from_tree(JSON3.read(read(path, String), Dict{String,Any}))
+    m = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
+    m._uid_backfilled && save_pop_map!(m, task_dir)
+    m
 end
 
 # CciaImage convenience (task_dir = img._dir)
