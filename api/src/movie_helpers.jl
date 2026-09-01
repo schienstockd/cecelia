@@ -263,7 +263,11 @@ function _config_overlay_pops(img, config)
         for vn in segs
             try
                 for L in resolve_pops(img, pt; value_name = vn)
-                    (L.show && !L.is_track) || continue
+                    # A pop counted as POINTS is one that's shown and NOT drawn as a ribbon. Under
+                    # MULTI_POP_TRACKING_PLAN.md Decision 2 ribbon eligibility is `is_track ||
+                    # has_tracks`, so both branches must exclude a pop the tracks legend below will
+                    # already list — otherwise a flow pop with tracked cells would show TWICE.
+                    (L.show && !L.is_track && !Bool(get(L, :has_tracks, false))) || continue
                     push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path))
                 end
             catch
@@ -278,6 +282,22 @@ function _config_overlay_pops(img, config)
         for vn in segs
             Bool(get(config, :showGatedTracks, false)) && _append_config_pop_paths!(out, img, vn, "track")
             Bool(get(config, :showTrackclust, false))  && _append_config_pop_paths!(out, img, vn, "trackclust")
+        end
+        # Ribbon-drawable FLOW pops (data flag `has_tracks`): a hand-drawn flow gate on cells that
+        # have since been tracked. `_build_overlay_state` already renders these as ribbons under
+        # Decision 2 — the legend picks the same set up here so the title card names every ribbon
+        # the movie will actually draw. Gated by `showGatedTracks` (the master ribbon toggle).
+        if Bool(get(config, :showGatedTracks, false))
+            pt = String(get(config, :popType, "flow"))
+            for vn in segs
+                try
+                    for L in resolve_pops(img, pt; value_name = vn)
+                        (L.show && Bool(get(L, :has_tracks, false)) && !L.is_track) || continue
+                        push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path))
+                    end
+                catch
+                end
+            end
         end
     end
     out

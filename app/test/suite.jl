@@ -9480,6 +9480,37 @@ end
     end
 end
 
+# ── resolve_pops.has_tracks — DATA fact per pop, drives ribbon eligibility next to `is_track` ─────
+# The `has_tracks` field (MULTI_POP_TRACKING_PLAN.md Decision 2) says whether a pop CURRENTLY holds
+# any cell with `track_id > 0` — so a flow gate on cells that have since been tracked qualifies as
+# ribbon-drawable without touching its `is_track` flag (which stays "was TYPED as a track pop"). The
+# fixture h5ad `KDIeEm/B.h5ad` carries a `track_id` obs column (see the test at line 8837 above), so
+# a broad flow gate lands on some tracked cells.
+@testset "resolve_pops has_tracks: data flag, orthogonal to is_track" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "resolve_pops has_tracks (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+
+        # Broad gate: every measured cell (0 → 1e12 on both axes) → includes the tracked ones. A
+        # `resolve_pops` layer for this flow pop should carry `has_tracks == true`.
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
+                                              -1e12, 1e12, -1e12, 1e12), colour="#3b82f6")
+        save_pop_map!(m, img)
+
+        layers = resolve_pops(img, "flow"; value_name="B")
+        @test length(layers) == 1
+        L = layers[1]
+        @test L.is_track === false                # flow pop → typed flag stays false
+        @test L.has_tracks === true               # data flag: at least one label has track_id > 0
+    end
+end
+
 # ── Segmentation integrity (QC) plot data (KDIeEm, timecourse) ───────────────
 # count per (image, timepoint) via group_by=temporal, + a per-timepoint measure distribution.
 # See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
