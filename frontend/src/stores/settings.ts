@@ -100,7 +100,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // Optional black outline around every population point, in SCREEN px. 0 = no border (the old
   // rendering), > 0 grows the quad by `border` px and paints the outer ring black — a crowded
   // multi-population view separates the categories more clearly against a busy MIP.
-  const viewerPointBorder = ref(Number(localStorage.getItem('cc.viewerPointBorder') ?? '0') || 0)
+  const viewerPointBorder = ref(Number(localStorage.getItem('cc.viewerPointBorder') ?? '3'))
   // Track tails. `viewerTailLength` is in FRAMES (default 30) and `viewerTailWidth` in screen px
   // (default 4). 0 length hides them.
   const viewerTailLength = ref(Number(localStorage.getItem('cc.viewerTailLength') ?? '30') || 30)
@@ -417,7 +417,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const setShowGatedTracks = (setUid: string, v: boolean) => _patchSet(setUid, { showGatedTracks: v })
   const getPointSize = (setUid: string): number => _setPrefs.value[setUid]?.pointSize ?? 6   // old GUI default 6
   const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
-  const getPointBorder = (setUid: string): number => _setPrefs.value[setUid]?.pointBorder ?? 0   // 0 = no outline (the old rendering)
+  const getPointBorder = (setUid: string): number => _setPrefs.value[setUid]?.pointBorder ?? 3   // 3 px reads best on a busy MIP; 0 disables the outline
   const setPointBorder = (setUid: string, v: number) => _patchSet(setUid, { pointBorder: v })
   const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' =>
     _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
