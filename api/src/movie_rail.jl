@@ -127,8 +127,16 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
         # and any `ov_raw` dict leaked pop dots.
         "showPopulations"  => show_pops,
-        "includeTracks"    => show_gated,       # cell-track ribbons alongside the pop points
-        "allTracks"        => show_tracks,      # whole-segmentation tracks, ignoring pops
+        # Ribbon eligibility in the overlay author is `include_tracks && (is_track || has_tracks)` on
+        # the pops path, and `include_tracks` alone on the all-tracks path. Both `tracks` (all-seg
+        # ribbons) and `gated` (cell-track ribbons) chips should push ribbons; before this either flag
+        # meant "yes for gated, no for all-seg" and the whole-seg chip drew dots only.
+        "includeTracks"    => show_gated || show_tracks,
+        # `allTracks` is the whole-seg grey mode — every tracked cell painted with `all_tracks_colour`,
+        # `pops_filter` ignored. When `showPops` is on the user has already narrowed to specific pops,
+        # so the all-seg override no longer matches intent; yield to the pops branch (which still gets
+        # ribbons for its own cells via `include_tracks` above).
+        "allTracks"        => show_tracks && !show_pops,
         "tailLength"       => 30,               # legacy default; the batch config doesn't author it
         "trackColorMode"   => "track",
         "pointSizePx"      => _cfg_int(cfg, "pointsSize", 6),

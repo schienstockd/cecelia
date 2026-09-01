@@ -7041,9 +7041,20 @@ end
     @test ov["pointSizePx"] == 8
     @test ov["allTracks"] === false
     @test ov["includeTracks"] === false
-    # showTracks = whole-segmentation tracks, ignoring pops (napari's ribbon).
+    # showTracks = whole-segmentation tracks. Ribbon-eligible (`includeTracks`) — else the
+    # `pi-directions` chip alone drew grey dots without ribbons.
     ov_all = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
     @test ov_all["allTracks"] === true
+    @test ov_all["includeTracks"] === true
+    # showPops overrides showTracks — an explicit pop selection means "these pops", not "every cell
+    # in the seg". Without this fix, `showPops + showTracks` painted every cell in default grey and
+    # ignored the popsFilter entirely.
+    ov_both = _overlays_raw_from_config(
+        Dict{String,Any}("showTracks" => true, "showPopulations" => true), false)
+    @test ov_both["allTracks"] === false
+    @test ov_both["showPopulations"] === true
+    # ribbons still push in the pops branch (via `include_tracks && (is_track || has_tracks)`)
+    @test ov_both["includeTracks"] === true
     # A mask fills the mask branch AND flips `allCells` on when there are no pops/gated to filter by.
     ov_mask = _overlays_raw_from_config(Dict{String,Any}("labelContour" => 3), true)
     @test ov_mask["showMask"] === true
