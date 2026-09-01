@@ -651,8 +651,14 @@ function api_viewer_overlays(req::HTTP.Request)
         # Populations, from the cached resolver. An image with no gating map answers an empty list
         # rather than an error — an unsegmented or ungated image is a normal state, not a failure.
         pops = try
+            # `hasTracks` is a DATA fact ("does this pop hold any tracked cells right now") emitted
+            # alongside the typed `isTrack` flag ("was this pop authored as a track-family pop"). The
+            # WebGPU viewer treats a pop as ribbon-drawable when `isTrack || hasTracks` — see
+            # MULTI_POP_TRACKING_PLAN.md Decision 2 + P3. Defaulting to `false` on legacy servers is
+            # safe: the viewer falls back to today's isTrack-only behaviour.
             [(; path = p.path, name = p.name, colour = p.colour, show = p.show,
-                isTrack = p.is_track, labels = p.labels)
+                isTrack = p.is_track, hasTracks = get(p, :has_tracks, false),
+                labels = p.labels)
              for p in resolve_pops(img, pt; value_name = vn)]
         catch e
             @warn "viewer overlays: populations unavailable" value_name = vn exception = e

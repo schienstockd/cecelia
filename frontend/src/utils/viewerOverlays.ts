@@ -56,7 +56,14 @@ export interface OverlayPop {
   name: string
   colour: string
   show: boolean
+  /** TYPED flag — was this pop authored as a track-family pop (`pop_type == "track"`)?
+   *  `TrackSchemeView` + the analysis board's registry entries key off this, so its meaning stays
+   *  narrow. Use `isTrack || hasTracks` to decide whether to DRAW a pop as a ribbon. */
   isTrack: boolean
+  /** DATA flag — does this pop hold any cell with `track_id > 0` right now?
+   *  Set true for e.g. a flow gate over cells that a per-pop tracking run has since populated. See
+   *  docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2. Absent on payloads from older servers → false. */
+  hasTracks?: boolean
   labels: number[]
 }
 

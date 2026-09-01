@@ -1767,14 +1767,35 @@ function resolve_pops(img::CciaImage, pop_type::AbstractString;
     fetch = cols -> (lp = label_props(img; value_name = value_name);
                      isempty(cols) || select_cols(lp, cols); as_df(lp))
     recompute!(m, fetch)
+    # `has_tracks`: does this pop hold any cell with `track_id > 0`? Data-based, so a hand-drawn flow
+    # gate on cells that were later tracked qualifies as a ribbon-drawable pop without any change to
+    # its `is_track` flag (which stays "was this pop TYPED as a track pop"). See
+    # docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2. One label-props read, cached on the image with
+    # the rest of `resolve_pops`'s output (mtime-keyed), so the whole membership + tracks lookup pays
+    # its cost once per (segmentation × edit).
+    tracked_labels = Set{Int}()
+    begin
+        lp = label_props(img; value_name = value_name)
+        if "track_id" in col_names(lp; data_type = :obs)
+            select_cols(lp, ["track_id"])
+            tdf = as_df(lp)
+            @inbounds for i in 1:size(tdf, 1)
+                tid = tdf[i, :track_id]
+                (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
+                push!(tracked_labels, Int(tdf[i, :label]))
+            end
+        end
+    end
     out = NamedTuple[]
     for path in pop_paths(m)
         p = pop_at(m, path)
         p.transient && continue
         labs = Int.(cells_in_pop(m, path))
         isempty(labs) && continue
+        has_tracks = !isempty(tracked_labels) && any(l -> l in tracked_labels, labs)
         push!(out, (path = p.path, name = p.name, colour = p.colour,
-                    show = p.show, is_track = p.is_track, labels = labs))
+                    show = p.show, is_track = p.is_track, has_tracks = has_tracks,
+                    labels = labs))
     end
     img._pop_df_cache[ckey] = out
     out
