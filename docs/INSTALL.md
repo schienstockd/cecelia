@@ -209,8 +209,9 @@ $env:CECELIA_HOME='D:\apps\cecelia'
 irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
 
-Launch with `cd <CECELIA_HOME> && pixi run app` (or point the desktop launcher at that path). Config
-and projects still live in `~/.cecelia`; only the install moves.
+The desktop entry (`cecelia.desktop`), `/Applications/Cecelia.command` and the Start Menu shortcut
+all embed the resolved `INSTALL_DIR`, so they keep working when `CECELIA_HOME` is set — no manual
+`cd` needed. Config and projects still live in `~/.cecelia`; only the install moves.
 
 ---
 

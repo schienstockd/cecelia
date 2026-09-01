@@ -99,8 +99,9 @@ curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.s
 $env:CECELIA_HOME='D:\apps\cecelia'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
 
-Then launch by pointing at that directory: `cd <CECELIA_HOME> && pixi run app`. Your projects folder
-and settings still live in `~/.cecelia` — only the install moves.
+The Applications entry / Start Menu shortcut the installer creates points at `CECELIA_HOME`, so
+launching from the menu still works — no need to `cd` yourself. Your projects folder and settings
+still live in `~/.cecelia`; only the install moves.
 
 ---
 
