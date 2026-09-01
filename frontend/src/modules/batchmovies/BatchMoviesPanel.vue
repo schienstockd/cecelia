@@ -156,6 +156,13 @@ const showGated    = computed<boolean>({ get: () => !!cfg.value.showGatedTracks,
 const showPops     = computed<boolean>({ get: () => !!cfg.value.showPopulations,     set: v => patch({ showPopulations: v }) })
 const colourLabels = computed<boolean>({ get: () => !!cfg.value.colourLabels,        set: v => patch({ colourLabels: v }) })
 const popType      = computed<string>({ get: () => cfg.value.popType ?? 'flow',      set: v => patch({ popType: v }) })
+// Which segmentation the pop tree is fetched from. Pop trees are per-segmentation, so a batch that
+// draws mask `flowTom` while filtering `/qc/CD169-` needs to know the pop path was authored on
+// `flowTom`. Empty → first mask column, else the first available segmentation.
+const popValueName = computed<string>({
+  get: () => cfg.value.popValueName ?? (compareSegmentations.value[0] ?? segNames.value[0] ?? ''),
+  set: v => patch({ popValueName: v }),
+})
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
 
@@ -241,7 +248,7 @@ const popPaths = ref<{ path: string; label: string }[]>([])
 async function loadPopPaths() {
   const uid = props.selectedUids[0]
   const projectUid = projectMeta.current?.uid
-  const seg = segNames.value[0]
+  const seg = popValueName.value
   const pt = popType.value
   if (!uid || !projectUid || !seg || !pt) { popPaths.value = []; return }
   try {
@@ -262,7 +269,7 @@ async function loadPopPaths() {
     popPaths.value = out
   } catch { popPaths.value = [] }
 }
-watch(() => [props.selectedUids[0], segNames.value[0], popType.value] as const, loadPopPaths, { immediate: true })
+watch(() => [props.selectedUids[0], popValueName.value, popType.value] as const, loadPopPaths, { immediate: true })
 // Selected pop paths — persist under `popsFilter`. Empty = draw ALL pops (backend rule).
 const popsFilter = computed<string[]>({
   get: () => (cfg.value.popsFilter as string[] | undefined) ?? [],
@@ -518,6 +525,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
             <option value="flow">gating</option>
             <option value="clust">clusters</option>
           </select>
+          <select v-if="segNames.length" v-model="popValueName" class="bm-mini"
+                  v-tooltip.bottom="'Segmentation whose pop tree to draw from'">
+            <option v-for="s in segNames" :key="s" :value="s">{{ s }}</option>
+          </select>
           <span class="bm-lbl cc-muted">size</span>
           <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
                  v-tooltip.bottom="'Diameter of the population points'" />
@@ -527,7 +538,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <span class="bm-lbl cc-muted" v-tooltip.left="'From the first selected image; empty = all populations'">populations</span>
           <ChipSelect v-if="popPathOptions.length" v-model="popsFilter" :options="popPathOptions"
                       multiple aria-label="Populations to draw" />
-          <span v-else class="bm-hint cc-muted">no populations for this segmentation / type</span>
+          <span v-else class="bm-hint cc-muted">no populations for {{ popValueName || 'this segmentation' }} / {{ popType }}</span>
         </div>
       </section>
 

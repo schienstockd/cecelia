@@ -157,6 +157,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     if pf_raw isa AbstractVector && !isempty(pf_raw)
         out["popPaths"] = String[String(p) for p in pf_raw]
     end
+    # `popValueName` — which segmentation the pop tree is looked up in. Pop trees are per-segmentation
+    # (`gating/{value_name}.json`), so a batch that draws mask `default` while filtering `/qc/CD169-`
+    # (a pop authored on `flowTom`) needs the resolver to look up `flowTom`'s tree, not `default`'s.
+    # Emitted as `valueName` — the field `_resolve_movie_overlays_mask` already reads and threads into
+    # `build_overlays_for(; value_name=...)`. Absent → the resolver falls back to `vnn` (the mask
+    # segmentation), matching the pre-picker behaviour.
+    pvn = _cfg_str(cfg, "popValueName", "")
+    isempty(pvn) || (out["valueName"] = pvn)
     out
 end
 

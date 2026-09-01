@@ -49,6 +49,20 @@ describe('buildBatchMovieConfig', () => {
       .toEqual([])
   })
 
+  it('popValueName defaults to the first mask column, else the first segmentation', () => {
+    // Explicit pick wins.
+    expect(buildBatchMovieConfig({ popValueName: 'flowTom' }, ['memTom', 'flowTom'], {}).popValueName)
+      .toBe('flowTom')
+    // No pick, mask column present ⇒ inherit the first mask column (the segmentation the batch is
+    // drawing, which is the pre-picker fallback).
+    expect(buildBatchMovieConfig({ labelValueNames: ['memTom'] }, ['flowTom', 'memTom'], {}).popValueName)
+      .toBe('memTom')
+    // No pick and no mask column ⇒ first available segmentation.
+    expect(buildBatchMovieConfig({}, ['flowTom', 'memTom'], {}).popValueName).toBe('flowTom')
+    // Nothing at all ⇒ empty string (backend then falls back to the mask segmentation).
+    expect(buildBatchMovieConfig({}, [], {}).popValueName).toBe('')
+  })
+
   it('defaults the title card ON with a 3s duration', () => {
     const c = buildBatchMovieConfig({}, [], {})
     expect(c.titleCard).toEqual({ enabled: true, note: '', durationSec: 3 })

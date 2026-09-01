@@ -7065,6 +7065,18 @@ end
     ov_pf = _overlays_raw_from_config(
         Dict{String,Any}("showPopulations" => true, "popsFilter" => ["/A", "/B/c"]), false)
     @test ov_pf["popPaths"] == ["/A", "/B/c"]
+
+    # `popValueName` surfaces as `valueName` on the overlay dict — the segmentation whose pop tree
+    # `_resolve_movie_overlays_mask` looks up. Without it, pop paths from `flowTom` would silently
+    # miss when the batch draws mask `default` (the resolver falls back to `vnn`).
+    ov_no_vn = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true), false)
+    @test !haskey(ov_no_vn, "valueName")
+    ov_empty_vn = _overlays_raw_from_config(
+        Dict{String,Any}("showPopulations" => true, "popValueName" => ""), false)
+    @test !haskey(ov_empty_vn, "valueName")
+    ov_vn = _overlays_raw_from_config(
+        Dict{String,Any}("showPopulations" => true, "popValueName" => "flowTom"), false)
+    @test ov_vn["valueName"] == "flowTom"
 end
 
 @testset "API: movie rail — viewstate → render args (keyframe rendering)" begin

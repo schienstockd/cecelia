@@ -260,7 +260,13 @@ function _config_overlay_pops(img, config)
 
     if Bool(get(config, :showPopulations, false))
         pt = String(get(config, :popType, "flow"))
-        for vn in segs
+        # When the config names a `popValueName` (batch picker for which segmentation's pop tree to
+        # draw from), the legend must reflect that segmentation only — else it would list pops from
+        # every segmentation while the movie actually draws pops from just one. Absent → iterate all
+        # segmentations (pre-picker fallback, matches `_overlays_raw_from_config`).
+        pop_vn = String(get(config, :popValueName, ""))
+        vns_for_pops = isempty(pop_vn) ? segs : String[pop_vn]
+        for vn in vns_for_pops
             try
                 for L in resolve_pops(img, pt; value_name = vn)
                     # A pop counted as POINTS is one that's shown and NOT drawn as a ribbon. Under
@@ -292,7 +298,11 @@ function _config_overlay_pops(img, config)
         # TRACK measures; see docs/TRACKING.md → deferred 3d/3e.
         if Bool(get(config, :showGatedTracks, false))
             pt = String(get(config, :popType, "flow"))
-            for vn in segs
+            # Same segmentation scope as the points block above: when `popValueName` is set, cell-
+            # track ribbons come from that segmentation's pops only.
+            pop_vn = String(get(config, :popValueName, ""))
+            vns_for_pops = isempty(pop_vn) ? segs : String[pop_vn]
+            for vn in vns_for_pops
                 try
                     for L in resolve_pops(img, pt; value_name = vn)
                         (L.show && Bool(get(L, :has_tracks, false)) && !L.is_track) || continue

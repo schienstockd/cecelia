@@ -53,6 +53,12 @@ export interface BatchMovieCfg {
   showTrackclust?: boolean
   showPopulations?: boolean
   popType?: string
+  // Which SEGMENTATION the pops in `popsFilter` belong to (a labelProps key like `flowTom`). Pop trees
+  // are per-segmentation, so a batch that draws mask `default` while filtering `/qc/CD169-` needs to
+  // know the pop path was authored on `flowTom` — otherwise the renderer looks it up against `default`
+  // and misses. Empty/absent → the batch's first `labelValueNames` entry (else the first segmentation
+  // of the first selected image), matching the pre-picker behaviour.
+  popValueName?: string
   // Which pop paths to draw when `showPopulations` is on. Empty (or absent) = ALL pops of `popType`
   // for the selected segmentation, which is the pre-picker behaviour every batch already had. The
   // backend `_overlays_raw_from_config` forwards this as `popPaths` (see `_resolve_movie_overlays_mask`).
@@ -100,6 +106,7 @@ export interface BatchMovieRequestConfig {
   showTrackclust: boolean
   showPopulations: boolean
   popType: string
+  popValueName: string
   popsFilter: string[]
   pointsSize: number
   colourLabels: boolean
@@ -157,6 +164,9 @@ export function buildBatchMovieConfig(
     showTrackclust: !!cfg.showTrackclust,
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',
+    // Which segmentation the popsFilter paths belong to. Empty → the batch's first mask column,
+    // else the first available segmentation (backend fallback matches).
+    popValueName: cfg.popValueName ?? (cfg.labelValueNames?.[0] ?? segNames[0] ?? ''),
     // Empty list = ALL pops of the resolved popType (backend rule; matches the pre-picker default).
     popsFilter: cfg.showPopulations ? [...(cfg.popsFilter ?? [])] : [],
     pointsSize: cfg.pointsSize ?? 6,
