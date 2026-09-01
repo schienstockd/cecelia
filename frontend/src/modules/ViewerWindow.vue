@@ -622,6 +622,13 @@ function toggleSelectMode() {
  *  pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
 /**
+ * Track-layer visibility hides a pop's RIBBONS separately from its POINTS. A user showing points for
+ * `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing this into `hiddenPops` would
+ * silently link the two, which the plan (MULTI_POP_TRACKING_PLAN.md Decision 5) rejects.
+ * Path-keyed, initialised empty on every overlays reload so a fresh payload's rows all start on.
+ */
+const hiddenTrackPops = ref<Set<string>>(new Set())
+/**
  * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
  * and write goes to the one store the panel already uses — the same image cannot then look different
  * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
@@ -768,6 +775,20 @@ let segments: SegmentBuffer = EMPTY_SEGMENTS
 const pointCount = ref(0)
 const segCount = ref(0)
 const summary = computed(() => overlaySummary(overlays.value))
+/**
+ * Ribbon-drawable pops from the current overlays payload — pops the Tracks section enumerates as
+ * per-pop layer rows (swatch/name/count/eye), mirroring the Populations section. A pop qualifies
+ * when it was TYPED as a track pop (`isTrack`) OR when it currently holds cells with `track_id > 0`
+ * (`hasTracks`, MULTI_POP_TRACKING_PLAN.md Decision 2). Sorted by path so the ordering is stable
+ * across refetches. `count` is the pop's label count from the payload — a cell-level number that
+ * matches what the Populations section shows for the same pop, so the two sections read the same.
+ */
+const trackDrawablePops = computed(() => {
+  const pops = overlays.value?.pops ?? []
+  return pops.filter(p => p.show && p.labels?.length && (p.isTrack || p.hasTracks))
+             .map(p => ({ path: p.path, name: p.name, colour: p.colour, count: p.labels.length }))
+             .sort((a, b) => a.path.localeCompare(b.path))
+})
 /** The ramp as a CSS gradient, from the same 256-entry lookup the points are shaded with — a legend
  *  built from a different set of stops would be a second answer about the same scale. */
 const rampStyle = computed(() => {
@@ -1226,7 +1247,13 @@ function rebuildOverlays() {
   const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
   if (gatedOn && popMgrPayload && popMgrVn) {
     for (const pop of popMgrPayload.pops ?? []) {
-      if (!pop.isTrack || !pop.show || !pop.labels?.length) continue
+      // A pop is ribbon-drawable when it was TYPED as a track pop (`isTrack`) OR when its cells
+      // actually hold `track_id > 0` (`hasTracks`) — data OR type, either qualifies. Legacy servers
+      // omit `hasTracks`; the guard falls back to today's `isTrack`-only behaviour.
+      // See docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2.
+      if (!pop.show || !pop.labels?.length) continue
+      if (!(pop.isTrack || pop.hasTracks)) continue
+      if (hiddenTrackPops.value.has(pop.path)) continue
       const filtered = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
       if (!filtered.nCells) continue
       const key = `${popMgrVn}::${pop.path}`
@@ -1300,6 +1327,10 @@ async function loadOverlays() {
     const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : false
     if (!popTypeOn) p.pops = []
     hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
+    // Same reset for track-layer visibility: a refetch resyncs from the server's `pop.show` for
+    // POINTS, and the ribbon toggle is a transient row-eye that starts CLEAR each payload (a stale
+    // hide from an older payload would silently drop a ribbon the user thought they were seeing).
+    hiddenTrackPops.value = new Set()
     overlays.value = p
     rebuildOverlays()
   } catch (e) {
@@ -1313,6 +1344,13 @@ function togglePop(path: string) {
   const next = new Set(hiddenPops.value)
   next.has(path) ? next.delete(path) : next.add(path)
   hiddenPops.value = next
+  rebuildOverlays()
+}
+// Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
+function toggleTrackPop(path: string) {
+  const next = new Set(hiddenTrackPops.value)
+  next.has(path) ? next.delete(path) : next.add(path)
+  hiddenTrackPops.value = next
   rebuildOverlays()
 }
 
@@ -4243,6 +4281,20 @@ onUnmounted(() => {
                section colours + shapes the ribbons. Empty state names both the "nothing ticked" case
                and the "ticked but no tracked cells" case rather than showing an empty block. -->
           <template v-if="segCount > 0">
+            <!-- Per-pop ribbon rows: one line per gated pop with tracks (isTrack || hasTracks),
+                 mirroring the Populations section above (swatch/name/count/toggle). The eye hides
+                 the ribbon layer WITHOUT touching the point layer's eye — `hiddenTrackPops` is a
+                 separate set from `hiddenPops` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
+            <div v-for="pop in trackDrawablePops" :key="pop.path" class="cc-row cc-row-tight">
+              <span class="vw-swatch" :style="{ background: pop.colour }" />
+              <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+              <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
+              <CcToggle
+                :model-value="!hiddenTrackPops.has(pop.path)"
+                v-tooltip.bottom="'Draw this population as a track ribbon layer'"
+                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop.path)"
+              />
+            </div>
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
               <select v-model="trackColorMode" class="cc-fs-2xs vw-grow"
