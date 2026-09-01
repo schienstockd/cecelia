@@ -258,8 +258,8 @@ This section doesn't try to invent one.
   [doi:10.1038/s41467-025-57193-y](https://doi.org/10.1038/s41467-025-57193-y); source (R version):
   [github.com/schienstockd/cecelia-legacy](https://github.com/schienstockd/cecelia-legacy).
 - The scientific tools this pipeline orchestrates, each retaining its own license and citation:
-  **Cellpose** (segmentation), **btrack** (Bayesian cell tracking), **napari** (image viewing),
-  **scanpy** / **anndata** (single-cell data + clustering), **scikit-image**, **PyTorch**.
+  **Cellpose** (segmentation), **btrack** (Bayesian cell tracking), **scanpy** / **anndata**
+  (single-cell data + clustering), **scikit-image**, **PyTorch**.
 - The **celltrackR** R package (Wortel & Textor) — its track-measurement algorithms are ported in
   `app/src/tasks/tracking/track_measures.jl`. Cited work, not just a dependency: Wortel et al.
   (2021), *Cell Reports Methods*, [doi:10.1016/j.crmeth.2021.100006](https://doi.org/10.1016/j.crmeth.2021.100006).
@@ -274,7 +274,7 @@ This section doesn't try to invent one.
 | Frontend | Vue 3 + Pinia + PrimeVue, Observable Plot, regl-scatterplot | UI only — no analysis logic |
 | API | Julia (HTTP + WebSocket server) | Thin transport over the package |
 | Package | **Cecelia.jl** | Data model, tasks, gating, statistics — headless-runnable |
-| Compute | Pixi-managed env (napari, Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
+| Compute | Pixi-managed env (Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layer boundaries and the REPL-runnable
 contract.
