@@ -115,18 +115,6 @@ what the human's role is called, whether a tool built this way is publishable �
 converged. Cecelia's README describes what happened rather than picking a position on questions
 the field hasn't answered.
 
-## Publication position
-
-Undecided. If publication happens, two shapes are on the table:
-
-- A *Nature Methods*-style paper for the parts that are genuinely new — the browser WebGPU viewer,
-  the offline renderer, the analysis board — where the technical contribution has no direct
-  predecessor.
-- A *Nature Protocols*-style paper for the full pipeline, referencing the 2025 *Nature
-  Communications* paper on the original R/Shiny `cecelia` for the underlying scientific framework.
-
-Neither is a commitment.
-
 ## When this document changes
 
 Add a dated line here when the disclosure or validation record is materially updated, so that a
