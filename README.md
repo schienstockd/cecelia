@@ -86,6 +86,22 @@ Every account gets a launcher (application menu / Start Menu). Because the files
 **updates are admin-only**: the in-app Update button defers to an administrator, who re-runs the same
 command elevated. (The default per-user install can self-update in-app.)
 
+### Custom install location
+
+Set `CECELIA_HOME` to install anywhere else — a bigger drive, a shared path. Works with either scope;
+Pixi and Julia land inside it, so nothing spills over. `~` and `~/…` are expanded.
+
+```sh
+# Linux / macOS
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_HOME=~/apps/cecelia sh
+
+# Windows (PowerShell)
+$env:CECELIA_HOME='D:\apps\cecelia'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
+```
+
+Then launch by pointing at that directory: `cd <CECELIA_HOME> && pixi run app`. Your projects folder
+and settings still live in `~/.cecelia` — only the install moves.
+
 ---
 
 ## Updating
