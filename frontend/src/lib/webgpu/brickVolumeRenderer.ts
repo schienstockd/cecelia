@@ -398,6 +398,7 @@ export async function createBrickVolumeRenderer(
   let pointFirst = 0
   let pointCount = 0
   let pointSizePx = 6
+  let pointBorderPx = 0
   let pointPlaneLo = -1
   let pointPlaneHi = -1
   let segBuf: GPUBuffer | null = null
@@ -1073,7 +1074,9 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.LAB + 0] = atlas?.labelsEnabled ? labelOpacity : 0
     uniformCpu[BU.LAB + 1] = labelContourPx
     uniformCpu[BU.LAB + 2] = LABEL_PALETTE_N
-    uniformCpu[BU.LAB + 3] = 0
+    // The unused labels vec4 .w slot carries the point OUTLINE width in screen px — same encoding
+    // as `volumeRenderer.ts`, so both renderers' shaders read one uniform (`p.lab.w`).
+    uniformCpu[BU.LAB + 3] = pointBorderPx
     // Prev-level fallback fields — only meaningful when a level switch has copied the previous
     // page table into the prev buffer. `prevValid` is a float flag the shader reads with a
     // > 0.5 comparison (WGSL uniform floats don't do bitwise cleanly).
@@ -1338,7 +1341,7 @@ export async function createBrickVolumeRenderer(
       }
       if (data.byteLength > 0) device.queue.writeBuffer(pointBuf, 0, data)
     },
-    setOverlayDraw(first, count, sizePx, planeLo, planeHi) {
+    setOverlayDraw(first, count, sizePx, planeLo, planeHi, borderPx) {
       pointFirst = first
       pointCount = count
       pointSizePx = sizePx
@@ -1346,6 +1349,7 @@ export async function createBrickVolumeRenderer(
       // treats the range as a single plane rather than reading garbage from an unset slot.
       pointPlaneLo = planeLo
       pointPlaneHi = planeHi ?? planeLo
+      pointBorderPx = Math.max(0, borderPx ?? 0)
     },
     setOverlaySegments(data) {
       if (destroyed) return

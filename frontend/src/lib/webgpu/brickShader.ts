@@ -68,7 +68,7 @@ struct BU {
   grid:     vec4<f32>,  // nBx, nBy, nBz (current level), slotsY
   pan:      vec4<f32>,  // panX, panY, ribbon planeLo, ribbon planeHi
   ov:       vec4<f32>,  // point size px, first plane, tail width px, last plane
-  lab:      vec4<f32>,  // opacity (0 = off), contour px (0 = filled), palette rows, _
+  lab:      vec4<f32>,  // opacity (0 = off), contour px (0 = filled), palette rows, POINT border px (0 = no outline)
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
   ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
@@ -377,7 +377,9 @@ struct POut {
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
   let ndc = project(centre - boxCentre(), c, aspect);
-  let px = p.ov.x;
+  // Quad grown by the black-outline width so the border sits OUTSIDE the fill. Mirrors POINTS_WGSL
+  // in mipShader.ts — same uniform slot (p.lab.w), same encoding.
+  let px = p.ov.x + max(p.lab.w, 0.0);
   o.pos = vec4(ndc.x + corner.x * (2.0 * px / max(p.vp.y, 1.0)),
                ndc.y + corner.y * (2.0 * px / max(p.vp.z, 1.0)),
                0.0, 1.0);
@@ -388,6 +390,11 @@ struct POut {
   let r = length(in.local);
   let a = 1.0 - smoothstep(0.75, 1.0, r);
   if (a <= 0.001) { discard; }
+  let border = max(p.lab.w, 0.0);
+  if (border > 0.0) {
+    let inner = p.ov.x / max(p.ov.x + border, 0.0001);
+    if (r > inner) { return vec4(0.0, 0.0, 0.0, a); }
+  }
   return vec4(in.rgb, a);
 }
 `

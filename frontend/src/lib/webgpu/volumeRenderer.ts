@@ -128,7 +128,7 @@ export interface VolumeRenderer {
    * against a box that holds eight of them.
    */
   setOverlayDraw(first: number, count: number, sizePx: number,
-                 planeLo: number, planeHi?: number): void
+                 planeLo: number, planeHi?: number, borderPx?: number): void
   /** Replace the track-tail segment instances (`SEG_STRIDE` floats each). Same lifetime as the points:
    *  once per (image, populations), never per frame. */
   setOverlaySegments(data: Float32Array): void
@@ -897,12 +897,15 @@ export async function createVolumeRenderer(
     },
 
     setOverlayDraw(first: number, count: number, sizePx: number,
-                   planeLo: number, planeHi = planeLo) {
+                   planeLo: number, planeHi = planeLo, borderPx = 0) {
       pointFirst = Math.max(0, Math.floor(first))
       pointCount = Math.max(0, Math.floor(count))
       u[16] = Math.max(1, sizePx)
       u[17] = planeLo
       u[19] = Math.max(planeLo, planeHi)
+      // Piggy-backs on the labels vec4's unused .w slot — see SHARED_WGSL in `mipShader.ts`. Zero
+      // keeps the point shader on its pre-border path (same fragment output as before).
+      u[LAB0 + 3] = Math.max(0, borderPx)
     },
 
     setOverlaySegments(data: Float32Array) {
