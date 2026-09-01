@@ -1228,11 +1228,13 @@ function rebuildOverlays() {
   // Source list mixes THREE track kinds, in this order:
   //   1. Per-vn base tracks — from `trackPayloads`, the panel's "directions" eye per segmentation.
   //      Colour-cycled by track id (or per-source solid, or heat by speed — the mode picker).
-  //   2. Gated-track pop ribbons — one filtered payload per gated track pop with pop.show &&
-  //      pop.isTrack, from the POP MANAGER's active payload (`overlays.value`), not the per-vn
-  //      track eye. That is the authoring surface for populations, so a viewer with the pop
-  //      manager on vn A and no per-vn eye ticked still shows A's gated tracks. Gated by
-  //      `settings.getShowGatedTracks(setUid)`.
+  //   2. Cell-track ribbons — one filtered payload per pop.show flow pop with
+  //      `isTrack || hasTracks`, from the POP MANAGER's active payload (`overlays.value`), not
+  //      the per-vn track eye. That is the authoring surface for populations, so a viewer with
+  //      the pop manager on vn A and no per-vn eye ticked still shows A's cell tracks. Gated by
+  //      `settings.getShowGatedTracks(setUid)` (setting key kept for continuity; the toggle
+  //      label is "Show cell-track ribbons"). Distinct from "gated tracks" — a future
+  //      track-poptype pop gated on TRACK measures; see docs/TRACKING.md → deferred 3d/3e.
   //   3. Trackclust ribbons — from `trackclustPayloads[popManagerVn]`, gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.

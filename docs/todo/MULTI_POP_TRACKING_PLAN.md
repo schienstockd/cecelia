@@ -1,6 +1,19 @@
 # Multi-population tracking + per-pop track layers
 
-Status: **planning** (2026-09-01)
+Status: **shipped** #741–#746, 2026-09-01
+
+## Terminology (2026-09-01, post-ship clarification)
+
+Throughout this doc "gated track pop" / "gated pop with hasTracks" / "gated-track loop" all mean
+the **cell-track** case: a flow gate over cells, some of which have `track_id > 0` because they
+were later tracked. The UI label for the master toggle is **"Show cell-track ribbons"** (setting
+key kept as `showGatedTracks` for continuity with persisted user state).
+
+This is **distinct from "gated tracks"** in the strict sense — a `pop_type="track"` pop gated on
+TRACK measures (speed, straightness, lifetime). That backend is done (`track_props.jl`,
+`pop_df(img, "track", …)`, sidecar `gating/{vn}__tracks.json`); the frontend gating canvas +
+viewer ribbons for it are the deferred phases 3d/3e (see `docs/TRACKING.md` →
+*Track-property gating*). This plan does not touch them.
 
 ## Goal
 
