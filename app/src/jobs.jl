@@ -80,8 +80,9 @@ end
 
 # Kill whatever process is LISTENING on a TCP port (+ its tree). Cross-platform, best-effort. Used to
 # guarantee a clean app shutdown even for a child we only ADOPTED or that outlived a crash (no process
-# handle to `kill`) — napari :7655, notebooks :7660 — mirroring `pixi run stop`. There is no libuv API
-# for port→pid, so we shell out per-OS; this is the one sanctioned place, alongside `_kill_tree`.
+# handle to `kill`) — the preview worker :7656, notebooks :7660 — mirroring `pixi run stop`. There is
+# no libuv API for port→pid, so we shell out per-OS; this is the one sanctioned place, alongside
+# `_kill_tree`.
 # Extract listener PIDs from `ss -tlnpH` output (the `users:(("name",pid=NNN,fd=..))` field), deduped
 # (a listener shows once for IPv4 and once for IPv6). Pure/unit-tested — the rest of
 # _kill_listeners_on_port shells out and kills, which isn't.

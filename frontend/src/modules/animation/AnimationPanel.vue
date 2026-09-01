@@ -181,7 +181,7 @@ async function updateSelected() {
 // pending-viewState bridge — ViewerWindow consumes `pendingViewState` and re-applies with
 // `applyViewStateToBrowser`.
 function onToggleSync(on: boolean) {
-  settings.animationSyncNapari = on
+  settings.animationSyncViewer = on
   if (on && selected.value?.snapshot) {
     viewer.setPendingViewState(selected.value.snapshot as unknown as ViewerViewState)
   }
@@ -377,7 +377,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
           </button>
         </div>
         <CcToggle class="ap-sync" label="Sync viewer"
-                  :model-value="settings.animationSyncNapari" @update:model-value="onToggleSync($event)"
+                  :model-value="settings.animationSyncViewer" @update:model-value="onToggleSync($event)"
                   v-tooltip.bottom="'Show the selected keyframe in the viewer when you click it'" />
       </section>
 

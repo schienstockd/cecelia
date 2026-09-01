@@ -7,9 +7,6 @@
 // already knows all of it. Both moved to `/api/viewer/meta` (2026-08-28); the pop-out's query is now
 // `project + image` plus optional `valueName`.
 //
-// NOTHING HERE DEPENDS ON NAPARI. The viewer used to be reachable only from the panel that drives
-// napari, so seeing an image in the browser meant starting a desktop process first (Dominik,
-// 2026-08-25). The image uid is all it ever needed.
 import { openPopoutWindow } from '../lib/popout'
 
 export interface ViewerWindowTarget {

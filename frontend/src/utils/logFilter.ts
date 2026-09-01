@@ -14,18 +14,18 @@ export type LogLevel = 'info' | 'warn' | 'error'
 
 /** The chip axis: one per runtime component that can talk. */
 export type LogGroup =
-  'app' | 'backend' | 'tasks' | 'viewer' | 'napari' | 'preview' | 'runner' | 'notebooks'
+  'app' | 'backend' | 'tasks' | 'viewer' | 'preview' | 'runner' | 'notebooks'
 
 /**
  * Sources the BACKEND stamps on a `server:log` frame — mirrored from `LOG_SOURCES` in
  * `app/src/log_stream.jl`. Keep the two in step: a source Julia can emit with no chip here is a
  * message that arrives and is unreachable.
  */
-export const SERVER_LOG_SOURCES = ['backend', 'napari', 'preview', 'runner', 'notebooks'] as const
+export const SERVER_LOG_SOURCES = ['backend', 'preview', 'runner', 'notebooks'] as const
 
 /**
  * Group definitions, in chip order. `quiet: true` means the group is HIDDEN by default — the child
- * processes are chatty (the napari bridge prints a line per label layer) and nobody wants that in the
+ * processes can be chatty (a warm cellpose preview, a notebooks server) and nobody wants that in the
  * default view. They are still *captured*, and their errors still show regardless (see `isVisible`),
  * so nothing is lost — it is a default, not a filter on what gets recorded.
  */
@@ -33,11 +33,7 @@ export const LOG_GROUPS: { value: LogGroup; label: string; tip: string; quiet?: 
   { value: 'app',       label: 'App',       tip: 'This browser UI — actions, fetch failures, render errors' },
   { value: 'backend',   label: 'Backend',   tip: 'The Julia server (:8080)' },
   { value: 'tasks',     label: 'Tasks',     tip: 'Task and chain runs' },
-  // The VIEWERS, as opposed to the napari process. Its own chip rather than a napari one because the
-  // napari half is going: the browser volume viewer is what replaces it, and its diagnostics —
-  // which GPU, what geometry, a lost device — are the ones that survive (Dominik, 2026-08-25).
   { value: 'viewer',    label: 'Viewer',    tip: 'Opening images — GPU, geometry, load failures' },
-  { value: 'napari',    label: 'Napari',    tip: 'Viewer bridge output (:7655) — errors always show', quiet: true },
   { value: 'preview',   label: 'Preview',   tip: 'Task-preview worker (:7656) — errors always show',  quiet: true },
   { value: 'runner',    label: 'Runner',    tip: 'Detached task runner (:7657) — errors always show', quiet: true },
   { value: 'notebooks', label: 'Notebooks', tip: 'Pluto server (:7660) — errors always show',         quiet: true },
@@ -55,7 +51,7 @@ export const DEFAULT_GROUPS: LogGroup[] = LOG_GROUPS.filter(g => !g.quiet).map(g
  * such a selection and starts on; the newer shape records what was known, so this list never grows.
  */
 const V1_GROUPS: readonly LogGroup[] =
-  ['app', 'backend', 'tasks', 'napari', 'preview', 'runner', 'notebooks'] as const
+  ['app', 'backend', 'tasks', 'preview', 'runner', 'notebooks'] as const
 
 /** The persisted shape. The array form is what v1 wrote; `known` is what made it self-describing. */
 interface StoredGroups { groups: LogGroup[]; known: LogGroup[] }
@@ -98,7 +94,7 @@ export function storeGroups(groups: LogGroup[]): string {
 // thing this browser did, and a new one should not need a change here to be reachable.
 const GROUP_OF: Record<string, LogGroup> = {
   backend: 'backend', server: 'backend',
-  napari: 'napari', viewer: 'viewer',
+  viewer: 'viewer',
   preview: 'preview',
   runner: 'runner',
   notebooks: 'notebooks',

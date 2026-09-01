@@ -51,11 +51,10 @@
   --cc-sev-ok:     #0ca30c;
   --cc-sev-warn:   #fab219;
   --cc-sev-fail:   #d03b3b;
-  /* THE green (named for its first user, the napari viewer). Green marks the app's own instrumentation
-     as opposed to your data, so it stands apart from the purple form/control chrome and the amber
-     selection boxes. Users: the viewer controls button + its floating-panel border, the setup wizard's
-     ok hint, and the Settings service pills. One green — don't add a second token holding the same
-     colour for a new surface. */
+  /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
+     from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
+     button + its floating-panel border, the setup wizard's ok hint, and the Settings service pills.
+     One green — don't add a second token holding the same colour for a new surface. */
   --cc-viewer:     #22c55e;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
      highlight ring, and the Guides compass mark (header button + dialog title). Deliberately NOT

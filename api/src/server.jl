@@ -653,9 +653,9 @@ function _watch_supervisor!()
     nothing
 end
 
-# Ctrl-C must stop this server's CHILDREN too, not just this process. Nothing else will: napari
-# (:7655), the preview worker (:7656), Pluto (:7660) and the task runner (:7657) are grandchildren in
-# their own process groups, and an in-flight task's Python child is only reparented. Before this hook,
+# Ctrl-C must stop this server's CHILDREN too, not just this process. Nothing else will: the
+# preview worker (:7656), Pluto (:7660) and the task runner (:7657) are grandchildren in their
+# own process groups, and an in-flight task's Python child is only reparented. Before this hook,
 # a Ctrl-C left every one of them running — verified live: the task runner survived on :7657 with
 # nothing able to reach it again.
 #

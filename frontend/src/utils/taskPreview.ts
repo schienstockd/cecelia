@@ -65,9 +65,8 @@ export function previewBlocker(
   if (!ctx.params) return 'no-params'
   const params = paramsBlocker(ctx.params)
   if (params) return params
-  // Prefer the browser viewer's identity when the caller supplies it (P7 onward — the WebGPU viewer
-  // is the source of truth). `status.imageUid` remains the transitional fallback (populated by
-  // `current_napari_image()` on the server) and will go with napari in P8.
+  // The browser viewer is the source of truth for what is open; `status.imageUid` is the fallback
+  // for callers that don't supply it directly.
   const openUid = opts.openImage?.imageUid ?? status?.imageUid ?? null
   if (!openUid) return 'no-viewer-open'
   if (openUid !== ctx.imageUid) return 'image-mismatch'
@@ -82,12 +81,12 @@ export function previewBlocker(
  * input version.
  *
  * Not the same question as "which image version does the task read", and getting the two confused is
- * what this exists to stop. The napari bridge uses this name as the label stem: a preview lands as
+ * what this exists to stop. The viewer uses this name as the label stem: a preview lands as
  * `({vn}) Preview` and evicts `({vn}) Labels` / `({vn}) Labels (live)`, which is what makes a finished
- * run replace its own preview and vice versa (`_LABEL_SUFFIXES` in `napari/napari_bridge.py`). Those
- * layers are named after the LABEL SET — `outputValueName` — so passing the input version here left
- * `(corrected) Preview` sitting on top of an un-evicted `(default) Labels`, two masks stacked, and the
- * finished run then failed to remove the stale preview.
+ * run replace its own preview and vice versa. Those layers are named after the LABEL SET —
+ * `outputValueName` — so passing the input version here left `(corrected) Preview` sitting on top of
+ * an un-evicted `(default) Labels`, two masks stacked, and the finished run then failed to remove
+ * the stale preview.
  *
  * Falls back to the input version for a task with no output name of its own (AF correction), which is
  * what it was already getting.

@@ -4,8 +4,8 @@
 // for a slow client by design (per-client drop-on-full queue in `api/src/server.jl`). The `tasks` store
 // is built purely from WS events, so a single dropped frame left a task pinned at `running` forever —
 // and silently skipped everything hanging off completion: the image's status, `bumpDataVersion` (plot
-// auto-refresh), `refreshImageMeta`, the napari reload, the observer's completion watch. Nothing in the
-// frontend ever asked the backend how a task ended.
+// auto-refresh), `refreshImageMeta`, the viewer reload, the observer's completion watch. Nothing in
+// the frontend ever asked the backend how a task ended.
 //
 // `GET /api/tasks/recent` is that answer (a bounded ring of terminal outcomes the scheduler keeps after
 // deregistering the task — see `docs/SCHEDULER.md` → *Recently-finished outcomes*). This module turns it
@@ -64,7 +64,7 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled'])
  *
  * `recovered: true` marks the frame as reconstructed and `recoveredFrom` carries the scheduler task id —
  * that's how the ws store swallows the real frame if it turns up late (re-running the completion side
- * effects would refetch plots, reload napari, and double-count an observer attempt).
+ * effects would refetch plots, reload the viewer, and double-count an observer attempt).
  */
 export function recoveredTaskFrames(
   inFlight: InFlightTask[],

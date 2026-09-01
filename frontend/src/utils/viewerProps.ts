@@ -1,22 +1,19 @@
 // Per-image viewer view-state — capture / apply / save / load.
 //
-// The WebGPU viewer autosaves the same class of user-set knobs napari's autosave has always covered
-// (contrast per channel, colormap per channel, camera, T/Z), to the SAME on-disk file napari's
-// autosave writes to (`<task_dir>/data/<basename(zarr)>.json`), so an animation-card snapshot stays
-// portable across viewers. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
+// The WebGPU viewer autosaves per-channel contrast + colormap, camera and T/Z to
+// `<task_dir>/data/<basename(zarr)>.json`. The on-disk schema is a superset of the historical
+// napari-autosave format (the codebase used to write it, so existing files carry that shape):
 //
-// The stored JSON is a superset of napari's schema:
-//
-//   - `camera` / `dims` / `layers` — napari-shaped, so a consumer that speaks napari's format (movie
-//     recorder, animation card) reads channel contrast/colormap by name, dims by index, and the
-//     camera zoom/pose it understands. Populated by mapping the WebGPU channel index to its name.
-//   - `webgpu` — the round-trippable native state that napari's schema cannot represent (orbit
+//   - `camera` / `dims` / `layers` — the historical shape: channel contrast/colormap by name, dims
+//     by index, camera zoom/pose. Populated by mapping the WebGPU channel index to its name; the
+//     movie recorder and the animation card read this block.
+//   - `webgpu` — the round-trippable native state the historical schema cannot represent (orbit
 //     camera pose, mode = plane/volume, per-channel LUT as a single hex — WebGPU's channel colour
-//     is a single hue, not the two-stop ramp napari carries).
+//     is a single hue, not the two-stop ramp the older schema carries).
 //
-// Missing napari-shaped fields on restore mean the file was written by the WebGPU viewer AND its
-// napari-shape sidecar is absent — no error, just less to restore. Missing `webgpu` means the file
-// was written by napari; the applier falls back to the napari-shaped block.
+// Missing shape fields on restore mean the file was written by the WebGPU viewer and its sidecar
+// block is absent — no error, just less to restore. Missing `webgpu` means the file predates the
+// browser viewer; the applier falls back to the shape block.
 //
 // Pure logic — no fetch, no Vue. Testable in Vitest.
 
@@ -119,7 +116,7 @@ export interface ApplyTarget {
 
 /**
  * Apply a saved snapshot to the running viewer. Uses `webgpu` when present (round-trip), otherwise
- * falls back to the napari-shaped `layers` (matched by channel name) + camera zoom (best-effort).
+ * falls back to the legacy `layers` block (matched by channel name) + camera zoom (best-effort).
  */
 export function applyViewState(
   vs: ViewerViewState | null | undefined,
@@ -141,7 +138,7 @@ export function applyViewState(
     if (Number.isFinite(w.t)) target.applyT(w.t)
     return
   }
-  // Napari-only file: match channels by name for contrast/colormap/visible.
+  // Legacy-only file (no `webgpu` block): match channels by name for contrast/colormap/visible.
   const layers = vs.layers ?? {}
   for (let c = 0; c < meta.channels.length; c++) {
     const props = layers[meta.channels[c].name]
@@ -155,7 +152,7 @@ export function applyViewState(
     if (typeof props.colormap === 'string' && props.colormap.startsWith('#')) patch.hex = props.colormap
     target.applyChannel(c, patch)
   }
-  // Dims (T only — napari's z is a step index whose meaning depends on the ndisplay we don't know).
+  // Dims (T only — the legacy z is a step index whose meaning depends on the ndisplay we don't know).
   const step = vs.dims?.current_step
   if (Array.isArray(step) && step.length > 0 && Number.isFinite(step[0])) target.applyT(Number(step[0]))
 }

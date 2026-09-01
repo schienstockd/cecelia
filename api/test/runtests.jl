@@ -331,12 +331,12 @@ end
     # queue rather than block a worker), and before the ring carried a sequence nothing could even
     # notice a line had gone missing. Exercised through the real handler, against the real ring.
     before = Cecelia.log_ring_seq(_log_ring)
-    _log_sink(Cecelia.log_record("warn", "ring probe"; source = Cecelia.LOG_SOURCE_NAPARI))
+    _log_sink(Cecelia.log_record("warn", "ring probe"; source = Cecelia.LOG_SOURCE_PREVIEW))
 
     _, all_body = api_logs_recent(HTTP.Request("GET", "/api/logs/recent"))
     probe = last(JSON3.read(all_body).logs)
     @test String(probe.message) == "ring probe"
-    @test String(probe.source)  == Cecelia.LOG_SOURCE_NAPARI     # the facet survives the round trip
+    @test String(probe.source)  == Cecelia.LOG_SOURCE_PREVIEW     # the facet survives the round trip
     @test probe.seq == before + 1
     @test !isempty(String(probe.ts))                             # stamped by the SINK, not the caller
 
@@ -1087,13 +1087,13 @@ end
     _region() = Dict("xy" => Dict("X" => [0, 32], "Y" => [0, 32]),
                      "z" => 0, "t" => 0, "ndisplay" => 2)
     # ── nothing body-carried → 409 no-viewer-open, and the status route reports null image fields
-    #    (no server-side napari tracking left in P9), so a transitional client can't read a
+    #    (no server-side viewer tracking left after P9), so a transitional client can't read a
     #    plausible-looking default out of it
     st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
     @test st == 200
     d = JSON3.read(body)
     @test d.imageUid === nothing && d.zarrPath === nothing && d.taskDir === nothing
-    @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
+    @test d.port == 7656
     @test d.alive == false
 
     st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",

@@ -953,14 +953,14 @@ end
     @test count(_ -> true, findall("boom", log_record("warn", "boom"; exception = e)["message"])) == 1
 
     # ordinary kwargs go to the DETAIL, not the row: they are what made rows unreadable
-    plain = log_record("info", "Napari GL renderer"; renderer = "NVIDIA", vendor = "NVIDIA Corp")
-    @test plain["message"] == "Napari GL renderer"
+    plain = log_record("info", "GL renderer"; renderer = "NVIDIA", vendor = "NVIDIA Corp")
+    @test plain["message"] == "GL renderer"
     @test occursin("renderer = NVIDIA", plain["detail"])
     @test !haskey(log_record("info", "plain line"), "detail")
 
     # `source` is a facet, never text in the body
-    @test log_record("info", "x"; source = LOG_SOURCE_NAPARI)["source"] == LOG_SOURCE_NAPARI
-    @test !haskey(log_record("info", "x"; source = LOG_SOURCE_NAPARI), "detail")
+    @test log_record("info", "x"; source = LOG_SOURCE_PREVIEW)["source"] == LOG_SOURCE_PREVIEW
+    @test !haskey(log_record("info", "x"; source = LOG_SOURCE_PREVIEW), "detail")
 
     # a detail is capped — it rides a WS frame into a browser store
     big = log_record("error", "huge"; detail = repeat("x", LOG_DETAIL_CAP * 2))["detail"]
@@ -972,7 +972,7 @@ end
 end
 
 @testset "child log lines — level and traceback reassembly" begin
-    @test Cecelia.child_line_level("[napari] added labels: shape=(1, 2)") == "info"
+    @test Cecelia.child_line_level("[preview] added labels: shape=(1, 2)") == "info"
     @test Cecelia.child_line_level("[ERROR] $(:x): could not open")       == "error"
     @test Cecelia.child_line_level("ValueError: invalid literal for int") == "error"
     @test Cecelia.child_line_level("cecelia.utils.zarr_utils.StoreError: nope") == "error"
@@ -1003,12 +1003,12 @@ end
     @test isempty(sink.buf)
 
     # a traceback cut off by the process dying still gets emitted rather than swallowed
-    cut = Cecelia.ChildLineSink(LOG_SOURCE_NAPARI)
+    cut = Cecelia.ChildLineSink(LOG_SOURCE_PREVIEW)
     Cecelia.child_line_records!(cut, "Traceback (most recent call last):")
-    Cecelia.child_line_records!(cut, "  File \"napari_bridge.py\", line 1, in <module>")
+    Cecelia.child_line_records!(cut, "  File \"preview_worker.py\", line 1, in <module>")
     left = Cecelia.child_line_flush!(cut)
     @test length(left) == 1 && left[1]["level"] == "error"
-    @test occursin("napari_bridge.py", left[1]["detail"])
+    @test occursin("preview_worker.py", left[1]["detail"])
 
     # blank filler is not an event
     @test isempty(Cecelia.child_line_records!(Cecelia.ChildLineSink("x"), "   "))
@@ -8914,16 +8914,16 @@ end
 end
 
 # ── explicit-label membership (pick selection) + transient not persisted ─
-@testset "explicit-label (napari) membership" begin
+@testset "explicit-label (pick selection) membership" begin
     df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9])
 
     m = PopulationMap(pop_type="flow", value_name="B")
     add_pop!(m, "p"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))   # x≥5 → 2,3,4,5
     # transient pick selection of labels {2,4,9} ∩ parent(x≥5) → {2,4}
-    add_pop!(m, "napari"; parent="/p", explicit_labels=[2, 4, 9],
+    add_pop!(m, "pick"; parent="/p", explicit_labels=[2, 4, 9],
              colour="#22d3ee", transient=true)
     recompute!(m, _ -> df)
-    @test cells_in_pop(m, "/p/napari") == [2, 4]              # 9 absent, 3/5 not selected
+    @test cells_in_pop(m, "/p/pick") == [2, 4]              # 9 absent, 3/5 not selected
 
     # root-level selection (no gate parent): exactly the labels present
     m2 = PopulationMap(pop_type="flow", value_name="B")
@@ -8935,17 +8935,17 @@ end
     td = mktempdir()
     save_pop_map!(m, td)
     reloaded = load_pop_map(td, "B")
-    @test !has_pop(reloaded, "/p/napari")                    # dropped on persist
-    @test has_pop(reloaded, "/p")                            # real pop kept
-    @test "transient" in keys(Cecelia._node_dict(m, "/p/napari"))  # flagged in broadcast tree
+    @test !has_pop(reloaded, "/p/pick")                     # dropped on persist
+    @test has_pop(reloaded, "/p")                           # real pop kept
+    @test "transient" in keys(Cecelia._node_dict(m, "/p/pick"))  # flagged in broadcast tree
 
     # explicit-label pops carry a membership signature in the broadcast tree (no gate/filter
     # to diff on) so the client refreshes plots when the selection's cell set changes.
-    nd1 = Cecelia._node_dict(m, "/p/napari")
+    nd1 = Cecelia._node_dict(m, "/p/pick")
     @test haskey(nd1, "membership_sig")
-    del_pop!(m, "/p/napari")
-    add_pop!(m, "napari"; parent="/p", explicit_labels=[2, 9], colour="#22d3ee", transient=true)
-    @test Cecelia._node_dict(m, "/p/napari")["membership_sig"] != nd1["membership_sig"]
+    del_pop!(m, "/p/pick")
+    add_pop!(m, "pick"; parent="/p", explicit_labels=[2, 9], colour="#22d3ee", transient=true)
+    @test Cecelia._node_dict(m, "/p/pick")["membership_sig"] != nd1["membership_sig"]
 end
 
 # ── scale_centroids!: THE one pixel→µm conversion (pure, no fixture needed) ────────

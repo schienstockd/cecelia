@@ -2,9 +2,9 @@
 # Drives the Settings "System" panel's global controls. Per-component start/stop/restart reuse the
 # existing notebooks_api endpoints; only the whole-app actions live here.
 
-# Stop the child processes THIS server owns, best-effort, before the process exits. napari had no
-# atexit hook (unlike the notebook server), so it must be closed explicitly here or the bridge is
-# orphaned on :7655. Called by the global shutdown (and, later, restart).
+# Stop the child processes THIS server owns, best-effort, before the process exits. The preview
+# worker in particular has no atexit hook, so it must be closed explicitly here or it is orphaned
+# on :7656. Called by the global shutdown (and, later, restart).
 #
 # EVERY resident child this server can launch belongs here — the list is the contract, and it is
 # checked by a test (`api/test/runtests.jl`) rather than by whoever adds the next one. The preview

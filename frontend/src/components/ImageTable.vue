@@ -398,18 +398,14 @@ async function resyncFlagged() {
 // ── Viewers ───────────────────────────────────────────────────────────────────
 
 /**
- * The eye: the BROWSER volume viewer, in its own window.
+ * The eye: the browser volume viewer, in its own window.
  *
- * It used to be reachable only from the viewer panel's ↗, which is disabled until napari has an image
- * open — so looking at an image in the browser meant starting a desktop process first, every time
- * (Dominik, 2026-08-25). Nothing about the browser viewer ever needed napari; the two are alternatives.
  * No version is sent because this table shows images, not versions: the server resolves the default.
  */
 function openViewer(img: CciaImage) {
-  // Record the focus so the ViewerPanel (in this window) shows this image's controls even when
-  // napari isn't running. The popup itself is a fresh app instance and cannot write back into this
-  // store; this write is what makes the panel see the image at all. See P1 in
-  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  // Record the focus so the ViewerPanel (in this window) shows this image's controls. The popup
+  // itself is a fresh app instance and cannot write back into this store; this write is what makes
+  // the panel see the image at all. See P1 in docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
   project.openImageUid = img.uid
   openViewerWindow({
     projectUid: projectMeta.current?.uid ?? '',
