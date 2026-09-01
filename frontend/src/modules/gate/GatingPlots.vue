@@ -388,6 +388,11 @@ watch(() => g.transientPaths, (paths) => {
 // plot displaying it. Without this a stale highlight keeps showPops true, so the base plot stays
 // dimmed/flat with no overlay to load (grey) instead of reverting to pseudocolour/contour.
 watch(() => g.flat.map(p => p.path).join('\n'), () => {
+  // Same singleton-store guard as the panel watches: `g.flat` is whichever popType is active in the
+  // store. If the Tracking page loaded (`g.popType = 'track'`), a flow page's flat is track pops —
+  // none of which contain `/qc/CD169-`, so a flow panel's `state.parent` would reset to root even
+  // though its own tree still has the pop. Only prune when the store's popType matches this page's.
+  if (g.popType !== props.popType) return
   const exist = new Set(g.flat.map(p => p.path))
   gHL.value = gHL.value.filter(p => exist.has(p))
   for (const p of panels.value) {
@@ -495,13 +500,13 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <GatePairsPanel v-else-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                           :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                          :dot-size="panelDotSize(p.state)"
+                          :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
                           :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                           @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
           <GatePlotPanel v-else :index="i" :arrange="p.arrange"
                          :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                          :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                         :dot-size="panelDotSize(p.state)"
+                         :dot-size="panelDotSize(p.state)" :pop-type="props.popType"
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
