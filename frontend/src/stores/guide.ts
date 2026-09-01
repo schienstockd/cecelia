@@ -98,7 +98,7 @@ export const useGuideStore = defineStore('guide', () => {
       setUid: set?.uid ?? null,
       setCount: project.sets.length,
       images: set?.images ?? [],
-      napariImageUid: project.napariImageUid,
+      viewerImageUid: project.viewerImageUid,
       selection: (module: string) => (set ? project.getImageSelection(module, set.uid) : []),
       rightPanelCollapsed: settings.rightPanelCollapsed,
       viewerPanelOpen: settings.viewerPanelOpen,

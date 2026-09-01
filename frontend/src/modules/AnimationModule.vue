@@ -28,7 +28,7 @@ const project = useProjectStore()
     <!-- With nothing selected the timeline still shows whatever the viewer has open, so landing on
          the page is never a blank canvas — that fallback is the helper, shared with the panel. -->
     <template #plots="{ selectedUids }">
-      <AnimationTimeline :image-uid="activeAnimationUid(selectedUids, project.napariImageUid)" />
+      <AnimationTimeline :image-uid="activeAnimationUid(selectedUids, project.viewerImageUid)" />
     </template>
   </ModuleLayout>
 </template>

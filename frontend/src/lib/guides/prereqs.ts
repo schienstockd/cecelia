@@ -37,7 +37,7 @@ export const PREREQ = {
   // `status === 'done'` this shipped with. `status` is the transient conversion-job state and is not a
   // reliable record of the outcome — the image table's Status column shows the per-MODULE task status
   // and reads "—" for an image with none, and `isImported` is what the table itself uses to decide
-  // whether the napari eye is enabled. A second definition of "imported" meant the picker declared this
+  // whether the viewer eye is enabled. A second definition of "imported" meant the picker declared this
   // missing for a project full of perfectly good images (Dominik, 2026-08-12).
   imageImported: {
     id: 'imageImported',

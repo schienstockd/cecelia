@@ -7,7 +7,7 @@
 // default. So opening an image while that panel was closed restored nothing at all (no subscriber
 // existed to hear `napari:opened`), and the toggles — read from localStorage, so they still showed ON
 // — only took effect once the user flipped them off and on by hand. The orchestration now lives in
-// composables/useNapariAutoShow.ts, mounted once at app level; the decisions live here, pure and
+// composables/useOverlayAutoShow.ts, mounted once at app level; the decisions live here, pure and
 // unit-tested, so they can't drift from the panel's own per-toggle requests.
 
 // The CELL-grained population types that render as centroid POINT overlays, in display order. Only

@@ -107,7 +107,7 @@ export const gatePopulationsGuide: GuideDef = {
       text: 'Gates are stored as definitions, not as a frozen list of cells.',
       bullets: [
         'Re-segment and your gates still apply.',
-        'Populations show up in napari, in plots, and as a tracking input.',
+        'Populations show up in the viewer, in plots, and as a tracking input.',
       ],
     },
   ],

@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { unionViewSnapshot } from './napariOverlays'
+import { unionViewSnapshot } from './titleCard'
 
-// Only the pure helper is tested here; the fetch-backed capture/apply functions are exercised live.
-// The show-labels body-builder (`labelsRequestBody`) and the coalescing tests around it retired
-// with the label push helpers in P9 slice 2 (this branch): the WebGPU viewer reads visibility off
-// the shared settings bag now, so there is no wire shape to pin.
 describe('unionViewSnapshot', () => {
   it('includes a layer visible in ANY keyframe, keeping a colormap from where it is shown', () => {
     const u = unionViewSnapshot([

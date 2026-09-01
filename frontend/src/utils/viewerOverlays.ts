@@ -14,8 +14,43 @@
 import type { ViewerMeta } from './volumeViewer'
 import { BLUE_HEAT_RGB } from '../plots/flowColors'
 import palettesJson from '../plots/palettes.json'
+import { parseOverlays } from './overlayLayers'
+import { channelLegend, type LegendItem } from './viewLegend'
 
-/** One population as the gating engine resolved it — the same shape napari's points layers get. */
+// ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
+// The ONE path that turns a captured viewState snapshot into legend pieces: channels from the
+// snapshot's layer colormaps (channelLegend), populations + colour-by from the canonical
+// /api/viewer/overlay-legend (overlay pops parsed from the snapshot's layer names). Both the board
+// strip (ImageStripView) and the single-record movie card go through this, so their legends match.
+export interface CapturedViewLegend {
+  channels: LegendItem[]
+  populations: { name: string; colour: string }[]
+  colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
+}
+export async function captureViewLegend(
+  projectUid: string, imageUid: string,
+  snapshot: { layers?: Record<string, unknown> } | null | undefined,
+  colourBy: string, colourOverrides: Record<string, string> = {},
+): Promise<CapturedViewLegend> {
+  const layers = (snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
+  const channels = channelLegend(layers)
+  const overlayPops = parseOverlays(snapshot?.layers as Record<string, unknown>)
+    .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
+  let populations: { name: string; colour: string }[] = []
+  let cby: CapturedViewLegend['colourBy'] | undefined
+  const res = await fetch('/api/viewer/overlay-legend', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectUid, imageUid, colourBy, overlayPops, colourOverrides }),
+  }).catch(() => undefined)
+  if (res?.ok) {
+    const j = await res.json().catch(() => ({})) as CapturedViewLegend & { ok?: boolean }
+    populations = j.populations ?? []
+    cby = j.colourBy
+  }
+  return { channels, populations, colourBy: cby }
+}
+
+/** One population as the gating engine resolved it — the shape the viewer's points overlay reads. */
 export interface OverlayPop {
   path: string
   name: string

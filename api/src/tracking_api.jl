@@ -322,11 +322,10 @@ function api_track_diagnostics(req::HTTP.Request)
     end
 end
 
-# ── GET /api/tracking/selection — what is selected in napari, as TRACKS ───────
-# The bridge from "I can see that track is wrong" to an edit. Drawing a region in napari already
-# stores the enclosed label ids as the transient selection (`POST /api/napari/event` →
-# `_set_napari_selection!`); this resolves them to the TRACKS those cells belong to, which is the
-# vocabulary the correction ops speak.
+# ── GET /api/tracking/selection — what is picked in the viewer, as TRACKS ─────
+# The bridge from "I can see that track is wrong" to an edit. Pick-cell / pick-rect store the
+# enclosed label ids as the transient pick selection (`_set_pick_selection!`); this resolves them
+# to the TRACKS those cells belong to, which is the vocabulary the correction ops speak.
 #
 # Without it the correction surface only answered "fix what the detector found". Finding the track you
 # can SEE meant reading its id off the viewer and hunting for it in a table — the exact chore the
@@ -339,7 +338,7 @@ function api_track_selection(req::HTTP.Request)
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
 
-    labels = _get_napari_selection(img._dir, vn)
+    labels = _get_pick_selection(img._dir, vn)
     (labels === nothing || isempty(labels)) &&
         return 200, JSON3.write((; valueName = vn, labels = Int[], tracks = [],
                                    nLabels = 0, nUntracked = 0))

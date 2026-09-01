@@ -151,7 +151,7 @@ export const useWsStore = defineStore('ws', () => {
   // ONE path for every task/chain frame — whether it arrived on the socket or was RECONSTRUCTED from
   // the backend's outcome ring (see startOutcomePoll). That's what makes the backstop a fix for all five
   // completion listeners (this store's image-status/dataVersion/meta refresh, ViewerPanel's napari
-  // reload, TasksModule's auto-follow, useNapariAutoShow, the observer's completion watch) instead of a
+  // reload, TasksModule's auto-follow, useOverlayAutoShow, the observer's completion watch) instead of a
   // second, drifting copy of the completion side effects.
   function dispatch(data: Record<string, unknown>) {
     const type = data.type as string | undefined
@@ -347,7 +347,7 @@ export const useWsStore = defineStore('ws', () => {
         // Napari opened X — record BOTH the napari-specific state and the shared "focused image"
         // that the panel and browser viewer read. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
         const p = useProjectStore()
-        p.napariImageUid = imageUid
+        p.viewerImageUid = imageUid
         p.openImageUid = imageUid
       }
     }

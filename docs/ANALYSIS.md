@@ -357,5 +357,5 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
 
 ## Cross-references
 `docs/UI.md` (generic plot-integration contract, `docked`, canvas shell), `docs/PLOTS.md` (summary-plot
-spec), `docs/POPULATION.md` (pop_df, gate↔track, cluster pops), `docs/NAPARI.md` (screenshot),
+spec), `docs/POPULATION.md` (pop_df, gate↔track, cluster pops),
 `docs/API.md` (`/api/plots/*`, project save/open), `docs/todo/ANALYSIS_CANVAS_PLAN.md` (design history).

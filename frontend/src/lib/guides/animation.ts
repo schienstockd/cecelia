@@ -56,7 +56,7 @@ export const animationGuide: GuideDef = {
         text: 'The animation panel is folded away — open it with this handle.',
         placement: 'left',
       },
-      when: c => c.napariImageUid !== null,
+      when: c => c.viewerImageUid !== null,
     },
     {
       anchor: 'animation.capture',

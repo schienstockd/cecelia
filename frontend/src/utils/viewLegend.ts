@@ -3,7 +3,7 @@
 // feeds every legend: the analysis-board image strip, the animation page, and (later) movie overlays.
 // Pure + unit-tested; the presentational <ViewLegend> component renders a LegendSection[].
 // See docs/todo/ANIMATION_PLAN.md (Phase C — the legend derives from the view snapshot).
-import { napariColormapHex } from './napariColormap'
+import { viewerColormapHex } from './viewerColormap'
 
 export interface LegendItem { label: string; colour: string }
 export interface LegendSection { title: string; items: LegendItem[] }
@@ -19,7 +19,7 @@ export function channelLegend(
   const out: LegendItem[] = []
   for (const [name, l] of Object.entries(layers ?? {})) {
     if (l?.visible === false) continue
-    const colour = napariColormapHex(l?.colormap)
+    const colour = viewerColormapHex(l?.colormap)
     if (colour) out.push({ label: name, colour })
   }
   return out

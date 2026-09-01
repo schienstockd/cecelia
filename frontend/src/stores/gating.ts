@@ -412,7 +412,7 @@ export const useGatingStore = defineStore('gating', () => {
   const refreshOverlays = () => { _pingViewer(); return Promise.resolve(true) }
   // Clear the transient cell-selection pop: the server drops it from the registry, re-broadcasts
   // the tree without it. Used by the × button in `CellSelectionTools`; the WebGPU picker writes
-  // into the same registry (`_set_napari_selection!`), so this clear is symmetric.
+  // into the same registry (`_set_pick_selection!`), so this clear is symmetric.
   async function clearSelection(): Promise<boolean> {
     if (!imageUid.value) return false
     try {

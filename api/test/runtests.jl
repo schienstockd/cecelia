@@ -2442,14 +2442,6 @@ end
     @test _share_contrast("nonsense")
     @test !_share_contrast("version")
 
-    # …and what "each version keeps its own settings" actually drops: the per-layer props, never the
-    # camera or the timepoint (columns framed differently would not be a comparison).
-    snap = Dict("camera" => Dict("zoom" => 2.0), "dims" => Dict("current_step" => [3]),
-                "layers" => Dict("CD3" => Dict("contrast_limits" => [0, 100])))
-    @test !haskey(_camera_only(snap), "layers")
-    @test _camera_only(snap)["camera"] == Dict("zoom" => 2.0)
-    @test _camera_only(snap)["dims"]   == Dict("current_step" => [3])
-
     # Frame arithmetic for ONE progress bar across the passes + the compose. Mirrors the bridge's own
     # range maths: one frame per timepoint, both ends inclusive.
     img20 = (; meta = Dict("SizeT" => 20))
@@ -2460,11 +2452,6 @@ end
     @test _t_sweep_frames(img20, 8, 8)       == 0       # empty range
     @test _t_sweep_frames((; meta = Dict("SizeT" => 1)), 0, nothing) == 0
     @test _t_sweep_frames((; meta = Dict{String,Any}()), 0, nothing) == 0   # image doesn't say
-
-    @test _comparison_frame_total(2, 20) == 60          # 2 passes + the compose
-    @test _comparison_frame_total(3, 20) == 80
-    @test _comparison_frame_total(1, 20) == 0           # one column = a plain record, own total
-    @test _comparison_frame_total(2, 0)  == 0           # unknown T → let each pass report its own
 end
 
 # The comparison GRID (docs/todo/MOVIE_COMPARE_PLAN.md, generalised). `_record_grid!` and everything
@@ -2543,7 +2530,6 @@ end
     # Frame arithmetic for ONE progress bar across every pass AND every compose.
     @test _grid_frame_total(1, 2, 20) == 60          # 2 passes + the compose = the old 1-D case
     @test _grid_frame_total(1, 3, 20) == 80
-    @test _comparison_frame_total(2, 20) == _grid_frame_total(1, 2, 20)
     @test _grid_frame_total(2, 2, 20) == 140         # 4 cells + 2 row composes + 1 stack
     @test _grid_frame_total(3, 1, 20) == 80          # a column of 3 = 3 cells + the stack (no row composes)
     @test _grid_frame_total(1, 1, 20) == 0           # one cell = a plain record, own total
@@ -2568,19 +2554,8 @@ end
     @test _config_compare_segmentations(Dict(:labelValueNames => ["a", " b ", "a", ""])) == ["a", "b"]
     @test _config_compare_segmentations(Dict{Symbol,Any}()) == String[]
 
-    # Masks per image: THREE-valued. `nothing` (key absent) must stay distinct from an empty list —
-    # absent leaves the canvas alone (what "record what's on screen" needs), empty means no masks.
-    img = (; labels = Dict{String,Vector{String}}("a" => ["a.zarr"], "b" => ["b.zarr", "b_nuc.zarr"]))
-    @test _config_label_value_names(Dict{Symbol,Any}(), img)                  === nothing
-    @test _config_label_value_names(Dict(:labelValueNames => String[]), img)  == String[]
-    @test _config_label_value_names(Dict(:labelValueNames => ["b", "a"]), img) == ["b", "a"]
-    # unregistered + duplicate names are dropped rather than handed to the bridge
-    @test _config_label_value_names(Dict(:labelValueNames => ["a", "gone", "a"]), img) == ["a"]
-    # an image with no label registry at all is not an error — it simply has no masks
-    @test _config_label_value_names(Dict(:labelValueNames => ["a"]), (; name = "x")) == String[]
-
     # Mask OUTLINE width. Clamped, not validated: a bad value is a display nicety and must not fail a
-    # whole batch, and napari has no meaning for a negative contour.
+    # whole batch, and a negative contour is meaningless to the renderer.
     @test _label_contour(Dict{Symbol,Any}())              == 0      # absent → filled, what it always was
     @test _label_contour(Dict(:labelContour => 3))        == 3
     @test _label_contour(Dict(:labelContour => -2))       == 0
@@ -2596,27 +2571,6 @@ end
     @test _z_slice(Dict(:zSlice => -1))                      == 0          # floored, clamped again bridge-side
     @test _z_slice(Dict(:show3D => true, :zSlice => 4))      === nothing   # 3D ignores the index…
     @test _z_slice(Dict(:show3D => false, :zSlice => 4))     == 4          # …and keeps it for next time
-
-    # …and the store files that go on the wire, in the {valueName => [files]} shape show-labels takes.
-    @test _label_files_for(img, ["b"])   == Dict("b" => ["b.zarr", "b_nuc.zarr"])
-    @test _label_files_for(img, nothing) == Dict{String,Vector{String}}()
-    @test _label_files_for(img, ["gone"]) == Dict{String,Vector{String}}()
-
-    # SKELETONS are the second registry with the same three-valued contract — separate stores, a
-    # separate picker (BRANCHING_PLAN Decision 6), and they had the identical bug for the identical
-    # reason. The two must not read each other's names.
-    both = (; labels        = Dict{String,Vector{String}}("a" => ["a.zarr"]),
-              branch_labels = Dict{String,Vector{String}}("sk" => ["sk.zarr"]))
-    @test _config_branch_value_names(Dict{Symbol,Any}(), both)                    === nothing
-    @test _config_branch_value_names(Dict(:branchValueNames => String[]), both)   == String[]
-    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), both)     == ["sk"]
-    # a mask name is not a skeleton name, and vice versa — each is filtered by its OWN registry
-    @test _config_branch_value_names(Dict(:branchValueNames => ["a"]), both)      == String[]
-    @test _config_label_value_names(Dict(:labelValueNames => ["sk"]), both)       == String[]
-    @test _branch_files_for(both, ["sk"]) == Dict("sk" => ["sk.zarr"])
-    @test _branch_files_for(both, ["a"])  == Dict{String,Vector{String}}()
-    # an image with no skeletons at all is not an error
-    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), img) == String[]
 end
 
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in
@@ -6389,7 +6343,7 @@ end
     @test st == 404
 end
 
-@testset "API: a napari selection resolves to TRACKS" begin
+@testset "API: a pick selection resolves to TRACKS" begin
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !api_have_fixture(h5)
         @test_skip "labelProps fixture missing"
@@ -6418,7 +6372,7 @@ end
                        if df[r, :track_id] isa Real && !isnan(Float64(df[r, :track_id])) &&
                           Int(round(Float64(df[r, :track_id]))) in tids]
             @test length(labs) > 2
-            _set_napari_selection!(img._dir, "B", labs)
+            _set_pick_selection!(img._dir, "B", labs)
             try
                 st, body = api_track_selection(HTTP.Request("GET",
                     "/api/tracking/selection?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
@@ -6432,7 +6386,7 @@ end
                 @test sum(Int[t.nCells for t in d.tracks]) == length(labs)
                 @test d.nUntracked == 0
             finally
-                _set_napari_selection!(img._dir, "B", Int[])
+                _set_pick_selection!(img._dir, "B", Int[])
             end
 
             # `ids=` names tracks and IGNORES the cap — "the one I need is not in the top N" must have

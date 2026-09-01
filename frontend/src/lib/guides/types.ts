@@ -23,7 +23,7 @@ export interface GuideCtx {
   // sets there is nothing to select, so a step saying "pick a set" has to point at "New set" instead.
   setCount: number
   images: CciaImage[]                        // images in the ACTIVE set (the ones a page shows)
-  napariImageUid: string | null              // image currently open in the napari window, if any
+  viewerImageUid: string | null              // image currently open in the viewer window, if any
   selection: (module: string) => string[]    // checkbox selection for a module page
   rightPanelCollapsed: boolean
   viewerPanelOpen: boolean

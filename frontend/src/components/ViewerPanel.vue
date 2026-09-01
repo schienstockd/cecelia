@@ -12,8 +12,8 @@ import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   colourLegend, colourLegendLabels, resetColourLegend,
   livePreviews, previewShown, togglePreview,
-} from '../composables/useNapariAutoShow'
-import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/napariAutoShow'
+} from '../composables/useOverlayAutoShow'
+import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -55,7 +55,7 @@ const gatedTracksShown  = ref(false)   // master "show gated track populations" 
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
-// utils/napariAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
+// utils/overlayAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
 // new pop type can't end up toggleable-but-never-restored. Only CELL-grained types are in that list:
 // show-populations plots by cell label, whereas track/trackclust are track-grained (membership is
 // track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
@@ -284,8 +284,8 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 
 
 // These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
-// useNapariAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
-// can no longer affect what actually reaches napari (it once did: see useNapariAutoShow's rules).
+// useOverlayAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
+// can no longer affect what actually reaches napari (it once did: see useOverlayAutoShow's rules).
 watch(napariImage, (img) => {
   // restore the remembered preference rather than always starting hidden
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
@@ -321,7 +321,7 @@ function openInViewer(valueName: string) {
 // mistake. The button no longer owns the "in progress" state either; the task list does.
 async function recordTimelapse() {
   // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whether the popup
-  // browser viewer OR napari has the image. Was `napariImageUid`, which stayed null when only the
+  // browser viewer OR napari has the image. Was `viewerImageUid`, which stayed null when only the
   // browser viewer was open, so the Record button silently early-returned (a regression the user
   // hit after napari was retired from the record path).
   const uid        = projectStore.openImageUid
@@ -421,8 +421,8 @@ function togglePopType(popType: string) {
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, ping the viewer.
 function toggleTrack(vn: string) {
-  // `openImageUid`, not `napariImageUid`: this write must land whether or not any legacy napari WS
-  // event has fired. Before P6 the persist was gated on `napariImageUid=null`, which meant the
+  // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy napari WS
+  // event has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
@@ -464,7 +464,7 @@ function toggleTrackclust() {
 // The WebGPU viewer reads `settings.getColourBy(setUid)` and re-derives colours on the overlay
 // tick; the panel writes the setting and pings. Options are the open segmentation's obs columns.
 async function loadObsCols() {
-  const uid = projectStore.napariImageUid
+  const uid = projectStore.viewerImageUid
   const projectUid = projectMeta.current?.uid
   const vn = selectedValueName.value
   if (!uid || !projectUid || !vn) { obsCols.value = []; return }

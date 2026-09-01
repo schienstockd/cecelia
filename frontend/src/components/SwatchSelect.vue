@@ -2,7 +2,7 @@
   A tiny dropdown that shows a colour SWATCH next to each option (native <select> can't render swatches
   reliably across browsers). Used by the batch-movie channel-colormap picker; reusable for any
   {value,label,hex} colour choice. Swatch style matches the app's `.cby-swatch` idiom; hex comes from
-  the caller (single source of truth — see utils/napariColormap). An option with `hex: null` renders a
+  the caller (single source of truth — see utils/viewerColormap). An option with `hex: null` renders a
   hatched "none/hidden" swatch.
 -->
 <script setup lang="ts">

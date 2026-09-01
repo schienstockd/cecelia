@@ -365,12 +365,11 @@ segmentation too drew every track in the image beside it, which puts the picked 
 haystack they were picked out of. That closes the loop a table could not: you see the bad track in the image and act on
 it there.
 
-**Show opens this panel's image first.** The bridge resolves layer paths against the image the viewer
-holds, not the one the request names, so pressing *Show* while the viewer was on another movie asked for
-a segmentation that image does not have and died inside HDF5 (`docs/NAPARI.md` → *A layer request names
-an image*). The panel now points the viewer at its own image through the one canonical open path, and
-declines with a line when no viewer is open rather than force-launching one. The route refuses the
-mismatch as a backstop.
+**Show opens this panel's image first.** The viewer resolves overlays against the image it holds,
+not the one the request names, so pressing *Show* while the viewer was on another movie asked for
+a segmentation that image does not have. The panel now points the viewer at its own image through the
+one canonical open path, and declines with a line when no viewer is open rather than force-launching one.
+The route refuses the mismatch as a backstop.
 
 **Show flies to a track's LAST frame, not its first.** napari's Tracks layer draws each track as a
 trail up to the current timepoint, so at the first frame there is one point and no track — the layer
@@ -696,9 +695,8 @@ Still deferred:
 1. **Gating API track-awareness (3c)** — the gating endpoints branch their data source on
    `popType="track"` → `track_props`; channels list motility + cell-aggregate columns; pop CRUD
    persists to `{vn}__tracks.json`.
-2. **Show tracks in napari (3d)** — napari's native **Tracks layer** (`viewer.add_tracks(data, …)`,
-   `data` = `[track_id, t, (z,) y, x]` + lineage `graph`) built from the `track_id` + centroids +
-   `t` in the H5AD, kept in sync with the gating selection (port R `show_tracks`; `docs/NAPARI.md`).
+2. **Show tracks in the viewer (3d)** — track ribbons built from the `track_id` + centroids +
+   `t` in the H5AD, kept in sync with the gating selection (port R `show_tracks`).
 3. **Track-gating canvas in the Tracking module (3e)** — the gating scatter + population manager
    with `popType="track"`, reusing the extracted canvas shell; conditional manager option-groups.
 

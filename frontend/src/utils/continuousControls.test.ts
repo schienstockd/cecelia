@@ -215,7 +215,7 @@ describe('nobody hand-rolls a fourth debounce', () => {
 // The live-viewer pushes are the ones this audit started from: the movie z slider and the mask-outline
 // slider each landed a napari command per slider event, and the bridge runs one command at a time, so
 // the viewer kept stepping through slices long after the mouse was released. The fix is at the SINK —
-// `utils/napariOverlays` owns the coalescing — which only holds while it stays the sole owner.
+// `utils/viewerOverlays` owns the coalescing — which only holds while it stays the sole owner.
 describe('live napari view-property endpoints have exactly one owner', () => {
   const LIVE_ENDPOINTS = /\/api\/napari\/(set-z-view|apply-view-state)/
   const ALL = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
@@ -226,7 +226,7 @@ describe('live napari view-property endpoints have exactly one owner', () => {
   it('nobody else POSTs to them', () => {
     const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
     const others = all
-      .filter(s => s.path !== 'utils/napariOverlays.ts' && !s.path.endsWith('.test.ts'))
+      .filter(s => s.path !== 'utils/viewerOverlays.ts' && !s.path.endsWith('.test.ts'))
       .filter(s => LIVE_ENDPOINTS.test(code(s.text)))
       .map(s => s.path)
     expect(others).toEqual([])

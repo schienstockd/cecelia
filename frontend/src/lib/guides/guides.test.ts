@@ -289,7 +289,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     setUid: null,
     setCount: 0,
     images: [],
-    napariImageUid: null,
+    viewerImageUid: null,
     selection: () => [],
     rightPanelCollapsed: false,
     viewerPanelOpen: false,
@@ -316,7 +316,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
   // `status` is the transient conversion-job state, so a project full of long-since-converted images
   // reported the prereq as MISSING and every guide looked blocked. The canonical answer is
   // `isImported` — does the image HAVE a converted file — which is what the image table uses to decide
-  // whether the napari eye is enabled.
+  // whether the viewer eye is enabled.
   it('imageImported asks whether a CONVERTED file exists, not what status says', () => {
     expect(PREREQ.imageImported.ok(ctx({ images: [img()] }))).toBe(false)          // registered only
     expect(PREREQ.imageImported.ok(ctx({ images: [img({ filepaths: {} })] }))).toBe(false)

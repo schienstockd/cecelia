@@ -2,7 +2,7 @@
 // thing you wait for is a SERVER starting, not a task in the rail, and the notebook itself opens in a
 // browser tab Cecelia doesn't own.
 //
-// That last bit is the same boundary as napari (plan R1): once the tab is open, the guide can only say
+// That last bit is the same boundary as the viewer (plan R1): once the tab is open, the guide can only say
 // what to expect, not point at it. So the steps front-load what matters — that the notebook comes
 // pre-wired to the project — and stop at the door.
 

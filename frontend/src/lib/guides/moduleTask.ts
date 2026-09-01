@@ -53,7 +53,7 @@ export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
   navLabel: string                 // the sidebar entry's wording, so the bubble can name it
   prereqs?: Prereq[]
   intro?: string                   // one sentence on what this function is FOR
-  after?: GuideStep[]              // what to do with the output (QC, napari, the next page)
+  after?: GuideStep[]              // what to do with the output (QC, the viewer, the next page)
 }
 
 // Every use of the task-run block, for the ratchet in `guides.test.ts` — it checks each one's
@@ -157,10 +157,10 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       route: o.route,
       placement: 'left' as const,
       title: 'Preview before you commit',
-      text: 'This runs the real compute over just the region napari is showing.',
+      text: 'This runs the real compute over just the region the viewer is showing.',
       bullets: [
         'Seconds instead of minutes — the way to judge the diameter and channels.',
-        'Open the image in napari first; the preview follows what it shows.',
+        'Open the image in the viewer first; the preview follows what it shows.',
       ],
       reveal: [
         revealsFor('task.preview')[0],

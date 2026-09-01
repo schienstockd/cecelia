@@ -92,7 +92,7 @@ export const tourGuide: GuideDef = {
       anchor: 'sidebar.viewerCta',
       placement: 'right',
       title: 'The viewer',
-      text: 'Opens images in napari, with segmentations and tracks as layers you can toggle.',
+      text: 'Opens images in the viewer, with segmentations and tracks as layers you can toggle.',
     },
     {
       anchor: 'sidebar.labLogCta',
@@ -141,7 +141,7 @@ export const tourGuide: GuideDef = {
       text: 'Closing the browser tab does not stop Cecelia — the backend keeps running until you quit here.',
       bullets: [
         'Not now — this is for when you are done for the day.',
-        'It stops napari and the notebook server too.',
+        'It stops the viewer and the notebook server too.',
       ],
     },
   ],

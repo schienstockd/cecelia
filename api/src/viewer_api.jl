@@ -732,9 +732,8 @@ end
 
 # ── POST /api/viewer/pick-cell (P8) ───────────────────────────────────────────────
 # Click a cell in the WebGPU viewer → transient population highlighted on the gating plots.
-# Reuses the same _set_napari_selection! / _inject_napari_pop! bridge napari's shape selection
-# uses (`gating_api.jl` → *Napari cell-selection registry*) so this behaves identically to the
-# existing linked-brushing pop — same JSON tree, same broadcast, same colour, no client-side
+# Writes into the pick-selection registry (`gating_api.jl` → *Pick-selection registry*) which
+# feeds the linked-brushing pop — same JSON tree, same broadcast, same colour, no client-side
 # gating store changes needed.
 #
 # Body: {projectUid, imageUid, valueName, popType, t, z, x, y, mode?}
@@ -779,7 +778,7 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     # click would surprise the user who missed a cell by one pixel.
     label == 0 && return 200, JSON3.write((; label = 0, nSelected = 0))
     mode = String(get(body, "mode", "replace"))
-    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    cur  = something(_get_pick_selection(img._dir, vn), Int[])
     labs = if mode == "add"
         label in cur ? cur : vcat(cur, label)
     elseif mode == "toggle"
@@ -787,9 +786,9 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     else
         Int[label]
     end
-    _set_napari_selection!(img._dir, vn, labs)
+    _set_pick_selection!(img._dir, vn, labs)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
-    _inject_napari_pop!(m, img)
+    _inject_pick_pop!(m, img)
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; label, nSelected = length(labs)))
 end
@@ -855,7 +854,7 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = "rect read failed: " * sprint(showerror, e)))
     end
     mode = String(get(body, "mode", "replace"))
-    cur  = something(_get_napari_selection(img._dir, vn), Int[])
+    cur  = something(_get_pick_selection(img._dir, vn), Int[])
     labs = if mode == "add"
         collect(union(Set(cur), Set(labels_uniq)))
     elseif mode == "toggle"
@@ -864,9 +863,9 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     else
         labels_uniq
     end
-    _set_napari_selection!(img._dir, vn, labs)
+    _set_pick_selection!(img._dir, vn, labs)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
-    _inject_napari_pop!(m, img)
+    _inject_pick_pop!(m, img)
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
@@ -893,11 +892,9 @@ function api_viewer_overlay_legend(body_bytes::Vector{UInt8})
 end
 
 # ── POST /api/viewer/pick-clear (P9) ──────────────────────────────────────────────
-# Empty the transient cell-selection pop for (image, valueName, popType). Replaces
-# `/api/napari/stop-selection` on the P9 retirement — the napari route also removed the Shapes
-# layer, which is meaningless now the browser viewer owns picking. Same registry / broadcast path
-# as pick-cell / pick-rect (they all `_set_napari_selection!` + `_inject_napari_pop!` + broadcast);
-# clearing is `_set_napari_selection!` with an empty label list.
+# Empty the transient cell-selection pop for (image, valueName, popType). Same registry /
+# broadcast path as pick-cell / pick-rect (they all `_set_pick_selection!` + `_inject_pick_pop!`
+# + broadcast); clearing is `_set_pick_selection!` with an empty label list.
 #
 # Body: {projectUid, imageUid, valueName?, popType?} — same shape as pick-cell / pick-rect so a
 # frontend caller can reuse its existing body builder. Response: {nSelected: 0}.
@@ -909,9 +906,9 @@ function api_viewer_pick_clear(body_bytes::Vector{UInt8})
     img, err = _gating_image(pu, iu)
     err === nothing || return err
     vn   = _resolve_vn(img, String(get(body, "valueName", "")))
-    _set_napari_selection!(img._dir, vn, Int[])
+    _set_pick_selection!(img._dir, vn, Int[])
     m = load_pop_map(img; value_name = vn, pop_type = pt)
-    _inject_napari_pop!(m, img)                               # no-op now (selection gone)
+    _inject_pick_pop!(m, img)                               # no-op now (selection gone)
     _broadcast_popmap(pu, iu, vn, pt, m)
     200, JSON3.write((; nSelected = 0))
 end

@@ -65,7 +65,7 @@ import {
   prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
-import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
@@ -3507,7 +3507,7 @@ function onSlabsTick(e: StorageEvent) {
 }
 // Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
 // toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
-// clicked. Mirrors the napari path, where `napariImageUid` is set by napari's WS `open` event so
+// clicked. Mirrors the napari path, where `viewerImageUid` is set by napari's WS `open` event so
 // panel + napari always agree on WHICH image the toggles govern. Written on mount + on every focus
 // so switching between several open popups follows attention (Dominik, 2026-08-31: "popup shows
 // dots despite panel off" — panel keyed to M2b, popup to fXgbTl).

@@ -8913,13 +8913,13 @@ end
     @test_throws ErrorException cells_in_pop(PopulationMap(), "/x")  # not recomputed
 end
 
-# ── explicit-label membership (napari selection) + transient not persisted ─
+# ── explicit-label membership (pick selection) + transient not persisted ─
 @testset "explicit-label (napari) membership" begin
     df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9])
 
     m = PopulationMap(pop_type="flow", value_name="B")
     add_pop!(m, "p"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))   # x≥5 → 2,3,4,5
-    # transient napari selection of labels {2,4,9} ∩ parent(x≥5) → {2,4}
+    # transient pick selection of labels {2,4,9} ∩ parent(x≥5) → {2,4}
     add_pop!(m, "napari"; parent="/p", explicit_labels=[2, 4, 9],
              colour="#22d3ee", transient=true)
     recompute!(m, _ -> df)
