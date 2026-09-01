@@ -47,7 +47,7 @@ const frameTime = (s: AnimSnapshot) =>
 // no-op by construction (nothing consumes the pending), not a failure.
 function selectKeyframe(s: AnimSnapshot) {
   anim.selectedId = s.id
-  if (settings.animationSyncNapari && s.snapshot) {
+  if (settings.animationSyncViewer && s.snapshot) {
     viewer.setPendingViewState(s.snapshot as unknown as ViewerViewState)
   }
 }

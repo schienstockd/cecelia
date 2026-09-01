@@ -21,9 +21,9 @@
 # ## Why child processes are pumped here
 #
 # `run(cmd; wait = false)` does NOT inherit stdio — Julia swallows it to devnull (`spawn_opts_swallow`).
-# Three long-lived children were spawned exactly that way (napari :7655, the preview worker :7656, the
-# task runner :7657), so ~20 `print(..., flush=True)` diagnostics in the bridge and the worker's
-# `traceback.print_exc()` went nowhere at all — not to the console, and not to the terminal either.
+# Long-lived children were spawned exactly that way (the preview worker :7656, the task runner :7657),
+# so ~20 `print(..., flush=True)` diagnostics and the worker's `traceback.print_exc()` went nowhere at
+# all — not to the console, and not to the terminal either.
 # That is the "messages get lost" case, and it is why `spawn_logged` is the only sanctioned way to
 # start a long-lived child: it pipes both streams into the logger, so the child's output travels the
 # same rail as everything else and lands in the console under its own `source`.
@@ -36,16 +36,14 @@ import Dates
 # step with `LOG_SOURCES` in `frontend/src/stores/log.ts`; asserted by the
 # "log sources agree across languages" testset.
 const LOG_SOURCE_BACKEND   = "backend"
-const LOG_SOURCE_NAPARI    = "napari"
 const LOG_SOURCE_PREVIEW   = "preview"
 const LOG_SOURCE_RUNNER    = "runner"
 const LOG_SOURCE_NOTEBOOKS = "notebooks"
 
 #: The sources a CHILD PROCESS writes under — the noisy ones. The console hides these by default
-#: (their chips are off until you ask) because a napari session prints a line per label layer, while
-#: their warnings and errors still surface. See docs/UI.md → *The console*.
-const CHILD_LOG_SOURCES = (LOG_SOURCE_NAPARI, LOG_SOURCE_PREVIEW, LOG_SOURCE_RUNNER,
-                           LOG_SOURCE_NOTEBOOKS)
+#: (their chips are off until you ask) because a warm cellpose preview or a notebooks server can be
+#: chatty, while their warnings and errors still surface. See docs/UI.md → *The console*.
+const CHILD_LOG_SOURCES = (LOG_SOURCE_PREVIEW, LOG_SOURCE_RUNNER, LOG_SOURCE_NOTEBOOKS)
 
 const LOG_SOURCES = (LOG_SOURCE_BACKEND, CHILD_LOG_SOURCES...)
 
@@ -334,8 +332,8 @@ and stderr piped into the Julia logger, one record per line, tagged `source = so
 output reaches the terminal AND the app console like everything else.
 
 Use this instead of `run(cmd; wait = false)`, which swallows both streams to devnull (see the header
-of this file: that silently discarded every line the napari bridge and the preview worker ever
-printed). It is the process-level twin of `run_py`'s stream handling for task runners.
+of this file: that silently discarded every line the preview worker ever printed). It is the
+process-level twin of `run_py`'s stream handling for task runners.
 
 **Not for a process that must outlive us.** The pipe is owned by THIS process, so a child holding it
 after we exit writes into a broken pipe. The detached task runner is deliberately excluded for that
@@ -376,8 +374,8 @@ end
 #
 # `_module`/`_file`/`_line` are nulled deliberately. Julia's console logger appends `@ <module>
 # <file>:<line>` to every warning and error, and left to the default that would read
-# `@ Cecelia log_stream.jl:390` on every line the napari bridge ever prints — pointing at the pump that
-# forwarded it rather than at anything to do with the failure, which is worse than no pointer at all.
+# `@ Cecelia log_stream.jl:390` on every line the preview worker ever prints — pointing at the pump
+# that forwarded it rather than at anything to do with the failure, which is worse than no pointer at all.
 function _emit_child_record(rec::Dict{String,Any})
     lvl = get(rec, "level", "info")
     msg = get(rec, "message", "")

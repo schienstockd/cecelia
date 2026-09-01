@@ -14,7 +14,7 @@ describe('logGroup', () => {
 
   it('folds the aliases that mean the same component', () => {
     expect(logGroup('server')).toBe('backend')   // the pre-rework tag, still in old ring entries
-    expect(logGroup('viewer')).toBe('viewer')    // its own chip: the napari half is going
+    expect(logGroup('viewer')).toBe('viewer')    // its own chip: the preview half is going
     expect(logGroup('chain')).toBe('tasks')
     expect(logGroup('task')).toBe('tasks')
   })
@@ -37,7 +37,7 @@ describe('logGroup', () => {
 describe('default groups', () => {
   it('starts with the app-side groups on and the chatty children off', () => {
     expect(DEFAULT_GROUPS).toEqual(['app', 'backend', 'tasks', 'viewer'])
-    for (const g of ['napari', 'preview', 'runner', 'notebooks'] as LogGroup[])
+    for (const g of ['preview', 'runner', 'notebooks'] as LogGroup[])
       expect(DEFAULT_GROUPS).not.toContain(g)
   })
 })
@@ -46,25 +46,25 @@ describe('isVisible', () => {
   const groups: LogGroup[] = ['app', 'backend', 'tasks']
 
   it('hides a group that is switched off', () => {
-    expect(isVisible(entry({ source: 'napari' }), { groups, level: 'all' })).toBe(false)
+    expect(isVisible(entry({ source: 'preview' }), { groups, level: 'all' })).toBe(false)
     expect(isVisible(entry({ source: 'backend' }), { groups, level: 'all' })).toBe(true)
   })
 
   it('NEVER hides an error behind a group chip', () => {
     // The rule the whole rework rests on: turning a chatty child off means "stop narrating", not
     // "stop telling me when you break". A console that can silently withhold a stacktrace is the bug.
-    expect(isVisible(entry({ source: 'napari', level: 'error' }), { groups, level: 'all' })).toBe(true)
+    expect(isVisible(entry({ source: 'preview', level: 'error' }), { groups, level: 'all' })).toBe(true)
     expect(isVisible(entry({ source: 'preview', level: 'error' }), { groups: [], level: 'all' })).toBe(true)
     // a warning from a hidden child is still hidden — only errors get the override
-    expect(isVisible(entry({ source: 'napari', level: 'warn' }), { groups, level: 'all' })).toBe(false)
+    expect(isVisible(entry({ source: 'preview', level: 'warn' }), { groups, level: 'all' })).toBe(false)
   })
 
   it('still applies the level filter to that error', () => {
-    expect(isVisible(entry({ source: 'napari', level: 'error' }), { groups, level: 'warn' })).toBe(false)
+    expect(isVisible(entry({ source: 'preview', level: 'error' }), { groups, level: 'warn' })).toBe(false)
   })
 
   it('still applies the search to that error', () => {
-    const e = entry({ source: 'napari', level: 'error', message: 'BoundsError' })
+    const e = entry({ source: 'preview', level: 'error', message: 'BoundsError' })
     expect(isVisible(e, { groups, level: 'all', query: 'bounds' })).toBe(true)
     expect(isVisible(e, { groups, level: 'all', query: 'zarr' })).toBe(false)
   })
@@ -72,9 +72,9 @@ describe('isVisible', () => {
 
 describe('matchesQuery', () => {
   it('is case-insensitive across message, source and detail', () => {
-    const e = entry({ message: 'Open failed', source: 'napari', detail: 'at zarr_utils.py:120' })
+    const e = entry({ message: 'Open failed', source: 'preview', detail: 'at zarr_utils.py:120' })
     expect(matchesQuery(e, 'OPEN')).toBe(true)
-    expect(matchesQuery(e, 'napari')).toBe(true)
+    expect(matchesQuery(e, 'preview')).toBe(true)
     // the file name lives in the STACK TRACE — searching only the row would miss the thing you
     // actually search for
     expect(matchesQuery(e, 'zarr_utils')).toBe(true)
@@ -115,12 +115,12 @@ describe('gapBefore', () => {
 describe('formatEntry', () => {
   it('writes a paste-ready line with the detail underneath', () => {
     const out = formatEntry({
-      level: 'error', message: 'Open failed', source: 'napari',
+      level: 'error', message: 'Open failed', source: 'preview',
       detail: 'Stacktrace:\n  at x', timestamp: new Date(2026, 0, 2, 13, 45, 6),
     })
     expect(out).toContain('13:45:06')
     expect(out).toContain('ERROR')
-    expect(out).toContain('[napari]')
+    expect(out).toContain('[preview]')
     expect(out).toContain('Open failed')
     expect(out).toContain('Stacktrace:')
   })

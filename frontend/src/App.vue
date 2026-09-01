@@ -86,16 +86,16 @@ watch([() => pm.current?.uid, () => projectStore.loadedProjectUid], ([openUid, l
 // A pop-out window (the console, the Task Manager) is a second FULL app instance with its own WS, so
 // everything App.vue starts here would run twice. That is invisible for anything that only touches
 // this window, and not invisible at all for the three below, which act on the BACKEND or on shared
-// state: two overlay-restore requests to napari per `napari:opened`, two lab-log captures per
-// finished task, and a tip-of-the-day silently consumed (stamped by a window whose bare route never
-// renders the dialog). A popout is a VIEW of the app, not a second copy of it.
+// state: two overlay-restore passes per image open, two lab-log captures per finished task, and a
+// tip-of-the-day silently consumed (stamped by a window whose bare route never renders the dialog).
+// A popout is a VIEW of the app, not a second copy of it.
 // `lib/popout.ts` reads the hash, not the route: the first navigation has not resolved during setup.
 const popout = isPopoutWindow()
 
-// Restore each image's remembered napari overlays (labels, branches, tracks, populations) when it
+// Restore each image's remembered viewer overlays (labels, branches, tracks, populations) when it
 // opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with
-// the floating Viewer panel closed (its default) nothing was listening for `napari:opened`, so the
-// toggles read ON but no overlay was ever requested until the user flipped them by hand.
+// the floating Viewer panel closed (its default) nothing was listening for the image-open event, so
+// the toggles read ON but no overlay was ever requested until the user flipped them by hand.
 if (!popout) useOverlayAutoShow()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
@@ -167,8 +167,8 @@ const bare = computed(() => popout || route.meta.bare === true)
         </RouterView>
       </main>
     </div>
-    <!-- napari viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
-         floating above the content so it's usable on any page while an image is open in napari -->
+    <!-- Viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
+         floating above the content so it's usable on any page while an image is open in the viewer -->
     <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
                    accent="var(--cc-viewer)" @close="settings.viewerPanelOpen = false">
       <ViewerPanel />

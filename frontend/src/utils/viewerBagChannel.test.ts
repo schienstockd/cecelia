@@ -4,25 +4,25 @@ import { decodeViewerBagEvent } from './viewerBagChannel'
 describe('decodeViewerBagEvent', () => {
   it('decodes label visibility', () => {
     const v = { 'img-A': { seg1: true, seg2: false } }
-    expect(decodeViewerBagEvent('cc.napariLabelVisibility', JSON.stringify(v)))
+    expect(decodeViewerBagEvent('cc.viewerLabelVisibility', JSON.stringify(v)))
       .toEqual({ kind: 'labelVis', value: v })
   })
 
   it('decodes track visibility', () => {
     const v = { 'img-A': { seg1: true } }
-    expect(decodeViewerBagEvent('cc.napariTrackVisibility', JSON.stringify(v)))
+    expect(decodeViewerBagEvent('cc.viewerTrackVisibility', JSON.stringify(v)))
       .toEqual({ kind: 'trackVis', value: v })
   })
 
   it('decodes branch visibility', () => {
     const v = { 'img-A': { seg1: false } }
-    expect(decodeViewerBagEvent('cc.napariBranchVisibility', JSON.stringify(v)))
+    expect(decodeViewerBagEvent('cc.viewerBranchVisibility', JSON.stringify(v)))
       .toEqual({ kind: 'branchVis', value: v })
   })
 
   it('decodes per-set prefs', () => {
     const v = { 'set-A': { colourBy: 'HMM_state', show3D: true, pointSize: 8 } }
-    expect(decodeViewerBagEvent('cc.napariSetPrefs', JSON.stringify(v)))
+    expect(decodeViewerBagEvent('cc.viewerSetPrefs', JSON.stringify(v)))
       .toEqual({ kind: 'setPrefs', value: v })
   })
 
@@ -42,17 +42,17 @@ describe('decodeViewerBagEvent', () => {
   })
 
   it('returns null when newValue is null (removeItem elsewhere)', () => {
-    expect(decodeViewerBagEvent('cc.napariLabelVisibility', null)).toBeNull()
+    expect(decodeViewerBagEvent('cc.viewerLabelVisibility', null)).toBeNull()
   })
 
   it('returns null on malformed JSON — a stale ref is better than a crash', () => {
-    expect(decodeViewerBagEvent('cc.napariLabelVisibility', '{not-json')).toBeNull()
-    expect(decodeViewerBagEvent('cc.napariSetPrefs', 'undefined')).toBeNull()
+    expect(decodeViewerBagEvent('cc.viewerLabelVisibility', '{not-json')).toBeNull()
+    expect(decodeViewerBagEvent('cc.viewerSetPrefs', 'undefined')).toBeNull()
   })
 
   it('decodes an empty bag as an empty object (not as null)', () => {
     // A window that hasn't opened any image writes '{}' — a legal state, not "nothing to say".
-    expect(decodeViewerBagEvent('cc.napariLabelVisibility', '{}'))
+    expect(decodeViewerBagEvent('cc.viewerLabelVisibility', '{}'))
       .toEqual({ kind: 'labelVis', value: {} })
   })
 })

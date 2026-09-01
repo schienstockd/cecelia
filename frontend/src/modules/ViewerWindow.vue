@@ -3149,11 +3149,10 @@ watch(zRange,    () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
 
-// The panel's 3D button (`ViewerPanel.vue` → `settings.setShow3D`) used to flip napari between 2D
-// and 3D via `pushZView`; with the napari mirror gone, that write reaches the popup viewer through
-// the `cc.napariSetPrefs` bag sync (see `utils/viewerBagChannel.ts`). Watch the setter's derived
-// value here so a panel-side flip drives THIS viewer's mode as it used to drive napari's. Guarded
-// on a real change to avoid re-entrant loops with `onModeChange` (chip → setShow3D).
+// The panel's 3D button (`ViewerPanel.vue` → `settings.setShow3D`) reaches the popup viewer
+// through the `cc.viewerSetPrefs` bag sync (see `utils/viewerBagChannel.ts`). Watch the setter's
+// derived value here so a panel-side flip drives THIS viewer's mode. Guarded on a real change to
+// avoid re-entrant loops with `onModeChange` (chip → setShow3D).
 watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
   if (want === null) return
   const next: 'plane' | 'volume' = want ? 'volume' : 'plane'

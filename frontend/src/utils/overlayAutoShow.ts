@@ -1,14 +1,14 @@
 // Decisions for the "restore the user's remembered overlays" step that runs every time an image
-// (re)opens in napari — which label sets, branch (skeleton) sets, track ribbons and population point
-// layers to ask for, and which segmentation's obs columns to read.
+// (re)opens in the viewer — which label sets, branch (skeleton) sets, track ribbons and population
+// point layers to ask for, and which segmentation's obs columns to read.
 //
 // WHY THIS IS NOT IN THE COMPONENT: the autoshow used to live entirely inside ViewerPanel.vue, which
 // App.vue mounts behind `v-if="settings.viewerPanelOpen"` — the floating Viewer panel is OFF by
-// default. So opening an image while that panel was closed restored nothing at all (no subscriber
-// existed to hear `napari:opened`), and the toggles — read from localStorage, so they still showed ON
-// — only took effect once the user flipped them off and on by hand. The orchestration now lives in
-// composables/useOverlayAutoShow.ts, mounted once at app level; the decisions live here, pure and
-// unit-tested, so they can't drift from the panel's own per-toggle requests.
+// default. So opening an image while that panel was closed restored nothing at all, and the toggles
+// — read from localStorage, so they still showed ON — only took effect once the user flipped them
+// off and on by hand. The orchestration now lives in composables/useOverlayAutoShow.ts, mounted once
+// at app level; the decisions live here, pure and unit-tested, so they can't drift from the panel's
+// own per-toggle requests.
 
 // The CELL-grained population types that render as centroid POINT overlays, in display order. Only
 // these belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
@@ -28,7 +28,7 @@ export const CELL_POP_TYPES = ['flow', 'clust', 'region'] as const
 // ONE helper because getting it wrong is invisible: the viewer seeded its toggles from the union
 // while `pushTracksNow` re-derived the same record from `labels` alone, so toggling an imported set
 // stored `true`, `getTrackVisibility` dropped the key on the way back out (it returns only names in
-// the list it is given), and napari was asked to show nothing. The toggle looked live and did
+// the list it is given), and the viewer was asked to show nothing. The toggle looked live and did
 // nothing.
 export function trackableValueNames(img: { labels?: Record<string, unknown>
                                            labelPropsNames?: string[] } | null | undefined): string[] {

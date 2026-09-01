@@ -50,14 +50,14 @@ def _server_ready(timeout: float = 180.0) -> bool:
 def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
     """Ask the server to stop ITS OWN children, then exit. True if it did.
 
-    `proc.terminate()` kills the Julia server and nothing else. The server is the parent of three
-    resident processes — the napari bridge (:7655), the task-preview worker (:7656) and the Pluto
-    notebooks server (:7660) — and they are grandchildren in their own process groups, so they survive
-    it. That left them running with no backend able to reach them: the preview worker in particular
-    holds a warm cellpose model's VRAM, and an orphan is then silently ADOPTED by the next launch, which
-    is how a worker running stale code outlived several restarts.
+    `proc.terminate()` kills the Julia server and nothing else. The server is the parent of two
+    resident processes — the task-preview worker (:7656) and the Pluto notebooks server (:7660) —
+    and they are grandchildren in their own process groups, so they survive it. That left them
+    running with no backend able to reach them: the preview worker in particular holds a warm
+    cellpose model's VRAM, and an orphan is then silently ADOPTED by the next launch, which is how
+    a worker running stale code outlived several restarts.
 
-    `POST /api/app/shutdown` already stops all three and then exits, and it is the path the in-app Quit
+    `POST /api/app/shutdown` already stops both and then exits, and it is the path the in-app Quit
     button uses — so this REUSES it rather than adding a third copy of platform-specific port-killing
     (Julia has one in `_kill_listeners_on_port`, the dev supervisor another in `api/dev.jl::_free_port`).
     Failure just falls through to terminate/kill, which is where this always ended up.

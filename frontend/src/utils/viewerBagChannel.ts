@@ -37,10 +37,10 @@ export function decodeViewerBagEvent(
   let value: unknown
   try { value = JSON.parse(newValue) } catch { return null }
   switch (key) {
-    case 'cc.napariLabelVisibility':  return { kind: 'labelVis',     value }
-    case 'cc.napariTrackVisibility':  return { kind: 'trackVis',     value }
-    case 'cc.napariBranchVisibility': return { kind: 'branchVis',    value }
-    case 'cc.napariSetPrefs':         return { kind: 'setPrefs',     value }
+    case 'cc.viewerLabelVisibility':  return { kind: 'labelVis',     value }
+    case 'cc.viewerTrackVisibility':  return { kind: 'trackVis',     value }
+    case 'cc.viewerBranchVisibility': return { kind: 'branchVis',    value }
+    case 'cc.viewerSetPrefs':         return { kind: 'setPrefs',     value }
     case 'cc.viewerImageVersion':     return { kind: 'imageVersion', value }
     default:                          return null
   }

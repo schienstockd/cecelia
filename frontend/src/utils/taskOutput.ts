@@ -9,7 +9,7 @@
 //
 // Before this module there were TWO partial answers that had already drifted apart, both correct only
 // for the `outputValueName` spelling:
-//   • `taskPreview.previewValueName` — the napari layer stem, params-only, always returns a string
+//   • `taskPreview.previewValueName` — the preview layer stem, params-only, always returns a string
 //   • `ChainModule.nodeOutputValueName` — edge propagation, def-aware, returns null for non-producers
 // Both now delegate here. A third variant is the bug (CLAUDE.md → divergent re-implementation), and
 // it is an easy one to write, because the two callers genuinely want different SHAPES of the answer —
