@@ -14,8 +14,8 @@ Cecelia.load_custom_modules!()
 
 include("sockets.jl")
 include("routes.jl")
-include("napari_api.jl")
-include("preview_api.jl")   # task preview; reads the open image from napari_api
+include("movie_helpers.jl")   # shared movie / legend / view helpers (formerly napari_api.jl)
+include("preview_api.jl")     # task preview; the browser viewer is authoritative for the open image
 include("observer_api.jl")
 include("gating_api.jl")
 include("plotting_api.jl")

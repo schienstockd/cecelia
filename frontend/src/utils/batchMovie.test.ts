@@ -154,8 +154,8 @@ describe('clampContour / labelContour', () => {
 
 // Mirrors the Julia `_safe_name_part` testset (api/test/runtests.jl) — the two sanitisers must agree,
 // or the filename the batch panel PREVIEWS is not the one the recorder writes.
-// napari's own 3D choice is the COARSEST pyramid level, which erases a strided label pyramid — so an
-// authored batch config says "full resolution" rather than leaving it unsaid. See docs/NAPARI.md.
+// The coarsest pyramid level erases a strided label pyramid — so an authored batch config says
+// "full resolution" rather than leaving it unsaid.
 describe('buildBatchMovieConfig 3D detail', () => {
   const build = (cfg: Record<string, unknown>) =>
     buildBatchMovieConfig(cfg, ['segA'], {})

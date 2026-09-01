@@ -1,15 +1,15 @@
 # Cecelia Feijoa — engine environment (Julia API + Python analysis stack).
 #
-# Pixi manages the **Python analysis env** that the whole engine uses (it was formerly
-# `napari/.venv`, but it is NOT napari-specific — cellpose, measure, btrack, the label-props
-# writer and the napari bridge all share it). The env now lives at the repo-root `.pixi/`,
+# Pixi manages the **Python analysis env** that the whole engine uses (originally lived at
+# `napari/.venv` from the R-Shiny era; the napari bridge is gone but the env is shared by cellpose,
+# measure, btrack and the label-props writer). The env now lives at the repo-root `.pixi/`,
 # not under `napari/`.
 #
 # Julia stays on juliaup + Manifest; Node stays on fnm. The single rule that makes this work:
 # **run everything via `pixi run <task>`**. Pixi activates this env (prepends `.pixi/envs/.../bin`
-# to PATH), so the Julia server's Python subprocesses and the napari bridge pick up *this*
-# `python3`. That is why no hardcoded env path lives in the Julia code anymore — see
-# `python_bin_path()` (config default `"python3"`) and `app/src/napari.jl`.
+# to PATH), so the Julia server's Python subprocesses pick up *this* `python3`. That is why no
+# hardcoded env path lives in the Julia code anymore — see `python_bin_path()` (config default
+# `"python3"`).
 #
 # Full rationale + non-obvious notes: docs/SHIPPING.md.
 
@@ -25,8 +25,8 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 # as a meta-path finder holding ONE ABSOLUTE PATH. The pixi/uv cache keys that build on the RELATIVE
 # `./python`, so the entry collides across git worktrees and the first checkout to build it wins: a
 # worktree's own env can resolve `cecelia` into a DIFFERENT worktree, and nothing errors. Half the app
-# then runs this checkout's files (everything launched by path — the napari bridge, the preview worker,
-# task runners) while importing another's library, until one side gains a helper the other lacks:
+# then runs this checkout's files (everything launched by path — the preview worker, task runners)
+# while importing another's library, until one side gains a helper the other lacks:
 #
 #   AttributeError: module 'cecelia.utils.correction_utils' has no attribute 'af_derived_values'
 #
@@ -34,7 +34,7 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 # something each worktree has to be repaired out of. $PIXI_PROJECT_ROOT expands per project, so every
 # worktree points at itself. Verified: re-breaking the finder no longer changes what imports.
 #
-# The launchers set it explicitly too (`run_py`, `preview.jl`, `napari.jl`) — that covers processes
+# The launchers set it explicitly too (`run_py`, `preview.jl`) — that covers processes
 # spawned by the Julia server, which do not go through `pixi run`. This covers the other direction:
 # `pixi run test-py`, `pixi run python`, a REPL. Belt and braces, deliberately.
 # Full write-up: docs/DEV.md → *A worktree's Python env can point at ANOTHER checkout*.
@@ -65,8 +65,10 @@ pyproj = ">=3.7"
 # disjoint-sets split — every pin in exactly one file; see docs/todo/PY_PACKAGING_PLAN.md).
 cecelia      = { path = "python", editable = true }
 websockets   = ">=16.0"
-napari       = ">=0.7"
-pyqt5        = ">=5.15"
+# Movie writer backend for imageio.mimwrite/get_writer(fps=…). Was pulled in transitively via napari
+# → napari-animation until P9; declared here now that napari is gone. Tests in test_movie_io.py
+# encode short mp4s for real, so this needs to be present, not optional.
+imageio-ffmpeg = ">=0.4"
 # Cellpose v4 (Cellpose-SAM). v4 has no `DenoiseModel` — the v3 pin existed to keep
 # `cleanupImages.cellposeCorrect` alive, and that task is retired: `cleanupImages.smooth` (coastal's
 # model-free restorers) and `coastal.denoise` (the Cellpose-3 net re-implemented, no `cellpose`
@@ -103,7 +105,6 @@ coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "d68
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
-napari-animation = ">=0.0.10, <0.0.11"
 # MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
 # `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
 mcp          = ">=1.2"
@@ -178,9 +179,6 @@ mcp           = { cmd = "python -m cecelia_mcp.server", cwd = "mcp", env = { PYT
 frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload
 build    = { cmd = "npm run build", cwd = "frontend" }  # static production build
 
-# Napari bridge (port 7655) standalone — normally the backend launches it; run this to debug it alone.
-napari = { cmd = "python3 napari_bridge.py", cwd = "napari" }
-
 # Task-preview worker (port 7656) standalone — normally the backend launches it on the first preview;
 # run this to debug it alone. Resident because a process that can segment costs 17.7s of imports before
 # it can answer (measured), which is fatal per preview and irrelevant once. PYTHONPATH so it resolves
@@ -244,10 +242,9 @@ update = "pixi update"
 julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'"
 
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
-# orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
-# after editing napari_bridge.py (the backend otherwise adopts the running bridge on restart).
+# orphaning long-lived children (originally the napari bridge; see docs/SHIPPING.md).
 #
-# All six delegate to `api/portkill.jl`, which is ONE cross-platform implementation instead of the
+# All five delegate to `api/portkill.jl`, which is ONE cross-platform implementation instead of the
 # three per-OS shell variants (lsof / PowerShell / ss) these used to carry — 18 one-liners that had to
 # be kept in step by hand. Two things that shell could not do, and both were real bugs:
 #
@@ -263,9 +260,8 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.insta
 # It restricts to LISTENING sockets throughout: a browser tab and its Vite HMR socket are CONNECTED to
 # :5173, and killing those reaps Firefox/Chrome. Base-only Julia (no `--project`), so it still works
 # when the env or a manifest is half-installed — which is exactly when you reach for `stop`.
-stop           = { cmd = "julia --startup-file=no portkill.jl backend 8080 frontend 5173 napari 7655 preview 7656 runner 7657 notebooks 7660", cwd = "api" }
+stop           = { cmd = "julia --startup-file=no portkill.jl backend 8080 frontend 5173 preview 7656 runner 7657 notebooks 7660", cwd = "api" }
 stop-backend   = { cmd = "julia --startup-file=no portkill.jl backend 8080",       cwd = "api" }
-stop-napari    = { cmd = "julia --startup-file=no portkill.jl napari 7655",        cwd = "api" }
 stop-preview   = { cmd = "julia --startup-file=no portkill.jl preview 7656",       cwd = "api" }
 stop-runner    = { cmd = "julia --startup-file=no portkill.jl runner 7657",        cwd = "api" }
 stop-notebooks = { cmd = "julia --startup-file=no portkill.jl notebooks 7660",     cwd = "api" }

@@ -37,7 +37,7 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # the runner keeps working and the fresh server adopts it. This used to be the bug — a segfault in the
 # backend's own shutdown path counted as "the user is done" and reaped the running segmentation the
 # runner exists to protect.
-const CHILD_PORTS = (7655, 7656, 7657, 7660)   # napari, preview worker, task runner, notebooks
+const CHILD_PORTS = (7656, 7657, 7660)   # preview worker, task runner, notebooks
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
 # with the restart sentinel; we relaunch the backend FROM THAT DIR (and the frontend from the sibling

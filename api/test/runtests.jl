@@ -126,7 +126,7 @@ end
     @test !isempty(String(d.julia))
     @test haskey(d, :replAvailable) && haskey(d, :loopback) && haskey(d, :replEnabled)
     # service ports surfaced for the System panel
-    @test d.port > 0 && d.napariPort == 7655 && d.previewPort == 7656 && d.notebooksPort == 7660
+    @test d.port > 0 && d.previewPort == 7656 && d.notebooksPort == 7660
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
@@ -367,13 +367,13 @@ end
     # diagnostics without adding it here fails this test rather than shipping another zombie.
     diag  = JSON3.read(api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))[2])
     child = [k for k in keys(diag) if endswith(String(k), "Port") && String(k) != "port"]
-    @test length(child) == 4            # napari, preview, notebooks, runner — deliberately, not silently
+    @test length(child) == 3            # preview, notebooks, runner — deliberately, not silently
     # The runner is reported by diagnostics but is NOT freed by an unconditional
     # `_kill_listeners_on_port` — it is stopped through `runner_stop!`, and only when `stop_runner` is
-    # true. So the count covers the other three and the runner is asserted on its own below.
+    # true. So the count covers the other two and the runner is asserted on its own below.
     @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child) - 1
 
-    for c in ("NAPARI_PORT", "PREVIEW_PORT", "NOTEBOOKS_PORT")
+    for c in ("PREVIEW_PORT", "NOTEBOOKS_PORT")
         @test occursin(c, body)
     end
 
@@ -405,7 +405,6 @@ end
     shutdown = src[findfirst("function api_app_shutdown(", src)[1]:end]
     @test !occursin("stop_runner = false", shutdown[1:findfirst("\nend", shutdown)[1]])
     # and the graceful stop, not only the port-level kill, for each child that has a handle
-    @test occursin("close!(v)", body)
     @test occursin("_shutdown_notebook_server!()", body)
     @test occursin("_stop_preview_worker!()", body)
 
@@ -422,7 +421,7 @@ end
     m   = match(r"const CHILD_PORTS = \(([^)]*)\)", dev)
     @test m !== nothing
     dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
-    @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
+    @test dev_ports == sort([Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
     @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
     # Both LONG-LIVED children this supervisor spawns must wire their streams EXPLICITLY. A
     # non-blocking `run` defaults to devnull, NOT to inheritance, and the Vite launch got that wrong for
@@ -620,7 +619,7 @@ end
     let pixi = read(joinpath(@__DIR__, "..", "..", "pixi.toml"), String)
         stop_line = only(filter(l -> startswith(l, "stop  "), split(pixi, '\n')))
         ports = sort(parse.(Int, [m.captures[1] for m in eachmatch(r"\b(\d{4})\b", stop_line)]))
-        @test ports == sort([8080, 5173, Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT,
+        @test ports == sort([8080, 5173, Cecelia.PREVIEW_PORT,
                              Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
         @test occursin("portkill.jl", stop_line)
         # Base-only, deliberately: `stop` has to work when a manifest is broken, which is when you
@@ -1087,20 +1086,15 @@ end
     # because the alternative to refusing is acting on the wrong image.
     _region() = Dict("xy" => Dict("X" => [0, 32], "Y" => [0, 32]),
                      "z" => 0, "t" => 0, "ndisplay" => 2)
-    # ── nothing body-carried → 409 no-viewer-open, and the status route says the napari-tracked side
-    #    is null too so a transitional client can't read a plausible-looking default out of it
-    saved = (_current_image_uid[], _current_zarr_path[], _current_task_dir[])
-    try
-        _current_image_uid[] = nothing; _current_zarr_path[] = nothing; _current_task_dir[] = nothing
-        st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
-        @test st == 200
-        d = JSON3.read(body)
-        @test d.imageUid === nothing && d.zarrPath === nothing && d.taskDir === nothing
-        @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
-        @test d.alive == false
-    finally
-        _current_image_uid[], _current_zarr_path[], _current_task_dir[] = saved
-    end
+    # ── nothing body-carried → 409 no-viewer-open, and the status route reports null image fields
+    #    (no server-side napari tracking left in P9), so a transitional client can't read a
+    #    plausible-looking default out of it
+    st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test d.imageUid === nothing && d.zarrPath === nothing && d.taskDir === nothing
+    @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
+    @test d.alive == false
 
     st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
                                            "params" => Dict("models" => Dict()),
@@ -1494,7 +1488,7 @@ Base.getindex(a::FakeZArray, ::Colon) = a.block
     # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
     # version read with plain `arr[...]` is byte-swapped garbage that renders as saturated white noise
     # (a true 63 reads as 16128; 98% of a real frame exceeded a contrast ceiling that should clip none).
-    # Silent, and invisible in Python, which honours the descriptor. See docs/NAPARI.md → Byte order.
+    # Silent, and invisible in Python, which honours the descriptor.
     # DETECTOR for the single Zarr.jl internal this depends on. `_zarr_byte_order` reads the raw numpy
     # dtype descriptor out of `arr.metadata.dtype`; if a Zarr.jl upgrade changes that field's shape the
     # guard falls back to '|' (never swap) and the big-endian bug returns. The swap assertions below DO
@@ -5723,44 +5717,6 @@ end
 
     @test _json_safe(Dict("a" => NaN))["a"] === nothing
     @test _json_safe(Any[NaN, 2.0]) == Any[nothing, 2.0]
-end
-
-# ── The napari→tracks bridge, and naming a track past the picker's cap ────────
-#
-# Both are the answer to "fix a track the detector never flagged": draw around it in the viewer, or
-# name it. The RESOLUTION is the part worth pinning — labels in, tracks out, most-represented first,
-# with untracked cells counted separately rather than folded in (they are what `points.add` is for).
-# A layer request NAMES an image; the bridge resolves paths against the one on SCREEN. Nothing checked
-# that they matched, and the reported failure is what that costs: a track panel on `fXgbTl` asked for
-# `memTom` while the viewer held `VJy1Nx`, and the bridge died inside HDF5 on a path that does not exist.
-#
-# Validated against THAT case, not a convenient one — the guard is only worth having if it fires on the
-# bug it was written for, and refuses BEFORE any bridge work rather than reporting a nicer error after.
-@testset "API: a viewer showing another image refuses the layer" begin
-    open_uid, asked_uid = "VJy1Nx", "fXgbTl"
-    prev = Main._current_image_uid[]
-    try
-        # nothing open: every one of these needs an image to draw ON, so this is a refusal, not a no-op
-        Main._current_image_uid[] = nothing
-        st, body = Main._viewer_shows(asked_uid)
-        @test st == 400
-        @test occursin("open it first", JSON3.read(body).error)
-
-        # the reported case: the viewer is on a DIFFERENT image
-        Main._current_image_uid[] = open_uid
-        st, body = Main._viewer_shows(asked_uid)
-        @test st == 400
-        d = JSON3.read(body)
-        # both uids are NAMED, because "wrong image" without saying which two is not actionable
-        @test occursin(open_uid, d.error) && occursin(asked_uid, d.error)
-        @test d.viewerImageUid == open_uid && d.requestedImageUid == asked_uid
-
-        # …and it gets out of the way the moment they agree
-        Main._current_image_uid[] = asked_uid
-        @test Main._viewer_shows(asked_uid) === nothing
-    finally
-        Main._current_image_uid[] = prev
-    end
 end
 
 # ── Undo / redo for hand-drawn gating ────────────────────────────────────────────────────────

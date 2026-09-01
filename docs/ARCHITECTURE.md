@@ -294,26 +294,25 @@ time, read from different places, and narrowing one of them was enough to break 
 
 ---
 
-## Napari
+## Viewer
 
-See [`docs/NAPARI.md`](NAPARI.md) for the full bridge design, command protocol, OME-ZARR loading, contrast limits, and layer props.
-
-**Architectural invariant:** `napariImageUid` in `project.ts` is set by the `napari:opened` WS broadcast, not the HTTP 200 response — this keeps it in sync on both the immediate (200) and deferred startup (202) paths.
+Napari was retired in P9. The browser viewer (`frontend/src/lib/webgpu`) drives image display,
+overlays and recording. See `docs/todo/WEB_VIEWER_PLAN.md` for the migration and the current
+architecture.
 
 ---
 
-## Napari → Julia event flow (gating linked brushing)
+## Linked brushing (viewer → gating)
 
 ```
-Draw a region on the Cell selection layer in Napari
-  → napari_bridge.py: point-in-polygon over cell centroids → inside label IDs
-  → POST http://localhost:8080/api/napari/event {type:"cellSelection", labels:[…], …}
-  → Julia /api/napari/event: store as transient "Napari selection" pop; broadcast_ws gating:popmap
+Draw a region on the viewer's cell-selection layer
+  → viewer POSTs /api/viewer/pick-rect {labels:[…], zLo, zHi, …}
+  → Julia stores as transient "Viewer selection" pop; broadcast_ws gating:popmap
   → frontend ws.ts → gating store: tree gains the transient pop → flow plots highlight those cells
 ```
 
-See `docs/NAPARI.md` (commands) and `docs/POPULATION.md` (transient pops). Julia stays the sole
-gate evaluator; napari only draws regions and displays membership.
+Julia stays the sole gate evaluator; the viewer only draws regions and displays membership.
+See `docs/POPULATION.md` for transient pops.
 
 Components: `ws.on(...)` in `onMounted`, `ws.off(...)` in `onUnmounted`.
 This replaces R/Shiny's pattern of writing files + `reactiveFileReader`. No polling.
@@ -519,7 +518,7 @@ Lives in Julia, operates on H5AD files written by Python tasks.
 
 ## OME-ZARR dual-format
 
-> Moved here from `CLAUDE.md` (2026-08-20). Viewer-side detail (byte order, contrast, dask vs zarr loading) is in [`docs/NAPARI.md`](NAPARI.md).
+> Moved here from `CLAUDE.md` (2026-08-20).
 
 
 Two layouts coexist — the reader handles both:

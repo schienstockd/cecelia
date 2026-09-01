@@ -1,20 +1,12 @@
 """Every `cecelia.utils.*` call in a runtime process must match the library's real signature.
 
-The runtime processes (`napari/napari_bridge.py`, `preview/preview_worker.py`) are the only Python in
-the repo that is NOT imported by any test — the bridge needs a viewer, the worker needs a socket. So a
-parameter removed from a `cecelia.utils` helper leaves its call sites red-free: nothing binds them
-until a user clicks Record.
+The runtime process (`preview/preview_worker.py`) is the only Python in the repo that is NOT
+imported by any test — the worker needs a socket. So a parameter removed from a `cecelia.utils`
+helper leaves its call sites red-free: nothing binds them until a user actually clicks.
 
-That is not hypothetical. Dropping the movie `res` multiplier removed `scale` from
-`napari_utils.record_timelapse`/`record_keyframes` and updated the Julia routes, the stores and the
-control — but left the two bridge methods forwarding `scale=scale`. The whole Python suite stayed
-green (464 tests) while BOTH movie paths would have died with `TypeError: unexpected keyword argument
-'scale'` on the next napari restart, invisible until then because the bridge is a long-lived process
-holding the old code.
-
-The check is static: parse each runtime source, resolve its `cecelia.utils` import aliases, and bind
-every call against the real `inspect.signature`. No napari, no Qt, no viewer. Calls that splat
-(`*args`/`**kwargs`) are skipped — a static bind can say nothing about them.
+The check is static: parse each runtime source, resolve its `cecelia.utils` import aliases, and
+bind every call against the real `inspect.signature`. Calls that splat (`*args`/`**kwargs`) are
+skipped — a static bind can say nothing about them.
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
 """
@@ -28,7 +20,6 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 
 # The runtime processes: they import the library but no test imports them.
 _SOURCES = (
-    os.path.join(_REPO, 'napari', 'napari_bridge.py'),
     os.path.join(_REPO, 'preview', 'preview_worker.py'),
 )
 

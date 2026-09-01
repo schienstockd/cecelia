@@ -319,8 +319,7 @@ function api_viewer_meta(req::HTTP.Request)
                             activeValueName = active_vn,
                             # The store the browser viewer is looking at and the image's meta dir.
                             # Body-carried into `/api/preview/run` (P7): the preview API uses these
-                            # as source of truth for "what's on screen" rather than reaching sideways
-                            # into `current_napari_image()`.
+                            # as source of truth for "what's on screen".
                             zarrPath = zp,
                             taskDir  = td,
                             bytesPerVoxel = bpv, slabBytes = nx * ny * nz * bpv,

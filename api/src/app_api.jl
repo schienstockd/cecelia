@@ -1,8 +1,8 @@
 # ── App lifecycle: global shutdown (+ restart, Phase 3) ─────────────────────────
 # Drives the Settings "System" panel's global controls. Per-component start/stop/restart reuse the
-# existing napari_api / notebooks_api endpoints; only the whole-app actions live here.
+# existing notebooks_api endpoints; only the whole-app actions live here.
 
-# Stop the child processes THIS server owns, best-effort, before the process exits. napari has no
+# Stop the child processes THIS server owns, best-effort, before the process exits. napari had no
 # atexit hook (unlike the notebook server), so it must be closed explicitly here or the bridge is
 # orphaned on :7655. Called by the global shutdown (and, later, restart).
 #
@@ -43,12 +43,6 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
         @warn "Shutdown: cancelling in-flight tasks failed" exception = e
     end
     try
-        v = _viewer()
-        v !== nothing && close!(v)          # kills the napari bridge process
-    catch e
-        @warn "Shutdown: closing napari failed" exception = e
-    end
-    try
         _shutdown_notebook_server!()        # stops a Pluto server we spawned (no-op otherwise)
     catch e
         @warn "Shutdown: stopping notebooks failed" exception = e
@@ -60,8 +54,7 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
     end
     # belt-and-suspenders: also free the child ports by force, covering a child we only ADOPTED or
     # that outlived a crash (no process handle to close!) — so shutdown/restart never leaves a zombie
-    # on :7655 / :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
-    try; Cecelia._kill_listeners_on_port(Cecelia.NAPARI_PORT);  catch; end
+    # on :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
     try; Cecelia._kill_listeners_on_port(Cecelia.PREVIEW_PORT); catch; end
     try; Cecelia._kill_listeners_on_port(NOTEBOOKS_PORT);       catch; end
     # …and the task runner, but ONLY on the routes that mean "stop everything". A restart leaving it

@@ -17,9 +17,8 @@
 # are load-bearing for a RUNNING install — this is not an inventory of the repo.
 
 # ── spawned processes ────────────────────────────────────────────────────────────────────────────
-# Asserted against Cecelia.NAPARI_BRIDGE / Cecelia.PREVIEW_WORKER, so moving either file fails the
-# test here rather than at a user's first launch.
-napari/napari_bridge.py
+# Asserted against Cecelia.PREVIEW_WORKER, so moving the file fails the test here rather than at a
+# user's first launch.
 preview/preview_worker.py
 
 # ── notebooks ────────────────────────────────────────────────────────────────────────────────────

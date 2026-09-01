@@ -5,7 +5,7 @@ export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_p
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
-export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
+export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit
 export task_worker_threads, default_task_worker_threads, set_task_worker_threads!
 export usable_cpus, task_workers_max
 export task_workers_widen, task_workers_derived, set_task_workers_widen!
@@ -211,16 +211,10 @@ export load_chain_run
 export run_chain
 export chain_node, make_chain
 
-# ── Napari viewer ─────────────────────────────────────────────────────────────
-export NapariViewer
-export launch!, close!, restart!, send
-export open_image!, show_labels!, show_branch_labels!, refresh_labels!, set_z_view!, set_3d_level!
-export show_layer!, hide_layer!, remove_layer!, clear!
-export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!, stitch_movies!
-export capture_view_state, apply_view_state!
-
 # ── Task preview (resident worker) ────────────────────────────────────────────
-# `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
+# `launch!`/`close!`/`send` are the resident-child generics defined in preview.jl. Napari used to
+# define them too — retired in P9.
+export launch!, close!, send
 export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
 export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
@@ -319,14 +313,13 @@ include("tasks/chain.jl")
 include("runner/execute.jl")
 # Chain events -> wire frames, shared by the API server and the runner (one builder, one bank).
 include("runner/chain_frames.jl")
-include("napari.jl")
-# Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
-# `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).
+# Task preview — the resident preview worker's lifecycle + request shape. Shares the resident-WS-
+# process pattern napari.jl used to embody (retired in P9). Depends on jobs.jl's `_kill_proc_tree`.
 include("preview.jl")
 # The detached task runner: `server.jl` is the process that owns the pools and executes tasks,
-# `client.jl` is the API server's side of it. After napari.jl/preview.jl — same resident-child
-# lifecycle — and after jobs.jl, whose `_kill_listeners_on_port` is how a runner we only ADOPTED gets
-# stopped. See docs/todo/TASK_RUNNER_PLAN.md.
+# `client.jl` is the API server's side of it. Same resident-child lifecycle as preview.jl; after
+# jobs.jl, whose `_kill_listeners_on_port` is how a runner we only ADOPTED gets stopped. See
+# docs/todo/TASK_RUNNER_PLAN.md.
 include("runner/server.jl")
 include("runner/client.jl")
 # Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)

@@ -111,15 +111,13 @@ function handle_message(ws, raw::AbstractString)
         handle_task_run(ws, data)
     elseif type == "task:cancel"
         task_id = _wstr(data, :taskId)
-        # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in the
-        # scheduler's _TASKS: recordings, single and batch (request_batch_cancel!, which flags the run AND
-        # tells the bridge to stop the frame loop it is in), and background jobs (cancel_job!, kills the
-        # subprocess(es) — data patches + project export/import).
-        # So the Task-Manager Cancel button works on all of them, not just scheduler tasks.
-        # …and the detached runner, where a scheduler task most likely actually IS. All of these are
-        # no-ops for an unknown id, so asking all four is free; asking fewer is a Cancel button that
-        # silently does nothing depending on where the task happens to be running.
-        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id);
+        # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in
+        # the scheduler's _TASKS: background jobs (cancel_job! kills the subprocess(es) — data
+        # patches + project export/import), and the detached runner, where a scheduler task most
+        # likely actually IS. All of these are no-ops for an unknown id, so asking all three is
+        # free; asking fewer is a Cancel button that silently does nothing depending on where the
+        # task happens to be running.
+        isempty(task_id) || (cancel_task!(task_id);
                              cancel_job!(task_id); _cancel_on_runner(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)

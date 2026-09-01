@@ -51,13 +51,6 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.animationSyncNapari') === 'true'  // default false
   )
 
-  // Clean capture (E1): hide napari's baked scale bar + timestamp when taking a screenshot, for a clean
-  // publication still (add a vector scale bar / timestamp externally). Applies to strip + animation
-  // captures. Default false (keep the on-screen annotations). See docs/todo/ANIMATION_PLAN.md → E.
-  const cleanCapture = ref(
-    localStorage.getItem('cc.cleanCapture') === 'true'         // default false
-  )
-
   // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
   // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
   // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
@@ -478,8 +471,8 @@ export const useSettingsStore = defineStore('settings', () => {
     // The 3D half is the EXISTING per-set `show3D` pref — one stored value, so the viewer's 3D button
     // and the movie's z control cannot disagree.
     zSlice: _setPrefs.value[setUid]?.movie?.zSlice ?? null,
-    // 0 = full resolution. napari's own 3D choice is the COARSEST level, which erases a strided label
-    // pyramid — so the default is full and the cost is a visible control (docs/NAPARI.md → 3D detail).
+    // 0 = full resolution. The default is full because the coarsest level erases a strided label
+    // pyramid — the cost is a visible control.
     detail3d: _setPrefs.value[setUid]?.movie?.detail3d ?? 0,
     compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
@@ -536,7 +529,6 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
-  watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
   watch(viewerAutoSaveLayerProps, v => localStorage.setItem('cc.viewerAutoSaveLayerProps', String(v)))
   watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
@@ -610,7 +602,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, cleanCapture, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncNapari, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

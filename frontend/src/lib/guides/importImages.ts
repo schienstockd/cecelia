@@ -129,7 +129,7 @@ export const importImagesGuide: GuideDef = {
       route: '/manage-images',
       placement: 'right',
       title: 'Check it opened correctly',
-      text: 'The ↗ opens an image in napari — worth doing once per new file type.',
+      text: 'The ↗ opens the image in the viewer — worth doing once per new file type.',
       bullets: [
         'It stays disabled until that image has converted.',
         'Wrong channel count or pixel size means the metadata needs a look.',

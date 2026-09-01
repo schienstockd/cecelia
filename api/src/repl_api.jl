@@ -124,10 +124,9 @@ function api_diagnostics(::HTTP.Request)
         replEnabled = _repl_on[],           # runtime toggle state
         replAvailable = _repl_available(),  # toggle on AND loopback-bound → console usable
         dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
-        napariPort    = Cecelia.NAPARI_PORT,  # child-service ports, surfaced so the panel shows which
-        previewPort   = Cecelia.PREVIEW_PORT, # ports Cecelia occupies (backend `port` is above), so the
-        notebooksPort = NOTEBOOKS_PORT,       # "don't bind other services here" list stays complete
-        runnerPort    = Cecelia.RUNNER_PORT,  # the detached task runner (see /api/runner/status)
+        previewPort   = Cecelia.PREVIEW_PORT, # child-service ports Cecelia occupies (backend `port`
+        notebooksPort = NOTEBOOKS_PORT,       # is above), surfaced so the panel shows the "don't
+        runnerPort    = Cecelia.RUNNER_PORT,  # bind here" list; runner = the detached task runner
     ))
 end
 

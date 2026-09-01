@@ -11,9 +11,11 @@
 # like the napari bridge and the notebooks server. Measurements + the decisions they forced:
 # docs/todo/TASK_PREVIEW_PLAN.md.
 #
-# Deliberately mirrors `napari.jl` — same struct shape, same `send`, same launch-then-ping, same
-# kill-the-tree close — because "a resident Python process we talk to over WS" already has one way
-# to be done here and a second variant would be the bug.
+# Same struct shape, same `send`, same launch-then-ping, same kill-the-tree close as the retired
+# napari bridge did — "a resident Python process we talk to over WS" already has one way to be done
+# here and a second variant would be the bug.
+
+using HTTP    # napari.jl carried this at file scope for the Cecelia module; keep it here.
 
 const PREVIEW_PORT   = 7656
 

@@ -1,8 +1,8 @@
 // Pure helpers for the 3D-crop control (Viewer panel). Kept out of the .vue so the range maths is
-// unit-testable (docs/DEV.md → Tests). The crop itself lives in napari — the user draws the XY box over
-// a Z/T max-projection there; here we only normalise the z- and t-ranges picked with two 0–100 % sliders
-// each into the [0,1] fractions the bridge expects (it converts fractions → pixels, so the frontend
-// needn't know the slice/frame count). See docs/NAPARI.md → "3D crop".
+// unit-testable (docs/DEV.md → Tests). The user draws the XY box over a Z/T max-projection in the
+// viewer; here we only normalise the z- and t-ranges picked with two 0–100 % sliders each into the
+// [0,1] fractions the crop task expects (it converts fractions → pixels, so the frontend needn't
+// know the slice/frame count).
 
 export interface Range { lo: number; hi: number }   // fractions in [0,1], lo <= hi
 

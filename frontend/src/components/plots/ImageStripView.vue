@@ -112,9 +112,8 @@ const exportSrcs = ref<Record<string, string>>({})
 // uses so the thumbnail matches what a movie made from this look would produce.
 //
 // Fails cleanly when no browser viewer is open on this image: the caller cannot capture what they
-// cannot see. `settings.cleanCapture` used to strip napari's baked scale bar / timestamp from the
-// screenshot; the browser thumbnail renders channels-only for MVP so there is nothing to strip and
-// the setting is ignored on this path (its legacy meaning is preserved for the movie recorder).
+// cannot see. The browser thumbnail renders channels-only for MVP — no baked scale bar / timestamp
+// to strip.
 async function capture(i: number) {
   capturing.value = i
   err.value = ''
@@ -340,9 +339,6 @@ defineExpose({ exportImage })
             <CcToggle class="is-check cc-muted cc-fs-xs" label="legend (channels · pops · colour-by)"
               v-tooltip.bottom="'Show the channel and population key under the strip'"
               :model-value="showLegend" @update:model-value="showLegend = $event" />
-            <CcToggle class="is-check cc-muted cc-fs-xs" label="clean capture"
-              v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing'"
-              :model-value="settings.cleanCapture" @update:model-value="settings.cleanCapture = $event" />
             <CcToggle class="is-check cc-muted cc-fs-xs" label="scale bar"
               v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"
               :model-value="showScaleBar" @update:model-value="showScaleBar = $event" />

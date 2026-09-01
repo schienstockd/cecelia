@@ -20,22 +20,20 @@ import { PREREQ } from './prereqs'
 import type { GuideStep } from './types'
 
 // Where segmentation and tracking both end up: the mask/tracks are only trustworthy once you have
-// LOOKED at them, and looking happens in napari — a separate window this guide cannot point into
-// (plan R1). So we point at the control that puts them on screen and say what to look for.
+// LOOKED at them. So we point at the control that puts them on screen and say what to look for.
 const napariCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
   {
     anchor: 'images.viewerBtn',
     placement: 'right',
-    title: 'Open it in napari',
+    title: 'Open it in the viewer',
     text: 'The ↗ opens the image itself — the overlay is a separate switch.',
-    bullets: ['napari is its own window, so bring it to the front.'],
     when: c => c.napariImageUid !== null,
   },
   {
     anchor: 'sidebar.viewerCta',
     placement: 'right',
     title: 'Open the Viewer panel',
-    text: 'This panel drives the napari window — overlays, contrast, 3D, recording.',
+    text: 'This panel drives the viewer — overlays, contrast, 3D, recording.',
     reveal: {
       needed: c => !c.viewerPanelOpen,
       anchor: 'sidebar.viewerCta',
@@ -46,8 +44,8 @@ const napariCheck = (what: string, toggleAnchor: string, lookFor: string[]): Gui
   },
   {
     // The step users get stuck on: a finished run puts nothing on the image by itself. Each
-    // segmentation has its own row here with a per-overlay switch, and until you flip it napari shows
-    // the raw channels and it looks like the run did nothing (Dominik, 2026-08-12).
+    // segmentation has its own row here with a per-overlay switch, and until you flip it the viewer
+    // shows the raw channels and it looks like the run did nothing (Dominik, 2026-08-12).
     anchor: toggleAnchor,
     placement: 'left',
     title: `Switch the ${what} on`,

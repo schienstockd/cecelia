@@ -17,7 +17,6 @@ self-contained.
 | `app/src/` — the Julia package: model, scheduler, gating, tasks | [`docs/inventory/JULIA_APP.md`](docs/inventory/JULIA_APP.md) | 37 KB |
 | `api/src/` — HTTP/WS handlers | [`docs/inventory/JULIA_API.md`](docs/inventory/JULIA_API.md) | 8 KB |
 | `python/cecelia/` — utils, writers, task runners | [`docs/inventory/PYTHON.md`](docs/inventory/PYTHON.md) | 8 KB |
-| `napari/` — the viewer bridge | [`docs/inventory/NAPARI.md`](docs/inventory/NAPARI.md) | 5 KB |
 | `mcp/` — the read-only observer server | [`docs/inventory/MCP.md`](docs/inventory/MCP.md) | 9 KB |
 
 **FRONTEND.md and JULIA_APP.md are still big — slice them.** `grep -n -i '<thing>' docs/inventory/FRONTEND.md`

@@ -73,8 +73,8 @@ corrected/cropped version the writers produce (`zarr_utils.native_dtype`). So th
 whether the store's order actually DIFFERS from the host's, rather than relying on the element-wise
 no-op. Still correct on a big-endian machine, and still a no-op for 1-byte dtypes (`|u1`).
 
-See `docs/NAPARI.md` → *Byte order (big-endian zarr)* for the other half of this trap (the writers
-force native order via `zarr_utils.native_dtype`, so corrected/cropped versions are little-endian).
+The other half of this trap: the writers force native order via `zarr_utils.native_dtype`, so
+corrected/cropped versions are little-endian.
 """
 function read_native(arr, idx...)
     blk = arr[idx...]
