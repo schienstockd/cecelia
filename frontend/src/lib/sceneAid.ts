@@ -23,12 +23,15 @@
  * colours. Piping the real palette in would make the preview a second legend to keep in step.
  */
 
-/** One dot in the schematic. `ringed` draws a thin outline (a mask-outline hint). */
+/** One dot in the schematic. `ringed` draws a thin outline (a mask-outline hint) alongside the
+ *  filled dot. `mode: 'ring-only'` draws just the ring — for a mask-outline-only view (no points),
+ *  or a pop hint before points are on. */
 export interface SceneAidPoint {
   x: number         // 0..1
   y: number         // 0..1
   colour: string    // any CSS colour
   ringed?: boolean
+  mode?: 'ring-only'
 }
 
 /** A short polyline — a "ribbon" or track tail in the schematic. Two or more points; the renderer

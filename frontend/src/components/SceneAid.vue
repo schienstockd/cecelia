@@ -18,6 +18,7 @@
  */
 import { computed } from 'vue'
 import type { SceneAidRender } from '../lib/sceneAid'
+import InlineNote from './InlineNote.vue'
 
 const props = withDefaults(defineProps<{
   /** The render, already computed by the producer. */
@@ -63,12 +64,14 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
           :stroke="rib.colour" :stroke-width="strokeW"
           fill="none" stroke-linejoin="round" stroke-linecap="round" />
         <!-- Points. `ringed` gets a thin outline in the point's own colour — the mask-outline hint
-             from the producer, which the movie draws as a labels contour around the same cell. -->
+             from the producer, which the movie draws as a labels contour around the same cell.
+             `mode: 'ring-only'` skips the filled centre for a mask-only view (no dots requested). -->
         <template v-for="(pt, i) in render.points" :key="`pt-${i}`">
-          <circle v-if="pt.ringed" :cx="pt.x * VB" :cy="pt.y * VB"
+          <circle v-if="pt.ringed || pt.mode === 'ring-only'" :cx="pt.x * VB" :cy="pt.y * VB"
             :r="pointR * 1.9" :stroke="pt.colour" :stroke-width="strokeW * 0.5"
-            fill="none" opacity="0.55" />
-          <circle :cx="pt.x * VB" :cy="pt.y * VB" :r="pointR" :fill="pt.colour" />
+            fill="none" :opacity="pt.mode === 'ring-only' ? 0.75 : 0.55" />
+          <circle v-if="pt.mode !== 'ring-only'" :cx="pt.x * VB" :cy="pt.y * VB"
+            :r="pointR" :fill="pt.colour" />
         </template>
       </svg>
       <span v-if="render.corners.showTimestamp" class="sa-ts cc-fs-3xs">
@@ -79,7 +82,11 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
         {{ render.corners.scaleBarText ?? '25 µm' }}
       </span>
     </div>
-    <div v-if="render.caption" class="sa-cap cc-muted cc-fs-3xs">{{ render.caption }}</div>
+    <!-- The empty-state hint uses the canonical `InlineNote` primitive (docs/ui/PRIMITIVES.md) so
+         a producer's "cell-track ribbons need populations on" reads with the same icon + text
+         shape as every other advisory in the app, at full size — a smaller variant here would be
+         a fourth spelling of the primitive `InlineNote` exists to unify. -->
+    <InlineNote v-if="render.caption" class="sa-cap" :short="render.caption" />
   </div>
 </template>
 
@@ -105,5 +112,5 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
 .sa-ts { top: 2px; left: 3px; }
 .sa-sb { bottom: 2px; right: 3px; display: inline-flex; align-items: center; gap: 3px; }
 .sa-sb-bar { display: inline-block; width: 18px; height: 2px; background: #fff; }
-.sa-cap { text-align: center; }
+.sa-cap { align-self: center; }
 </style>

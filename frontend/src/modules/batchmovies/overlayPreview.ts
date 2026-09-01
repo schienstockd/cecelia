@@ -96,6 +96,7 @@ export interface OverlayPreviewConfig {
   showTracks?: boolean
   showGatedTracks?: boolean
   showTrackclust?: boolean
+  colourLabels?: boolean
   labelValueNames?: string[]
   showTimestamp?: boolean
   showScaleBar?: boolean
@@ -167,13 +168,40 @@ function ribbonPath(c: OverlayCell): Array<{ x: number; y: number }> {
   return out
 }
 
-/** Apply the current config to the scene and produce a `SceneAidRender`. Three branches match
- *  `_build_overlay_state`. */
+/** A second ribbon walk with a distinct tilt — draws trackclust ribbons offset from the cell
+ *  ribbons so they don't overlap exactly. Track-cluster ribbons are the movie's second track family
+ *  (trackclust pops) and read differently from cell-track ribbons in the app; the preview echoes
+ *  that by giving them their own path shape. */
+function trackclustRibbonPath(c: OverlayCell): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = []
+  const seed = Math.floor((c.x * 1500 + c.y * 913) | 0)
+  const rnd = mulberry32(seed)
+  const dx = (rnd() - 0.5) * 0.16
+  const dy = (rnd() - 0.5) * 0.16
+  for (let s = 0; s < RIBBON_STEPS; s++) {
+    const t = s / (RIBBON_STEPS - 1)
+    // Different bend axis so the two ribbon families don't stack.
+    const bendX = Math.cos(t * Math.PI) * 0.03
+    const bendY = Math.sin(t * Math.PI) * 0.03
+    out.push({
+      x: Math.min(0.98, Math.max(0.02, c.x + dx * t + bendX)),
+      y: Math.min(0.98, Math.max(0.02, c.y + dy * t + bendY)),
+    })
+  }
+  return out
+}
+
+/** Apply the current config to the scene and produce a `SceneAidRender`. Handles every chip the
+ *  Overlays row surfaces (`tracks`, `trackclust`, `gated`, `pops`, `labels`) + the mask pickers,
+ *  mirroring the backend `_config_overlay_pops` + `_build_overlay_state` branches. */
 export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlayScene): SceneAidRender {
   const { allTracks, includeTracks, showPoints } = derivedOverlayFlags(cfg)
+  const showTrackclust = !!cfg.showTrackclust
+  const colourLabels = !!cfg.colourLabels
+  const hasMask = previewHasMask(cfg)
   const points: SceneAidPoint[] = []
   const ribbons: SceneAidRibbon[] = []
-  const ringed = previewHasMask(cfg)
+  const wantedPops = popsForConfig(cfg, scene)
 
   const corners = {
     showTimestamp: !!cfg.showTimestamp,
@@ -181,37 +209,70 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     showTitleChip: !!cfg.titleCard?.enabled,
   }
 
-  if (!showPoints) {
-    return { points, ribbons, corners, caption: 'nothing on' }
-  }
-
-  const wantedPops = popsForConfig(cfg, scene)
-
-  if (allTracks) {
-    // Whole-seg branch — every tracked cell, uniform grey. Untracked cells never drew here either
-    // (the overlay author's all_tracks branch reads `track_id`), so mirror that.
-    for (const c of scene.cells) {
-      if (c.trackId === null) continue
-      points.push({ x: c.x, y: c.y, colour: ALL_TRACKS_GREY, ringed })
-      if (includeTracks) {
-        ribbons.push({ points: ribbonPath(c), colour: ALL_TRACKS_GREY })
+  // ── Pop points + cell-track ribbons ────────────────────────────────────────
+  if (showPoints) {
+    if (allTracks) {
+      // Whole-seg branch — every tracked cell, uniform grey. Untracked cells never drew here either
+      // (the overlay author's all_tracks branch reads `track_id`), so mirror that.
+      for (const c of scene.cells) {
+        if (c.trackId === null) continue
+        points.push({ x: c.x, y: c.y, colour: ALL_TRACKS_GREY, ringed: hasMask })
+        if (includeTracks) ribbons.push({ points: ribbonPath(c), colour: ALL_TRACKS_GREY })
+      }
+    } else {
+      // Pops branch — per-pop colour, ribbons only for pops with `hasTracks` under includeTracks.
+      for (const c of scene.cells) {
+        if (!wantedPops.has(c.popIdx)) continue
+        const pop = scene.pops[c.popIdx]
+        points.push({ x: c.x, y: c.y, colour: pop.colour, ringed: hasMask })
+        if (includeTracks && pop.hasTracks && c.trackId !== null) {
+          ribbons.push({ points: ribbonPath(c), colour: pop.colour })
+        }
       }
     }
-  } else {
-    // Pops branch — per-pop colour, ribbons only for pops with `hasTracks` under includeTracks.
+  }
+
+  // ── Trackclust ribbons — a second ribbon family, gated on showPops ─────────
+  // The movie's trackclust overlay reaches `build_overlays_for` through the same overlay gate as
+  // the other pop-driven overlays (`_overlays_raw_from_config` needs one of showPops/showTracks/
+  // showGatedTracks/has_mask). Alone it renders nothing — trackclust ribbons need a pops context
+  // to attach to. Mirror that: only add trackclust ribbons when the pops branch is running.
+  if (showTrackclust && !allTracks && cfg.showPopulations) {
     for (const c of scene.cells) {
       if (!wantedPops.has(c.popIdx)) continue
       const pop = scene.pops[c.popIdx]
-      points.push({ x: c.x, y: c.y, colour: pop.colour, ringed })
-      if (includeTracks && pop.hasTracks && c.trackId !== null) {
-        ribbons.push({ points: ribbonPath(c), colour: pop.colour })
-      }
+      if (!pop.hasTracks || c.trackId === null) continue
+      ribbons.push({ points: trackclustRibbonPath(c), colour: pop.colour })
     }
   }
 
-  const caption = points.length === 0
-    ? (cfg.showPopulations ? 'no pops selected' : 'no tracked cells')
-    : undefined
+  // ── Mask outlines when nothing else is on ───────────────────────────────────
+  // The movie's mask branch draws label CONTOURS around every labelled cell when a mask column is
+  // picked. Without any other overlay flag, the preview would go blank while the movie actually
+  // rendered outlines — so add ring-only points to reflect it. Colour tinted by pop when
+  // `colourLabels`, else neutral grey.
+  if (hasMask && points.length === 0 && ribbons.length === 0) {
+    for (const c of scene.cells) {
+      const colour = colourLabels ? scene.pops[c.popIdx].colour : ALL_TRACKS_GREY
+      points.push({ x: c.x, y: c.y, colour, mode: 'ring-only' })
+    }
+  }
+
+  // ── Caption for the empty / near-empty cases ────────────────────────────────
+  let caption: string | undefined
+  if (points.length === 0 && ribbons.length === 0) {
+    if (cfg.showGatedTracks && !cfg.showPopulations && !cfg.showTracks) {
+      caption = 'cell-track ribbons need populations on'
+    } else if (showTrackclust && !cfg.showPopulations && !cfg.showTracks) {
+      caption = 'track-cluster ribbons need populations on'
+    } else if (colourLabels && !hasMask) {
+      caption = 'colour-labels needs a mask picked'
+    } else if (cfg.showPopulations && !wantedPops.size) {
+      caption = 'no pops selected'
+    } else {
+      caption = 'nothing on'
+    }
+  }
 
   return { points, ribbons, corners, caption }
 }

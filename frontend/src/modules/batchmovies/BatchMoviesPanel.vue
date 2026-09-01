@@ -297,6 +297,7 @@ const overlayPreview = computed(() => renderOverlayPreview({
   showTracks: cfg.value.showTracks,
   showGatedTracks: cfg.value.showGatedTracks,
   showTrackclust: cfg.value.showTrackclust,
+  colourLabels: cfg.value.colourLabels,
   labelValueNames: cfg.value.labelValueNames,
   showTimestamp: movie.value.showTimestamp,
   showScaleBar: movie.value.showScaleBar,

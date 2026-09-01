@@ -89,6 +89,60 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.points.every(p => p.ringed === true)).toBe(true)
   })
 
+  it('trackclust adds its own ribbons under a pops config', () => {
+    const gated = renderOverlayPreview(
+      { showPopulations: true, showGatedTracks: true }, scene)
+    const both = renderOverlayPreview(
+      { showPopulations: true, showGatedTracks: true, showTrackclust: true }, scene)
+    // Trackclust adds ribbons ON TOP of the gated ones — the two families both render.
+    expect(both.ribbons.length).toBeGreaterThan(gated.ribbons.length)
+  })
+
+  it('trackclust alone → empty + caption about needing populations', () => {
+    const r = renderOverlayPreview({ showTrackclust: true }, scene)
+    expect(r.points.length).toBe(0)
+    expect(r.ribbons.length).toBe(0)
+    expect(r.caption).toBe('track-cluster ribbons need populations on')
+  })
+
+  it('showGatedTracks alone → empty + caption (mirrors backend: gates need pops)', () => {
+    const r = renderOverlayPreview({ showGatedTracks: true }, scene)
+    expect(r.points.length).toBe(0)
+    expect(r.caption).toBe('cell-track ribbons need populations on')
+  })
+
+  it('mask alone → ring-only outlines around every cell in neutral grey', () => {
+    const r = renderOverlayPreview({ labelValueNames: ['flowTom'] }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    // ring-only = no filled circle; the schematic shows JUST the mask contour.
+    expect(r.points.every(p => p.mode === 'ring-only')).toBe(true)
+    expect(r.points.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
+  })
+
+  it('colourLabels on top of a mask → outlines tinted by pop colour', () => {
+    const r = renderOverlayPreview(
+      { labelValueNames: ['flowTom'], colourLabels: true }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    // Every point ring-only, and at least one is NOT grey (i.e. a pop palette entry).
+    expect(r.points.every(p => p.mode === 'ring-only')).toBe(true)
+    expect(r.points.some(p => p.colour !== ALL_TRACKS_GREY)).toBe(true)
+  })
+
+  it('colourLabels without a mask → empty + explanatory caption', () => {
+    const r = renderOverlayPreview({ colourLabels: true }, scene)
+    expect(r.points.length).toBe(0)
+    expect(r.caption).toBe('colour-labels needs a mask picked')
+  })
+
+  it('mask + pops → filled dots WITH mask rings, mask-only branch skipped', () => {
+    const r = renderOverlayPreview(
+      { showPopulations: true, labelValueNames: ['flowTom'] }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    // Filled dots (default mode) with `ringed: true` — NOT ring-only.
+    expect(r.points.every(p => p.mode !== 'ring-only')).toBe(true)
+    expect(r.points.every(p => p.ringed === true)).toBe(true)
+  })
+
   it('corner overlays follow the config flags 1:1', () => {
     const r = renderOverlayPreview({
       showPopulations: true, showTimestamp: true, showScaleBar: false,
