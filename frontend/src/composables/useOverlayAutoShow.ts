@@ -4,7 +4,7 @@ import { useWsStore } from '../stores/ws'
 import {
   createClaimRegistry,
   liveLabelPreviews, shouldRefreshPreview, type LivePreview, type TaskListEntry,
-} from '../utils/napariAutoShow'
+} from '../utils/overlayAutoShow'
 
 // Turn REMEMBERED overlay state + live-write previews into VIEWER state — the app-level glue that
 // wires WS events (`napari:opened`, `gating:popmap`, `task:status`, `task:progress`, chain nodes)
@@ -23,7 +23,7 @@ import {
 //    in ViewerPanel.vue, which App.vue mounts behind `v-if="settings.viewerPanelOpen"` — and that
 //    floating panel is off by default. With it closed, nothing was subscribed to `napari:opened`, so
 //    opening an image restored no overlays at all while the toggles (persisted in localStorage) still
-//    read ON. `useNapariAutoShow()` is mounted ONCE in App.vue so the WS wiring runs regardless.
+//    read ON. `useOverlayAutoShow()` is mounted ONCE in App.vue so the WS wiring runs regardless.
 //
 // 2. READ `settings`, NEVER A COMPONENT'S REFS. These run off WS events, so no component watcher is
 //    guaranteed to have run first. Trusting ViewerPanel's refs is what previously pushed against a
@@ -104,7 +104,7 @@ export function suppressAutoShowOnce(imageUid: string) { _claims.claim(imageUid)
 export function releaseAutoShowSuppression(imageUid?: string) { _claims.release(imageUid) }
 
 // Mount ONCE, app-level (App.vue) — see rule 1. Not for use in a page or a floating panel.
-export function useNapariAutoShow() {
+export function useOverlayAutoShow() {
   const ws = useWsStore()
   const onOpened = (data: Record<string, unknown>) => {
     const uid = String(data?.imageUid ?? '')

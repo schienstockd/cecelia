@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildAutoShowPlan, activeValueName, createClaimRegistry, type AutoShowInput,
   liveLabelPreviews, shouldRefreshPreview, PREVIEW_REFRESH_MIN_MS, type TaskListEntry,
-} from './napariAutoShow'
+} from './overlayAutoShow'
 
 const base: AutoShowInput = {
   labels: {}, branchLabels: {},

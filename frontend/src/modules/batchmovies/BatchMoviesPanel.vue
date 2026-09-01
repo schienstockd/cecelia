@@ -22,7 +22,7 @@ import { useTaskStore } from '../../stores/tasks'
 import { useViewerStore } from '../../stores/viewer'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
-import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
+import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/viewerColormap'
 import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, type BatchMovieCfg, type TitleCardCfg, type ViewStateLike } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,

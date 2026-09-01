@@ -8,7 +8,7 @@
 // a title + labeled sections; `unionViewSnapshot` merges several view snapshots for the animation
 // case, where a card needs to describe everything shown "at some point" across the keyframes.
 
-import { captureViewLegend } from './napariOverlays'
+import { captureViewLegend } from './viewerOverlays'
 
 // The movie title-card payload the recorder consumes (Phase H). Channels are NOT included here — the
 // recorder adds them from the live viewer; the frontend supplies only the non-channel sections + title.

@@ -12,8 +12,8 @@ import { buildTitleCard, type TitleCardPayload } from '../utils/titleCard'
 import {
   colourLegend, colourLegendLabels, resetColourLegend,
   livePreviews, previewShown, togglePreview,
-} from '../composables/useNapariAutoShow'
-import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/napariAutoShow'
+} from '../composables/useOverlayAutoShow'
+import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -55,7 +55,7 @@ const gatedTracksShown  = ref(false)   // master "show gated track populations" 
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
-// utils/napariAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
+// utils/overlayAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
 // new pop type can't end up toggleable-but-never-restored. Only CELL-grained types are in that list:
 // show-populations plots by cell label, whereas track/trackclust are track-grained (membership is
 // track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
@@ -284,8 +284,8 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 
 
 // These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
-// useNapariAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
-// can no longer affect what actually reaches napari (it once did: see useNapariAutoShow's rules).
+// useOverlayAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
+// can no longer affect what actually reaches napari (it once did: see useOverlayAutoShow's rules).
 watch(napariImage, (img) => {
   // restore the remembered preference rather than always starting hidden
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false

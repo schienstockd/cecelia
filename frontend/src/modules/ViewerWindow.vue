@@ -65,7 +65,7 @@ import {
   prefetchWindow, prefetchDepth, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
 import { toHex } from '../utils/colour'
-import { CHANNEL_COLORMAP_OPTIONS } from '../utils/napariColormap'
+import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'

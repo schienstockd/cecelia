@@ -29,7 +29,7 @@ import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { isColorLegendOpen } from './lib/colorLegendOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
-import { useNapariAutoShow } from './composables/useNapariAutoShow'
+import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
 import { isPopoutWindow } from './lib/popout'
 
 const ws = useWsStore()
@@ -96,7 +96,7 @@ const popout = isPopoutWindow()
 // opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with
 // the floating Viewer panel closed (its default) nothing was listening for `napari:opened`, so the
 // toggles read ON but no overlay was ever requested until the user flipped them by hand.
-if (!popout) useNapariAutoShow()
+if (!popout) useOverlayAutoShow()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
 // project export/import, task:run) registers via taskStore.add(), which bumps `lastStarted`. One

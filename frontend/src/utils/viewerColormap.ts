@@ -14,12 +14,12 @@ const NAPARI_COLORMAP_HEX: Record<string, string> = {
 }
 
 /** Hex for a napari colormap name (case-insensitive), or null if it isn't a single-hue channel colour. */
-export function napariColormapHex(name: string | null | undefined): string | null {
+export function viewerColormapHex(name: string | null | undefined): string | null {
   if (!name) return null
   return NAPARI_COLORMAP_HEX[name] ?? NAPARI_COLORMAP_HEX[name.toLowerCase()] ?? null
 }
 
-// Reverse of `napariColormapHex`. The browser viewer stores channel colour as a 2-stop black→hex LUT
+// Reverse of `viewerColormapHex`. The browser viewer stores channel colour as a 2-stop black→hex LUT
 // and drops the colormap NAME, so a viewState snapshot has to reverse-lookup: what named palette is
 // this hex? Feeds `buildViewState` → so a snapshot can carry a real colormap name that
 // `seedConfigFromViewState` can read, instead of the always-null we used to emit (which made the
@@ -40,7 +40,7 @@ export const CHANNEL_COLORMAP_OPTIONS: ColormapOption[] = (
     ['bop orange', 'orange'], ['red', 'red'], ['magenta', 'magenta'],
     ['bop purple', 'purple'], ['gray', 'gray'],
   ] as [string, string][]
-).map(([value, label]) => ({ value, label, hex: napariColormapHex(value) ?? '#888888' }))
+).map(([value, label]) => ({ value, label, hex: viewerColormapHex(value) ?? '#888888' }))
 
 // Hex → colormap name. Built from the picker's palette first (so those canonical names win when
 // several map to the same hex — 'gray' over 'grey', 'red' over 'i red'), then padded with any names
@@ -57,7 +57,7 @@ const HEX_TO_NAPARI_COLORMAP: Record<string, string> = (() => {
 
 /** Napari colormap NAME for a hex (case-insensitive), or null if unknown. Exact match only — a
  *  "close" match would silently rewrite the user's colour. */
-export function napariColormapForHex(hex: string | null | undefined): string | null {
+export function viewerColormapForHex(hex: string | null | undefined): string | null {
   if (!hex) return null
   return HEX_TO_NAPARI_COLORMAP[hex.toLowerCase()] ?? null
 }

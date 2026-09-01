@@ -14,7 +14,7 @@
 // 1) **`colormap` is a picker NAME when we can reverse-lookup the top LUT stop, else the RAW HEX
 //    (`#rrggbb`), else `null`.** The browser viewer stores channels as 2-stop black→hex ramps and
 //    drops the colormap name. We rebuild it by taking each channel's top RGB and looking it up in
-//    `napariColormap.ts` (the picker's palette). If it doesn't match a picker entry we emit the
+//    `viewerColormap.ts` (the picker's palette). If it doesn't match a picker entry we emit the
 //    hex directly — the Julia offline renderer (`_as_lut`) accepts `#rrggbb` and builds a 2-stop
 //    black→hex LUT, exact for a channel tint. That way a live palette pick round-trips even when
 //    the picker's name and the server's `CMAP_RGB` disagree (`bop orange` is off by a hue, so
@@ -29,7 +29,7 @@
 //    authored from the volume mode.
 
 import type { ViewerMeta, OrbitCamera } from '../volumeViewer'
-import { napariColormapForHex } from '../napariColormap'
+import { viewerColormapForHex } from '../viewerColormap'
 import { toHex } from '../colour'
 
 export interface ViewerLayerState {
@@ -119,7 +119,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
     layers[ch.name] = {
       visible: !!ch.visible,
       contrast_limits: [Number(ch.lo), Number(ch.hi)],
-      colormap: napariColormapForHex(hex) ?? hex,
+      colormap: viewerColormapForHex(hex) ?? hex,
     }
   }
 
