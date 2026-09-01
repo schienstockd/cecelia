@@ -455,7 +455,12 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
         for p in pops
             Bool(get(p, :show, true)) || continue
             default_col = hex_to_rgb(String(p.colour))
-            is_track_pop = Bool(get(p, :is_track, false)) && hasK
+            # A pop is ribbon-drawable when it was TYPED as a track pop OR when its cells actually
+            # hold `track_id > 0` (a hand-drawn flow gate over cells that were later tracked). Data
+            # fact + typed fact, both required to pass; `hasK` still gates on the segmentation
+            # actually having a track_id column at all. See MULTI_POP_TRACKING_PLAN.md Decision 2.
+            is_track_pop = (Bool(get(p, :is_track, false)) ||
+                            Bool(get(p, :has_tracks, false))) && hasK
             for L in p.labels
                 i = get(row_of, Int(L), 0)
                 i == 0 && continue
