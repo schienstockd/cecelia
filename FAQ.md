@@ -6,7 +6,7 @@ it is, and how the pieces fit. Deeper reasoning lives in [`docs/`](docs/); this 
 ## Languages & architecture
 
 **Why three languages — Julia, Python, and Vue?**
-Each does a job the others can't do as well: Python for image I/O and ML (napari, Cellpose, btrack,
+Each does a job the others can't do as well: Python for image I/O and ML (Cellpose, btrack,
 PyTorch), Julia for orchestration, gating, and statistics (ported cleanly from the original R and
 fast without a C extension layer), Vue for the interface. The split is a firm rule — see
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -18,8 +18,8 @@ would add build and interop cost for performance the current stack already deliv
 
 **Why not port the remaining Python to Julia and drop a language?**
 The Python that remains is there for *libraries* with no equivalent in another ecosystem — Cellpose,
-btrack, scanpy/Leiden, napari — so "porting" would mean reimplementing published algorithms. Full
-audit: [`docs/archive/python-audit-report.md`](docs/archive/python-audit-report.md).
+btrack, scanpy/Leiden — so "porting" would mean reimplementing published algorithms. Full audit:
+[`docs/archive/python-audit-report.md`](docs/archive/python-audit-report.md).
 
 **Why keep all analysis out of the frontend?**
 So the core package can run and be tested from the Julia REPL with no interface attached. The API is
@@ -46,8 +46,7 @@ to get wrong.
 **Everyone says "use Dask" for out-of-memory images. Why doesn't Cecelia?**
 Dask's default block layout over-fetches for the tiled/per-plane access Cecelia's hot paths use, and
 going per-frame (one frame in memory, written straight to the output store) beats it on both speed
-and peak RAM. Dask still backs napari rendering; it just isn't the compute engine. Numbers and the
-`da.store` correctness edge case in
+and peak RAM. Numbers and the `da.store` correctness edge case in
 [`docs/todo/ZARR_STREAMING_PLAN.md`](docs/todo/ZARR_STREAMING_PLAN.md).
 
 **Then how do live task previews work, if not by re-evaluating a lazy graph?**
