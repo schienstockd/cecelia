@@ -998,6 +998,13 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
     all_tracks       = Bool(_ov(ov_raw, :allTracks, false))
     all_tracks_col   = String(_ov(ov_raw, :allTracksColour, "#9ca3af"))
+    # Optional multi-source track composition — `trackSources` is a list of `{valueName, colour}`
+    # entries; when present under `allTracks`, we call `build_overlays_for` once per source (each
+    # with its own `all_tracks_colour`) and merge the resulting closures. Without this the whole-seg
+    # branch could only draw ONE segmentation's tracks in one grey — fXgbTl (cpSAM + flowTom +
+    # coastalFg + coastalSm15 all tracked) had no way to show them together with distinct colours.
+    ts_raw_v = _ov(ov_raw, :trackSources, nothing)
+    track_sources = ts_raw_v isa AbstractVector ? ts_raw_v : Any[]
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     point_size_px    = Int(_ov(ov_raw, :pointSizePx, point_size_px))
@@ -1013,13 +1020,17 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     show_mask = Bool(_ov(ov_raw, :showMask, false))
     all_cells = Bool(_ov(ov_raw, :allCells, false))
     mask_diag["requested"] = show_mask
+    # Multi-source track composition is on when a non-empty `trackSources` arrives under `allTracks`.
+    # It relaxes the empty-ov_vn guard below (each source carries its own value_name), and switches
+    # the overlay build to the merge path further down.
+    has_multi_tracks = all_tracks && !isempty(track_sources)
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn)
+    elseif isempty(ov_vn) && !has_multi_tracks
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
-    elseif !(show_pops || all_tracks || show_mask)
+    elseif !(show_pops || all_tracks || show_mask || has_multi_tracks)
         # No overlay type asked for — skip the pop-dot / track / mask build entirely. Before this
         # gate, `build_overlays_for` painted every pop of `pop_type` regardless of `showPopulations`.
         ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks + showMask all false)"
@@ -1032,7 +1043,58 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
         else
             tf = pixel_transform(H, W; crop = crop, max_px = max_px)
-            if show_pops || all_tracks
+            if has_multi_tracks
+                # One closure per source; merge them into one `t -> (points, segments)` by
+                # concatenating the per-source outputs. This is the shape `build_overlays_for`
+                # already emits (`(; x, y, colour)` for points and `(; x0, y0, x1, y1, colour, alpha)`
+                # for segments), so no format bridging.
+                per_source = Any[]
+                for src in track_sources
+                    src isa AbstractDict || continue
+                    vn_src  = String(get(src, "valueName", get(src, :valueName, "")))
+                    col_src = String(get(src, "colour",    get(src, :colour, all_tracks_col)))
+                    isempty(vn_src) && continue
+                    cl = try
+                        build_overlays_for(img; value_name = vn_src, pop_type = ov_pt,
+                                            transform = tf,
+                                            include_tracks = include_tracks,
+                                            tail_length = tail_length,
+                                            all_tracks = true,
+                                            all_tracks_colour = col_src,
+                                            track_color_mode = track_color_mode)
+                    catch e
+                        @warn "movie overlays: multi-source author failed" value_name = vn_src exception = e
+                        nothing
+                    end
+                    cl === nothing || push!(per_source, cl)
+                end
+                inner = if isempty(per_source)
+                    ov_diag["reason"] = "no track sources resolved"
+                    nothing
+                else
+                    function(t::Int)
+                        pts_x = Int[]; pts_y = Int[]; pts_c = RGB{N0f8}[]
+                        s_x0 = Int[]; s_y0 = Int[]; s_x1 = Int[]; s_y1 = Int[]
+                        s_c = RGB{N0f8}[]; s_a = Float64[]
+                        for cl in per_source
+                            p, s = cl(t)
+                            if p !== nothing
+                                append!(pts_x, p.x); append!(pts_y, p.y); append!(pts_c, p.colour)
+                            end
+                            if s !== nothing
+                                append!(s_x0, s.x0); append!(s_y0, s.y0)
+                                append!(s_x1, s.x1); append!(s_y1, s.y1)
+                                append!(s_c, s.colour); append!(s_a, s.alpha)
+                            end
+                        end
+                        pts = isempty(pts_x) ? nothing : (; x = pts_x, y = pts_y, colour = pts_c)
+                        segs = isempty(s_x0) ? nothing :
+                            (; x0 = s_x0, y0 = s_y0, x1 = s_x1, y1 = s_y1,
+                               colour = s_c, alpha = s_a)
+                        (pts, segs)
+                    end
+                end
+            elseif show_pops || all_tracks
                 inner = try
                     build_overlays_for(img; value_name = ov_vn, pop_type = ov_pt,
                                        transform = tf, pops_filter = ov_paths,
@@ -1046,26 +1108,28 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                     @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
                     nothing
                 end
-                if inner !== nothing
-                    if tally
-                        # Tally per-frame counts through a wrapper closure. Cheap (one integer per
-                        # frame) and answers "did overlays fire?" without a second inspection route.
-                        pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
-                        overlays_for = function(t::Int)
-                            p, s = inner(t)
-                            p === nothing || (pts_seen[]  += length(p.x))
-                            s === nothing || (segs_seen[] += length(s.x0))
-                            frames_touched[] += 1
-                            (p, s)
-                        end
-                        ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
-                    else
-                        overlays_for = inner
-                    end
-                    isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
-                end
             else
+                inner = nothing
                 ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
+            end
+            # Shared inner → overlays_for wrap. `inner` is set by either the multi-source or the
+            # single-source branch above; either way, the tally wrapper and the "ok" reason belong
+            # at ONE writeback so the diagnostic surface stays uniform across branches.
+            if inner !== nothing
+                if tally
+                    pts_seen = Ref(0); segs_seen = Ref(0); frames_touched = Ref(0)
+                    overlays_for = function(t::Int)
+                        p, s = inner(t)
+                        p === nothing || (pts_seen[]  += length(p.x))
+                        s === nothing || (segs_seen[] += length(s.x0))
+                        frames_touched[] += 1
+                        (p, s)
+                    end
+                    ov_diag["_tally"] = (pts_seen, segs_seen, frames_touched)
+                else
+                    overlays_for = inner
+                end
+                isempty(ov_diag["reason"]) && (ov_diag["reason"] = "ok")
             end
             # ── Optional P4 mask outlines. Same transform, same pops_filter, same
             # `allTracks/allCells` split (`allCells` is the mask counterpart). `showMask`

@@ -45,12 +45,14 @@ const RIBBON_STEPS = 4
 
 /** One cell of the schematic — a centroid position with the fake pop it belongs to and the fake
  *  track it sits on. `trackId = null` means "untracked" — what makes `includeTracks` visibly
- *  different from `showPopulations` alone. */
+ *  different from `showPopulations` alone. `segIdx` is the pseudo-segmentation the cell lives in
+ *  (0 or 1) — used only under multi-source track composition. */
 export interface OverlayCell {
   x: number   // 0..1
   y: number
   popIdx: number
   trackId: number | null
+  segIdx: number
 }
 
 /** One fake pop — index, colour, and whether its cells hold `track_id > 0` (`has_tracks`). Half
@@ -84,7 +86,12 @@ export function buildOverlayScene(seed = 7): OverlayScene {
     const x = 0.08 + rnd() * 0.84
     const y = 0.08 + rnd() * 0.84
     const trackId = pops[popIdx].hasTracks ? i + 1 : null
-    cells.push({ x, y, popIdx, trackId })
+    // Split the scene across two pseudo-segmentations so a multi-source `showTracks && !showPops`
+    // config shows two distinct colours in the frame. Real batches may have any number of tracked
+    // segs; the preview always uses two — enough to see the composition without turning into a
+    // legend.
+    const segIdx = i % 2
+    cells.push({ x, y, popIdx, trackId, segIdx })
   }
   return { cells, pops }
 }
@@ -105,6 +112,12 @@ export interface OverlayPreviewConfig {
    *  pop of popType" rule). Paths hash to a stable pop index; the preview can't interpret real
    *  paths without the tree, so this mapping just makes different picks look different. */
   popsFilter?: string[]
+  /** Visible track sources — `{valueName, colour}` per seg the user ticked in the batch panel's
+   *  Track sources list. Only meaningful under `showTracks && !showPops`. When present, the preview
+   *  paints all-tracks cells split across two pseudo-segmentations, each in its picked colour
+   *  (schematic — the scene is fixed at two pseudo-segs regardless of how many real ones exist).
+   *  Empty or absent → single-source grey (`ALL_TRACKS_GREY`), matching pre-picker behaviour. */
+  trackSources?: Array<{ valueName: string; colour: string }>
 }
 
 /** Whether the preview should ring each drawn point (mask-outline hint). Any picked mask counts. */
@@ -212,12 +225,20 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
   // ── Pop points + cell-track ribbons ────────────────────────────────────────
   if (showPoints) {
     if (allTracks) {
-      // Whole-seg branch — every tracked cell, uniform grey. Untracked cells never drew here either
-      // (the overlay author's all_tracks branch reads `track_id`), so mirror that.
+      // Whole-seg branch — every tracked cell. `trackSources` (non-empty) splits the cells across
+      // two pseudo-segmentations and paints each in its picked colour — mirroring what the backend's
+      // multi-source composition does when the batch panel sends more than one visible source.
+      // Empty/absent → uniform grey (single-source behaviour). Untracked cells never drew here
+      // either (the overlay author's all_tracks branch reads `track_id`), so mirror that.
+      const srcs = cfg.trackSources ?? []
+      const multiColours = srcs.length
+        ? [srcs[0]!.colour, srcs[Math.min(1, srcs.length - 1)]!.colour]
+        : null
       for (const c of scene.cells) {
         if (c.trackId === null) continue
-        points.push({ x: c.x, y: c.y, colour: ALL_TRACKS_GREY, ringed: hasMask })
-        if (includeTracks) ribbons.push({ points: ribbonPath(c), colour: ALL_TRACKS_GREY })
+        const colour = multiColours ? multiColours[c.segIdx % multiColours.length]! : ALL_TRACKS_GREY
+        points.push({ x: c.x, y: c.y, colour, ringed: hasMask })
+        if (includeTracks) ribbons.push({ points: ribbonPath(c), colour })
       }
     } else {
       // Pops branch — per-pop colour, ribbons only for pops with `hasTracks` under includeTracks.

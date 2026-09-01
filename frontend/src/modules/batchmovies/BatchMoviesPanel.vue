@@ -33,6 +33,8 @@ import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import SceneAid from '../../components/SceneAid.vue'
 import { buildOverlayScene, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
+import ColourPicker from '../../components/ColourPicker.vue'
+import { PALETTES } from '../../plots/plot'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
@@ -287,6 +289,44 @@ watch(popPaths, (paths) => {
 const popPathOptions = computed<ChipOption[]>(() =>
   popPaths.value.map(p => ({ value: p.path, label: p.label.trim(), tip: p.path })))
 
+// ── Per-segmentation track sources — only meaningful under `showTracks && !showPops` ──
+// The backend `_resolve_movie_overlays_mask` composes one overlay closure per source when this list
+// is non-empty (multi-source path); each source gets its own `all_tracks_colour`. The tracked
+// segmentations come from the first selected image's payload (`img.trackValueNames` — populated
+// server-side by `img_track_value_names`), so the picker offers only segs that actually have a
+// `track_id` obs column. Persisted map so an untick + re-tick restores the same colour.
+const trackedSegs = computed<string[]>(() =>
+  (imgs.value[0]?.trackValueNames ?? []) as string[])
+type TrackSourceCfg = { visible: boolean; colour: string }
+const trackSources = computed<Record<string, TrackSourceCfg>>({
+  get: () => (cfg.value.trackSources as Record<string, TrackSourceCfg> | undefined) ?? {},
+  set: v => patch({ trackSources: v }),
+})
+/** Default colour for a source at position `i` in the tracked-segs list — cycle the house palette so
+ *  a first-time user gets distinguishable colours without touching any picker. */
+function _defaultTrackColour(i: number): string {
+  const p = PALETTES.cecelia
+  return p[i % p.length] as string
+}
+function setTrackSourceVisible(vn: string, visible: boolean) {
+  const idx = Math.max(0, trackedSegs.value.indexOf(vn))
+  const cur = trackSources.value[vn] ?? { visible: true, colour: _defaultTrackColour(idx) }
+  trackSources.value = { ...trackSources.value, [vn]: { ...cur, visible } }
+}
+function setTrackSourceColour(vn: string, colour: string) {
+  const idx = Math.max(0, trackedSegs.value.indexOf(vn))
+  const cur = trackSources.value[vn] ?? { visible: true, colour: _defaultTrackColour(idx) }
+  trackSources.value = { ...trackSources.value, [vn]: { ...cur, colour } }
+}
+function trackSourceVisible(vn: string): boolean {
+  return trackSources.value[vn]?.visible ?? true
+}
+function trackSourceColour(vn: string): string {
+  const cur = trackSources.value[vn]
+  if (cur?.colour) return cur.colour
+  return _defaultTrackColour(Math.max(0, trackedSegs.value.indexOf(vn)))
+}
+
 // Overlay preview — a schematic frame that shows what the batch's overlay config will draw,
 // without generating a real movie. Deterministic scene (see modules/batchmovies/overlayPreview.ts),
 // so two toggles-of-the-same-config produce the same picture; every branch rule locked with the
@@ -303,6 +343,11 @@ const overlayPreview = computed(() => renderOverlayPreview({
   showScaleBar: movie.value.showScaleBar,
   titleCard: cfg.value.titleCard,
   popsFilter: cfg.value.popsFilter,
+  // Only meaningful under showTracks && !showPops (batch panel hides the picker otherwise); passed
+  // in every case so the preview stays a pure function of the config.
+  trackSources: trackedSegs.value
+    .filter(vn => trackSourceVisible(vn))
+    .map(vn => ({ valueName: vn, colour: trackSourceColour(vn) })),
 }, _previewScene))
 
 // ── seed the config so it's not blank (colours + pops of the first selected image) ─────────────
@@ -571,6 +616,26 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                       multiple aria-label="Populations to draw" />
           <span v-else class="bm-hint cc-muted">no populations for {{ popValueName || 'this segmentation' }} / {{ popType }}</span>
         </div>
+        <!-- Per-segmentation track sources — one row per tracked seg on the first selected image,
+             each with an eye toggle + colour swatch. Only shown under `showTracks && !showPops`:
+             when pops are on, ribbons draw in pop colours and per-seg picking would be a second,
+             disagreeing legend. -->
+        <template v-if="showTracks && !showPops && trackedSegs.length">
+          <div class="bm-inset bm-lbl-row">
+            <span class="bm-lbl cc-muted"
+                  v-tooltip.left="'Which tracked segmentations to draw, and their colour'">track sources</span>
+          </div>
+          <div v-for="vn in trackedSegs" :key="vn" class="bm-inset bm-track-row">
+            <CcToggle :model-value="trackSourceVisible(vn)"
+                      @update:modelValue="v => setTrackSourceVisible(vn, v)"
+                      :aria-label="'Show tracks from ' + vn"
+                      v-tooltip.bottom="'Draw tracks from ' + vn" />
+            <ColourPicker :model-value="trackSourceColour(vn)"
+                          @update:model-value="hex => setTrackSourceColour(vn, hex)"
+                          :tip="'Colour for ' + vn + ' tracks'" />
+            <span class="bm-track-name cc-fs-sm" :title="vn">{{ vn }}</span>
+          </div>
+        </template>
       </section>
 
       <!-- Colour by -->
@@ -676,6 +741,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 /* Centred wrapper for the schematic overlay preview — small margin below the chip row so the
    frame reads as a separate element rather than part of the toggle row. */
 .bm-preview-row { display: flex; justify-content: center; margin: 6px 0 2px; }
+/* One row per tracked segmentation in the Track sources list — eye, swatch, name. `.bm-track-name`
+   is allowed to grow into the leftover space and truncate on the tail. */
+.bm-track-row { gap: 8px; }
+.bm-track-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-lbl-row { margin-top: 4px; }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
 .bm-sub { margin-left: 6px; }

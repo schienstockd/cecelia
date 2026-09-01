@@ -63,6 +63,14 @@ export interface BatchMovieCfg {
   // for the selected segmentation, which is the pre-picker behaviour every batch already had. The
   // backend `_overlays_raw_from_config` forwards this as `popPaths` (see `_resolve_movie_overlays_mask`).
   popsFilter?: string[]
+  // Per-segmentation whole-seg track visibility + colour, active only when `showTracks && !showPops`.
+  // The batch panel enumerates every tracked segmentation on the first selected image and lets the
+  // user pick which to draw and what colour each gets. When empty (or `showPops` on), the backend
+  // falls back to the single-source `allTracks` grey path — the pre-picker behaviour. Backend:
+  // `_resolve_movie_overlays_mask` composes one `build_overlays_for` closure per visible source
+  // (each with its own `all_tracks_colour`) and merges their outputs, so a fXgbTl movie with cpSAM
+  // + flowTom + coastalFg all ticked draws all three simultaneously, each in its own colour.
+  trackSources?: Record<string, { visible: boolean; colour: string }>
   colourLabels?: boolean
   tailWidth?: number
   pointsSize?: number
@@ -108,6 +116,9 @@ export interface BatchMovieRequestConfig {
   popType: string
   popValueName: string
   popsFilter: string[]
+  /** Multi-source composition for the whole-seg-tracks path — an array of visible `{valueName,
+   *  colour}` entries. Empty (or absent) when the batch should fall back to single-source. */
+  trackSources: Array<{ valueName: string; colour: string }>
   pointsSize: number
   colourLabels: boolean
   colourOverrides: Record<string, string>
@@ -169,6 +180,14 @@ export function buildBatchMovieConfig(
     popValueName: cfg.popValueName ?? (cfg.labelValueNames?.[0] ?? segNames[0] ?? ''),
     // Empty list = ALL pops of the resolved popType (backend rule; matches the pre-picker default).
     popsFilter: cfg.showPopulations ? [...(cfg.popsFilter ?? [])] : [],
+    // Multi-source composition: emit an array of `{valueName, colour}` for the segs the user ticked
+    // visible in the batch panel's Track sources list. Only meaningful under `showTracks && !showPops`
+    // — else empty (single-source `allTracks` grey is what the pop branch overrides anyway).
+    trackSources: (!!cfg.showTracks && !cfg.showPopulations && cfg.trackSources)
+      ? Object.entries(cfg.trackSources)
+          .filter(([, v]) => v?.visible)
+          .map(([valueName, v]) => ({ valueName, colour: v.colour }))
+      : [],
     pointsSize: cfg.pointsSize ?? 6,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},

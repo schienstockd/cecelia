@@ -49,6 +49,28 @@ describe('buildBatchMovieConfig', () => {
       .toEqual([])
   })
 
+  it('trackSources emits only visible entries under showTracks && !showPops', () => {
+    // Not showTracks → no emit at all
+    expect(buildBatchMovieConfig({}, [], {}).trackSources).toEqual([])
+    // showTracks + showPops (pops wins) → empty (multi-source is a whole-seg-only feature)
+    expect(buildBatchMovieConfig({
+      showTracks: true, showPopulations: true,
+      trackSources: { cpSAM: { visible: true, colour: '#ff6b6b' } },
+    }, [], {}).trackSources).toEqual([])
+    // Ordinary case — visible entries emitted as an ordered {valueName, colour} array
+    expect(buildBatchMovieConfig({
+      showTracks: true,
+      trackSources: {
+        cpSAM:   { visible: true,  colour: '#ff6b6b' },
+        flowTom: { visible: false, colour: '#4ecdc4' },
+        default: { visible: true,  colour: '#a78bfa' },
+      },
+    }, [], {}).trackSources).toEqual([
+      { valueName: 'cpSAM',   colour: '#ff6b6b' },
+      { valueName: 'default', colour: '#a78bfa' },
+    ])
+  })
+
   it('popValueName defaults to the first mask column, else the first segmentation', () => {
     // Explicit pick wins.
     expect(buildBatchMovieConfig({ popValueName: 'flowTom' }, ['memTom', 'flowTom'], {}).popValueName)
