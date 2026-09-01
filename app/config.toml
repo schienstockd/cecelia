@@ -22,15 +22,6 @@ lenUID = 6
   [images.normalise]
   percentile = 99.98
 
-# Napari viewer bridge.
-[napari]
-# Render napari on the discrete GPU when the machine has hybrid graphics. On Linux this launches the
-# bridge with DRI_PRIME (AMD/Intel) and, when an NVIDIA GPU is present, NVIDIA PRIME render-offload
-# env vars so the viewer uses the dGPU instead of the integrated one. Ignored on Windows/macOS (GPU
-# choice is an OS/driver setting there). Can be flipped at runtime from Settings; this value is the
-# default the server starts with. The env var CECELIA_NAPARI_DISCRETE_GPU overrides it.
-discreteGpu = false
-
 # Compression for the image OME-ZARRs we write (import + every correction). Selectable live in
 # Settings → Storage; this is the default the server starts with. Existing stores are not touched —
 # `python/cecelia/utils/rechunk_zarr.py` re-lands them on the current choice.

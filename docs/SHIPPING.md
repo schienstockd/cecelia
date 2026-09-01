@@ -36,7 +36,7 @@ install.sh / install.ps1  (bootstrap installer — one command)
 Desktop launcher → app.py  (Python, in the env)
   ├── starts → Julia API server (Cecelia.jl + HTTP/WebSocket) on :8080
   │               └── serves the built Vue frontend AND /api + /ws (same origin)
-  │               └── spawns Python analysis subprocesses (Cellpose, btrack, napari…) from the env
+  │               └── spawns Python analysis subprocesses (Cellpose, btrack…) from the env
   └── opens → the user's default browser at http://localhost:8080
 ```
 
@@ -70,17 +70,17 @@ User clicks the desktop icon
     which stops its own children first; SIGTERM only if that fails → clean shutdown
 ```
 
-**Why the launcher asks rather than just SIGTERMs.** The server is the parent of three resident
-processes — the napari bridge (:7655), the task-preview worker (:7656), the Pluto notebooks server
-(:7660) — and they are grandchildren in their own process groups, so killing the server leaves them
-running. That is not merely untidy: the preview worker holds a warm cellpose model's VRAM with nothing
-able to reach it, and an orphan gets silently **adopted** by the next launch, which is how a worker
-running stale code can outlive several restarts. `POST /api/app/shutdown` already stops all three (it is
-the in-app Quit path), so the launcher reuses it instead of carrying a third copy of platform-specific
-port-killing — the other two live in Julia's `_kill_listeners_on_port` (in-process) and
-`api/portkill.jl` (outside the package: `api/dev.jl` and every `pixi run stop*` task).
-Asserted by *"shutdown stops EVERY resident child"* in `api/test/runtests.jl`, which covers all three
-supervisors and checks the ORDER (a graceful attempt after the terminate would be pointless).
+**Why the launcher asks rather than just SIGTERMs.** The server is the parent of two resident
+processes — the task-preview worker (:7656) and the Pluto notebooks server (:7660) — and they are
+grandchildren in their own process groups, so killing the server leaves them running. That is not
+merely untidy: the preview worker holds a warm cellpose model's VRAM with nothing able to reach it,
+and an orphan gets silently **adopted** by the next launch, which is how a worker running stale code
+can outlive several restarts. `POST /api/app/shutdown` already stops both (it is the in-app Quit
+path), so the launcher reuses it instead of carrying a third copy of platform-specific port-killing —
+the other two live in Julia's `_kill_listeners_on_port` (in-process) and `api/portkill.jl` (outside
+the package: `api/dev.jl` and every `pixi run stop*` task). Asserted by *"shutdown stops EVERY
+resident child"* in `api/test/runtests.jl`, which covers both supervisors and checks the ORDER (a
+graceful attempt after the terminate would be pointless).
 
 **And asking is not enough on its own — the fallback has to escalate.** A SIGTERM does not stop a
 Julia server whose worker threads are inside a non-yielding region (codegen, a blocking `ccall`): it
@@ -137,8 +137,8 @@ Juliaup, download the release bundle, provision the env, and create the desktop 
 OS-independent:
 1. `npm ci && npm run build` → prebuilt `frontend/dist`.
 2. `tar` a portable bundle `cecelia.tar.gz` (api, app, **pluto**, **preview**, **mcp**, **python**
-   (the `cecelia` helper package), scripts, app.py, pixi.toml, pixi.lock, napari/napari_bridge.py,
-   frontend/dist, install scripts, README, LICENSE, THIRD_PARTY.md, docs). It excludes
+   (the `cecelia` helper package), scripts, app.py, pixi.toml, pixi.lock, frontend/dist, install
+   scripts, README, LICENSE, THIRD_PARTY.md, docs). It excludes
    `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
    The bundle is **~6 MB** (frontend/dist dominates).
 
@@ -323,19 +323,17 @@ note instead of the Update button. Re-running `install.sh` as root updates the s
 ## Engine Python environment (Pixi) — current state & non-obvious notes
 
 Source of truth for how the Python env is wired *today*. Read before touching `pixi.toml`,
-`python_bin_path()`, `app/src/napari.jl`, or `app.py`.
+`python_bin_path()`, or `app.py`.
 
-### It is the engine's env, not napari's
-The Python env was historically `napari/.venv`, but it is shared by the whole engine — cellpose,
-measure, btrack, the label-props writer, **and** the napari bridge. It now lives at the repo-root
-**`.pixi/`** (managed by Pixi), not under `napari/`. `napari/` keeps only `napari_bridge.py`.
+### It is the engine's env
+The Python env lives at the repo-root **`.pixi/`** (managed by Pixi) and is shared by the whole
+engine — cellpose, measure, btrack, the label-props writer, the task-preview worker, the observer MCP.
 
 ### The "run via `pixi run`" rule (no hardcoded env paths)
 `pixi run <task>` prepends `.pixi/envs/default/bin` to `PATH`, so `python_bin_path()` needs no
-`custom.toml` override — it finds the Pixi env python inside an activated run. `app/src/napari.jl` no
-longer hardcodes a venv path; `NAPARI_PYTHON` routes through `python_bin_path()`. **Always launch via
-`pixi run`** (`dev`/`prod`/`app`/`napari`) — launching `julia` directly outside the env makes
-subprocesses fall back to system `python3` and fail.
+`custom.toml` override — it finds the Pixi env python inside an activated run. **Always launch via
+`pixi run`** (`dev`/`prod`/`app`) — launching `julia` directly outside the env makes subprocesses
+fall back to system `python3` and fail.
 
 `python_bin_path()` **resolves to an absolute path** (via `Sys.which`), it does not return the bare
 config default. Two reasons the bare name wasn't enough:
@@ -356,16 +354,11 @@ Pixi scopes to the **Python** env. Julia stays on **juliaup + Manifest**, Node o
 inherits PATH so both resolve. For the *shipped* installer, Julia (and the prebuilt frontend) are
 baked into the conda env at build time — see **Building installers**.
 
-### cellpose is pinned to v3 — do not bump
-`cellpose == 3.1.1.2`. **v4 dropped denoise support, and denoising cannot be excised from v3.**
-Bumping to 4.x breaks the denoise path. (INSTALL.md's old `4.2.1.1` table entry was wrong.)
-
-**This is a dead end, not a preference.** Cellpose denoise is unmaintained upstream and phased out in
-v4, so there is no version of cellpose to migrate the denoise path *to* — the exit is `coastal`
-replacing it (see `docs/todo/SEG_QUALITY_PLAN.md`, and coastal's own `DENOISE_PLAN.md`). Two things
-follow for anyone touching this code: don't invest in refactoring cellpose denoise for its own sake,
-and when a replacement lands, put it behind a backend seam the way segmentation has one
-(`SegmentationUtils.predict_slice`) rather than swapping one hard-coded engine for another.
+### cellpose is pinned to v4
+`cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`). v3 model names (`cyto2`/`cyto3`/`nuclei`) are refused
+by the task rather than silently substituted. Cellpose denoise was removed with the v4 move — the
+replacement is `cleanupImages.smooth` (measured ~30× faster, fewer merged cells; see
+`docs/todo/SEG_QUALITY_PLAN.md`). For dim/moving/3D data prefer `segment.coastal`.
 
 ### PyTorch is platform-gated
 The cu124 wheel index carries only Linux/Windows wheels, so `torch`/`torchvision` are declared in
@@ -386,14 +379,12 @@ Two things to keep true:
 
 * **Pin a `rev`, not a branch, before tagging a release.** A branch ref lets `pixi lock` silently
   follow `main`, which is fine in dev and wrong for a reproducible build.
-* **The source-level dependency direction stays coastal → cecelia.** coastal imports cecelia's IO and
-  napari helpers *lazily* and keeps `coastal/` array-only; this entry is only cecelia consuming
-  coastal's algorithms, which import nothing from cecelia. Do not let it become mutual — coastal's CI
-  installs base+dev only and will catch a stray `import cecelia` in `coastal/` (it did).
+* **The source-level dependency direction stays coastal → cecelia.** coastal imports cecelia's IO
+  helpers *lazily* and keeps `coastal/` array-only; this entry is only cecelia consuming coastal's
+  algorithms, which import nothing from cecelia. Do not let it become mutual — coastal's CI installs
+  base+dev only and will catch a stray `import cecelia` in `coastal/` (it did).
 
-It adds `cma` and `hmmlearn` to the lock, and `opencv-python-headless` — headless is load-bearing:
-the GUI build sets `QT_QPA_PLATFORM_PLUGIN_PATH` to its own Qt5 plugins on import, which is
-ABI-incompatible with napari's PyQt5 xcb plugin and segfaults the viewer. No torch conflict: coastal
+It adds `cma` and `hmmlearn` to the lock, and `opencv-python-headless`. No torch conflict: coastal
 declares bare `torch` and cecelia's per-platform index entry wins.
 
 ### cvxopt is pinned from conda-forge (not PyPI)
@@ -437,8 +428,8 @@ Because the image is stamped, a shipped one that predates the user's Julia/deps 
 The Pluto server keeps its **secret token ON** (Pluto's secure default): it's a browser-reachable
 code-execution surface, so the secret guards against other local sites/processes driving it (CSRF/RCE).
 `launch.jl` writes the session secret to `pluto/.plutosecret` (git-ignored) and the API threads it into
-the URLs. Do not bind it to a public host. Launched/stopped like napari: `pixi run notebooks` (port
-7660) / `pixi run stop-notebooks`, and the app launches it via `POST /api/notebooks/launch`.
+the URLs. Do not bind it to a public host. Launched/stopped by port: `pixi run notebooks` (7660) /
+`pixi run stop-notebooks`, and the app launches it via `POST /api/notebooks/launch`.
 
 ### Shipping precompiled Julia code — the CPU target is a fourth axis
 
@@ -479,9 +470,9 @@ and extend `sysimage_stamp.jl` to record it so a mismatch is detected rather tha
 
 ## Roadmap
 
-**Phase 1 — done.** Pixi env (committed `pixi.toml`/`pixi.lock`, relocated out of `napari/`, verified
-to build + import); `pixi run` tasks replace the old shell scripts; the Julia server serves the built
-frontend at same-origin `:8080` (verified); the `app.py` launcher + `pixi run app` exist.
+**Phase 1 — done.** Pixi env (committed `pixi.toml`/`pixi.lock`, verified to build + import); `pixi
+run` tasks replace the old shell scripts; the Julia server serves the built frontend at same-origin
+`:8080` (verified); the `app.py` launcher + `pixi run app` exist.
 
 **Phase 2 — installer + releases — done.** `install.sh` / `install.ps1` (bootstrap Pixi + Juliaup,
 download the bundle, provision, add a desktop launcher) and `release.yml` (build bundle → GitHub
@@ -509,9 +500,8 @@ pixi run prod             # Julia API server, plain include (production)
 pixi run frontend         # Vite dev server (hot reload) → :5173
 pixi run build            # frontend → static assets (frontend/dist), required before `prod`/`app`
 pixi run app              # one-click: start prod server, wait for /api/health, open the browser
-pixi run napari           # napari bridge standalone (normally the backend launches it)
 pixi run update           # update the env to latest within pixi.toml constraints
-pixi run stop             # stop backend/frontend/napari by port (TERM → KILL → verify; exit 1 if stuck)
+pixi run stop             # stop backend/frontend by port (TERM → KILL → verify; exit 1 if stuck)
 ```
 
 In dev you typically run `pixi run dev` + `pixi run frontend` (Vite, hot reload). To exercise the
@@ -522,9 +512,9 @@ Running through `pixi run` is what guarantees the Julia server's Python subproce
 
 ## Python environment
 
-**Location:** the Pixi-managed env at the repo-root `.pixi/` (NOT under `napari/`). Don't reference an
-interpreter path — launch via `pixi run`, which puts the env's `python3` on PATH (that's how the Julia
-server's subprocesses and the napari bridge find it). See `docs/SHIPPING.md`.  
+**Location:** the Pixi-managed env at the repo-root `.pixi/`. Don't reference an interpreter path —
+launch via `pixi run`, which puts the env's `python3` on PATH (that's how the Julia server's
+subprocesses find it). See `docs/SHIPPING.md`.  
 **Add a package:** `pixi add --pypi <package>` (PyPI) or `pixi add <package>` (conda-forge), then commit
 the updated `pixi.toml` + `pixi.lock`.  
 **Where deps are defined (two files, disjoint sets — a dep is listed in exactly one):**
@@ -533,11 +523,11 @@ the updated `pixi.toml` + `pixi.lock`.
   an external `pip install cecelia` consumer (e.g. coastal). If importing `cecelia.utils.*` needs it,
   it goes here.
 - **`pixi.toml`** owns everything else — the **heavy / conda / per-platform** deps only the full app
-  needs (`cellpose`, `torch`, `napari`, `pyqt5`, `anndata`, `scanpy`, `btrack`, `leidenalg`,
-  `trimesh`, `pandas`, `websockets`; conda `python`/`openjdk`/`cvxopt`) — plus the editable
+  needs (`cellpose`, `torch`, `anndata`, `scanpy`, `btrack`, `leidenalg`, `trimesh`, `pandas`,
+  `websockets`; conda `python`/`openjdk`/`cvxopt`) — plus the editable
   `cecelia = { path = "python", editable = true }` dep, which pulls the IO tier transitively so the
   pixi env has everything. `pixi.toml` remains the single source of truth **for the pins it owns**;
-  the IO pins are `pyproject.toml`'s. (The old `napari/requirements.txt` is gone.)
+  the IO pins are `pyproject.toml`'s.
   See [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
 ### Key version pins
