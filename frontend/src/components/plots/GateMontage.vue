@@ -66,7 +66,14 @@ const emit = defineEmits<{ coerced: [boolean] }>()
 const montageId = computed<MontageId>(() => ({
   projectUid: props.projectUid, imageUid: props.imageUid, valueName: props.valueName, popType: props.popType }))
 const single = computed(() => props.cols == null && props.defs.length === 1)
-const gridStyle = computed(() => props.cols ? { gridTemplateColumns: `repeat(${props.cols}, minmax(0, 1fr))` } : {})
+// matrix (cols) → fixed N-column strict grid; wrap → N × M that fills the slot (see nRow/nCol below);
+// single is handled by the .single class rule.
+const gridStyle = computed(() => {
+  if (props.cols != null) return { gridTemplateColumns: `repeat(${props.cols}, minmax(0, 1fr))` }
+  if (single.value || !props.defs.length) return {}
+  return { gridTemplateColumns: `repeat(${nCol.value}, minmax(0, 1fr))`,
+           gridTemplateRows: `repeat(${nRow.value}, minmax(0, 1fr))` }
+})
 
 interface PanelData {
   points: Float32Array; extents: Ext; xTicks: Tick[]; yTicks: Tick[]
@@ -331,6 +338,14 @@ const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (r
 // upper-triangle correlation cell (ggpairs): show r, scaling the text with |r| so strong pairs stand out
 const fmtCorr = (r: number | null | undefined) => (r == null ? '–' : (r >= 0 ? '' : '−') + Math.abs(r).toFixed(2))
 const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r ?? 0) * 13)}px`
+
+// ── WRAP: fixed N × M grid that FILLS the slot (no scroll) ───────────────────────────────────────────
+// Ports the old R plotFlowGating model (R/flowHelpers.R:.flowPlotGatedRaster + ggpubr::ggarrange nrow/
+// ncol) — the whole figure sizes to the render surface, so PDF export is just a picture of the DOM.
+// `auto-fill` scrolls at small slots; a decided N × M can't. Auto-shape ≈ square: nCol = ceil(√count),
+// nRow = ceil(count / nCol). Matrix (cols != null) and single set their template inline / by class.
+const nCol = computed(() => Math.max(1, Math.ceil(Math.sqrt(Math.max(1, props.defs.length)))))
+const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value)))
 </script>
 
 <template>
@@ -378,11 +393,14 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
    capture THIS element, so the legend travels with the figure. */
 .gm-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .gm-legend { flex: none; display: flex; justify-content: flex-end; padding: 2px 8px 0; }
-/* Two layouts. WRAP (gating-strategy): responsive squares that fill the width and wrap. MATRIX
-   (channel pairs): a strict N-column grid (columns set inline) so every channel lines up in a row/col. */
-.gm-grid { flex: 1; min-height: 0; overflow: auto; padding: 6px; display: grid; gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-content: start; }
-.gm-grid.matrix { grid-auto-rows: max-content; }
+/* Three layouts. WRAP (gating-strategy): fixed N × M grid (set inline from nRow/nCol) that FILLS
+   the slot without scrolling — same model as R's ggarrange nrow × ncol in the old plotFlowGating
+   module; a scrolling grid can't render to PDF cleanly. MATRIX (channel pairs): strict N-column
+   grid (columns set inline), can scroll vertically at high channel counts (16×16). SINGLE: one
+   plot filling the slot. */
+.gm-grid { flex: 1; min-height: 0; padding: 6px; display: grid; gap: 8px; overflow: hidden;
+  align-content: stretch; }
+.gm-grid.matrix { grid-auto-rows: max-content; overflow: auto; align-content: start; }
 .gm-grid.single { grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
 /* light theme for PDF export: dark ink on white — set on the CAPTURE host, so the grid, its tiles and
    the legend strip all inherit the flipped vars */
@@ -392,19 +410,29 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 /* montage plot area is SQUARE — but the SQUARE is the DOTS (.panel-plot in GateScatterCell), not this
    outer box: the capture's axis padding is asymmetric (room for the rotated y-name + the x-name below),
    so squaring the OUTER box made the dots taller than wide ("flow plots elongate on export"). We size
-   the width here and let GateScatterCell square its .panel-plot; the outer box heights to fit. Cap the
-   width in wrap mode so a wide column doesn't grow the tile too tall.
+   the width here and let GateScatterCell square its .panel-plot; the outer box heights to fit. No cap —
+   let the plot grow with the cell so the board's scale drives the plot's scale (not a fixed 320-px lid).
    EXCEPTION — the pairs MATRIX keeps a square OUTER box (aspect-ratio:1) so scatter tiles line up with
    the square diagonal/correlation cells; its axis padding is tiny+near-symmetric so the dots stay square. */
-.gm-plot { flex: none; width: 100%; max-width: 320px; margin: 0 auto; }
-.gm-grid.matrix .gm-plot { max-width: none; aspect-ratio: 1; }
+/* WRAP: .gm-cell owns the square (aspect-ratio above). The plot-capture fills the remaining vertical
+   space of the cell (below the .gm-title). MATRIX: keeps its own outer-square via aspect-ratio here. */
+.gm-plot { flex: 1; width: 100%; min-height: 0; }
+.gm-grid.matrix .gm-plot { flex: none; aspect-ratio: 1; }
+/* WRAP fill-mode: turn OFF GateScatterCell's default "dots square" rule so plot-capture stretches
+   to fill the tile and panel-plot uses the tile's aspect (not aspect-ratio:1 — that made plot-capture
+   content-driven and its x-axis label at bottom:-15 spilled past .gm-cell's overflow:hidden and got
+   clipped). Matrix / single opt out via the selector. */
+.gm-grid:not(.matrix):not(.single) :deep(.plot-capture.gm-plot) {
+  flex: 1; min-height: 0; align-items: stretch; }
+.gm-grid:not(.matrix):not(.single) :deep(.plot-capture.gm-plot .panel-plot) {
+  flex: 1; aspect-ratio: auto; width: 100%; min-height: 0; }
 /* single tile (board gating-strategy): FILL the slot. The plot-capture fills the cell and CENTRES a
    square sized to the cell's SMALLER dimension (like the UMAP square) — the old rule made a
    width-square anchored to the TOP with big blank space below, and the full 84px y-name padding left
    the dots tiny in a small slot. Tighter axis padding here so the dots reclaim the space. :deep reaches
    into GateScatterCell (single mode is board-only, so this doesn't touch the matrix / gate page). */
 .gm-grid.single .gm-cell { container-type: size; }
-.gm-grid.single .gm-plot { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; }
+.gm-grid.single .gm-plot { flex: 1; min-height: 0; width: 100%; }
 /* padding leaves room for the axis NAMES at their offsets (x-name bottom:-40, y-name left:-66) + ticks
    so neither clips; the height budget below subtracts it so the square still fits the cell. */
 .gm-grid.single :deep(.plot-capture.gm-plot) {

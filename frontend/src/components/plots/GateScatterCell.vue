@@ -139,12 +139,19 @@ function drawAxes(c: CanvasRenderingContext2D, pr: { x: number; y: number; w: nu
     c.beginPath(); c.moveTo(left, y); c.lineTo(left - MARK, y); c.stroke()
     if (!props.compact) c.fillText(fmtTick(t.label), left - MARK - GAP, y)
   }
-  // axis names (skip when hidden — pairs matrix names each channel on the diagonal)
+  // axis names (skip when hidden — pairs matrix names each channel on the diagonal). Compact hides tick
+  // labels (see .plot-capture.compact .xtick-lbl { display: none }), so the x-name sits right against
+  // the axis line — match the CSS offsets (`compact .axis-x { bottom: -15 }` / `.axis-x { bottom: -40 }`)
+  // instead of always reserving room for a hidden tick-label row, or PDF clips the compact name.
   if (!props.hideAxisLabels) {
     c.fillStyle = ink; c.font = `600 ${nameFont}px system-ui, sans-serif`
     c.textAlign = 'center'; c.textBaseline = 'alphabetic'
-    c.fillText(props.xLabel, pr.x + pr.w / 2, bottom + MARK + GAP + tickFont + nameFont + 6)
-    c.save(); c.translate(Math.max(nameFont, left - 44), pr.y + pr.h / 2); c.rotate(-Math.PI / 2)
+    const xNameY = props.compact ? bottom + MARK + GAP + nameFont * 0.5
+                                 : bottom + MARK + GAP + tickFont + nameFont + 6
+    c.fillText(props.xLabel, pr.x + pr.w / 2, xNameY)
+    const yNameX = props.compact ? Math.max(nameFont * 0.8, left - 12)
+                                 : Math.max(nameFont, left - 44)
+    c.save(); c.translate(yNameX, pr.y + pr.h / 2); c.rotate(-Math.PI / 2)
     c.textBaseline = 'top'; c.fillText(props.yLabel, 0, 0); c.restore()
   }
   c.restore()
@@ -213,10 +220,15 @@ function drawAxesSvg(pr: { x: number; y: number; w: number; h: number }): string
     s += svgLine(left, y, left - MARK, y, { stroke: dim, width: 1 })
     if (!props.compact) s += svgText(left - MARK - GAP, y + tickFont * 0.35, fmtTick(t.label), { fill: dim, size: tickFont, anchor: 'end' })
   }
-  // axis names (skip when hidden — pairs matrix names each channel on the diagonal)
+  // axis names — same compact/full offsets as drawAxes (mirror the CSS positions, don't reserve room
+  // for the hidden tick-label row in compact or PDF clips the name)
   if (!props.hideAxisLabels) {
-    s += svgText(pr.x + pr.w / 2, bottom + MARK + GAP + tickFont + nameFont + 6, props.xLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600 })
-    s += svgText(Math.max(nameFont, left - 44), pr.y + pr.h / 2, props.yLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600, rotate: -90 })
+    const xNameY = props.compact ? bottom + MARK + GAP + nameFont * 0.5
+                                 : bottom + MARK + GAP + tickFont + nameFont + 6
+    const yNameX = props.compact ? Math.max(nameFont * 0.8, left - 12)
+                                 : Math.max(nameFont, left - 44)
+    s += svgText(pr.x + pr.w / 2, xNameY, props.xLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600 })
+    s += svgText(yNameX, pr.y + pr.h / 2, props.yLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600, rotate: -90 })
   }
   return s
 }
