@@ -380,15 +380,14 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
-        zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
-        lerr === nothing || return false
         if preview_labels
-            # The worker's convention is fixed: `<img_labels_dir>/<vn>__preview.ome.zarr`, keyed on the
-            # value_name and NOT on the ccid.json filename. Deriving from `zp` (which for an unregistered
-            # vn is `<img_labels_dir>/<vn>.zarr` — no `.ome`) misses the store the worker wrote, so the
-            # preview mask 404s on first-time segmentations — the exact case preview is most useful for.
-            zp = joinpath(dirname(zp), "$(lbl)__preview.ome.zarr")
-            isdir(zp) || return false
+            zpp, perr = preview_labels_store_path(
+                get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+            perr === nothing || return false
+            zp = zpp
+        else
+            zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+            lerr === nothing || return false
         end
     else
         zp, meta_dir, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
@@ -534,6 +533,27 @@ function label_store_path(project_uid::AbstractString, image_uid::AbstractString
     haskey(img.labels, vn) || return (nothing, "no label store named '$vn'")
     zp = img_labels_path(img, vn)
     isdir(zp) || return (nothing, "label store not on disk: $(basename(zp))")
+    (zp, nothing)
+end
+
+"""
+    preview_labels_store_path(project_uid, image_uid, value_name) -> (path, err)
+
+The scratch preview labels store for one segmentation. Keyed only on the vn — the worker's convention
+is fixed at `<img_labels_dir>/<vn>__preview.ome.zarr`, independent of ccid.json filename registration.
+
+Deliberately NOT `label_store_path`: that helper enforces `haskey(img.labels, vn)`, which excludes a
+FIRST-TIME segmentation preview — the exact case preview is most useful for. The scratch store lives
+by convention, not by registration.
+"""
+function preview_labels_store_path(project_uid::AbstractString, image_uid::AbstractString,
+                                   value_name::AbstractString)
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return (nothing, "image not found")
+    vn = isempty(value_name) ? "" : String(value_name)
+    isempty(vn) && return (nothing, "value_name required")
+    zp = joinpath(img_labels_dir(img), "$(vn)__preview.ome.zarr")
+    isdir(zp) || return (nothing, "preview labels store not on disk: $(basename(zp))")
     (zp, nothing)
 end
 
