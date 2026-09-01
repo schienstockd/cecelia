@@ -173,6 +173,29 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # segmentation), matching the pre-picker behaviour.
     pvn = _cfg_str(cfg, "popValueName", "")
     isempty(pvn) || (out["valueName"] = pvn)
+    # `trackSources` — a list of `{valueName, colour}` entries picked in the batch panel's
+    # "Track sources" list. Only meaningful under `showTracks && !showPops` (all-tracks mode) — the
+    # batch panel hides the picker otherwise. When passed, `_resolve_movie_overlays_mask` composes
+    # ONE overlay closure per source (each `build_overlays_for` call has its own `all_tracks_colour`)
+    # and merges their outputs. Without this the movie draws only the mask segmentation's tracks in
+    # one grey; with two tracked segs (fXgbTl has cpSAM + flowTom + coastalFg + coastalSm15) the user
+    # can now see both, each in its own colour.
+    ts_raw = get(cfg, "trackSources", nothing)
+    ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
+    if ts_raw isa AbstractVector && !isempty(ts_raw)
+        # Symbol/String key tolerance — same reason `_ov` reads both shapes.
+        _svalue(e, k) = something(get(e, Symbol(k), nothing), get(e, String(k), ""))
+        sources = Any[]
+        for e in ts_raw
+            e isa AbstractDict || continue
+            vn = String(_svalue(e, "valueName"))
+            col = String(_svalue(e, "colour"))
+            isempty(vn) && continue
+            push!(sources, Dict{String,Any}("valueName" => vn,
+                                             "colour" => isempty(col) ? "#9ca3af" : col))
+        end
+        isempty(sources) || (out["trackSources"] = sources)
+    end
     out
 end
 

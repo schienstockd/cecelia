@@ -7088,6 +7088,38 @@ end
     ov_vn = _overlays_raw_from_config(
         Dict{String,Any}("showPopulations" => true, "popValueName" => "flowTom"), false)
     @test ov_vn["valueName"] == "flowTom"
+
+    # `trackSources` — multi-segmentation composition for showTracks && !showPops. When present +
+    # non-empty, `_resolve_movie_overlays_mask` composes one overlay closure per source, each with
+    # its own `all_tracks_colour`. Absent / empty → single-source `allTracks` grey (legacy).
+    ov_no_ts = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
+    @test !haskey(ov_no_ts, "trackSources")
+    ov_empty_ts = _overlays_raw_from_config(
+        Dict{String,Any}("showTracks" => true, "trackSources" => []), false)
+    @test !haskey(ov_empty_ts, "trackSources")
+    ov_ts = _overlays_raw_from_config(Dict{String,Any}(
+        "showTracks" => true,
+        "trackSources" => [
+            Dict("valueName" => "cpSAM",   "colour" => "#ff6b6b"),
+            Dict("valueName" => "flowTom", "colour" => "#4ecdc4"),
+        ]), false)
+    @test length(ov_ts["trackSources"]) == 2
+    @test ov_ts["trackSources"][1]["valueName"] == "cpSAM"
+    @test ov_ts["trackSources"][1]["colour"]    == "#ff6b6b"
+    @test ov_ts["trackSources"][2]["valueName"] == "flowTom"
+    # An entry with no colour falls back to the neutral grey, so a caller can send half-filled
+    # entries without breaking the multi-source path.
+    ov_ts_default = _overlays_raw_from_config(Dict{String,Any}(
+        "showTracks" => true,
+        "trackSources" => [Dict("valueName" => "cpSAM")]), false)
+    @test ov_ts_default["trackSources"][1]["colour"] == "#9ca3af"
+    # A blank valueName is dropped (can't render tracks against no seg) — never sent to the author.
+    ov_ts_blank = _overlays_raw_from_config(Dict{String,Any}(
+        "showTracks" => true,
+        "trackSources" => [Dict("valueName" => "", "colour" => "#ff6b6b"),
+                            Dict("valueName" => "cpSAM", "colour" => "#4ecdc4")]), false)
+    @test length(ov_ts_blank["trackSources"]) == 1
+    @test ov_ts_blank["trackSources"][1]["valueName"] == "cpSAM"
 end
 
 @testset "API: movie rail — viewstate → render args (keyframe rendering)" begin

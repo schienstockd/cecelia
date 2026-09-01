@@ -143,6 +143,51 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(r.points.every(p => p.ringed === true)).toBe(true)
   })
 
+  it('showTracks alone + trackSources → cells split across two colours (multi-source)', () => {
+    const r = renderOverlayPreview({
+      showTracks: true,
+      trackSources: [
+        { valueName: 'cpSAM', colour: '#ff6b6b' },
+        { valueName: 'flowTom', colour: '#4ecdc4' },
+      ],
+    }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    // Both source colours must appear — mirrors the backend's multi-source composition.
+    expect(r.points.some(p => p.colour === '#ff6b6b')).toBe(true)
+    expect(r.points.some(p => p.colour === '#4ecdc4')).toBe(true)
+    // No point should stay grey when trackSources kicks the multi-source branch.
+    expect(r.points.every(p => p.colour !== ALL_TRACKS_GREY)).toBe(true)
+  })
+
+  it('showTracks + a SINGLE trackSource → every cell in that source colour', () => {
+    const r = renderOverlayPreview({
+      showTracks: true,
+      trackSources: [{ valueName: 'cpSAM', colour: '#ff6b6b' }],
+    }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    expect(r.points.every(p => p.colour === '#ff6b6b')).toBe(true)
+  })
+
+  it('showTracks alone + empty trackSources → single-source grey (legacy behaviour)', () => {
+    const r = renderOverlayPreview({ showTracks: true, trackSources: [] }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    expect(r.points.every(p => p.colour === ALL_TRACKS_GREY)).toBe(true)
+  })
+
+  it('showPops overrides trackSources — pops win (allTracks false, so trackSources ignored)', () => {
+    // Use a colour that CANNOT collide with PREVIEW_PALETTE — the pop palette here happens to
+    // include `#ff6b6b`, and the point is to prove the pops branch runs regardless of what
+    // colour a trackSource entry carries.
+    const distinctive = '#123456'
+    const r = renderOverlayPreview({
+      showTracks: true, showPopulations: true,
+      trackSources: [{ valueName: 'cpSAM', colour: distinctive }],
+    }, scene)
+    expect(r.points.length).toBeGreaterThan(0)
+    // Pop branch → points paint in pop palette, NEVER in the trackSource's distinctive colour.
+    expect(r.points.every(p => p.colour !== distinctive)).toBe(true)
+  })
+
   it('corner overlays follow the config flags 1:1', () => {
     const r = renderOverlayPreview({
       showPopulations: true, showTimestamp: true, showScaleBar: false,
