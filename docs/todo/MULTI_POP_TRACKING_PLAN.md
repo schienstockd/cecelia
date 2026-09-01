@@ -1,6 +1,8 @@
 # Multi-population tracking + per-pop track layers
 
-Status: **shipped** #741–#746, 2026-09-01
+Status: **shipped** #741–#746, 2026-09-01. Follow-up gaps (orphan cleanup on pop deletion,
+cross-pop label collisions on WRITE, `has_tracks` attribution to a pop that didn't author the row):
+[`MULTI_POP_TRACKING_ORPHANS_PLAN.md`](MULTI_POP_TRACKING_ORPHANS_PLAN.md).
 
 ## Terminology (2026-09-01, post-ship clarification)
 
