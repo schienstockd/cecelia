@@ -59,6 +59,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
 | [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
+| [`docs/PROVENANCE.md`](docs/PROVENANCE.md) | How this software was built and how we know it works — field context, per-subsystem validation record, attribution + publication position. Longer version of the README's *How this software was built* section |
 | [`docs/FUTURE.md`](docs/FUTURE.md) | **Deliberately deferred**: known-better alternatives, non-goals, work gated on a trigger that may never fire |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Temporary forward goals: phases + post-v1 backlog. Consult before starting a new phase |
 | [`docs/MILESTONES.md`](docs/MILESTONES.md) | Append-only ledger of what landed and how it was packaged. Add an entry at each freeze/release |
@@ -133,6 +134,24 @@ this actually correct?" genuinely matters — not ordinary code or small helpers
 
 Example: `app/src/gating/transforms.jl` (logicle ← Moore & Parks 2012, cross-checked against
 FlowUtils' `logicle_c`, golden values asserted in `app/test/runtests.jl`).
+
+---
+
+## Real-data visual validation for biological-signal work
+
+The automated test categories check code correctness — that a function does what it's supposed to,
+that a pipeline runs to completion, that the data model round-trips. They don't check scientific
+correctness: whether a segmentation captured the cells that mattered, whether a track is a real
+cell trajectory, whether a gate put the right population in the right bucket. When a numeric fit
+or optimisation metric can't confirm that the intended *biological* signal was captured — and
+that's usually true for segmentation, tracking, gating, and rendering — the bar is a documented
+visual check on real data by whoever has the domain expertise. Documented durably: a test comment,
+a note in the relevant `docs/<AREA>.md`, or the PR description. Not left in memory.
+
+Segmentation is the case that showed why this matters: an accuracy metric computed without ground
+truth pointed away from temporal smoothing; visual inspection on real intravital data showed
+temporal smoothing was in fact what captured the cells. The metric was optimising something other
+than the biological signal. Full record in [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
 ---
 

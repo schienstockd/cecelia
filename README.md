@@ -174,80 +174,96 @@ Running from source with hot-reload (`pixi run dev` + `pixi run frontend`) is co
 
 ## How this software was built
 
-**This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
+This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
 (Anthropic), using the Claude Opus and Claude Sonnet models, under the Garvan Institute of Medical
-Research enterprise license.**
+Research enterprise license. The field hasn't settled on how to develop, disclose, credit, or
+validate AI-assisted scientific software — this section is what we did and why. Longer version in
+[`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-Building a research software package largely with an AI assistant is, by now, not in itself novel.
-What this disclaimer is for is **transparency about the specific route we took and the process we
-followed** — so that users, reviewers, and collaborators can judge the work with that context, and
-so the approach is reproducible.
+### Claude's role
 
-### Claude's role (the AI)
+Claude wrote essentially all of the code — both the port of the original R/Shiny `cecelia` and the
+newer subsystems that have no direct predecessor (the WebGPU browser viewer, the offline renderer,
+the analysis board, the notebook playground, the chain executor). What it couldn't do is the part
+that matters most for trust: it had no access to a microscope, the running GUI, or real imaging
+output beyond small test fixtures. On engineering decisions it was consulted like a colleague with
+opinions worth listening to; on scientific decisions it was the implementer, not the judge.
 
-Claude wrote essentially all of the source code in this repository. Working interactively in the
-terminal, it:
+### The human role — direction, and validation on real data
 
-- **ported** the original R/Shiny `cecelia` into this Julia/Python/Vue stack. The architecture and
-  data model are largely *carried over* from the original — the object model, the population table,
-  the gating and population model are Dominik's existing design, not new inventions. The work was
-  translating them faithfully into Julia idioms (see [`docs/`](docs/) for the per-subsystem design
-  notes);
-- worked out the new-stack-specific structure under Dominik's direction (the package / API / GUI
-  layer split, the task/scheduler system, the Vue frontend, the Python/napari bridge) and
-  implemented all of it;
-- wrote the automated test suite and the documentation in [`docs/`](docs/).
+Dominik set every goal and every design decision, and provided the immunology and
+intravital-microscopy judgment the analysis has to be correct for. The automated test suite checks
+*code correctness* — that a function does what it's supposed to, that a pipeline runs to
+completion. It doesn't check *scientific correctness*: whether a segmentation captured the cells
+that mattered. Those are separate questions, and it's easy to conflate them.
 
-Claude operated as the **implementer/engineer**: given a goal and the original design, it explored
-the old codebase, proposed how to port it, wrote and revised code against review, and ran the test
-suite headlessly. It **could not** see the running GUI, a microscope, or real imaging output — so it
-never had the final word on whether a result was scientifically or visually correct.
+The failure mode this discipline exists to catch is that **a fit or optimisation number can look
+fine while measuring fit to the wrong thing**. Early in Cecelia's port, the segmentation model was
+being tuned by an accuracy number computed without ground truth. On those numbers, temporal
+smoothing looked unhelpful, and the AI proposed dropping it. On real intravital output, the
+temporal-smoothed model was in fact what captured the cells Dominik was analysing — the metric
+had been optimising something other than the biological signal. The final choice was made on the
+images, not on the number.
 
-Concretely, what Claude **could not** do is the part that matters most for trust: it had no access
-to microscopy data during development beyond the small fixture files in the test suite. It could not
-observe live-cell tracking, validate segmentation quality on real images, or confirm that a
-population gate was biologically meaningful. All scientific validation — that the software produces
-correct results on real data — was performed by Dominik.
+Different subsystems were validated in different ways:
 
-### The human role
+- **Ported** parts (celltrackR track measures, the btrack pipeline, drift correction) were
+  validated by matching the R version's output — the same pattern public AI-assisted rewrites
+  like Seqera's RustQC, Fulcrum's fgumi, and Rob Patro's sshash-rs use.
+- The **logicle transform** in gating is cross-checked against FlowUtils, with golden values
+  asserted in the test suite.
+- **Original** parts (segmentation on real intravital data, the WebGPU viewer, the offline
+  renderer, gating population plausibility, autofluorescence correction) have no reference to
+  diff against and were validated by looking at real images. The WebGPU viewer specifically was
+  cross-checked against the offline renderer, and a real disagreement between the two was found
+  and resolved.
+- The **chain executor** has been exercised on the common analysis arrangements Dominik runs, but
+  not on every combination a user might build. Real bugs are expected to surface once other
+  people run combinations he hasn't. That's flagged rather than smoothed over.
 
-Dominik is the **author and scientific owner** of this software and of the original `cecelia`. He:
+### Framework scale — the discipline that had to be added
 
-- set every goal and constraint, and made all architecture and design decisions (the language
-  boundary, the package / API / GUI separation, the gating and population model, what to port,
-  what to drop, what to defer);
-- contributed the domain expertise — immunology and intravital / live-cell microscopy — that the
-  analysis must be correct for;
-- **reviewed all output and validated scientific and visual correctness**, which the AI could not
-  verify from its environment. This division of labour was deliberate: the AI implements, the human
-  is the architect and the scientific authority.
+The publicly disclosed AI-assisted open-source scientific projects we could find in 2025-2026 are
+all single-tool: a QC pipeline, a UMI collapser, an indexer, a STAR fork. Their validation check
+— output equivalence against the original — is a clean fit for that shape. Cecelia is a framework,
+and the thing that bit us hardest was **drift**: with no persistent memory across sessions, an AI
+will happily build the same helper twice because it didn't know the first one existed. The
+frontend was the worst of it — by the time we measured, there were 116 icon-only buttons across
+the app carrying 60 distinct class names, really only two shapes and four size tiers. Collapsing
+them into one primitive with a test that fails on any new hand-rolled icon-button was a 39-file,
+~700-line change ([PR #353](https://github.com/schienstockd/cecelia/pull/353)); the
+CSS-convention tests specifically were the most painful to add after the fact.
+
+What now keeps drift from compounding is making "what already exists" cheap to find. `docs/inventory/*.md`
+catalogs the shared components, `CLAUDE.md` opens with a mandatory discovery step, and the "one
+canonical helper per job" rule is enforced by convention tests where possible. None of this was
+designed up front; each rule went in the day drift caused a real duplication. The architecture
+invariants in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the package/API/GUI separation,
+`Cecelia.jl` as a REPL-runnable standalone package, `run_py` as the one Python launcher — were
+written down the same way, learned in flight rather than designed up front.
+
+### Attribution — an open question
+
+Claude wrote the code. Dominik directed it, reviewed as much as was practical, and made every
+scientific and design decision. Neither of them is the sole author in the sense the word meant a
+few years ago. Every public disclosure the field has landed on so far agrees on one thing: AI
+isn't a listed author. On everything else — how loudly to say "AI wrote this", what to call the
+human's role, where the maintenance responsibility sits long-term — there isn't a convention yet.
+This section doesn't try to invent one.
 
 ### Sources
 
-- The original **`cecelia`** R/Shiny package by Dominik and colleagues — the
-  behavioural specification this project ports. Published in *Nature Communications* (2025),
+- The original **`cecelia`** R/Shiny package by Dominik and colleagues — the behavioural
+  specification this project ports. Published in *Nature Communications* (2025),
   [doi:10.1038/s41467-025-57193-y](https://doi.org/10.1038/s41467-025-57193-y); source (R version):
   [github.com/schienstockd/cecelia-legacy](https://github.com/schienstockd/cecelia-legacy).
 - The scientific tools this pipeline orchestrates, each retaining its own license and citation:
-  **Cellpose** (segmentation), **btrack** (Bayesian cell tracking), **napari** (image viewing),
-  **scanpy** / **anndata** (single-cell data + clustering), **scikit-image**, **PyTorch**.
+  **Cellpose** (segmentation), **btrack** (Bayesian cell tracking), **scanpy** / **anndata**
+  (single-cell data + clustering), **scikit-image**, **PyTorch**.
 - The **celltrackR** R package (Wortel & Textor) — its track-measurement algorithms are ported in
   `app/src/tasks/tracking/track_measures.jl`. Cited work, not just a dependency: Wortel et al.
   (2021), *Cell Reports Methods*, [doi:10.1016/j.crmeth.2021.100006](https://doi.org/10.1016/j.crmeth.2021.100006).
 - The **Julia**, **Python**, and **Vue** (with PrimeVue and Observable Plot) open-source ecosystems.
-
-### Our approach — the route we took
-
-- **Human-as-architect, AI-as-implementer**, fully interactive via Claude Code in the terminal.
-- **Port-driven**: the old R behaviour was the spec. Every departure (e.g. dropping the tracking
-  "filter crutch") was a deliberate, documented decision — not drift.
-- **Invariants written down first and enforced**: a headless-testable package boundary, no analysis
-  logic in the API or UI, no fourth language. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
-  [`CLAUDE.md`](CLAUDE.md).
-- **Every change ships with tests and docs**, and the package is verifiable from the Julia REPL
-  without the GUI.
-- Because the AI cannot observe the live GUI or real microscopy data, **visual and scientific
-  verification was always performed by the human** — by design.
 
 ---
 
@@ -258,7 +274,7 @@ Dominik is the **author and scientific owner** of this software and of the origi
 | Frontend | Vue 3 + Pinia + PrimeVue, Observable Plot, regl-scatterplot | UI only — no analysis logic |
 | API | Julia (HTTP + WebSocket server) | Thin transport over the package |
 | Package | **Cecelia.jl** | Data model, tasks, gating, statistics — headless-runnable |
-| Compute | Pixi-managed env (napari, Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
+| Compute | Pixi-managed env (Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layer boundaries and the REPL-runnable
 contract.
