@@ -981,6 +981,22 @@ const BRICK_TIERS = [
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
 const effectiveMaxIntersect = computed(() =>
   brickKnobThrFromUrl ? brickKnobThr : BRICK_TIER_THRESHOLD[settings.viewerBrickTier])
+/** Predicts whether the tier can change ANY level pick on the current image. The over-fetch
+ *  guard (`guardIntersectCost` in `brickScheduler.ts`) only coarsens the SSE-picked level when
+ *  the core brick count exceeds the tier's `maxIntersect`. If the store's L0 grid — the largest
+ *  the scheduler ever intersects — is smaller than Quick's threshold (128), no viewport can
+ *  ever trigger the guard, and Quick / Balanced / Detailed all resolve to the same level pick.
+ *  Dml3RG at 1060 × 1039 lands at 9 × 9 = 81 bricks per plane → guard is dead code on this image.
+ *  Brick XY size pinned at 128 per BRICK_INTEGRATION_PLAN.md Decision 2; brick Z clamps at nZ so
+ *  a thin store has one z-brick regardless of the atlas's brickZ preference. */
+const tierHasNoEffect = computed<boolean>(() => {
+  const m = meta.value
+  if (m === null || !bricksEnabled.value) return false
+  const brickXY = 128
+  const zBricks = Math.max(1, Math.ceil(m.nZ / Math.max(1, Math.min(m.nZ, 37))))
+  const maxCore = Math.ceil(m.nX / brickXY) * Math.ceil(m.nY / brickXY) * zBricks
+  return maxCore < BRICK_TIER_THRESHOLD.quick
+})
 /** Cache size options — chips, not a spinner. Bytes are the honest currency (unlike Quality tier,
  *  where the safe range isn't measured), but a spinner offering arbitrary MB values implies
  *  "any value is fine" — same trap. */
@@ -3743,6 +3759,9 @@ onUnmounted(() => {
               @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
             />
           </div>
+          <div v-if="tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
+            No effect on this image
+          </div>
           <div class="cc-muted cc-fs-3xs vw-adv-note" v-else>
             Quality tier applies to the Brick renderer.
           </div>
@@ -4737,9 +4756,12 @@ onUnmounted(() => {
    don't jitter the slider on every playback tick. */
 .vw-fps-val { min-width: 1.4rem; text-align: right; flex: none; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
-   with the controls above (no horizontal inset), consistent vertical rhythm. */
+   with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
+   center` keeps the value baselines centered against the taller label text — grid's default
+   `start` alignment left values crowded to the top of each row (Dominik 2026-09-02). */
 .vw-bench-grid {
   display: grid; grid-template-columns: auto 1fr;
+  align-items: center;
   column-gap: 0.5rem; row-gap: 0.15rem;
   padding: 0.1rem 0 0.2rem;
 }
