@@ -38,6 +38,27 @@ export function parseBrickKey(key: string): VirtualBrick | null {
   return { t: +m[1], level: +m[2], bx: +m[3], by: +m[4], bz: +m[5] }
 }
 
+/** Safest prefetch depth given the atlas slot capacity and the per-t core brick count.
+ *
+ *  Bug shape (Dominik 2026-09-02, Dml3RG at cacheMB=2048): a hardcoded `cap=4` during playback
+ *  wanted `(1 + 4) × 81 = 405` bricks resident, against an atlas that could hold ~442. On a
+ *  bigger L0 or a smaller cache, that inequality flips — prefetch bricks then LRU-evict boundT
+ *  bricks (rectangular black holes). `BOUND_T_TOUCH_BIAS` protects boundT ONCE per resident, but
+ *  it can't stop the underlying overload. Sizing prefetch below the atlas is the durable fix.
+ *
+ *  Formula: `floor(atlasCapacity / coreBricksPerT) - 1` (subtracting 1 for boundT itself), then
+ *  clamped by the caller-requested cap. Returns 0 when there is not even room for boundT + one
+ *  extra t (boundT still wins under BOUND_T_TOUCH_BIAS). Returns `requestedCap` untouched when
+ *  `coreBricksPerT` is unknown (0) — the caller has no signal to reduce below its own preference.
+ */
+export function maxSafePrefetchDepth(
+  atlasCapacity: number, coreBricksPerT: number, requestedCap: number,
+): number {
+  if (coreBricksPerT <= 0) return Math.max(0, requestedCap)
+  const usable = Math.floor(atlasCapacity / coreBricksPerT) - 1
+  return Math.max(0, Math.min(requestedCap, usable))
+}
+
 /** Given the current inflight brick keys and the set of timepoints we still want, return the keys
  *  whose bricks are for a t that is no longer wanted. The caller aborts those to free `MAX_INFLIGHT`
  *  slots for the current `boundT`. Pure over strings so the renderer's queue-skip contract can be

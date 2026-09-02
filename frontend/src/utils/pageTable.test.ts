@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { PageTable, brickKey, slotToAtlasOrigin, slotCount, pickStaleInflightKeys } from './pageTable'
+import {
+  PageTable, brickKey, slotToAtlasOrigin, slotCount, pickStaleInflightKeys, maxSafePrefetchDepth,
+} from './pageTable'
 
 describe('brickKey', () => {
   it('is stable and axis-labelled', () => {
@@ -158,6 +160,39 @@ describe('PageTable — LRU eviction', () => {
     expect(() => t.evict('T0/L0/B99,0,0')).not.toThrow()
     // The freed slot 0 is reused by the next inserter.
     expect(t.insertOrEvictLru(brick(1), 2).entry.slot).toBe(0)
+  })
+})
+
+describe('maxSafePrefetchDepth — the atlas-sizing prefetch guard', () => {
+  it('caps at the request when the atlas has plenty of headroom (SispLk-shape)', () => {
+    // 64 slots, 12-brick core → (64/12) − 1 = 4.33 → 4; requestedCap=1 wins.
+    expect(maxSafePrefetchDepth(64, 12, 1)).toBe(1)
+    expect(maxSafePrefetchDepth(64, 12, 4)).toBe(4)
+  })
+
+  it('bounds the request when the atlas can barely hold two t\'s — the Dml3RG shape at cacheMB=2048', () => {
+    // 442-slot atlas (post-sizer-rewrite), 81-brick core (9×9×1) — (442/81)−1 = 4.45 → 4.
+    // A hardcoded cap=4 was RIGHT on the edge (405 wanted vs 442 capacity) and prefetch churn
+    // was still visible. Cap=3 gives (1+3)×81=324 residents, comfortable margin.
+    expect(maxSafePrefetchDepth(442, 81, 4)).toBe(4)      // exact-fit case
+    expect(maxSafePrefetchDepth(256, 81, 4)).toBe(2)      // pre-sizer atlas: 256/81=3 → 2
+  })
+
+  it('returns 0 when the atlas is not big enough for even boundT plus one prefetch t', () => {
+    // Contract: boundT still wins even at depth=0 (BOUND_T_TOUCH_BIAS in the touch loop).
+    expect(maxSafePrefetchDepth(80, 81, 4)).toBe(0)       // core > capacity
+    expect(maxSafePrefetchDepth(100, 81, 4)).toBe(0)      // 100/81=1, minus 1 = 0
+  })
+
+  it('trusts the caller when coreBricksPerT is unknown (0)', () => {
+    // Renderer has no atlas bound yet — leave the caller\'s preference alone rather than clamp
+    // to 0 and silently kill prefetch.
+    expect(maxSafePrefetchDepth(442, 0, 4)).toBe(4)
+  })
+
+  it('never returns a negative depth', () => {
+    expect(maxSafePrefetchDepth(0, 81, 4)).toBe(0)
+    expect(maxSafePrefetchDepth(442, 81, -3)).toBe(0)
   })
 })
 

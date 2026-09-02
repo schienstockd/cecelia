@@ -27,7 +27,11 @@ import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
-import { PageTable, brickKey, parseBrickKey, pickStaleInflightKeys, type VirtualBrick } from '../../utils/pageTable'
+import {
+  PageTable, brickKey, parseBrickKey, pickStaleInflightKeys,
+  maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
+  type VirtualBrick,
+} from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
   bricksIntersectingViewport, DEFAULT_KNOBS, type SchedulerKnobs,
@@ -1485,6 +1489,12 @@ export async function createBrickVolumeRenderer(
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
     setOnFrameTimings(cb) { onFrameTimings = cb },
+    maxSafePrefetchDepth(requestedCap) {
+      if (atlas === null) return Math.max(0, requestedCap)
+      const capacity = atlasSlotCapacity(atlas.layout)
+      const coreBricks = atlas.gridNx * atlas.gridNy * atlas.gridNz
+      return computeMaxSafePrefetchDepth(capacity, coreBricks, requestedCap)
+    },
     setPrefetchTimepoints(list) {
       prefetchTs = list.slice()
       // Free `MAX_INFLIGHT` slots for the current wanted frontier. Bug shape (Dominik 2026-09-02):

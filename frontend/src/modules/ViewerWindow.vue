@@ -1717,9 +1717,12 @@ function gotoT(tp: number) {
   const r = renderer.value; const m = meta.value
   if (r?.setPrefetchTimepoints && m) {
     const dir = Math.sign(tp - lastT) || 1
-    // Small depth — atlas has plenty of room, but every extra `t` fires 16-64 fetches. 4 covers
-    // half a second of 8fps playback and lands cheaply; sane default until we measure.
-    const cap = playing.value ? 4 : 1
+    // Cap requested: 4 during playback (~½ s buffer at 8 fps), 1 otherwise. The renderer clamps
+    // to whatever fits alongside boundT in the atlas — a small cache or a big-L0 image (Dml3RG
+    // shape) rounds this down so prefetch bricks can't LRU-evict boundT bricks. Regression guard
+    // for the rectangular-black-holes symptom Dominik hit 2026-09-02.
+    const requested = playing.value ? 4 : 1
+    const cap = r.maxSafePrefetchDepth?.(requested) ?? requested
     r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
   }
 }
@@ -2215,7 +2218,11 @@ function tick() {
       const m = meta.value
       if (r?.setPrefetchTimepoints && m) {
         const dir = Math.sign(step.next - t.value) || 1
-        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, 4))
+        // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
+        // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
+        // the shader is trying to draw. Regression guard, Dominik 2026-09-02.
+        const cap = r.maxSafePrefetchDepth?.(4) ?? 4
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap))
       }
       frame.redraw()
     } else {
