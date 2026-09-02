@@ -147,29 +147,37 @@ def run(params):
         })
         log.progress(step, n_steps); step += 1
 
-    # Write the stacked output.
+    # Stream the stacked output straight to disk — the assembled image never lives in RAM, only one
+    # 3D channel volume at a time. IBEX-scale cycles (multi-channel large 3D) would OOM on a full-
+    # shape allocation, which is what `open_multiscales_for_writing` exists to prevent (same
+    # streaming path that drift/AF/cellpose correction take — see drift_correct_run.py).
     log.log(f'>> write registered image: {im_out_path}')
+    ref_du_out = ref_du   # output geometry mirrors the reference: same T/Z/Y/X, C grows
+
+    def _plane_slice(dim_utils, shape, ch, t=0):
+        """Full (Y, Z, …) at one T and one C — the unit we stream per-channel. Any absent axis is
+        omitted (T=1 stacks / 2D staining images work the same way)."""
+        sl = [slice(None)] * len(shape)
+        if dim_utils.dim_idx('T') is not None:
+            sl[dim_utils.dim_idx('T')] = 0 if shape[dim_utils.dim_idx('T')] == 1 else t
+        if dim_utils.dim_idx('C') is not None:
+            sl[dim_utils.dim_idx('C')] = ch
+        return tuple(sl)
+
     with zarr_utils.staged_store(im_out_path) as staging:
-        out_zarr = zarr_utils.zarr_utils_writable_full_shape(
-            staging, out_shape, ref_arr.dtype, ref_arr.chunksize,
-        ) if hasattr(zarr_utils, 'zarr_utils_writable_full_shape') else None
-        # Fall back to a lower-level create_multiscales-based write via a NumPy staging tensor if the
-        # helper above is not present in this checkout — the runner is scoped to editImages so we lean
-        # on the same primitives crop uses. Simplest and correct: assemble in memory, then hand to
-        # create_multiscales. Registration outputs are per-plane small; the cost is fine.
-        assembled = np.zeros(tuple(out_shape), dtype=ref_arr.dtype)
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            staging, tuple(out_shape), ref_arr.dtype, ref_du_out,
+            nscales=len(input_arrays[0]),
+            reference_zarr=im_paths[0])   # inherit source's zarr format (v2/v3), see ZARR_V3_PLAN D9
 
-        # First push the reference — every channel, frame 0.
-        ref_slice = [slice(None)] * len(out_shape)
-        if ref_du.dim_idx('T') is not None:
-            ref_slice[ref_du.dim_idx('T')] = 0
-        # Reference channels 0..ref_C into output channels 0..ref_C.
+        # Reference channels → output 0..ref_C-1. One channel at a time keeps peak memory bounded to
+        # one 3D volume per write.
         for c in range(ref_du.dim_val('C')):
-            src_slc = list(ref_slice); src_slc[c_idx] = c
-            dst_slc = list(ref_slice); dst_slc[c_idx] = c
-            assembled[tuple(dst_slc)] = np.asarray(zarr_utils.fortify(ref_arr[tuple(src_slc)]))
+            src = ref_arr[_plane_slice(ref_du, ref_arr.shape, c)]
+            level0[_plane_slice(ref_du_out, tuple(out_shape), c)] = np.asarray(zarr_utils.fortify(src))
 
-        # Now each moving cycle's non-reg channels, resampled onto the reference geometry.
+        # Moving cycles → output ref_C.. . For each non-reg channel: pull the 3D volume, ITK-resample
+        # against the fixed reference using the cycle's affine transform, write the result plane.
         channel_sum = ref_du.dim_val('C')
         for i in range(1, n_cycles):
             mov_arr = input_arrays[i][0]
@@ -178,44 +186,34 @@ def run(params):
             for c in range(mov_du.dim_val('C')):
                 if c == reg_channels[i]:
                     continue
-                # Extract the moving cycle's channel at T=0 → SimpleITK → resample using the
-                # registered transform → write into the output.
-                mov_slc = [slice(None)] * mov_arr.ndim
-                if mov_du.dim_idx('T') is not None:
-                    mov_slc[mov_du.dim_idx('T')] = 0
-                mov_slc[mov_du.dim_idx('C')] = c
-                mov_np_c = np.squeeze(np.asarray(zarr_utils.fortify(mov_arr[tuple(mov_slc)])))
-                mov_im_c = sitk.GetImageFromArray(mov_np_c)
+                mov_np = np.squeeze(np.asarray(zarr_utils.fortify(
+                    mov_arr[_plane_slice(mov_du, mov_arr.shape, c)])))
+                mov_im = sitk.GetImageFromArray(mov_np)
                 resampled_im = sitkibex.resample(
                     fixed_image=fixed_im,
-                    moving_image=mov_im_c,
+                    moving_image=mov_im,
                     transform=reg_tx[i])
-                resampled_np = sitk.GetArrayFromImage(resampled_im)
-
-                dst_slc = list(ref_slice); dst_slc[c_idx] = channel_sum + k
-                # squeeze/broadcast into the destination's exact shape
-                assembled[tuple(dst_slc)] = resampled_np.astype(ref_arr.dtype, copy=False).reshape(
-                    assembled[tuple(dst_slc)].shape)
+                # ITK arrays are already numpy — cast to the output dtype and reshape to whatever the
+                # destination's non-T non-C axes need (the T axis is length-1, so `_plane_slice`
+                # returns a slot the ndarray fits into directly).
+                dst_slot = _plane_slice(ref_du_out, tuple(out_shape), channel_sum + k)
+                arr = sitk.GetArrayFromImage(resampled_im).astype(ref_arr.dtype, copy=False)
+                level0[dst_slot] = arr.reshape(np.asarray(level0[dst_slot]).shape) if arr.ndim != len(dst_slot) else arr
                 k += 1
             channel_sum += mov_du.dim_val('C') - 1
             log.progress(step, n_steps); step += 1
 
-        # Wrap the assembled numpy array as dask and hand to create_multiscales (same primitives crop
-        # uses). ref_arr is the calibration/format reference.
-        import dask.array as da
-        out_dask = da.from_array(assembled, chunks=ref_arr.chunksize)
-        zarr_utils.create_multiscales(
-            out_dask, staging,
-            dim_utils=ref_du,
-            reference_zarr=ref_arr,
-            nscales=len(input_arrays[0]),
-        )
+        # Build the downscaled levels FROM the on-disk level 0 — the same helper drift/AF/smooth use.
+        # Peak memory stays bounded per level, not the whole pyramid.
+        log.log('>> build multiscale pyramid')
+        zarr_utils.write_multiscale_pyramid(group, level0, ref_du_out, len(input_arrays[0]), list(pchunks))
+
         ome_xml_utils.save_meta_in_zarr(
             staging, im_paths[0],
             changed_shape=tuple(out_shape),   # SizeC grows; SizeX/Y/Z/T carry
-            dim_utils=ref_du,
+            dim_utils=ref_du_out,
         )
-        zarr_utils.write_calibration(staging, ref_du)
+        zarr_utils.write_calibration(staging, ref_du_out)
 
         # VALID-BOX-EXEMPT: registration RESAMPLES the moving cycles onto the reference geometry, so
         # each moving cycle's box (if any) is remapped — computing the transformed union is doable
