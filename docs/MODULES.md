@@ -443,6 +443,29 @@ and the `taskDefs` label store hit the same `/api/tasks/definitions` and must st
 the whiteboard to offer the node, the label store to resolve its name for run tags. Filtering at the
 route would silently take the chain capability away too, which is the opposite of the intent.
 
+### `comingSoon` — flag a task as not-yet-ready without hiding it
+
+```json
+{ "fun_name": "editImages.register", "comingSoon": true, "comingSoonNote": "Coming in 0.2.1 — under test" }
+```
+
+Marks a task whose **runtime plumbing is registered and runnable from the REPL / API / chain**, but
+is not ready for GUI users yet. The frontend picker greys the row and appends the note:
+`Register images (staining cycles) — Coming in 0.2.1 — under test`. `Run` is disabled for the same
+reason. This is a static task-level flag (in the JSON), unlike `requires`, which is an image-shaped
+gate — the task doesn't run for anyone through the picker, whatever they select.
+
+Kept UI-only on purpose: the backend accepts REPL/API/chain calls without objection, so the task can
+be tested off-GUI and the release cycle only has to flip the flag in the JSON to publish it. No Julia
+or TS change needed to promote a task from coming-soon to shipped.
+
+- `comingSoon: true` — required; the flag itself.
+- `comingSoonNote` — optional short reason after the em-dash (default: `"Coming soon"`). Keep it short,
+  it lands in a `<select>` option label.
+
+Wired through `frontend/src/utils/taskGating.ts` → `taskGatingReason` short-circuits `comingSoon`
+before the `requires` checks; the picker + Run button read the same predicate.
+
 ### Requires — axis-shape and physical-scale gating
 
 A task that only makes sense on a particular image shape (a timelapse for tracking, a Z-stack for

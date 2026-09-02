@@ -181,6 +181,7 @@ export ZProject
 export TProject
 export BinImage
 export ResampleZ
+export Register
 export ExportOmeTiff
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -289,6 +290,7 @@ include("tasks/editImages/zProject.jl")
 include("tasks/editImages/tProject.jl")
 include("tasks/editImages/bin.jl")
 include("tasks/editImages/resampleZ.jl")
+include("tasks/editImages/register.jl")
 include("tasks/exportImages/ome_tiff.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/opticalFlow/train.jl")

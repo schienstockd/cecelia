@@ -137,6 +137,10 @@ function _spec_path(::ResampleZ)
     joinpath(@__DIR__, "editImages", "resampleZ.json")
 end
 
+function _spec_path(::Register)
+    joinpath(@__DIR__, "editImages", "register.json")
+end
+
 function _spec_path(::TestImageTask)
     joinpath(@__DIR__, "testTasks", "image_task.json")
 end
@@ -208,6 +212,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "editImages.tProject"               => TProject(),
         "editImages.bin"                    => BinImage(),
         "editImages.resampleZ"              => ResampleZ(),
+        "editImages.register"               => Register(),
         "exportImages.ome_tiff"        => ExportOmeTiff(),
         "testTasks.image_task"               => TestImageTask(),
         "testTasks.set_task"                 => TestSetTask(),
