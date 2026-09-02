@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  PageTable, brickKey, slotToAtlasOrigin, slotCount, maxSafePrefetchDepth,
+  PageTable, brickKey, slotToAtlasOrigin, slotCount, maxSafePrefetchDepth, shouldAdmitKick,
 } from './pageTable'
 
 describe('brickKey', () => {
@@ -193,6 +193,51 @@ describe('maxSafePrefetchDepth — the atlas-sizing prefetch guard', () => {
   it('never returns a negative depth', () => {
     expect(maxSafePrefetchDepth(0, 81, 4)).toBe(0)
     expect(maxSafePrefetchDepth(442, 81, -3)).toBe(0)
+  })
+})
+
+describe('shouldAdmitKick — the two-tier queue contract', () => {
+  const bgKeys = (n: number, t: number = 5): string[] =>
+    Array.from({ length: n }, (_, i) => `T${t}/L0/B${i},0,0`)
+
+  it('admits a boundT brick when total is under cap', () => {
+    // Full slate of 8 bg fetches for a stale t + 7 boundT fetches — a new boundT brick fits.
+    const inflight = [...bgKeys(8, 5), ...bgKeys(7, 20)]
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('refuses a boundT brick when total hits the hard cap', () => {
+    const inflight = [...bgKeys(8, 5), ...bgKeys(8, 20)]  // 16 total
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(false)
+  })
+
+  it('caps bg at maxBg even while boundT slots are free', () => {
+    // 8 bg fetches, 0 boundT — bg is at its cap. A new bg brick MUST be refused so the 8 free
+    // slots stay open for boundT. This is the whole point of the two-tier scheme.
+    const inflight = bgKeys(8, 5)
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(false)
+    // But boundT admission from the same state is fine — the reservation works.
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('admits bg while below the bg cap', () => {
+    expect(shouldAdmitKick(bgKeys(7, 5), 6, 20, 16, 8)).toBe(true)
+  })
+
+  it('re-classifies stale inflight when boundT drifts (no counter to keep in sync)', () => {
+    // Fetches kicked at boundT=5 now count as BG because boundT has moved to 20 — the exact case
+    // that made an event-driven counter fragile. Recount on each admit keeps the semantics stable.
+    const inflight = bgKeys(8, 5)  // originally boundT bricks, now stale
+    // A new bg (at t=6) should be refused because the "stale-t=5" bricks now occupy the bg cap.
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(false)
+    // A new boundT=20 brick admits fine.
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('does not count unparseable keys toward bg (a malformed key must not block boundT)', () => {
+    const inflight = ['not-a-key', 'also-not-a-key', ...bgKeys(6, 5)]  // 8 total, 6 bg-known
+    // A new bg brick: only 6 bg counted, cap is 8 → admit.
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(true)
   })
 })
 

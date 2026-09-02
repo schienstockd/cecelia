@@ -28,7 +28,7 @@ import {
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
 import {
-  PageTable, brickKey, parseBrickKey,
+  PageTable, brickKey, parseBrickKey, shouldAdmitKick,
   maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
   type VirtualBrick,
 } from '../../utils/pageTable'
@@ -78,6 +78,15 @@ const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
  *  used every slot, so prefetch never ran. Measured 2026-08-29 (Dominik): "doesn't prefetch or
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
 const MAX_INFLIGHT = 16
+
+/** Non-boundT (prefetch / trailing playback t) inflight cap. Reserves `MAX_INFLIGHT - MAX_INFLIGHT_BG`
+ *  = 8 sockets for boundT bricks so a stop→scrub-elsewhere doesn't wait ~one browser-fetch time
+ *  (300 ms–1 s) for the FIFO to drain before the new boundT gets on the wire. See
+ *  `shouldAdmitKick` in `utils/pageTable.ts`. Bug shape: Dominik 2026-09-02, "when i just press
+ *  the play button it presumably pushes the bricks into a fifo queue. so when i stop the
+ *  playback. i have to wait a bit until the queue catches up. there is no skip the queue for the
+ *  brick that i would actually need right now". */
+const MAX_INFLIGHT_BG = 8
 
 /** LRU stamp bias for bricks the shader is CURRENTLY sampling as a fallback (prev-level bricks
  *  during a level swap, prev-t bricks during Frankenstein hole-fill). Placed well past
@@ -593,10 +602,11 @@ export async function createBrickVolumeRenderer(
     if (currentMeta === null || source === null || atlas === null) return
     const key = brickKey(brick)
     if (inflight.has(key)) return
-    // Backpressure: the browser queues everything past ~6 concurrent HTTP/1.1 requests anyway,
-    // and an unbounded fan-out floods the queue with fetches the scheduler no longer wants by
-    // the time they run. Next tick picks up whatever we skipped. See MAX_INFLIGHT comment.
-    if (inflight.size >= MAX_INFLIGHT) return
+    // Two-tier backpressure: total inflight ≤ MAX_INFLIGHT (16) AND non-boundT inflight ≤
+    // MAX_INFLIGHT_BG (8). Reserving 8 slots for boundT means a stop→scrub gets its new-boundT
+    // bricks on the wire the same tick, without cancelling a still-useful prefetch. Skipped kicks
+    // retry next tick — that path is unchanged. See `shouldAdmitKick`.
+    if (!shouldAdmitKick(inflight.keys(), brick.t, boundT, MAX_INFLIGHT, MAX_INFLIGHT_BG)) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
