@@ -117,6 +117,26 @@ describe('pickAtlasLayout — real-world sizing', () => {
     expect(l!.atlasSlotCounts[1]).toBeLessThanOrEqual(2)
     expect(validateAtlasLayout(l!, tight)).toBeNull()
   })
+
+  it('maximises slot count under budget instead of pinning nz=1 — the fix for Dml3RG atlas under-provisioning', () => {
+    // Dml3RG-shape at Dominik's cacheMB=2048 setting was the driving case (2026-09-02): brickSize
+    // [128, 128, 37], bpv=2, channelsPerBrick=4. The old sizer picked a square xy (16×16×1=256)
+    // against a 442-slot budget — 58 % utilisation — and produced the "want > atlas" thrash that
+    // showed up as rectangular black holes in the visible render.
+    // Under 2 GB and RTX 2000 Ada limits (maxDim3D=2048), the sweep sizer should exceed the old
+    // square-xy fallback and land near the budget cap without violating any axis limit.
+    // maxBufferSize past the 2 GB budget so the size guard doesn't gate it (WebGPU spec caps at
+    // ~4 GiB in Chromium/Dawn today — the browser's own ceiling stays enforced by validateAtlasLayout).
+    const REAL_2GB: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * 1024 * 1024 * 1024 }
+    const l = pickAtlasLayout([128, 128, 37], 2, 4, 2 * 1024 * 1024 * 1024, REAL_2GB)
+    expect(l).not.toBeNull()
+    // Strictly better than the old sizer's 16×16×1 = 256, and comfortably above the shipping
+    // demand curve during playback (~405 wanted bricks: 5 t's × 81 core bricks per t).
+    expect(atlasSlotCapacity(l!)).toBeGreaterThan(256)
+    expect(atlasSlotCapacity(l!)).toBeLessThanOrEqual(442)
+    // Still passes the axis + byte guards for the same limits it was built for.
+    expect(validateAtlasLayout(l!, REAL_2GB)).toBeNull()
+  })
 })
 
 describe('canReuseAtlas — the dtype-safety gate', () => {

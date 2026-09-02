@@ -141,32 +141,53 @@ export function pickAtlasLayout(
                         channelsPerBrick * bytesPerVoxel
   if (oneBrickBytes > vramBudgetBytes) return null
 
-  // Slots we can afford by budget alone. Grow xy before z — the thin-Z stores this is sized for
-  // don't need a stack of z-slabs, and xy is where the pyramid pays off (Decision 6, 3D halo).
   const budgetSlots = Math.floor(vramBudgetBytes / oneBrickBytes)
   if (budgetSlots < 1) return null
 
-  // Grow xy until each axis touches `maxTextureDimension3D`, then z picks up the remainder.
+  // Per-axis caps from `maxTextureDimension3D`. Bricks pack channels along Z inside the atlas
+  // texture, so nz's cap divides through `channelsPerBrick` as well.
   const maxXperAxis = Math.floor(limits.maxTextureDimension3D / brickSizeVox[0])
   const maxYperAxis = Math.floor(limits.maxTextureDimension3D / brickSizeVox[1])
   const maxZperAxis = Math.floor(limits.maxTextureDimension3D /
                                   (brickSizeVox[2] * channelsPerBrick))
   if (maxXperAxis < 1 || maxYperAxis < 1 || maxZperAxis < 1) return null
 
-  // Aim for a squarish `nx * ny` under the axis cap and the budget cap. Prefer even fills so a
-  // developer poking at the residency map sees a symmetric layout.
-  const nxyTarget = Math.min(
-    Math.floor(Math.sqrt(budgetSlots)),
-    maxXperAxis,
-    maxYperAxis,
-  )
-  const nx = Math.max(1, nxyTarget)
-  const ny = Math.max(1, Math.min(maxYperAxis, Math.floor(budgetSlots / nx)))
-  const nz = Math.max(1, Math.min(maxZperAxis, Math.floor(budgetSlots / (nx * ny))))
+  // Maximise slot count under budget + axis caps. Previously the sizer targeted a square nx×ny
+  // and picked nz from the remainder — Dml3RG at cacheMB=2048 landed on 16×16×1=256 slots against
+  // 442 budget-allowed (58%), causing the "wanted > atlas" thrash Dominik hit 2026-09-02. The
+  // brute-force sweep here is cheap (worst case ~3300 candidates at maxDim=2048/brick=128) and
+  // deterministic. Tie-break prefers the more-square nx×ny for readable residency maps.
+  let best: { nx: number; ny: number; nz: number } | null = null
+  let bestCount = 0
+  let bestSquareDelta = Infinity
+  for (let nz = 1; nz <= maxZperAxis; nz++) {
+    if (nz > budgetSlots) break
+    for (let ny = 1; ny <= maxYperAxis; ny++) {
+      if (nz * ny > budgetSlots) break
+      const nxCap = Math.min(maxXperAxis, Math.floor(budgetSlots / (nz * ny)))
+      if (nxCap < 1) continue
+      const nx = nxCap
+      const slots = nx * ny * nz
+      const squareDelta = Math.abs(nx - ny)
+      // Tiebreak order: (1) more slots, (2) SMALLER nz — a thin-Z store's atlas texture stays
+      // shallow, preserves cache-line-friendly xy walks (SispLk, KILN_BRICK_PLAN #635-#644),
+      // and keeps `atlasTextureSize`'s z axis room to spare, (3) more-square nx×ny for readable
+      // residency maps.
+      const better = slots > bestCount
+        || (slots === bestCount && best !== null && nz < best.nz)
+        || (slots === bestCount && best !== null && nz === best.nz && squareDelta < bestSquareDelta)
+      if (better) {
+        best = { nx, ny, nz }
+        bestCount = slots
+        bestSquareDelta = squareDelta
+      }
+    }
+  }
+  if (best === null) return null
 
   const layout: AtlasLayout = {
     brickSizeVox,
-    atlasSlotCounts: [nx, ny, nz] as const,
+    atlasSlotCounts: [best.nx, best.ny, best.nz] as const,
     bytesPerVoxel,
     channelsPerBrick,
   }

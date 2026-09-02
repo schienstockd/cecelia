@@ -81,6 +81,17 @@ const MAX_INFLIGHT = 16
  *  arbitrary tie-break wiping an active prev-level slot. */
 const PREV_TOUCH_BIAS = 1_000_000_000
 
+/** LRU stamp bias for bricks at the CURRENT `boundT` and level — the ones the shader is
+ *  drawing THIS frame. Same arbitrary-tie-break bug as PREV_TOUCH_BIAS: when the atlas is
+ *  full and every resident brick has `lastUsed = frameNow` (touched this tick), `evictLru`
+ *  picks the first-inserted entry — which is typically an early-loaded boundT brick still in
+ *  the visible render. Under overload (`prefetch × scheduled > atlas.capacity` on Dml3RG at
+ *  cacheMB=2048: 5 × 81 = 405 wanted vs 256 slots), that produces the "black rectangular
+ *  holes" symptom Dominik hit 2026-09-02. Kept strictly SMALLER than `PREV_TOUCH_BIAS` so
+ *  prev-level fallback still wins ties against current boundT — during a level swap the
+ *  fallback matters more than the target. */
+const BOUND_T_TOUCH_BIAS = 500_000_000
+
 interface AtlasState {
   layout: AtlasLayout
   texture: BrickAtlasTexture
@@ -601,7 +612,12 @@ export async function createBrickVolumeRenderer(
         if (payload === null) return
         if (destroyed || atlas === null) return
         if (atlas.currentLevel !== brick.level) return
-        const result = atlas.pageTable.insertOrEvictLru(brick, frameNow)
+        // Insert with the tiered stamp so a boundT brick is protected the moment it lands,
+        // not a tick later. Under overload the next `insertOrEvictLru` may fire from another
+        // arrival before the next tick — without this, a freshly-arrived boundT brick has
+        // `lastUsed = frameNow` and can be evicted by the next arrival within the same frame.
+        const arrivalStamp = brick.t === boundT ? frameNow + BOUND_T_TOUCH_BIAS : frameNow
+        const result = atlas.pageTable.insertOrEvictLru(brick, arrivalStamp)
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
         // Edge bricks: server clamps xTo/yTo to store bounds; pad the response back up to the full
@@ -961,14 +977,23 @@ export async function createBrickVolumeRenderer(
     // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
     // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
     // the prefetch timepoints, dropping duplicates via `brickKey`.
+    //
+    // Touch stamp is tiered: boundT bricks (the ones the shader is DRAWING) get
+    // `frameNow + BOUND_T_TOUCH_BIAS` so LRU never picks them under an arbitrary tie-break;
+    // prefetch t's get plain `frameNow`. When the atlas is at capacity (prefetch × scheduled >
+    // atlas.slotCapacity, e.g. Dml3RG at cacheMB=2048), the untouched-this-tick prefetch bricks
+    // now die BEFORE any current-render brick, preventing the rectangular black holes symptom
+    // Dominik hit 2026-09-02. Prefetch churn under overload continues (expected — want > atlas);
+    // this fix only stops that churn from bleeding into the visible frame.
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     const ts = [boundT]
     for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
     for (const pt of ts) {
+      const touchStamp = pt === boundT ? frameNow + BOUND_T_TOUCH_BIAS : frameNow
       for (const s of scheduled) {
         const brickAtT: VirtualBrick = { ...s.brick, t: pt }
         const k = brickKey(brickAtT)
-        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
+        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, touchStamp); continue }
         if (inflight.has(k)) continue
         kickFetch(brickAtT)
       }

@@ -121,6 +121,34 @@ describe('PageTable — LRU eviction', () => {
     expect(evictedKey).toBe('T0/L0/B1,0,0')
   })
 
+  it('touch stamp bias survives an eviction round against same-frame touches — the fix for the boundT-brick eviction thrash', () => {
+    // Regression test for the "black rectangular holes in the volume" bug 2026-09-02: when
+    // every resident brick had `lastUsed = frameNow` (all touched this tick), `evictLru`'s
+    // strict `<` tie-break picked the first-inserted resident as victim — which was typically
+    // an early-loaded boundT current-render brick. The fix in `brickVolumeRenderer.ts` touches
+    // boundT bricks with `frameNow + BOUND_T_TOUCH_BIAS` so LRU can't pick them under a tie.
+    // Guard the underlying contract here so a future refactor of the touch policy can't
+    // reintroduce the tie-break scenario.
+    const t = new PageTable(3)
+    t.insertOrEvictLru(brick(0), 1)       // simulate an early-loaded boundT brick
+    t.insertOrEvictLru(brick(1), 2)       // simulate a prefetch brick
+    t.insertOrEvictLru(brick(2), 3)       // simulate a second prefetch brick
+    // This-tick touches — boundT gets the bias, prefetch bricks get plain frameNow=100.
+    const BOUND_T_BIAS = 500_000_000
+    t.touch('T0/L0/B0,0,0', 100 + BOUND_T_BIAS)  // boundT — protected
+    t.touch('T0/L0/B1,0,0', 100)                  // prefetch
+    t.touch('T0/L0/B2,0,0', 100)                  // prefetch
+    // A new prefetch brick arrives, triggering an eviction.
+    const { evictedKey } = t.insertOrEvictLru(brick(3), 100)
+    // The boundT brick MUST survive — a prefetch brick has to die instead.
+    expect(evictedKey).not.toBe('T0/L0/B0,0,0')
+    expect(t.has('T0/L0/B0,0,0')).toBe(true)
+    // And the biased brick keeps its bias — a subsequent tie-break round can't pick it either.
+    const { evictedKey: evicted2 } = t.insertOrEvictLru(brick(4), 100)
+    expect(evicted2).not.toBe('T0/L0/B0,0,0')
+    expect(t.has('T0/L0/B0,0,0')).toBe(true)
+  })
+
   it('explicit evict frees the slot and does not throw on an absent key', () => {
     const t = new PageTable(2)
     t.insertOrEvictLru(brick(0), 1)
