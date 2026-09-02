@@ -132,17 +132,20 @@ def _make_labelprops_h5ad(path, labels):
     adata.write_h5ad(path)
 
 
-def _run_utils(props_path, source, force=False):
+def _run_utils(props_path, source, force=False, live=None):
     """A `BayesianTrackingUtils` wired to a fixture h5ad and a specific `trackSource`. Only
     `_write_back` is exercised; params for btrack itself are irrelevant here. `force=True` sets
-    `trackSourceForce` — the intentional-overlap override the P1 conflict detector honours."""
+    `trackSourceForce` — the intentional-overlap override the P1 conflict detector honours.
+    `live=None` disables the P3 orphan sweep (matches a legacy Julia handler that never emitted the
+    param); `live=[...]` (or `[]`) engages it against that live-UID set."""
     params = {'taskDir': os.path.dirname(props_path), 'btrackConfig': '/tmp/cfg.json',
               'maxSearchRadius': 20, 'maxLost': 1, 'trackBranching': False, 'minTimepoints': 1,
               'accuracy': 0.8, 'probToAssign': 0.8, 'noiseInital': 300, 'noiseProcessing': 100,
               'noiseMeasurements': 100, 'distThresh': 10, 'timeThresh': 5,
               'segmentationMissRate': 0.1, 'lambdaLink': 5, 'lambdaBranch': 50, 'lambdaTime': 5,
               'lambdaDist': 5, 'thetaTime': 5, 'thetaDist': 5,
-              'valueName': 'test', 'trackSource': source, 'trackSourceForce': force}
+              'valueName': 'test', 'trackSource': source, 'trackSourceForce': force,
+              'liveTrackSources': live}
     u = BayesianTrackingUtils(params, _Log())
     # override the labelProps location `__init__` computed so it points at the fixture we built
     u.props_path = props_path
@@ -341,6 +344,103 @@ class WriteBackConflictDetectorTest(unittest.TestCase):
             self.assertEqual(obs.loc[str(l), "track_source"], "A")
         # Labels 4, 5 dropped from the re-run — DELETE cleared them, no re-write follows.
         self.assertTrue(pd.isna(obs.loc["4", "track_source"]))
+
+
+class WriteBackOrphanSweepTest(unittest.TestCase):
+    """MULTI_POP_TRACKING_ORPHANS_PLAN.md P3 — the tracking-time orphan sweep.
+
+    A `track_source` value in the h5ad outlives the pop that stamped it. Between DELETE and COMPACT
+    the sweep NaNs any row whose `track_source` is neither the whole_seg sentinel nor a member of
+    the live-UID set the Julia handler passed in. `liveTrackSources=None` (legacy handler) disables
+    the sweep entirely; `[]` runs it with an empty live set.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "cells.h5ad")
+        _make_labelprops_h5ad(self.path, list(range(1, 11)))
+
+    def test_orphaned_rows_are_swept_when_a_live_pop_re_tracks(self):
+        """Track pop A, delete A (simulated by removing A from `liveTrackSources`), then track pop
+        B. B's run carries `liveTrackSources=['B_uid']` — A's rows are orphans and get NaN'd."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        # B tracks non-overlapping labels (6..10) — no conflict, plain sweep territory.
+        _run_utils(self.path, "B", live=["B"])._write_back(
+            _lineage_df([(l, 200 + l) for l in range(6, 11)]))
+        obs = _obs(self.path)
+        # A's rows (1..5) were orphaned by the sweep — track_id NaN, source cleared.
+        for l in range(1, 6):
+            self.assertTrue(np.isnan(obs.loc[str(l), "track_id"]))
+            self.assertTrue(pd.isna(obs.loc[str(l), "track_source"]))
+        # B's rows survive.
+        for l in range(6, 11):
+            self.assertFalse(np.isnan(obs.loc[str(l), "track_id"]))
+            self.assertEqual(obs.loc[str(l), "track_source"], "B")
+
+    def test_none_disables_the_sweep_backwards_compat(self):
+        """A legacy Julia handler that never emits `liveTrackSources` sends `None`. Under the
+        `None` path the sweep is skipped — pre-P3 behaviour unchanged, orphans persist."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        _run_utils(self.path, "B", live=None)._write_back(
+            _lineage_df([(l, 200 + l) for l in range(6, 11)]))
+        obs = _obs(self.path)
+        # A's rows PRESERVED because the sweep didn't run.
+        for l in range(1, 6):
+            self.assertFalse(np.isnan(obs.loc[str(l), "track_id"]))
+            self.assertEqual(obs.loc[str(l), "track_source"], "A")
+
+    def test_whole_seg_rows_survive_the_sweep_always(self):
+        """`whole_seg` is the sentinel — a whole-seg row is never an orphan even if the live-UID
+        set is empty. Otherwise a per-pop refine after a whole-seg run would wipe every non-refined
+        cell."""
+        _run_utils(self.path, "whole_seg")._write_back(
+            _lineage_df([(l, 100 + l) for l in range(1, 11)]))
+        # Run a per-pop A on labels 1..5, live-set carries only A. whole_seg rows 6..10 must live.
+        _run_utils(self.path, "A", live=["A"])._write_back(
+            _lineage_df([(l, 500 + l) for l in range(1, 6)]))
+        obs = _obs(self.path)
+        for l in range(6, 11):
+            self.assertEqual(obs.loc[str(l), "track_source"], "whole_seg")
+            self.assertFalse(np.isnan(obs.loc[str(l), "track_id"]))
+        # And A's rows are A.
+        for l in range(1, 6):
+            self.assertEqual(obs.loc[str(l), "track_source"], "A")
+
+    def test_sweep_prevents_the_conflict_detector_from_seeing_orphans(self):
+        """An orphan whose label overlaps THIS run's target set would otherwise trip the P1
+        detector — it wouldn't be `self.track_source`, wouldn't be `whole_seg`, wouldn't be None.
+        The sweep runs FIRST so the detector sees only live-pop conflicts, not deleted-pop
+        residue."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        # Track B on labels 3..7. A owns 3..5. With the sweep engaged and A absent from live, A's
+        # rows become orphans → cleared → B proceeds without raising.
+        _run_utils(self.path, "B", live=["B"])._write_back(
+            _lineage_df([(l, 200 + l) for l in range(3, 8)]))
+        obs = _obs(self.path)
+        for l in range(3, 8):
+            self.assertEqual(obs.loc[str(l), "track_source"], "B")
+        # Labels 1, 2 were owned by A → also swept (orphan) → NaN.
+        for l in (1, 2):
+            self.assertTrue(pd.isna(obs.loc[str(l), "track_source"]))
+
+    def test_empty_live_set_still_preserves_whole_seg(self):
+        """Edge case: no live pops at all (every pop was deleted). Only whole_seg survives the sweep."""
+        _run_utils(self.path, "whole_seg")._write_back(
+            _lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 500 + l) for l in range(6, 11)]))
+        # A now writes; then a whole-seg re-run with empty live sweeps A (deleted) but keeps ws.
+        # But whole_seg's re-run also DELETEs its own rows first, then re-writes them. So verify
+        # the interaction is clean.
+        _run_utils(self.path, "whole_seg", live=[])._write_back(
+            _lineage_df([(l, 900 + l) for l in range(1, 6)]))
+        obs = _obs(self.path)
+        # Labels 1..5: newly whole-seg-authored, source == whole_seg
+        for l in range(1, 6):
+            self.assertEqual(obs.loc[str(l), "track_source"], "whole_seg")
+        # Labels 6..10: A's rows were swept as orphans (A not in live=[])
+        for l in range(6, 11):
+            self.assertTrue(pd.isna(obs.loc[str(l), "track_source"]))
+            self.assertTrue(np.isnan(obs.loc[str(l), "track_id"]))
 
 
 if __name__ == '__main__':

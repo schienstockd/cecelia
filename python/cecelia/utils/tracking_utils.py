@@ -72,6 +72,13 @@ class BayesianTrackingUtils:
         # refinement idiom (see MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 2); the whole-seg
         # non-symmetry doesn't need it because whole_seg is already treated as bypass.
         self.force_track_source = bool(params.get("trackSourceForce", False))
+        # Live pop UIDs the Julia handler saw when it launched this run — used to sweep rows stamped
+        # with a `track_source` from a pop that no longer exists (MULTI_POP_TRACKING_ORPHANS_PLAN.md
+        # decision 3). `None` disables the sweep, for a legacy Julia handler that doesn't emit the
+        # param — behaviour matches the shipped code. An empty list runs the sweep normally: every
+        # pop-authored row is now an orphan, `whole_seg` rows survive (sentinel).
+        live = params.get("liveTrackSources", None)
+        self.live_track_sources = None if live is None else set(str(s) for s in live)
 
         self.max_search_radius   = params["maxSearchRadius"]
         # [sz, sy, sx] in µm — skimage axis order, matching the centroid columns, the same shape
@@ -276,6 +283,30 @@ class BayesianTrackingUtils:
         # Row lookup by label id, shared between the conflict check below and the WRITE step. Both
         # want "which row is label L on" — before the guard, we didn't need it here.
         rowof = {int(l): i for i, l in enumerate(labels_all)}
+
+        # ── 2a. orphan sweep (MULTI_POP_TRACKING_ORPHANS_PLAN P3) ─────────────────
+        # A row still stamped by a `track_source` that is NOT in the live pop-UID set (nor the
+        # whole_seg sentinel) belongs to a pop the user has already deleted. Nothing in the
+        # tracking pipeline would ever fire that source's DELETE again, so without this sweep those
+        # rows persist forever and their `track_id` bleeds into whichever live pop later includes
+        # the same label. Sweep NaNs those rows and clears their src marker, mirroring the DELETE
+        # step's contract; COMPACT then re-numbers around them.
+        # `None` disables the sweep (a legacy Julia handler that never emits the param → shipped
+        # code path unchanged). An empty live-set is a valid config — every pop-authored row is
+        # then an orphan; `whole_seg` rows always survive.
+        if self.live_track_sources is not None:
+            live = self.live_track_sources
+            sweep_idx = [i for i, s in enumerate(src_obj)
+                         if isinstance(s, str) and s and s != WHOLE_SEG_TRACK_SOURCE
+                            and s not in live]
+            if sweep_idx:
+                sweep_idx_arr = np.array(sweep_idx, dtype=np.int64)
+                for arr in (cur_id, cur_parent, cur_root, cur_state, cur_gen, cur_cellid):
+                    arr[sweep_idx_arr] = np.nan
+                for i in sweep_idx:
+                    src_obj[i] = None
+                self.log.log(f">> Sweep {len(sweep_idx)} orphan rows "
+                             f"(track_source from deleted pop(s))")
 
         # ── 2b. conflict detector (MULTI_POP_TRACKING_ORPHANS_PLAN P1) ─────────────
         # After DELETE, any row still stamped with a track_source other than {None, whole_seg,
