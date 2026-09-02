@@ -8,7 +8,6 @@
   "scope": "set",
   "outputValueName": "registered",
   "comingSoon": true,
-  "comingSoonNote": "Coming in 0.2.1 — under test",
   "params": [
     {
       "key": "regChannel",
