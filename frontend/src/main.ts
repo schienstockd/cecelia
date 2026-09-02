@@ -27,6 +27,7 @@ const router = createRouter({
     // rather than timing around it. See docs/todo/VIEW_PROFILES_PLAN.md → Decision 9.
     { path: '/',          component: () => import('./modules/WelcomeModule.vue'), meta: { label: 'Welcome' } },
     { path: '/manage-images', component: () => import('./modules/ManageImagesModule.vue'), meta: { label: 'Manage images' } },
+    { path: '/preprocess', component: () => import('./modules/PreprocessingModule.vue'),  meta: { label: 'Preprocessing' } },
     { path: '/metadata',  component: () => import('./modules/MetadataModule.vue'),      meta: { label: 'Metadata' } },
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
     { path: '/optical-flow', component: () => import('./modules/OpticalFlowModule.vue'), meta: { label: 'Optical flow' } },

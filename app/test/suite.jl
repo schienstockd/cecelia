@@ -2386,7 +2386,7 @@ end
     # silently disables validation for that param, so the set is asserted, not assumed.
     known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
                        "channelSelection", "valueNameSelection", "valueNameInput", "popSelection",
-                       "labelPropsColsSelection", "motionDimsSelection"])
+                       "labelPropsColsSelection", "motionDimsSelection", "imagePicker"])
 
     # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
     # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image
@@ -3787,12 +3787,15 @@ end
 end
 
 @testset "params NOT declared in the spec pass through untouched" begin
-    # Ranges/types are swept above. What is asserted here is the absence of a rule: cropImage
-    # passes z/t bounds that its spec never declares, and validation must not reject an unknown
-    # key — several tasks rely on carrying extra values through to their runner.
+    # Ranges/types are swept above. What is asserted here is the absence of a rule: a task's
+    # runner may receive keys its spec does not declare, and validation must not reject an
+    # unknown key — several tasks rely on carrying extra values through to their runner.
+    # cropImage's spec now declares one `cropBox` param carrying the whole box (the imagePicker
+    # widget's shape); everything else is unknown and passes through.
+    box = Dict{String,Any}("x0"=>0, "x1"=>100, "y0"=>0, "y1"=>100,
+                           "z0"=>2, "z1"=>8, "t0"=>-1, "t1"=>-1)
     @test validate_params(
-        CropImage(), Dict{String,Any}("x0" => 0, "x1" => 100, "y0" => 0, "y1" => 100,
-                                      "z0" => 2, "z1" => 8, "t0" => -1, "t1" => -1)) === nothing
+        CropImage(), Dict{String,Any}("cropBox" => box, "extraKey" => "unknown")) === nothing
 end
 
 @testset "CropImage inherits source calibration (pure helper)" begin

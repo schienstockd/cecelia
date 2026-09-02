@@ -18,72 +18,13 @@
       "tip": "Which image version to crop"
     },
     {
-      "key": "x0",
-      "label": "X min",
-      "type": "int",
-      "min": 0,
-      "default": 0,
+      "key": "cropBox",
+      "label": "Crop area",
+      "type": "imagePicker",
+      "geometry": "box3d",
       "required": true,
-      "tip": "Crop X start (px)"
-    },
-    {
-      "key": "x1",
-      "label": "X max",
-      "type": "int",
-      "min": 0,
-      "default": 0,
-      "required": true,
-      "tip": "Crop X end (px, exclusive)"
-    },
-    {
-      "key": "y0",
-      "label": "Y min",
-      "type": "int",
-      "min": 0,
-      "default": 0,
-      "required": true,
-      "tip": "Crop Y start (px)"
-    },
-    {
-      "key": "y1",
-      "label": "Y max",
-      "type": "int",
-      "min": 0,
-      "default": 0,
-      "required": true,
-      "tip": "Crop Y end (px, exclusive)"
-    },
-    {
-      "key": "z0",
-      "label": "Z min",
-      "type": "int",
-      "min": -1,
-      "default": -1,
-      "tip": "Crop Z start (plane); -1 keeps every plane"
-    },
-    {
-      "key": "z1",
-      "label": "Z max",
-      "type": "int",
-      "min": -1,
-      "default": -1,
-      "tip": "Crop Z end (plane, exclusive); -1 keeps every plane"
-    },
-    {
-      "key": "t0",
-      "label": "T min",
-      "type": "int",
-      "min": -1,
-      "default": -1,
-      "tip": "Crop T start (frame); -1 keeps every frame"
-    },
-    {
-      "key": "t1",
-      "label": "T max",
-      "type": "int",
-      "min": -1,
-      "default": -1,
-      "tip": "Crop T end (frame, exclusive); -1 keeps every frame"
+      "default": null,
+      "tip": "Draw the region to keep; z/t unset = keep whole axis"
     }
   ]
 }

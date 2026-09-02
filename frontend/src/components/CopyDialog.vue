@@ -2,7 +2,7 @@
   CopyDialog — "Copy images", opened from the Copy action in the Import page's action bar. Duplicates
   one version of each selected image into a NEW image (fresh uid) in a new or existing set, dropping all
   derived data — a re-import shortcut so a pipeline can be re-run from a clean copy without re-importing
-  the microscope file. Wraps a version picker (like CropDialog) + the shared destination-set picker in a
+  the microscope file. Wraps a version picker (like ImagePickerModal) + the shared destination-set picker in a
   modal, then dispatches one editImages.copyImage per image over the task rail (background + universal
   toast + task console) and closes immediately — the copies appear in the target set as the tasks finish.
 -->
@@ -39,7 +39,7 @@ const selectedValueName = ref(defaultValueName())
 function defaultValueName(): string {
   const names = valueNames.value
   const img = single.value
-  // One image: default to the active version (mirrors CropDialog). Several: the imported original,
+  // One image: default to the active version (mirrors ImagePickerModal). Several: the imported original,
   // since "the active version" is per image and would mean something different for each.
   if (!img) return names.includes('default') ? 'default' : (names[0] ?? '')
   const nonDefault = names.filter(n => n !== 'default')

@@ -64,10 +64,18 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     s = proj._sets[set_idx]
 
     # box: full-res pixels, half-open. z/t default -1 → keep the whole axis (2D image / no time trim).
-    x0 = Int(get(params, "x0", 0));  x1 = Int(get(params, "x1", 0))
-    y0 = Int(get(params, "y0", 0));  y1 = Int(get(params, "y1", 0))
-    z0 = Int(get(params, "z0", -1)); z1 = Int(get(params, "z1", -1))
-    t0 = Int(get(params, "t0", -1)); t1 = Int(get(params, "t1", -1))
+    # Nested under `cropBox` — the `imagePicker` widget emits one param whose value is the whole box.
+    # JSON3 yields Symbol keys; coerce to a plain Dict so `get(_, "x0", …)` works for both shapes.
+    raw_box = get(params, "cropBox", nothing)
+    if isnothing(raw_box) || !(raw_box isa AbstractDict)
+        on_log("[ERROR] cropBox param missing or not a box")
+        return nothing
+    end
+    box = Dict{String,Any}(String(k) => v for (k, v) in pairs(raw_box))
+    x0 = Int(get(box, "x0", 0));  x1 = Int(get(box, "x1", 0))
+    y0 = Int(get(box, "y0", 0));  y1 = Int(get(box, "y1", 0))
+    z0 = Int(get(box, "z0", -1)); z1 = Int(get(box, "z1", -1))
+    t0 = Int(get(box, "t0", -1)); t1 = Int(get(box, "t1", -1))
 
     # Inherit the source image's calibration onto the crop (SizeC/T/Z, PhysicalSize*, TimeIncrement).
     # Carried from the source's ccid `meta` — the same source→crop pattern used for `imChannelNames`

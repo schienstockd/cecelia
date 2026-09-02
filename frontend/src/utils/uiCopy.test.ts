@@ -267,7 +267,7 @@ describe('uncoveredControls', () => {
     // at the call site, so counting the internal input reports a violation no caller can fix.
     const src = '<template><input type="checkbox" /></template>'
     expect(uncoveredControls(src, '/src/components/CcToggle.vue')).toEqual([])
-    expect(uncoveredControls(src, '/src/components/CropPanel.vue')).toHaveLength(1)
+    expect(uncoveredControls(src, '/src/components/ManageImagesModule.vue')).toHaveLength(1)
   })
 
   it('does not end a tag early on a > inside an attribute value', () => {

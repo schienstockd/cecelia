@@ -5,7 +5,11 @@ export interface ParamDef {
        | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
        | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
+       | 'imagePicker'
        | 'group' | 'section'
+  // imagePicker: which spatial selection to author. v1 = 'box3d' (crop's box + z/t ranges).
+  // box2d / point2d / line2d / polygon2d slot into the same modal when a task needs them.
+  geometry?: 'box3d'
   tip?: string
   // A tip whose applicable text depends on the IMAGE (in practice, whether it carries T). Ordered
   // list, first-with-satisfied-`requires` wins; an entry without `requires` matches anything, so it

@@ -662,6 +662,28 @@ Reach for it whenever a param is "some of these", instead of asking the user to 
 list — a text field there is a parse error waiting to happen, and the values usually reach a runner
 that fails much later and much less clearly.
 
+**`imagePicker`** — a spatial selection AUTHORED on the image. Instead of eight int fields, the row
+shows a summary + a **Draw…** button that opens `ImagePickerModal` — a coloured z-MIP + rectangle
+draw + z/t range sliders (backend: the reused `/api/crop/*` endpoints in `api/src/crop_api.jl`). The
+`geometry` field says what to draw:
+
+| `geometry` | Value shape | Use |
+|---|---|---|
+| `box3d` | `{ x0, x1, y0, y1, z0, z1, t0, t1 }` — half-open pixels; `z0/z1/t0/t1 = -1` keep the whole axis | `editImages.cropImage` |
+
+```json
+{ "key": "cropBox", "label": "Crop area", "type": "imagePicker",
+  "geometry": "box3d", "required": true, "default": null,
+  "tip": "Draw the region to keep; z/t unset = keep whole axis" }
+```
+
+Preview version comes from the sibling `valueNameSelection` — the widget draws over the same version
+the task will read. The task runs against every selected image; the preview is `context.images[0]`
+and the same value applies to all of them. Reach for this whenever a task consumes a spatial region
+of an image; a follow-up geometry (`box2d`, `point2d`, `line2d`, `polygon2d`) is a matter of
+extending the modal's drawing branch. Handler reads the value as a nested dict — coerce JSON3 keys
+with `pairs(box)` before unpacking.
+
 ### Which picker — decide this before writing the param
 
 Every picker below already documents *how it works*. This table is the question that comes first:
