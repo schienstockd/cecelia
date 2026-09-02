@@ -1,0 +1,36 @@
+{
+  "task": "zProject",
+  "fun_name": "editImages.zProject",
+  "label": "Z-projection",
+  "category": "Edit",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to project"
+    },
+    {
+      "key": "op",
+      "label": "Projection",
+      "type": "select",
+      "default": "max",
+      "options": [
+        { "label": "Max",    "value": "max",    "help": "Brightest voxel per pixel — the ImageJ MIP" },
+        { "label": "Mean",   "value": "mean",   "help": "Average over Z" },
+        { "label": "Median", "value": "median", "help": "Robust average; slower — rechunks Z into one block" },
+        { "label": "Sum",    "value": "sum",    "help": "Photon-count math; can saturate an integer dtype" },
+        { "label": "Min",    "value": "min",    "help": "Dimmest voxel per pixel" },
+        { "label": "Std",    "value": "std",    "help": "Where signal varies through Z — a heterogeneity map" }
+      ],
+      "tip": "Which statistic collapses the Z axis"
+    }
+  ]
+}

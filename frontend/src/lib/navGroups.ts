@@ -30,6 +30,7 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'Data',
     items: [
       { to: '/manage-images', label: 'Manage images', icon: 'pi-upload', tip: 'Add, organise and export images.', requiresProject: true },
+      { to: '/preprocess', label: 'Preprocessing', icon: 'pi-image', tip: 'Crop, project or resample the image into a new one.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
       { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },

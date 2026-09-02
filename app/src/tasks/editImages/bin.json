@@ -1,0 +1,54 @@
+{
+  "task": "bin",
+  "fun_name": "editImages.bin",
+  "label": "Bin (XY downsample)",
+  "category": "Edit",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to bin"
+    },
+    {
+      "key": "factorX",
+      "label": "X factor",
+      "type": "int",
+      "min": 1,
+      "max": 32,
+      "step": 1,
+      "default": 2,
+      "tip": "Combine this many pixels along X into one; 1 = no binning"
+    },
+    {
+      "key": "factorY",
+      "label": "Y factor",
+      "type": "int",
+      "min": 1,
+      "max": 32,
+      "step": 1,
+      "default": 2,
+      "tip": "Combine this many pixels along Y into one; 1 = no binning"
+    },
+    {
+      "key": "op",
+      "label": "Combine",
+      "type": "select",
+      "default": "mean",
+      "options": [
+        { "label": "Mean", "value": "mean", "help": "Average — smooths noise, safe default" },
+        { "label": "Sum",  "value": "sum",  "help": "Photon-count math; can saturate an integer dtype" },
+        { "label": "Max",  "value": "max",  "help": "Preserves the brightest voxel in each bin" },
+        { "label": "Min",  "value": "min",  "help": "Preserves the dimmest voxel in each bin" }
+      ],
+      "tip": "How each factorX × factorY block collapses to one pixel"
+    }
+  ]
+}

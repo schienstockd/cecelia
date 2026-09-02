@@ -174,9 +174,13 @@ export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
-export AfCorrect, DriftCorrect, Smooth, CompositeTask
+export AfCorrect, DriftCorrect, Smooth, Flip, DtypeConvert, CompositeTask
 export CropImage
 export CopyImage
+export ZProject
+export TProject
+export BinImage
+export ResampleZ
 export ExportOmeTiff
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -276,8 +280,14 @@ include("tasks/importImages/migrateLegacy.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/smooth.jl")
+include("tasks/cleanupImages/flip.jl")
+include("tasks/cleanupImages/dtype.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
+include("tasks/editImages/zProject.jl")
+include("tasks/editImages/tProject.jl")
+include("tasks/editImages/bin.jl")
+include("tasks/editImages/resampleZ.jl")
 include("tasks/exportImages/ome_tiff.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/opticalFlow/train.jl")

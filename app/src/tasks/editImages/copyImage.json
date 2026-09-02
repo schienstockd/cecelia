@@ -3,6 +3,7 @@
   "fun_name": "editImages.copyImage",
   "label": "Copy image",
   "category": "Edit",
+  "hidden": true,
   "env": ["local"],
   "resource_pool": "io",
   "outputValueName": "default",

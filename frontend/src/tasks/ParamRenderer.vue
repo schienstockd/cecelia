@@ -17,7 +17,8 @@ import { selectedOptionHelp } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
+import ImagePickerModal from '../components/ImagePickerModal.vue'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
@@ -156,6 +157,36 @@ const availableChannels = computed(() => {
   if (nameLists[0].length === 0) return []
   return nameLists[0].filter(n => nameLists.every(ns => ns.includes(n)))
 })
+
+// imagePicker — a task param whose value is a spatial selection on ONE image (v1: `box3d` for crop).
+// The modal renders the preview + drawing surface (ImagePickerModal); this closure resolves which
+// image to draw on and which value_name to preview it as (the sibling valueNameSelection, so the
+// picker draws over the same version the task will read). A task that runs against N images uses
+// the same box for all of them — image[0] is the preview + the box applies to the rest.
+const pickerOpen = ref(false)
+const pickerImage = computed(() => props.context?.images?.[0])
+const pickerValueName = computed(() => {
+  const vnKey = siblingKeyOfType(props.context?.params, 'valueNameSelection')
+  const vn = vnKey ? props.context?.values?.[vnKey] : undefined
+  return typeof vn === 'string' && vn ? vn : 'default'
+})
+const pickerExtra = computed(() => Math.max(0, (props.context?.images?.length ?? 0) - 1))
+const pickerCanDraw = computed(() =>
+  props.param.type === 'imagePicker' && !!pickerImage.value && !!props.context?.projectUid)
+const pickerSummary = computed(() => {
+  if (props.param.type !== 'imagePicker') return ''
+  const v = val.value as Record<string, number> | null | undefined
+  if (!v || typeof v !== 'object') return 'not set'
+  const w = (v.x1 ?? 0) - (v.x0 ?? 0)
+  const h = (v.y1 ?? 0) - (v.y0 ?? 0)
+  const parts = [`${w}×${h} px`]
+  if ((v.z0 ?? -1) >= 0 && (v.z1 ?? -1) >= 0) parts.push(`z:${v.z0}–${v.z1 - 1}`)
+  if ((v.t0 ?? -1) >= 0 && (v.t1 ?? -1) >= 0) parts.push(`t:${v.t0}–${v.t1 - 1}`)
+  return parts.join(', ')
+})
+function onPickerSave(box: Record<string, number> | null) {
+  val.value = box
+}
 
 // popSelection — two modes:
 //  • single (default): a dropdown of flow populations for ONE segmentation (the sibling
@@ -770,12 +801,39 @@ const pct = computed(() => {
         :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
+    <!-- imagePicker — visual spatial selection (crop box today; box2d/point/line/polygon later).
+         The row shows a summary + Draw button; the modal owns preview + drawing. -->
+    <div v-else-if="param.type === 'imagePicker'" class="cc-row cc-row-tight image-picker">
+      <span class="image-picker-summary cc-muted cc-fs-xs">{{ pickerSummary }}</span>
+      <button class="cc-btn cc-btn-primary cc-btn-sm" :disabled="!pickerCanDraw"
+              @click="pickerOpen = true"
+              v-tooltip.top="pickerCanDraw
+                ? 'Open the image and draw the region'
+                : 'Select one image first'">
+        <i class="pi pi-image" /> {{ val ? 'Redraw…' : 'Draw…' }}
+      </button>
+      <button v-if="val" class="cc-btn cc-btn-ghost cc-btn-sm" @click="val = null"
+              v-tooltip.top="'Clear the picked region'">Clear</button>
+    </div>
+
     <!-- fallback -->
     <div v-else class="picker-placeholder"
       v-tooltip.top="`${param.type} — populated from image metadata`">
       <i class="pi pi-spinner pi-spin" style="font-size:var(--cc-fs-xs)" />
       {{ param.type }}
     </div>
+
+    <!-- imagePicker modal — teleported by BaseModal (fixed overlay). Only mounted when open, so no
+         MIP fetch runs until the user clicks Draw. -->
+    <ImagePickerModal v-if="pickerOpen && pickerImage && context?.projectUid"
+      :project-uid="context.projectUid"
+      :image-uid="pickerImage.uid"
+      :image-name="pickerImage.name"
+      :value-name="pickerValueName"
+      :geometry="((param as { geometry?: 'box3d' }).geometry) ?? 'box3d'"
+      :extra-image-count="pickerExtra"
+      @save="onPickerSave"
+      @close="pickerOpen = false" />
 
     <!-- The figure this param offers, if the spec named one. Below the control rather than beside the
          label, for a reason the layout does not show: a wrapper around the label moves it a level

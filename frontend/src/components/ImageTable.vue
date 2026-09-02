@@ -21,7 +21,6 @@ import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
-import CropDialog from './CropDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
@@ -51,12 +50,6 @@ const physSizeDialogUid = ref<string | null>(null)
 const metaDialogUid = ref<string | null>(null)
 const metaDialogImg = computed(() =>
   metaDialogUid.value ? (images.value.find(i => i.uid === metaDialogUid.value) ?? null) : null)
-
-// crop dialog (per-image, napari-free) — draw a rectangle on the coloured MIP, set z/t, save a new image.
-// Import page only: crop CREATES an image, which is an import-time operation (see the actions menu).
-const cropDialogUid = ref<string | null>(null)
-const cropDialogImg = computed(() =>
-  cropDialogUid.value ? (images.value.find(i => i.uid === cropDialogUid.value) ?? null) : null)
 
 // Two distinct affordances, kept visually separate: the warning (any module, always visible when
 // flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
@@ -776,9 +769,6 @@ const unselectableUids = computed(() =>
   <ImageMetadataDialog v-if="metaDialogImg" :image="metaDialogImg"
     @close="metaDialogUid = null" />
 
-  <CropDialog v-if="cropDialogImg" :image="cropDialogImg" :set-uid="setUid"
-    @close="cropDialogUid = null" />
-
   <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
   <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end" flush>
     <div v-if="actionsImg" class="cc-actions-menu">
@@ -788,11 +778,6 @@ const unselectableUids = computed(() =>
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
         <i class="pi pi-info-circle" /> Metadata
-      </button>
-      <!-- crop CREATES an image → Import page only, like copy/move/remove in the action bar -->
-      <button v-if="module === 'manageImages'" class="cc-actions-item" :disabled="!isImported(actionsImg)"
-        @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
-        <i class="pi pi-image" /> Crop to new image…
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID

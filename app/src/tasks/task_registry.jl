@@ -101,6 +101,14 @@ function _spec_path(::Smooth)
     joinpath(@__DIR__, "cleanupImages", "smooth.json")
 end
 
+function _spec_path(::Flip)
+    joinpath(@__DIR__, "cleanupImages", "flip.json")
+end
+
+function _spec_path(::DtypeConvert)
+    joinpath(@__DIR__, "cleanupImages", "dtype.json")
+end
+
 function _spec_path(::CropImage)
     joinpath(@__DIR__, "editImages", "cropImage.json")
 end
@@ -111,6 +119,22 @@ end
 
 function _spec_path(::CopyImage)
     joinpath(@__DIR__, "editImages", "copyImage.json")
+end
+
+function _spec_path(::ZProject)
+    joinpath(@__DIR__, "editImages", "zProject.json")
+end
+
+function _spec_path(::TProject)
+    joinpath(@__DIR__, "editImages", "tProject.json")
+end
+
+function _spec_path(::BinImage)
+    joinpath(@__DIR__, "editImages", "bin.json")
+end
+
+function _spec_path(::ResampleZ)
+    joinpath(@__DIR__, "editImages", "resampleZ.json")
 end
 
 function _spec_path(::TestImageTask)
@@ -175,9 +199,15 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.smooth"              => Smooth(),
+        "cleanupImages.flip"                => Flip(),
+        "cleanupImages.dtype"               => DtypeConvert(),
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),
+        "editImages.zProject"               => ZProject(),
+        "editImages.tProject"               => TProject(),
+        "editImages.bin"                    => BinImage(),
+        "editImages.resampleZ"              => ResampleZ(),
         "exportImages.ome_tiff"        => ExportOmeTiff(),
         "testTasks.image_task"               => TestImageTask(),
         "testTasks.set_task"                 => TestSetTask(),
