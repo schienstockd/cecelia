@@ -2037,9 +2037,9 @@ const brickMapSlices = computed(() => {
     slices.push({ z: bz, cells })
   }
   // Wrap the per-Z slices into a grid that grows down rather than across — the sidebar is
-  // narrow, so cap columns at 3 (Dominik 2026-09-02, SRPabw: "the maps just seem a bit large").
-  // nBz=2 → 2, 3 → 3, 4 → 3 (2 rows), 6 → 3 (2 rows), 9 → 3 (3 rows).
-  const gridCols = Math.min(3, Math.max(1, slices.length))
+  // narrow, so cap columns at 4 (Dominik 2026-09-02). nBz=2 → 2, 4 → 4, 6 → 4 (2 rows),
+  // 9 → 4 (3 rows), 16 → 4 (4 rows).
+  const gridCols = Math.min(4, Math.max(1, slices.length))
   return { displayNBx, displayNBy, gridCols, slices }
 })
 
