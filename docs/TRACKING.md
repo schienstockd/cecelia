@@ -8,7 +8,7 @@ celltrackR-style motility measures (speed, angle, displacement, …): **per-cell
 the cell H5AD `obs`, **per-track** measures go to a companion per-track table
 `labelProps/{value_name}__tracks.h5ad` (one row per track, measures in `X`/`var` so they are
 gateable). See "Track measures". The per-track view is read via `pop_df(…; granularity=:track)`;
-**gating on** track properties in the UI is the next phase ("Still deferred").
+gating on track properties is done end-to-end — see "Track-property gating" below.
 
 ## Pipeline at a glance
 
@@ -661,18 +661,20 @@ to be true, and neither announces itself when broken:
   the cost of a pooled condition is Σ nᵢ² and not (Σ nᵢ)² — guarding on the total would report "not
   checked" for every pooled arm, three ordinary movies being enough to pass 800.
 
-## Track-property gating — backend done, frontend/napari deferred
+## Track-property gating — done, end-to-end
 
-Gating on track properties (one point per track) is a first-class **`track` pop_type**. The backend
-is **done** (ports R `tracksInfo`); the gating UI + napari Tracks layer are the next sub-steps
-(plan: plotting-canvas-and-track-df, phase 3c–3e).
+Gating on track properties (one point per track) is a first-class **`track` pop_type**, wired all
+the way from the per-track store through the API to a dedicated Tracking-module canvas and to
+ribbon rendering in the browser viewer. Ports R `tracksInfo`. Source plan (kept as a record of the
+design, not a spec of what is): [`docs/todo/plotting-canvas-and-track-df.md`](todo/plotting-canvas-and-track-df.md),
+Phase 3 shipped 2026-08-20.
 
-- **`track_props` (`app/src/tracking/track_props.jl`) — done.** Compute-on-read per-track table
-  keyed by `track_id` (== `label`, so the gate engine's by-`label` membership works unchanged):
-  `num_cells` + motility from `{value_name}__tracks.h5ad` + on-read aggregates of any requested
-  **cell** column (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`; categorical → per-category
-  frequency `{m}.{cat}`). Nothing persisted — never stale, no re-run when new cell measures appear
-  (same "derive don't duplicate" choice as the track table). Ports R `tracksInfo`.
+- **`track_props` (`app/src/tracking/track_props.jl`).** Compute-on-read per-track table keyed by
+  `track_id` (== `label`, so the gate engine's by-`label` membership works unchanged): `num_cells`
+  + motility from `{value_name}__tracks.h5ad` + on-read aggregates of any requested **cell** column
+  (numeric → `.mean/.median/.sum/.qUp/.qLow/.sd`; categorical → per-category frequency `{m}.{cat}`).
+  Nothing persisted — never stale, no re-run when new cell measures appear (same "derive don't
+  duplicate" choice as the track table).
   - **Numeric vs categorical is auto-detected** from the decoded type + values — no config map
     (replaces the old R `config.yml` `labelStats`). `_is_categorical_col`: a non-`Real` column
     (anndata `string-array`/`categorical` decode to `String`) → categorical (e.g.
@@ -682,23 +684,22 @@ is **done** (ports R `tracksInfo`); the gating UI + napari Tracks layer are the 
     heuristic (a wide-spread integer count stays numeric); `categorical`/`numeric` kwargs force a
     column either way. The string/categorical-encoding path is exact, so a producing task can
     guarantee correct detection by writing a true categorical as an anndata `categorical`.
-- **`pop_df(img, "track", pops; …)` — done.** Gates evaluated DIRECTLY over the `track_props`
-  table; gate map in `gating/{value_name}__tracks.json`. `granularity=:track` → gated track rows;
-  `granularity=:cell` → expand to member cells. Distinct from `pop_type="live"` + `granularity=:track`,
-  which gates *cells* then aggregates to tracks. See `docs/POPULATION.md`. Verified on KDIeEm B
-  (gate on `live.track.speed`; track rows ↔ expanded cells).
-- **Gate-map storage — done.** `gating_path(task_dir, vn; pop_type="track")` →
+- **`pop_df(img, "track", pops; …)`.** Gates evaluated DIRECTLY over the `track_props` table;
+  gate map in `gating/{value_name}__tracks.json`. `granularity=:track` → gated track rows;
+  `granularity=:cell` → expand to member cells. Distinct from `pop_type="live"` +
+  `granularity=:track`, which gates *cells* then aggregates to tracks. See `docs/POPULATION.md`.
+  Verified on KDIeEm B (gate on `live.track.speed`; track rows ↔ expanded cells).
+- **Gate-map storage.** `gating_path(task_dir, vn; pop_type="track")` →
   `gating/{vn}__tracks.json`; `save_pop_map!`/`load_pop_map` route by `pop_type`.
-
-Still deferred:
-
-1. **Gating API track-awareness (3c)** — the gating endpoints branch their data source on
-   `popType="track"` → `track_props`; channels list motility + cell-aggregate columns; pop CRUD
-   persists to `{vn}__tracks.json`.
-2. **Show tracks in the viewer (3d)** — track ribbons built from the `track_id` + centroids +
-   `t` in the H5AD, kept in sync with the gating selection (port R `show_tracks`).
-3. **Track-gating canvas in the Tracking module (3e)** — the gating scatter + population manager
-   with `popType="track"`, reusing the extracted canvas shell; conditional manager option-groups.
-
-Tracked in `docs/TODO.md`. All of it builds on the `track_id` + measures already written — nothing
-above needs to change.
+- **Gating API is track-aware.** `_track_grained(pop_type)` in `api/src/gating_api.jl` routes
+  `popType ∈ ("track","trackclust")` at every gating endpoint: channels list motility + cell-
+  aggregate columns, pop CRUD persists to `{vn}__tracks.json`, plots read from the per-track
+  table.
+- **Tracking-module canvas.** `frontend/src/modules/TrackingModule.vue` mounts the extracted
+  `GatingPlots` component with `pop-type="track"` — one canvas shell, two family bindings (Gate
+  page = `flow`, Tracking page = `track`).
+- **Viewer ribbons.** `is_track_pop = get(p, :is_track, false) || get(p, :has_tracks, false)` in
+  `api/src/overlay_author.jl` — a track-poptype pop (`is_track = true`) draws as a ribbon layer in
+  the browser viewer, kept in sync with the gating selection. The source plan's "napari Tracks
+  layer" bullet is defunct — napari is being dropped in favour of the browser viewer + the offline
+  renderer.
