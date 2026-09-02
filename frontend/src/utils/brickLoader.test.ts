@@ -126,9 +126,22 @@ describe('brickShapeError', () => {
     expect(brickShapeError('38,4,36,128', bytes2, 1, 38, size)).toBeNull()
   })
 
-  it('flags a response LARGER than expected on nx/ny — never a valid clamp', () => {
+  // Z-edge bricks: same idea on the Z axis. SRPabw's nZ=193 with brickZ=128 makes the bz=1 brick
+  // come back with nz=65 (193-128). Rejecting the short reply here used to send the client into a
+  // constant refetch loop — 17.9 GB fetched, 0 writes.
+  it('accepts a payload with shorter nz — Z-edge brick', () => {
+    // Use a size with a plausible brickZ so the ebz axis has room for a shorter reply.
+    const zSize: readonly [number, number, number] = [128, 128, 128]
+    const bytes = 38 * 65 * 128 * 128 * 1
+    expect(brickShapeError('38,65,128,128', bytes, 1, 38, zSize)).toBeNull()
+  })
+
+  it('flags a response LARGER than expected on any axis — never a valid clamp', () => {
     const bytes = 38 * 4 * 200 * 128 * 1
-    expect(brickShapeError('38,4,200,128', bytes, 1, 38, size)).toMatch(/nx\/ny exceeds/)
+    expect(brickShapeError('38,4,200,128', bytes, 1, 38, size)).toMatch(/exceeds/)
+    const zSize: readonly [number, number, number] = [128, 128, 4]
+    const bytesZ = 38 * 8 * 128 * 128 * 1
+    expect(brickShapeError('38,8,128,128', bytesZ, 1, 38, zSize)).toMatch(/exceeds/)
   })
 })
 

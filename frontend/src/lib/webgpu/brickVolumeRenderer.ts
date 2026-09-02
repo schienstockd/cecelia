@@ -489,12 +489,11 @@ export async function createBrickVolumeRenderer(
     inflight.clear()
     const bpv = meta.bytesPerVoxel
     // Thin-Z stores collapse brickZ to nZ (Decision 2). Vibratome stacks keep the full 128.
-    // Also clamped by `meta.nZ`: a caller passing `zd > nZ` (e.g. a restored `zRange` that
-    // survived across images with different depths) would make the server clamp `zTo` back to
-    // the store's last plane, return `nz=meta.nZ`, and the shape guard rejects EVERY payload
-    // because `shape.nz !== ebz` (Dominik 2026-09-02, VJy1Nx: constant reload loop, 16 GB
-    // fetched but 0 writes). Defensive here so the renderer keeps working even if a caller
-    // slips.
+    // Also clamped by `meta.nZ` so a caller passing `zd > nZ` (e.g. a restored `zRange` that
+    // survived across images with different depths) doesn't over-allocate the atlas. The
+    // client-side clamp is independent of the Z-edge padding in the loader — `brickShapeError`
+    // now accepts `shape.nz <= ebz` so an nZ-not-multiple-of-brickZ store (SRPabw, nZ=193,
+    // brickZ=128) pads the tail brick instead of rejecting it in a constant refetch loop.
     const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd, meta.nZ))
     const brickSize: [number, number, number] = [BRICK_XY, BRICK_XY, brickZ]
     const nC = Math.min(meta.nC, 32)   // shader `array<f32, 32>` upper bound
@@ -640,11 +639,14 @@ export async function createBrickVolumeRenderer(
         const result = atlas.pageTable.insertOrEvictLru(brick, arrivalStamp)
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
-        // Edge bricks: server clamps xTo/yTo to store bounds; pad the response back up to the full
-        // slot so writeTexture takes the same-shape argument for every brick. The padded voxels
-        // are never sampled — the shader skips vi.x >= p.dims.x — so their contents don't matter.
+        // Edge bricks: server clamps xTo/yTo/zTo to store bounds; pad the response back up to the
+        // full slot so writeTexture takes the same-shape argument for every brick. The padded
+        // voxels are never sampled — the shader skips vi.x/y/z >= p.dims.x/y/z — so their contents
+        // don't matter. Z-edge kicks in when nZ isn't a brickZ multiple (SRPabw, nZ=193, brickZ=128:
+        // the bz=1 brick comes back nz=65 and used to be rejected → constant refetch loop).
         const [ebx, eby, ebz] = atlas.layout.brickSizeVox
         const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
+                    || payload.shape.nz !== ebz
         const bytes = isEdge
           ? padBrickPayload(payload.bytes, payload.shape, [ebx, eby, ebz], atlas.layout.bytesPerVoxel)
           : payload.bytes
@@ -761,6 +763,7 @@ export async function createBrickVolumeRenderer(
     if (entry === undefined || entry.slot !== expectedSlot) return
     const [ebx, eby, ebz] = layout.brickSizeVox
     const isEdge = payload.shape.nx !== ebx || payload.shape.ny !== eby
+                || payload.shape.nz !== ebz
     // Pad through the same helper as intensity — u32 is 4 bytes/voxel, and the helper's per-c/z/y
     // copy is bpv-agnostic. nc = 1 here.
     const bytes = isEdge

@@ -1948,16 +1948,26 @@ function syncTileCacheState() {
 
 /** Brick residency grid — one nBx × nBy panel per Z slice at the CURRENT level + `boundT` (via
  *  `shownT.value` which tracks the frame actually painted). Null when brick mode is off, the meta
- *  hasn't loaded, or the atlas hasn't ticked at least once. Template checks with `v-if`.
+ *  hasn't loaded, the atlas hasn't ticked at least once, or the tile renderer has taken over the
+ *  canvas. Template checks with `v-if`.
+ *
+ *  Active-renderer gate: the brick renderer runs whenever `bricksEnabled` is true AND the tile
+ *  renderer isn't active (`useTiles`). That INCLUDES 2D plane mode on movies too big for the flat
+ *  cache (Dml3RG, 29.5 GB total: bricks in 2D too). In whole-slide 2D the tile renderer takes
+ *  over instead — `syncCacheState` then never touches the brick residency snapshot, so the map
+ *  would freeze on the last 3D state (Dominik 2026-09-02, f8gzA2: "brick map stays and doesn't
+ *  change after 3D→2D").
  *
  *  Grid dims are computed here from meta + `brickSizeVox` + `2^level` rather than plumbed back
  *  from the renderer, so a level swap doesn't need a second round trip. */
 const brickMapGrid = computed(() => {
   const m = meta.value
   const lvl = brickCurrentLevel.value
-  if (!bricksEnabled.value || !m || lvl === undefined) return null
+  if (!bricksEnabled.value || useTiles.value || !m || lvl === undefined) return null
   const [bx, by, bz] = brickSizeVox.value
   const scale = Math.pow(2, lvl)
+  // Plane mode fetches a single z-brick per t (brickZ collapses to 1 in the renderer); volume
+  // mode spans the full zDepth.
   const zd = mode.value === 'plane' ? 1 : zDepth.value
   const nBx = Math.max(1, Math.ceil(m.nX / (bx * scale)))
   const nBy = Math.max(1, Math.ceil(m.nY / (by * scale)))
@@ -1980,7 +1990,8 @@ const BRICKMAP_MAX_CELLS_PER_AXIS = 8
  *  matches. */
 const brickMapSlices = computed(() => {
   const g = brickMapGrid.value
-  if (!g) return { displayNBx: 0, displayNBy: 0, slices: [] as { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] }
+  if (!g) return { displayNBx: 0, displayNBy: 0, gridCols: 1,
+    slices: [] as { z: number; cells: { key: string; state: 'absent' | 'loading' | 'resident' }[] }[] }
   // Filter by the TARGET t (`t.value`), same convention the tile map uses. The map is a
   // loading-progress indicator: what the user wants to see is bricks fetching toward the t
   // they just scrubbed to, not what the shader is still drawing. Filtering by `displayT`
@@ -2025,7 +2036,12 @@ const brickMapSlices = computed(() => {
     }
     slices.push({ z: bz, cells })
   }
-  return { displayNBx, displayNBy, slices }
+  // Wrap the per-Z slices into a roughly square grid so the whole map keeps a similar
+  // FOOTPRINT regardless of nBz — the point of gridding out (Dominik 2026-09-02: "i thought
+  // we gridded them out for cases with multiple maps"). `ceil(sqrt)` gives 1×1 at nBz=1,
+  // 2×2 at 4, 3×3 at 9, 4×4 at 16; non-perfect-squares (nBz=6 → 3×2) are close to square.
+  const gridCols = Math.max(1, Math.ceil(Math.sqrt(slices.length)))
+  return { displayNBx, displayNBy, gridCols, slices }
 })
 
 /** Grid dims of the current level — drives the mini tile map's aspect + cell count. Null when tile
@@ -2745,8 +2761,14 @@ const overviewChans = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
 const overviewDims = ref<{ nX: number; nY: number } | null>(null)
 async function loadOverviewThumbnail() {
   const m = meta.value
-  if (!m || !m.levels || m.levels.length === 0) return
-  const lvl = m.levels[m.levels.length - 1]
+  if (!m) return
+  // Deepest pyramid level for multi-level stores; for a single-level store `m.levels` is empty and
+  // L0 = meta.nX/nY is the only choice (Dominik 2026-09-02, SRPabw: no thumbnail because
+  // `levels.length === 0` bailed here). L0 is bigger, but still bounded — SRPabw is 441×420×2 B ×
+  // 4 ch ≈ 1.5 MB and 350k pixels to composite.
+  const lvl = m.levels && m.levels.length > 0
+    ? m.levels[m.levels.length - 1]
+    : { level: 0, nX: m.nX, nY: m.nY }
   const nch = Math.min(m.nC, MAX_CHANNELS)
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
   try {
@@ -4019,50 +4041,56 @@ onUnmounted(() => {
                     v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
               <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
             </div>
-            <div v-if="tileMapGrid" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
-              <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
+            <!-- Tile residency: toggle row + the map, packed together as one block so the map
+                 sits directly under the switch that controls it (Dominik 2026-09-02). One cell
+                 per tile at the current level; blue = in the atlas, amber = fetching. -->
+            <div v-if="tileMapGrid" class="vw-mapblock">
+              <div class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                      v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
+                <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
+              </div>
+              <div v-if="tilesMapShown" class="vw-tilemap vw-nested-map"
+                   :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
+                             gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
+                             aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}` }">
+                <span v-for="c in tileMapCellsView" :key="c.key"
+                      class="vw-tilemap-cell" :class="'is-' + c.state" />
+              </div>
             </div>
-            <div v-if="brickMapGrid" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
-              <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
+            <!-- Brick residency: same packed layout. Multiple Z slices wrap into a square-ish
+                 grid via `brickMapSlices.gridCols` so nBz > 2 (SRPabw, nBz=2 already; a real
+                 vibratome stack goes higher) doesn't stretch across the sidebar. -->
+            <div v-if="brickMapGrid" class="vw-mapblock">
+              <div class="cc-row cc-row-tight">
+                <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                      v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
+                <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
+              </div>
+              <div v-if="bricksMapShown" class="vw-brickmapgrid vw-nested-map"
+                   :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)` }">
+                <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
+                  <div class="vw-tilemap vw-brickmap-slice"
+                       :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                                 gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                                 aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
+                    <span v-for="c in s.cells" :key="c.key"
+                          class="vw-tilemap-cell" :class="'is-' + c.state" />
+                  </div>
+                  <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
+                       plane mode `nBz === 1` so a single "z0" label just added a row of vertical
+                       space under the grid with nothing to compare it against (Dominik
+                       2026-08-31). -->
+                  <span v-if="brickMapSlices.slices.length > 1"
+                        class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
+                </div>
+              </div>
             </div>
           </div>
           <div class="vw-compact-right">
             <button class="cc-btn cc-btn-ghost vw-reset"
                     @click="resetView"
                     v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
-            <!-- Tile residency mini map: the spatial analog of the timecourse strip above. One
-                 cell per tile at the current level; blue = in the atlas, amber = fetching, empty
-                 = absent. Only shown when its toggle in the left column is on. -->
-            <div v-if="tilesMapShown && tileMapGrid" class="vw-tilemap"
-                 :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
-                           gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
-                           aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}` }">
-              <span v-for="c in tileMapCellsView" :key="c.key"
-                    class="vw-tilemap-cell" :class="'is-' + c.state" />
-            </div>
-            <!-- Brick residency mini map: 3D analog of the tile map. One nBx × nBy grid per Z
-                 slice at the CURRENT level + timepoint. Same colour language as the tile map
-                 (blue = resident, amber = fetching). -->
-            <div v-if="bricksMapShown && brickMapGrid" class="vw-brickmaprow">
-              <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
-                <div class="vw-tilemap vw-brickmap-slice"
-                     :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
-                               gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
-                               aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
-                  <span v-for="c in s.cells" :key="c.key"
-                        class="vw-tilemap-cell" :class="'is-' + c.state" />
-                </div>
-                <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D plane
-                     mode `nBz === 1` so a single "z0" label just added a row of vertical space
-                     under the grid with nothing to compare it against (Dominik 2026-08-31). -->
-                <span v-if="brickMapSlices.slices.length > 1"
-                      class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -4779,15 +4807,23 @@ onUnmounted(() => {
    slipped; p95 > 33 ms = 30 Hz too. Standard fps split. */
 .vw-gpu-warn { color: var(--cc-sev-warn); }
 .vw-gpu-fail { color: var(--cc-sev-fail); }
-/* Brick residency map: one Z slice per column. Slices sit side by side and each carries a small
-   z index below. Same cell language as the tile map (blue = resident, amber = fetching). */
-.vw-brickmaprow { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }
+/* Brick residency map: `gridCols` per row so multi-Z stacks look square-ish rather than a long
+   horizontal strip. Each cell wraps one Z slice with a small z label below. Same cell language as
+   the tile map (blue = resident, amber = fetching). */
+.vw-brickmapgrid { display: grid; gap: 0.25rem; }
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
-.vw-brickmap-slice { flex: none; min-width: 3rem; max-width: 5rem; }
+.vw-brickmap-slice { min-width: 0; width: 100%; }
 .vw-brickmap-zlabel { line-height: 1; }
+/* Toggle-row + nested residency map, packed together as one block so the map hangs directly
+   under the switch that turns it on (Dominik 2026-09-02, "have these back underneath the bricks
+   toggle"). One .vw-mapblock per toggle; the map itself uses `.vw-nested-map` to cap width so a
+   single-tile map doesn't stretch across the whole sidebar. */
+.vw-mapblock { display: flex; flex-direction: column; gap: 0.25rem; }
+.vw-nested-map { width: 100%; max-width: 6rem; }
 /* Compact controls block — toggles (Fps, Loop, Overview, Tiles, Bricks) stacked on the left,
-   Reset view on the right with residency maps nested directly below it. Right column takes its
-   own width from the button + map so the left column can grow to fill the rest of the sidebar. */
+   Reset view on the right. Residency maps live under their own toggles in the left column.
+   Right column takes its own width from the button so the left column can grow to fill the rest
+   of the sidebar. */
 .vw-compact { display: flex; gap: 0.5rem; align-items: flex-start; }
 .vw-compact-left { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; min-width: 0; }
 .vw-compact-right { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex: 0 0 auto; min-width: 0; }
