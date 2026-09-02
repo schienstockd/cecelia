@@ -62,6 +62,11 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
            valueName            = value_name,
            labelIds             = label_ids,                          # null = whole segmentation
            trackSource          = track_source,                       # pop UID or "whole_seg"
+           # Override the P1 conflict detector: allow writing over labels currently owned by a
+           # different pop's track_source. Only for the intentional pop→pop refinement idiom; the
+           # whole-seg→pop case doesn't need it (whole_seg is treated as bypass in the detector).
+           # Not exposed as a param widget yet — wired for future use.
+           trackSourceForce     = Bool(get(params, "trackSourceForce", false)),
            maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
            maxLost              = Int(get(params, "maxLost", 3)),
            trackBranching       = Bool(get(params, "trackBranching", false)),

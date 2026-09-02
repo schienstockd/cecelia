@@ -132,16 +132,17 @@ def _make_labelprops_h5ad(path, labels):
     adata.write_h5ad(path)
 
 
-def _run_utils(props_path, source):
+def _run_utils(props_path, source, force=False):
     """A `BayesianTrackingUtils` wired to a fixture h5ad and a specific `trackSource`. Only
-    `_write_back` is exercised; params for btrack itself are irrelevant here."""
+    `_write_back` is exercised; params for btrack itself are irrelevant here. `force=True` sets
+    `trackSourceForce` — the intentional-overlap override the P1 conflict detector honours."""
     params = {'taskDir': os.path.dirname(props_path), 'btrackConfig': '/tmp/cfg.json',
               'maxSearchRadius': 20, 'maxLost': 1, 'trackBranching': False, 'minTimepoints': 1,
               'accuracy': 0.8, 'probToAssign': 0.8, 'noiseInital': 300, 'noiseProcessing': 100,
               'noiseMeasurements': 100, 'distThresh': 10, 'timeThresh': 5,
               'segmentationMissRate': 0.1, 'lambdaLink': 5, 'lambdaBranch': 50, 'lambdaTime': 5,
               'lambdaDist': 5, 'thetaTime': 5, 'thetaDist': 5,
-              'valueName': 'test', 'trackSource': source}
+              'valueName': 'test', 'trackSource': source, 'trackSourceForce': force}
     u = BayesianTrackingUtils(params, _Log())
     # override the labelProps location `__init__` computed so it points at the fixture we built
     u.props_path = props_path
@@ -248,6 +249,98 @@ class WriteBackProvenanceTest(unittest.TestCase):
         for l in range(6, 11):
             self.assertEqual(obs.loc[str(l), "track_source"], "whole_seg")
             self.assertFalse(np.isnan(obs.loc[str(l), "track_id"]))
+
+
+class WriteBackConflictDetectorTest(unittest.TestCase):
+    """MULTI_POP_TRACKING_ORPHANS_PLAN.md P1 — the conflict detector in `_write_back`.
+
+    Guards the general pop→pop label-collision case that the shipped plan left undocumented: if
+    pop B's run includes a label currently owned by pop A's `track_source`, the WRITE step used to
+    silently transfer ownership. Now it fails by default and names the labels; the caller passes
+    `trackSourceForce=true` to override (the intentional pop→pop refinement idiom).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "cells.h5ad")
+        _make_labelprops_h5ad(self.path, list(range(1, 11)))
+
+    def test_disjoint_pops_do_not_trigger_the_detector(self):
+        """Baseline: pop A on 1..5, pop B on 6..10 — no shared labels, no conflict, no raise."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        # If the detector fired incorrectly this would raise. Assert both runs land.
+        _run_utils(self.path, "B")._write_back(_lineage_df([(l, 200 + l) for l in range(6, 11)]))
+        obs = _obs(self.path)
+        self.assertEqual(obs.loc["1", "track_source"], "A")
+        self.assertEqual(obs.loc["6", "track_source"], "B")
+
+    def test_overlapping_pops_second_run_raises(self):
+        """Pop A tracks 1..5. Pop B then tracks 3..7 — labels 3, 4, 5 are still stamped `A`. The
+        detector raises with an actionable message; nothing is written."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        # Snapshot the id-space BEFORE B's attempt so we can prove the raise didn't half-write.
+        obs_before = _obs(self.path).copy()
+        with self.assertRaises(ValueError) as cm:
+            _run_utils(self.path, "B")._write_back(
+                _lineage_df([(l, 200 + l) for l in range(3, 8)]))
+        msg = str(cm.exception)
+        # The message names the count, the sample labels/sources, and the override switch.
+        self.assertIn("3 labels already owned", msg)
+        self.assertIn("source='A'", msg)
+        self.assertIn("trackSourceForce", msg)
+        # Nothing was written — A's rows are untouched, B has no rows.
+        obs_after = _obs(self.path)
+        for l in range(1, 6):
+            self.assertEqual(obs_after.loc[str(l), "track_source"], "A")
+            self.assertEqual(obs_before.loc[str(l), "track_id"],
+                             obs_after.loc[str(l), "track_id"])
+        # Labels 6..10 stay untracked.
+        for l in range(6, 11):
+            self.assertTrue(pd.isna(obs_after.loc[str(l), "track_source"]))
+            self.assertTrue(np.isnan(obs_after.loc[str(l), "track_id"]))
+
+    def test_force_overrides_and_transfers_ownership(self):
+        """Same collision as above, but with `trackSourceForce=true`. B wins the overlap; A's rows
+        outside the overlap survive."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        _run_utils(self.path, "B", force=True)._write_back(
+            _lineage_df([(l, 200 + l) for l in range(3, 8)]))
+        obs = _obs(self.path)
+        # A's non-overlapping cells (1, 2) still A-owned
+        for l in (1, 2):
+            self.assertEqual(obs.loc[str(l), "track_source"], "A")
+        # Overlap (3, 4, 5) transferred to B
+        for l in (3, 4, 5):
+            self.assertEqual(obs.loc[str(l), "track_source"], "B")
+        # B's new-only cells (6, 7) B-owned
+        for l in (6, 7):
+            self.assertEqual(obs.loc[str(l), "track_source"], "B")
+
+    def test_whole_seg_is_bypass_and_does_not_raise(self):
+        """`whole_seg` primes every cell. Per-pop A afterwards touches labels also stamped
+        whole_seg — but whole_seg is the sanctioned bypass, no raise. This is the shipped plan's
+        non-symmetric refine mode; the P1 detector must not regress it."""
+        _run_utils(self.path, "whole_seg")._write_back(
+            _lineage_df([(l, 100 + l) for l in range(1, 11)]))
+        # Should not raise — every overlap is against whole_seg.
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 500 + l) for l in range(1, 6)]))
+        obs = _obs(self.path)
+        for l in range(1, 6):
+            self.assertEqual(obs.loc[str(l), "track_source"], "A")
+        for l in range(6, 11):
+            self.assertEqual(obs.loc[str(l), "track_source"], "whole_seg")
+
+    def test_own_source_retrack_is_not_a_conflict(self):
+        """Re-tracking pop A on labels A already owns must not raise. The DELETE step clears A's
+        rows before the detector runs, so `src_obj` at those rows is `None` when checked."""
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 100 + l) for l in range(1, 6)]))
+        # Second A run overlaps its OWN labels; DELETE clears them first, detector sees None.
+        _run_utils(self.path, "A")._write_back(_lineage_df([(l, 999 + l) for l in range(1, 4)]))
+        obs = _obs(self.path)
+        for l in (1, 2, 3):
+            self.assertEqual(obs.loc[str(l), "track_source"], "A")
+        # Labels 4, 5 dropped from the re-run — DELETE cleared them, no re-write follows.
+        self.assertTrue(pd.isna(obs.loc["4", "track_source"]))
 
 
 if __name__ == '__main__':
