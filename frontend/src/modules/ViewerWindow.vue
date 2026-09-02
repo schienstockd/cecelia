@@ -2036,10 +2036,11 @@ const brickMapSlices = computed(() => {
     }
     slices.push({ z: bz, cells })
   }
-  // Wrap the per-Z slices into a grid that grows down rather than across — the sidebar is
-  // narrow, so cap columns at 4 (Dominik 2026-09-02). nBz=2 → 2, 4 → 4, 6 → 4 (2 rows),
-  // 9 → 4 (3 rows), 16 → 4 (4 rows).
-  const gridCols = Math.min(4, Math.max(1, slices.length))
+  // Wrap the per-Z slices into a roughly square grid so the whole map keeps a similar
+  // FOOTPRINT regardless of nBz — the point of gridding out (Dominik 2026-09-02: "i thought
+  // we gridded them out for cases with multiple maps"). `ceil(sqrt)` gives 1×1 at nBz=1,
+  // 2×2 at 4, 3×3 at 9, 4×4 at 16; non-perfect-squares (nBz=6 → 3×2) are close to square.
+  const gridCols = Math.max(1, Math.ceil(Math.sqrt(slices.length)))
   return { displayNBx, displayNBy, gridCols, slices }
 })
 
