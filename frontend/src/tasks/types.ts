@@ -171,6 +171,13 @@ export interface TaskDef {
                           // (`task_output_effect`, tasks/task.jl); same stamping route as
                           // `previewable`. Absent = don't show a line (segment/measure/cluster — the
                           // output isn't an image).
+  comingSoon?: boolean    // a task that is REGISTERED — its runtime plumbing exists and it runs from
+                          // the REPL/API — but is not yet ready for GUI use. `taskGatingReason` short-
+                          // circuits with the note, so the picker row greys out and reads
+                          // "<label> — Coming soon (…)". Set in the task JSON so a release can flip
+                          // the flag off without touching Julia/TS. See docs/MODULES.md → `comingSoon`.
+  comingSoonNote?: string // bespoke short reason shown after the em-dash (default: "Coming soon").
+                          // Keep short — this lands in a `<select>` option label.
 }
 
 export type ParamValues = Record<string, unknown>

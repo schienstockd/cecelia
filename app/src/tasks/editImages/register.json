@@ -1,0 +1,51 @@
+{
+  "task": "register",
+  "fun_name": "editImages.register",
+  "label": "Register images (staining cycles)",
+  "category": "Edit",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "scope": "set",
+  "outputValueName": "registered",
+  "comingSoon": true,
+  "params": [
+    {
+      "key": "regChannel",
+      "label": "Alignment channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "required": true,
+      "requiredMessage": "Select the channel used to align cycles",
+      "tip": "Shared marker across cycles — first selected image is the reference"
+    },
+    {
+      "key": "doAffine2d",
+      "label": "2D affine (MIP)",
+      "type": "bool",
+      "default": true,
+      "tip": "Register the max-intensity Z projection — fast and usually enough"
+    },
+    {
+      "key": "doAffine3d",
+      "label": "3D affine",
+      "type": "bool",
+      "default": false,
+      "tip": "Full 3D volume registration — slower, needed for real Z misalignment"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "doFftInitialization", "label": "FFT initialisation", "type": "bool", "default": false, "tip": "Seed the search with a phase-correlation shift — helps when the initial offset is large" },
+        { "key": "ignoreSpacing",       "label": "Ignore physical spacing", "type": "bool", "default": true, "tip": "Treat every pixel as isotropic — matches the old-R default" },
+        { "key": "autoMask",            "label": "Auto mask", "type": "bool", "default": false, "tip": "Restrict the optimiser to non-background pixels" },
+        { "key": "sigma",               "label": "Sigma", "type": "float", "min": 0, "max": 5, "step": 0.1, "default": 1.0, "tip": "Gaussian smoothing before registration — higher tolerates more noise" },
+        { "key": "samplesPerParameter", "label": "Samples per parameter", "type": "int", "min": 0, "max": 10000, "step": 50, "default": 5000, "tip": "How many pixels the optimiser sees per transform parameter" },
+        { "key": "expand",              "label": "Expand", "type": "int", "min": 0, "max": 5, "step": 1, "default": 0, "tip": "Multi-resolution pyramid depth (0 = single scale)" }
+      ]
+    }
+  ]
+}

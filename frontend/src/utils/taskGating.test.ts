@@ -94,3 +94,35 @@ describe('scale gating', () => {
     expect([...imageMissingScale(IMG({ ...CAL, ...LIVE }))]).toEqual([])
   })
 })
+
+
+// ── comingSoon: a static maturity flag on the task, not a property of the image ────────────────────
+// A task that ships its runtime plumbing but is not ready for GUI users yet — the REPL/API still runs
+// it, so the release cycle can flip the flag in the JSON without touching Julia. Short-circuits
+// `taskGatingReason` first: it applies regardless of the selection (an empty selection would
+// otherwise return '' and the picker row would render pickable-with-no-images rather than greyed
+// for the right reason).
+describe('comingSoon flag', () => {
+  const IMG = (over: Partial<CciaImage> = {}): CciaImage =>
+    ({ uid: 'u', name: 'n', status: 'done', ...over } as CciaImage)
+
+  it('greys the picker with a default reason when no note is set', () => {
+    expect(taskGatingReason({ comingSoon: true } as TaskDef, [IMG({ sizeT: 5 })]))
+      .toBe('Coming soon')
+  })
+  it('greys with the custom note when one is set', () => {
+    expect(taskGatingReason({ comingSoon: true, comingSoonNote: 'Coming in 0.2.1' } as TaskDef, [IMG()]))
+      .toBe('Coming in 0.2.1')
+  })
+  it('short-circuits the axis+scale checks entirely (empty selection still greys)', () => {
+    // A task that would ALSO fail the scale gate is greyed for `comingSoon`, not for the scale
+    // reason — the flag wins so a maintainer sees the intended message.
+    const def = { comingSoon: true, requires: { axes: ['T'], scale: ['xy'] } } as TaskDef
+    expect(taskGatingReason(def, [])).toBe('Coming soon')
+    expect(taskGatingReason(def, [IMG()])).toBe('Coming soon')
+  })
+  it('treats a whitespace-only note as absent', () => {
+    expect(taskGatingReason({ comingSoon: true, comingSoonNote: '   ' } as TaskDef, [IMG()]))
+      .toBe('Coming soon')
+  })
+})

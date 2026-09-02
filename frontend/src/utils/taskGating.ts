@@ -123,6 +123,11 @@ export function taskAppliesToAll(def: TaskDef, imgs: CciaImage[]): boolean {
  * missing axis rather than every image, so a mixed selection still reads cleanly.
  */
 export function taskGatingReason(def: TaskDef, imgs: CciaImage[]): string {
+  // `comingSoon` short-circuits — it's a maturity flag on the TASK, not a property of the image, so
+  // it applies whether anything is selected or not (an empty selection would otherwise return ''
+  // and the picker row would render pickable-with-no-images, not greyed for the right reason).
+  // Kept UI-only; the backend still accepts REPL/API/chain calls so the task can be tested off-GUI.
+  if (def.comingSoon) return def.comingSoonNote?.trim() || 'Coming soon'
   if (imgs.length === 0) return ''
   const need = taskRequiresAxes(def)
   const missingBy = new Set<Axis>()

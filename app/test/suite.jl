@@ -3936,6 +3936,28 @@ end
     @test m3["SizeZ"] == 1                    # round(1 * 0.1) = 0, floored to 1
 end
 
+@testset "Register stacks channels across cycles (pure helper)" begin
+    # Registration keeps the reference's extent + calibration + timeline; only the C dimension grows.
+    # The formula (ref_C + Σ(cycle_C - 1)) is decided by the handler, so the helper just receives it
+    # and stamps SizeC onto the inherited meta. Other calibration flows through untouched.
+    ref = Dict{String,Any}(
+        "SizeC" => 4, "SizeZ" => 12, "SizeT" => 1, "SizeX" => 512, "SizeY" => 512,
+        "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeUnit" => "micrometer",
+        "TimeIncrement" => 0, "TimeIncrementUnit" => "second",
+        "ori_path" => "/should/not/carry — handler adds it separately")
+    m = Cecelia._register_inherited_meta(ref, 4 + (5 - 1) + (3 - 1))  # ref + two moving cycles
+    @test m["SizeC"] == 10
+    @test m["SizeZ"] == 12 && m["SizeT"] == 1 && m["SizeX"] == 512 && m["SizeY"] == 512
+    @test m["PhysicalSizeX"] == 0.33 && m["PhysicalSizeZ"] == 2.0
+    @test m["PhysicalSizeUnit"] == "micrometer"
+    @test !haskey(m, "ori_path")   # the handler carries it, not this helper
+    # a total_c of 1 still writes SizeC=1 (a single-cycle "self-registration" is a valid no-op)
+    m2 = Cecelia._register_inherited_meta(Dict{String,Any}("SizeX" => 100, "SizeY" => 100), 1)
+    @test m2["SizeC"] == 1
+    @test m2["SizeX"] == 100 && m2["SizeY"] == 100
+end
+
 @testset "CopyImage carries calibration + provenance (pure helper)" begin
     # A copy is a faithful duplicate of ONE version: every calibration field carries over UNCHANGED
     # (unlike a crop), plus ori_path and a copy_source_* breadcrumb; non-calibration keys stay behind.
