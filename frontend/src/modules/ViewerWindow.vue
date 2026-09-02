@@ -981,6 +981,22 @@ const BRICK_TIERS = [
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
 const effectiveMaxIntersect = computed(() =>
   brickKnobThrFromUrl ? brickKnobThr : BRICK_TIER_THRESHOLD[settings.viewerBrickTier])
+/** Predicts whether the tier can change ANY level pick on the current image. The over-fetch
+ *  guard (`guardIntersectCost` in `brickScheduler.ts`) only coarsens the SSE-picked level when
+ *  the core brick count exceeds the tier's `maxIntersect`. If the store's L0 grid — the largest
+ *  the scheduler ever intersects — is smaller than Quick's threshold (128), no viewport can
+ *  ever trigger the guard, and Quick / Balanced / Detailed all resolve to the same level pick.
+ *  Dml3RG at 1060 × 1039 lands at 9 × 9 = 81 bricks per plane → guard is dead code on this image.
+ *  Brick XY size pinned at 128 per BRICK_INTEGRATION_PLAN.md Decision 2; brick Z clamps at nZ so
+ *  a thin store has one z-brick regardless of the atlas's brickZ preference. */
+const tierHasNoEffect = computed<boolean>(() => {
+  const m = meta.value
+  if (m === null || !bricksEnabled.value) return false
+  const brickXY = 128
+  const zBricks = Math.max(1, Math.ceil(m.nZ / Math.max(1, Math.min(m.nZ, 37))))
+  const maxCore = Math.ceil(m.nX / brickXY) * Math.ceil(m.nY / brickXY) * zBricks
+  return maxCore < BRICK_TIER_THRESHOLD.quick
+})
 /** Cache size options — chips, not a spinner. Bytes are the honest currency (unlike Quality tier,
  *  where the safe range isn't measured), but a spinner offering arbitrary MB values implies
  *  "any value is fine" — same trap. */
@@ -1054,12 +1070,33 @@ const effectiveCacheBytes = computed(() => {
   const mb = settings.viewerCacheMB
   return (mb > 0 ? mb : AUTO_CACHE_MB.value) * 1024 * 1024
 })
-// Live-apply the tier without reallocating the renderer. Ignored on the flat renderer (setter
-// is optional). `bias` stays URL-only, so it rides through unchanged. Nudge the frame pump so
-// the new threshold takes effect on the next draw — otherwise `tickScheduler` doesn't re-run
-// until the user moves the camera (2026-08-31 Dominik: "are you sure you're reloading").
-watch(effectiveMaxIntersect, v => {
-  renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: brickKnobBias })
+/** Effective scheduler bias — user's URL knob plus two conditional bumps:
+ *  - When the user explicitly picks a level from the dropdown, add that pick so SSE cannot go
+ *    finer than the pick. `scheduleBricks`'s `floor` alone is a CAP on coarseness (`chosen =
+ *    min(biased, floor)`), not a pin — SSE picks 0 based on zoom, `min(0, 2)` returns 0, and the
+ *    "L2" dropdown loads L0 anyway (Dominik 2026-09-02, "when i select l2… it just loads l0").
+ *    Adding `pick` to bias pushes SSE's raw pick past `pick`, then the clamp at `[0, nLevels-1]`
+ *    lands biased at `min(sse+pick, nLevels-1)` — coarser or equal to `pick`, never finer.
+ *  - During playback, force coarsest available. Blocky-but-in-motion beats sharp-but-frozen —
+ *    same reason every video player drops quality on playback.
+ *  Both are `max`-ed together with `brickKnobBias` so an explicit dropdown pick coexists with
+ *  playback (playback wins if it's coarser). No-op on single-level stores (`nLevels-1 = 0`,
+ *  `userPick` clamped to 0). */
+const effectiveSchedulerBias = computed(() => {
+  const nLevels = meta.value?.levels?.length ?? 1
+  const maxLevel = Math.max(0, nLevels - 1)
+  let extra = 0
+  if (playing.value) extra = Math.max(extra, maxLevel)
+  const userPick = settings.viewerVolumeLevel
+  if (userPick >= 0) extra = Math.max(extra, Math.min(userPick, maxLevel))
+  return brickKnobBias + extra
+})
+// Live-apply the tier + bias without reallocating the renderer. Ignored on the flat renderer
+// (setter is optional). Nudge the frame pump so the new threshold takes effect on the next draw
+// — otherwise `tickScheduler` doesn't re-run until the user moves the camera (2026-08-31
+// Dominik: "are you sure you're reloading").
+watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
+  renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
 })
 /**
@@ -1701,9 +1738,12 @@ function gotoT(tp: number) {
   const r = renderer.value; const m = meta.value
   if (r?.setPrefetchTimepoints && m) {
     const dir = Math.sign(tp - lastT) || 1
-    // Small depth — atlas has plenty of room, but every extra `t` fires 16-64 fetches. 4 covers
-    // half a second of 8fps playback and lands cheaply; sane default until we measure.
-    const cap = playing.value ? 4 : 1
+    // Cap requested: 4 during playback (~½ s buffer at 8 fps), 1 otherwise. The renderer clamps
+    // to whatever fits alongside boundT in the atlas — a small cache or a big-L0 image (Dml3RG
+    // shape) rounds this down so prefetch bricks can't LRU-evict boundT bricks. Regression guard
+    // for the rectangular-black-holes symptom Dominik hit 2026-09-02.
+    const requested = playing.value ? 4 : 1
+    const cap = r.maxSafePrefetchDepth?.(requested) ?? requested
     r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
   }
 }
@@ -2152,6 +2192,11 @@ function stopPlay() {
   playing.value = false
   waitingFor.value = -1
   if (playTimer !== null) { clearTimeout(playTimer); playTimer = null }
+  // Retire the playback prefetch window. Playback sets `prefetchTs` to `[t, t±1, t±2]` so the
+  // scheduler buffers ahead; leaving that in place after stop keeps `tickScheduler` kicking
+  // fetches for those neighbour t's every tick with no benefit — Dominik 2026-09-02 ("doesn't
+  // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
+  renderer.value?.setPrefetchTimepoints?.([t.value])
 }
 
 function tick() {
@@ -2199,7 +2244,11 @@ function tick() {
       const m = meta.value
       if (r?.setPrefetchTimepoints && m) {
         const dir = Math.sign(step.next - t.value) || 1
-        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, 4))
+        // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
+        // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
+        // the shader is trying to draw. Regression guard, Dominik 2026-09-02.
+        const cap = r.maxSafePrefetchDepth?.(4) ?? 4
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap))
       }
       frame.redraw()
     } else {
@@ -2881,7 +2930,7 @@ async function ensureRenderer() {
       // persisted quality tier; a subsequent tier change goes through the watcher below without
       // a reallocate. `bias`/`hold` stay URL-only (dev knobs). No-ops on the flat renderer.
       // See `parseNumQuery` block at the top of the module for the param names.
-      r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: brickKnobBias })
+      r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: effectiveSchedulerBias.value })
       r.setHoldFinerEnabled?.(brickKnobHold)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
@@ -3136,7 +3185,16 @@ async function loadVersion(refit: boolean) {
         applyChannel: () => { /* deferred to the post-alloc apply below */ },
         applyCamera:  () => { /* deferred */ },
         applyMode:    md => { mode.value = md },
-        applyZ:       (zp, zr) => { zPlane.value = zp; zRange.value = zr },
+        applyZ:       (zp, zr) => {
+          // Clamp restored z-state to THIS image's depth. A saved zRange from an image with a
+          // deeper stack (or an off-by-one leaked into persistence) would otherwise flow through
+          // as `zRange[1] = m.nZ`, making `zDepth = m.nZ + 1` and every brick payload get
+          // rejected on shape mismatch (Dominik 2026-09-02, VJy1Nx: constant reload loop).
+          // Same clamp discipline `applyT` already has for t.
+          const maxZ = Math.max(m.nZ - 1, 0)
+          zPlane.value = Math.max(0, Math.min(zp, maxZ))
+          zRange.value = [Math.max(0, Math.min(zr[0], maxZ)), Math.max(0, Math.min(zr[1], maxZ))]
+        },
         applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
       })
     })
@@ -3731,24 +3789,10 @@ onUnmounted(() => {
             />
           </div>
           <div class="cc-fs-3xs vw-adv-using cc-sev-ok">{{ effectiveRendererLabel }}</div>
-          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="brickKnobThrFromUrl
-                    ? `?brickThr=${brickKnobThr} overrides the tier`
-                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
-            <ChipSelect
-              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
-              variant="segmented" aria-label="Brick quality tier"
-              :disabled="brickKnobThrFromUrl"
-              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
-            />
-          </div>
-          <div class="cc-muted cc-fs-3xs vw-adv-note" v-else>
-            Quality tier applies to the Brick renderer.
-          </div>
           <!-- Cache size — one budget for both renderers. Flat uses it as its timepoint-cache
                ceiling; brick uses it as its atlas ceiling. Auto = 1500 MB, the pre-setting default.
-               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip. -->
+               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip.
+               Placed BEFORE Quality so the popover height doesn't reflow when Flat hides Quality. -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="cacheMBFromUrl
@@ -3762,6 +3806,21 @@ onUnmounted(() => {
             />
           </div>
           <div class="cc-fs-3xs vw-adv-using" :class="`cc-sev-${cacheSeverity}`">{{ effectiveCacheMBLabel }}</div>
+          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="brickKnobThrFromUrl
+                    ? `?brickThr=${brickKnobThr} overrides the tier`
+                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
+            <ChipSelect
+              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
+              variant="segmented" aria-label="Brick quality tier"
+              :disabled="brickKnobThrFromUrl"
+              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
+            />
+          </div>
+          <div v-if="bricksEnabled && tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
+            No effect on this image
+          </div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
@@ -4564,7 +4623,7 @@ onUnmounted(() => {
 .vw-adv-using.cc-sev-ok { color: var(--cc-sev-ok); }
 .vw-adv-using.cc-sev-warn { color: var(--cc-sev-warn); }
 .vw-adv-body { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 4px; min-width: 16rem; }
-.vw-adv-note { padding: 0.2rem 0 0.1rem; }
+.vw-adv-note { padding: 0.2rem 0 0.1rem; margin-left: calc(var(--cc-lbl-col) + 0.4rem); }
 .vw-keys { border-collapse: collapse; margin-top: 4px; }
 .vw-keys th, .vw-keys td { padding: 3px 8px 3px 0; text-align: left; vertical-align: middle; white-space: nowrap; }
 .vw-keys th { font-weight: normal; }
@@ -4737,9 +4796,12 @@ onUnmounted(() => {
    don't jitter the slider on every playback tick. */
 .vw-fps-val { min-width: 1.4rem; text-align: right; flex: none; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
-   with the controls above (no horizontal inset), consistent vertical rhythm. */
+   with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
+   center` keeps the value baselines centered against the taller label text — grid's default
+   `start` alignment left values crowded to the top of each row (Dominik 2026-09-02). */
 .vw-bench-grid {
   display: grid; grid-template-columns: auto 1fr;
+  align-items: center;
   column-gap: 0.5rem; row-gap: 0.15rem;
   padding: 0.1rem 0 0.2rem;
 }

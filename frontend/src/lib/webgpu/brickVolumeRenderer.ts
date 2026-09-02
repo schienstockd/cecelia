@@ -27,7 +27,11 @@ import {
   pickAtlasLayout, atlasSlotCapacity, type AtlasLayout, type DeviceLimits,
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
-import { PageTable, brickKey, parseBrickKey, type VirtualBrick } from '../../utils/pageTable'
+import {
+  PageTable, brickKey, parseBrickKey, shouldAdmitKick,
+  maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
+  type VirtualBrick,
+} from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
   bricksIntersectingViewport, DEFAULT_KNOBS, type SchedulerKnobs,
@@ -75,11 +79,31 @@ const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */
 const MAX_INFLIGHT = 16
 
+/** Non-boundT (prefetch / trailing playback t) inflight cap. Reserves `MAX_INFLIGHT - MAX_INFLIGHT_BG`
+ *  = 8 sockets for boundT bricks so a stop→scrub-elsewhere doesn't wait ~one browser-fetch time
+ *  (300 ms–1 s) for the FIFO to drain before the new boundT gets on the wire. See
+ *  `shouldAdmitKick` in `utils/pageTable.ts`. Bug shape: Dominik 2026-09-02, "when i just press
+ *  the play button it presumably pushes the bricks into a fifo queue. so when i stop the
+ *  playback. i have to wait a bit until the queue catches up. there is no skip the queue for the
+ *  brick that i would actually need right now". */
+const MAX_INFLIGHT_BG = 8
+
 /** LRU stamp bias for bricks the shader is CURRENTLY sampling as a fallback (prev-level bricks
  *  during a level swap, prev-t bricks during Frankenstein hole-fill). Placed well past
  *  `frameNow` so no arbitrary tie-break can evict them under load — screenshot #35 was an
  *  arbitrary tie-break wiping an active prev-level slot. */
 const PREV_TOUCH_BIAS = 1_000_000_000
+
+/** LRU stamp bias for bricks at the CURRENT `boundT` and level — the ones the shader is
+ *  drawing THIS frame. Same arbitrary-tie-break bug as PREV_TOUCH_BIAS: when the atlas is
+ *  full and every resident brick has `lastUsed = frameNow` (touched this tick), `evictLru`
+ *  picks the first-inserted entry — which is typically an early-loaded boundT brick still in
+ *  the visible render. Under overload (`prefetch × scheduled > atlas.capacity` on Dml3RG at
+ *  cacheMB=2048: 5 × 81 = 405 wanted vs 256 slots), that produces the "black rectangular
+ *  holes" symptom Dominik hit 2026-09-02. Kept strictly SMALLER than `PREV_TOUCH_BIAS` so
+ *  prev-level fallback still wins ties against current boundT — during a level swap the
+ *  fallback matters more than the target. */
+const BOUND_T_TOUCH_BIAS = 500_000_000
 
 interface AtlasState {
   layout: AtlasLayout
@@ -465,7 +489,13 @@ export async function createBrickVolumeRenderer(
     inflight.clear()
     const bpv = meta.bytesPerVoxel
     // Thin-Z stores collapse brickZ to nZ (Decision 2). Vibratome stacks keep the full 128.
-    const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd))
+    // Also clamped by `meta.nZ`: a caller passing `zd > nZ` (e.g. a restored `zRange` that
+    // survived across images with different depths) would make the server clamp `zTo` back to
+    // the store's last plane, return `nz=meta.nZ`, and the shape guard rejects EVERY payload
+    // because `shape.nz !== ebz` (Dominik 2026-09-02, VJy1Nx: constant reload loop, 16 GB
+    // fetched but 0 writes). Defensive here so the renderer keeps working even if a caller
+    // slips.
+    const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd, meta.nZ))
     const brickSize: [number, number, number] = [BRICK_XY, BRICK_XY, brickZ]
     const nC = Math.min(meta.nC, 32)   // shader `array<f32, 32>` upper bound
     const limits: DeviceLimits = {
@@ -578,10 +608,11 @@ export async function createBrickVolumeRenderer(
     if (currentMeta === null || source === null || atlas === null) return
     const key = brickKey(brick)
     if (inflight.has(key)) return
-    // Backpressure: the browser queues everything past ~6 concurrent HTTP/1.1 requests anyway,
-    // and an unbounded fan-out floods the queue with fetches the scheduler no longer wants by
-    // the time they run. Next tick picks up whatever we skipped. See MAX_INFLIGHT comment.
-    if (inflight.size >= MAX_INFLIGHT) return
+    // Two-tier backpressure: total inflight ≤ MAX_INFLIGHT (16) AND non-boundT inflight ≤
+    // MAX_INFLIGHT_BG (8). Reserving 8 slots for boundT means a stop→scrub gets its new-boundT
+    // bricks on the wire the same tick, without cancelling a still-useful prefetch. Skipped kicks
+    // retry next tick — that path is unchanged. See `shouldAdmitKick`.
+    if (!shouldAdmitKick(inflight.keys(), brick.t, boundT, MAX_INFLIGHT, MAX_INFLIGHT_BG)) return
     const layout = atlas.layout
     const url = brickSlabUrl(source, brick, layout.channelsPerBrick, layout.brickSizeVox, currentZLo)
     const ac = new AbortController()
@@ -601,7 +632,12 @@ export async function createBrickVolumeRenderer(
         if (payload === null) return
         if (destroyed || atlas === null) return
         if (atlas.currentLevel !== brick.level) return
-        const result = atlas.pageTable.insertOrEvictLru(brick, frameNow)
+        // Insert with the tiered stamp so a boundT brick is protected the moment it lands,
+        // not a tick later. Under overload the next `insertOrEvictLru` may fire from another
+        // arrival before the next tick — without this, a freshly-arrived boundT brick has
+        // `lastUsed = frameNow` and can be evicted by the next arrival within the same frame.
+        const arrivalStamp = brick.t === boundT ? frameNow + BOUND_T_TOUCH_BIAS : frameNow
+        const result = atlas.pageTable.insertOrEvictLru(brick, arrivalStamp)
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
         // Edge bricks: server clamps xTo/yTo to store bounds; pad the response back up to the full
@@ -821,6 +857,25 @@ export async function createBrickVolumeRenderer(
       }
     }
     atlas.pageTableDirty = true
+
+    // Rebuild prev-pageTable to name prev-level residents at the NEW displayT. Without this,
+    // prev-pageTable stays frozen at whatever displayT the last level swap snapshotted (line
+    // 951's `set(pageTableCpu)`) — so a play-past-swap shows the swap-time frame as a still
+    // image "on top", masking any newly-arriving prev-level bricks for the current displayT
+    // (Dominik 2026-09-02, "l2 bricks being reloaded underneath but a still image on top").
+    // Also updates when `rebuildPageTableForDisplayT` is called at swap (line 971), which then
+    // supersedes the swap-time snapshot at 951 — that snapshot is kept for the case where
+    // pageTable holds nothing at displayT yet (fallback: name the empty state).
+    if (atlas.prevLevel !== undefined && atlas.prevGridNx > 0) {
+      atlas.prevPageTableCpu.fill(EMPTY_SLOT)
+      for (const entry of atlas.pageTable.entries()) {
+        if (entry.brick.t !== displayT || entry.brick.level !== atlas.prevLevel) continue
+        const pIdx = prevGridIndexOfBrick(atlas, entry.brick)
+        if (pIdx < 0) continue
+        atlas.prevPageTableCpu[pIdx] = entry.slot >>> 0
+      }
+      atlas.prevPageTableDirty = true
+    }
   }
 
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
@@ -947,8 +1002,20 @@ export async function createBrickVolumeRenderer(
     // black — a between-tick arrival tied with L1 (prev) and the arbitrary tie-break picked
     // the L1 core, wiping the fallback.
     if (atlas.prevLevel !== undefined) {
+      // Only protect prev-level bricks the shader can ACTUALLY fall back to right now: same
+      // level (already gated) AND same displayT (prev-pageTable is a snapshot of pageTableCpu
+      // at swap time, which reflects the OLD displayT after swap and gets updated to reflect
+      // the NEW displayT on show(t) via rebuildPageTableForDisplayT). Prev-level residents at
+      // OTHER t's have no defensive value — the shader can't reach them. Blanket-protecting
+      // them (the previous behavior) caused the "roulette wheel" symptom Dominik 2026-09-02 on
+      // VJy1Nx: after a zoom-in swap from L2→L0, 441 L2 residents from a prior scrub across
+      // 62 timepoints all had PREV_TOUCH_BIAS applied every tick. Any L0 boundT arrival landed
+      // at BOUND_T_TOUCH_BIAS (5e8) < PREV_TOUCH_BIAS (1e9), then became LRU victim on the
+      // next L0 arrival — bricks flickering in and out one at a time on an L2 background.
       for (const e of atlas.pageTable.entries()) {
-        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
+        if (e.brick.level === atlas.prevLevel && e.brick.t === displayT) {
+          atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
+        }
       }
     }
     // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
@@ -961,14 +1028,23 @@ export async function createBrickVolumeRenderer(
     // ones already resident so they're LRU-fresh; kick fetches for the misses. The scheduled
     // brick set is the same shape for every `t` — only `brick.t` differs — so we re-use it for
     // the prefetch timepoints, dropping duplicates via `brickKey`.
+    //
+    // Touch stamp is tiered: boundT bricks (the ones the shader is DRAWING) get
+    // `frameNow + BOUND_T_TOUCH_BIAS` so LRU never picks them under an arbitrary tie-break;
+    // prefetch t's get plain `frameNow`. When the atlas is at capacity (prefetch × scheduled >
+    // atlas.slotCapacity, e.g. Dml3RG at cacheMB=2048), the untouched-this-tick prefetch bricks
+    // now die BEFORE any current-render brick, preventing the rectangular black holes symptom
+    // Dominik hit 2026-09-02. Prefetch churn under overload continues (expected — want > atlas);
+    // this fix only stops that churn from bleeding into the visible frame.
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     const ts = [boundT]
     for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
     for (const pt of ts) {
+      const touchStamp = pt === boundT ? frameNow + BOUND_T_TOUCH_BIAS : frameNow
       for (const s of scheduled) {
         const brickAtT: VirtualBrick = { ...s.brick, t: pt }
         const k = brickKey(brickAtT)
-        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, frameNow); continue }
+        if (atlas.pageTable.has(k)) { atlas.pageTable.touch(k, touchStamp); continue }
         if (inflight.has(k)) continue
         kickFetch(brickAtT)
       }
@@ -1460,6 +1536,12 @@ export async function createBrickVolumeRenderer(
     setOnDisplayAdvanced(cb) { onDisplayAdvanced = cb },
     setOnBrickWritten(cb) { onBrickWritten = cb },
     setOnFrameTimings(cb) { onFrameTimings = cb },
+    maxSafePrefetchDepth(requestedCap) {
+      if (atlas === null) return Math.max(0, requestedCap)
+      const capacity = atlasSlotCapacity(atlas.layout)
+      const coreBricks = atlas.gridNx * atlas.gridNy * atlas.gridNz
+      return computeMaxSafePrefetchDepth(capacity, coreBricks, requestedCap)
+    },
     setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelFloor(level) {
       // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`

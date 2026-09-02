@@ -248,6 +248,14 @@ export interface VolumeRenderer {
    */
   setPrefetchTimepoints?(list: number[]): void
   /**
+   * Brick renderer only: safest prefetch depth given atlas capacity and the current per-t core
+   * brick count. Callers pass their preferred cap (e.g. `4` during playback); the renderer clamps
+   * to whatever fits alongside boundT without evicting it. Returns the caller's cap untouched
+   * when the atlas isn't bound yet. Dml3RG-shape / small-cache regression guard — see
+   * `maxSafePrefetchDepth` in `utils/pageTable.ts`.
+   */
+  maxSafePrefetchDepth?(requestedCap: number): number
+  /**
    * Brick renderer only: floor for the SSE-picked LOD — coarsest level the scheduler is allowed
    * to use. `undefined` (or a negative number) means no floor (freely SSE). Threaded from
    * ViewerWindow's `slabLevel` computed. Replaces the 8b780fd pin: the pin blocked adaptive LOD

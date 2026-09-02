@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { PageTable, brickKey, slotToAtlasOrigin, slotCount } from './pageTable'
+import {
+  PageTable, brickKey, slotToAtlasOrigin, slotCount, maxSafePrefetchDepth, shouldAdmitKick,
+} from './pageTable'
 
 describe('brickKey', () => {
   it('is stable and axis-labelled', () => {
@@ -121,6 +123,34 @@ describe('PageTable — LRU eviction', () => {
     expect(evictedKey).toBe('T0/L0/B1,0,0')
   })
 
+  it('touch stamp bias survives an eviction round against same-frame touches — the fix for the boundT-brick eviction thrash', () => {
+    // Regression test for the "black rectangular holes in the volume" bug 2026-09-02: when
+    // every resident brick had `lastUsed = frameNow` (all touched this tick), `evictLru`'s
+    // strict `<` tie-break picked the first-inserted resident as victim — which was typically
+    // an early-loaded boundT current-render brick. The fix in `brickVolumeRenderer.ts` touches
+    // boundT bricks with `frameNow + BOUND_T_TOUCH_BIAS` so LRU can't pick them under a tie.
+    // Guard the underlying contract here so a future refactor of the touch policy can't
+    // reintroduce the tie-break scenario.
+    const t = new PageTable(3)
+    t.insertOrEvictLru(brick(0), 1)       // simulate an early-loaded boundT brick
+    t.insertOrEvictLru(brick(1), 2)       // simulate a prefetch brick
+    t.insertOrEvictLru(brick(2), 3)       // simulate a second prefetch brick
+    // This-tick touches — boundT gets the bias, prefetch bricks get plain frameNow=100.
+    const BOUND_T_BIAS = 500_000_000
+    t.touch('T0/L0/B0,0,0', 100 + BOUND_T_BIAS)  // boundT — protected
+    t.touch('T0/L0/B1,0,0', 100)                  // prefetch
+    t.touch('T0/L0/B2,0,0', 100)                  // prefetch
+    // A new prefetch brick arrives, triggering an eviction.
+    const { evictedKey } = t.insertOrEvictLru(brick(3), 100)
+    // The boundT brick MUST survive — a prefetch brick has to die instead.
+    expect(evictedKey).not.toBe('T0/L0/B0,0,0')
+    expect(t.has('T0/L0/B0,0,0')).toBe(true)
+    // And the biased brick keeps its bias — a subsequent tie-break round can't pick it either.
+    const { evictedKey: evicted2 } = t.insertOrEvictLru(brick(4), 100)
+    expect(evicted2).not.toBe('T0/L0/B0,0,0')
+    expect(t.has('T0/L0/B0,0,0')).toBe(true)
+  })
+
   it('explicit evict frees the slot and does not throw on an absent key', () => {
     const t = new PageTable(2)
     t.insertOrEvictLru(brick(0), 1)
@@ -130,6 +160,84 @@ describe('PageTable — LRU eviction', () => {
     expect(() => t.evict('T0/L0/B99,0,0')).not.toThrow()
     // The freed slot 0 is reused by the next inserter.
     expect(t.insertOrEvictLru(brick(1), 2).entry.slot).toBe(0)
+  })
+})
+
+describe('maxSafePrefetchDepth — the atlas-sizing prefetch guard', () => {
+  it('caps at the request when the atlas has plenty of headroom (SispLk-shape)', () => {
+    // 64 slots, 12-brick core → (64/12) − 1 = 4.33 → 4; requestedCap=1 wins.
+    expect(maxSafePrefetchDepth(64, 12, 1)).toBe(1)
+    expect(maxSafePrefetchDepth(64, 12, 4)).toBe(4)
+  })
+
+  it('bounds the request when the atlas can barely hold two t\'s — the Dml3RG shape at cacheMB=2048', () => {
+    // 442-slot atlas (post-sizer-rewrite), 81-brick core (9×9×1) — (442/81)−1 = 4.45 → 4.
+    // A hardcoded cap=4 was RIGHT on the edge (405 wanted vs 442 capacity) and prefetch churn
+    // was still visible. Cap=3 gives (1+3)×81=324 residents, comfortable margin.
+    expect(maxSafePrefetchDepth(442, 81, 4)).toBe(4)      // exact-fit case
+    expect(maxSafePrefetchDepth(256, 81, 4)).toBe(2)      // pre-sizer atlas: 256/81=3 → 2
+  })
+
+  it('returns 0 when the atlas is not big enough for even boundT plus one prefetch t', () => {
+    // Contract: boundT still wins even at depth=0 (BOUND_T_TOUCH_BIAS in the touch loop).
+    expect(maxSafePrefetchDepth(80, 81, 4)).toBe(0)       // core > capacity
+    expect(maxSafePrefetchDepth(100, 81, 4)).toBe(0)      // 100/81=1, minus 1 = 0
+  })
+
+  it('trusts the caller when coreBricksPerT is unknown (0)', () => {
+    // Renderer has no atlas bound yet — leave the caller\'s preference alone rather than clamp
+    // to 0 and silently kill prefetch.
+    expect(maxSafePrefetchDepth(442, 0, 4)).toBe(4)
+  })
+
+  it('never returns a negative depth', () => {
+    expect(maxSafePrefetchDepth(0, 81, 4)).toBe(0)
+    expect(maxSafePrefetchDepth(442, 81, -3)).toBe(0)
+  })
+})
+
+describe('shouldAdmitKick — the two-tier queue contract', () => {
+  const bgKeys = (n: number, t: number = 5): string[] =>
+    Array.from({ length: n }, (_, i) => `T${t}/L0/B${i},0,0`)
+
+  it('admits a boundT brick when total is under cap', () => {
+    // Full slate of 8 bg fetches for a stale t + 7 boundT fetches — a new boundT brick fits.
+    const inflight = [...bgKeys(8, 5), ...bgKeys(7, 20)]
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('refuses a boundT brick when total hits the hard cap', () => {
+    const inflight = [...bgKeys(8, 5), ...bgKeys(8, 20)]  // 16 total
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(false)
+  })
+
+  it('caps bg at maxBg even while boundT slots are free', () => {
+    // 8 bg fetches, 0 boundT — bg is at its cap. A new bg brick MUST be refused so the 8 free
+    // slots stay open for boundT. This is the whole point of the two-tier scheme.
+    const inflight = bgKeys(8, 5)
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(false)
+    // But boundT admission from the same state is fine — the reservation works.
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('admits bg while below the bg cap', () => {
+    expect(shouldAdmitKick(bgKeys(7, 5), 6, 20, 16, 8)).toBe(true)
+  })
+
+  it('re-classifies stale inflight when boundT drifts (no counter to keep in sync)', () => {
+    // Fetches kicked at boundT=5 now count as BG because boundT has moved to 20 — the exact case
+    // that made an event-driven counter fragile. Recount on each admit keeps the semantics stable.
+    const inflight = bgKeys(8, 5)  // originally boundT bricks, now stale
+    // A new bg (at t=6) should be refused because the "stale-t=5" bricks now occupy the bg cap.
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(false)
+    // A new boundT=20 brick admits fine.
+    expect(shouldAdmitKick(inflight, 20, 20, 16, 8)).toBe(true)
+  })
+
+  it('does not count unparseable keys toward bg (a malformed key must not block boundT)', () => {
+    const inflight = ['not-a-key', 'also-not-a-key', ...bgKeys(6, 5)]  // 8 total, 6 bg-known
+    // A new bg brick: only 6 bg counted, cap is 8 → admit.
+    expect(shouldAdmitKick(inflight, 6, 20, 16, 8)).toBe(true)
   })
 })
 

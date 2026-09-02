@@ -38,6 +38,62 @@ export function parseBrickKey(key: string): VirtualBrick | null {
   return { t: +m[1], level: +m[2], bx: +m[3], by: +m[4], bz: +m[5] }
 }
 
+/** Should the renderer admit a new fetch given the current inflight state?
+ *
+ *  Two-tier cap. Total inflight is bounded by `maxTotal` (the browser queues everything past its
+ *  own concurrency cap anyway, and an unbounded fan-out floods the queue with fetches the
+ *  scheduler no longer wants by the time they run). Non-boundT inflight is additionally bounded
+ *  by `maxBg`, reserving `maxTotal - maxBg` slots for boundT bricks — the ones the shader is
+ *  currently drawing.
+ *
+ *  Bug shape (Dominik 2026-09-02): playback fills all `maxTotal=16` sockets with prefetch and
+ *  current-t fetches. Stop, scrub elsewhere: new-boundT kickFetches hit `inflight.size >=
+ *  maxTotal` and skip. Retried next tick, but by then prefetch still holds the slots; user waits
+ *  ~one browser-fetch time (300 ms–1 s) for the FIFO to drain. With `maxBg=8`, prefetch can only
+ *  hold 8/16 sockets at any time — the other 8 stay open for boundT to jump the queue at the
+ *  source, no aborts needed.
+ *
+ *  Pure over the current inflight keys + boundT so the queue-priority contract can be
+ *  unit-tested without a WebGPU device. Unparseable keys count toward `maxTotal` but NOT toward
+ *  `maxBg` — we can't confirm the t, and over-counting bg would block boundT admission for
+ *  reasons the caller can't fix. */
+export function shouldAdmitKick(
+  inflightKeys: Iterable<string>, brickT: number, boundT: number,
+  maxTotal: number, maxBg: number,
+): boolean {
+  let total = 0
+  let bg = 0
+  for (const key of inflightKeys) {
+    total++
+    if (total >= maxTotal) return false
+    const b = parseBrickKey(key)
+    if (b !== null && b.t !== boundT) bg++
+  }
+  if (brickT !== boundT && bg >= maxBg) return false
+  return true
+}
+
+/** Safest prefetch depth given the atlas slot capacity and the per-t core brick count.
+ *
+ *  Bug shape (Dominik 2026-09-02, Dml3RG at cacheMB=2048): a hardcoded `cap=4` during playback
+ *  wanted `(1 + 4) × 81 = 405` bricks resident, against an atlas that could hold ~442. On a
+ *  bigger L0 or a smaller cache, that inequality flips — prefetch bricks then LRU-evict boundT
+ *  bricks (rectangular black holes). `BOUND_T_TOUCH_BIAS` protects boundT ONCE per resident, but
+ *  it can't stop the underlying overload. Sizing prefetch below the atlas is the durable fix.
+ *
+ *  Formula: `floor(atlasCapacity / coreBricksPerT) - 1` (subtracting 1 for boundT itself), then
+ *  clamped by the caller-requested cap. Returns 0 when there is not even room for boundT + one
+ *  extra t (boundT still wins under BOUND_T_TOUCH_BIAS). Returns `requestedCap` untouched when
+ *  `coreBricksPerT` is unknown (0) — the caller has no signal to reduce below its own preference.
+ */
+export function maxSafePrefetchDepth(
+  atlasCapacity: number, coreBricksPerT: number, requestedCap: number,
+): number {
+  if (coreBricksPerT <= 0) return Math.max(0, requestedCap)
+  const usable = Math.floor(atlasCapacity / coreBricksPerT) - 1
+  return Math.max(0, Math.min(requestedCap, usable))
+}
+
 /** Slot index → 3D origin in atlas voxel coords. Row-major over (sx, sy, sz) so a linear scan of
  *  slots walks the atlas cache-friendly. `atlasSlotCounts` is `[nSlotsX, nSlotsY, nSlotsZ]`;
  *  `brickSizeVox` is `[bx, by, bz]` — bricks are cuboids in voxel units, one dimension per axis
