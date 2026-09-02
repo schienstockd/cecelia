@@ -1,5 +1,7 @@
 struct CropImage <: CciaTask end
 
+task_output_effect(::CropImage) = "new-image"
+
 # Pure: derive the crop's inherited calibration meta from the SOURCE image's `meta` + the (half-open)
 # crop `box`. A crop keeps the same physical pixel size, channels and frame interval — only the extent
 # shrinks — so the physical scale/unit and channel count carry over unchanged; the Z/T counts shrink to
@@ -97,7 +99,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     haskey(src_meta, "ori_path") && (crop_meta["ori_path"] = src_meta["ori_path"])
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
-    new_img = add_image!(s; name = "$(img.name) (cropped)", meta = crop_meta)
+    new_img = add_image!(s; name = "$(img.name) (cropped)", meta = crop_meta, attr = img.attr)
 
     # No task subdirs are created for the new image (mirrors the import route): each is made by whoever
     # writes into it. The `data/` sidecar copy below makes its own, which is why it still works.

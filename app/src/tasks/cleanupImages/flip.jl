@@ -1,5 +1,7 @@
 struct Flip <: CciaTask end
 
+task_output_effect(::Flip) = "new-version"
+
 # Flip an image along one axis (X / Y / Z) and register the result as a NEW VERSION on the same
 # image — dims are preserved (only order along one axis reverses), so existing segmentations,
 # populations and gates that reference the source image's coordinates still line up on the flipped

@@ -1565,6 +1565,28 @@ end
 
     rm(proj.root; recursive=true)
 end
+@testset "add_image! carries attr for derived images" begin
+    # editImages tasks (copy/crop/z-proj/t-proj/bin/resample) mint a new image via `add_image!`,
+    # and the user's cohort/condition/mouse tags — `img.attr` — must follow that derivation.
+    # Silent DROP made a copy invisible to attr_value_counts / compare-by-attribute and forced the
+    # user to re-tag every crop; the fix is one kwarg into add_image!.
+    proj = create_project!(name = "attr-carry-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "set")
+    src_attr = Dict{String,String}("cohort" => "WT", "mouse" => "m3")
+    derived  = add_image!(s; name = "cropped", attr = src_attr)
+    @test derived.attr == src_attr
+    # copy defensively — mutating the passed dict later must not leak into the new image's attr
+    src_attr["cohort"] = "MUT"
+    @test derived.attr["cohort"] == "WT"
+    # round-trips through save! / load_project
+    reloaded = load_project(proj.uid)._sets[1]._images[1]
+    @test reloaded.attr == Dict{String,String}("cohort" => "WT", "mouse" => "m3")
+
+    # Default is empty (the fresh-import path — routes.jl — does not pass `attr`)
+    fresh = add_image!(s; name = "import")
+    @test fresh.attr == Dict{String,String}()
+    rm(proj.root; recursive = true)
+end
 @testset "move_image! (manifest-only, no data moved)" begin
     proj = create_project!(name="move-test-$(rand(1000:9999))")
     a = add_set!(proj; name="set-A")
@@ -13832,6 +13854,36 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # every spec, so one bad overload would otherwise break the whole task picker
         for (fun, task) in Cecelia._fun_name_map()
             @test Cecelia.task_previewable(task) isa Bool
+        end
+    end
+
+    @testset "task_output_effect labels image-producing tasks" begin
+        # editImages tasks all mint a NEW image (new uid via `add_image!`); the module-page picker
+        # surfaces this so the user knows they're duplicating, not overwriting.
+        for t in (Cecelia.CopyImage(), Cecelia.CropImage(), Cecelia.ZProject(), Cecelia.TProject(),
+                  Cecelia.BinImage(), Cecelia.ResampleZ())
+            @test Cecelia.task_output_effect(t) == "new-image"
+        end
+        # cleanupImages tasks write a NEW VERSION alongside `default` (via `_spec_output_value_name`).
+        for t in (Cecelia.AfCorrect(), Cecelia.DriftCorrect(), Cecelia.Smooth(),
+                  Cecelia.Flip(), Cecelia.DtypeConvert())
+            @test Cecelia.task_output_effect(t) == "new-version"
+        end
+        # Default is `nothing` — a task whose output is not an image (measure/cluster/segment) MUST
+        # NOT show a misleading line under the picker.
+        for t in (Cecelia.MeasureLabels(), Cecelia.CellposeSegment(), Cecelia.ImportOmezarr())
+            @test isnothing(Cecelia.task_output_effect(t))
+        end
+        # Composite: fold across steps, "strongest" wins. afDriftCorrect = AF + drift, both
+        # new-version, so the composite is new-version.
+        af_drift = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
+        @test af_drift isa Cecelia.CompositeTask
+        @test Cecelia.task_output_effect(af_drift) == "new-version"
+        # every registered task answers without throwing — same reason as previewable above; the
+        # definitions route stamps this onto every spec.
+        for (fun, task) in Cecelia._fun_name_map()
+            v = Cecelia.task_output_effect(task)
+            @test v === nothing || v in ("new-image", "new-version", "in-place")
         end
     end
 

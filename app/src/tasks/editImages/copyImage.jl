@@ -1,5 +1,7 @@
 struct CopyImage <: CciaTask end
 
+task_output_effect(::CopyImage) = "new-image"
+
 # Pure: the meta a copy inherits from its SOURCE image. A copy is a faithful duplicate of ONE version,
 # so every calibration field carries over UNCHANGED (unlike a crop, which shrinks SizeZ/SizeT) — plus
 # `ori_path` provenance (same underlying acquisition) and a `copy_source_*` breadcrumb. Non-calibration
@@ -112,7 +114,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     copy_meta = _copied_meta(src_meta, img.uid, value_name)
 
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
-    new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta)
+    new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta, attr = img.attr)
 
     # No task subdirs are created for the new image (mirrors the import route / cropImage): each is made
     # by whoever writes into it. The `data/` sidecar copy below makes its own, which is why it still works.

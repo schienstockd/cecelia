@@ -282,6 +282,27 @@ live_outputs(::CciaTask, ::AbstractDict)::Vector{LiveOutput} = LiveOutput[]
 task_previewable(::CciaTask)::Bool = false
 
 """
+    task_output_effect(task) -> Union{String, Nothing}
+
+What this task PRODUCES on disk. The module-page picker surfaces this as a short line under the
+function select so the user knows, before submitting, whether a run duplicates the image or
+just adds a version. One of:
+
+- `"new-image"`   — creates a whole new image (a new uid in the same set)
+- `"new-version"` — adds a version to each source image (writes a new value_name)
+- `"in-place"`    — modifies the selected image(s) without producing a new artefact
+
+`nothing` (the default) suppresses the line — appropriate for a task whose output is not an
+image (segment, cluster, measure, spatial analysis) or where the effect isn't decided by the
+task alone.
+
+Declared beside the task in Julia, same as [`task_previewable`](@ref), not in the JSON spec —
+the JSON is the PARAM spec, and a static capability doesn't belong in it. Stamped onto the
+served spec by `/api/tasks/definitions` as `outputEffect`. Composites fold across their steps.
+"""
+task_output_effect(::CciaTask)::Union{String, Nothing} = nothing
+
+"""
     preview_params(task, params, img) -> Dict
 
 The task's params as its OWN Python side needs them, for a preview. The base method passes them through.
@@ -1094,6 +1115,27 @@ end
 # not veto it.
 task_previewable(task::CompositeTask)::Bool =
     any(task_previewable, _composite_steps(task))
+
+# Composite: the effect the user sees is the strongest one across the steps. A composite that runs an
+# AF correction and then a drift correction still just adds a version; a composite that ends by
+# creating a whole new image should say so. Priority (strongest last): in-place < new-version <
+# new-image. A step that declares nothing is skipped (a measurement step in a segment+measure
+# composite has no image-output effect and shouldn't blank the segmenter's).
+function task_output_effect(task::CompositeTask)::Union{String, Nothing}
+    rank = Dict("in-place" => 1, "new-version" => 2, "new-image" => 3)
+    best::Union{String, Nothing} = nothing
+    best_rank = 0
+    for sub in _composite_steps(task)
+        e = task_output_effect(sub)
+        e === nothing && continue
+        r = get(rank, e, 0)
+        if r > best_rank
+            best = e
+            best_rank = r
+        end
+    end
+    best
+end
 
 # Composite: the previewable step owns the translation. Params are shared across a composite's steps
 # (they sit flat in one dict — see `live_outputs(::CompositeTask, …)`), so the first step that can be

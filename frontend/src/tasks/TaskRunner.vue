@@ -73,6 +73,25 @@ const paramContext = computed<ParamContext>(() => ({
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
 
+// what the task PRODUCES on disk, for the one-line note under the picker. Server-stamped from
+// `task_output_effect` (Julia); absent when the output isn't an image (segment / measure / cluster).
+// One-line each, per docs/ui/COPY.md — no "each image" plural boilerplate; the picker's row of images
+// above already establishes that.
+const OUTPUT_EFFECT_LABEL: Record<string, string> = {
+  'new-image':   'Creates a new image',
+  'new-version': 'Adds a new image version',
+  'in-place':    'Modifies in place',
+}
+const OUTPUT_EFFECT_TIP: Record<string, string> = {
+  'new-image':   'A new image is added to the set; the source is untouched',
+  'new-version': 'A new version is written on each image; other versions are untouched',
+  'in-place':    'Overwrites the selected image data; not undoable',
+}
+const outputEffectLabel = computed(() =>
+  OUTPUT_EFFECT_LABEL[taskDef.value?.outputEffect ?? ''] ?? '')
+const outputEffectTip = computed(() =>
+  OUTPUT_EFFECT_TIP[taskDef.value?.outputEffect ?? ''] ?? '')
+
 // resource profile — auto-selected from task def default; user can override. We only need the pool
 // NAMES here (the chip labels); live limits are the throttle popover's concern, not this picker's.
 const pools = ref<string[]>([])
@@ -585,6 +604,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
       </div>
+      <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
+         v-tooltip.right="outputEffectTip">
+        <i class="pi pi-info-circle" />
+        <span>{{ outputEffectLabel }}</span>
+      </p>
     </section>
 
     <!-- ── Parameters ── -->
@@ -767,6 +791,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
 .fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+.fn-effect {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.3rem 0 0;
+}
+.fn-effect .pi { font-size: var(--cc-fs-2xs); }
 .runner-down {
   display: flex;
   align-items: center;

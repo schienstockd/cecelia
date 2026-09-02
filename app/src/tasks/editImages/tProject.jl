@@ -1,5 +1,7 @@
 struct TProject <: CciaTask end
 
+task_output_effect(::TProject) = "new-image"
+
 # Pure: the meta a T-projection inherits from its SOURCE image. T is collapsed to a single frame,
 # so SizeT becomes 1; every other calibration field carries over unchanged (X/Y/Z pixel size + unit,
 # frame interval, channels). Mirrors `_zproj_inherited_meta` — kept out of `_run_task` so it's
@@ -62,7 +64,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     merge!(proj_meta, _tproj_inherited_meta(src_meta))
     haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
 
-    new_img = add_image!(s; name = "$(img.name) (t-$op)", meta = proj_meta)
+    new_img = add_image!(s; name = "$(img.name) (t-$op)", meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

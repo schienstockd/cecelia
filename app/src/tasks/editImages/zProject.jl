@@ -1,5 +1,7 @@
 struct ZProject <: CciaTask end
 
+task_output_effect(::ZProject) = "new-image"
+
 # Ops the runner understands. Kept out of `_run_task` so `validate_params` + the tests can share it,
 # and so a future op is one entry rather than a new branch three places.
 const _ZPROJECT_OPS = ("max", "mean", "median", "sum", "min", "std")
@@ -67,7 +69,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
     haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)
-    new_img = add_image!(s; name = "$(img.name) (z-$op)", meta = proj_meta)
+    new_img = add_image!(s; name = "$(img.name) (z-$op)", meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

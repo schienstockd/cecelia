@@ -1,5 +1,7 @@
 struct BinImage <: CciaTask end
 
+task_output_effect(::BinImage) = "new-image"
+
 # Pure: the meta an XY-bin inherits from its SOURCE image. Only the spatial fields change — SizeX/Y
 # shrink by their factor (integer floor, matching the runner's block-coarsen truncation) and
 # PhysicalSizeX/Y grow by the same factor (a binned pixel physically COVERS `factor` source pixels).
@@ -80,7 +82,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     haskey(src_meta, "ori_path") && (bin_meta["ori_path"] = src_meta["ori_path"])
 
     tag     = factor_x == factor_y ? "bin$factor_x" : "bin$(factor_x)x$(factor_y)"
-    new_img = add_image!(s; name = "$(img.name) ($tag)", meta = bin_meta)
+    new_img = add_image!(s; name = "$(img.name) ($tag)", meta = bin_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

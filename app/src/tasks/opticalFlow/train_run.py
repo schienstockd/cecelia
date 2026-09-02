@@ -90,7 +90,9 @@ CROP_BORDER_FRAC = 0.1
 
 
 def _open(im_path):
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr — every read below is `np.asarray(level[slice])`, no dask compute anywhere.
+    # (docs/todo/ZARR_STREAMING_PLAN.md decision 2.)
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
     dim_utils.calc_image_dimensions(im_dat[0].shape)
     return im_dat, dim_utils

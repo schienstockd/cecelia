@@ -1283,7 +1283,9 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     """
     # v2 unless told otherwise, and "told otherwise" normally means the SOURCE store was v3
     # (`store_encoding_of`). A v2 original must not acquire a v3 derived variant.
-    enc = store_encoding_of(reference_zarr) if reference_zarr else None
+    # `is not None`, not truthiness: `reference_zarr` may be a dask/zarr Array, whose `__bool__`
+    # raises `ValueError: The truth value of a Array is ambiguous`.
+    enc = store_encoding_of(reference_zarr) if reference_zarr is not None else None
     if zarr_format is None:
         zarr_format = enc['zarr_format'] if enc else 2
     if separator is None:
@@ -1431,7 +1433,9 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     the caller fills level 0 a plane or a tile at a time — which is exactly the pattern sharding
     punishes: one chunk written means one whole shard rewritten, and two workers on the same shard race
     (D8). Sharding belongs on write-once-sequential output."""
-    enc = store_encoding_of(reference_zarr) if reference_zarr else None
+    # `is not None`, not truthiness: `reference_zarr` may be a dask/zarr Array, whose `__bool__`
+    # raises `ValueError: The truth value of a Array is ambiguous`.
+    enc = store_encoding_of(reference_zarr) if reference_zarr is not None else None
     if zarr_format is None:
         zarr_format = enc['zarr_format'] if enc else 2
     if separator is None:

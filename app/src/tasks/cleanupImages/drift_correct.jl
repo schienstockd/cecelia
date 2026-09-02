@@ -2,6 +2,8 @@ using Statistics: median
 
 struct DriftCorrect <: CciaTask end
 
+task_output_effect(::DriftCorrect) = "new-version"
+
 # A registration whose own measurements disagree by more than this many pixels did not register.
 # Calibrated, not guessed: across the 18 corrected movies on the machine this was written on, every
 # movie that registered sat at 0.13–0.39 px RMS and the one that did not (`4kS67f/fHqhyb`, whose

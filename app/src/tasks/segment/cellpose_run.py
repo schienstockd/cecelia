@@ -53,10 +53,9 @@ def run(params):
     im_path  = params['imPath']
 
     log.log(f'>> open image: {im_path}')
-    # `as_dask=True` is metadata-only — `predict_from_zarr` fortifies one frame at a time via
-    # `read_timepoint`, so peak RAM is bounded regardless. (The old user `useDask` toggle was
-    # inert once per-timepoint streaming landed; removed.)
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr: `predict_from_zarr` uses `read_timepoint` per frame — no dask compute anywhere.
+    # (The old user `useDask` toggle was inert once per-timepoint streaming landed; removed.)
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
