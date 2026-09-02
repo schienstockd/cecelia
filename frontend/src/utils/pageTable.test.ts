@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PageTable, brickKey, slotToAtlasOrigin, slotCount } from './pageTable'
+import { PageTable, brickKey, slotToAtlasOrigin, slotCount, pickStaleInflightKeys } from './pageTable'
 
 describe('brickKey', () => {
   it('is stable and axis-labelled', () => {
@@ -158,6 +158,34 @@ describe('PageTable — LRU eviction', () => {
     expect(() => t.evict('T0/L0/B99,0,0')).not.toThrow()
     // The freed slot 0 is reused by the next inserter.
     expect(t.insertOrEvictLru(brick(1), 2).entry.slot).toBe(0)
+  })
+})
+
+describe('pickStaleInflightKeys — the queue-skip contract', () => {
+  it('names keys whose t is outside the wanted set — playback→stop→scrub-elsewhere', () => {
+    // Bug shape (Dominik 2026-09-02): playback burst filled inflight at t=5,6,7; user then
+    // scrubbed to t=20. Without this sweep the new boundT=20 kickFetches sit behind the queue
+    // cap (`MAX_INFLIGHT=16`) waiting for now-obsolete t=5..7 fetches to land.
+    const inflight = [
+      'T5/L0/B0,0,0', 'T6/L0/B0,0,0', 'T7/L0/B0,0,0',
+      'T20/L0/B0,0,0', 'T21/L0/B0,0,0',
+    ]
+    const wanted = new Set([20, 21, 22])
+    expect(pickStaleInflightKeys(inflight, wanted).sort()).toEqual([
+      'T5/L0/B0,0,0', 'T6/L0/B0,0,0', 'T7/L0/B0,0,0',
+    ])
+  })
+  it('keeps everything when every t is wanted (playback stepping forward)', () => {
+    // Playback t=5→6, old prefetch was {6,7,8}, new prefetch = {7,8,9}. Wanted =
+    // {6,7,8,9} (boundT plus new window). All old-prefetch bricks stay — no wasted socket work.
+    const inflight = ['T6/L0/B0,0,0', 'T7/L0/B0,0,0', 'T8/L0/B0,0,0']
+    expect(pickStaleInflightKeys(inflight, new Set([6, 7, 8, 9]))).toEqual([])
+  })
+  it('ignores unparseable keys — the aborter cannot name what it cannot identify', () => {
+    // Defensive: a malformed key holds its queue slot rather than being aborted blindly. Better
+    // to leak one slot than to abort an unrelated request whose identity we cannot confirm.
+    const stale = pickStaleInflightKeys(['not-a-key', 'T5/L0/B0,0,0'], new Set([20]))
+    expect(stale).toEqual(['T5/L0/B0,0,0'])
   })
 })
 

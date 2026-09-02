@@ -38,6 +38,28 @@ export function parseBrickKey(key: string): VirtualBrick | null {
   return { t: +m[1], level: +m[2], bx: +m[3], by: +m[4], bz: +m[5] }
 }
 
+/** Given the current inflight brick keys and the set of timepoints we still want, return the keys
+ *  whose bricks are for a t that is no longer wanted. The caller aborts those to free `MAX_INFLIGHT`
+ *  slots for the current `boundT`. Pure over strings so the renderer's queue-skip contract can be
+ *  unit-tested without a WebGPU device.
+ *
+ *  Semantics: the caller passes `wantedTs = {boundT} ∪ prefetchTs` — a set of t values that are
+ *  still worth spending a socket on. A key that fails `parseBrickKey` is unknown-t and kept
+ *  (aborting a request we cannot identify would be worse than holding a queue slot for a stale
+ *  one). */
+export function pickStaleInflightKeys(
+  inflightKeys: Iterable<string>,
+  wantedTs: ReadonlySet<number>,
+): string[] {
+  const stale: string[] = []
+  for (const key of inflightKeys) {
+    const b = parseBrickKey(key)
+    if (b === null) continue
+    if (!wantedTs.has(b.t)) stale.push(key)
+  }
+  return stale
+}
+
 /** Slot index → 3D origin in atlas voxel coords. Row-major over (sx, sy, sz) so a linear scan of
  *  slots walks the atlas cache-friendly. `atlasSlotCounts` is `[nSlotsX, nSlotsY, nSlotsZ]`;
  *  `brickSizeVox` is `[bx, by, bz]` — bricks are cuboids in voxel units, one dimension per axis
