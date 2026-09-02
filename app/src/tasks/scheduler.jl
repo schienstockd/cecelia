@@ -593,6 +593,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
     params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
+    params = _apply_param_requires(task, img, params)  # drop image-guarded params (see task.jl)
     validate_params(task, params)
     # Axis gating — raises TaskApplicabilityError before we occupy a pool slot. Chain executor
     # calls task_applies directly and skips (rather than raising) so mixed-image chains work.
@@ -638,6 +639,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
     params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
+    params = _apply_param_requires(task, imgs, params)  # drop image-guarded params (set-scope intersects)
     validate_params(task, params)
     # Set-scope tasks (behaviour/hmm) fit jointly across the whole vector — a static image inside
     # the set would break the fit, so gate on ALL images satisfying the requirement.

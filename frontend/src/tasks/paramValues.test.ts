@@ -4,8 +4,14 @@ import {
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
-  missingRequired, groupOrderKeysFor, newEntryDefaults } from './paramValues'
+  missingRequired, groupOrderKeysFor, newEntryDefaults,
+  paramAppliesToImages, resolveParamTip } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
+import type { CciaImage } from '../stores/project'
+
+// Minimal `CciaImage` for gating tests — only the axis-derivation fields matter (see imageAxes).
+const staticImg  = { sizeT: 1, sizeZ: 1, sizeC: 3 } as unknown as CciaImage
+const timelapseImg = { sizeT: 24, sizeZ: 1, sizeC: 3 } as unknown as CciaImage
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
 const DEF = {
@@ -542,6 +548,88 @@ describe('missingRequired', () => {
     } as unknown as TaskDef
     expect(missingRequired(def, { mode: 'on' })).toEqual(['K is required'])
     expect(missingRequired(def, { mode: 'off' })).toEqual([])
+  })
+})
+
+// ── param.requires.axes: image-side counterpart of showIf ──────────────────────────────────────────
+//
+// Smooth is the ONE mixed case in the tree — spatial sigma applies to a static image while the
+// temporal window does not — so refusing the run at task level was wrong. `paramAppliesToImages` is
+// the image-side twin of `showIfSatisfied`: it drops the temporal controls from the picker on
+// static images, and the Julia twin (`_apply_param_requires`) drops them from the effective run.
+describe('paramAppliesToImages', () => {
+  const guarded: ParamDef = {
+    key: 'temporalFrames', label: 'Temporal window', type: 'int',
+    requires: { axes: ['T'] },
+  }
+
+  it('un-guarded params always apply', () => {
+    const p: ParamDef = { key: 'sigma', label: 'Sigma', type: 'float' }
+    expect(paramAppliesToImages(p, [staticImg])).toBe(true)
+    expect(paramAppliesToImages(p, [])).toBe(true)
+    expect(paramAppliesToImages(p, undefined)).toBe(true)
+  })
+
+  it('T-guarded param applies to a timelapse and not to a still', () => {
+    expect(paramAppliesToImages(guarded, [timelapseImg])).toBe(true)
+    expect(paramAppliesToImages(guarded, [staticImg])).toBe(false)
+  })
+
+  it('empty or absent selection is treated as SATISFIED — we do not pre-hide before the user picks', () => {
+    expect(paramAppliesToImages(guarded, [])).toBe(true)
+    expect(paramAppliesToImages(guarded, undefined)).toBe(true)
+  })
+
+  it('a mixed selection with any static image fails — the guarded value cannot apply to it', () => {
+    expect(paramAppliesToImages(guarded, [timelapseImg, staticImg])).toBe(false)
+  })
+})
+
+describe('resolveParamTip', () => {
+  it('a plain `tip` string wins when there is no `tips` array', () => {
+    const p: ParamDef = { key: 'k', label: 'K', type: 'text', tip: 'plain' }
+    expect(resolveParamTip(p, [staticImg])).toBe('plain')
+  })
+
+  it('`tips` picks the FIRST entry whose requires is satisfied', () => {
+    const p: ParamDef = {
+      key: 'valueName', label: 'Image', type: 'valueNameSelection',
+      tips: [
+        { text: 'Use a drift-corrected version', requires: { axes: ['T'] } },
+        { text: 'Any image' },
+      ],
+    }
+    expect(resolveParamTip(p, [timelapseImg])).toBe('Use a drift-corrected version')
+    expect(resolveParamTip(p, [staticImg])).toBe('Any image')
+  })
+
+  it('no fallback entry + no match ⇒ undefined (no info icon) — smooth on a still', () => {
+    const p: ParamDef = {
+      key: 'valueName', label: 'Image', type: 'valueNameSelection',
+      tips: [{ text: 'T-only tip', requires: { axes: ['T'] } }],
+    }
+    expect(resolveParamTip(p, [staticImg])).toBeUndefined()
+  })
+})
+
+describe('missingRequired respects param.requires.axes', () => {
+  const DEF = {
+    params: [
+      { key: 'sigma', label: 'Sigma', type: 'float' },
+      { key: 'frames', label: 'Temporal window', type: 'int', required: true,
+        requires: { axes: ['T'] } },
+    ],
+  } as unknown as TaskDef
+
+  it('a param the IMAGE has ruled out is NOT required — same rule as showIf', () => {
+    // Otherwise the two combine into "please fill in a control you cannot see" — the smooth-on-still
+    // case that first motivated the mechanism.
+    expect(missingRequired(DEF, { sigma: 1 }, [staticImg])).toEqual([])
+  })
+
+  it('still requires when the axis IS present', () => {
+    expect(missingRequired(DEF, { sigma: 1 }, [timelapseImg]))
+      .toEqual(['Temporal window is required'])
   })
 })
 

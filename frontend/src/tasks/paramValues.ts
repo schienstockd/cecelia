@@ -15,6 +15,7 @@
 
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
+import { imageAxes, type Axis } from '../utils/taskGating'
 
 /**
  * One entry of a repeatable `group`, reconciled against the group's declared sub-params.
@@ -266,6 +267,59 @@ export function scopeValueName(
   return labelKeys[0] ?? 'default'
 }
 
+// ── Per-param image-gating: `requires.axes` on a single param ──────────────────────────────────────
+//
+// The image-side twin of `showIf`. `showIf` gates a param on the FORM ("show me only when
+// mode=attach"); `param.requires.axes` gates a param on the IMAGE ("show me only when this
+// image carries T"). Both feed the same `notApplicable` in `ParamRenderer`, so a caller adding a
+// new gate does not choose between two mechanisms — it picks the one whose data source matches.
+//
+// Same rule as showIf and `TaskDef.requires.axes`: the intersection of REQUIRED axes with axes the
+// images CARRY. Empty selection → satisfied (nothing to intersect against). A mixed selection
+// where one image is static and another is a timelapse is failed: the guarded control cannot
+// meaningfully apply to the static image, and quietly running the timelapse config on it is exactly
+// the smearing the guard is here to prevent.
+export function paramRequiredAxes(p: ParamDef): Set<Axis> {
+  const raw = p.requires?.axes
+  if (!raw?.length) return new Set()
+  return new Set(raw.map(a => String(a).toUpperCase() as Axis).filter(Boolean))
+}
+
+export function paramAppliesToImages(p: ParamDef, images: CciaImage[] | undefined): boolean {
+  const need = paramRequiredAxes(p)
+  if (need.size === 0) return true
+  if (!images || images.length === 0) return true    // no image yet → don't pre-hide
+  for (const img of images) {
+    const have = imageAxes(img)
+    for (const ax of need) if (!have.has(ax)) return false
+  }
+  return true
+}
+
+/**
+ * The tip to show, given the selected images. Picks the first entry in `param.tips` whose
+ * `requires.axes` is satisfied by every selected image, falling back to `param.tip`. Absent tip
+ * (no match, or the matching entry omits text) means no info icon — that is the point of the
+ * guarded form for controls whose only tip is temporal.
+ */
+export function resolveParamTip(p: ParamDef, images: CciaImage[] | undefined): string | undefined {
+  if (p.tips?.length) {
+    for (const entry of p.tips) {
+      const need = new Set((entry.requires?.axes ?? []).map(a => String(a).toUpperCase() as Axis))
+      if (need.size === 0) return entry.text || undefined
+      if (!images || images.length === 0) continue
+      const ok = images.every(img => {
+        const have = imageAxes(img)
+        for (const ax of need) if (!have.has(ax)) return false
+        return true
+      })
+      if (ok) return entry.text || undefined
+    }
+    return undefined
+  }
+  return p.tip
+}
+
 // ── Required params, checked BEFORE the run ────────────────────────────────────────────────────────
 //
 // `required` was declared in specs, enforced only server-side, and read by the frontend NOWHERE — no
@@ -274,11 +328,18 @@ export function scopeValueName(
 //
 // A param `showIf` has ruled out is NOT required: the two would otherwise combine into a form that
 // cannot be submitted and gives no way to see why. Julia's `validate_params` applies the same rule.
-export function missingRequired(def: TaskDef, values: ParamValues | undefined): string[] {
+// Same reasoning applies to `param.requires.axes` — a control the image cannot carry (the temporal
+// window on a static image) is nothing the user is expected to fill in.
+export function missingRequired(
+  def: TaskDef, values: ParamValues | undefined,
+  images: CciaImage[] | undefined = undefined,
+): string[] {
   const out: string[] = []
   const walk = (ps: ParamDef[] | undefined) => {
     for (const p of ps ?? []) {
-      const applies = p.hidden !== true && showIfSatisfied(p.showIf, values)
+      const applies = p.hidden !== true
+        && showIfSatisfied(p.showIf, values)
+        && paramAppliesToImages(p, images)
       if (applies && p.required) {
         const v = values?.[p.key]
         const empty = v === undefined || v === null || v === '' ||
