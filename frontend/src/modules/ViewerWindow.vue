@@ -3754,27 +3754,10 @@ onUnmounted(() => {
             />
           </div>
           <div class="cc-fs-3xs vw-adv-using cc-sev-ok">{{ effectiveRendererLabel }}</div>
-          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="brickKnobThrFromUrl
-                    ? `?brickThr=${brickKnobThr} overrides the tier`
-                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
-            <ChipSelect
-              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
-              variant="segmented" aria-label="Brick quality tier"
-              :disabled="brickKnobThrFromUrl"
-              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
-            />
-          </div>
-          <div v-if="tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
-            No effect on this image
-          </div>
-          <div class="cc-muted cc-fs-3xs vw-adv-note" v-else>
-            Quality tier applies to the Brick renderer.
-          </div>
           <!-- Cache size — one budget for both renderers. Flat uses it as its timepoint-cache
                ceiling; brick uses it as its atlas ceiling. Auto = 1500 MB, the pre-setting default.
-               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip. -->
+               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip.
+               Placed BEFORE Quality so the popover height doesn't reflow when Flat hides Quality. -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="cacheMBFromUrl
@@ -3788,6 +3771,21 @@ onUnmounted(() => {
             />
           </div>
           <div class="cc-fs-3xs vw-adv-using" :class="`cc-sev-${cacheSeverity}`">{{ effectiveCacheMBLabel }}</div>
+          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="brickKnobThrFromUrl
+                    ? `?brickThr=${brickKnobThr} overrides the tier`
+                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
+            <ChipSelect
+              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
+              variant="segmented" aria-label="Brick quality tier"
+              :disabled="brickKnobThrFromUrl"
+              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
+            />
+          </div>
+          <div v-if="bricksEnabled && tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
+            No effect on this image
+          </div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
@@ -4590,7 +4588,7 @@ onUnmounted(() => {
 .vw-adv-using.cc-sev-ok { color: var(--cc-sev-ok); }
 .vw-adv-using.cc-sev-warn { color: var(--cc-sev-warn); }
 .vw-adv-body { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 4px; min-width: 16rem; }
-.vw-adv-note { padding: 0.2rem 0 0.1rem; }
+.vw-adv-note { padding: 0.2rem 0 0.1rem; margin-left: calc(var(--cc-lbl-col) + 0.4rem); }
 .vw-keys { border-collapse: collapse; margin-top: 4px; }
 .vw-keys th, .vw-keys td { padding: 3px 8px 3px 0; text-align: left; vertical-align: middle; white-space: nowrap; }
 .vw-keys th { font-weight: normal; }

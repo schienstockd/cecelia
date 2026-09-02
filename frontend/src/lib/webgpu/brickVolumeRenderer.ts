@@ -28,7 +28,7 @@ import {
 } from '../../utils/brickAtlas'
 import { createBrickAtlasTexture, type BrickAtlasTexture } from './brickAtlasTexture'
 import {
-  PageTable, brickKey, parseBrickKey, pickStaleInflightKeys,
+  PageTable, brickKey, parseBrickKey,
   maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
   type VirtualBrick,
 } from '../../utils/pageTable'
@@ -1495,30 +1495,7 @@ export async function createBrickVolumeRenderer(
       const coreBricks = atlas.gridNx * atlas.gridNy * atlas.gridNz
       return computeMaxSafePrefetchDepth(capacity, coreBricks, requestedCap)
     },
-    setPrefetchTimepoints(list) {
-      prefetchTs = list.slice()
-      // Free `MAX_INFLIGHT` slots for the current wanted frontier. Bug shape (Dominik 2026-09-02):
-      // playback burst fills the queue with t=old..old+3 fetches; user stops and scrubs elsewhere;
-      // the new boundT's kickFetches then hit the queue cap (`MAX_INFLIGHT=16`) and skip, leaving
-      // the visible frame black until the obsolete playback fetches drain. Aborting the stale-t
-      // sockets HERE — the caller's frontier-declaration point — is safe because ViewerWindow's
-      // `gotoT` runs the sequence `show(t)` → `schedulePump` → `setPrefetchTimepoints` all in one
-      // synchronous block, so `boundT` is already the new t and `prefetchTs` is the new window by
-      // the time we sweep. The stall path (2216) has no `show`, but `boundT` is still the wanted
-      // t there (the stall t is what the shader is drawing).
-      //
-      // Not the same shape as the level-swap DON'T-abort at line 922 — that concerned bytes for
-      // the OLD level that might still be useful on zoom-back; here the bytes are for t values
-      // the caller has explicitly retired. Arrival guard already discards stale payloads
-      // silently, and the `.catch(() => inflight.delete(key))` handler removes each aborted key
-      // on the next microtask — we delete synchronously below so the slot is freed THIS tick.
-      const wanted = new Set<number>([boundT])
-      for (const pt of prefetchTs) wanted.add(pt)
-      for (const key of pickStaleInflightKeys(inflight.keys(), wanted)) {
-        inflight.get(key)?.abort()
-        inflight.delete(key)
-      }
-    },
+    setPrefetchTimepoints(list) { prefetchTs = list.slice() },
     setLevelFloor(level) {
       // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`
       // dropdown: Auto = n-1 (coarsest possible, no restriction), an explicit pick = that level.
