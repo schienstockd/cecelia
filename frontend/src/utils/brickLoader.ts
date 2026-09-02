@@ -159,8 +159,8 @@ export async function fetchLabelBrick(
   // Labels are always u32 ids -- 4 bytes/voxel, nc=1. Skip brickShapeError (which is
   // channel-aware) and roll a smaller check inline.
   const [ebx, eby, ebz] = expectedBrickSize
-  if (shape.nc !== 1 || shape.nz !== ebz) return null
-  if (shape.nx > ebx || shape.ny > eby) return null
+  if (shape.nc !== 1) return null
+  if (shape.nx > ebx || shape.ny > eby || shape.nz > ebz) return null
   const want = shape.nc * shape.nz * shape.ny * shape.nx * 4
   if (bytes.byteLength !== want) return null
   return { bytes, shape }
@@ -185,18 +185,23 @@ export function brickShapeError(
   const shape = parseBrickSlabShape(header)
   if (!shape) return 'Brick response carried no 4-tuple X-Slab-Shape header (need nc,nz,ny,nx)'
   const [ebx, eby, ebz] = expectedBrickSize
-  // Edge bricks: the server clamps `xTo`/`yTo` to the store's bounds so an edge brick comes back
-  // shorter than the interior on x and/or y. The caller pads the payload to full brick size before
-  // writeTexture — the padded voxels are never sampled because the shader skips `vi.x >= p.dims.x`.
-  // nc + nz must still match exactly (the atlas has no way to compensate for a wrong channel count
-  // or a wrong z-thickness). shape.nx/ny must not EXCEED the expected — a server that returns MORE
-  // than we asked for is either a route bug or a stale reply, both silent-corruption risks.
-  if (shape.nc !== expectedNC || shape.nz !== ebz) {
+  // Edge bricks: the server clamps `xTo`/`yTo`/`zTo` to the store's bounds, so an edge brick comes
+  // back shorter than the interior on ANY of x, y, z. The caller pads the payload to full brick
+  // size before writeTexture — the padded voxels are never sampled because the shader skips
+  // `vi.x >= p.dims.x` (same guard for y and z). nc must still match exactly (the atlas has no way
+  // to compensate for a wrong channel count). shape.nx/ny/nz must not EXCEED the expected — a
+  // server that returns MORE than we asked for is either a route bug or a stale reply, both
+  // silent-corruption risks.
+  //
+  // Z-edge matters for nZ > brickZ stores (SRPabw, nZ=193, brickZ=128 ⇒ last z-brick nz=65):
+  // rejecting the short reply here turned into a constant refetch loop — 17.9 GB fetched, 0 writes.
+  if (shape.nc !== expectedNC) {
     return `Brick is ${shape.nc}x${shape.nz}x${shape.ny}x${shape.nx} (c,z,y,x) but ` +
            `${expectedNC}x${ebz}x${eby}x${ebx} was asked for`
   }
-  if (shape.nx > ebx || shape.ny > eby) {
-    return `Brick nx/ny exceeds expected: got ${shape.nx}x${shape.ny}, max ${ebx}x${eby}`
+  if (shape.nx > ebx || shape.ny > eby || shape.nz > ebz) {
+    return `Brick nx/ny/nz exceeds expected: got ${shape.nx}x${shape.ny}x${shape.nz}, ` +
+           `max ${ebx}x${eby}x${ebz}`
   }
   const want = shape.nc * shape.nz * shape.ny * shape.nx * bytesPerVoxel
   if (byteLength !== want) return `Brick is ${byteLength} bytes, expected ${want}`
