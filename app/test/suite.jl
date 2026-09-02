@@ -7898,6 +7898,83 @@ end
     @test m2._uid_backfilled == false                 # nothing to backfill this time
 end
 
+# ── Retired UIDs (MULTI_POP_TRACKING_ORPHANS_PLAN P2) ──────────────────────────────
+# A pop's UID outlives the pop as long as the segmentation's h5ad still carries `track_source`
+# rows stamped with it. Reusing that UID for a new pop would silently transfer the old orphan
+# rows to the new pop on its first tracking run. `_del_paths!` retires the UID; `_fresh_pop_uid`
+# refuses to reissue it; the set round-trips through the sidecar so retirement survives sessions.
+@testset "deleted pop's UID is retired and never reissued" begin
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    uid_a = pop_uid(m, "/a")
+    @test uid_a ∉ m.retired_uids                       # live pops don't belong in the set
+
+    del_pop!(m, "/a")
+    @test uid_a in m.retired_uids                      # retirement is on delete
+
+    # `_fresh_pop_uid` must refuse the retired UID even when explicitly preferred (a hand-edited
+    # sidecar that resurrected it). Rerolls to something fresh instead of colliding.
+    reused = Cecelia._fresh_pop_uid(m; preferred=uid_a)
+    @test reused != uid_a
+    @test reused ∉ m.retired_uids
+
+    # And every future add_pop! is guaranteed to skip retired UIDs — driven statistically by the
+    # birthday probability, guaranteed by the guard. Add 20 pops and none can land on `uid_a`.
+    for i in 1:20
+        add_pop!(m, "p$i"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+        @test pop_uid(m, "/p$i") != uid_a
+    end
+end
+
+@testset "retired UIDs round-trip through the sidecar" begin
+    td = mktempdir()
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    add_pop!(m, "b"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    uid_a = pop_uid(m, "/a"); uid_b = pop_uid(m, "/b")
+    del_pop!(m, "/a")
+    del_pop!(m, "/b")
+    save_pop_map!(m, td)
+
+    m2 = load_pop_map(td, "B")
+    @test uid_a in m2.retired_uids
+    @test uid_b in m2.retired_uids
+    # The guard still applies AFTER a load — the retired set is authoritative in the fresh session.
+    @test Cecelia._fresh_pop_uid(m2; preferred=uid_a) != uid_a
+end
+
+@testset "legacy sidecar without retired_uids loads with an empty set" begin
+    td = mktempdir()
+    mkpath(joinpath(td, "gating"))
+    # An emitted sidecar from before the P2 ship — no `retired_uids` key at all.
+    write(joinpath(td, "gating", "B.json"), """
+    {"pop_type":"flow","value_name":"B","populations":[
+      {"name":"a","uid":"abc123","colour":"#f00","show":true,
+       "gate":{"kind":"rectangle","x_channel":"x","y_channel":"y",
+               "x_transform":{"kind":"linear"},"y_transform":{"kind":"linear"},
+               "x_min":0,"x_max":1,"y_min":0,"y_max":1},"children":[]}
+    ]}
+    """)
+    m = load_pop_map(td, "B")
+    @test isempty(m.retired_uids)                      # legacy → empty, no exception
+    @test pop_uid(m, "/a") == "abc123"                 # live UID untouched by the P2 path
+end
+
+@testset "retired_uids only appears in the sidecar when non-empty (visual cleanliness)" begin
+    td = mktempdir()
+    m = PopulationMap(pop_type="flow", value_name="B")
+    add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
+    save_pop_map!(m, td)
+    # No deletions → no `retired_uids` key emitted. Byte-visible on the JSON.
+    raw = read(joinpath(td, "gating", "B.json"), String)
+    @test !occursin("retired_uids", raw)
+
+    del_pop!(m, "/a")
+    save_pop_map!(m, td)
+    raw2 = read(joinpath(td, "gating", "B.json"), String)
+    @test occursin("retired_uids", raw2)
+end
+
 @testset "move_pop! rejects a cycle, a collision and an unknown target" begin
     m = PopulationMap(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
