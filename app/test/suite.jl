@@ -282,6 +282,15 @@ end
         end
         # built by the release job, so it exists in CI but not in a checkout — coverage only
         @test covered("frontend/dist")
+
+        # …and every OTHER token in the tar allow-list has to point at something that exists in a
+        # checkout — otherwise `tar` fails at tag time (as v0.2.0 did on a stale `napari/napari_bridge.py`
+        # left behind after the P9 retire). Skip the two paths the release job produces itself.
+        job_produced = Set(["VERSION", "frontend/dist"])
+        for t in toks
+            t in job_produced && continue
+            @test ispath(joinpath(repo, split(t, '/')...))
+        end
     end
 end
 
