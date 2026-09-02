@@ -64,6 +64,7 @@ are preserved untouched.
 | `track_state` | btrack state (e.g. 5 = alive) |
 | `track_generation` | generation index in a division tree |
 | `cell_id` | 1-based index of the cell within its track, ordered by time |
+| `track_source` | categorical: the population UID that authored this row, or `"whole_seg"` for an un-gated run. Missing on rows written before the P1 provenance ship. |
 
 Cells not assigned to a track get **`NaN`** in all of these. A "tracked" population is then
 just cells with `track_id` present (the old `live` filter `track_id > 0`).
@@ -148,6 +149,50 @@ creates a track by hand (see correction, below) must follow that convention; wri
 - **The bridge analogy doesn't apply.** Unlike napari (a long-running WS bridge), tracking
   is a normal one-shot task subprocess streaming `[PROGRESS] n/total`; nothing is
   hot-reloaded specially.
+
+## Multi-pop tracking — provenance, orphans, attribution
+
+A segmentation's h5ad holds ONE `track_id` column shared by every tracking run against it, per
+`docs/todo/MULTI_POP_TRACKING_PLAN.md`. That contract is safe because every tracked row carries a
+`track_source` marker (added in P1) naming who authored it — the pop's UID, or `"whole_seg"` for an
+un-gated run. Four rules turn that marker into the guarantees the viewer + batch movie depend on
+(details in `docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md`):
+
+1. **Attribution guard (P0).** A pop's `has_tracks` (the flag ribbons key off) fires only if one of
+   its labels was authored by ITSELF, by whole-seg tracking, or by a legacy row with no marker.
+   Before this guard, `has_tracks = track_id > 0 ∩ pop.labels` — so an orphan row whose label
+   happened to fall inside a different live pop's gate bled into that pop's ribbon with the wrong
+   colour. Pure predicate lives in `_pop_has_authored_tracks` (`app/src/gating/population_manager.jl`);
+   `resolve_pops` fills a `label → track_source` dict once per cache miss.
+
+2. **Conflict detector (P1).** `_write_back` (Python) checks between DELETE and COMPACT: any label
+   this run wants to write whose `track_source` is still `{something other than None, whole_seg,
+   self.track_source}` is a live-pop conflict. Raises with the label count + first 5 `(label,
+   source)` pairs + the override switch. Bypass: `whole_seg` sentinel, own-source re-track (DELETE
+   cleared them), or `trackSourceForce=true` (plumbed through the Julia handler, not exposed as a
+   widget — for the intentional pop→pop refinement idiom).
+
+3. **Retired UID set (P2).** `PopulationMap` carries `retired_uids::Set{String}`, appended by
+   `_del_paths!` and consulted by `_fresh_pop_uid`. A UID freed by pop deletion can never be
+   reissued; a `track_source` value in the h5ad outlives the pop that stamped it, so reuse would
+   silently inherit the deleted pop's lineage. Persisted in the gating JSON; only emitted when
+   non-empty, so a project that has never had a pop deleted keeps its sidecar byte-identical.
+
+4. **Orphan sweep (P3).** `bayesian_tracking.jl` passes `liveTrackSources = [pop_uid(m, p) for p in
+   pop_paths(m)]` down. `_write_back` NaNs any row whose `track_source` is a string not in that set
+   (nor the whole-seg sentinel) before COMPACT. Runs on every tracking task, so an orphaned row
+   lingers only between pop-deletion and the next tracking run on that segmentation — the P0 guard
+   keeps it invisible meanwhile. `liveTrackSources=None` (legacy handler that never emits the param)
+   disables the sweep — behaviour matches the shipped code path.
+
+The `WHOLE_SEG_TRACK_SOURCE = "whole_seg"` sentinel is a single named constant in both languages
+(`app/src/gating/population_manager.jl` and `python/cecelia/utils/tracking_utils.py`) so the writer,
+the guard, and the sweep can't drift apart.
+
+**Legacy data.** A row written before the P1 ship has no `track_source` marker. The P0 guard treats
+it as everyone's (has_tracks fires on every pop that touches its label), preserving pre-P1
+visibility for projects that haven't been re-tracked. Re-tracking the pop rewrites the marker and
+the guard tightens.
 
 ## Track measures (`tracking.track_measures`)
 
