@@ -1,0 +1,44 @@
+{
+  "task": "dtype",
+  "fun_name": "cleanupImages.dtype",
+  "label": "Bit depth",
+  "category": "Cleanup",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "io",
+  "outputValueName": "dtype",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to convert"
+    },
+    {
+      "key": "dtype",
+      "label": "Target",
+      "type": "select",
+      "default": "uint8",
+      "options": [
+        { "label": "8-bit unsigned (uint8)",   "value": "uint8",   "help": "Smallest; lossy from anything wider unless you rescale" },
+        { "label": "16-bit unsigned (uint16)", "value": "uint16",  "help": "The usual microscopy default" },
+        { "label": "32-bit float (float32)",   "value": "float32", "help": "Preserves negatives + fractions from math; 2× the disk of uint16" }
+      ],
+      "tip": "What dtype to store the output as; scan the runner log for saturation warnings"
+    },
+    {
+      "key": "rescale",
+      "label": "Rescale",
+      "type": "select",
+      "default": "auto",
+      "options": [
+        { "label": "Auto (per-channel min–max → full range)", "value": "auto", "help": "Stretches each channel independently — preserves visual contrast when shrinking to uint8" },
+        { "label": "None (direct cast, may saturate)",         "value": "none", "help": "No remap — high values above the target's max saturate" }
+      ],
+      "tip": "How to map source values onto the target dtype's range"
+    }
+  ]
+}

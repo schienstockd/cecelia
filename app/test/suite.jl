@@ -3821,6 +3821,99 @@ end
 end
 
 
+@testset "ZProject inherits source calibration (pure helper)" begin
+    # A Z-projection collapses SizeZ to 1 while every other calibration field carries over
+    # unchanged (X/Y pixel size + unit, T interval, channels). Same source→new pattern as crop's
+    # `_crop_inherited_meta`; non-calibration keys (e.g. `ori_path`) stay behind — the handler
+    # opts them in separately.
+    src = Dict{String,Any}(
+        "SizeC" => 4, "SizeZ" => 20, "SizeT" => 181,
+        "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeUnit" => "micrometer", "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+        "ori_path" => "/should/not/carry")
+    m = Cecelia._zproj_inherited_meta(src)
+    @test m["SizeZ"] == 1                     # projected → single plane
+    @test m["SizeT"] == 181 && m["SizeC"] == 4
+    @test m["PhysicalSizeX"] == 0.33 && m["PhysicalSizeY"] == 0.33
+    @test m["PhysicalSizeZ"] == 2.0           # slice thickness kept — describes the SOURCE stack
+    @test m["TimeIncrement"] == 15 && m["TimeIncrementUnit"] == "second"
+    @test !haskey(m, "ori_path")              # only calibration inherited; the handler adds it
+    # a source with no SizeZ (a 2D image) still ends up with SizeZ=1 — the projection is a no-op
+    m2 = Cecelia._zproj_inherited_meta(Dict{String,Any}("SizeC" => 2, "SizeT" => 10))
+    @test m2["SizeZ"] == 1 && m2["SizeC"] == 2 && m2["SizeT"] == 10
+end
+
+@testset "TProject inherits source calibration (pure helper)" begin
+    # A T-projection collapses SizeT to 1; every other calibration field carries over unchanged
+    # (X/Y/Z pixel size + unit, frame interval, channels). Same source→new pattern as crop's and
+    # ZProject's helpers.
+    src = Dict{String,Any}(
+        "SizeC" => 4, "SizeZ" => 20, "SizeT" => 181,
+        "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeUnit" => "micrometer", "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+        "ori_path" => "/should/not/carry")
+    m = Cecelia._tproj_inherited_meta(src)
+    @test m["SizeT"] == 1                     # projected → single frame
+    @test m["SizeZ"] == 20 && m["SizeC"] == 4
+    @test m["PhysicalSizeX"] == 0.33 && m["PhysicalSizeZ"] == 2.0
+    @test m["TimeIncrement"] == 15            # kept: describes the SOURCE's frame spacing
+    @test m["TimeIncrementUnit"] == "second"
+    @test !haskey(m, "ori_path")
+    # a source with no SizeT (a still image) still ends up with SizeT=1 — the projection is a no-op
+    m2 = Cecelia._tproj_inherited_meta(Dict{String,Any}("SizeC" => 2, "SizeZ" => 8))
+    @test m2["SizeT"] == 1 && m2["SizeC"] == 2 && m2["SizeZ"] == 8
+end
+
+@testset "BinImage rescales calibration by the factor (pure helper)" begin
+    # A bin shrinks SizeX/Y by integer floor and grows PhysicalSizeX/Y by the same factor — the
+    # binned pixel PHYSICALLY covers `factor` source pixels. Z/T/C invariant. Same source→new
+    # pattern as crop's / ZProject's / TProject's helpers.
+    src = Dict{String,Any}(
+        "SizeC" => 4, "SizeZ" => 20, "SizeT" => 181, "SizeX" => 1024, "SizeY" => 512,
+        "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.5, "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeUnit" => "micrometer",
+        "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+        "ori_path" => "/should/not/carry")
+    m = Cecelia._bin_inherited_meta(src, 2, 4)
+    @test m["SizeX"] == 512 && m["SizeY"] == 128
+    @test m["PhysicalSizeX"] ≈ 0.66
+    @test m["PhysicalSizeY"] ≈ 2.0
+    @test m["SizeZ"] == 20 && m["SizeT"] == 181 && m["SizeC"] == 4
+    @test m["PhysicalSizeZ"] == 2.0 && m["TimeIncrement"] == 15
+    @test !haskey(m, "ori_path")
+    # ragged remainder: integer floor matches `coarsen(trim_excess=True)` — a source of 1025 with
+    # factor 2 gives 512, and the last source pixel is dropped so calibration stays honest
+    m2 = Cecelia._bin_inherited_meta(Dict{String,Any}("SizeX" => 1025, "SizeY" => 513,
+                                                       "PhysicalSizeX" => 1.0, "PhysicalSizeY" => 1.0), 2, 2)
+    @test m2["SizeX"] == 512 && m2["SizeY"] == 256
+    @test m2["PhysicalSizeX"] ≈ 2.0 && m2["PhysicalSizeY"] ≈ 2.0
+end
+
+@testset "ResampleZ rewrites SizeZ to match XY spacing (pure helper)" begin
+    # A Z-resample rewrites SizeZ to make the output isotropic (PhysicalSizeZ = PhysicalSizeX). XY
+    # stays put; T/C invariant.
+    src = Dict{String,Any}(
+        "SizeC" => 4, "SizeZ" => 20, "SizeT" => 5, "SizeX" => 1024, "SizeY" => 512,
+        "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeUnit" => "micrometer",
+        "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+        "ori_path" => "/should/not/carry")
+    m = Cecelia._resample_z_inherited_meta(src)
+    # ratio = 2.0 / 0.33 ≈ 6.06 → 20 * 6.06 ≈ 121 planes at 0.33 µm apart
+    @test m["SizeZ"] == round(Int, 20 * (2.0 / 0.33))
+    @test m["PhysicalSizeZ"] == 0.33          # isotropic → matches X
+    @test m["PhysicalSizeX"] == 0.33 && m["SizeC"] == 4 && m["SizeT"] == 5
+    @test !haskey(m, "ori_path")
+    # a source already isotropic (px_x == px_z) is a no-op on SizeZ
+    m2 = Cecelia._resample_z_inherited_meta(Dict{String,Any}(
+        "SizeZ" => 32, "PhysicalSizeX" => 1.0, "PhysicalSizeZ" => 1.0))
+    @test m2["SizeZ"] == 32 && m2["PhysicalSizeZ"] == 1.0
+    # SizeZ never rounds down below 1 even if the ratio would zero it out
+    m3 = Cecelia._resample_z_inherited_meta(Dict{String,Any}(
+        "SizeZ" => 1, "PhysicalSizeX" => 1.0, "PhysicalSizeZ" => 0.1))
+    @test m3["SizeZ"] == 1                    # round(1 * 0.1) = 0, floored to 1
+end
+
 @testset "CopyImage carries calibration + provenance (pure helper)" begin
     # A copy is a faithful duplicate of ONE version: every calibration field carries over UNCHANGED
     # (unlike a crop), plus ori_path and a copy_source_* breadcrumb; non-calibration keys stay behind.

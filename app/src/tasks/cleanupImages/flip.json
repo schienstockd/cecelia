@@ -1,0 +1,33 @@
+{
+  "task": "flip",
+  "fun_name": "cleanupImages.flip",
+  "label": "Flip",
+  "category": "Cleanup",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "io",
+  "outputValueName": "flipped",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to flip"
+    },
+    {
+      "key": "axis",
+      "label": "Axis",
+      "type": "select",
+      "default": "Y",
+      "options": [
+        { "label": "X (horizontal)", "value": "X", "help": "Mirror left/right — reverses X" },
+        { "label": "Y (vertical)",   "value": "Y", "help": "Mirror top/bottom — reverses Y" },
+        { "label": "Z",              "value": "Z", "help": "Reverse the Z stack (top ↔ bottom slice)" }
+      ],
+      "tip": "Which axis to reverse; dims are preserved so downstream artifacts still line up"
+    }
+  ]
+}

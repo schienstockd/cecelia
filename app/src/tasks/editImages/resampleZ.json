@@ -1,0 +1,34 @@
+{
+  "task": "resampleZ",
+  "fun_name": "editImages.resampleZ",
+  "label": "Resample Z (isotropic)",
+  "category": "Edit",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "cpu",
+  "outputValueName": "default",
+  "requires": { "axes": ["Z"], "scale": ["xy"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to resample"
+    },
+    {
+      "key": "order",
+      "label": "Interpolation",
+      "type": "select",
+      "default": "linear",
+      "options": [
+        { "label": "Nearest (integer labels)", "value": "nearest", "help": "Preserves values verbatim — use for label masks, not intensities" },
+        { "label": "Linear (safe default)",     "value": "linear",  "help": "Bilinear along Z — the usual choice for intensities" },
+        { "label": "Cubic (smoothest)",         "value": "cubic",   "help": "Smoother than linear; can overshoot values on sharp edges" }
+      ],
+      "tip": "How to interpolate between source Z planes"
+    }
+  ]
+}
