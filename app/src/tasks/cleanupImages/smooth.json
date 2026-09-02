@@ -6,7 +6,6 @@
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "smoothed",
-  "requires": { "axes": ["T"] },
   "params": [
     {
       "key": "valueName",
@@ -14,7 +13,9 @@
       "type": "valueNameSelection",
       "default": "default",
       "field": "filepaths",
-      "tip": "Use a drift-corrected version — frames must be aligned"
+      "tips": [
+        { "text": "Use a drift-corrected version — frames must be aligned", "requires": { "axes": ["T"] } }
+      ]
     },
     {
       "key": "channels",
@@ -32,7 +33,10 @@
       "min": 0.0,
       "max": 4.0,
       "step": 0.5,
-      "tip": "xy Gaussian before the temporal statistic — 0 keeps less signal than no smoothing"
+      "tips": [
+        { "text": "xy Gaussian before the temporal statistic — 0 keeps less signal than no smoothing", "requires": { "axes": ["T"] } },
+        { "text": "xy Gaussian — 0 disables spatial smoothing" }
+      ]
     },
     {
       "key": "temporalFrames",
@@ -42,6 +46,7 @@
       "min": 1,
       "max": 9,
       "step": 2,
+      "requires": { "axes": ["T"] },
       "tip": "Full centred width, forced odd. 1 disables the temporal term"
     },
     {
@@ -49,6 +54,7 @@
       "label": "Temporal statistic",
       "type": "select",
       "default": "median",
+      "requires": { "axes": ["T"] },
       "options": [
         { "label": "Median", "value": "median",
           "help": "Photon-limited data. Blurs cells that moved, more so at wider windows." },

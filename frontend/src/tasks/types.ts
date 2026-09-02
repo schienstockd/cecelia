@@ -7,6 +7,13 @@ export interface ParamDef {
        | 'motionDimsSelection'
        | 'group' | 'section'
   tip?: string
+  // A tip whose applicable text depends on the IMAGE (in practice, whether it carries T). Ordered
+  // list, first-with-satisfied-`requires` wins; an entry without `requires` matches anything, so it
+  // is the fallback and belongs LAST. Absent tips (nothing matched, or the entry was T-only and the
+  // image is static) render no info icon — better than showing prose that does not apply.
+  // Declarative on purpose: the alternative was a Vue computed sniffing image axes and switching
+  // strings, which is exactly the "hand-rolled visibility" this exists to delete.
+  tips?: Array<{ text: string; requires?: { axes?: string[] } }>
   placeholder?: string  // text / dirPath / filePath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
@@ -52,6 +59,14 @@ export interface ParamDef {
   labelUnit?: 'frameDuration'
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
                         | { endsWith?: string | string[]; notEndsWith?: string | string[] }>
+  // Gate this param on the IMAGE, not the form — `showIf`'s image-side counterpart. Same shape as
+  // `TaskDef.requires`: `axes` lists axis codes the image must carry (e.g. `["T"]`). A param that
+  // fails renders nowhere AND is filtered out of the effective run server-side, so the handler's
+  // `get(params, key, default)` returns the "off" default. Used when a task's math applies to any
+  // image but a subset of controls is temporal-only (smooth: spatial sigma applies to a still,
+  // temporal window does not) — splitting the whole task on `TaskDef.requires` would refuse the run
+  // for a case that actually works. See `paramApplies` in paramValues.ts.
+  requires?: { axes?: string[] }
   // Refuse the run with a readable error when the value is missing or empty. Enforced SERVER-side in
   // `validate_params`, so it holds for a chain and the REPL too — not only for a form that drew it.
   required?: boolean

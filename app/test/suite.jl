@@ -2727,6 +2727,50 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Per-param image gating (`param.requires.axes`) ────────────────────────────
+# The image-side twin of showIf: a param whose axes the image does not carry is deleted from the
+# effective run BEFORE validation, and the handler's `get(params, key, default)` returns the "off"
+# default. Smooth is the one mixed case in the tree — spatial sigma applies to a still, the temporal
+# window does not — so gating the WHOLE task on `requires.axes` would refuse a run that works.
+@testset "Per-param requires.axes — smooth's temporal controls" begin
+    smooth = Cecelia.Smooth()
+
+    img_still = CciaImage(; uid="p1", name="still", dir="")
+    img_still.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>1)
+    img_live  = CciaImage(; uid="p2", name="live", dir="")
+    img_live.meta  = Dict{String,Any}("SizeC"=>2, "SizeT"=>10, "SizeZ"=>1)
+
+    # Smooth's task-level requires no longer names T — spatial-only smoothing is a legitimate run.
+    @test isempty(Cecelia.task_requires_axes(smooth))
+    @test task_applies(smooth, img_still)
+    @test task_applies(smooth, img_live)
+
+    # After spec defaults + guard, a static image loses the temporal keys; the timelapse keeps them.
+    base = Cecelia._apply_spec_defaults(smooth, Dict{String,Any}())
+    @test base["temporalFrames"] == 3          # spec default fires
+    @test base["temporalStat"]   == "median"
+    @test haskey(base, "spatialSigma")
+
+    still_run = Cecelia._apply_param_requires(smooth, img_still, copy(base))
+    @test !haskey(still_run, "temporalFrames") # dropped by requires.axes
+    @test !haskey(still_run, "temporalStat")
+    @test still_run["spatialSigma"] == 1.0     # unguarded, survives
+    @test still_run["restoreDynamicRange"] == true
+
+    live_run = Cecelia._apply_param_requires(smooth, img_live, copy(base))
+    @test live_run["temporalFrames"] == 3      # timelapse keeps them
+    @test live_run["temporalStat"]   == "median"
+
+    # Set-scope intersects: any static image in the mix drops the temporal params.
+    mixed = Cecelia._apply_param_requires(smooth, CciaImage[img_live, img_still], copy(base))
+    @test !haskey(mixed, "temporalFrames")
+
+    # Vs a task with the task-level requires still in place: this must not touch its params.
+    @test !isempty(Cecelia.task_requires_axes(BayesianTracking()))
+    unchanged = Cecelia._apply_param_requires(BayesianTracking(), img_live, Dict{String,Any}("k"=>1))
+    @test unchanged == Dict{String,Any}("k"=>1)
+end
+
 # ── Dispatch + param validation — Branching (segment.branching) ──────────────
 # docs/todo/BRANCHING_PLAN.md Phase 1. New task registers via _task_from_fun_name and
 # validate_params rejects out-of-range dilation sizes + wrong-typed booleans.
@@ -12921,6 +12965,16 @@ end
         each_spec_param(spec_get(spec, "params")) do p, _
             t = spec_get(p, "tip")
             t isa AbstractString && push!(tips, (f, join(split(String(t)), " ")))
+            # `tips: [{text, requires?}]` — image-dependent variants of `tip`. Each entry's text is a
+            # tip in its own right and gets the same length + house-style check.
+            ts = spec_get(p, "tips")
+            if ts isa AbstractVector
+                for entry in ts
+                    entry isa AbstractDict || continue
+                    et = spec_get(entry, "text")
+                    et isa AbstractString && push!(tips, (f, join(split(String(et)), " ")))
+                end
+            end
         end
     end
 
@@ -12977,7 +13031,14 @@ end
         defaults = Dict{String,Any}()
         walk(ps) = ps isa AbstractVector && for q in ps
             q isa AbstractDict || continue
-            haskey(q, "default") && (defaults[string(get(q, "key", ""))] = q["default"])
+            # A per-param `requires.axes` gate can DROP the key from the effective run
+            # (`_apply_param_requires`), so the handler's fallback here is deliberately the "off"
+            # value rather than the visible spec default — the guard IS the reason they differ.
+            # Same reason `showIf`-only params are already exempt (their fallback is a state the
+            # form no longer names). Skip these keys from the equality check.
+            if !haskey(q, "requires")
+                haskey(q, "default") && (defaults[string(get(q, "key", ""))] = q["default"])
+            end
             walk(get(q, "params", nothing))
         end
         walk(spec["params"])
@@ -13236,8 +13297,23 @@ end
             ptype = String(something(spec_get(p, "type"), ""))
             (haskey(p, :key) || haskey(p, "key")) && !(ptype in CONTAINER) || return
             tip = spec_get(p, "tip")
-            push!(params, (f, String(something(spec_get(p, "key"), "?")),
-                           !isempty(strip(tip isa AbstractString ? String(tip) : ""))))
+            tipped = !isempty(strip(tip isa AbstractString ? String(tip) : ""))
+            # `tips: [{text, requires?}]` — image-dependent variants. Any entry with a non-empty
+            # `text` covers the requirement; the renderer picks the first that matches, and a
+            # deliberate no-match (a T-only tip on a still) is the honest empty state.
+            if !tipped
+                tips = spec_get(p, "tips")
+                if tips isa AbstractVector
+                    for entry in tips
+                        entry isa AbstractDict || continue
+                        txt = spec_get(entry, "text")
+                        if txt isa AbstractString && !isempty(strip(String(txt)))
+                            tipped = true; break
+                        end
+                    end
+                end
+            end
+            push!(params, (f, String(something(spec_get(p, "key"), "?")), tipped))
         end
     end
 
@@ -13614,7 +13690,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         src   = read(joinpath(@__DIR__, "..", "src", "tasks", "task.jl"), String)
         sched = read(joinpath(@__DIR__, "..", "src", "tasks", "scheduler.jl"), String)
 
-        prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults"]
+        prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults",
+                "_apply_param_requires"]
 
         # what the preview entry point calls, taken from its body rather than from this list
         body = src[findfirst("function preview_params_for_run", src)[1]:end]

@@ -400,7 +400,7 @@ const activeTaskGatingReason = computed(() =>
 // picked nothing from a log line, minutes later. First message only: the button is one line, and
 // fixing the first usually reveals whether the rest matter.
 const missingRequiredReason = computed(() =>
-  taskDef.value ? (missingRequired(taskDef.value, paramValues.value)[0] ?? '') : '')
+  taskDef.value ? (missingRequired(taskDef.value, paramValues.value, selectedImages.value)[0] ?? '') : '')
 
 // run
 const canRun = computed(() =>

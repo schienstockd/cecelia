@@ -844,6 +844,37 @@ valid on its own.
 
 **`tip`** — required on every param; one line, under 90 characters. Ratcheted.
 
+**`tips` — image-dependent variants of `tip`.** An array of `{ text, requires? }`; the renderer picks
+the first entry whose `requires` is satisfied by the selected images, else nothing (no info icon).
+Use this instead of a Vue computed switching strings — same declarative shape as `requires`. If no
+entry omits `requires`, a non-matching image gets no tip, which is the point on a param whose only
+tip is temporal:
+
+```json
+{ "key": "valueName", "label": "Image to smooth", "type": "valueNameSelection",
+  "tips": [
+    { "text": "Use a drift-corrected version — frames must be aligned", "requires": { "axes": ["T"] } }
+  ]}
+```
+
+Exactly one of `tip` / `tips` per param.
+
+**`requires` — this param only applies when the IMAGE carries the axes it names.** The image-side
+twin of `showIf`. Same shape as the task-level `requires` (see *Requires — axis-shape …* above), but
+scoped to a single param: the picker hides it on an image without the axes, and the effective run
+drops it (`_apply_param_requires` in `app/src/tasks/task.jl`), so the handler's `get(params, key,
+default)` returns the "off" default. Reach for it when a task's math applies to any image but a
+subset of controls is axis-specific — the smoothing task's spatial sigma applies to a still, its
+temporal window does not. Gating the whole task on `TaskDef.requires` would refuse a run that works:
+
+```json
+{ "key": "temporalFrames", "label": "Temporal window (frames)", "type": "int", "default": 3,
+  "requires": { "axes": ["T"] } }
+```
+
+Same rule as `showIf`: a param the image has ruled out is **not** required. Set-scope tasks
+intersect across the whole vector — any image missing the axis drops the param for the run.
+
 **`required`** / **`requiredMessage`** — the run is refused if the value is missing OR an empty
 collection, both server-side (`validate_params`, so it holds for a chain and the REPL) and on the Run
 button, which shows the reason instead of `Run on N images`.

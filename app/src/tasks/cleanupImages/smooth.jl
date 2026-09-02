@@ -82,8 +82,11 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     # The temporal statistic compares the SAME pixel across t-1, t, t+1. Before drift correction that
     # pixel is not the same tissue, so the median runs across different structures and smears them.
     # We cannot verify alignment from the pixels, but the value name says which version this is —
-    # so say something rather than silently produce a smeared store.
-    if !occursin("rift", string(value_name)) && !occursin("rift", string(filename))
+    # so say something rather than silently produce a smeared store. Skipped when the image carries
+    # no T axis — the temporal statistic is guarded off by the spec, so drift correction is not a
+    # prerequisite this run cares about.
+    has_t = :T in img_axes(img)
+    if has_t && !occursin("rift", string(value_name)) && !occursin("rift", string(filename))
         on_log("[WARN] '$value_name' does not look drift-corrected. The temporal statistic compares the " *
                "same pixel across frames, so run drift correction first or the statistic mixes tissue.")
     end
@@ -99,7 +102,11 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     end
 
     spatial_sigma   = Float64(get(params, "spatialSigma", 1.0))
-    temporal_frames = Int(get(params, "temporalFrames", 3))
+    # Fallback = 1 (one frame, temporal term off). The spec's default is 3, but on a static image
+    # `_apply_param_requires` has dropped these keys entirely (guarded by `requires.axes: ["T"]`) and
+    # the "off" value is what the handler must fall back to. Same reason `temporalStat` is irrelevant
+    # once the window is one frame.
+    temporal_frames = Int(get(params, "temporalFrames", 1))
     temporal_stat   = string(get(params, "temporalStat", "median"))
     restore_gain    = Bool(get(params, "restoreDynamicRange", true))
 

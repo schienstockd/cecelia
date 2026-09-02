@@ -16,6 +16,7 @@ import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
+         paramAppliesToImages, resolveParamTip,
          scopeValueName, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
@@ -60,13 +61,24 @@ const emit = defineEmits<{
   (e: 'update:groupOrder', key: string, v: string[]): void
 }>()
 
-// Two ways a param can not apply, and they are deliberately separate:
-//   `hidden`  — the SERVER ruled it out, from something only it can see (the file you picked is an
-//               XML export, which has no columns). Set by `_inject_dynamic_options!`.
-//   `showIf`  — the SPEC ruled it out, from the form alone (`{ "mode": "attach" }`). No Julia.
-// Either one means it renders nowhere rather than sitting there empty and looking broken.
+// Three ways a param can not apply, and they are deliberately separate:
+//   `hidden`         — the SERVER ruled it out, from something only it can see (the file you picked
+//                       is an XML export, which has no columns). Set by `_inject_dynamic_options!`.
+//   `showIf`         — the SPEC ruled it out, from the form alone (`{ "mode": "attach" }`).
+//   `requires.axes`  — the SPEC ruled it out, from the IMAGE alone (temporal window on a static
+//                       image). Same shape as `TaskDef.requires` — `paramValues.paramAppliesToImages`.
+// Any one true means it renders nowhere rather than sitting there empty and looking broken. The
+// server-side twin filters these out of the effective run in `params_for_image`, so the handler's
+// `get(params, key, default)` returns the "off" default.
 const notApplicable = computed(() =>
-  props.param.hidden === true || !showIfSatisfied(props.param.showIf, props.context?.values))
+  props.param.hidden === true
+  || !showIfSatisfied(props.param.showIf, props.context?.values)
+  || !paramAppliesToImages(props.param, props.context?.images))
+
+// Which tip text to actually show. A plain `tip: "..."` is a constant; a `tips: [{text, requires}]`
+// array picks by image axes (first match wins). Callers still bind `v-tooltip.*` on the resolved
+// value — no per-widget branching, and no Vue file "sniffing" image axes for a string swap.
+const shownTip = computed(() => resolveParamTip(props.param, props.context?.images))
 
 // section (collapsible box) state
 const sectionOpen = ref(!props.param.collapsed)
@@ -561,9 +573,9 @@ const pct = computed(() => {
        above a collapsible headed "ADVANCED". They are siblings of this row, not children of it, so
        the row was contributing a duplicate label and an empty body. -->
   <div v-else-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
-    <label class="param-label" v-tooltip.top="param.tip">
+    <label class="param-label" v-tooltip.top="shownTip">
       {{ param.label }}
-      <i v-if="param.tip" class="pi pi-info-circle tip-icon" />
+      <i v-if="shownTip" class="pi pi-info-circle tip-icon" />
     </label>
 
     <!-- int / float → slider + number display -->
@@ -601,7 +613,7 @@ const pct = computed(() => {
         :value="val as string"
         :list="param.options?.length ? `dl-${param.key}` : undefined"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.bottom="param.tip"
+        v-tooltip.bottom="shownTip"
       />
       <datalist v-if="param.options?.length" :id="`dl-${param.key}`">
         <option v-for="o in param.options" :key="o.value" :value="o.value" />
@@ -616,7 +628,7 @@ const pct = computed(() => {
       :model-value="(val as string) ?? ''"
       :options="availableValueNames"
       :placeholder="param.placeholder"
-      :tip="param.tip"
+      :tip="shownTip"
       mark-existing
       @update:model-value="val = $event"
       @change="emit('commit', param.key, ($event.target as HTMLInputElement).value)"
@@ -629,7 +641,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'dirPath'" class="cc-row cc-row-tight dir-path">
       <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.bottom="param.tip" />
+        v-tooltip.bottom="shownTip" />
       <button type="button" class="cc-btn cc-btn-ghost" @click="showDirBrowser = true"
         v-tooltip.top="'Browse for a folder'">
         <i class="pi pi-folder-open" />
@@ -643,7 +655,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'filePath'" class="cc-row cc-row-tight dir-path">
       <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
         @input="val = ($event.target as HTMLInputElement).value"
-        v-tooltip.bottom="param.tip" />
+        v-tooltip.bottom="shownTip" />
       <button type="button" class="cc-btn cc-btn-ghost" @click="showFileBrowser = true"
         v-tooltip.top="'Browse for a file'">
         <i class="pi pi-folder-open" />
@@ -679,7 +691,7 @@ const pct = computed(() => {
       class="select-input"
       :value="val as string"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.bottom="param.tip"
+      v-tooltip.bottom="shownTip"
     >
       <option v-for="opt in param.options" :key="opt.value" :value="opt.value">
         {{ opt.label }}
@@ -691,7 +703,7 @@ const pct = computed(() => {
       class="select-input"
       :value="val as string"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.bottom="param.tip"
+      v-tooltip.bottom="shownTip"
     >
       <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
       <option v-if="availableValueNames.length === 0" value="" disabled>— no versions available —</option>
@@ -699,7 +711,7 @@ const pct = computed(() => {
 
     <!-- popSelection (multi / across segmentations): chip list of value_name-prefixed populations -->
     <div v-else-if="param.type === 'popSelection' && popAcross" class="channel-select-wrap"
-      v-tooltip.top="param.tip">
+      v-tooltip.top="shownTip">
       <div v-if="popMultiOptions.length === 0" class="channel-empty cc-muted">
         No populations — select an image first.
       </div>
@@ -716,14 +728,14 @@ const pct = computed(() => {
       class="select-input"
       :value="(val as string) ?? 'NONE'"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.bottom="param.tip"
+      v-tooltip.bottom="shownTip"
     >
       <option v-for="opt in popOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
     </select>
 
     <!-- labelPropsColsSelection: grouped (Tracking / Object) multi-select chip lists -->
     <div v-else-if="param.type === 'labelPropsColsSelection'" class="channel-select-wrap"
-      v-tooltip.top="param.tip">
+      v-tooltip.top="shownTip">
       <div v-if="colGroups.length === 0" class="channel-empty cc-muted">
         No measures — select a population first.
       </div>
@@ -739,7 +751,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'motionDimsSelection'" class="motion-dims">
       <select class="select-input" :value="(val as string) ?? 'auto'"
               @change="val = ($event.target as HTMLSelectElement).value"
-              v-tooltip.bottom="param.tip">
+              v-tooltip.bottom="shownTip">
         <option value="auto">Auto (recommended)</option>
         <option value="2D">2D (in-plane)</option>
         <option value="3D">3D</option>

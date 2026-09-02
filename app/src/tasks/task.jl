@@ -370,6 +370,7 @@ function preview_params_for_run(task::CciaTask, params::AbstractDict,
     flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
     flat = _apply_group_order(task, flat)
     flat = _apply_spec_defaults(task, flat)
+    flat = _apply_param_requires(task, img, flat)   # drop image-guarded params (see task.jl)
     preview_params(task, flat, img)
 end
 
@@ -1326,6 +1327,56 @@ end
 _spec_value(v) = v isa AbstractVector ? Any[_spec_value(x) for x in v] :
                  v isa AbstractDict   ? Dict{String,Any}(string(k) => _spec_value(x) for (k, x) in v) :
                  v
+
+# ── Per-param image-gating (`requires.axes`) ─────────────────────────────────
+# The image-side twin of `showIf`. A spec param can carry its own `requires.axes` (same shape as the
+# task-level `TaskDef.requires`), and any key whose axes the image does not carry is deleted from the
+# effective params before validation. So a handler's `get(params, "temporalFrames", 1)` returns the
+# "off" default without the handler needing to sniff `img_axes` itself, which is the "hand-rolled
+# visibility" this exists to delete.
+#
+# Why AT run-task prep rather than inside the handler:
+#   • the frontend twin (paramValues.paramAppliesToImages) hides the SAME controls in the picker, so
+#     the payload's default lands in a control the user cannot see. Filtering here keeps the two
+#     sides in step — a chain call, a REPL call and the GUI all see the same effective bag.
+#   • validate_params walks the spec: a required param would then still be checked. Guarded params
+#     are NOT required by design (same rule as showIf); an empty control the user cannot see is not
+#     something to refuse the run over. If the pattern ever needs `required + requires` together, the
+#     right place is `_show_if_satisfied`'s sibling, threaded via `validate_params`.
+#
+# The set-scope form intersects across all images (ALL must carry the axis for the guarded control
+# to remain), same rule as `task_applies(::AbstractVector)`.
+function _apply_param_requires(task::CciaTask, img::CciaImage, params::Dict{String,Any})::Dict{String,Any}
+    _apply_param_requires_by_axes(task, img_axes(img), params)
+end
+function _apply_param_requires(task::CciaTask, imgs::AbstractVector{CciaImage}, params::Dict{String,Any})::Dict{String,Any}
+    isempty(imgs) && return params
+    common = img_axes(imgs[1])
+    for i in 2:length(imgs)
+        common = intersect(common, img_axes(imgs[i]))
+    end
+    _apply_param_requires_by_axes(task, common, params)
+end
+function _apply_param_requires_by_axes(task::CciaTask, have::AbstractSet{Symbol}, params::Dict{String,Any})::Dict{String,Any}
+    spec = _task_spec(task)
+    isnothing(spec) && return params
+    out = params; copied = false
+    function walk(ps)
+        ps isa AbstractVector || return
+        for p in ps
+            p isa AbstractDict || continue
+            key = string(get(p, "key", ""))
+            need = _axes_from_requires(get(p, "requires", nothing))
+            if !isempty(need) && !issubset(need, have) && !isempty(key) && haskey(out, key)
+                copied || (out = copy(out); copied = true)
+                delete!(out, key)
+            end
+            walk(get(p, "params", nothing))
+        end
+    end
+    walk(get(spec, "params", nothing))
+    out
+end
 
 """
     task_scope(task) -> "image" | "set"
