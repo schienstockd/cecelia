@@ -460,6 +460,19 @@ function api_task_definitions(req::HTTP.Request)
             @warn "task_previewable failed" fun=fn exception=e
             false
         end
+
+        # `outputEffect` — the on-disk artefact this task produces (new-image / new-version /
+        # in-place). Declared beside the task in Julia (task_output_effect) for the same reason as
+        # `previewable`: a static capability of the compute belongs with the compute, not in the
+        # PARAM JSON. Stamped ONTO the spec so the module page's function picker can surface it
+        # without a second endpoint. `nothing` means "don't show a line" (segment / measure / etc).
+        effect = try
+            Cecelia.task_output_effect(task)
+        catch e
+            @warn "task_output_effect failed" fun=fn exception=e
+            nothing
+        end
+        effect === nothing || (spec["outputEffect"] = effect)
     end
 
     # Build fun_name → spec lookup so composite tasks can pull params from their steps.

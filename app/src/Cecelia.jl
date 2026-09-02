@@ -224,6 +224,7 @@ export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_req
 export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed
+export task_output_effect
 
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")

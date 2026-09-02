@@ -62,8 +62,9 @@ end
 
 function add_image!(s::CciaSet;
     name::String,
-    meta::Dict{String,Any} = Dict{String,Any}(),
-    uid::String            = gen_uid()   # override to preserve a UID (e.g. legacy migration)
+    meta::Dict{String,Any}      = Dict{String,Any}(),
+    attr::Dict{String,String}   = Dict{String,String}(),
+    uid::String                 = gen_uid()   # override to preserve a UID (e.g. legacy migration)
 )::CciaImage
     img      = CciaImage(uid=uid, name=name)
     # s._dir = {proj}/1/{set_uid}  →  dirname×2 = {proj}
@@ -74,6 +75,12 @@ function add_image!(s::CciaSet;
     mkpath(img_dir)
     img._dir = meta_dir
     img.meta = meta
+    # `attr` is the user-editable cohort/condition/mouse tag dict, distinct from the compute-derived
+    # `meta`. Threading it here so a task that mints a NEW image (copy/crop/project/bin/resample) can
+    # carry the source's tags forward — otherwise the derived image is invisible to
+    # attr_value_counts / compare-by-attribute, and the user has to re-tag every copy. Empty default
+    # keeps the import path (no source) unchanged.
+    img.attr = copy(attr)
     save!(img)
     push!(s.image_uids, img.uid)
     push!(s._images, img)

@@ -1,5 +1,7 @@
 struct Smooth <: CciaTask end
 
+task_output_effect(::Smooth) = "new-version"
+
 # QC from the persisted smoothing stats. The failure modes here are quiet ones — the task always
 # "succeeds", it just may not have helped:
 #  • not run on aligned data — the temporal statistic compares the same pixel across frames, so on an

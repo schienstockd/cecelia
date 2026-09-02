@@ -462,7 +462,7 @@ def run(params: dict):
     # the OME-XML dim count (C=4 vs labels' rank) and threw `ValueError: 4 is not in list`.
     omexml = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
-    im_list, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)   # metadata-only, cheap
+    im_list, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)   # plain zarr — reads are per-frame slices
     dim_utils.calc_image_dimensions(im_list[0].shape)
 
     is_3d = dim_utils.is_3D()

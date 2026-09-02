@@ -1,5 +1,7 @@
 struct AfCorrect <: CciaTask end
 
+task_output_effect(::AfCorrect) = "new-version"
+
 """
     af_combinations_for_python(params, raw) -> Dict
 

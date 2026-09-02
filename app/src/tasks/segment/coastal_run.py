@@ -38,7 +38,8 @@ def run(params):
     im_path = params['imPath']
 
     log.log(f'>> open image: {im_path}')
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr: `predict_from_zarr` streams per timepoint via `read_timepoint` — no dask compute.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)

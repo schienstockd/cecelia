@@ -164,6 +164,13 @@ export interface TaskDef {
                           // spec by the definitions route — never inferred from the params here, which
                           // is what this replaced: sniffing for a cellpose-shaped `models` bag was
                           // right about cellpose and silently wrong about every other backend.
+  outputEffect?: 'new-image' | 'new-version' | 'in-place'
+                          // what the task PRODUCES on disk — surfaced as a one-line note under the
+                          // function picker so the user knows, before submitting, whether a run
+                          // duplicates the image or just adds a version. DECLARED in Julia
+                          // (`task_output_effect`, tasks/task.jl); same stamping route as
+                          // `previewable`. Absent = don't show a line (segment/measure/cluster — the
+                          // output isn't an image).
 }
 
 export type ParamValues = Record<string, unknown>

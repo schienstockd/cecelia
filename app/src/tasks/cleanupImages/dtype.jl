@@ -1,5 +1,7 @@
 struct DtypeConvert <: CciaTask end
 
+task_output_effect(::DtypeConvert) = "new-version"
+
 # Convert an image to a target dtype (uint8 / uint16 / float32), optionally rescaling per channel to
 # fill the target's range. Dims are preserved — registered as a NEW VERSION on the same image, same
 # versioned-in-place pattern as af_correct / drift_correct / smooth / flip. The actual conversion
