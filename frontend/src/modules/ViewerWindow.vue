@@ -2036,10 +2036,10 @@ const brickMapSlices = computed(() => {
     }
     slices.push({ z: bz, cells })
   }
-  // Wrap the per-Z slices into a square-ish grid so nBz > 2 doesn't stretch across the sidebar as
-  // one long row (Dominik 2026-09-02, SRPabw). ceil(sqrt) picks the smallest column count that
-  // keeps the layout close to square (nBz=2→2 cols · 3→2 · 4→2 · 6→3 · 9→3).
-  const gridCols = Math.max(1, Math.ceil(Math.sqrt(slices.length)))
+  // Wrap the per-Z slices into a grid that grows down rather than across — the sidebar is
+  // narrow, so cap columns at 3 (Dominik 2026-09-02, SRPabw: "the maps just seem a bit large").
+  // nBz=2 → 2, 3 → 3, 4 → 3 (2 rows), 6 → 3 (2 rows), 9 → 3 (3 rows).
+  const gridCols = Math.min(3, Math.max(1, slices.length))
   return { displayNBx, displayNBy, gridCols, slices }
 })
 
@@ -4818,7 +4818,7 @@ onUnmounted(() => {
    toggle"). One .vw-mapblock per toggle; the map itself uses `.vw-nested-map` to cap width so a
    single-tile map doesn't stretch across the whole sidebar. */
 .vw-mapblock { display: flex; flex-direction: column; gap: 0.25rem; }
-.vw-nested-map { width: 100%; max-width: 8rem; }
+.vw-nested-map { width: 100%; max-width: 6rem; }
 /* Compact controls block — toggles (Fps, Loop, Overview, Tiles, Bricks) stacked on the left,
    Reset view on the right. Residency maps live under their own toggles in the left column.
    Right column takes its own width from the button so the left column can grow to fill the rest
