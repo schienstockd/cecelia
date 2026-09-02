@@ -100,6 +100,14 @@ mutable struct PopulationMap
     # currently-named pop after a rename. The primary map stays keyed by path — the UI still reads by
     # path — this is the reverse index for outside references.
     uid_index::Dict{String,String}
+    # UIDs of previously-deleted pops, appended by `_del_paths!` and honoured by `_fresh_pop_uid` so a
+    # freshly-generated UID can never collide with a pop the user has already retired. The 6-char UID
+    # space (56.8B) makes a live-map collision negligible in isolation, but a `track_source` obs value
+    # in the h5ad outlives the pop that stamped it — reissuing the same UID would silently transfer
+    # the old pop's lineage rows to a new pop on its first tracking run (MULTI_POP_TRACKING_ORPHANS_PLAN
+    # decision 4). Persisted in the gating JSON; a legacy sidecar without the key loads with an empty
+    # set and marks the map dirty on the next mutation so the field appears on the next save.
+    retired_uids::Set{String}
     # Load-time backfill flag: `true` if any pop's uid was auto-generated during `from_tree` because
     # the source dict didn't carry one. `load_pop_map(task_dir, …)` uses this to `save_pop_map!`
     # immediately so the freshly-assigned uids become the STABLE ids across sessions rather than being
@@ -130,7 +138,7 @@ PopulationMap(; pop_type::AbstractString="flow", value_name::AbstractString="def
               physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing) =
     PopulationMap(String(pop_type), String(value_name),
                   Dict{String,Population}(), String[],
-                  Dict{String,String}(), false,
+                  Dict{String,String}(), Set{String}(), false,
                   String(spatial_unit),
                   physical_sizes === nothing ? nothing : Vector{Float64}(physical_sizes),
                   nothing, nothing)
@@ -160,12 +168,18 @@ end
 # active-pop counts (single- to low-hundreds), the birthday probability of ever needing a reroll is
 # vanishing — this exists so a hand-edited sidecar with two identical UIDs doesn't shadow one pop.
 function _fresh_pop_uid(m::PopulationMap; preferred::AbstractString="")::String
-    if !isempty(preferred) && !haskey(m.uid_index, String(preferred))
+    # `preferred` (a UID from a sidecar being deserialised) is honoured when it collides with
+    # neither a live pop nor a retired one. A conflict with `retired_uids` shouldn't happen on a
+    # well-formed sidecar — the writer keeps a UID either in `uid_index` XOR in `retired_uids` — but
+    # a hand-edited file that resurrected a retired UID gets rerolled here rather than silently
+    # inheriting the old pop's `track_source` lineage.
+    if !isempty(preferred) && !haskey(m.uid_index, String(preferred)) &&
+                              !(String(preferred) in m.retired_uids)
         return String(preferred)
     end
     while true
         candidate = gen_uid()
-        haskey(m.uid_index, candidate) || return candidate
+        (haskey(m.uid_index, candidate) || candidate in m.retired_uids) || return candidate
     end
 end
 
@@ -505,9 +519,15 @@ end
 
 function _del_paths!(m::PopulationMap, targets::Set{String})
     for t in targets
-        # drop the reverse-lookup entry first so `uid_index` never points at a deleted path
+        # drop the reverse-lookup entry first so `uid_index` never points at a deleted path, then
+        # RETIRE the UID so `_fresh_pop_uid` can never reissue it — a `track_source` obs value in the
+        # h5ad outlives the pop that stamped it, and a reused UID would silently inherit the deleted
+        # pop's lineage (MULTI_POP_TRACKING_ORPHANS_PLAN decision 4).
         p = get(m.pops, t, nothing)
-        p === nothing || delete!(m.uid_index, p.uid)
+        if p !== nothing
+            delete!(m.uid_index, p.uid)
+            push!(m.retired_uids, p.uid)
+        end
         delete!(m.pops, t)
     end
     filter!(p -> !(p in targets), m.order)
@@ -555,7 +575,7 @@ ephemeral (napari-selection) pops — persistence uses this so they never hit di
 function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,Any}
     roots = direct_children(m, ROOT)
     include_transient || (roots = [r for r in roots if !m.pops[r].transient])
-    Dict{String,Any}(
+    out = Dict{String,Any}(
         "value_name" => m.value_name,
         "pop_type" => m.pop_type,
         # Which unit this file's SPATIAL gate coordinates are in. Written always (so a file this code
@@ -563,6 +583,11 @@ function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,An
         "spatial_unit" => m.spatial_unit,
         "populations" => [_node_dict(m, p; include_transient = include_transient) for p in roots],
     )
+    # Only serialise the retired-UID set when non-empty — a project that has never had a pop deleted
+    # keeps its sidecar visually clean, matching the pre-P2 file shape byte-for-byte.
+    isempty(m.retired_uids) ||
+        (out["retired_uids"] = sort!(collect(m.retired_uids)))
+    out
 end
 
 function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString)
@@ -599,6 +624,13 @@ function from_tree(tree::AbstractDict)::PopulationMap
     # coordinates, and must keep evaluating as pixels (SPATIAL_GATE_UNITS_PLAN.md decision 4).
     m = PopulationMap(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")),
                       spatial_unit=String(g("spatial_unit", SPATIAL_UNIT_PX)))
+    # Retired-UID set (MULTI_POP_TRACKING_ORPHANS_PLAN P2): absent on a legacy sidecar → empty set,
+    # unchanged behaviour for a project that has never had a pop deleted. Present entries seed the
+    # collision guard in `_fresh_pop_uid` — the freshly-picked UID for a newly added pop is
+    # guaranteed not to be one previously retired.
+    for u in g("retired_uids", String[])
+        push!(m.retired_uids, String(u))
+    end
     for node in g("populations", [])
         _add_node!(m, node, ROOT)
     end
