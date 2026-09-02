@@ -489,7 +489,13 @@ export async function createBrickVolumeRenderer(
     inflight.clear()
     const bpv = meta.bytesPerVoxel
     // Thin-Z stores collapse brickZ to nZ (Decision 2). Vibratome stacks keep the full 128.
-    const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd))
+    // Also clamped by `meta.nZ`: a caller passing `zd > nZ` (e.g. a restored `zRange` that
+    // survived across images with different depths) would make the server clamp `zTo` back to
+    // the store's last plane, return `nz=meta.nZ`, and the shape guard rejects EVERY payload
+    // because `shape.nz !== ebz` (Dominik 2026-09-02, VJy1Nx: constant reload loop, 16 GB
+    // fetched but 0 writes). Defensive here so the renderer keeps working even if a caller
+    // slips.
+    const brickZ = Math.max(1, Math.min(BRICK_Z_MAX, zd, meta.nZ))
     const brickSize: [number, number, number] = [BRICK_XY, BRICK_XY, brickZ]
     const nC = Math.min(meta.nC, 32)   // shader `array<f32, 32>` upper bound
     const limits: DeviceLimits = {

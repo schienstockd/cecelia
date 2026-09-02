@@ -3159,7 +3159,16 @@ async function loadVersion(refit: boolean) {
         applyChannel: () => { /* deferred to the post-alloc apply below */ },
         applyCamera:  () => { /* deferred */ },
         applyMode:    md => { mode.value = md },
-        applyZ:       (zp, zr) => { zPlane.value = zp; zRange.value = zr },
+        applyZ:       (zp, zr) => {
+          // Clamp restored z-state to THIS image's depth. A saved zRange from an image with a
+          // deeper stack (or an off-by-one leaked into persistence) would otherwise flow through
+          // as `zRange[1] = m.nZ`, making `zDepth = m.nZ + 1` and every brick payload get
+          // rejected on shape mismatch (Dominik 2026-09-02, VJy1Nx: constant reload loop).
+          // Same clamp discipline `applyT` already has for t.
+          const maxZ = Math.max(m.nZ - 1, 0)
+          zPlane.value = Math.max(0, Math.min(zp, maxZ))
+          zRange.value = [Math.max(0, Math.min(zr[0], maxZ)), Math.max(0, Math.min(zr[1], maxZ))]
+        },
         applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
       })
     })
