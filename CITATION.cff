@@ -17,15 +17,14 @@ authors:
 license: GPL-3.0-or-later
 repository-code: "https://github.com/schienstockd/cecelia"
 url: "https://github.com/schienstockd/cecelia"
-version: 0.1.3
-date-released: 2026-08-15
+version: 0.2.0
+date-released: 2026-09-01
 keywords:
   - microscopy
   - image-analysis
   - cell-tracking
   - cytometry
   - segmentation
-  - napari
   - julia
   - bioinformatics
 preferred-citation:

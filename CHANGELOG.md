@@ -15,159 +15,115 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
-### Changed — Cellpose 4, and no more Cellpose denoising  ⚠️ breaking
+## [0.2.0] — 2026-09-01
 
-- **Segmentation now runs Cellpose 4 (Cellpose-SAM).** The pin moved from `cellpose==3.1.1.2` to
-  `>=4.2`. v4 has one model instead of a zoo: pick **Cellpose-SAM v2** (`cpsam_v2`). Weights (~1.2 GB)
-  download from HuggingFace on first use into `~/.cellpose/models` — set `CELLPOSE_LOCAL_MODELS_PATH`
-  to put them elsewhere or to pre-seed a machine with no internet access.
-- **`cyto3` / `cyto2` / `cyto` / `nuclei` are gone, and a saved run that names one now fails with a
-  message rather than running.** That is deliberate: cellpose 4 answers an unknown model name with a
-  log warning and quietly substitutes `cpsam_v2`, so a silently-different segmentation was the
-  alternative. Re-select the model and re-check the cell diameter; the numbers will not match the old
-  run, and there is no way to reproduce it — v3 and v4 are the same package and cannot coexist.
-  Existing label stores are untouched.
-- **Custom Cellpose checkpoints have to be retrained on v4.** Cellpose refuses a v3 file outright
-  (*"This model does not appear to be a CP4 model"*). The drop-in slots
-  (`<config_dir>/models/cellposeModels/`, `<install>/models/cellposeModels/`) are unchanged, but the
-  installers no longer fetch the shared `ceceliaModels` set, because all of it is v3 — including
-  `ccia.fluo`, the fluorescence model used upstream of branching.
-- **On dim, moving, 3D data prefer Optical flow segmentation (`segment.coastal`).** Cellpose-SAM was
-  measured at 0% QC-pass on an intravital movie where tuned `cyto2` reached 13.4%
-  (`docs/todo/SEG_QUALITY_PLAN.md`), and `cyto2` is no longer available as a fallback. Cellpose's
-  case is static / clean-signal images.
-- **Cellpose correction (denoising) was removed.** Cellpose 4 has no denoise model, and the measured
-  comparison did not favour it: use **Smooth** (`cleanupImages.smooth`, gaussian + temporal median),
-  which kept more signal, produced fewer merged cells and ran ~30× faster on the same data. Images
-  already denoised keep their `cpCorrected` version and stay readable; only the task is gone. Deblur
-  and upsample had no replacement and are gone with it.
+~150 PRs since `v0.1.3`. Two changes affect existing work — read those first.
 
-### Changed — the two track plots compare a cohort
+### Removed — napari  ⚠️ retirement
 
-- **Tracks and the track diagnostics now put treatments and populations side by side**, like every other
-  plot on the Analysis board. Both shipped showing one image and no populations, so a figure comparing two
-  conditions had to be assembled by hand from per-image screenshots. They now read the board's own
-  controls — `compare` (this image / per image / pooled / by attribute), the population rail and *pool to
-  groups* — with one **group** per (images × population) cell of the comparison, drawn as small multiples
-  in a grid with the group's name as the cell title. No new control was added; the grouping resolves once
-  in the package (`track_plot_groups`), through the same attribute join the summary canvas uses.
-- **A group is named, never coloured.** Both plots always split rather than overlay (`Facet by` is
-  reported as overridden instead of being silently ignored): overlaid conditions are unreadable in every
-  mode, and a per-group colour would need the inline swatch legend the house style rules out and would
-  spend the colour channel `colorBy` exists for.
-- **Both routes are cohort-shaped.** `GET /api/tracking/paths` and `/api/tracking/diagnostics` return
-  `groups: [...]`, each entry carrying what the single-image response used to carry at its top level. A
-  single-image call is one group, so nothing about the Track page's own canvas changes.
-- **A group's images are pooled the way each plot needs.** Paths keep them apart (a track is labelled by
-  the movie it came from, and the per-group cap is taken round-robin so a pooled group shows each of its
-  replicates); the diagnostics battery pools the frames, offsetting track ids so two cells can never be
-  read as one track, and keeps its O(n²) pair scan inside a single movie.
-- **`pop_df(pop_type="track"|"trackclust", granularity=:cell, centroids=…)` now returns coordinates.** The
-  track→cell expansion carried only the requested columns, so a gated or clustered track's cells came back
-  with no centroids at all — which is exactly what a track plot draws.
+- **napari is gone.** The WebGPU browser viewer covers everything napari did: 2D/3D, mask outlines,
+  overlay layers, task previews, animations, movie recording, picking, cursor-zoom, projection toggle,
+  linked brushing. The napari bridge (`:7655`), the `pixi run napari` task, the `[napari]` config
+  block, and `CECELIA_NAPARI_DISCRETE_GPU` are all gone.
+- **Nothing on disk changes.** Saved LUTs, palettes, and overlay props load unchanged.
 
-### Changed — the flow training form
+### Changed — Cellpose 4  ⚠️ breaking
 
-- **One chip row for the temporal scales, labelled with what each lag spans.** The separate
-  *Temporal spans (s)* text box is gone. The chips now read `4 · 60s` — the lag, and what it covers at
-  the frame rate of the images you have selected — and a line beneath states the anchor
-  (`15s, 30s, 60s, 120s at 15s/frame (fXgbTl)`). The mode is now **Read other rates as: Same lags /
-  Same durations**, because that is the only thing it decides. A span that is not a whole number of the
-  reference movie's frames can no longer be asked for; typing `20` on a 15 s/frame movie used to be
-  accepted and silently trained as 15 s.
-- **The spans are anchored on the coarsest selected movie, not the finest.** The spans have to be
-  representable on every movie in the set, and only the coarsest anchor guarantees that — every finer
-  movie scales the lags up rather than below one frame. On lags 1/2/4 across 5/10/15 s/frame the finest
-  anchor could train 1 of 3 movies; the coarsest trains 3 of 3.
-- **The loss weights all move in the same step and share one range** — 0 to 4 in steps of 0.05, where
-  they were 0–10 or 0–2 in steps of 0.5 or 0.25. 0.05 rather than 0.1 because `intensityWeight`'s
-  default of 0.25 has to be a stop the slider can reach.
-- **The flow-boundary weight now appears in the model details, beside the foreground blur** — the two
-  together are the foreground target. The training-convergence plot says outright that it has no curve
-  of its own: it is not a loss term, it reshapes the target, so its effect lands in `foreground` and,
-  far more visibly, in that term's floor. Measured on fXgbTl at blur 1.0, `floor_foreground` is 0.317
-  at weight 0 against 0.015 at weight 1.0 — so two runs at different weights are not comparable until
-  the floor is subtracted.
+- Pin moved to `cellpose>=4.2` (Cellpose-SAM, `cpsam_v2` — weights ~1.2 GB fetched on first use;
+  `CELLPOSE_LOCAL_MODELS_PATH` to pre-seed).
+- `cyto2` / `cyto3` / `cyto` / `nuclei` are refused rather than silently substituted with `cpsam_v2`.
+  Custom v3 checkpoints must be retrained; the shared `ceceliaModels` set (all v3, including
+  `ccia.fluo`) is no longer fetched by the installers.
+- **Cellpose denoising removed.** Use `cleanupImages.smooth` (~30× faster, fewer merged cells; see
+  `docs/todo/SEG_QUALITY_PLAN.md`). Existing `cpCorrected` variants stay readable. Deblur and upsample
+  are gone with it.
+- For dim / moving / 3D data prefer `segment.coastal` — Cellpose-SAM measured 0% QC-pass on an
+  intravital movie where tuned `cyto2` reached 13.4%.
 
-### Added — flow models can be trained on time spans, not frame lags
+### Added
 
-- **`Train flow model` has its own Temporal scale: frame lags (default) or spans in seconds.** In
-  seconds you give the spans — `5,10,20,40` — and each training movie is resolved onto its own frame
-  lags. A set that mixes 5 s/frame and 15 s/frame acquisitions now contributes one motion timescale
-  instead of three-fold different ones under the same channel names, which is what training on frame
-  lags silently did. A movie whose frame interval is unknown, recorded in another unit, or too coarse
-  for the spans is skipped with a warning naming its rate — it is not clamped onto its nearest frames.
-- **A model trained this way states the acquisition it needs.** The model details dialog gains
-  *Temporal spans*, *As frame offsets* (against the rate they belong to) and *Needs — N s/frame or
-  finer*, and segmenting a coarser movie under `Match durations` refuses with that number rather than
-  quietly using the closest frames it has. The figure is the rate below which every span still lands
-  on its own frame offset, found by search — resolving is not monotone in the frame interval, so
-  there is no formula for it that is both correct and tight. "Use this model's settings" restores the
-  spans and the mode together.
-- Nothing existing changes: frame lags remain the default in both tasks, and every model already in a
-  vault trains, loads and segments exactly as before.
+- **Browser viewer parity** — brick renderer + octree, task-preview overlays, mask outlines,
+  animations & movie recording, picking, cursor-zoom, projection toggle, point border/outline.
+- **Per-pop track-layer rows** in the viewer's Tracks section — each ribbon-eligible pop shows and
+  toggles on its own row.
+- **Plugin contribution model** — user drop-in tasks under `<config_dir>/modules/` (see
+  `docs/CUSTOM_MODULES.md`); ccia-example plugins publishable to their own repos.
+- **Workflow recipes** — one-click template chains on the Analysis board.
+- **Measure groups** on the Analysis board and a **cohort split** for the two track plots (`paths`,
+  `diagnostics`) — treatments and populations side by side, driven by the board's own compare rail.
+- **Boolean populations** in the population manager.
+- **Task Manager pop-out window** with a history toggle.
+- **Flow-training in seconds** — temporal spans (`5,10,20,40 s`) resolved per-movie onto frame lags;
+  models declare the frame rate they need and refuse coarser movies rather than reshaping silently.
+- **Movie recording follows the viewer** — plane, canvas size and crop rectangle are all honoured
+  across every record path (one-shot, keyframe, compare grid), so a zoomed / cropped view records at
+  that view rather than the whole image.
+- **Stable population UIDs** — `Population.uid` + `PopulationMap.uid_index`; path stays the display
+  identity, UID is what outside tables and provenance can reference across rename/move.
+- **Batch-movie generation** — pick which segmentation's pop tree to draw from (was locked to the
+  first image's first `labels` entry), plus a schematic overlay preview and multi-source track
+  composition (per-segmentation visibility + colour).
+- **Preprocessing module** — new page with six tasks (Z/T projection, XY bin, Z isotropic resample,
+  flip, dtype) behind a generic `imagePicker`; crop cuts over to it.
+- **Staining-cycle registration** (`register`) — port of the R version's cross-cycle image
+  registration, feature-gated as *Coming soon* while it lands.
+- **Track-property gating shipped end-to-end** — the `track` pop_type is wired from the per-track
+  store through the API to a Tracking-module canvas and to ribbon rendering in the viewer.
+
+### Changed
+
+- **Flow training form** — one chip row per span (`4 · 60s`), coarsest-movie anchor, shared 0–4
+  loss-weight range. Flow-boundary weight now sits beside the foreground blur in model details.
+- **AF correction** — bleedthrough unmixed before the dominance weight; per-channel-pair *Different
+  cell types* switch (default on).
+- **Store layout** — chunk keys are always nested; the flat variant is gone. Existing stores still
+  open.
+- **`hasTracks` on pop payloads** — flow gates over cells that were later tracked qualify as
+  ribbon-drawable in the viewer and the movie compositor. The master toggle formerly labelled
+  *"gated tracks"* is now called *"cell tracks"* to distinguish it from the strict track-poptype
+  case (per-track gating of track measures).
+- **Movie compositor title-card** names every ribbon the frame actually draws — the legend was
+  reading *"points"* while the frame drew a ribbon.
+- **Batch-movie panel** — busy banner removed (runner already reports the same events); overlay row
+  tightened so the tail slider matches the size slider's width.
+- **`pop_df(pop_type="track"|"trackclust", granularity=:cell, centroids=…)`** now returns coordinates
+  (was empty for gated / clustered tracks).
+- **Brick renderer** — mode-aware auto-picks per view, atlas sizer uses the whole budget, LRU
+  protects `boundT` bricks; prefetch depth capped by atlas capacity; two-tier inflight cap.
+- **editImages / cleanup tasks** stream progress, land a task-effect line, and carry image attributes
+  forward through the pipeline.
+- **Smooth** — temporal-param guards run per-image, not per-task, so a mixed-rate cohort is validated
+  against the movie it will actually run on.
 
 ### Fixed
 
-- **The task preview applied the label modifications per model group; the run applies them once, after
-  the groups merge.** So a two-pass segmentation previewed as something the run would not produce, and
-  tuning `minCellSize` against it was tuning against the wrong number. Stacking a second model group is
-  a fill-only merge (`fill_unlabelled`): the later pass keeps only the pixels the earlier one left. The
-  run merges every group into the frame and *then* runs smoothing, erosion, expansion, the size filter
-  and border clearing, so it judges each object at its clipped extent. The preview ran all of that
-  inside the group loop instead, judging pass 2's objects at their full extent before the merge shaved
-  them. Measured on `zolIMa/fXgbTl` with a real two-pass config: 52 objects in run order against 53 in
-  the preview's, with non-identical foreground — and it diverged with `minCellSize` at 0 as well,
-  because `labelSmoothing` defaults to 0.5 and is equally order-sensitive. The per-pass object counts
-  the preview reports are now recounted after filtering, so a pass whose objects the size filter
-  removed reports zero rather than the pre-filter count. Single-pass previews are unaffected: with
-  nothing to clip, the two orders agree.
-
-- **The viewer's z-plane slider only updated the image when you let go of it.** It now follows the
-  drag, through the same 120 ms scheduler that shift+wheel already used, so the planes go past while
-  you look for one. A drag still costs a single refetch — the scheduler collapses a burst to the
-  position the pointer stopped at.
-
-- **Coastal segmentation's `Match durations (seconds)` fed the model its motion channels in the wrong
-  order.** Any result produced with it should be re-run. Coastal names each per-scale flow plane after
-  the frame lag it was measured at (`mag_4`) and stacks them by a *string* sort of those names, at
-  training and at inference alike. Matching durations changes the lags, so it changes the names: a
-  model trained on lags 1, 2, 4, 8 and pointed at a movie twice as fast resolves to 2, 4, 8, 16, and
-  `mag_16` sorts ahead of `mag_2` — the channel the network reads as its shortest motion scale was
-  handed its longest. The channel count was unaffected, so nothing raised and a plausible but wrong
-  mask came back. Every rate ratio of 2 or more was affected, which is the common case. The planes are
-  now renamed onto the names training used before the model sees them. `As trained` was never
-  affected, and it is the default.
-- **A movie too coarse for the model is now refused instead of silently reshaped.** When two of the
-  model's motion scales landed on the same frame lag, or one fell below a single frame, the scale list
-  was quietly shortened — which shifted every channel after the motion block and zero-filled the end.
-  Both cases now stop the run and name the frame rate the model needs.
-- **The flow preview showed a different channel set than the run it previews.** It read the scales
-  from the manifest directly, so under `Match durations` the metric sheet and the probability map were
-  built from the trained lags while the run used the resolved ones.
-- **A conditional parameter went unchecked when a chain node was validated.** A `showIf` condition
-  was evaluated against the submitted values alone, so a chain node (or a composite sub-step) that
-  omitted the key the condition names had the param skipped entirely — not just its required-check.
-  The run itself was never affected, only the check that runs before it. The condition now falls back
-  to the referenced param's spec default, which is what the form itself always did.
-- **"Find your way around" no longer opens with a warning.** The orientation tour — the guide Cecelia
-  starts by itself on a first launch — read "1 missing · needs pages your view profile hides
-  (/settings)", for everyone, including users who had never chosen a view profile. Settings is reached
-  from the sidebar footer and is deliberately not in the nav catalogue a profile curates, so the guide
-  picker was comparing the tour's `/settings` steps against a list that could never contain them. Only
-  a page the menu offers can now be reported as hidden.
-- **A guide no longer reports someone else's run as yours.** A guide step that waits for a task
-  ("Segmenting — I'll pick up when it finishes") adopted the newest run of that function, whether or
-  not it was the one you had just started. Since Next always moves on, walking past the Run step in a
-  session where you had already run that function meant the guide acted on the old run — skipping the
-  step if it had succeeded, or claiming "That run failed." if it hadn't. It now waits for a run you
-  started during the guide, or one still in flight. **"Wait again" after a failure really does wait
-  for the next run**, instead of re-adopting the dead one.
-- **A guide that sends you to a page your view profile hides now says so.** The warning was derived
-  from each step's declared page, but a step can also name one by pointing at its sidebar row — which
-  is how "Record a movie" and "Build an animation" name the Movies page, and neither declares it. With
-  Movies hidden both guides read "Ready" and then showed "That control isn't on screen right now"
-  where the menu row should have been.
+- Two-pass segmentation preview now matches the run — filtering + object counts reflect the merge
+  order, not the per-group order.
+- Viewer z-plane slider follows the drag through the same 120 ms scheduler as shift+wheel.
+- Coastal `Match durations (seconds)` fed motion channels in the wrong order (`mag_16` before
+  `mag_2`) — re-run anything trained on it. A movie too coarse for the model is now refused.
+- Flow preview channel set matches the run under `Match durations`.
+- Chain-node param validation now honours a `showIf` default when the referenced key is absent.
+- Guide picker no longer opens with a phantom *"1 missing"* warning, and no longer adopts someone
+  else's run as yours. *"Wait again"* really waits for the next run.
+- Guides that point at a page via its sidebar row now warn correctly when a view profile hides it.
+- Gating page remembers the last-picked segmentation per (popType, image); *Show defining plot*
+  retunes the active scatter panel instead of stacking a new one on every click.
+- Gating panel watches are guarded on `popType` — mounting the Track page no longer resets the Gate
+  page's persisted axes.
+- Sequential btrack runs on the same segmentation no longer overwrite each other's `track_id` —
+  `_write_back` is provenance-aware and keyed on pop UID (running `/CD169-/fragments` after
+  `/CD169-/cells` used to NaN out the cells' `track_id`).
+- Batch-movie overlay config — `showTracks` now actually pushes ribbons rather than silently
+  turning into `all-tracks`, and `showPops` overrides the all-tracks fill.
+- Brick renderer — atlas thrash on repeat scrubs (LRU protects `boundT`), Z-edge padding, residency
+  map layout + column cap (3–4 max), stale-`t` inflight fetches aborted on frontier change,
+  multi-level brick fixes (`VJy1Nx` repro), `brickZ` clamped to `meta.nZ`.
+- `has_tracks` fires only for the pop that authored the row — a later re-track can't retroactively
+  flip an unrelated pop's ribbon eligibility.
+- Sequential re-tracks on the same segmentation are refused when they would overwrite another pop's
+  rows (conflict detector); deleted pop UIDs are retired so they can never be reissued; orphan
+  `track_source` rows are swept against the live UID set.
 
 ## [0.1.3] — 2026-08-15
 
@@ -747,7 +703,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/schienstockd/cecelia/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/schienstockd/cecelia/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/schienstockd/cecelia/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/schienstockd/cecelia/compare/v0.1.0...v0.1.1

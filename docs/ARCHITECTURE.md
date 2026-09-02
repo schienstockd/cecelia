@@ -14,7 +14,6 @@ cecelia-feijoa/
   frontend/     Vue 3 — unchanged
   python/       Installable Python package `cecelia` — IO LIBRARY only: analysis/IO helpers
                 (cecelia.utils) + writers. NO task runners. Top-level sibling of app/.
-  napari/       Python napari bridge process (imports `cecelia`; not part of the package)
 ```
 
 **`python/` is the installable IO library; task runners live with their task in `app/`.** A task's
@@ -29,15 +28,14 @@ per-platform deps in `pixi.toml`. See [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY
 
 ### Every language boundary carries a version
 
-Julia and Python meet at three places, and **each one can end up with the two halves running different
-code**. Two of them hold a long-lived Python process that is *adopted* rather than relaunched (it
-outlives a backend crash or Ctrl-C on purpose); the third spawns Python fresh every run, so it is the
-**Julia** half that goes stale — `app/src` is Revise-tracked and a branch switch or a merge under a
-live server does not always reload it.
+Julia and Python meet at two places, and **each one can end up with the two halves running different
+code**. One holds a long-lived Python process that is *adopted* rather than relaunched (it outlives a
+backend crash or Ctrl-C on purpose); the other spawns Python fresh every run, so it is the **Julia**
+half that goes stale — `app/src` is Revise-tracked and a branch switch or a merge under a live server
+does not always reload it.
 
 | Boundary | Julia | Python | Mismatch → |
 |---|---|---|---|
-| napari bridge (:7655) | `NAPARI_PROTOCOL` (`app/src/napari.jl`) | `PROTOCOL` (`napari/napari_bridge.py`) | refuse to adopt, kill the port, relaunch |
 | preview worker (:7656) | `PREVIEW_PROTOCOL` (`app/src/preview.jl`) | `PROTOCOL` (`preview/preview_worker.py`) | refuse to adopt, relaunch |
 | task params (`run_py`) | `PY_CONTRACT_VERSION` (`app/src/py_runner.jl`) | `CONTRACT_VERSION` (`cecelia.utils.script_utils`) | the runner exits, naming the restart |
 
@@ -63,11 +61,11 @@ by hand still works.
 
 ### …and both ends of a resident-Python socket carry the same frame cap
 
-Every message on the napari and preview legs is **one JSON frame carrying a whole payload** — a label
-block, a set of AF-corrected channels, a contact sheet of PNGs. Both ends cap the size of a frame they
-will accept, the two caps are independent, and one number governs all four:
-`WS_MAX_FRAME_SIZE` (`app/src/utils.jl`) = `WS_MAX_SIZE` in both `napari_bridge.py` and
-`preview_worker.py`, asserted equal by the `resident python legs agree on their frame cap` testset.
+Every message on the preview leg is **one JSON frame carrying a whole payload** — a set of AF-corrected
+channels, a contact sheet of PNGs. Both ends cap the size of a frame they will accept, the two caps
+are independent, and one number governs both:
+`WS_MAX_FRAME_SIZE` (`app/src/utils.jl`) = `WS_MAX_SIZE` in `preview_worker.py`, asserted equal by the
+`resident python legs agree on their frame cap` testset.
 
 This is the protocol-version failure in a value nobody thought of as a version. The Python side had been
 raised to 64 MiB with a comment saying the 1 MiB default "is not a graceful degradation — the server
@@ -92,10 +90,8 @@ than relying on the transport to survive it.
 | Task abstract type + validation | Package | `tasks/task.jl` |
 | Concrete task implementations | Package | `tasks/<category>/<name>.jl` |
 | Task param specs (JSON) | Package | `tasks/<category>/<name>.json` — single source of truth |
-| NapariViewer (control protocol) | Package | `napari.jl` — REPL-callable, no server needed |
 | REST route handlers | API | `api/src/routes.jl` |
 | WS task queue + status push | API | `api/src/sockets.jl` |
-| Napari bridge lifecycle (multi-client) | API | `api/src/napari_api.jl` |
 | HTTP/WS server entry point | API | `api/src/server.jl` |
 | Serving task param specs to Vue | API | `GET /api/tasks/definitions?category=X` |
 | UI rendering, param forms | GUI | Vue, Pinia — no param definitions duplicated here |
@@ -138,7 +134,6 @@ its own. This is the mechanism that keeps the package runnable headless — a ta
 | `app/src/model/image.jl` | PACKAGE | CciaImage; round-trips every ccid.json field (status, attr, imChannelNames, filepath) |
 | `app/src/model/set.jl` | PACKAGE | CciaSet, `init_object`, `delete_image!` |
 | `app/src/model/project.jl` | PACKAGE | CciaProject, `delete_set!`, naive `with_transaction` lockfile |
-| `app/src/napari.jl` | PACKAGE | NapariViewer opens its own WS to bridge |
 | `app/src/tasks/task.jl` | PACKAGE | Abstract type, validation, REPL contract |
 | `app/src/tasks/importImages/omezarr.jl` | PACKAGE | bf2raw via callbacks — no WS |
 | `app/src/tasks/importImages/remove.jl` | PACKAGE | File deletion + ccid.json update — no WS |
@@ -151,7 +146,6 @@ its own. This is the mechanism that keeps the package runnable headless — a ta
 | `api/src/routes.jl` | API | REST handlers — delegate to package; shape responses only |
 | `api/src/gating_api.jl` | API | Gating/plot HTTP routes — delegate to `pop_df`/`plot_summary_data`; serve plot specs (`GET /api/plots/definitions`), aggregate (`POST /api/plot_data`) |
 | `api/src/sockets.jl` | API | WS task queue, process registry, `_kill_tree`, status push |
-| `api/src/napari_api.jl` | API | Napari bridge lifecycle + broadcast for multi-client |
 
 The plotting canvas obeys the same boundary as everything else: **aggregation is a PACKAGE function**
 (`plot_summary_data`, headless-testable, returns a plain data structure), the **route is a thin API
@@ -161,7 +155,7 @@ chart config, only aggregated numbers). A summary panel that needed bespoke Juli
 component that computed bins from raw cells, would be a boundary violation.
 
 > **Cleanup (this audit):** the pre-separation monolith orphaned in `app/src/` —
-> `server.jl`, `tasks.jl`, `projects.jl`, `metadata_handler.jl`, `napari_handler.jl` — was deleted
+> `server.jl`, `tasks.jl`, `projects.jl`, `metadata_handler.jl` — was deleted
 > (none were loaded by `Cecelia.jl` or the live server; one even `include`d an already-deleted file).
 > Task implementations were consolidated from flat `tasks/*.jl` into co-located
 > `tasks/<category>/<name>.{jl,json}`, matching the module pattern.
@@ -296,9 +290,8 @@ time, read from different places, and narrowing one of them was enough to break 
 
 ## Viewer
 
-Napari was retired in P9. The browser viewer (`frontend/src/lib/webgpu`) drives image display,
-overlays and recording. See `docs/todo/WEB_VIEWER_PLAN.md` for the migration and the current
-architecture.
+The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays and recording. See
+`docs/todo/WEB_VIEWER_PLAN.md` for the migration and the current architecture.
 
 ---
 
@@ -339,17 +332,17 @@ four and a second copy is how the two consoles would drift.
 | Producer | Carrier | `source` |
 |---|---|---|
 | API server's own logs | `TeeLogger` → `server:log` | `backend` |
-| napari bridge :7655, preview worker :7656, Pluto :7660 | `spawn_logged` → the same tee | `napari` · `preview` · `notebooks` |
+| preview worker :7656, Pluto :7660 | `spawn_logged` → the same tee | `preview` · `notebooks` |
 | detached task runner :7657 | its own tee → `runner:log` on `/events` → relayed into the API ring; raw stdio inherited → terminal | `runner` |
 | a task's Python | `run_py` → `on_log` → `task:log` (the task drawer) | *n/a — per-task, not console* |
 
 ### `run(cmd; wait = false)` swallows stdio — use `spawn_logged`
 
 Julia's non-blocking `run` does **not** inherit stdio; it sends both streams to devnull
-(`spawn_opts_swallow`). Three long-lived children were started exactly that way, so the napari
-bridge's ~20 `print(..., flush=True)` diagnostics and the preview worker's `traceback.print_exc()` went
-**nowhere at all** — not to the console, and not to the `pixi run dev` terminal either. Anyone looking
-for them reasonably assumed the terminal had them.
+(`spawn_opts_swallow`). Long-lived children started that way (e.g. the preview worker's
+`traceback.print_exc()`, its `print(..., flush=True)` diagnostics) went **nowhere at all** — not to
+the console, and not to the `pixi run dev` terminal either. Anyone looking for them reasonably
+assumed the terminal had them.
 
 So `spawn_logged(source, cmd)` is the only sanctioned way to start a long-lived child. It pipes both
 streams into the logger a line at a time and reassembles a Python traceback into **one** record
@@ -429,9 +422,6 @@ Tasks that also write OME dimensions can merge both into one return:
 ```julia
 merge(zarr_meta, Dict{String,Any}("valueName" => value_name, "filename" => basename(zarr_out)))
 ```
-| S→C | `napari:event` | `name`, `data` | `ws.ts` → named handlers |
-| S→C | `napari:opened` | `imageUid` | `ws.ts` → `project.napariImageUid` |
-
 ---
 
 ## REST endpoint reference
@@ -452,7 +442,7 @@ For the full chain of existing project/image/task REST routes see `api/src/route
 ```
 Vue 3 + Pinia   →  UI only; no analysis logic
 Julia            →  task dispatch, gating, statistics, REST/WS API, HPC
-Python           →  image I/O, Napari, PyTorch, Cellpose
+Python           →  image I/O, PyTorch, Cellpose
 ```
 
 The Julia half is one process in production and optionally **two in dev**: the API server, and a
@@ -511,7 +501,7 @@ Lives in Julia, operates on H5AD files written by Python tasks.
 - **Population hierarchy**: tree; each node is a named population with a boolean mask over its parent
 - **Gate coordinates**: always in transformed space (logicle/biex first, gates drawn on top — same convention as FlowJo)
 - **Storage**: per-segmentation sidecar `gating/{value_name}.json` (NOT `ccid.json`); population tree = `{name, gate, children: [...]}`
-- **Napari integration**: *linked brushing*, not gate-drawing — napari draws an image region → bridge POSTs the inside cells' label IDs to `/api/napari/event` → Julia mirrors them as a transient population and broadcasts `gating:popmap` (see flow above + `docs/POPULATION.md`)
+- **Viewer integration**: *linked brushing*, not gate-drawing — the viewer draws an image region → POSTs the inside cells' label IDs to `/api/viewer/pick-rect` → Julia mirrors them as a transient population and broadcasts `gating:popmap` (see flow above + `docs/POPULATION.md`)
 - **logicle transform**: port Logicle.cpp (Parks et al. 2006); Python implementations available as reference
 
 ---
@@ -545,7 +535,7 @@ Never assume one format, and never hand-roll the check — always go through the
 and returns silently. First it made `resync_ome_meta!` a no-op on any image with a processed
 variant active; then it made `sync_zarr_calibration!` land only its OME-XML half on the 8-bit
 import + crop outputs, leaving a store whose XML said `TimeIncrement="10.0"` while its NGFF t axis
-said `scale: 1.0` — and napari, which prefers NGFF, rendered 1 s/frame.
+said `scale: 1.0` — and the viewer, which prefers NGFF, rendered 1 s/frame.
 
 Callers of `read_ome_metadata` should still resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` —
 the `"default"` zarr, not the active one. That is no longer a layout limitation: physical size and
@@ -572,11 +562,10 @@ cecelia-feijoa/
   python/       Installable Python package `cecelia` (pyproject.toml here) — the IO LIBRARY only:
                 analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
                 to app/. This is what an external consumer (coastal) `pip install`s.
-  napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
   preview/      Task-preview worker (preview_worker.py, :7656) — resident process that runs a task's
-                real compute over the visible region. Runtime process, like napari/ and mcp/.
+                real compute over the visible region. Runtime process, like mcp/.
   mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
-  pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
+  pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|stop`)
   docs/         Extended architecture and design reference
 ```
 
@@ -589,7 +578,6 @@ each task's co-located Python runner; `python/` is the **installable IO library*
 | `api/` | Julia | HTTP/WS server scripts (`include`d, not a package). |
 | `frontend/` | Vue/TS | The browser UI. |
 | `python/` | Python | The installable **`cecelia`** IO library — **no task runners**: `python/cecelia/utils/*` (zarr/OME/dim/label-props/tracking/… helpers) + `python/cecelia/writers/*` (h5ad write-side). `python/pyproject.toml` ships only `cecelia` + `cecelia.utils`. This is what coastal `pip install`s. |
-| `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
 | `preview/` | Python | The task-preview worker (`:7656`): runs a task's own compute over one visible region so params can be judged before a full run. Resident (17.7 s of imports), un-pooled, returns the mask block rather than writing a store. Imports `cecelia`; not part of it. |
 | `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
 
@@ -604,7 +592,7 @@ each task's co-located Python runner; `python/` is the **installable IO library*
 > the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
 > `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
-**Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
+**Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise.
 
 **Adding a Julia dependency to `app/`**: `Cecelia` is path-sourced by **three** separate environments,
 each with its own committed `Manifest.toml` that pins Cecelia's full dependency graph — so a new dep
@@ -632,7 +620,6 @@ Miss one and it precompiles fine everywhere else but dies in that one env — wh
 ### Ports
 - `8080` — Julia WS/HTTP server
 - `5173` — Vite dev (proxies `/ws` → `8080`)
-- `7655` — Napari bridge WS
 - `7656` — Task-preview worker WS (`preview/preview_worker.py`)
 - `7657` — Detached task runner (`api/runner.jl`, dev only — see `docs/RUNNER.md`)
 - `7660` — Pluto notebooks server

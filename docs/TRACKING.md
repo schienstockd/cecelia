@@ -31,7 +31,7 @@ ParamRenderer (popSelection) → TaskRunner (task:run)
   `cells_in_pop(load_pop_map(img; value_name, pop_type="flow") |> recompute!, pop)` and
   passes the **label-ID list** to Python. Julia is the sole gate evaluator (see
   `docs/POPULATION.md`); Python never evaluates gates, and there is **no CSV handoff** and
-  **no HTTP callback** (unlike the napari linked-brushing path).
+  **no HTTP callback**.
 - **btrack** runs in the Python subprocess and writes lineage into the **same**
   `labelProps/{value_name}.h5ad` `obs`.
 
@@ -126,8 +126,8 @@ creates a track by hand (see correction, below) must follow that convention; wri
     honoured — while a 31-frame track covers ~25 µm at the median step and ~70 µm at p95.
     So check whether the long thing is one STEP or a whole trail before suspecting the
     tracker. (Open: on that run a single-frame jump was still reported by eye across two
-    consecutive frames, which the cell table does not contain — the drawn vertices come
-    from `napari_bridge._tracks_matrix`, so that is where to look, not at the params.)
+    consecutive frames, which the cell table does not contain — check the viewer's track
+    geometry rather than the params.)
   * **`maxLost` does not bound the gaps you end up with.** Same run, `maxLost = 1`, and
     final tracks contain gaps of 2–5 frames: each tracklet respected `max_lost`, then the
     optimiser joined them across up to `timeThresh` (5). To limit gaps, set `timeThresh`.
@@ -146,8 +146,7 @@ creates a track by hand (see correction, below) must follow that convention; wri
   reversed `prob_to_assign`, `+P_branch` when branching is on).
 - **`minTimepoints` is kept** as a basic tracking cutoff (drop tracks shorter than N) — it
   bounds what btrack emits and is distinct from the dropped displacement/angle *filters*.
-- **The bridge analogy doesn't apply.** Unlike napari (a long-running WS bridge), tracking
-  is a normal one-shot task subprocess streaming `[PROGRESS] n/total`; nothing is
+- **Tracking is a one-shot task subprocess** streaming `[PROGRESS] n/total`; nothing is
   hot-reloaded specially.
 
 ## Multi-pop tracking — provenance, orphans, attribution
@@ -393,7 +392,7 @@ one per host plus `chipSelect`; single-select would have been a sixth that disag
 gating canvas's `shared` bag (`useViewState`, the same mechanism as the highlighted populations), so
 selecting lanes in the timeline is the same act as choosing what the **Tracks** x/y panel draws — it
 re-requests with `ids=`, which bypasses the endpoint's cap, so a selected track outside the top-N is
-still drawn. `lib/napariView.ts` sends the viewer to a selected track. The link is offered through the
+still drawn. `lib/viewerLink.ts` sends the viewer to a selected track. The link is offered through the
 view context (`selTracks` + `setSelTracks`) rather than an event on `InteractivePanel`, which is
 generic infrastructure and must not learn what a track is; a host that provides neither still gets a
 working panel that simply talks to nobody.
@@ -403,12 +402,12 @@ pairs, hit-testing) and is unit-tested; the view renders SVG directly rather tha
 for the same reason the gating scatter is a canvas — it is an authoring surface, and every pixel has
 to map back to a (track, frame).
 
-**From napari, not from a table.** **Draw** a region around the cells in the viewer
-(`POST /api/napari/start-selection`), then **Read** → `GET /api/tracking/selection` resolves the
-enclosed labels to their tracks, selects those lanes and scrolls to them. **Show** puts the selection on its OWN napari layer — and only that layer: sending the
-segmentation too drew every track in the image beside it, which puts the picked tracks back in the
-haystack they were picked out of. That closes the loop a table could not: you see the bad track in the image and act on
-it there.
+**From the viewer, not from a table.** **Draw** a region around the cells in the viewer, then
+**Read** → `GET /api/tracking/selection` resolves the enclosed labels to their tracks, selects those
+lanes and scrolls to them. **Show** puts the selection on its own layer — and only that layer:
+sending the segmentation too drew every track in the image beside it, which puts the picked tracks
+back in the haystack they were picked out of. That closes the loop a table could not: you see the bad
+track in the image and act on it there.
 
 **Show opens this panel's image first.** The viewer resolves overlays against the image it holds,
 not the one the request names, so pressing *Show* while the viewer was on another movie asked for
@@ -416,9 +415,9 @@ a segmentation that image does not have. The panel now points the viewer at its 
 one canonical open path, and declines with a line when no viewer is open rather than force-launching one.
 The route refuses the mismatch as a backstop.
 
-**Show flies to a track's LAST frame, not its first.** napari's Tracks layer draws each track as a
-trail up to the current timepoint, so at the first frame there is one point and no track — the layer
-is on, the viewer is in the right place, and there is nothing to see.
+**Show flies to a track's LAST frame, not its first.** The tracks layer draws each track as a trail
+up to the current timepoint, so at the first frame there is one point and no track — the layer is
+on, the viewer is in the right place, and there is nothing to see.
 
 **The selection carries its SCOPE.** A `track_id` is only unique within one (image, segmentation)
 pair, so the canvas shares `{imageUid, valueName, ids}` rather than a bare id list
@@ -453,7 +452,7 @@ is unchanged (exactly as `y` already is for a 1-D segmentation). Measured on a r
 shape costs ~641 B per track, so 5000 tracks would be ~3.2 MB of coordinates for a panel that reads
 none of them. A path plot caps at a top-N because 5000 polylines are a hairball; a lane list capped is
 just a lie — "pick track 2001" has no answer if 2001 was never sent, and the panel cannot even say it
-exists. So occupancy mode defaults to a 20000 cap, and the fly-to-napari button fetches that one
+exists. So occupancy mode defaults to a 20000 cap, and the fly-to-viewer button fetches that one
 track's geometry on demand with `ids=`.
 
 **A TRACK POPULATION PICKER picks what the track panels show.** All three track views sit on the
@@ -553,16 +552,16 @@ is the durable, per-image edit history; old R's died with the Shiny session.
 
 ## Tracks as a plot (`trackPaths`)
 
-Tracks were viewable only in napari, which is fine for judging one cell and useless for a figure: a
-viewer screenshot cannot be recoloured by a measure, put beside another condition, or exported as
-vectors. `TrackPathsView` is the plot half — an interactive-view registry entry, so it lands on the
+Tracks were viewable only in the viewer, which is fine for judging one cell and useless for a
+figure: a viewer screenshot cannot be recoloured by a measure, put beside another condition, or
+exported as vectors. `TrackPathsView` is the plot half — an interactive-view registry entry, so it lands on the
 Track canvas **and** the Analysis board with panel chrome, zoom and PNG/SVG/CSV export attached.
 
 Three modes, because "the tracks" is three questions:
 
 | Mode | Shows | Why |
 |---|---|---|
-| Paths | the polylines where the cells were | the spatial picture, the one napari draws |
+| Paths | the polylines where the cells were | the spatial picture, the one the viewer draws |
 | Star | every track translated to a common origin | position discarded, SHAPE preserved — the celltrackR rose family (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100006); directed migration fans, a random walk fills a disc |
 | Rose | one arrow per track, start → end | net displacement, when hundreds of paths have become a scribble |
 
