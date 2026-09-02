@@ -27,14 +27,20 @@ THIRD_PARTY.md.
 
 import os
 import numpy as np
-import SimpleITK as sitk
-import sitkibex
 
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
+
+# SimpleITK + sitkibex are imported LAZILY inside `run()` — module-load must succeed on every
+# platform so the runner-discovery scan (`test_task_result_writes.py`) can import this file. The
+# conda-forge SimpleITK Windows build has occasionally shipped with a DLL-resolution failure
+# ("DLL load failed while importing _SimpleITK") that a top-level `import SimpleITK` would trip
+# on every discovery pass — the task itself is behind a `comingSoon` flag and won't run in the
+# GUI, and a REPL/API caller who invokes it will see the import error at the moment they run,
+# which is when it belongs.
 
 
 def _slice_registration_plane(arr, dim_utils, ch_idx):
@@ -55,6 +61,8 @@ def _slice_registration_plane(arr, dim_utils, ch_idx):
 
 def run(params):
     log = script_utils.get_logfile_utils(params)
+    import SimpleITK as sitk           # lazy — see the top-of-file note
+    import sitkibex
 
     im_paths      = list(params['imPaths'])
     im_out_path   = params['imOutPath']
