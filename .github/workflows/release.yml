@@ -53,7 +53,7 @@ jobs:
           # runtime path` testset in app/test/suite.jl, which pins the load-bearing ones.
           tar -czf out/cecelia.tar.gz \
             api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
-            napari/napari_bridge.py frontend/dist \
+            frontend/dist \
             install.sh install.ps1 README.md LICENSE THIRD_PARTY.md docs
           # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
           # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
