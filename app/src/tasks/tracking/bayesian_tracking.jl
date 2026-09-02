@@ -30,8 +30,19 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     # the pop's UID (unchanged by rename/move) for a gated run, `WHOLE_SEG_TRACK_SOURCE` when tracking
     # the whole segmentation. See MULTI_POP_TRACKING_PLAN.md Decision 1.
     track_source = WHOLE_SEG_TRACK_SOURCE
+    # Load the flow pop map up-front (even for a whole-seg run) so the P3 orphan sweep in
+    # `_write_back` can see the current live UIDs and NaN any row still stamped by a deleted pop's
+    # `track_source` — see MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 3. No sidecar → no live pops,
+    # every non-whole_seg row is an orphan; `nothing` there disables the sweep entirely on the
+    # Python side, so a legacy tracking task that never emits the param still lands somewhere sane.
+    m = try
+        load_pop_map(img; value_name = value_name, pop_type = "flow")
+    catch _
+        nothing
+    end
+    live_track_sources = m === nothing ? nothing : [pop_uid(m, p) for p in pop_paths(m)]
     if pops_to_track != "NONE"
-        m = load_pop_map(img; value_name = value_name, pop_type = "flow")
+        m === nothing && (on_log("[ERROR] No gating sidecar for value_name='$value_name'"); return nothing)
         if !has_pop(m, pops_to_track)
             on_log("[ERROR] Population not found in gating/$(value_name).json: $pops_to_track")
             return nothing
@@ -67,6 +78,9 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
            # whole-seg→pop case doesn't need it (whole_seg is treated as bypass in the detector).
            # Not exposed as a param widget yet — wired for future use.
            trackSourceForce     = Bool(get(params, "trackSourceForce", false)),
+           # Live pop UIDs seen when this run launched. `nothing` (no sidecar loaded) disables the
+           # P3 sweep — matches the legacy behaviour. See MULTI_POP_TRACKING_ORPHANS_PLAN decision 3.
+           liveTrackSources     = live_track_sources,
            maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
            maxLost              = Int(get(params, "maxLost", 3)),
            trackBranching       = Bool(get(params, "trackBranching", false)),
