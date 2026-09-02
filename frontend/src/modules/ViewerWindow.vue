@@ -1070,12 +1070,33 @@ const effectiveCacheBytes = computed(() => {
   const mb = settings.viewerCacheMB
   return (mb > 0 ? mb : AUTO_CACHE_MB.value) * 1024 * 1024
 })
-// Live-apply the tier without reallocating the renderer. Ignored on the flat renderer (setter
-// is optional). `bias` stays URL-only, so it rides through unchanged. Nudge the frame pump so
-// the new threshold takes effect on the next draw — otherwise `tickScheduler` doesn't re-run
-// until the user moves the camera (2026-08-31 Dominik: "are you sure you're reloading").
-watch(effectiveMaxIntersect, v => {
-  renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: brickKnobBias })
+/** Effective scheduler bias — user's URL knob plus two conditional bumps:
+ *  - When the user explicitly picks a level from the dropdown, add that pick so SSE cannot go
+ *    finer than the pick. `scheduleBricks`'s `floor` alone is a CAP on coarseness (`chosen =
+ *    min(biased, floor)`), not a pin — SSE picks 0 based on zoom, `min(0, 2)` returns 0, and the
+ *    "L2" dropdown loads L0 anyway (Dominik 2026-09-02, "when i select l2… it just loads l0").
+ *    Adding `pick` to bias pushes SSE's raw pick past `pick`, then the clamp at `[0, nLevels-1]`
+ *    lands biased at `min(sse+pick, nLevels-1)` — coarser or equal to `pick`, never finer.
+ *  - During playback, force coarsest available. Blocky-but-in-motion beats sharp-but-frozen —
+ *    same reason every video player drops quality on playback.
+ *  Both are `max`-ed together with `brickKnobBias` so an explicit dropdown pick coexists with
+ *  playback (playback wins if it's coarser). No-op on single-level stores (`nLevels-1 = 0`,
+ *  `userPick` clamped to 0). */
+const effectiveSchedulerBias = computed(() => {
+  const nLevels = meta.value?.levels?.length ?? 1
+  const maxLevel = Math.max(0, nLevels - 1)
+  let extra = 0
+  if (playing.value) extra = Math.max(extra, maxLevel)
+  const userPick = settings.viewerVolumeLevel
+  if (userPick >= 0) extra = Math.max(extra, Math.min(userPick, maxLevel))
+  return brickKnobBias + extra
+})
+// Live-apply the tier + bias without reallocating the renderer. Ignored on the flat renderer
+// (setter is optional). Nudge the frame pump so the new threshold takes effect on the next draw
+// — otherwise `tickScheduler` doesn't re-run until the user moves the camera (2026-08-31
+// Dominik: "are you sure you're reloading").
+watch([effectiveMaxIntersect, effectiveSchedulerBias], ([v, b]) => {
+  renderer.value?.setSchedulerKnobs?.({ maxIntersect: v, bias: b })
   frame.redraw()
 })
 /**
@@ -2171,6 +2192,11 @@ function stopPlay() {
   playing.value = false
   waitingFor.value = -1
   if (playTimer !== null) { clearTimeout(playTimer); playTimer = null }
+  // Retire the playback prefetch window. Playback sets `prefetchTs` to `[t, t±1, t±2]` so the
+  // scheduler buffers ahead; leaving that in place after stop keeps `tickScheduler` kicking
+  // fetches for those neighbour t's every tick with no benefit — Dominik 2026-09-02 ("doesn't
+  // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
+  renderer.value?.setPrefetchTimepoints?.([t.value])
 }
 
 function tick() {
@@ -2904,7 +2930,7 @@ async function ensureRenderer() {
       // persisted quality tier; a subsequent tier change goes through the watcher below without
       // a reallocate. `bias`/`hold` stay URL-only (dev knobs). No-ops on the flat renderer.
       // See `parseNumQuery` block at the top of the module for the param names.
-      r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: brickKnobBias })
+      r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: effectiveSchedulerBias.value })
       r.setHoldFinerEnabled?.(brickKnobHold)
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise

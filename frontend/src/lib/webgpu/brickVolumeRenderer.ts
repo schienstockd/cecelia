@@ -857,6 +857,25 @@ export async function createBrickVolumeRenderer(
       }
     }
     atlas.pageTableDirty = true
+
+    // Rebuild prev-pageTable to name prev-level residents at the NEW displayT. Without this,
+    // prev-pageTable stays frozen at whatever displayT the last level swap snapshotted (line
+    // 951's `set(pageTableCpu)`) — so a play-past-swap shows the swap-time frame as a still
+    // image "on top", masking any newly-arriving prev-level bricks for the current displayT
+    // (Dominik 2026-09-02, "l2 bricks being reloaded underneath but a still image on top").
+    // Also updates when `rebuildPageTableForDisplayT` is called at swap (line 971), which then
+    // supersedes the swap-time snapshot at 951 — that snapshot is kept for the case where
+    // pageTable holds nothing at displayT yet (fallback: name the empty state).
+    if (atlas.prevLevel !== undefined && atlas.prevGridNx > 0) {
+      atlas.prevPageTableCpu.fill(EMPTY_SLOT)
+      for (const entry of atlas.pageTable.entries()) {
+        if (entry.brick.t !== displayT || entry.brick.level !== atlas.prevLevel) continue
+        const pIdx = prevGridIndexOfBrick(atlas, entry.brick)
+        if (pIdx < 0) continue
+        atlas.prevPageTableCpu[pIdx] = entry.slot >>> 0
+      }
+      atlas.prevPageTableDirty = true
+    }
   }
 
   /** True when every CORE viewport brick at `t` is resident. Called from `show(t)` and
@@ -983,8 +1002,20 @@ export async function createBrickVolumeRenderer(
     // black — a between-tick arrival tied with L1 (prev) and the arbitrary tie-break picked
     // the L1 core, wiping the fallback.
     if (atlas.prevLevel !== undefined) {
+      // Only protect prev-level bricks the shader can ACTUALLY fall back to right now: same
+      // level (already gated) AND same displayT (prev-pageTable is a snapshot of pageTableCpu
+      // at swap time, which reflects the OLD displayT after swap and gets updated to reflect
+      // the NEW displayT on show(t) via rebuildPageTableForDisplayT). Prev-level residents at
+      // OTHER t's have no defensive value — the shader can't reach them. Blanket-protecting
+      // them (the previous behavior) caused the "roulette wheel" symptom Dominik 2026-09-02 on
+      // VJy1Nx: after a zoom-in swap from L2→L0, 441 L2 residents from a prior scrub across
+      // 62 timepoints all had PREV_TOUCH_BIAS applied every tick. Any L0 boundT arrival landed
+      // at BOUND_T_TOUCH_BIAS (5e8) < PREV_TOUCH_BIAS (1e9), then became LRU victim on the
+      // next L0 arrival — bricks flickering in and out one at a time on an L2 background.
       for (const e of atlas.pageTable.entries()) {
-        if (e.brick.level === atlas.prevLevel) atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
+        if (e.brick.level === atlas.prevLevel && e.brick.t === displayT) {
+          atlas.pageTable.touch(brickKey(e.brick), frameNow + PREV_TOUCH_BIAS)
+        }
       }
     }
     // No proactive eviction on same-level ticks: `dec.toEvict` names only bricks not scheduled at
