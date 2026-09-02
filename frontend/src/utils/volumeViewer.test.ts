@@ -541,6 +541,7 @@ describe('pickVolumeLevel — 3D LOD (napari-parity: coarsest by default)', () =
 describe('shouldUseBricks — 3D renderer auto-select from ViewerMeta', () => {
   // Landmarks lifted straight from `~/Downloads/TMP/bench6/*.json` (2026-08-29) — the reference
   // images this predicate has to classify correctly. Update if a new store gets added.
+  // Defaults to 'volume' when mode is omitted so old callers keep working.
   it('classifies every reference image the way BRICK_INTEGRATION_PLAN Decision 2 expects', () => {
     // fXgbTl: 31 t × ~47 MB = 1.4 GB total, fits flat's cache 31/31 → flat wins scrub
     expect(shouldUseBricks(meta({
@@ -558,6 +559,40 @@ describe('shouldUseBricks — 3D renderer auto-select from ViewerMeta', () => {
     expect(shouldUseBricks(meta({
       nT: 50, nC: 4, nZ: 20, nY: 7293, nX: 7848, bytesPerVoxel: 2,
     }))).toBe(true)
+  })
+  // The 2D case: only one z-plane fetched per t, so per-t cost drops by nZ. Dml3RG in 3D is
+  // 59 GB and unambiguously bricks; in 2D it's 1.6 GB and the pick depends on the runtime
+  // cache budget (bench10, 2026-09-02: cache 181/181, no re-fetch, TTFF 163 ms on a 2.8 GB
+  // effective budget). Explicit budget makes the test honest about what the runtime plumbs.
+  it('per-view: with a realistic runtime budget, Dml3RG flips 2D→flat, 3D→brick', () => {
+    const dml3rg = meta({ nT: 181, nC: 4, nZ: 37, nY: 1039, nX: 1060, bytesPerVoxel: 2 })
+    const runtime = 2_500_000_000    // ~AUTO_CACHE on Chromium (maxBufferSize 4 GB × 0.7 ≈ 2.8)
+    expect(shouldUseBricks(dml3rg, 'plane', runtime)).toBe(false)
+    expect(shouldUseBricks(dml3rg, 'volume', runtime)).toBe(true)
+    // fXgbTl already fits in 3D → still flat in 2D (both modes are under the budget).
+    const fxgbTl = meta({ nT: 31, nC: 4, nZ: 32, nY: 420, nX: 441, bytesPerVoxel: 2 })
+    expect(shouldUseBricks(fxgbTl, 'plane', runtime)).toBe(false)
+    expect(shouldUseBricks(fxgbTl, 'volume', runtime)).toBe(false)
+    // Whole-slide movie (f8gzA2-shape reduced to a tractable nT) — even one PLANE times nT
+    // blows the budget → brick both modes. Tile renderer takes over the 2D path elsewhere;
+    // that's a separate route decided by `useTiles`, not this predicate.
+    const wholeSlide = meta({ nT: 5, nC: 4, nZ: 1, nY: 16898, nX: 20329, bytesPerVoxel: 2 })
+    expect(shouldUseBricks(wholeSlide, 'plane', runtime)).toBe(true)
+    expect(shouldUseBricks(wholeSlide, 'volume', runtime)).toBe(true)
+  })
+  it('respects an explicit runtime budget — user Cache size setting flows through', () => {
+    // Same store, three budgets, three answers. Dml3RG-2D at 1.6 GB:
+    const dml3rgPlane = meta({ nT: 181, nC: 4, nZ: 37, nY: 1039, nX: 1060, bytesPerVoxel: 2 })
+    expect(shouldUseBricks(dml3rgPlane, 'plane',   500_000_000)).toBe(true)   // tight → brick
+    expect(shouldUseBricks(dml3rgPlane, 'plane', 1_500_000_000)).toBe(true)   // static floor → brick
+    expect(shouldUseBricks(dml3rgPlane, 'plane', 2_800_000_000)).toBe(false)  // auto → flat
+  })
+  it('falls back to the static floor for a zero / NaN / negative budget', () => {
+    // A pre-adapter call may pass 0 / NaN — treat as "unknown, use the static floor".
+    const dml3rg = meta({ nT: 181, nC: 4, nZ: 37, nY: 1039, nX: 1060, bytesPerVoxel: 2 })
+    expect(shouldUseBricks(dml3rg, 'plane', 0)).toBe(true)     // 1.6 GB > 1.5 GB floor
+    expect(shouldUseBricks(dml3rg, 'plane', NaN)).toBe(true)
+    expect(shouldUseBricks(dml3rg, 'plane', -1)).toBe(true)
   })
   it('gates on total movie bytes, not per-plane pixels', () => {
     // A big-XY image at a SINGLE small-C timepoint that still fits the cache → flat

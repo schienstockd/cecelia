@@ -302,37 +302,54 @@ export function pickVolumeLevel(meta: ViewerMeta, override?: number): number {
 }
 
 /**
- * Whole-movie byte budget for the flat renderer's per-timepoint cache. When `nT * bytesPerT`
- * fits under this, flat caches the ENTIRE movie once and playback is 0.10 ms with zero
- * re-fetch — measured 2026-08-29 bench6 on fXgbTl (31 t × 47 MB = 1.4 GB, cap 31/31, all
- * cached). Above this, the flat renderer still evicts on scrub (Dml3RG 181 t × 47 MB = 8.5 GB,
- * cap 4/181) and brick's TTFF-plus-streaming design wins. 1.5 GB is a conservative middle
- * ground between typical discrete-GPU headroom and the observed win/lose boundary.
- * Docs/todo/BRICK_INTEGRATION_PLAN.md → Decision 2.
+ * Fallback whole-movie byte budget for `shouldUseBricks` when the caller doesn't know the
+ * runtime budget yet (adapter not up, first classification). The RUNTIME budget is
+ * `effectiveCacheBytes` in `ViewerWindow` — derived from `maxBufferSize × 0.7`, then overridden
+ * by `settings.viewerCacheMB` if the user has picked a specific size. Callers that know it
+ * should pass it in; this constant only guards the first-classify path.
+ *
+ * Measured 2026-08-29 bench6 on fXgbTl (31 t × 47 MB = 1.4 GB, cap 31/31, all cached) and
+ * 2026-09-02 bench10 on 2h06xA plane (181 t × 8.86 MB = 1.6 GB, cap 181/181, no re-fetch,
+ * TTFF 163 ms). Docs/todo/BRICK_INTEGRATION_PLAN.md → Decision 2.
  */
 export const CACHE_BUDGET_BYTES = 1_500_000_000
 
 /**
- * Whether the 3D path should route to the brick renderer for this image.
+ * Whether the 3D path should route to the brick renderer for this image at the CURRENT view mode.
  *
- * The gate is "does the whole movie fit in flat's cache" — measured on bench6 blobs
- * 2026-08-29. Flat wins when it can hold every timepoint (fXgbTl, 1.4 GB total: cached 31/31,
- * playback 0.10 ms, no re-fetch); brick wins when flat can't hold enough for playback to be
- * smooth (Dml3RG, 8.5 GB total: cached 4/181, re-fetches on scrub — and brick's TTFF is 100×
- * better anyway). Earlier draft gated on `nX * nY < HUGE_XY_THRESHOLD_PX` (huge L0 → flat),
- * but bench5 showed the intersect guard cut f8gzA2's drawP95 from 200 ms to 2.8 ms, and flat
- * can't hold f8gzA2 in a single volume anyway (17 GB per t), so the shader-scaling exclusion
- * disappeared. `nLevels` doesn't get a vote — brick wins TTFF on single-level stores too.
+ * The gate is "does the whole movie fit in flat's cache" — measured on bench6 blobs 2026-08-29.
+ * Flat wins when it can hold every timepoint (fXgbTl, 1.4 GB total: cached 31/31, playback
+ * 0.10 ms, no re-fetch); brick wins when flat can't hold enough for playback to be smooth
+ * (Dml3RG, 8.5 GB total: cached 4/181, re-fetches on scrub — and brick's TTFF is 100× better
+ * anyway).
  *
- * Pure function on `ViewerMeta`; evaluated by ViewerWindow reactively when meta lands.
- * `?bricks=0|1` remains as a dev override in both directions (auto-select does not surface
- * as a user-facing toggle).
+ * `mode` matters because "the whole movie" is a different size in 2D and 3D. In `plane` we only
+ * ever draw one z-plane per timepoint, so flat's per-t cost drops by `nZ`. Dml3RG at 8.5 GB
+ * per-volume × 181 t = 29 GB doesn't fit flat in 3D, but in 2D a plane is 4.4 MB × 181 t ≈
+ * 800 MB and flat holds every timepoint (bench10, 2026-09-02: cacheCapacity 181, resident 181,
+ * 1.6 GB fetched, no re-fetch, TTFF 163 ms). So auto flips 2D→flat, 3D→brick on the same store.
+ *
+ * Earlier draft gated on `nX * nY < HUGE_XY_THRESHOLD_PX` (huge L0 → flat), but bench5 showed the
+ * intersect guard cut f8gzA2's drawP95 from 200 ms to 2.8 ms, and flat can't hold f8gzA2 in a
+ * single volume anyway (17 GB per t), so the shader-scaling exclusion disappeared. `nLevels`
+ * doesn't get a vote — brick wins TTFF on single-level stores too.
+ *
+ * Pure function on `ViewerMeta` + `mode`; evaluated by ViewerWindow reactively when either
+ * changes. `?bricks=0|1` remains as a dev override in both directions (auto-select does not
+ * surface as a user-facing toggle).
  */
-export function shouldUseBricks(meta: ViewerMeta): boolean {
-  const bytesPerT = meta.nX * meta.nY * meta.nZ * meta.nC * meta.bytesPerVoxel
-  if (!Number.isFinite(bytesPerT) || bytesPerT <= 0) return false
+export function shouldUseBricks(
+  meta: ViewerMeta,
+  mode: 'plane' | 'volume' = 'volume',
+  budgetBytes: number = CACHE_BUDGET_BYTES,
+): boolean {
+  const perT = mode === 'plane'
+    ? meta.nX * meta.nY * meta.nC * meta.bytesPerVoxel
+    : meta.nX * meta.nY * meta.nZ * meta.nC * meta.bytesPerVoxel
+  if (!Number.isFinite(perT) || perT <= 0) return false
   const nT = Math.max(meta.nT, 1)
-  return bytesPerT * nT >= CACHE_BUDGET_BYTES
+  const budget = Number.isFinite(budgetBytes) && budgetBytes > 0 ? budgetBytes : CACHE_BUDGET_BYTES
+  return perT * nT >= budget
 }
 
 /** `X-Slab-Shape` (`nz,ny,nx`) → the three numbers, or null if the header is absent/unparseable. */

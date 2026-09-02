@@ -57,7 +57,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, slabZ, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks,
+  shouldUseBricks, CACHE_BUDGET_BYTES,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -114,18 +114,27 @@ const imageUid = String(route.query.image ?? '')
  *  forces brick, `?bricks=0` forces flat, absent defers to `settings.viewerBricksMode` and then
  *  the predicate. Dev-only tool for A/B side-by-side comparisons. */
 const bricksOverride = String(route.query.bricks ?? '')
-/** Reactive on `meta` (server round-trip) AND `settings.viewerBricksMode` (user toggle). Read
- *  `.value` in script, auto-unwraps in template. Consumers that snapshot the value once (e.g.
- *  `ensureRenderer`) see the current classification because `reallocate` guards on `meta.value`
- *  being non-null first — and a setting flip fires the reallocate watcher below. */
+/** Reactive on `meta`, `settings.viewerBricksMode`, `mode` (2D/3D) AND `effectiveCacheBytes`
+ *  (which folds in `settings.viewerCacheMB`). Auto flips the renderer when the per-view working
+ *  set crosses the RUNTIME cache budget — a Dml3RG-shape store bricks in 3D and stays flat in
+ *  2D at the default budget, and if you bump the Cache size setting the threshold moves with it.
+ *  Consumers that snapshot the value once (e.g. `ensureRenderer`) see the current classification
+ *  because `reallocate` guards on `meta.value` being non-null first, and a mode / setting /
+ *  budget flip fires the reallocate watcher below. */
 const bricksEnabled = computed<boolean>(() => {
   if (bricksOverride === '1') return true
   if (bricksOverride === '0') return false
-  const mode = settings.viewerBricksMode
-  if (mode === 'brick') return true
-  if (mode === 'flat') return false
+  const bmode = settings.viewerBricksMode
+  if (bmode === 'brick') return true
+  if (bmode === 'flat') return false
   const m = meta.value
-  return m !== null && shouldUseBricks(m)
+  if (m === null) return false
+  // Runtime budget when the adapter is up (folds in `settings.viewerCacheMB`); the static floor
+  // otherwise so a pre-adapter first classification isn't skewed by the 512 MB AUTO fallback.
+  // The one flip we accept: Dml3RG-2D creates bricks first (static floor says "no fit"), then
+  // adapter lands, budget grows past 1.6 GB, watcher swaps in the flat renderer.
+  const budget = activeAdapter.value !== null ? effectiveCacheBytes.value : CACHE_BUDGET_BYTES
+  return shouldUseBricks(m, mode.value, budget)
 })
 /**
  * Brick LOD tuning knobs — URL params for interactive feel-testing. Applied ONCE at mount to
@@ -673,11 +682,14 @@ const labelName = computed(() => {
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 watch(labelName, () => reallocate())
-// Renderer swap when the user flips the bricks mode. `ensureRenderer` has an `if
-// (renderer.value) return` short-circuit, so we have to destroy first — without this the
-// toggle changed `bricksEnabled.value` but the OLD renderer kept drawing (Dominik
-// 2026-08-29: "toggle doesn't do a full reload, need to reload the page").
-watch(() => settings.viewerBricksMode, () => {
+// Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
+// crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
+// picks per view). `ensureRenderer` has an `if (renderer.value) return` short-circuit, so we
+// destroy first — without that the toggle changed `bricksEnabled.value` but the OLD renderer
+// kept drawing (Dominik 2026-08-29: "toggle doesn't do a full reload, need to reload the page").
+// Guard against firing during `bricksEnabled`'s initial computation when meta is still null.
+watch(bricksEnabled, () => {
+  if (meta.value === null) return
   if (renderer.value) { renderer.value.destroy(); renderer.value = null }
   reallocate()
 })
