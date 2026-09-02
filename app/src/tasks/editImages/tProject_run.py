@@ -93,6 +93,10 @@ def run(params):
         )
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # VALID-BOX-EXEMPT: T is COLLAPSED to a single frame. A per-frame box is keyed by frame
+        # index and would have no frames to key on; the frame-wise union would over-report validity.
+        # No box means "all valid" — a consumer skips nothing and is merely slower, never wrong.
+
     log.progress(3, 3)
     log.log('>> done')
 

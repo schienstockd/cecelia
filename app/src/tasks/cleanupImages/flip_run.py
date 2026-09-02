@@ -61,6 +61,11 @@ def run(params):
         ome_xml_utils.save_meta_in_zarr(staging, im_path, dim_utils=dim_utils)
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # VALID-BOX-EXEMPT: flip MIRRORS coordinates along the flipped axis, so a carried box would
+        # be a precise-looking lie — a valid region at [x0, x1] on the source is at [W-x1, W-x0]
+        # here. Mirroring the box in step is doable but unneeded — no box means "all valid", so a
+        # consumer skips nothing and is merely slower, never wrong.
+
     log.progress(3, 3)
     log.log('>> done')
 

@@ -111,6 +111,11 @@ def run(params):
         ome_xml_utils.save_meta_in_zarr(staging, im_path, dim_utils=dim_utils)
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # dtype is a per-pixel value transform — pixel COORDINATES are unchanged, so the source's
+        # valid box still describes the same data region and carries verbatim.
+        if zarr_utils.carry_valid_box(im_path, staging):
+            log.log('>> carried valid box from source')
+
     log.progress(3, 3)
     log.log('>> done')
 

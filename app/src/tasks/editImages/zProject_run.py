@@ -98,6 +98,10 @@ def run(params):
         )
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # VALID-BOX-EXEMPT: Z is COLLAPSED to a single plane, so a Z span from the source has no
+        # meaning on this store. XY validity from the source could be projected too, but no box
+        # means "all valid" — a consumer skips nothing and is merely slower, never wrong.
+
     log.progress(3, 3)
     log.log('>> done')
 

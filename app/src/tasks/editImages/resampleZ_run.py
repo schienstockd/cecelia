@@ -107,6 +107,11 @@ def run(params):
         )
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # VALID-BOX-EXEMPT: Z is RESAMPLED (SizeZ changes), so a source box in level-0 Z coords does
+        # not describe this store. Rescaling Z bounds by `ratio` is doable but unneeded — no box
+        # means "all valid", so a consumer skips nothing and is merely slower, never wrong.
+        # (`carry_valid_box` would refuse anyway: Z shapes differ.)
+
     log.progress(3, 3)
     log.log('>> done')
 
