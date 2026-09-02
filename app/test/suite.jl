@@ -9511,6 +9511,62 @@ end
     end
 end
 
+# ── has_tracks attribution guard (MULTI_POP_TRACKING_ORPHANS_PLAN P0) ─────────
+# `_pop_has_authored_tracks` is the predicate that fixes the wrong-attribution bug where an orphan
+# row (from a deleted pop) or a shared-label row (from an overlapping live pop) bled into a
+# different pop's ribbon. Pure predicate so we can pin its four rules without a fixture that
+# carries a categorical `track_source` column (which requires the Python writer). See docstring +
+# the plan's decision 1.
+@testset "has_tracks attribution guard (pure predicate)" begin
+    UID_A = "aAaAaA"
+    UID_B = "bBbBbB"
+    WS    = Cecelia.WHOLE_SEG_TRACK_SOURCE
+    src(d) = Dict{Int,Union{String,Nothing}}(k => v for (k, v) in d)
+
+    # 1. Empty label_to_source → false regardless of pop.uid / labels.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [1, 2, 3], src(Dict())) === false
+
+    # 2. A ↔ its own labels: authored by A → true.
+    m1 = src(Dict(1 => UID_A, 2 => UID_A))
+    @test Cecelia._pop_has_authored_tracks(UID_A, [1, 2, 3], m1) === true
+
+    # 3. B on labels A authored → false. THIS is the bug the guard fixes: pre-guard, B.has_tracks
+    #    would fire because B's labels overlap tracked rows; now B claims only rows IT authored.
+    @test Cecelia._pop_has_authored_tracks(UID_B, [1, 2, 3], m1) === false
+
+    # 4. `whole_seg` sentinel → counts for everyone (the documented prime-everything mode).
+    m_ws = src(Dict(1 => WS, 2 => WS))
+    @test Cecelia._pop_has_authored_tracks(UID_A, [1, 2], m_ws) === true
+    @test Cecelia._pop_has_authored_tracks(UID_B, [1, 2], m_ws) === true
+
+    # 5. Legacy row (`nothing`) → counts for everyone. Preserves pre-P1 behaviour for h5ads written
+    #    before the provenance ship (decision 1's legacy branch).
+    m_leg = src(Dict(1 => nothing, 2 => nothing))
+    @test Cecelia._pop_has_authored_tracks(UID_A, [1, 2], m_leg) === true
+    @test Cecelia._pop_has_authored_tracks(UID_B, [1, 2], m_leg) === true
+
+    # 6. Mixed set: label 1 authored by A, label 2 by B, label 3 legacy, label 4 whole_seg,
+    #    label 5 orphaned (deleted pop's UID no longer live). Guard fires when ANY qualifying
+    #    label sits in `labs` — attribution is per-pop, per-label.
+    ORPHAN = "zZzZzZ"
+    m_mix = src(Dict(1 => UID_A, 2 => UID_B, 3 => nothing, 4 => WS, 5 => ORPHAN))
+    #   A owns 1 directly → true even in isolation.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [1], m_mix) === true
+    #   B owns 2 → true in isolation.
+    @test Cecelia._pop_has_authored_tracks(UID_B, [2], m_mix) === true
+    #   Nobody but the orphan-source claims label 5. A does NOT get it.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [5], m_mix) === false
+    #   Legacy label 3 counts for A.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [3], m_mix) === true
+    #   whole_seg label 4 counts for B.
+    @test Cecelia._pop_has_authored_tracks(UID_B, [4], m_mix) === true
+    #   A over [5, 6] (all orphan or absent) → false. Confirms the ORPHAN row cannot bleed into A.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [5, 6], m_mix) === false
+
+    # 7. Label absent from label_to_source (i.e. `track_id ≤ 0` or NaN) → not tracked, ignored.
+    @test Cecelia._pop_has_authored_tracks(UID_A, [99, 100], m1) === false
+end
+
 # ── Segmentation integrity (QC) plot data (KDIeEm, timecourse) ───────────────
 # count per (image, timepoint) via group_by=temporal, + a per-timepoint measure distribution.
 # See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.

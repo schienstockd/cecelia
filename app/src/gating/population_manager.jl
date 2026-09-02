@@ -11,6 +11,12 @@ using JSON3
 
 const ROOT = "root"
 
+# `track_source` sentinel written by `_write_back` when tracking runs on the whole segmentation, not
+# on a gated pop. Bypasses the pop→pop conflict/attribution rules (whole-seg is the documented "prime
+# everything" mode, MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 1). Kept as a Julia const so the
+# guard in `resolve_pops` and the writer in `tasks/tracking/bayesian_tracking.jl` can't drift apart.
+const WHOLE_SEG_TRACK_SOURCE = "whole_seg"
+
 # ── Path helpers (root convention: "root"; pop paths start with "/") ─────────────
 is_root(p::AbstractString) = p == ROOT || p == "/" || isempty(p)
 
@@ -1737,6 +1743,38 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
 end
 
 """
+    _pop_has_authored_tracks(pop_uid, pop_labels, label_to_source) -> Bool
+
+The attribution predicate that drives `has_tracks` in `resolve_pops` (MULTI_POP_TRACKING_ORPHANS_PLAN
+decision 1). A label appears in `label_to_source` iff it holds `track_id > 0`; its value is the
+authoring `track_source` string (a pop UID or `WHOLE_SEG_TRACK_SOURCE`) or `nothing` for a legacy
+row whose row has no marker (pre-P1 h5ad, or an h5ad written before the provenance ship).
+
+This pop's ribbon fires when any of its labels was:
+- authored by itself (`src == pop_uid`),
+- authored by whole-seg tracking (`src == WHOLE_SEG_TRACK_SOURCE`) — the prime-everything mode, or
+- an unmarked row (`src === nothing`) — treated as everyone's, so a project tracked before the
+  provenance ship keeps its ribbons drawn. Re-tracking rewrites the marker and the guard tightens.
+
+Pure — no I/O, no `img` handle. Extracted so the plan's tests can unit-test the rule without
+building a fixture that carries a categorical `track_source` column (which requires the Python
+writer).
+"""
+function _pop_has_authored_tracks(pop_uid::AbstractString,
+                                  pop_labels::AbstractVector{<:Integer},
+                                  label_to_source::AbstractDict{Int,Union{String,Nothing}})::Bool
+    isempty(label_to_source) && return false
+    @inbounds for l in pop_labels
+        src = get(label_to_source, Int(l), missing)
+        src === missing && continue
+        if src === nothing || src == WHOLE_SEG_TRACK_SOURCE || src == pop_uid
+            return true
+        end
+    end
+    false
+end
+
+"""
     resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}
 
 Resolve a segmentation's stored populations to display-ready, membership-resolved entries: one per
@@ -1767,22 +1805,43 @@ function resolve_pops(img::CciaImage, pop_type::AbstractString;
     fetch = cols -> (lp = label_props(img; value_name = value_name);
                      isempty(cols) || select_cols(lp, cols); as_df(lp))
     recompute!(m, fetch)
-    # `has_tracks`: does this pop hold any cell with `track_id > 0`? Data-based, so a hand-drawn flow
-    # gate on cells that were later tracked qualifies as a ribbon-drawable pop without any change to
-    # its `is_track` flag (which stays "was this pop TYPED as a track pop"). See
-    # docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2. One label-props read, cached on the image with
-    # the rest of `resolve_pops`'s output (mtime-keyed), so the whole membership + tracks lookup pays
-    # its cost once per (segmentation × edit).
-    tracked_labels = Set{Int}()
+    # `has_tracks`: does this pop hold any cell with `track_id > 0` AND authored by this pop (or by
+    # whole-seg tracking, or from a legacy row with no `track_source` marker)? Provenance-aware — an
+    # orphan row from a deleted pop whose label happens to fall inside a live pop's gate no longer
+    # bleeds into that pop's ribbon, and two overlapping live pops don't cross-claim each other's
+    # tracks. Data-based, so a hand-drawn flow gate on cells that were later tracked still qualifies
+    # without any change to `is_track` (which stays "was this pop TYPED as a track pop"). See
+    # docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2 (`has_tracks` flag) and
+    # docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md Decision 1 (attribution guard). One label-props
+    # read, cached on the image with the rest of `resolve_pops`'s output (mtime-keyed), so the whole
+    # membership + tracks lookup pays its cost once per (segmentation × edit).
+    #
+    # Legacy row (no `track_source` column, or NaN in it) → treated as whole-seg-equivalent
+    # (claimed by every pop that touches its label). Preserves the pre-orphan-guard behaviour for
+    # projects tracked before the P1 provenance ship; re-tracking rewrites the marker and the guard
+    # tightens.
+    label_to_source = Dict{Int,Union{String,Nothing}}()
     begin
         lp = label_props(img; value_name = value_name)
-        if "track_id" in col_names(lp; data_type = :obs)
-            select_cols(lp, ["track_id"])
+        obs_cols = col_names(lp; data_type = :obs)
+        if "track_id" in obs_cols
+            cols = "track_source" in obs_cols ? ["track_id", "track_source"] : ["track_id"]
+            select_cols(lp, cols)
             tdf = as_df(lp)
+            has_src = "track_source" in names(tdf)
             @inbounds for i in 1:size(tdf, 1)
                 tid = tdf[i, :track_id]
                 (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
-                push!(tracked_labels, Int(tdf[i, :label]))
+                src::Union{String,Nothing} = nothing
+                if has_src
+                    s = tdf[i, :track_source]
+                    # `s` may be missing (unmarked row, legacy), a string (categorical / object), or an
+                    # empty string. Everything except a non-empty string is "unmarked" → legacy branch.
+                    if s isa AbstractString && !isempty(s)
+                        src = String(s)
+                    end
+                end
+                label_to_source[Int(tdf[i, :label])] = src
             end
         end
     end
@@ -1792,7 +1851,7 @@ function resolve_pops(img::CciaImage, pop_type::AbstractString;
         p.transient && continue
         labs = Int.(cells_in_pop(m, path))
         isempty(labs) && continue
-        has_tracks = !isempty(tracked_labels) && any(l -> l in tracked_labels, labs)
+        has_tracks = _pop_has_authored_tracks(p.uid, labs, label_to_source)
         push!(out, (path = p.path, name = p.name, colour = p.colour,
                     show = p.show, is_track = p.is_track, has_tracks = has_tracks,
                     labels = labs))
