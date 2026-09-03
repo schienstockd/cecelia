@@ -87,9 +87,17 @@ export interface TileRenderer {
    * together with the adapter's `maxTextureDimension3D`; `chunkX`/`chunkY` are the level's own chunk
    * shape, `nC` its channel count. Called on setImage AND on every level swap — the atlas dims are a
    * function of the level (finer levels have finer chunks in µm terms but the same pixel dims).
+   *
+   * `sourceId` names the STORE the tiles will come from — `<imageUid>/<valueName>` is the current
+   * convention. Two stores of identical shape (a drift-corrected version and its smoothed sibling
+   * are the case) key their tiles by the same `(t, z, level, tx, ty)`, so without a source distinct
+   * from geometry a version switch keeps the OLD tiles resident and every fetch key-collides into a
+   * cache HIT that returns pixels from the previous store. When it changes we drop the tile map but
+   * keep the atlas texture (progressive refinement across level swaps still works, and the atlas
+   * allocation is the expensive half — dropping it caused visible black flashes on 2026-08-26).
    */
   setImage(meta: ViewerMeta, level: number, budgetBytes: number,
-           chunkX: number, chunkY: number, nC: number): void
+           chunkX: number, chunkY: number, nC: number, sourceId: string): void
   /**
    * Upload one tile's channels (each a raw little-endian slab of exactly `w*h*2` bytes where
    * `(w, h)` are the tile's sampled dims, given by `tileFetchRect` on the level). Returns the slot it
@@ -220,6 +228,7 @@ export async function createTileRenderer(
   let atlasChunkY = 0
   let atlasNC = 0
   let atlasBPV = DEFAULT_BPV      // set from `m.bytesPerVoxel` on setImage
+  let atlasSourceId = ''          // which STORE the resident tiles decoded from (see setImage docs)
   let capacity = 0
   let currentLevel = -1
   let metaRef: ViewerMeta | null = null
@@ -275,6 +284,7 @@ export async function createTileRenderer(
     atlasChunkY = 0
     atlasNC = 0
     atlasBPV = DEFAULT_BPV
+    atlasSourceId = ''
     capacity = 0
     currentLevel = -1
   }
@@ -299,7 +309,7 @@ export async function createTileRenderer(
     adapter: report,
     lost: device.lost,
 
-    setImage(m, level, budgetBytes, chunkX, chunkY, nC) {
+    setImage(m, level, budgetBytes, chunkX, chunkY, nC, sourceId) {
       metaRef = m
       const nch = Math.min(nC, MAX_CHANNELS)
       // Progressive refinement: an atlas allocated for the CURRENT (chunkX, chunkY, nC) shape is a
@@ -312,6 +322,17 @@ export async function createTileRenderer(
         && atlasChunkX === chunkX
         && atlasChunkY === chunkY
         && atlasNC === nch
+      // Store identity change (a version swap on the same image, most often): the atlas geometry
+      // still fits, but every resident tile decoded from the OLD store and its `(t, z, level, tx, ty)`
+      // key collides with every fetch from the new one. Drop the map and refill freeSlots so a
+      // fresh fetch of the same coord uploads new pixels; keep the atlas texture so no black flash.
+      const sourceChanged = reuse && atlasSourceId !== sourceId
+      if (sourceChanged) {
+        tiles.clear()
+        freeSlots.length = 0
+        for (let i = 0; i < capacity; i++) freeSlots.push(i)
+      }
+      atlasSourceId = sourceId
       currentLevel = level
       // Publish the geometry the shader reads — always, whether we reuse or reallocate.
       const [ex, ey] = [m.nX * (m.voxelUm[0] || 1), m.nY * (m.voxelUm[1] || 1)]
