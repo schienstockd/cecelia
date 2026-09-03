@@ -1063,6 +1063,12 @@ export async function createVolumeRenderer(
       segBuf?.destroy(); segBuf = null
       if (dead) return                     // the device took its resources with it
       lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
+      // Detach the canvas swap chain BEFORE the device dies. Without the `unconfigure()` step,
+      // `device.destroy()` on the still-bound context left the swap chain in a state the next
+      // `ctx.configure(newDevice)` couldn't fully recover from — 2D→3D rendered an empty
+      // canvas (Dominik, 2026-09-03). Skipping `device.destroy()` instead leaked ~2 GB of
+      // texture pool and brick's next atlas alloc OOM'd. Both steps, in this order.
+      ctx.unconfigure()
       device.destroy()
     },
   }

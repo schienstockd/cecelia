@@ -41,7 +41,7 @@ import {
   // Kiln brick renderer (KILN_BRICK_PLAN.md P5) — dev-flagged via `?bricks=1`. Same interface
   // as `createVolumeRenderer`; P5a's build is a proof-of-plumbing that clears the canvas
   // magenta so a screenshot proves the swap works before the shader lands.
-  type VolumeRenderer, type UniformState, type FrameSample,
+  type VolumeRenderer, type UniformState, type FrameSample, type AdapterReport,
 } from '../lib/webgpu/volumeRenderer'
 import { createBrickVolumeRenderer } from '../lib/webgpu/brickVolumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
@@ -114,6 +114,39 @@ const imageUid = String(route.query.image ?? '')
  *  forces brick, `?bricks=0` forces flat, absent defers to `settings.viewerBricksMode` and then
  *  the predicate. Dev-only tool for A/B side-by-side comparisons. */
 const bricksOverride = String(route.query.bricks ?? '')
+/**
+ * The FIRST adapter this session saw, held across renderer destroy/recreate cycles. Used by
+ * `bricksEnabled`'s budget gate and by `AUTO_CACHE_MB`/`cacheHardCapMB` (hardware limits don't
+ * change under us), NOT by template chips (those want the LIVE renderer's adapter — see
+ * `activeAdapter`).
+ *
+ * Why this exists rather than reusing `activeAdapter`: `bricksEnabled` reads a budget that
+ * depends on whether the adapter is known. With `activeAdapter` (live) as that signal,
+ * destroying the current renderer flipped the budget back to the static floor / 512 MB Auto,
+ * flipping the classification, which destroyed the new renderer, which flipped it back — an
+ * oscillator that never stabilised on images sitting between the static floor (1.5 GB) and the
+ * Auto budget (2 GB), i.e. ldYr8J-plane at 1.75 GB (Dominik, 2026-09-03: "when i select bricks
+ * from the toggle it works. but when i select auto which goes to bricks it doesn't"). Manual
+ * `viewerBricksMode==='brick'` sidestepped it by short-circuiting the budget check.
+ *
+ * Set once inside `ensureRenderer` on the first successful renderer construction; never cleared.
+ * The hardware doesn't change under a running tab.
+ */
+const stableAdapterReport = ref<AdapterReport | null>(null)
+/**
+ * Which renderer kind currently backs `renderer.value` / `tileRenderer.value`. Consulted inside
+ * `ensureRenderer` to decide "reuse vs. destroy+recreate" atomically, so a `bricksEnabled` flip
+ * that races with an in-flight `reallocate` can't leave both callers looking at a null renderer.
+ *
+ * Why this exists: the previous design put the destroy in the watcher and let `ensureRenderer`
+ * early-return on `renderer.value` truthiness. Between the truthiness check and the awaited
+ * continuation, the watcher fired, nulled `renderer.value`, and the resuming reallocate's
+ * `if (!r) return` bailed silently — a hang on 3D→2D toggle for images that need a renderer swap
+ * (Dominik, 2026-09-03: "when i switch to 3d and then back to 2d. it gets stuck on loading
+ * timepoint again"). Now the destroy sits INSIDE the ensureRenderer IIFE, gated on kind mismatch,
+ * so the create branch runs whenever the desired kind isn't already live.
+ */
+const currentRendererKind = ref<'brick' | 'flat' | 'tile' | null>(null)
 /** Reactive on `meta`, `settings.viewerBricksMode`, `mode` (2D/3D) AND `effectiveCacheBytes`
  *  (which folds in `settings.viewerCacheMB`). Auto flips the renderer when the per-view working
  *  set crosses the RUNTIME cache budget — a Dml3RG-shape store bricks in 3D and stays flat in
@@ -133,7 +166,14 @@ const bricksEnabled = computed<boolean>(() => {
   // otherwise so a pre-adapter first classification isn't skewed by the 512 MB AUTO fallback.
   // The one flip we accept: Dml3RG-2D creates bricks first (static floor says "no fit"), then
   // adapter lands, budget grows past 1.6 GB, watcher swaps in the flat renderer.
-  const budget = activeAdapter.value !== null ? effectiveCacheBytes.value : CACHE_BUDGET_BYTES
+  //
+  // ⚠️ Uses `stableAdapterReport` (set once on first renderer creation, never cleared), NOT the
+  // live `activeAdapter`. Otherwise the watcher below oscillated: destroying the brick renderer
+  // to swap in flat also nulled `activeAdapter`, which put the budget back on the static floor,
+  // which flipped the classifier back to brick, which recreated the brick renderer, and so on.
+  // Symptom on ldYr8J-plane (1.75 GB, sitting between floor 1.5 GB and Auto 2 GB): no renderer
+  // ever stabilised, `Frames 0`, "Loading timepoint N" forever (Dominik, 2026-09-03).
+  const budget = stableAdapterReport.value !== null ? effectiveCacheBytes.value : CACHE_BUDGET_BYTES
   return shouldUseBricks(m, mode.value, budget)
 })
 /**
@@ -684,13 +724,13 @@ const labelName = computed(() => {
 watch(labelName, () => reallocate())
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
-// picks per view). `ensureRenderer` has an `if (renderer.value) return` short-circuit, so we
-// destroy first — without that the toggle changed `bricksEnabled.value` but the OLD renderer
-// kept drawing (Dominik 2026-08-29: "toggle doesn't do a full reload, need to reload the page").
+// picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
+// `currentRendererKind`), so the watcher just kicks a reallocate. Destroying here directly
+// raced with an in-flight `reallocate` from `onModeChange` and both callers ended up bailing on
+// `!renderer.value` — a hang on 3D→2D toggle for images that need a kind swap.
 // Guard against firing during `bricksEnabled`'s initial computation when meta is still null.
 watch(bricksEnabled, () => {
   if (meta.value === null) return
-  if (renderer.value) { renderer.value.destroy(); renderer.value = null }
   reallocate()
 })
 // Cache size change → full reallocate (atlas / timepoint textures resize). Keep the renderer
@@ -1019,8 +1059,11 @@ const AUTO_CACHE_MB_FALLBACK = 512
  *  `maxBufferSize` — the atlas is one big 3D texture and can't exceed the biggest allocatable
  *  buffer. 0.7 is a safety margin against soft OOM from other tabs; tune when we've measured. */
 const AUTO_CACHE_SAFETY = 0.7
+// Uses `stableAdapterReport` — the hardware's limits don't change under us, and using the LIVE
+// adapter here re-entered `bricksEnabled`'s oscillator via `effectiveCacheBytes` (destroying the
+// renderer collapsed Auto back to 512 MB, which flipped the brick classifier back on).
 const AUTO_CACHE_MB = computed(() => {
-  const a = activeAdapter.value
+  const a = stableAdapterReport.value
   if (!a) return AUTO_CACHE_MB_FALLBACK
   const target = a.looksDiscrete ? 2048 : 512
   const cap = Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024))
@@ -1040,8 +1083,10 @@ const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip:
   { value: '2048', label: '2 GB', mb: 2048, tip: 'Large — more timepoints / bricks resident' },
   { value: '4096', label: '4 GB', mb: 4096, tip: 'Aggressive — only on discrete GPU with headroom' },
 ]
+// Same reasoning as `AUTO_CACHE_MB` — the "which chips are disabled" answer depends on the
+// hardware, not on which renderer happens to be alive right now.
 const cacheHardCapMB = computed(() => {
-  const a = activeAdapter.value
+  const a = stableAdapterReport.value
   return a ? Math.floor((a.maxBufferSize * AUTO_CACHE_SAFETY) / (1024 * 1024)) : Infinity
 })
 const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
@@ -2932,15 +2977,40 @@ let _rendererCreating: Promise<void> | null = null
 async function ensureRenderer() {
   if (_rendererCreating) return _rendererCreating
   _rendererCreating = (async () => {
-    if (useTiles.value) {
-      if (tileRenderer.value) return
-      if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+    // Snapshot the DESIRED kind at IIFE-entry time. Any watcher-triggered flip that queues while
+    // we're mid-await won't retroactively change what THIS creation targets — the next
+    // `reallocate` will see the new desired kind and swap. Locking it here also means a
+    // downstream reactive re-evaluate (e.g. `bricksEnabled` flipping during construct) doesn't
+    // silently redirect the assignment. See `currentRendererKind`'s docstring for the race this
+    // exists to close.
+    const desiredKind: 'brick' | 'flat' | 'tile' = useTiles.value
+      ? 'tile' : (bricksEnabled.value ? 'brick' : 'flat')
+    // Reuse: current renderer already matches the desired kind. Kind-check gates the truthiness
+    // check so a stale wrong-type renderer can't survive a swap.
+    if (desiredKind === 'tile' && tileRenderer.value !== null && currentRendererKind.value === 'tile') return
+    if (desiredKind !== 'tile' && renderer.value !== null && currentRendererKind.value === desiredKind) return
+    // Fresh build: tear down whatever's there. Destroys are cheap and idempotent.
+    if (renderer.value) { renderer.value.destroy(); renderer.value = null }
+    if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
+    currentRendererKind.value = null
+    if (desiredKind === 'tile') {
       const tr = await createTileRenderer(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'Tile GPU error: ' + msg)
       })
       tileRenderer.value = tr
+      currentRendererKind.value = 'tile'
+      // Pin the adapter report so `bricksEnabled`'s budget gate doesn't lose it on a future
+      // destroy — see `stableAdapterReport`'s docstring for the oscillator this prevents.
+      if (stableAdapterReport.value === null) stableAdapterReport.value = tr.adapter
+      // Capture THIS renderer so a later intentional destroy (kind swap in ensureRenderer) can
+      // be told apart from an unexpected GPU loss: if `tileRenderer.value` has already moved on,
+      // this `.lost` resolution is the cleanup for OUR own destroy, not a driver crash.
+      // Without this guard, toggling 2D↔3D reported "Device was destroyed" every time (Dominik,
+      // 2026-09-03) and forced a Reload click even though the swap had succeeded.
+      const thisTr = tr
       void tr.lost.then(info => {
+        if (tileRenderer.value !== thisTr) return
         tilePump.cancel()
         for (const ac of tileAborts.values()) ac.abort()
         lostDevice.value = true
@@ -2948,18 +3018,20 @@ async function ensureRenderer() {
         vlog('error', 'Viewer lost the GPU device', info?.message || 'no reason given')
       })
     } else {
-      if (renderer.value) return
-      if (tileRenderer.value) { tileRenderer.value.destroy(); tileRenderer.value = null }
       // `?bricks=1` swaps in the KILN_BRICK_PLAN P5 renderer instead of the flat volume one.
       // Same interface, different backing — the caller doesn't branch, only the constructor
       // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
       // in P5b.
-      const construct = bricksEnabled.value ? createBrickVolumeRenderer : createVolumeRenderer
+      const construct = desiredKind === 'brick' ? createBrickVolumeRenderer : createVolumeRenderer
       const r = await construct(canvas.value!, msg => {
         error.value = 'GPU: ' + msg
         vlog('error', 'GPU error: ' + msg)
       })
       renderer.value = r
+      currentRendererKind.value = desiredKind
+      // Pin the adapter report so `bricksEnabled`'s budget gate doesn't lose it on a future
+      // destroy — see `stableAdapterReport`'s docstring for the oscillator this prevents.
+      if (stableAdapterReport.value === null) stableAdapterReport.value = r.adapter
       // Apply the initial LOD knobs. `maxIntersect` = URL override if present, else the
       // persisted quality tier; a subsequent tier change goes through the watcher below without
       // a reallocate. `bias`/`hold` stay URL-only (dev knobs). No-ops on the flat renderer.
@@ -3006,7 +3078,13 @@ async function ensureRenderer() {
       // entirely when nothing is watching — Debug is a developer diagnostic surface, not
       // something a normal viewer session pays for. Delivered asynchronously (frame N+K).
       wireFrameTimings(r)
+      // Capture THIS renderer so a later intentional destroy (kind swap in ensureRenderer) can
+      // be told apart from an unexpected GPU loss: if `renderer.value` has already moved on, this
+      // `.lost` resolution is the cleanup for OUR own destroy, not a driver crash. Same guard as
+      // the tile branch above; see its comment for the 2D↔3D toggle regression this closes.
+      const thisR = r
       void r.lost.then(info => {
+        if (renderer.value !== thisR) return
         stopPlay()
         pump.cancel()
         for (const ac of aborts.values()) ac.abort()
@@ -3085,6 +3163,13 @@ async function reallocate(refit = false) {
     r.setImage(m, effectiveCacheBytes.value, zDepth.value,
                mode.value === 'plane' ? zPlane.value : zRange.value[0], wantLabels,
                renderNX.value, renderNY.value)
+    // Channels/LUT: the renderer is freshly built (or its LUT texture was reset by a preceding
+    // destroy). Without this, a mode-toggle swap (e.g. 2D→3D flat→brick) leaves the new
+    // renderer's LUT at its zero-initialised state — the raycast accumulates zeros and the
+    // canvas renders empty even though bricks are landing in the atlas (Dominik, 2026-09-03).
+    // On the initial load `loadVersion`'s post-restore `pushChannels()` also covers it; here
+    // we make reallocate self-sufficient so the toggle path doesn't rely on that follow-up.
+    r.setChannels(m.channels)
     // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
     // No-op on the flat renderer via the optional chain.
     r.setBrickSource?.({
@@ -3515,6 +3600,24 @@ async function start() {
       return
     }
     if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
+    // Prime `stableAdapterReport` from the probe BEFORE any renderer is constructed. Without this,
+    // `bricksEnabled`'s first classification uses the static-floor budget (1.5 GB), which said
+    // "brick" for ldYr8J-plane's 1.75 GB working set — and once the brick renderer was up, the
+    // adapter-derived budget (2 GB Auto) flipped it to "flat", destroying the brick, which fell
+    // through to the static floor again, which said "brick", … a double-reallocate cascade that
+    // sometimes left the flat pump inert. Seeding from the probe collapses that to a single
+    // renderer creation with the correct classification. The probe already has the same limits +
+    // `looksDiscrete` verdict `acquireGpuDevice` reports (both use `classifyAdapter`), so the two
+    // paths agree by construction.
+    if (probe.adapterFound && probe.limits && stableAdapterReport.value === null) {
+      stableAdapterReport.value = {
+        maxTextureDimension3D: probe.limits.maxTextureDimension3D,
+        maxBufferSize: probe.limits.maxBufferSize,
+        looksDiscrete: probe.looksDiscrete,
+        hasTimestamps: probe.hasTimestamps,
+        name: probe.name,
+      }
+    }
 
     // The breadcrumb goes down BEFORE the device is created, because that is the line the driver dies
     // on. Cleared when a frame is on screen, not here.

@@ -1687,7 +1687,13 @@ export async function createBrickVolumeRenderer(
       lutTex.destroy()
       palTex.destroy()
       noLabelAtlas.destroy()
+      // Detach the canvas swap chain BEFORE the device dies (Vulkan/Chromium leaves the swap
+      // chain in a state a subsequent `ctx.configure(newDevice)` can't recover from otherwise).
+      // Then release the device so its texture pool doesn't pile up across kind swaps — 3D→2D→3D
+      // would OOM brick's next atlas alloc without this (Dominik, 2026-09-03: "vkAllocateMemory
+      // failed with VK_ERROR_OUT_OF_DEVICE_MEMORY"). Both steps, in this order.
       ctx.unconfigure()
+      device.destroy()
     },
   }
   return r
