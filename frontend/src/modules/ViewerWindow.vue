@@ -440,6 +440,26 @@ const chMax = computed(() =>
  *  per image, like the server's: recomputed per timepoint, playback flickers as the window chases each
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
 const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
+/** Stash of the LAST fetch's raw per-channel buffers + the row length + bytes-per-voxel needed to
+ *  interpret them. Kept so `viewerAutoContrastPercent` can recompute `autoWin` in place without
+ *  waiting for the next scrub — the reason the previous "just clear it" approach silently no-op'd
+ *  the Auto button (Dominik, 2026-09-03). `shallowRef` because the elements are big ArrayBuffers
+ *  we never mutate, only replace whole. */
+const lastFetchedBufs = shallowRef<ArrayBuffer[] | null>(null)
+const lastFetchedRowLen = ref(1)
+const lastFetchedBpv = ref(2)
+function stashForAutoRecompute(bufs: ArrayBuffer[], rowLength: number, bpv: number) {
+  lastFetchedBufs.value = bufs
+  lastFetchedRowLen.value = rowLength
+  lastFetchedBpv.value = bpv
+}
+function recomputeAutoWin() {
+  const bufs = lastFetchedBufs.value
+  if (!bufs) { autoWin.value = []; return }
+  autoWin.value = bufs.map(b =>
+    contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
+                     undefined, settings.viewerAutoContrastPercent))
+}
 /** The channels' `lo`/`hi` as the SERVER shipped them (napari-saved or first-load percentile) — the
  *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
  *  restoring these gets the user back to a picture they know worked. */
@@ -1028,6 +1048,14 @@ const BRICK_TIERS = [
   { value: 'quick', label: 'Quick', tip: 'Fewer bricks per view — faster on wide zooms, coarser' },
   { value: 'balanced', label: 'Balanced', tip: 'Shipped default' },
   { value: 'detailed', label: 'Detailed', tip: 'More bricks per view — finer at cost' },
+]
+/** Top-percentile choices for the Auto contrast button. Names describe what happens on the DATA,
+ *  not what the number IS: Tight = trim more, Balanced = middle, Wide = keep more bright pixels
+ *  visible (the shipped default — sparse microscopy signal reads best there, Dominik 2026-09-03). */
+const AUTO_CONTRAST_OPTIONS = [
+  { value: '99', label: 'Tight', tip: 'p99 — trims the bright tail, saturates rare cells' },
+  { value: '99.8', label: 'Balanced', tip: 'p99.8 — smooth on dense signal' },
+  { value: '99.99', label: 'Wide', tip: 'p99.99 — the default; keeps sparse bright signal' },
 ]
 /** Core-brick ceiling actually shipped to the scheduler. URL `?brickThr=N` wins so a dev
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
@@ -1659,8 +1687,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // chases each frame's own distribution and playback flickers (decision 5). The slider's RANGE is
     // not the same question and does follow the data: a max-only pass, no sort, ~1 ms a channel.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), m.nX))
+      autoWin.value = bufs.map(b =>
+        contrastFromSlab(slabView(b, m.bytesPerVoxel), m.nX, undefined, settings.viewerAutoContrastPercent))
     }
+    stashForAutoRecompute(bufs, m.nX, m.bytesPerVoxel)
     seenMax.value = bufs.map((b, c) =>
       Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), m.nX)))
 
@@ -1952,8 +1982,10 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
     // each tile's own distribution and the auto button would land somewhere new every time.
     if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b => contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen))
+      autoWin.value = bufs.map(b =>
+        contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen, undefined, settings.viewerAutoContrastPercent))
     }
+    stashForAutoRecompute(bufs, rowLen, m.bytesPerVoxel)
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
@@ -2717,6 +2749,11 @@ watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
  *  button so `TeleportPopover` positions from its rect. */
 const advancedOpen = ref(false)
 const advancedTrigger = ref<HTMLElement | null>(null)
+/** Auto-contrast tuning popover — anchor + open state. Same pattern as `advancedOpen`; not
+ *  persisted because a popover that reopens on reload is a distinct bug from a slider whose value
+ *  should survive. */
+const autoTuneOpen = ref(false)
+const autoTuneTrigger = ref<HTMLElement | null>(null)
 /** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
  *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
  *  who never scrubs won't want it. */
@@ -3194,28 +3231,30 @@ async function reallocate(refit = false) {
 }
 
 /**
- * Reset the channel's contrast to the values the server shipped (napari-saved, or first-load
- * percentile). NOT an auto-window from data anymore: user's expectation is "put it back the way it
- * was" (Dominik, 2026-08-26), and `autoWin` was a volume-mode-only helper that never fired for
- * whole-slide tiles, so the button did nothing there.
+ * Reset a channel to the FULL bit range of the image — `[0, dtype_max]`. Deliberately not a
+ * percentile / server-default restore: the semantics that make Reset useful is "put me back to
+ * the raw sensor range so I can see what's actually there, unclipped" (Dominik, 2026-09-03). If a
+ * user wants a smart window they hit Auto instead; Reset now can never LAND at Auto's numbers,
+ * which was the redundancy that made both buttons look broken.
  */
+function dtypeMax(): number {
+  return (meta.value?.bytesPerVoxel ?? 2) >= 2 ? 65535 : 255
+}
 function resetContrast(c: number) {
-  const init = initialContrast.value[c], m = meta.value
-  if (!init || !m) return
-  m.channels[c].lo = init.lo
-  m.channels[c].hi = init.hi
+  const m = meta.value
+  if (!m) return
+  m.channels[c].lo = 0
+  m.channels[c].hi = dtypeMax()
   pushChannels()
 }
-/** Reset every channel's contrast in one click — the master pair to the per-channel button. Only
- *  the CONTRAST, not the visibility or colour: those have their own controls above. */
+/** Reset every channel to the raw bit range in one click — master pair to the per-channel button. */
 function resetAllContrast() {
   const m = meta.value
   if (!m) return
+  const hi = dtypeMax()
   for (let i = 0; i < m.channels.length; i++) {
-    const init = initialContrast.value[i]
-    if (!init) continue
-    m.channels[i].lo = init.lo
-    m.channels[i].hi = init.hi
+    m.channels[i].lo = 0
+    m.channels[i].hi = hi
   }
   pushChannels()
 }
@@ -3239,6 +3278,12 @@ function autoAllContrast() {
   })
   pushChannels()
 }
+
+// The top-percentile knob for Auto is a fetch-time computation. On change, recompute IN PLACE
+// from the last-fetched buffers so pressing Auto right after picking a chip lands at the new
+// percentile — the earlier "just clear it" approach silently no-op'd the button until the next
+// scrub (Dominik, 2026-09-03).
+watch(() => settings.viewerAutoContrastPercent, () => { recomputeAutoWin() })
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
@@ -4269,13 +4314,36 @@ onUnmounted(() => {
             <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoAllContrast"
                     v-tooltip.left="'Auto contrast on every channel'"
                     aria-label="Auto contrast every channel">
-              <i class="pi pi-sliders-h" />
+              <i class="pi pi-bolt" />
             </button>
             <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetAllContrast"
-                    v-tooltip.left="'Reset every channel to the server default'"
+                    v-tooltip.left="'Reset every channel to the full bit range'"
                     aria-label="Reset every channel contrast">
-              <i class="pi pi-history" />
+              <i class="pi pi-arrow-right-arrow-left" />
             </button>
+            <!-- Auto-contrast tuning popover. Anchored to a cog next to the Auto button — the eye
+                 lands on the two together, and the popover keeps the sidebar row height stable
+                 (Dominik 2026-09-03: an inline chip strip was noise, especially since Reset was
+                 removed for being visually redundant with Auto on his data). -->
+            <button ref="autoTuneTrigger" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                    @click="autoTuneOpen = !autoTuneOpen"
+                    v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
+              <i class="pi pi-sliders-h" />
+            </button>
+            <TeleportPopover v-model="autoTuneOpen" :anchor="autoTuneTrigger" placement="bottom-end">
+              <div class="cc-eyebrow cc-fs-2xs">Auto range</div>
+              <div class="cc-row cc-row-tight">
+                <ChipSelect
+                  :options="AUTO_CONTRAST_OPTIONS"
+                  :model-value="String(settings.viewerAutoContrastPercent)"
+                  variant="segmented" aria-label="Auto contrast percentile"
+                  @update:model-value="v => (settings.viewerAutoContrastPercent = Number(v))"
+                />
+              </div>
+              <div class="cc-muted cc-fs-3xs vw-adv-note">
+                How far Auto pushes the top of the window.
+              </div>
+            </TeleportPopover>
           </div>
           <div class="cc-row cc-row-tight vw-ch-master">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -4311,11 +4379,11 @@ onUnmounted(() => {
               <CcToggle v-model="ch.visible" :aria-label="'Show ' + ch.name" @update:modelValue="pushChannels" />
               <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
                       v-tooltip.left="'Auto contrast — window on the loaded pixels (ImageJ-style)'">
-                <i class="pi pi-sliders-h" />
+                <i class="pi pi-bolt" />
               </button>
               <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
-                      v-tooltip.left="'Reset contrast to the server default'">
-                <i class="pi pi-history" />
+                      v-tooltip.left="'Reset to the full bit range of the image'">
+                <i class="pi pi-arrow-right-arrow-left" />
               </button>
             </div>
             <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a

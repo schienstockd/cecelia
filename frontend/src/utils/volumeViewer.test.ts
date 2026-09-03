@@ -309,24 +309,30 @@ describe('slabView — dtype-aware wrap around the slab ArrayBuffer', () => {
     v[0] = 0; v[1] = 255                          // one dead pixel, one saturated
     const { lo, hi, max } = contrastFromSlab(v)
     expect(lo).toBeGreaterThanOrEqual(10)
-    expect(hi).toBeLessThan(200)                  // the 255 does not set the ceiling
+    // Sanity: hi is inside the dtype and never below the bulk range. Under the Wide default
+    // (p9999) with 4096 samples, position 4095 IS the last element (the 255), so `hi` sits at the
+    // sampled max here — that's the whole point of the Wide default (Dominik 2026-09-03), keep
+    // sparse bright signal visible.
+    expect(hi).toBeGreaterThan(100)
+    expect(hi).toBeLessThanOrEqual(255)
     expect(max).toBeLessThanOrEqual(255)
-    // slabMax is the exact max of the strided subsample, so it can sit at 109 (10 + 99) or 255 —
-    // both are legitimate given the stride. Just prove it stays within the dtype range.
     expect(slabMax(v)).toBeLessThanOrEqual(255)
     expect(slabMax(v)).toBeGreaterThanOrEqual(10)
   })
 })
 
 describe('contrastFromSlab', () => {
-  it('windows on the bulk of the data, not on the outliers', () => {
-    const v = new Uint16Array(10_000)
-    for (let i = 0; i < v.length; i++) v[i] = 100 + (i % 50)
-    v[0] = 0; v[1] = 60000                        // one dead pixel and one hot one
-    const { lo, hi, max } = contrastFromSlab(v)
-    expect(lo).toBeGreaterThanOrEqual(100)
-    expect(hi).toBeLessThan(200)                  // the hot pixel does not set the ceiling
-    expect(max).toBeGreaterThanOrEqual(hi)
+  // 2026-09-03: when the middle 99.8% band is a narrow ridge next to a much wider observed range —
+  // an empty-ish channel with rare bright signal (500 cells in 100k pixels, 0.5%) — the collapsed-
+  // window guard opens `hi` to the sampled max. If the guard is removed, the display maps a
+  // knife-edge and every cell saturates. This is the sparse-signal case the whole redesign targets.
+  it('opens hi to the sampled max when signal is sparse (the collapsed-window guard)', () => {
+    const v = new Uint16Array(100_000)
+    for (let i = 0; i < v.length; i++) v[i] = 200                // dense background
+    for (let i = 0; i < 500; i++) v[i] = 5_000 + (i * 6)         // 0.5% sparse "cells", 5k..8k
+    const { lo, hi } = contrastFromSlab(v)
+    expect(lo).toBeGreaterThanOrEqual(199)
+    expect(hi).toBeGreaterThanOrEqual(5_000)                     // guard fires → widens to signal
   })
   it('never returns a zero-width window, which would divide by zero in the shader', () => {
     const flat = new Uint16Array(1000).fill(7)
@@ -354,6 +360,20 @@ describe('contrastFromSlab', () => {
   })
   it('handles an empty slab without throwing', () => {
     expect(contrastFromSlab(new Uint16Array(0))).toEqual({ lo: 0, hi: 1, max: 1 })
+  })
+  // 2026-09-03: the `topPercent` knob shifts where `hi` lands on a dense channel — the range
+  // between p99 and p999 is where the user's tuning lives (each channel picks its own sweet
+  // spot). On sparse/empty channels the collapsed-window guard dominates and the knob is a no-op
+  // by design. Pin the ORDERING here — this is the one control the Auto popover exposes to the
+  // user, so a silent revert of the knob wiring must fail loudly.
+  it('the top-percent knob orders hi on a dense channel (tight ≤ balanced ≤ wide)', () => {
+    const v = new Uint16Array(20_000)
+    for (let i = 0; i < v.length; i++) v[i] = 100 + (i % 10_000)   // dense: 100..10099
+    const tight    = contrastFromSlab(v, 1, 200_000, 99.0).hi
+    const balanced = contrastFromSlab(v, 1, 200_000, 99.8).hi
+    const wide     = contrastFromSlab(v, 1, 200_000, 99.9).hi
+    expect(balanced).toBeGreaterThan(tight)
+    expect(wide).toBeGreaterThan(balanced)
   })
 })
 
