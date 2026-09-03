@@ -1,5 +1,6 @@
 import type { FlowManifest } from './flowManifest'
-import type { ParamValues } from '../tasks/types'
+import type { ParamDef, ParamValues } from '../tasks/types'
+import { findParamByKey } from '../tasks/paramValues'
 
 /**
  * A trained model's manifest, read back as the form that produced it — "that one looks good, but I
@@ -89,3 +90,38 @@ export function unmappedFields(m: FlowManifest | null | undefined): string[] {
  * anyone is asking about; `modelName`/`overwrite` would target the model being copied.
  */
 export const NOT_CARRIED = ['seed'] as const
+
+/** One row of `/api/optical-flow/models`, narrowed to what this fallback needs. */
+export interface FlowModelEntry {
+  name: string
+  stem: string
+  hasManifest: boolean
+  manifest: FlowManifest
+}
+
+/**
+ * The train-form values a global-vault `modelName` restores from — straight from the model's
+ * manifest, when the per-project by-name record can't answer.
+ *
+ * `/api/tasks/funparams` only knows what THIS project's ccid.json has banked, so a model trained
+ * under a different set (or in another project entirely) answers `matched=false` there. The
+ * manifest travels with the `.pt`, and this is what makes typing that name into the picker restore
+ * the settings without having to open the Flow Model Vault.
+ *
+ * Same shape and same guarantees as the vault's "Apply settings" path — reuses
+ * [`paramsFromManifest`], including the two fields it must not carry (`modelName` and `overwrite`).
+ *
+ * `defParams` is the current train spec; only the `flowMetrics` option list is read from it, which
+ * `paramsFromManifest` needs to reconstruct the selection from the manifest's exclusions.
+ */
+export function flowManifestParams(
+  models: FlowModelEntry[] | null | undefined,
+  name: string,
+  defParams: ParamDef[] | undefined,
+): ParamValues | null {
+  const m = models?.find(x => x.stem === name || x.name === name)
+  if (!m?.hasManifest) return null
+  const metricsParam = findParamByKey(defParams, 'flowMetrics')
+  const metricOptions = (metricsParam?.options ?? []).map(o => String(o.value))
+  return paramsFromManifest(m.manifest, metricOptions)
+}

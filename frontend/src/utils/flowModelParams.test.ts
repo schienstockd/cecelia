@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { paramsFromManifest, unmappedFields } from './flowModelParams'
+import { paramsFromManifest, unmappedFields, flowManifestParams,
+         type FlowModelEntry } from './flowModelParams'
 import type { FlowManifest } from './flowManifest'
+import type { ParamDef } from '../tasks/types'
 
 // the real shape, from `flow.cyto.json` in the dev vault
 const M: FlowManifest = {
@@ -141,5 +143,47 @@ describe('unmappedFields', () => {
   it('names what an older manifest cannot supply, so the UI can say so', () => {
     expect(unmappedFields({ epochs: 30 } as FlowManifest))
       .toEqual(['channels', 'image version', 'metrics'])
+  })
+})
+
+// The two-layer picker fallback: when /api/tasks/funparams answers matched=false, the modelName
+// SuggestInput reaches for the vault manifest instead — same source the vault UI uses, so both
+// paths agree on the same input. See TaskRunner.onParamCommit.
+describe('flowManifestParams', () => {
+  const DEF: ParamDef[] = [
+    { key: 'flowMetrics', type: 'chipSelect', multiple: true,
+      options: OFFERED.map(v => ({ value: v, label: v })) } as unknown as ParamDef,
+  ]
+  const models: FlowModelEntry[] = [
+    { name: 'flow.small.pt', stem: 'flow.small', hasManifest: true, manifest: M },
+    { name: 'flow.other.pt', stem: 'flow.other', hasManifest: false, manifest: {} as FlowManifest },
+  ]
+
+  it('resolves the model by stem (what the picker holds), copying the manifest params', () => {
+    const p = flowManifestParams(models, 'flow.small', DEF)
+    expect(p?.epochs).toBe(100)
+    expect(p?.temporalScales).toEqual(['1', '2', '4', '8'])
+  })
+
+  it('accepts the .pt filename too, so a caller that carries either shape lands here', () => {
+    expect(flowManifestParams(models, 'flow.small.pt', DEF)?.epochs).toBe(100)
+  })
+
+  it('is null for a name that is not in the vault', () => {
+    expect(flowManifestParams(models, 'nope', DEF)).toBeNull()
+  })
+
+  it('is null for a vault entry with no manifest (an orphan .pt)', () => {
+    expect(flowManifestParams(models, 'flow.other', DEF)).toBeNull()
+  })
+
+  it('is null when the vault is unreachable', () => {
+    expect(flowManifestParams(null, 'flow.small', DEF)).toBeNull()
+  })
+
+  it('reads the metric options from THIS spec, so a spec that grows an option still selects it', () => {
+    const wider: ParamDef[] = [{ key: 'flowMetrics', type: 'chipSelect', multiple: true,
+      options: [...OFFERED, 'new_metric'].map(v => ({ value: v, label: v })) } as unknown as ParamDef]
+    expect(flowManifestParams(models, 'flow.small', wider)?.flowMetrics).toContain('new_metric')
   })
 })
