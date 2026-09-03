@@ -85,6 +85,7 @@ import { toHex as rgbHex } from '../utils/colour'
 import { PALETTES, distinctColors } from '../plots/plot'
 import { hslCssToRgb } from '../utils/viewerLabels'
 import StillOverlay from '../components/StillOverlay.vue'
+import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
 import ChipSelect from '../components/ChipSelect.vue'
@@ -2744,6 +2745,15 @@ const seen = ref<[number, number]>([0, 0])
  */
 const overviewShown = ref(localStorage.getItem('cc.vw.overview') !== 'false')
 watch(overviewShown, v => localStorage.setItem('cc.vw.overview', String(v)))
+/** 3D orientation gizmo — the volume-mode peer of the plane-mode overview. Same top-right slot,
+ *  same persist-in-localStorage pattern; default ON because "which way is Z" is a real question
+ *  the moment the volume rotates away from face-on. */
+const gizmoShown = ref(localStorage.getItem('cc.vw.gizmo') !== 'false')
+watch(gizmoShown, v => localStorage.setItem('cc.vw.gizmo', String(v)))
+/** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
+ *  every allocate + refit, and Reset writes `cam.dist = fitDist`, so this reads a clean 1× at rest
+ *  (no leftover breathing-room factor). */
+const volumeZoom = computed(() => fitDist.value / Math.max(cam.value.dist, 1e-6))
 /** Advanced viewer popover — open state + anchor. NOT persisted: a popover that's OPEN on
  *  reload is a distinct bug from a slider whose value should survive. Anchor is the trigger
  *  button so `TeleportPopover` positions from its rect. */
@@ -3914,6 +3924,12 @@ onUnmounted(() => {
                 class="vw-overview-vp" />
         </svg>
       </div>
+      <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
+           (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
+           projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
+           mip shader, so it cannot drift off the volume behind it. -->
+      <AxesGizmo v-if="gizmoShown && mode === 'volume'"
+                 :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
     </div>
 
     <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
@@ -4194,12 +4210,18 @@ onUnmounted(() => {
               <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
             </div>
             <!-- Overview minimap, offered for any 2D plane view — small images benefit too once
-                 you zoom in. Volume mode has no minimap: a rotated MIP has no useful "where am I"
-                 answer. -->
+                 you zoom in. Volume mode has its own corner overlay (Axes) instead: a rotated MIP
+                 has no useful "where AM I" answer, but "which way am I looking" is a real
+                 question the moment the view rotates away from face-on. -->
             <div v-if="mode === 'plane'" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col"
                     v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
               <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
+            </div>
+            <div v-if="mode === 'volume'" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                    v-tooltip.right="'Show a small XYZ triad in the corner'">Axes</span>
+              <CcToggle v-model="gizmoShown" aria-label="Show the orientation gizmo" />
             </div>
             <!-- Tile residency: toggle row + the map, packed together as one block so the map
                  sits directly under the switch that controls it (Dominik 2026-09-02). One cell

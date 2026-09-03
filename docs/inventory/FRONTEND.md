@@ -123,6 +123,14 @@
   there renders a 35 px label that changes size as you zoom). `elapsedLabel` has two styles: `'compact'`
   ("3h 18m") for the stills and the timeline, `'clock'` ("3:18:00") matching napari's own overlay.
   Careful with the unit: OME writes `micrometer`, not `µm`.
+- **3D orientation gizmo (which-way-am-I-looking triad)**: `components/AxesGizmo.vue` +
+  `utils/axesGizmo.ts` (pure, tested: `projectAxes(yaw, pitch, radius, centre?)` → the six axis
+  tips back-to-front for a naive painter draw). Volume-mode overlay in the same top-right slot the
+  plane view's overview minimap occupies (they never both mount). The basis is derived FROM
+  `lib/webgpu/mipShader.ts`'s `camera()` fn verbatim — same `fwd = (cp*sy, sp, cp*cy)`, same
+  `up = cross(right, fwd)` handedness — so the arrows can never drift off the rotating volume
+  behind them; a change to either the shader or the projection has to land in the same PR (the
+  golden-value test in `axesGizmo.test.ts` fails otherwise).
 - **Volume-viewer overlays (h5ad-derived points/tracks)**: `frontend/src/utils/viewerOverlays.ts`
   (pure: `overlaysUrl`, `buildPointBuffer`, `timepointRange`, `hexToUnit`, `overlaySummary`,
   `POINT_STRIDE`) + the points pass in `lib/webgpu/mipShader.ts` (`POINTS_WGSL`) and
