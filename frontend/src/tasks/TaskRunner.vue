@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
-import { flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
+import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
 import { vaultManifestParams } from '../utils/vaultManifest'
 import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
@@ -325,6 +325,19 @@ function onParamEdit(key: string, value: unknown) {
   syncGroupOrders(key, before, value)
   drafts.set(currentDraftKey.value, paramValues.value)
   if (optionTriggerKeys.value.has(key)) optionRefetch.schedule(null)
+}
+
+// Reset every param to its spec default — the same values `buildParamValues(def, {})` produces on a
+// first render. Persists as a draft so the reset is remembered across a navigation, and refreshes
+// server-fed dropdowns for the same reason `onParamCommit` does (a defaulted `triggersOptions` key
+// still owes its options a look). No confirmation dialog — a form reset writes nothing to disk.
+function resetParamsToDefaults() {
+  const def = taskDef.value
+  if (!def) return
+  handoffNote.value = ''
+  paramValues.value = buildParamValues(def, {}) as ParamValues
+  drafts.set(currentDraftKey.value, paramValues.value)
+  refreshOptionsForForm(def)
 }
 
 // Which entries of a repeatable group run, and in what order. A sibling key of the group's own —
@@ -650,7 +663,15 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" v-tooltip.left="'Dismiss'"
                 @click="handoffNote = ''"><i class="pi pi-times" /></button>
       </p>
-      <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
+      <!-- Heading + a bare icon-button to zero the form back to spec defaults. The button follows
+           the heading on the same row so a user reaching for it does not have to hunt — a common
+           ask when a chain node was tuned once and the next run wants a clean slate. -->
+      <div class="params-heading-row">
+        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                v-tooltip.left="'Reset to defaults'"
+                @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>
+      </div>
       <div class="params-list" data-guide="task.params">
         <ParamRenderer
           v-for="p in taskDef.params"
@@ -806,6 +827,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .pool-throttle:hover  { color: var(--cc-text); }
 
 .section-heading { margin: 0 0 0.5rem; }
+/* Heading + a single trailing icon-button. Both stay on the same baseline; the button eats its own
+   half-rem so the row still lines up with a bare heading on the sections that have no button. */
+.params-heading-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0 0 0.5rem;
+}
+.params-heading-row .section-heading { margin: 0; }
 
 /* function selector */
 .fn-select {
