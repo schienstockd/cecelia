@@ -667,7 +667,7 @@ export function orbitZoom(
 // ── Contrast from the data the client already holds ───────────────────────────────
 
 /**
- * `[p01, p999, max]` of a `Uint16Array`, from a strided subsample of ~`budget` samples. Same
+ * `[p01, p99, max]` of a `Uint16Array`, from a strided subsample of ~`budget` samples. Same
  * convention as `percentile_spec` in `image_render.jl`, so an "Auto" here and the server's cold-start
  * answer agree about what a sensible window is.
  *
@@ -680,9 +680,22 @@ export function orbitZoom(
  * distribution is nothing like the image's. It is not a hypothetical: `4e6 / 20e3` gives stride 200,
  * and any row length that is a multiple of 200 collapses onto every 200th x. So the stride is nudged
  * up until it is coprime with the row length, which makes the walk cross every column.
+ *
+ * THE TOP PERCENTILE (2026-09-03). Default 99.99%, user-tunable via
+ * `settings.viewerAutoContrastPercent`. Sparse microscopy signal (cells <0.5% of pixels) is what
+ * Dominik's data looks like, so the widest option preserves it by default; the knob drops to 99
+ * or 99.8 when a brighter tail (dead cells, hot pixels) should be trimmed.
+ *
+ * THE COLLAPSED-WINDOW GUARD. When most of the range sits above the top percentile — the tell of
+ * an empty-ish channel where signal is <0.2% of pixels — the middle-99.8% band is a knife-edge and
+ * every real pixel saturates. The guard widens `hi` to the sampled max in that case: a wide but
+ * honest window. Its cost is that a dense channel with ONE hot pixel now includes the hot pixel
+ * in `hi` too — see the `hi >= 40000 // dense-plus-outlier` case in the tests. On real microscopy
+ * data, sparse-signal channels are the common case; the trade-off is deliberate.
  */
 export function contrastFromSlab(
   v: Uint16Array | Uint8Array, rowLength = 1, budget = 200_000,
+  topPercent = 99.99,
 ): { lo: number; hi: number; max: number } {
   const stride = sampleStride(v.length, rowLength, budget)
   const s: number[] = []
@@ -691,7 +704,18 @@ export function contrastFromSlab(
   s.sort((a, b) => a - b)
   const at = (f: number) => s[Math.min(s.length - 1, Math.max(0, Math.floor(f * s.length)))]
   const lo = at(0.01)
-  return { lo, hi: Math.max(at(0.999), lo + 1), max: Math.max(s[s.length - 1], lo + 1) }
+  const pTop = at(clamp01(topPercent / 100))
+  const smax = s[s.length - 1]
+  const range = Math.max(smax - lo, 1)
+  const wide = (pTop - lo) < 0.1 * range ? smax : pTop
+  // `lo + 1` never divides by zero in the shader — fully flat data (all pixels equal, and both
+  // the collapse guard and the percentile land AT lo) would otherwise yield hi == lo.
+  const hi = Math.max(wide, lo + 1)
+  return { lo, hi, max: Math.max(smax, hi) }
+}
+
+function clamp01(x: number): number {
+  return Math.min(1, Math.max(0, x))
 }
 
 /**
