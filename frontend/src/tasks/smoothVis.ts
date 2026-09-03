@@ -97,7 +97,7 @@ export function motionSequence(seed = 7): VisFrame[] {
 }
 
 /** Separable box blur, `passes` of it — a Gaussian's cheap stand-in at this size. */
-function blur(f: VisFrame, sigma: number): VisFrame {
+export function blur(f: VisFrame, sigma: number): VisFrame {
   if (sigma <= 0) return f.map(r => r.slice())
   const passes = Math.max(1, Math.round(sigma * 2))
   let cur = f.map(r => r.slice())
@@ -255,6 +255,141 @@ function cell(text: string, frames?: VisFrame[]): VisCell {
 
 /** The two methods the figure compares. `mean` is deliberately absent — see `smoothVisColumns`. */
 export const SMOOTH_VIS_METHODS = ['median', 'gated'] as const
+
+// ─── spatial method figure ──────────────────────────────────────────────────
+//
+// A second figure for the SPATIAL choice: `gaussian` vs `bilateral_vst`. Same
+// schematic-not-preview rule as the temporal figure — a static 16x16 field with
+// two cell-like blobs and isolated pixel noise. What differs between the two
+// panels is the METHOD, not two draws of the noise.
+//
+// The bilateral here is the real algorithm at small scale (spatial-then-color
+// weights, exp falloff on both), NOT an impression of it — a hand-waved version
+// would be a second description of the method free to drift from the one that
+// runs. The VST is not modelled: the schematic works in [0,1] and the VST is an
+// implementation detail that helps on real Poisson counts but does nothing
+// visible at this scale. The visible thing is edge preservation.
+
+/** Two bright cells on a sparse, noisy background — the regime bilateral_vst was picked for. */
+export function sparseCellsFrame(seed = 11): VisFrame {
+  const rnd = mulberry32(seed)
+  const f = zeros()
+  // low-level shot noise everywhere
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      f[y][x] = 0.04 + 0.06 * rnd()
+    }
+  }
+  // two cells (compact bright blobs), sized so bilateral CAN preserve an edge
+  const cells: Array<[number, number, number, number]> = [
+    [5.5, 5.0, 2.2, 0.95],
+    [10.5, 11.0, 2.6, 0.90],
+  ]
+  for (const [cy, cx, r2, amp] of cells) {
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        f[y][x] += amp * Math.exp(-((y - cy) ** 2 + (x - cx) ** 2) / r2)
+      }
+    }
+  }
+  // A handful of isolated bright pixels — the "speckle" bilateral is asked to remove but the
+  // gaussian will merely blur.
+  const specks: Array<[number, number]> = [[2, 12], [3, 3], [8, 14], [13, 2], [14, 8]]
+  for (const [y, x] of specks) f[y][x] = 0.85
+  return f
+}
+
+/** Bilateral filter — the real construction, at 16x16 and normalised [0,1]. */
+export function bilateralPass(f: VisFrame, sigmaColor: number, sigmaSpatial: number): VisFrame {
+  const rSpat = Math.max(1, Math.round(sigmaSpatial * 2))
+  const invC2 = 1 / (2 * sigmaColor * sigmaColor)
+  const invS2 = 1 / (2 * sigmaSpatial * sigmaSpatial)
+  const out = zeros()
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const v = f[y][x]
+      let acc = 0, wsum = 0
+      for (let dy = -rSpat; dy <= rSpat; dy++) {
+        for (let dx = -rSpat; dx <= rSpat; dx++) {
+          const yy = y + dy, xx = x + dx
+          if (yy < 0 || yy >= N || xx < 0 || xx >= N) continue
+          const nb = f[yy][xx]
+          const dI = nb - v
+          const w = Math.exp(-(dy * dy + dx * dx) * invS2) * Math.exp(-(dI * dI) * invC2)
+          acc += w * nb; wsum += w
+        }
+      }
+      out[y][x] = wsum > 0 ? acc / wsum : v
+    }
+  }
+  return out
+}
+
+export const SMOOTH_SPATIAL_METHODS = ['gaussian', 'bilateral_vst'] as const
+
+export interface SmoothSpatialVisInput {
+  method: 'gaussian' | 'bilateral_vst'
+  /** `spatialSigma` — gaussian σ in px */
+  sigma: number
+  /** `bilateralColor` — real task uses Anscombe-space units; here mapped to normalised [0,1] */
+  bilateralColor: number
+  /** `bilateralReach` — spatial σ in px, shared unit with gaussian */
+  bilateralReach: number
+}
+
+/**
+ * Mapping from the real task's Anscombe-space `bilateralColor` to a normalised-space σ_color for
+ * this schematic. Real range is ~1–40 in Anscombe units where signal peaks around 45; here the
+ * frame's peak is ~1, so we compress by that factor. Fixed constant so a change to the schematic
+ * doesn't silently retune the demo away from the real defaults.
+ */
+export const SPATIAL_COLOR_TO_SCHEMATIC = 1 / 45
+
+export function smoothSpatialVisColumns(inp: SmoothSpatialVisInput): VisColumns {
+  const input = sparseCellsFrame()
+  const g = blur(input, Math.max(0, inp.sigma))
+  const bl = bilateralPass(input,
+                           Math.max(1e-3, inp.bilateralColor * SPATIAL_COLOR_TO_SCHEMATIC),
+                           Math.max(0.5, inp.bilateralReach))
+  const [normIn, normG, normBl] = normalise([input], [g], [bl]).map(s => s[0])
+  const wrap = (fr: VisFrame): VisFrame[] => [fr]
+
+  const rows: VisRow[] = [
+    { key: 'result', label: 'Simulated', role: 'grid', uniform: false,
+      cells: [cell('', wrap(normIn)), cell('', wrap(normG)), cell('', wrap(normBl))] },
+    { key: 'params', label: 'Params', role: 'text', uniform: false,
+      cells: [cell(''),
+              cell(`σ=${inp.sigma.toFixed(1)}px`),
+              cell(`color=${inp.bilateralColor.toFixed(0)} reach=${inp.bilateralReach.toFixed(1)}px`)] },
+  ]
+  return { columns: ['input', ...SMOOTH_SPATIAL_METHODS], rows, pxSize: null, uniformKeys: [] }
+}
+
+/**
+ * The verdict, from the frames themselves — how much of the input's punctate structure survives
+ * as isolated maxima. Bilateral wins when it keeps the two cells' peaks AND removes the specks;
+ * gaussian either blurs the cells or smears the specks into the background. Read off the pictures
+ * for the same reason the temporal figure reads its verdict off the frames.
+ */
+export function spatialVerdict(input: VisFrame, gauss: VisFrame, bl: VisFrame): string {
+  const peakIn = Math.max(...input.map(r => Math.max(...r)))
+  const peakG = Math.max(...gauss.map(r => Math.max(...r)))
+  const peakBl = Math.max(...bl.map(r => Math.max(...r)))
+  // Bilateral preserving > gaussian preserving = it's the choice worth spending on
+  return (peakBl > peakG * 1.05 && peakBl > peakIn * 0.8)
+    ? 'Bilateral keeps punctate structure the gaussian smears'
+    : 'Gaussian is sufficient at this sigma'
+}
+
+export function smoothSpatialFigure(inp: SmoothSpatialVisInput): { vis: VisColumns; note: string } {
+  const vis = smoothSpatialVisColumns(inp)
+  const input = sparseCellsFrame()
+  const g = blur(input, Math.max(0, inp.sigma))
+  const bl = bilateralPass(input,
+                           Math.max(1e-3, inp.bilateralColor * SPATIAL_COLOR_TO_SCHEMATIC),
+                           Math.max(0.5, inp.bilateralReach))
+  return { vis, note: spatialVerdict(input, g, bl) }
+}
 
 export interface SmoothVisInput {
   /** `temporalFrames` — the same window for both columns; the comparison is the method */

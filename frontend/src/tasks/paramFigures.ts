@@ -20,7 +20,7 @@ import type { AdvisorContext } from './paramAdvisors'
 import type { ParamDef } from './types'
 import type { VisColumns } from './paramVis'
 import type { Severity } from '../lib/severity'
-import { smoothFigure } from './smoothVis'
+import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
 export interface ParamFigureDef {
@@ -89,6 +89,31 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       headings: ['Input', 'Median', 'Gated'],
       storageKey: 'smooth-method-figure',
       defaultW: 340, defaultH: 300,
+    }
+  },
+
+  /**
+   * Smoothing's SPATIAL method. Same construction as `smoothMethod` — a schematic, drawn from the
+   * real algorithms at 16x16, and a verdict line read off the frames rather than recomputed from
+   * the settings. The verdict crossing follows the same rule the temporal figure follows: what the
+   * pictures show is what the line says.
+   */
+  smoothSpatial: ctx => {
+    const { vis, note } = smoothSpatialFigure({
+      method: (String(ctx.values?.spatialMethod ?? 'gaussian') === 'bilateral_vst'
+                 ? 'bilateral_vst' : 'gaussian'),
+      sigma: num(ctx.values?.spatialSigma, 1),
+      bilateralColor: num(ctx.values?.bilateralColor, 10),
+      bilateralReach: num(ctx.values?.bilateralReach, 3),
+    })
+    return {
+      vis,
+      note,
+      title: 'Spatial method',
+      tip: 'Show what each spatial filter does to a sparse punctate field',
+      headings: ['Input', 'Gaussian', 'Bilateral (VST)'],
+      storageKey: 'smooth-spatial-figure',
+      defaultW: 340, defaultH: 260,
     }
   },
 }
