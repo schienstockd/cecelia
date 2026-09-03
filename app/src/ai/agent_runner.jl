@@ -288,9 +288,17 @@ function mcp_connections(path::AbstractString = claude_config_path())::Vector{Di
     _transport(spec) = spec isa AbstractDict ?
         String(something(get(spec, :type, nothing), get(spec, :transport, nothing),
                          haskey(spec, :url) ? "http" : "stdio")) : ""
+    # PYTHONPATH is the load-bearing part of the observer spec — the checkout it points at. Showing
+    # it in the row is what makes "out of date" self-explanatory. Tolerant: not every server carries
+    # one, and another tool's file must never error a route.
+    _install_path(spec) = spec isa AbstractDict ? begin
+        env = get(spec, :env, nothing)
+        env isa AbstractDict ? String(something(get(env, :PYTHONPATH, nothing), "")) : ""
+    end : ""
     _row(name, scope, dir, spec) = Dict{String,Any}(
         "name" => String(name), "scope" => scope, "dir" => dir,
-        "transport" => _transport(spec), "ours" => String(name) == OBSERVER_MCP_NAME)
+        "transport" => _transport(spec), "ours" => String(name) == OBSERVER_MCP_NAME,
+        "installPath" => _install_path(spec))
 
     servers = get(cfg, :mcpServers, nothing)
     if servers isa AbstractDict

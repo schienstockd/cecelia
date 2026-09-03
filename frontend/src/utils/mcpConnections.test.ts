@@ -25,6 +25,14 @@ describe('mcpRows', () => {
     expect(obs.kind).toBe('machine')
   })
 
+  it('carries the observer install path through — that is what makes "out of date" self-explanatory', () => {
+    // Without a visible path, a stale entry looks identical to a fresh one and the user is left to
+    // hover to find out. The System row renders the last two segments; the raw path stays for the tooltip.
+    const rows = mcpRows([{ name: 'cecelia-observer', scope: 'user', ours: true,
+                            installPath: '/opt/some-old-install/mcp' }], 'stale')
+    expect(rows.find(r => r.name === 'cecelia-observer')!.installPath).toBe('/opt/some-old-install/mcp')
+  })
+
   it('still lists the observer when it is absent from the config', () => {
     const rows = mcpRows([], '')
     const obs = rows.find(r => r.name === 'cecelia-observer')!

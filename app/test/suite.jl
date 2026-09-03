@@ -1389,7 +1389,8 @@ end
     @test isempty(mcp_connections(cfg))                            # another tool's file: tolerate junk
 
     write(cfg, """
-    {"mcpServers": {"cecelia-observer": {"command": "py"}, "other-tool": {"url": "https://x/mcp"}},
+    {"mcpServers": {"cecelia-observer": {"command": "py", "env": {"PYTHONPATH": "/opt/here/mcp"}},
+                    "other-tool": {"url": "https://x/mcp"}},
      "projects": {"/tmp/p1": {"mcpServers": {"cecelia-observer": {"command": "old"}}},
                   "/tmp/p2": {}}}
     """)
@@ -1405,6 +1406,10 @@ end
     @test first(r["transport"] for r in rows if r["name"] == "other-tool") == "http"
     @test first(r["dir"] for r in rows if r["scope"] == "local") == "/tmp/p1"
     @test rows == sort(rows; by = r -> (r["name"], r["scope"], r["dir"]))   # deterministic order
+    # installPath: exposed so the Settings row can name the checkout an "out of date" entry points at.
+    # Tolerant: a spec with no env yields "", never errors.
+    @test first(r["installPath"] for r in rows if r["scope"] == "user" && r["name"] == "cecelia-observer") == "/opt/here/mcp"
+    @test first(r["installPath"] for r in rows if r["scope"] == "local") == ""
 end
 
 @testset "LabArchives context sidecar (round-trip, gaps, briefing)" begin
