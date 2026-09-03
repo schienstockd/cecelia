@@ -26,6 +26,20 @@
       "tip": "Unselected channels are copied through unchanged — leave SHG/THG out"
     },
     {
+      "key": "spatialMethod",
+      "label": "Spatial method",
+      "type": "select",
+      "default": "gaussian",
+      "options": [
+        { "label": "Gaussian", "value": "gaussian",
+          "help": "xy Gaussian blur — cheap, fills sparse counts, blurs cell edges." },
+        { "label": "Bilateral (VST)", "value": "bilateral_vst",
+          "help": "Poisson variance-stabilised bilateral — flattens background, keeps cell edges. Best for photon-limited fluorescence." }
+      ],
+      "tip": "Gaussian for dense data; bilateral (VST) for sparse photon counts",
+      "figure": "smoothSpatial"
+    },
+    {
       "key": "spatialSigma",
       "label": "Spatial sigma (px)",
       "type": "float",
@@ -33,10 +47,33 @@
       "min": 0.0,
       "max": 4.0,
       "step": 0.5,
+      "showIf": { "spatialMethod": "gaussian" },
       "tips": [
         { "text": "xy Gaussian before the temporal statistic — 0 keeps less signal than no smoothing", "requires": { "axes": ["T"] } },
         { "text": "xy Gaussian — 0 disables spatial smoothing" }
       ]
+    },
+    {
+      "key": "bilateralColor",
+      "label": "Color tolerance",
+      "type": "float",
+      "default": 10.0,
+      "min": 1.0,
+      "max": 40.0,
+      "step": 1.0,
+      "showIf": { "spatialMethod": "bilateral_vst" },
+      "tip": "Larger flattens background more, softens cell edges"
+    },
+    {
+      "key": "bilateralReach",
+      "label": "Spatial reach (px)",
+      "type": "float",
+      "default": 3.0,
+      "min": 1.0,
+      "max": 8.0,
+      "step": 0.5,
+      "showIf": { "spatialMethod": "bilateral_vst" },
+      "tip": "Wider neighbourhood — more denoising and more blur"
     },
     {
       "key": "temporalFrames",

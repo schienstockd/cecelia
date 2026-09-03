@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 import {
   amplitudeGap, gatedCost, gatedSequence, medianSequence, motionSequence, noiseSigma, smoothFigure,
   smoothVerdict, smoothVisColumns, GAP_WORTH_PAYING_FOR,
+  bilateralPass, blur, sparseCellsFrame, smoothSpatialFigure, smoothSpatialVisColumns,
+  SMOOTH_SPATIAL_METHODS,
 } from './smoothVis'
 import type { VisFrame } from './paramVis'
 
@@ -182,6 +184,65 @@ describe('the verdict under the figure', () => {
   it('turns over at the threshold, not somewhere near it', () => {
     expect(smoothVerdict(GAP_WORTH_PAYING_FOR - 0.001)).toContain('Median is enough')
     expect(smoothVerdict(GAP_WORTH_PAYING_FOR)).toContain('Gated keeps')
+  })
+})
+
+describe('spatial method figure', () => {
+  const input = sparseCellsFrame()
+
+  it('is deterministic', () => {
+    expect(sparseCellsFrame()).toEqual(input)
+  })
+
+  it('contains distinct cell peaks and isolated specks', () => {
+    // The whole point of the schematic — puncta the bilateral can preserve and specks it should
+    // remove. If either goes away the figure has nothing to compare.
+    const peaks = input.flat().filter(v => v > 0.7)
+    expect(peaks.length).toBeGreaterThan(3)
+  })
+
+  it('bilateral keeps cell peaks better than a gaussian at matched settings', () => {
+    // With the same spatial reach and a sensible color tolerance, bilateral preserves the two cell
+    // peaks better than a plain gaussian — the property that makes it worth offering here at all.
+    const bl = bilateralPass(input, 0.3, 1.5)
+    const g  = blur(input, 1.5)
+    const cellPeakOf = (f: number[][]) => Math.max(...f.slice(3, 8).map(r => Math.max(...r)))
+    expect(cellPeakOf(bl)).toBeGreaterThan(cellPeakOf(g))
+  })
+
+  it('bilateral flattens the background — its whole reason to exist', () => {
+    const bl = bilateralPass(input, 0.3, 1.5)
+    const bgSd = (f: number[][]) => {
+      const vals = f.slice(0, 3).flat()
+      const m = vals.reduce((a, b) => a + b, 0) / vals.length
+      return Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length)
+    }
+    expect(bgSd(bl)).toBeLessThan(bgSd(input))
+  })
+
+  it('a huge color tolerance collapses to a gaussian, since no neighbour is "different"', () => {
+    // A sanity check that the color weight is doing what the docstring says.
+    const bl = bilateralPass(input, 1e6, 1.5)
+    // Every neighbour weighted equally by color → same as a spatial gaussian; a plain average of
+    // the whole 3-radius neighbourhood will heavily reduce isolated speck intensity
+    expect(Math.max(...bl.flat())).toBeLessThan(Math.max(...input.flat()))
+  })
+
+  it('smoothSpatialVisColumns exposes the two methods beside the input', () => {
+    const vis = smoothSpatialVisColumns({
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3,
+    })
+    expect(vis.columns).toEqual(['input', ...SMOOTH_SPATIAL_METHODS])
+    expect(vis.rows.find(r => r.key === 'result')!.cells).toHaveLength(3)
+  })
+
+  it('smoothSpatialFigure carries a verdict line about the CHOICE', () => {
+    // Sparse-count regime with a bilateral: it should say bilateral is the pick, not that gaussian
+    // is enough — since the whole schematic exists to show what gaussian smears.
+    const fig = smoothSpatialFigure({
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3,
+    })
+    expect(fig.note.toLowerCase()).toContain('bilateral')
   })
 })
 

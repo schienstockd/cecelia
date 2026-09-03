@@ -208,6 +208,86 @@ class SmoothRunnerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._run(temporalStat='gate')
 
+    def test_bilateral_vst_runs_and_writes_the_same_shape(self):
+        """The bilateral (VST) spatial engine runs end-to-end and produces a same-shape output.
+
+        Runs both a spatial-only case (temporalFrames=1) and a spatial+temporal case, so both the
+        engine dispatch AND the streaming loop's caching (which reuses the spatial output across the
+        window) exercise the bilateral path.
+        """
+        out_spatial = self._run(spatialMethod='bilateral_vst', temporalFrames=1,
+                                bilateralColor=10.0, bilateralReach=3.0,
+                                temporalStat='median')
+        self.assertEqual(tuple(out_spatial.shape), tuple(self.shape))
+        self.assertTrue(np.isfinite(out_spatial).all())
+        # The bilateral must not have blown out the values — a broken inverse VST would leave the
+        # output either at zero or clipped at the dtype max everywhere.
+        self.assertGreater(int(out_spatial.max()), 0)
+        self.assertLess(int(out_spatial.max()), np.iinfo(np.uint16).max)
+
+        out_temporal = self._run(spatialMethod='bilateral_vst', temporalFrames=3,
+                                 bilateralColor=10.0, bilateralReach=3.0,
+                                 temporalStat='median')
+        self.assertEqual(tuple(out_temporal.shape), tuple(self.shape))
+        self.assertTrue(np.isfinite(out_temporal).all())
+
+    def test_gaussian_stays_the_default_when_no_method_is_passed(self):
+        """`spatialMethod` is optional; omitting it must run the gaussian engine unchanged, so an
+        older caller (chain, saved run, external script) still routes to the same spatial path.
+        """
+        default = self._run()                                    # no spatialMethod override
+        gaussian = self._run(spatialMethod='gaussian')
+        np.testing.assert_array_equal(default, gaussian)
+
+    def test_parallel_produces_the_same_output_as_serial(self):
+        """A per-z ThreadPoolExecutor must not change the output — the writes go to non-overlapping
+        chunks and every worker has its own rolling cache. Compare against `z_workers=1` (serial
+        path). Same params both runs; the only difference is thread count."""
+        # Force serial by capping the worker budget to 1
+        os.environ['CECELIA_TASK_WORKERS'] = '1'
+        try:
+            serial = self._run(spatialMethod='gaussian', temporalFrames=3, temporalStat='median')
+        finally:
+            del os.environ['CECELIA_TASK_WORKERS']
+        # Default budget — likely >1 on any test box, so this exercises the executor path
+        parallel = self._run(spatialMethod='gaussian', temporalFrames=3, temporalStat='median')
+        np.testing.assert_array_equal(serial, parallel)
+
+    def test_static_image_runs_the_spatial_engine_alone(self):
+        """A single-timepoint image has no temporal step to take, and the task must NOT refuse to
+        run — the temporal-only params are already gated by the spec's `requires.axes: ["T"]`, so
+        the fallback (`frames=1`) collapses to one spatial pass per plane. Guarding the whole task
+        on the presence of T would refuse a spatial-only run that has a valid engine of its own.
+        """
+        # Build a matching-shape but T=1 store, in every other way identical to the fixture.
+        one_shape = dict(size_t=1, size_z=self.SHAPE['size_z'], size_c=self.SHAPE['size_c'],
+                         size_y=self.SHAPE['size_y'], size_x=self.SHAPE['size_x'])
+        omexml = ome_types.from_xml(_ome_xml(**one_shape))
+        du = DimUtils(omexml, use_channel_axis=True)
+        shape = [1, one_shape['size_c'], one_shape['size_z'],
+                 one_shape['size_y'], one_shape['size_x']]
+        du.calc_image_dimensions(shape)
+        rng = np.random.default_rng(11)
+        data = np.full(shape, 40, dtype=np.float32)
+        data += rng.normal(0, 6, size=shape).astype(np.float32)
+        data = np.clip(data, 0, np.iinfo(np.uint16).max).astype(np.uint16)
+
+        in_path = os.path.join(self.dir, 'static.ome.zarr')
+        _, level0, _ = zarr_utils.open_multiscales_for_writing(
+            in_path, tuple(shape), np.uint16, du, nscales=1)
+        level0[:] = data
+        ome_xml_utils.save_meta_in_zarr(in_path, omexml=omexml)
+
+        # `temporalFrames` and `temporalStat` are dropped by the app-side `_apply_param_requires` on
+        # a static image; the runner sees a dict without them. Simulate the same call shape.
+        out = os.path.join(self.dir, 'static_out.ome.zarr')
+        self.runner.run(dict(imPath=in_path, imOutputPath=out, channels=[],
+                             spatialMethod='bilateral_vst', bilateralColor=10.0, bilateralReach=3.0,
+                             restoreGain=False, qcOutPath=os.path.join(self.dir, 'qc.json')))
+        arr = np.asarray(zarr_utils.open_as_zarr(out, as_dask=False)[0][0][:])
+        self.assertEqual(tuple(arr.shape), tuple(shape))
+        self.assertTrue(np.isfinite(arr).all())
+
     @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_refuses_a_gate_with_no_noise_scale(self):
         """A zero noise scale makes every weight collapse, so the run would spend minutes writing a

@@ -27,15 +27,29 @@ Parameter contract (JSON written by Julia):
   imPath           - absolute path to input .ome.zarr
   imOutputPath     - absolute path to write the smoothed .ome.zarr
   channels         - list of 0-based channel indices to smooth ([] = all)
-  spatialSigma     - xy Gaussian sigma in px (0 disables)
+  spatialMethod    - "gaussian" | "bilateral_vst"
+  spatialSigma     - xy Gaussian sigma in px, only used for spatialMethod=gaussian
+  bilateralColor   - Anscombe-space color tolerance, only used for spatialMethod=bilateral_vst
+  bilateralReach   - Spatial sigma in px, only used for spatialMethod=bilateral_vst
   temporalFrames   - full centred window, forced odd by coastal (1 disables)
   temporalStat     - "median" | "mean"
   restoreGain      - bool, rescale so an integer store keeps usable precision
   qcOutPath        - where to persist stats for the Julia QC step
+
+Bilateral (VST) branch (docs/todo/SMOOTHING_PLAN.md → *Alternative spatial engine*):
+  Anscombe VST → cv2.bilateralFilter in stabilised space → unbiased inverse (Mäkitalo & Foi 2011).
+  Kept behind one shared kernel per channel, applied per plane. The dynamic-range gain path runs
+  the same spatial function on the sampled planes so the gain estimate matches the engine that
+  actually runs. **Local implementation** — will move into `coastal.smooth` once the design lands.
 """
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+import cv2
 import numpy as np
 
+import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
@@ -45,6 +59,42 @@ from cecelia.utils.atomic_io import write_json_atomic
 # coastal owns the smoothing engine (array-only, imports nothing from cecelia). Declared as a git
 # dep in pixi.toml — see the note there for why it is no longer an editable sibling path.
 from coastal.smooth import spatial_smooth, temporal_smooth, gated_frames, noise_sigma
+
+
+def _anscombe(x):
+    """Poisson variance-stabilising transform: `y = 2 sqrt(x + 3/8)` (Anscombe 1948)."""
+    return 2.0 * np.sqrt(np.clip(x, 0.0, None) + 3.0 / 8.0)
+
+
+def _inv_anscombe(s):
+    """Unbiased closed-form inverse of `_anscombe`. Mäkitalo & Foi, IEEE T-IP 2011."""
+    s = np.clip(s, 1e-6, None)
+    inv = ((s / 2.0) ** 2 - 1.0 / 8.0
+           + (np.sqrt(3.0 / 2.0) / 4.0) / s
+           - (11.0 / 8.0) / (s ** 2)
+           + (5.0 * np.sqrt(3.0 / 2.0) / 8.0) / (s ** 3))
+    return np.clip(inv, 0.0, None).astype(np.float32)
+
+
+def _bilateral_vst(frame, sigma_color, sigma_spatial):
+    """Anscombe VST → cv2 bilateral → unbiased inverse. All the "one shared kernel per channel"
+    invariant needs is one filter with fixed params applied identically — that holds here."""
+    a = _anscombe(frame)
+    b = cv2.bilateralFilter(a.astype(np.float32), d=-1,
+                            sigmaColor=float(sigma_color),
+                            sigmaSpace=float(sigma_spatial))
+    return _inv_anscombe(b)
+
+
+def _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach):
+    """Return the per-frame spatial callable used by the streaming loop AND the gain estimator.
+
+    One callable so both paths run identical arithmetic — the gain the estimator picks is the gain
+    the streaming loop needs. `gaussian` routes to coastal.smooth's `spatial_smooth` unchanged.
+    """
+    if method == "bilateral_vst":
+        return lambda frame: _bilateral_vst(frame, bilateral_color, bilateral_reach)
+    return lambda frame: spatial_smooth(frame, sigma)
 
 #: How many (t, z) planes to sample when estimating the dynamic-range gain. The gain only needs the
 #: right order of magnitude, and a sample keeps this from being a second full pass over the store.
@@ -59,7 +109,10 @@ def _axis_len(dim_utils, letter, shape):
 def _plane_slice(ndim, t_idx, t, c_idx, c, z_idx, z):
     """Slice tuple selecting one (timepoint, channel, z) plane, leaving the spatial axes whole."""
     sl = [slice(None)] * ndim
-    sl[t_idx] = t
+    # `t_idx` is None on a static image (no T axis) — the store simply has no T dimension to index,
+    # and the caller's `t=0` is the only value it ever passes for that case anyway.
+    if t_idx is not None:
+        sl[t_idx] = t
     if c_idx is not None:
         sl[c_idx] = c
     if z_idx is not None:
@@ -70,13 +123,20 @@ def _plane_slice(ndim, t_idx, t, c_idx, c, z_idx, z):
 def run(params):
     log = script_utils.get_logfile_utils(params)
 
-    im_path      = params['imPath']
-    out_path     = params['imOutputPath']
-    channels     = [int(c) for c in (params.get('channels') or [])]
-    sigma        = float(params.get('spatialSigma', 1.0))
-    frames       = int(params.get('temporalFrames', 3))
-    stat         = str(params.get('temporalStat', 'median'))
-    restore_gain = bool(params.get('restoreGain', True))
+    im_path         = params['imPath']
+    out_path        = params['imOutputPath']
+    channels        = [int(c) for c in (params.get('channels') or [])]
+    method          = str(params.get('spatialMethod', 'gaussian'))
+    sigma           = float(params.get('spatialSigma', 1.0))
+    bilateral_color = float(params.get('bilateralColor', 10.0))
+    bilateral_reach = float(params.get('bilateralReach', 3.0))
+    frames          = int(params.get('temporalFrames', 3))
+    stat            = str(params.get('temporalStat', 'median'))
+    restore_gain    = bool(params.get('restoreGain', True))
+
+    # ONE spatial function for the estimators AND the streaming loop — see `_build_spatial_fn`.
+    # A separate closure per path would let the gain estimate drift from the loop that uses it.
+    spatial_fn = _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach)
 
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read is one chunk-aligned plane, so a dask graph only adds
@@ -92,15 +152,22 @@ def run(params):
     t_idx, nt = _axis_len(dim_utils, 'T', shape)
     c_idx, nc = _axis_len(dim_utils, 'C', shape)
     z_idx, nz = _axis_len(dim_utils, 'Z', shape)
-    if t_idx is None:
-        log.log('[ERROR] image has no time axis — the temporal statistic needs one')
-        raise SystemExit(1)
+    # A static image is fine: `temporalFrames` and `temporalStat` carry `requires.axes: ["T"]` in
+    # the spec, so `_apply_param_requires` drops them for a static input and the fallbacks kick in
+    # (`frames=1`, gated=False, half=0). The streaming loop's `if half == 0` branch is then one
+    # spatial pass per plane — which is precisely what the spatial-only engines (gaussian and
+    # bilateral_vst) mean by themselves. The task no longer needs a T axis; the temporal step does.
 
     sel = channels if channels else list(range(nc))
     others = [c for c in range(nc) if c not in sel]
     log.log(f'>> dims {dim_utils.im_dim_order} {shape}')
-    log.log(f'>> smoothing channels {sel} (passing through {others}); '
-            f'sigma={sigma}, frames={frames}, stat={stat}')
+    if method == 'bilateral_vst':
+        log.log(f'>> smoothing channels {sel} (passing through {others}); '
+                f'spatial=bilateral_vst color={bilateral_color} reach={bilateral_reach}, '
+                f'frames={frames}, stat={stat}')
+    else:
+        log.log(f'>> smoothing channels {sel} (passing through {others}); '
+                f'spatial=gaussian sigma={sigma}, frames={frames}, stat={stat}')
 
     half = max(0, (frames - 1) // 2) if frames and frames > 1 else 0
     gated = stat == 'gated' and half > 0
@@ -144,7 +211,7 @@ def run(params):
         for t, z in picks:
             for c in sel:
                 raw = read_plane(t, c, z)
-                sm = spatial_smooth(raw, sigma)
+                sm = spatial_fn(raw)
                 hi_in.append(np.percentile(raw, 99.99))
                 hi_sm.append(np.percentile(sm, 99.99))
         hi_in, hi_sm = float(np.mean(hi_in)), float(np.mean(hi_sm))
@@ -160,7 +227,7 @@ def run(params):
         samples = []
         for z in zs:
             # the guide is the SUM over smoothed channels, so estimate on that same quantity
-            slab = np.stack([sum(spatial_smooth(read_plane(t, c, z), sigma) for c in sel)
+            slab = np.stack([sum(spatial_fn(read_plane(t, c, z)) for c in sel)
                              for t in range(span)])
             samples.append(noise_sigma(slab))
         gate_sigma = float(np.median(samples))
@@ -187,7 +254,18 @@ def run(params):
     log.progress(done, total)
 
     # ── stream ─────────────────────────────────────────────────────────────────────────────────
-    log.log(f'>> smooth + write (streaming per z-plane): {out_path}')
+    # Per z-plane parallelism: each z owns its rolling cache and writes to non-overlapping chunks,
+    # so the loop is embarrassingly parallel below the gain/gate estimates. Threads (not processes)
+    # because the compute paths — cv2, scipy, numpy — release the GIL, and zarr writes are I/O
+    # bound. The worker count comes from `cpu_utils.task_workers()`, which respects the pool
+    # budget the scheduler set via `run_py`. `cv2.setNumThreads` gets the *remaining* CPU share
+    # after z-parallelism — on a static image (nz=1) that's the full budget, so cv2 still uses
+    # every core; on a stack with many z-planes the pool covers the parallelism and cv2 stays
+    # single-threaded per worker rather than fighting the pool for cores.
+    z_workers = max(1, min(cpu_utils.task_workers(), nz))
+    cv2.setNumThreads(max(1, cpu_utils.task_workers() // z_workers))
+    log.log(f'>> smooth + write (per-z workers: {z_workers}, cv2 threads: {cv2.getNumThreads()}) '
+            f'→ {out_path}')
     stats = {'zeroFracIn': {}, 'zeroFracOut': {}, 'clippedVoxels': 0, 'gain': gain}
     zin = {c: [] for c in sel}
     zout = {c: [] for c in sel}
@@ -198,17 +276,26 @@ def run(params):
             staging, shape, level_in.dtype, dim_utils, nscales=len(im_dat),
             reference_zarr=im_path)   # inherit the source's zarr format (ZARR_V3_PLAN D9)
 
-        for z in range(nz):
-            # Rolling cache of SPATIALLY smoothed planes for this z, keyed by timepoint. Bounded by
-            # the window, so memory is `frames` planes per channel regardless of T.
+        # accumulators are updated from worker threads — one lock for both the fraction lists AND
+        # the clipped counter, so the (zin, zout, clipped) triple is either all-updated or none.
+        stats_lock = threading.Lock()
+
+        def _process_z(z):
+            """Process one z-plane. Returns (zin_local, zout_local, clipped_local)."""
+            # Rolling cache of SPATIALLY smoothed planes for THIS z only, keyed by timepoint.
+            # Local to the worker — no cross-thread sharing.
             cache = {}
 
             def spatial_at(t, c):
                 t = min(max(t, 0), nt - 1)          # clamp = scipy's mode='nearest'
                 key = (t, c)
                 if key not in cache:
-                    cache[key] = spatial_smooth(read_plane(t, c, z), sigma)
+                    cache[key] = spatial_fn(read_plane(t, c, z))
                 return cache[key]
+
+            local_zin = {c: [] for c in sel}
+            local_zout = {c: [] for c in sel}
+            local_clipped = 0
 
             for t in range(nt):
                 # `gated` needs every selected channel's window at once: the match and the weight come
@@ -242,13 +329,16 @@ def run(params):
                         win = np.stack([spatial_at(tt, c) for tt in range(t - half, t + half + 1)])
                         out = temporal_smooth(win, frames, stat, time_axis=0)[half]
                     raw = read_plane(t, c, z)
-                    zin[c].append(float((raw == 0).mean()))
+                    local_zin[c].append(float((raw == 0).mean()))
 
                     out = out * gain
                     if dtype_max is not None:
-                        clipped += int((out > dtype_max).sum())
+                        local_clipped += int((out > dtype_max).sum())
                         out = np.clip(np.rint(out), 0, dtype_max)
-                    zout[c].append(float((out == 0).mean()))
+                    local_zout[c].append(float((out == 0).mean()))
+                    # Zarr writes to non-overlapping chunks are safe from concurrent threads (each
+                    # z is its own chunk row in the default layout). Verified by convention: coastal
+                    # writes the same way (`coastal_utils` ThreadPoolExecutor over z).
                     level0[_plane_slice(len(shape), t_idx, t, c_idx, c, z_idx, z)] = \
                         out.astype(level0.dtype)
 
@@ -260,10 +350,30 @@ def run(params):
                 for key in [k for k in cache if k[0] < t - half]:
                     del cache[key]
 
-            done += 1
-            log.progress(done, total)
-            if nz > 1:
-                log.log(f'   z {z + 1}/{nz}')
+            return z, local_zin, local_zout, local_clipped
+
+        # `ThreadPoolExecutor` gives determinism at the write layer for free — every z's writes are
+        # independent — and pays no fork-startup cost. Serial when nz == 1 (a static image) — no
+        # point paying the executor tax for a one-item queue.
+        if z_workers == 1 or nz <= 1:
+            iterator = (_process_z(z) for z in range(nz))
+        else:
+            executor = ThreadPoolExecutor(max_workers=z_workers)
+            iterator = executor.map(_process_z, range(nz))
+        try:
+            for z, lz_in, lz_out, lc in iterator:
+                with stats_lock:
+                    for c in sel:
+                        zin[c].extend(lz_in[c])
+                        zout[c].extend(lz_out[c])
+                    clipped += lc
+                done += 1
+                log.progress(done, total)
+                if nz > 1:
+                    log.log(f'   z {z + 1}/{nz}')
+        finally:
+            if z_workers > 1 and nz > 1:
+                executor.shutdown(wait=True)
 
         log.log('>> build pyramid + save')
         zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
@@ -286,7 +396,10 @@ def run(params):
     stats['zeroFracOut'] = {str(c): float(np.mean(v)) for c, v in zout.items() if v}
     stats['clippedVoxels'] = clipped
     stats['channels'] = sel
+    stats['spatialMethod'] = method
     stats['spatialSigma'] = sigma
+    stats['bilateralColor'] = bilateral_color
+    stats['bilateralReach'] = bilateral_reach
     stats['temporalFrames'] = frames
     stats['temporalStat'] = stat
     stats['shape'] = [int(x) for x in shape]
