@@ -445,6 +445,23 @@ const observerAuthFailed = computed(() => {
 const mcpConnectionRows = computed(() =>
   mcpRows(mcpRaw.value, observer.terminalState, settings.hiddenMcpAccounts,
           { available: observer.available, authFailed: observerAuthFailed.value }))
+// The observer is Cecelia's own row and belongs with the other backend components in "System" — it
+// used to render in "MCP connections" alongside third-party servers, and readers hunting for
+// Cecelia's lifecycle didn't find it. Now: shown ONCE, next to Application/Notebooks/etc.
+const observerServiceRow = computed(() =>
+  mcpConnectionRows.value.find(r => r.name === 'cecelia-observer'))
+const otherMcpConnectionRows = computed(() =>
+  mcpConnectionRows.value.filter(r => r.name !== 'cecelia-observer'))
+// The registered install's *checkout name* — the parent of the always-literal `mcp/` leaf, which
+// is the distinguishing bit ("cecelia-feijoa" vs "cecelia-mcp-row"). One short token so it fits the
+// .svc-port column without wrapping; the full path is in the row tooltip.
+const observerInstallShort = computed(() => {
+  const p = observerServiceRow.value?.installPath || ''
+  if (!p) return ''
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  const leaf = parts[parts.length - 1] || ''
+  return leaf === 'mcp' ? (parts[parts.length - 2] || leaf) : leaf
+})
 function hideAccountConnector(name: string) {
   if (!settings.hiddenMcpAccounts.includes(name)) settings.hiddenMcpAccounts.push(name)
 }
@@ -1109,40 +1126,30 @@ async function switchWt(path: string) {
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
       </div>
 
-      <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
-      <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
-    </section>
-
-    <!-- ── MCP connections ─────────────────────────────────────────────── -->
-    <!-- What Claude can reach. Machine rows come from the user's Claude config (real state); account
-         rows are managed by their claude.ai account and are NOT detectable from here, so they carry
-         no dot — listed so people discover Cecelia can use them. Row model: utils/mcpConnections.ts -->
-    <section class="settings-section">
-      <h2 class="section-title">MCP connections</h2>
-
-      <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
-           container that also holds tooltipped buttons fires both at once -->
-      <div v-for="r in mcpConnectionRows" :key="r.kind + r.name" class="mcp-row">
-        <span class="svc-name">{{ r.name }}</span>
-        <span class="svc-pill" :class="r.tone" v-tooltip.top="r.hint"><span class="dot" /> {{ r.label }}</span>
-        <span class="mcp-detail cc-muted cc-fs-xs" v-tooltip.top="r.hint">
-          {{ r.detail }}
-          <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
+      <!-- Cecelia MCP: NOT a running process — this is a registration in ~/.claude.json that Claude
+           reads when it spawns the server per session. Shown here anyway so the row appears in the
+           lifecycle picture users look at first; the tooltip carries the "no daemon" caveat so the
+           pill's "connected" is not misread as "running". -->
+      <div v-if="observerServiceRow" class="svc-row svc-row-mcp">
+        <span class="svc-name" v-tooltip.top="'Registered in your Claude config — spawned by Claude per session'">Cecelia MCP</span>
+        <span class="svc-pill" :class="observerServiceRow.tone" v-tooltip.top="observerServiceRow.hint">
+          <span class="dot" /> {{ observerServiceRow.label }}
         </span>
-        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn"
-                :disabled="observer.registering" @click="observer.registerMcp()"
-                v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
-          <i class="pi pi-download" /> {{ observer.registering ? 'Setting up…' : 'Set up' }}
-        </button>
-        <button v-else-if="r.dismissable" class="cc-btn cc-btn-bare cc-btn-icon"
-                @click="hideAccountConnector(r.name)" v-tooltip.left="'Hide — not used here'">
-          <i class="pi pi-times" />
-        </button>
-        <span v-else />
+        <span v-if="observerInstallShort" class="svc-port svc-port-name cc-muted cc-fs-xs"
+              v-tooltip.top="observerServiceRow.installPath">{{ observerInstallShort }}</span>
+        <span v-else class="svc-port cc-muted cc-fs-xs"></span>
+        <span class="svc-actions">
+          <button v-if="observerServiceRow.tone === 'warn'" class="save-btn"
+                  :disabled="observer.registering" @click="observer.registerMcp()"
+                  v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
+            <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
+            {{ observer.registering ? 'Setting up…' : 'Set up' }}
+          </button>
+        </span>
       </div>
 
-      <!-- one-click setup FAILED: the resolved command to run by hand. Diagnostics live here now, so
-           the lab-log toolbar keeps only the action. -->
+      <!-- one-click setup FAILED: the resolved command to run by hand. Lives next to the row it acts
+           on, so a failure in the System section doesn't send the reader hunting in another panel. -->
       <div v-if="observer.registerError" class="svc-row-note cc-row cc-row-tight">
         <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
         <template v-if="observerFallbackCommand">
@@ -1152,6 +1159,35 @@ async function switchWt(path: string) {
             <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
           </button>
         </template>
+      </div>
+
+      <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
+      <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
+    </section>
+
+    <!-- ── Other MCP connections ───────────────────────────────────────── -->
+    <!-- What ELSE Claude can reach — the CLI itself, third-party machine servers, and account-
+         managed connectors. Cecelia's own MCP row lives in "System" above, where the lifecycle
+         picture is. Machine rows come from the user's Claude config (real state); account rows are
+         managed by their claude.ai account and are NOT detectable from here, so they carry no dot.
+         Row model: utils/mcpConnections.ts -->
+    <section class="settings-section">
+      <h2 class="section-title">Other MCP connections</h2>
+
+      <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
+           container that also holds tooltipped buttons fires both at once -->
+      <div v-for="r in otherMcpConnectionRows" :key="r.kind + r.name" class="mcp-row">
+        <span class="svc-name">{{ r.name }}</span>
+        <span class="svc-pill" :class="r.tone" v-tooltip.top="r.hint"><span class="dot" /> {{ r.label }}</span>
+        <span class="mcp-detail cc-muted cc-fs-xs" v-tooltip.top="r.hint">
+          {{ r.detail }}
+          <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
+        </span>
+        <button v-if="r.dismissable" class="cc-btn cc-btn-bare cc-btn-icon"
+                @click="hideAccountConnector(r.name)" v-tooltip.left="'Hide — not used here'">
+          <i class="pi pi-times" />
+        </button>
+        <span v-else />
       </div>
 
       <span v-if="hiddenAccountConnectors.length" class="field-hint cc-muted cc-fs-xs">
@@ -1407,6 +1443,10 @@ async function switchWt(path: string) {
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
 .svc-port { justify-self: start; font-family: var(--cc-mono); }
+/* Cecelia MCP row: the third column carries a checkout name (variable length), not a fixed `:8080`.
+   Widen its grid slot and clip anything longer with an ellipsis so it stays on ONE line. */
+.svc-row-mcp { grid-template-columns: 8rem 7rem minmax(3.5rem, 12rem) 1fr; }
+.svc-port-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* MCP rows: ONE line each — name, pill, a short detail that ellipses rather than wrapping, and the
    row's single action. Its own grid rather than `.svc-row`'s, whose 3rd column is sized for a port
    number (`:8080`) and wrapped anything longer onto a second line. */

@@ -28,6 +28,8 @@ export interface McpConnection {          // one row from GET /api/mcp/connectio
   dir?: string
   transport?: string
   ours?: boolean
+  installPath?: string                    // spec.env.PYTHONPATH — the checkout the entry points at.
+                                          // Only meaningful for the observer; empty for others.
 }
 
 export interface McpRow {
@@ -41,6 +43,8 @@ export interface McpRow {
   scope: string
   dismissable: boolean                    // account rows only: plenty of sites have no LabArchives
   href?: string                           // an external help link (the CLI row's setup guide)
+  installPath?: string                    // observer only — shown so an "out of date" row names the
+                                          // install it points at without needing a hover
 }
 
 // Account-managed connectors we know Cecelia can USE. A registry, not a special case — the next one
@@ -110,7 +114,7 @@ export function mcpRows(
     if (c.ours) {
       const s = observerRowState(observerState)
       return { name: c.name, kind: 'machine', tone: s.tone, label: s.label, detail: s.detail,
-               hint: s.hint, scope, dismissable: false }
+               hint: s.hint, scope, dismissable: false, installPath: c.installPath || '' }
     }
     // Someone else's server: registered is all we can honestly claim — we don't health-check it
     // (that would spawn every server just to draw a dot).
@@ -125,7 +129,8 @@ export function mcpRows(
   if (!machine.some(r => r.name === 'cecelia-observer')) {
     const s = observerRowState(observerState || 'missing')
     machine.unshift({ name: 'cecelia-observer', kind: 'machine', tone: s.tone, label: s.label,
-                      detail: s.detail, hint: s.hint, scope: 'user', dismissable: false })
+                      detail: s.detail, hint: s.hint, scope: 'user', dismissable: false,
+                      installPath: '' })
   }
 
   const hidden = new Set(hiddenAccounts)
