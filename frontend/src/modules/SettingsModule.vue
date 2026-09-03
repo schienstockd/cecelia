@@ -1131,7 +1131,7 @@ async function switchWt(path: string) {
            lifecycle picture users look at first; the tooltip carries the "no daemon" caveat so the
            pill's "connected" is not misread as "running". -->
       <div v-if="observerServiceRow" class="svc-row svc-row-mcp">
-        <span class="svc-name" v-tooltip.top="'Registered in your Claude config — Claude spawns it per session, so it does not run between sessions'">Cecelia MCP</span>
+        <span class="svc-name" v-tooltip.top="'Registered in your Claude config — spawned by Claude per session'">Cecelia MCP</span>
         <span class="svc-pill" :class="observerServiceRow.tone" v-tooltip.top="observerServiceRow.hint">
           <span class="dot" /> {{ observerServiceRow.label }}
         </span>
