@@ -5,7 +5,7 @@ import {
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, siblingKeyOfType,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
-  paramAppliesToImages, resolveParamTip } from './paramValues'
+  paramAppliesToImages, resolveParamTip, findParamByKey } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 
@@ -503,6 +503,26 @@ describe('scopeValueName', () => {
                 ] as unknown as ParamDef[]
     expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
     expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
+  })
+})
+
+describe('findParamByKey', () => {
+  const def = [
+    { key: 'valueName', type: 'valueNameSelection' },
+    { key: 'modelName', type: 'valueNameInput', namespace: 'models' },
+    { key: 'advanced', type: 'section', params: [
+      { key: 'embeddingDim', type: 'int' },
+    ] },
+  ] as unknown as ParamDef[]
+
+  it('returns the top-level param', () => {
+    expect(findParamByKey(def, 'modelName')?.namespace).toBe('models')
+  })
+  it('recurses into a section', () => {
+    expect(findParamByKey(def, 'embeddingDim')?.type).toBe('int')
+  })
+  it('is undefined for a key that is not in the spec', () => {
+    expect(findParamByKey(def, 'notThere')).toBeUndefined()
   })
 })
 

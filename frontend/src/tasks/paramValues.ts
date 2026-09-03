@@ -245,6 +245,16 @@ export function siblingKeyOfType(params: ParamDef[] | undefined, type: string): 
   return undefined
 }
 
+/** The param with this key, recursing into sections/groups; undefined when nothing matches. */
+export function findParamByKey(params: ParamDef[] | undefined, key: string): ParamDef | undefined {
+  for (const p of params ?? []) {
+    if (p.key === key) return p
+    const hit = findParamByKey(p.params, key)
+    if (hit) return hit
+  }
+  return undefined
+}
+
 /** The segmentation a measure/population picker is scoped to, given the whole form. */
 export function scopeValueName(
   params: ParamDef[] | undefined,

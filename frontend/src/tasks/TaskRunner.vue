@@ -17,7 +17,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
-import { flattenParams, resolveInitialParams, missingRequired } from './paramValues'
+import { flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
+import { vaultManifestParams } from '../utils/vaultManifest'
 import { syncGroupOrder } from '../utils/chipSelect'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
@@ -238,22 +239,50 @@ function refreshOptionsForForm(def: TaskDef) {
 // Only on COMMIT, never per keystroke: typing toward "Tcell2" passes through "Tcell", and swapping
 // every other field mid-word would be worse than not having this at all.
 //
-// Only when the server MATCHED a by-name record. Without that guard the fallback (the last run's
-// params) would be stamped over a form the user had just edited — the same bug class as the
-// "my params go back to default" report below, arriving by a different route.
+// Only when the record was MATCHED. Without that guard the fallback (the last run's params) would be
+// stamped over a form the user had just edited — the same bug class as the "my params go back to
+// default" report below, arriving by a different route.
+//
+// Two-layer lookup for the same reason there are two writers:
+//   1. `/api/tasks/funparams` — this project's ccid.json (image → set), the primary path.
+//   2. Global-vault manifest — for a picker whose `optionsFrom` names a vault (`flowModels` today,
+//      custom-cellpose training next). The record there is shared across sets and projects, so a
+//      model trained under a different set silently didn't restore before this: the vault UI worked
+//      (`FlowModelVault` → *Apply settings*), the picker didn't, and the two paths disagreed on the
+//      same input. Dispatched in `utils/vaultManifest.ts` so a new vault plugs in with one entry.
+//
+// A NOTE either way. The old code was silent when nothing matched, so a user picking a name with
+// no known record couldn't tell "reload skipped" from "reload didn't happen" from "no params exist".
 async function onParamCommit(key: string, value: unknown) {
   const def = taskDef.value
   if (!def || typeof value !== 'string' || !value) return
   const seq = ++paramReqSeq
+
+  let saved: ParamValues | null = null
+  let source = ''
+
   const got = await fetchSavedParams(def, value)
-  if (seq !== paramReqSeq || !got || !got.matched) return
-  const next = resolveInitialParams(def, undefined, got.params)
+  if (seq !== paramReqSeq) return
+  if (got?.matched) { saved = got.params; source = value }
+
+  if (!saved) {
+    saved = await vaultManifestParams(findParamByKey(def.params, key), def.params, value)
+    if (seq !== paramReqSeq) return
+    if (saved) source = `${value} (vault manifest)`
+  }
+
+  if (!saved) {
+    handoffNote.value = `No saved settings for "${value}"`
+    return
+  }
+  const next = resolveInitialParams(def, undefined, saved)
   if (next === null) return
   // Keep the name the user just entered. A restored record carries the output name it was saved
   // with, which is normally the same string — but the fallback path (and a record saved before a
   // rename) is not, and silently rewriting the field the user just typed in is never right.
   paramValues.value = { ...next, [key]: value } as ParamValues
   drafts.set(currentDraftKey.value, paramValues.value)
+  handoffNote.value = `Settings restored from ${source}`
 }
 
 // ── an offer of params from elsewhere ────────────────────────────────────────

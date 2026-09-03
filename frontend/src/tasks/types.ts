@@ -35,6 +35,12 @@ export interface ParamDef {
   // option is chosen. Distinct from `tip`, which describes the PARAM: a label like "Gated" says
   // nothing on its own and the answer differs per option, so one param-level tip cannot carry it.
   options?: { label: string; value: string; help?: string }[]
+  // A named RUNTIME option source, resolved server-side against a registry (`_OPTION_SOURCES` in
+  // app/src/tasks/task.jl): "cellposeModels", "coastalModels", "flowModels". The server injects the
+  // resolved values into `options` above; the string is kept because it also names the picker's
+  // GLOBAL VAULT — a `valueNameInput` whose per-project record can't answer falls back to the
+  // vault's manifest by dispatching on this key. See utils/vaultManifest.ts.
+  optionsFrom?: string
   // When true, editing THIS param re-resolves the task's options against the current form — for a
   // param whose value other params' options are derived from (an importer's file path, whose columns
   // become the mapping fields' suggestions). The refetch is debounced at the sink; see TaskRunner.
