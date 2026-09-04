@@ -147,16 +147,7 @@ function cellSize(f: VisFrame): number {
         {{ vis.pxSize ? `${Number(vis.pxSize.toFixed(3))} µm/px` : '' }}
       </div>
       <div v-for="(c, i) in vis.columns" :key="`h-${c}`" class="vis-head cc-eyebrow cc-fs-2xs">
-        <span class="vis-head-txt">{{ heading(i) }}</span>
-        <!-- The heading's optional CTA — one small ghost button under the heading text. Kept
-             sibling-not-nested to the heading text so the eyebrow's letter-spacing does not
-             cascade into it. Nothing is drawn when the caller omits this column's CTA. -->
-        <button v-if="props.columnCtas?.[i]"
-          type="button" class="vis-head-cta cc-btn cc-btn-ghost cc-btn-micro"
-          @click="props.columnCtas![i]!.onClick()"
-          v-tooltip.bottom="props.columnCtas![i]!.tip">
-          {{ props.columnCtas![i]!.text }}
-        </button>
+        {{ heading(i) }}
       </div>
 
       <!-- `ri` only to drop the rule under the LAST row: a grid row is not an element, so the divider
@@ -186,6 +177,16 @@ function cellSize(f: VisFrame): number {
               </template>
             </svg>
             <span v-if="cell.text" class="vis-num">{{ cell.text }}</span>
+            <!-- Column's optional CTA — sits UNDER the placeholder image so a reader who has just
+                 spotted "this column doesn't do anything" finds the way to ask for it in the same
+                 glance. Rendered here (in the grid row's cell) not under the heading, because the
+                 heading is a compact eyebrow and the button belonged to the picture, not the label. -->
+            <button v-if="props.columnCtas?.[i]"
+              type="button" class="vis-cell-cta cc-btn cc-btn-ghost cc-btn-micro"
+              @click="props.columnCtas![i]!.onClick()"
+              v-tooltip.bottom="props.columnCtas![i]!.tip">
+              {{ props.columnCtas![i]!.text }}
+            </button>
           </div>
         </template>
 
@@ -240,24 +241,7 @@ function cellSize(f: VisFrame): number {
 }
 
 .vis-corner, .vis-head { padding: 0 0 0.25rem; }
-.vis-head {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-}
-.vis-head-txt { display: block; }
-/* The eyebrow's uppercase + tracking is right for the heading text but wrong for a CTA label. */
-.vis-head-cta {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: var(--cc-fs-2xs);
-  padding: 0 0.35rem;
-  line-height: 1.2;
-  height: auto;
-  min-height: 1.1rem;
-}
+.vis-head { text-align: center; }
 
 /* The rule per row, on the cells as well as the label: a grid row is not an element, so one border
    would stop at the label's edge. */
@@ -275,10 +259,30 @@ function cellSize(f: VisFrame): number {
 .vis-label.is-uniform { color: var(--cc-warn); }
 
 .vis-cell { gap: 0.3rem; }
-/* The one row that is a band rather than a line — see the header. Centred, because a grid has no
-   baseline to sit on the way an inline shape does. */
-.vis-cell-grid { justify-content: center; gap: 0.35rem; padding: 0.3rem 0; }
+/* The one row that is a band rather than a line — see the header. Stacks vertically so the
+   optional CTA (used by the drift figure's `ask3d` column) sits UNDER the placeholder image.
+   TOP-aligned on the main axis: a CTA in column 4 grows that cell taller and stretches the whole
+   row; the other columns must keep their image at the top of the row rather than drifting down to
+   centre against the taller neighbour. */
+.vis-cell-grid {
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0;
+}
 .vis-grid-svg { flex: 0 0 auto; }
+/* The chip: match the button micro size but drop the eyebrow-ish tracking. Kept narrow because the
+   grid cell owns ~90px in the drift figure's 4-column layout. */
+.vis-cell-cta {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--cc-fs-2xs);
+  padding: 0 0.35rem;
+  line-height: 1.2;
+  height: auto;
+  min-height: 1.1rem;
+}
 .vis-svg { flex: 0 0 auto; overflow: visible; }
 .vis-num { font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 /* The engine-facing number, subordinate to the one that matches the label. */
