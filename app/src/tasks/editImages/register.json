@@ -8,7 +8,7 @@
   "scope": "set",
   "outputValueName": "registered",
   "comingSoon": true,
-  "comingSoonNote": "Awaiting a dataset — see Call for Datasets",
+  "comingSoonNote": "Call for Datasets",
   "params": [
     {
       "key": "regChannel",
