@@ -64,6 +64,26 @@ DRIFT_DEFAULT_SMOOTHNESS = 0.5
 # rather than by the frame itself. See docs/todo/DRIFT_RIGID_PLAN.md Decision 6.
 DRIFT_DEFAULT_MAX_ANGLE = 5.0
 
+# Post-solve gaussian smoothing on the cumulative trajectory (per axis). 0 = off.
+# The writer places frames at integer pixels (`drift_correct_im` rounds
+# `cumsum(shifts)`), so a trajectory with sub-pixel noise around a small true
+# drift produces per-frame integer-pixel *jumps* in the corrected movie —
+# visible as jitter on `zolIMa/2h06xA`, where the underlying sample barely
+# moves (~1 px peak-to-peak) but the estimator's own noise floor produces 107
+# integer transitions across 181 frames. Smoothing the *positions* (not the
+# deltas: a per-delta threshold amplifies drift when noise partially cancels
+# real deltas, verified in the same audit) at σ=6 collapses that to 11
+# transitions on 2h06xA, and is nearly transparent on movies with real motion
+# — on `d5vw7z/ttRMjQ` (peak drift 168 px, real ~2 px/frame) it changes the
+# peak by 3% and reduces transitions by 1%.
+#
+# API default is 0 so direct callers keep the strict "recover the input drift"
+# contract that the estimator tests pin. The task-runner default is set in the
+# task's params JSON so GUI runs get the fix without every unit test having to
+# opt out.
+DRIFT_DEFAULT_SMOOTH_SIGMA = 0.0
+DRIFT_TASK_SMOOTH_SIGMA = 6.0
+
 DriftEstimate = collections.namedtuple('DriftEstimate', [
     'shifts',        # (T-1, D) per-frame deltas — what the writer applies. The historic return value.
     'positions',     # (T, D) absolute position of each frame, positions[0] == 0
@@ -231,11 +251,34 @@ def drift_residuals(pairs, positions):
     return np.linalg.norm(A @ positions - b, axis=1)
 
 
+def _smooth_positions(positions, sigma):
+    """Post-solve gaussian smoothing on the cumulative trajectory, per axis.
+
+    Runs on `positions`, not on the deltas: a per-delta deadzone or threshold
+    can *amplify* the cumulative drift when small noise deltas partially
+    cancel real spikes (measured on `zolIMa/2h06xA` Z — 6 real spikes of
+    −0.8 px with a bath of ±0.1 noise gave cumulative −2 px raw vs cumulative
+    −5 px after a τ=0.5 delta deadzone). Filtering the cumulative trajectory
+    with a symmetric kernel commutes with the writer's rounding in a
+    predictable way and has the property we want: it collapses to zero when
+    the trajectory is dominated by noise, and is nearly transparent when it
+    is dominated by real motion — no per-movie tuning."""
+    if sigma <= 0:
+        return positions
+    out = positions.astype(np.float64, copy=True)
+    for j in range(out.shape[1]):
+        out[:, j] = scipy.ndimage.gaussian_filter1d(
+            out[:, j], sigma=sigma, mode="nearest")
+    return out
+
+
 def estimate_drift(image_array, phase_shift_channel, dim_utils,
                    upsample_factor=100, normalisation=None,
                    estimator='multiLag', max_lag=DRIFT_DEFAULT_MAX_LAG,
                    max_angle_deg=DRIFT_DEFAULT_MAX_ANGLE,
-                   smoothness=DRIFT_DEFAULT_SMOOTHNESS, robust=True,
+                   smoothness=DRIFT_DEFAULT_SMOOTHNESS,
+                   trajectory_smooth_sigma=DRIFT_DEFAULT_SMOOTH_SIGMA,
+                   robust=True,
                    time_idx=None, channel_idx=None, on_progress=None):
     """Per-frame drift of ``image_array`` on ``phase_shift_channel``, as a `DriftEstimate`.
 
@@ -274,6 +317,10 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
             image_array, phase_shift_channel, dim_utils, n_t,
             max_angle_deg=max_angle_deg,
             time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+        # Same jitter mechanism as the translation path — direct-to-t=0 fits still float around a
+        # sub-pixel noise floor and the writer still rounds. Smooth positions only; angles keep
+        # their own contract (a cap-and-interpolate policy, not a low-pass one).
+        positions = _smooth_positions(positions, trajectory_smooth_sigma)
         n_dim = positions.shape[1]
         return DriftEstimate(
             shifts=np.diff(positions, axis=0) if n_t > 1 else np.zeros((0, n_dim)),
@@ -306,8 +353,17 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
         positions, weights = _solve_drift_trajectory(
             pairs, n_t, n_dim, smoothness=smoothness, robust=robust)
 
-    # Only meaningful with overlapping measurements to compare — see the field comment above.
+    # The `smoothness` prior above pulls the trajectory toward its own second
+    # difference, which is not enough when the true drift is at or below the
+    # PC noise floor (2h06xA: 107 integer-pixel writer transitions across
+    # 181 frames from a ~1 px peak-to-peak trajectory). A wider low-pass on
+    # the cumulative trajectory has the property we want: it goes to zero
+    # when the trajectory is dominated by noise and is nearly transparent
+    # when it is dominated by real motion, without a per-movie threshold.
+    # Residuals are computed on the *unsmoothed* solution so the QC metric
+    # still measures the estimator's self-consistency, not the smoother's.
     res = drift_residuals(pairs, positions) if lag > 1 else np.zeros(0)
+    positions = _smooth_positions(positions, trajectory_smooth_sigma)
     rejected = weights < 0.5
     # A frame nothing survived for is placed where its neighbours say it should be — flagged so a
     # reader of the QC sidecar knows that position was predicted rather than measured.

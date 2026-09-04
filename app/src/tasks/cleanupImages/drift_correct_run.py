@@ -13,6 +13,9 @@ Parameter contract (JSON written by Julia):
   driftEstimator     - "multiLag" | "chain" | "sitkRigid"  (see correction_utils.estimate_drift)
   driftMaxLag        - int, how far apart two frames may be and still be compared (multiLag only)
   driftMaxAngle      - float, degrees; per-frame |angle| cap (sitkRigid only)
+  driftSmoothSigma   - float, gaussian sigma (frames) on the cumulative trajectory. Kills
+                       integer-rounding jitter from sub-pixel-noise trajectories without
+                       significantly changing real motion. 0 = off. Default: DRIFT_TASK_SMOOTH_SIGMA.
 
 Skimage's phase_cross_correlation `normalization` param is left at its default (None) — the old
 `driftNormalisation` GUI knob (none | phase) never materially changed the estimate on the movies
@@ -38,6 +41,8 @@ def run(params):
     estimator          = params.get('driftEstimator', 'multiLag')
     max_lag            = int(params.get('driftMaxLag', correction_utils.DRIFT_DEFAULT_MAX_LAG))
     max_angle_deg      = float(params.get('driftMaxAngle', correction_utils.DRIFT_DEFAULT_MAX_ANGLE))
+    smooth_sigma       = float(params.get('driftSmoothSigma',
+                                          correction_utils.DRIFT_TASK_SMOOTH_SIGMA))
 
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
@@ -54,7 +59,8 @@ def run(params):
     _est_extra = (f' (max lag {max_lag})' if estimator == 'multiLag'
                   else f' (max angle {max_angle_deg}°)' if estimator == 'sitkRigid'
                   else '')
-    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}')
+    _smooth_extra = f', trajectory σ={smooth_sigma}' if smooth_sigma > 0 else ', no trajectory smoothing'
+    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}{_smooth_extra}')
 
     # One progress scale across the whole run rather than a 4-step one, because both loops below
     # are minutes long on a real movie and the old scale stood still through each of them:
@@ -68,6 +74,7 @@ def run(params):
         im_dat[0], drift_channel, dim_utils,
         estimator=estimator, max_lag=max_lag,
         max_angle_deg=max_angle_deg,
+        trajectory_smooth_sigma=smooth_sigma,
         on_progress=lambda n, _t: log.progress(n, total),
     )
     shifts = est.shifts
@@ -161,6 +168,7 @@ def run(params):
             'shifts':       [[float(v) for v in row] for row in shifts],
             'estimator':    est.estimator,
             'maxLag':       int(est.max_lag),
+            'smoothSigma':  smooth_sigma,
             'nPairs':       int(est.n_pairs),
             'nRejected':    int(est.n_rejected),
             'interpolated': [int(t) for t in est.interpolated],
