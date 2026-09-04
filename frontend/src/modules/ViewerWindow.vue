@@ -69,6 +69,7 @@ import { CHANNEL_COLORMAP_OPTIONS } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
+import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels,
@@ -155,6 +156,17 @@ const stableAdapterReport = ref<AdapterReport | null>(null)
  * so the create branch runs whenever the desired kind isn't already live.
  */
 const currentRendererKind = ref<'brick' | 'flat' | 'tile' | null>(null)
+/** Session OOM-fallback flags — bidirectional AND mode-scoped. When the FLAT (or TILE) renderer
+ *  surfaces an OOM under mode `m`, `bricksForcedByOom` holds that `m`; the fallback then only
+ *  applies while `mode.value === m`. Scoping matters: 3D flat legitimately OOMs on a big volume
+ *  (that is what `shouldUseBricks` exists to catch), but 2D flat on the SAME image fits in the
+ *  cache and must not be short-circuited by a stale 3D failure (Dominik, 2026-09-04 on 2h06xA:
+ *  3D toggle was on, flat OOM'd on the 3D attempt, the auto swap to 2D then found the flag still
+ *  forcing bricks and never re-consulted `shouldUseBricks`). Same treatment for `flatForcedByOom`
+ *  — a brick-atlas OOM in 3D says nothing about a brick attempt in 2D. Not persisted (recovery,
+ *  not preference) and cleared on Reload / Try again. `null` = no failure recorded. */
+const bricksForcedByOom = ref<'plane' | 'volume' | null>(null)
+const flatForcedByOom = ref<'plane' | 'volume' | null>(null)
 /** Reactive on `meta`, `settings.viewerBricksMode`, `mode` (2D/3D) AND `effectiveCacheBytes`
  *  (which folds in `settings.viewerCacheMB`). Auto flips the renderer when the per-view working
  *  set crosses the RUNTIME cache budget — a Dml3RG-shape store bricks in 3D and stays flat in
@@ -166,8 +178,22 @@ const bricksEnabled = computed<boolean>(() => {
   if (bricksOverride === '1') return true
   if (bricksOverride === '0') return false
   const bmode = settings.viewerBricksMode
+  // Explicit user setting wins over the fallback flag — if the user has manually picked Brick or
+  // Flat, honour it. The fallback only steers the Auto path so a session that OOM'd once does
+  // not silently ignore a manual override (Dominik, 2026-09-04: locking the flag above the user
+  // setting made the chip look broken).
   if (bmode === 'brick') return true
   if (bmode === 'flat') return false
+  // Auto path: apply the fallback only WITHIN the mode it fired under. `shouldUseBricks` picks
+  // the right renderer per mode from scratch on a mode change (3D → bricks for anything big, 2D
+  // → flat for anything that fits), and a mode-scoped flag lets that decision run fresh.
+  // Nullness gate is load-bearing: `mode` is declared LATER in the setup, so touching `mode.value`
+  // during the initial `watch(bricksEnabled)` dep-collect throws a TDZ ReferenceError. When both
+  // flags are null (the setup-time state), we cannot possibly be forcing anything anyway.
+  const brf = bricksForcedByOom.value
+  const flf = flatForcedByOom.value
+  if (brf !== null && brf === mode.value) return true
+  if (flf !== null && flf === mode.value) return false
   const m = meta.value
   if (m === null) return false
   // Runtime budget when the adapter is up (folds in `settings.viewerCacheMB`); the static floor
@@ -761,6 +787,17 @@ watch(bricksEnabled, () => {
   if (meta.value === null) return
   reallocate()
 })
+// Self-healing for the OOM-fallback flags. During a two-way oscillation at startup (auto pick →
+// brick atlas OOM → force flat → flat uploadFrame OOM → force brick → brick atlas SUCCEEDS this
+// time because the flat teardown freed memory) both flags flip and would keep steering Auto away
+// from a renderer that has since proven itself. On the first frame land, clear the flag whose
+// failure claim is contradicted by observed success — the OTHER renderer's last-known state
+// stays recorded, so Auto still avoids it. Cheap: writing an already-null ref is a no-op.
+watch(shownT, v => {
+  if (v < 0) return
+  if (currentRendererKind.value === 'brick') flatForcedByOom.value = null
+  else if (currentRendererKind.value === 'flat') bricksForcedByOom.value = null
+})
 // Cache size change → full reallocate (atlas / timepoint textures resize). Keep the renderer
 // instance — only `setImage` needs to re-run at the new byte budget; the eviction/growth path is
 // what `setImage` was written to do. Skips URL-override case since that's frozen at mount.
@@ -1035,7 +1072,9 @@ const PROJECTIONS = [
 ]
 /** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
  *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
- *  than "Auto-select/Force brick/Force flat" in a segmented control. */
+ *  than "Auto-select/Force brick/Force flat" in a segmented control. All three chips stay
+ *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
+ *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
 const BRICKS_MODES = [
   { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
@@ -1780,6 +1819,17 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     const ok = await fetchTimepoint(u)
     syncCacheState()
     if (!ok || !isCurrent()) return
+    // Symptom-based OOM guard for the FLAT path only. Flat's `uploadFrame` catches VRAM OOMs
+    // INSIDE its own error scope: on failure it silently returns without adding a slot, and the
+    // promise resolves truthy — `hasTimepoint(u)` is the only reliable "did the upload actually
+    // land" signal. Gated on `currentRendererKind === 'flat'` because brick's `hasTimepoint`
+    // returns false during normal LOD paging (bricks arrive per-view, not per-timepoint), which
+    // spuriously fired the flat-OOM fallback with a bricks renderer already active (Dominik,
+    // 2026-09-04: dismissed chip kept re-firing in bricks mode).
+    if (currentRendererKind.value === 'flat' && !r.hasTimepoint(u)) {
+      handleRendererError('flat', 'flat renderer out of memory: uploaded frame is not resident')
+      return
+    }
     // Only paints when the walk is still the current one, so a frame the user has already left cannot
     // land on the canvas; playback's own tick paints whatever became resident meanwhile.
     // No `shownT !== u` guard: after `r.setZPlane` bumps `planeVersion`, every slot is stale so
@@ -3015,6 +3065,45 @@ function resetView() {
 }
 
 /**
+ * Route a WebGPU error surfaced by a renderer's `onError` (BRICK atlas allocation, TILE atlas
+ * allocation) or its `setOnOom` (FLAT captured OOM in `uploadFrame`; the flat path swallows OOM
+ * inside its own error scope and would otherwise never notify — see volumeRenderer's setOnOom
+ * doc). Two things happen: the message lands in `error` (the bottom-left chip) and the console
+ * log, and — when `isViewerOom(msg)` — a bidirectional session-flag fallback fires:
+ *
+ *   flat OOM  → force bricks (bricks page LOD in and out under a bounded atlas budget, so they
+ *               can render an image whose flat working set does not fit in VRAM)
+ *   brick OOM → force flat  (the flat renderer sizes textures per-timepoint at the CURRENT
+ *               render level, so a coarser 2D plane view fits when a big-XY brick atlas will not)
+ *   tile OOM  → force bricks (tile is the whole-slide 2D path; bricks is the general fallback)
+ *
+ * If BOTH flags are already true this session, we've tried both renderers — leave the chip
+ * standing for the user to dismiss + lower cache MB. Reset in `start()`; a Try again re-arms.
+ * Reported (Dominik, 2026-09-04) on 2h06xA in 2D mode: `Brick atlas: vkAllocateMemory failed with
+ * VK_ERROR_OUT_OF_DEVICE_MEMORY`, canvas empty, manual toggle to the OTHER kind was the workaround.
+ */
+function handleRendererError(kind: 'flat' | 'brick' | 'tile', msg: string) {
+  error.value = 'GPU: ' + msg
+  vlog('error', kind === 'tile' ? 'Tile GPU error: ' + msg : 'GPU error: ' + msg)
+  if (!isViewerOom(msg)) return
+  // Only fire the swap once PER MODE — a repeat OOM in the same mode means we've already tried
+  // both renderers there. Cross-mode failures are independent (`bricksEnabled` scopes the flag).
+  const canForceBricks = (kind === 'flat' || kind === 'tile') && bricksForcedByOom.value !== mode.value
+  const canForceFlat = kind === 'brick' && flatForcedByOom.value !== mode.value
+  if (canForceBricks) {
+    bricksForcedByOom.value = mode.value
+    vlog('warn', 'Viewer: falling back to the brick renderer after an out-of-memory allocation')
+  } else if (canForceFlat) {
+    flatForcedByOom.value = mode.value
+    vlog('warn', 'Viewer: falling back to the flat renderer after an out-of-memory allocation')
+  } else return                               // both tried already in this mode — leave the chip
+  // Clear the chip on the way to the fallback — the reallocate the flag triggers will either
+  // succeed (canvas paints, chip stayed clear) or fail again (a fresh OOM repopulates the chip).
+  // Leaving the stale message under a working canvas was the reported bug.
+  error.value = ''
+}
+
+/**
  * Ensure the RIGHT renderer for the current mode+image is alive. The canvas has one WebGPU context,
  * so the two renderers are alternates — swapping mode destroys one before creating the other.
  *
@@ -3048,8 +3137,7 @@ async function ensureRenderer() {
     currentRendererKind.value = null
     if (desiredKind === 'tile') {
       const tr = await createTileRenderer(canvas.value!, msg => {
-        error.value = 'GPU: ' + msg
-        vlog('error', 'Tile GPU error: ' + msg)
+        handleRendererError('tile', msg)
       })
       tileRenderer.value = tr
       currentRendererKind.value = 'tile'
@@ -3076,9 +3164,9 @@ async function ensureRenderer() {
       // does. P5a's brick renderer is a magenta-clear proof-of-plumbing; the real shader lands
       // in P5b.
       const construct = desiredKind === 'brick' ? createBrickVolumeRenderer : createVolumeRenderer
+      const kindLabel: 'brick' | 'flat' = desiredKind
       const r = await construct(canvas.value!, msg => {
-        error.value = 'GPU: ' + msg
-        vlog('error', 'GPU error: ' + msg)
+        handleRendererError(kindLabel, msg)
       })
       renderer.value = r
       currentRendererKind.value = desiredKind
@@ -3091,6 +3179,11 @@ async function ensureRenderer() {
       // See `parseNumQuery` block at the top of the module for the param names.
       r.setSchedulerKnobs?.({ maxIntersect: effectiveMaxIntersect.value, bias: effectiveSchedulerBias.value })
       r.setHoldFinerEnabled?.(brickKnobHold)
+      // Flat-renderer OOM signal — the flat `uploadFrame` catches OOM in its OWN error scope and
+      // would otherwise never notify. The bidirectional fallback in `handleRendererError` reads
+      // this and swaps in the brick renderer. No-op on the brick renderer (its atlas OOM already
+      // surfaces via the `onError` closure above).
+      r.setOnOom?.(msg => handleRendererError(kindLabel, msg))
       // Brick renderer fetches asynchronously; a landed brick has to nudge the frame pump or
       // its bytes render one interaction late. Also refresh the residency snapshot — otherwise
       // the mini-map only updates on brick LAND (`setOnBrickLoaded`), and the "amber = fetching"
@@ -3657,6 +3750,11 @@ async function changeVersion(vn: string) {
 async function start() {
   heldAfterCrash.value = false
   error.value = ''
+  // Fresh attempt gets a fresh classification — Try again should not be locked into a fallback by
+  // an earlier OOM that may not repeat (a lingering allocation from a killed tab, another app
+  // freeing VRAM). Both fallback directions re-arm on the next OOM if it happens again.
+  bricksForcedByOom.value = null
+  flatForcedByOom.value = null
   try {
     starting.value = 'Checking the GPU'
     // ASKED BEFORE ANYTHING IS BUILT. `probeWebGpu` never throws — every failure is a report field —
@@ -3916,6 +4014,12 @@ onUnmounted(() => {
         <span>{{ error }}</span>
         <button v-if="lostDevice" class="cc-btn cc-btn-ghost cc-btn-micro vw-status-chip-btn"
                 @click="reload" v-tooltip.top="'Reopen the viewer'">Reload</button>
+        <!-- Dismiss X — the chip lingers after the underlying condition clears (e.g. a brick-atlas
+             OOM message stays after the user toggles bricks mode and the canvas renders anyway).
+             `error` is cleared unconditionally; nothing else depends on it. -->
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+                @click="error = ''" v-tooltip.top="'Dismiss'"
+                aria-label="Dismiss error"><i class="pi pi-times" /></button>
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
@@ -4912,6 +5016,8 @@ onUnmounted(() => {
 .vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
 .vw-status-chip-icon { font-size: 1em; }
 .vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
+.vw-status-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
+.vw-status-chip-dismiss:hover { opacity: 1; }
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
    translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
    navigation, not a select. */
