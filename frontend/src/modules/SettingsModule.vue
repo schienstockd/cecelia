@@ -289,7 +289,9 @@ function copyUid() {
 // ── Software updates ───────────────────────────────────────────────────────
 // State + actions live in the shared appControl store — the SAME source the header badge reads, so
 // there's one update check, not a per-surface re-implementation. Re-check when this panel opens.
+// A dev-channel flip re-checks against the OTHER stream so the button reflects it immediately.
 onMounted(() => appCtl.checkUpdate())
+watch(() => settings.preferDevChannel, v => appCtl.checkUpdate(v ? 'dev' : 'stable'))
 
 // ── Diagnostics + debug console ──────────────────────────────────────────────
 interface Diag {
@@ -666,7 +668,7 @@ async function switchWt(path: string) {
           <button
             class="save-btn"
             :disabled="appCtl.updateChecking"
-            @click="appCtl.checkUpdate"
+            @click="() => appCtl.checkUpdate(settings.preferDevChannel ? 'dev' : 'stable')"
             v-tooltip.right="'Check GitHub for a newer release'"
           >
             <i :class="['pi', appCtl.updateChecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
@@ -676,6 +678,13 @@ async function switchWt(path: string) {
         <span v-if="!appCtl.updateAvailable && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">
           You're on the latest version.
         </span>
+      </div>
+
+      <!-- Dev channel: track main HEAD rather than the newest release. Builds the frontend locally
+           on apply, so needs Node.js — same requirement as the install-time dev channel. -->
+      <div class="field">
+        <CcToggle class="toggle-row" v-model="settings.preferDevChannel" label="Track main (dev builds)"
+          v-tooltip.bottom="'Track main HEAD instead of tagged releases; source build, needs Node.js'" />
       </div>
 
       <!-- per-user install: in-app update -->
@@ -696,6 +705,20 @@ async function switchWt(path: string) {
         {{ appCtl.updateLatest }} is available. This is a shared installation — updates must be run by
         an administrator (re-run the install-system script).
       </span>
+
+      <!-- Revert to the previous release. Kept as a bare button next to the Update button rather
+           than a ConfirmButton: the actual overwrite happens on the NEXT restart, not on click. -->
+      <div v-if="appCtl.updateHasPrevious && appCtl.canApplyUpdate" class="field">
+        <button
+          class="save-btn"
+          :disabled="appCtl.updateRevertBusy"
+          @click="appCtl.revertUpdate"
+          v-tooltip.right="'Roll back to the previous version on the next restart'"
+        >
+          <i :class="['pi', appCtl.updateRevertBusy ? 'pi-spin pi-spinner' : 'pi-undo']" />
+          {{ appCtl.updateRevertBusy ? 'Staging revert…' : 'Revert to previous version' }}
+        </button>
+      </div>
 
       <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
     </section>

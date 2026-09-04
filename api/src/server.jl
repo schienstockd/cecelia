@@ -350,6 +350,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/repl" => (req, body_bytes) -> (api_repl(body_bytes)),
     "/api/repl/config" => (req, body_bytes) -> (api_repl_config(body_bytes)),
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
+    "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
 )
 

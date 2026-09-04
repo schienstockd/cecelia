@@ -215,7 +215,7 @@ launcher.
 | `CECELIA_CHANNEL` | Source | Frontend | To update |
 |---|---|---|---|
 | `stable` (default) | newest tagged Release's `cecelia.tar.gz` | prebuilt (shipped in the bundle) | re-run installer / `pixi run update` / in-app Update |
-| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm install && npm run build`) | re-run installer (re-downloads current `main`) |
+| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm install && npm run build`) | re-run installer, OR flip Settings → Software → *Track main (dev builds)* and use the in-app Update button (same URL, same local build; needs Node) |
 
 > The dev-channel local build uses `npm install`, **not** `npm ci`: the rolldown native binding vite 8
 > bundles with is an *optional* dep, and npm can silently skip it on Windows/macOS (a non-fatal optional
@@ -256,12 +256,15 @@ root). This is the only structural difference between the two paths.
 | Path | Mechanism |
 |---|---|
 | Console | `pixi run update` → `pixi update` (refreshes deps within `pixi.toml` constraints, rewrites `pixi.lock`) |
-| In-app (planned) | A Vue "Update" control → `/api/update`; checks GitHub Releases for a newer version, then updates and prompts to restart |
+| In-app — stable | Settings → Software → *Update to vX.Y.Z*. `/api/update/check` picks the newest GitHub release; `/api/update/apply` downloads `cecelia.tar.gz`, verifies it against the published `.sha256`, and stages it. Launcher applies the staged bundle on the next restart. |
+| In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API; apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Needs Node.js on PATH. |
+| In-app — revert | Settings → Software → *Revert to previous version*. Each apply snapshots the files it's about to overwrite into `.previous-release/payload/`; revert stages a `.pending-revert` marker and the launcher moves them back on the next restart. Only ONE step of history is kept — a second apply discards the earlier snapshot. |
 
-The **in-app update needs the release infrastructure to exist first** (a versioned release stream to
-check against — see *Release repo* below). Until then, `pixi run update` is the supported path and
-the console fallback for technical users. `/api/update` + the Vue control are scaffolded against
-that future release stream, not a placeholder that silently bumps dependencies.
+**Safety model.** The running server NEVER overwrites its own files. Apply and revert both write a
+marker (`.pending-update` / `.pending-revert`) and stage a payload; the launcher (`app.py`) does the
+move BEFORE the server starts, when nothing is using the files. Apply is refused in a dev/git
+checkout (would clobber source) and refused for a `system` scope (admin-only — re-run the
+install-system script).
 
 **Release repo (planned cleanup phase):** updates and the installer will point at
 **`https://github.com/schienstockd/cecelia`** as the canonical home of the *new* (Julia + Vue +
