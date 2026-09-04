@@ -9169,9 +9169,13 @@ end
         # The picker asks this on every load, so the answer is cached on the gating + h5ad mtimes —
         # and a SAVED GATE EDIT has to invalidate it, or the rail keeps answering for the old tree.
         # Deleting /all/pos leaves /all as the deepest pop holding the tracks, so the set changes.
-        t0 = @elapsed tracked_pop_parents(img; value_name="B")
-        t1 = @elapsed tracked_pop_parents(img; value_name="B")
-        @test t1 <= max(t0, 0.001)                      # second ask is not a second gate evaluation
+        # Functional oracle over the wall-clock timing the previous shape used: a cache hit does
+        # not add a key. `@elapsed` on a sub-ms function on a shared macOS runner picked up JIT/GC
+        # jitter (4.7 ms > 1 ms floor) — a hard flake, since the cost this test asserts on already
+        # left the wall clock. The Dict-length check is the same assertion as "cache hit".
+        n_before = length(Cecelia._TRACKED_PARENTS_CACHE)
+        tracked_pop_parents(img; value_name="B")
+        @test length(Cecelia._TRACKED_PARENTS_CACHE) == n_before     # second ask hit, no new entry
         del_pop!(m, "/all/pos"); sleep(0.01); save_pop_map!(m, img)
         @test tracked_pop_parents(img; value_name="B") == Set(["/all"])
         rm(td; recursive=true)

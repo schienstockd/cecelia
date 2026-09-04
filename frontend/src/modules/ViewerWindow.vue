@@ -50,7 +50,8 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
-import { onViewerCacheClear, readViewerCacheClearRev } from '../lib/viewerCacheClearChannel'
+import { onViewerCacheClear, readViewerCacheClearRev,
+         viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
@@ -3905,15 +3906,6 @@ function onSelectModeTick(e: StorageEvent) {
   selectModeActive.value = readSelectMode()
 }
 
-// A task rewrote a label store on disk (e.g. segment, correction). If it's THIS window's mask, the
-// cached slabs are stale — force a reallocate. `labelName` didn't change, so its own watcher never
-// fires. Payload: `<imageUid>:<valueName>:<ts>`. Guards on both uid AND valueName so an unrelated
-// segmentation's task doesn't refetch this window's pixels.
-function onSlabsTick(e: StorageEvent) {
-  if (e.key !== 'cc.viewerSlabsTick' || !e.newValue) return
-  const [uid, vn] = e.newValue.split(':')
-  if (uid === imageUid && vn === labelName.value) reallocate()
-}
 // Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
 // toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
 // clicked. Sets `viewerImageUid` on mount so the panel + the popup viewer always agree on WHICH
@@ -3936,13 +3928,18 @@ let stopCacheClearWatch: (() => void) | null = null
 
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
-  window.addEventListener('storage', onSlabsTick)
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
-  stopCacheClearWatch = onViewerCacheClear((rev) => {
-    if (rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
-    cacheClearRev.value = rev
+  stopCacheClearWatch = onViewerCacheClear((ev) => {
+    if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
+    // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
+    // us. Was the whole reason the labels-only `cc.viewerSlabsTick` existed alongside the rev —
+    // that channel filtered, this one didn't. Same rule now, one channel.
+    if (!viewerCacheClearMatches(ev, {
+      imageUid, valueName: valueName.value, labelValueName: labelName.value,
+    })) return
+    cacheClearRev.value = ev.rev
     // Reallocate reads `cacheClearRev.value` fresh, so the new sourceId / rev flow through to the
     // tile atlas and the brick page table on this pass. `refit=false` keeps the camera put — the
     // point of this path is to swap pixels without yanking the view.
@@ -3953,7 +3950,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('storage', onOverlaysTick)
-  window.removeEventListener('storage', onSlabsTick)
   window.removeEventListener('storage', onSelectModeTick)
   window.removeEventListener('focus', publishViewerFocus)
   stopCacheClearWatch?.(); stopCacheClearWatch = null
