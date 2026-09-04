@@ -10,16 +10,16 @@ Parameter contract (JSON written by Julia):
   imPath             - absolute path to input .ome.zarr
   imCorrectionPath   - absolute path to write corrected .ome.zarr
   driftChannel       - int, 0-based channel index used as phase-correlation reference
+  driftNormalisation - "none" | "phase"  (passed to skimage phase_cross_correlation; multiLag/chain
+                       only — sitkRigid does not use PCC). Phase whitens the cross-power spectrum,
+                       which helps on low-SNR frames or large per-frame drift where the raw peak is
+                       too broad. Default `none` matches the pre-existing behaviour.
   driftEstimator     - "multiLag" | "chain" | "sitkRigid"  (see correction_utils.estimate_drift)
   driftMaxLag        - int, how far apart two frames may be and still be compared (multiLag only)
   driftMaxAngle      - float, degrees; per-frame |angle| cap (sitkRigid only)
   driftSmoothSigma   - float, gaussian sigma (frames) on the cumulative trajectory. Kills
                        integer-rounding jitter from sub-pixel-noise trajectories without
                        significantly changing real motion. 0 = off. Default: DRIFT_TASK_SMOOTH_SIGMA.
-
-Skimage's phase_cross_correlation `normalization` param is left at its default (None) — the old
-`driftNormalisation` GUI knob (none | phase) never materially changed the estimate on the movies
-this runs on and was a straight leak of a scikit-image argument into the form.
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -38,6 +38,8 @@ def run(params):
     im_correction_path = params['imCorrectionPath']
     drift_channel      = script_utils.channel_index(
         params.get('driftChannel'), 'driftChannel', 'drift_correct.jl')
+    normalisation_raw  = params.get('driftNormalisation', 'none')
+    normalisation      = normalisation_raw if normalisation_raw != 'none' else None
     estimator          = params.get('driftEstimator', 'multiLag')
     max_lag            = int(params.get('driftMaxLag', correction_utils.DRIFT_DEFAULT_MAX_LAG))
     max_angle_deg      = float(params.get('driftMaxAngle', correction_utils.DRIFT_DEFAULT_MAX_ANGLE))
@@ -60,7 +62,8 @@ def run(params):
                   else f' (max angle {max_angle_deg}°)' if estimator == 'sitkRigid'
                   else '')
     _smooth_extra = f', trajectory σ={smooth_sigma}' if smooth_sigma > 0 else ', no trajectory smoothing'
-    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}{_smooth_extra}')
+    _norm_extra = '' if estimator == 'sitkRigid' else f', normalisation: {normalisation_raw}'
+    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}{_norm_extra}{_smooth_extra}')
 
     # One progress scale across the whole run rather than a 4-step one, because both loops below
     # are minutes long on a real movie and the old scale stood still through each of them:
@@ -72,6 +75,7 @@ def run(params):
     log.log('>> estimate drift')
     est = correction_utils.estimate_drift(
         im_dat[0], drift_channel, dim_utils,
+        normalisation=normalisation,
         estimator=estimator, max_lag=max_lag,
         max_angle_deg=max_angle_deg,
         trajectory_smooth_sigma=smooth_sigma,
@@ -168,6 +172,7 @@ def run(params):
             'shifts':       [[float(v) for v in row] for row in shifts],
             'estimator':    est.estimator,
             'maxLag':       int(est.max_lag),
+            'normalisation': normalisation_raw,
             'smoothSigma':  smooth_sigma,
             'nPairs':       int(est.n_pairs),
             'nRejected':    int(est.n_rejected),
