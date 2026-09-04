@@ -21,6 +21,7 @@ import type { ParamDef } from './types'
 import type { VisColumns } from './paramVis'
 import type { Severity } from '../lib/severity'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
+import { driftFigure } from './driftVis'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
 export interface ParamFigureDef {
@@ -115,6 +116,27 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       headings: ['Input', 'Gaussian', 'Bilateral (VST)'],
       storageKey: 'smooth-spatial-figure',
       defaultW: 340, defaultH: 260,
+    }
+  },
+
+  /**
+   * Drift correction's estimator. Same construction as `smoothMethod`: a schematic drawn from the
+   * real algorithms at 24x24 — a rotating field, translation-only alignment, rigid alignment, and a
+   * static "on request" column for the deferred full 6-DOF 3D rigid (option A in
+   * `docs/todo/DRIFT_RIGID_PLAN.md` P5). The context is currently unused: the figure does not vary
+   * with the selected image or the max-lag/max-angle knob, because the property it shows is a
+   * property of the METHOD rather than of the movie.
+   */
+  driftEstimator: _ctx => {
+    const { vis, note } = driftFigure()
+    return {
+      vis,
+      note,
+      title: 'Estimator',
+      tip: 'Show what each estimator does to a rotating field',
+      headings: ['Input', 'Phase', 'Rigid', '3D full (ask)'],
+      storageKey: 'drift-estimator-figure',
+      defaultW: 380, defaultH: 260,
     }
   },
 }
