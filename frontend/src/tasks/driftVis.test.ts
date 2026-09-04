@@ -118,27 +118,60 @@ describe('rigidAlignedSequence vs phaseAlignedSequence', () => {
   })
 })
 
+const DEFAULT_INPUT = { maxLag: 3, maxAngleDeg: 5 }
+
 describe('driftVisColumns', () => {
   it('has the four columns the figure documents', () => {
-    const vis = driftVisColumns()
+    const vis = driftVisColumns(DEFAULT_INPUT)
     expect(vis.columns).toEqual([...DRIFT_VIS_COLUMNS])
-    expect(vis.rows.length).toBeGreaterThan(0)
-    // One row per estimator does not fit here — the sequence IS the comparison, one row wide over
-    // four columns. Same shape smoothVis uses.
+    // Three rows: the sequence + two param rows (corrects-for + per-frame cap). Same shape
+    // smoothVis uses (grid + window + cost) so the reader has a table under the pictures rather
+    // than pictures floating alone.
+    expect(vis.rows.length).toBe(3)
     const result = vis.rows.find(r => r.key === 'result')
     expect(result).toBeDefined()
     expect(result!.role).toBe('grid')
     expect(result!.cells.length).toBe(4)
+    // The parameter table is what makes this a legible comparison and not just four pictures.
+    expect(vis.rows.find(r => r.key === 'corrects')).toBeDefined()
+    expect(vis.rows.find(r => r.key === 'cap')).toBeDefined()
   })
 
-  it('the fourth column carries a placeholder still, not a fake fit', () => {
+  it('the fourth column carries a placeholder still with no text, not a fake fit', () => {
     // Column 4 is `sitkRigid3d` (option A). If it shows a MULTI-FRAME sequence, a reader would take
     // it for a real fit, and the note under the figure would look like a bug rather than a design
-    // decision. One frame is honest — the CTA lives in the note.
-    const vis = driftVisColumns()
+    // decision. One frame is honest — the CTA lives in the note. Cell TEXT is empty because it
+    // squishes in the narrow column (regression fix: 2026-09-04 — "on request" wrapped to three
+    // vertical fragments); the heading + note carry the ask instead.
+    const vis = driftVisColumns(DEFAULT_INPUT)
     const cell4 = vis.rows.find(r => r.key === 'result')!.cells[3]
     expect(cell4.frames?.length ?? 0).toBe(1)
-    expect(cell4.text).toBe('on request')
+    expect(cell4.text).toBe('')
+  })
+
+  it('the cap row reads the current form values, live', () => {
+    // Same live-update rule the smoothVis window count follows: tuning the number in the form
+    // updates the number under the picture, so the figure is a picture of the SETTINGS the user
+    // is looking at rather than a static default.
+    const vis = driftVisColumns({ maxLag: 5, maxAngleDeg: 7.5 })
+    const cap = vis.rows.find(r => r.key === 'cap')!
+    // input column is empty, then the two live values, then a dash for the placeholder.
+    expect(cap.cells[0].text).toBe('')
+    expect(cap.cells[1].text).toBe('lag 5')
+    expect(cap.cells[2].text).toBe('7.5°')
+    expect(cap.cells[3].text).toBe('—')
+  })
+
+  it('the corrects-for row names what each column ACTUALLY does', () => {
+    // Frames comparing four estimators are not self-explanatory — "rigid" reads clearly ONCE you
+    // know it fits rotation, but the schematic cannot say that without prose. This row is that
+    // prose, one line per column.
+    const vis = driftVisColumns(DEFAULT_INPUT)
+    const c = vis.rows.find(r => r.key === 'corrects')!.cells.map(cc => cc.text)
+    expect(c[0]).toBe('')
+    expect(c[1]).toContain('translation')
+    expect(c[2]).toContain('rotation')
+    expect(c[3]).toContain('tilt')
   })
 })
 
@@ -146,7 +179,7 @@ describe('driftFigure', () => {
   it('returns both a vis and a note that names the ask', () => {
     // The note is what makes the empty fourth column legible — if it does not mention the ask, the
     // column is a mystery, not a call to action.
-    const { vis, note } = driftFigure()
+    const { vis, note } = driftFigure(DEFAULT_INPUT)
     expect(vis.columns.length).toBe(4)
     expect(note.toLowerCase()).toContain('call for datasets')
   })

@@ -123,20 +123,24 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
    * Drift correction's estimator. Same construction as `smoothMethod`: a schematic drawn from the
    * real algorithms at 24x24 — a rotating field, translation-only alignment, rigid alignment, and a
    * static "on request" column for the deferred full 6-DOF 3D rigid (option A in
-   * `docs/todo/DRIFT_RIGID_PLAN.md` P5). The context is currently unused: the figure does not vary
-   * with the selected image or the max-lag/max-angle knob, because the property it shows is a
-   * property of the METHOD rather than of the movie.
+   * `docs/todo/DRIFT_RIGID_PLAN.md` P5).
+   *
+   * The `Per-frame cap` row reads the current form values, so tuning `driftMaxLag` /
+   * `driftMaxAngle` reflects in the figure the same way `smoothVis`' window count does.
    */
-  driftEstimator: _ctx => {
-    const { vis, note } = driftFigure()
+  driftEstimator: ctx => {
+    const { vis, note } = driftFigure({
+      maxLag:      num(ctx.values?.driftMaxLag, 3),
+      maxAngleDeg: num(ctx.values?.driftMaxAngle, 5),
+    })
     return {
       vis,
       note,
       title: 'Estimator',
       tip: 'Show what each estimator does to a rotating field',
-      headings: ['Input', 'Phase', 'Rigid', '3D full (ask)'],
+      headings: ['Input', 'Multi-lag', 'Rigid', '3D full'],
       storageKey: 'drift-estimator-figure',
-      defaultW: 380, defaultH: 260,
+      defaultW: 460, defaultH: 320,
     }
   },
 }

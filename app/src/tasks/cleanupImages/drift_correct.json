@@ -25,17 +25,6 @@
       "tip": "Channel used for phase cross-correlation to estimate per-timepoint drift"
     },
     {
-      "key": "driftNormalisation",
-      "label": "Drift normalisation",
-      "type": "select",
-      "default": "none",
-      "options": [
-        { "label": "None",  "value": "none" },
-        { "label": "Phase", "value": "phase" }
-      ],
-      "tip": "Normalisation of the phase cross-correlation"
-    },
-    {
       "key": "driftEstimator",
       "label": "Estimator",
       "type": "select",
@@ -46,7 +35,7 @@
         { "label": "Rigid (SimpleITK)", "value": "sitkRigid" }
       ],
       "figure": "driftEstimator",
-      "tip": "Phase estimators find translation only; rigid also fits in-plane rotation"
+      "tip": "Multi-lag and chain correct translation only; rigid also fits in-plane rotation"
     },
     {
       "key": "driftMaxLag",

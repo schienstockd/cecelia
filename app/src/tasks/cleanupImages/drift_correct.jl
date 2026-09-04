@@ -163,7 +163,6 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         (; imPath             = im_path,
            imCorrectionPath   = im_correction_path,
            driftChannel       = drift_channel_idx,
-           driftNormalisation = string(get(params, "driftNormalisation", "none")),
            driftEstimator     = estimator,
            driftMaxLag        = max_lag,
            driftMaxAngle      = max_angle_deg,

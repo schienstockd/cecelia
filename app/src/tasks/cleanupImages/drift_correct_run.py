@@ -10,10 +10,13 @@ Parameter contract (JSON written by Julia):
   imPath             - absolute path to input .ome.zarr
   imCorrectionPath   - absolute path to write corrected .ome.zarr
   driftChannel       - int, 0-based channel index used as phase-correlation reference
-  driftNormalisation - "phase" | "none"  (passed to skimage phase_cross_correlation)
   driftEstimator     - "multiLag" | "chain" | "sitkRigid"  (see correction_utils.estimate_drift)
   driftMaxLag        - int, how far apart two frames may be and still be compared (multiLag only)
   driftMaxAngle      - float, degrees; per-frame |angle| cap (sitkRigid only)
+
+Skimage's phase_cross_correlation `normalization` param is left at its default (None) — the old
+`driftNormalisation` GUI knob (none | phase) never materially changed the estimate on the movies
+this runs on and was a straight leak of a scikit-image argument into the form.
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -32,8 +35,6 @@ def run(params):
     im_correction_path = params['imCorrectionPath']
     drift_channel      = script_utils.channel_index(
         params.get('driftChannel'), 'driftChannel', 'drift_correct.jl')
-    normalisation_raw  = params.get('driftNormalisation', 'none')
-    normalisation      = normalisation_raw if normalisation_raw != 'none' else None
     estimator          = params.get('driftEstimator', 'multiLag')
     max_lag            = int(params.get('driftMaxLag', correction_utils.DRIFT_DEFAULT_MAX_LAG))
     max_angle_deg      = float(params.get('driftMaxAngle', correction_utils.DRIFT_DEFAULT_MAX_ANGLE))
@@ -53,8 +54,7 @@ def run(params):
     _est_extra = (f' (max lag {max_lag})' if estimator == 'multiLag'
                   else f' (max angle {max_angle_deg}°)' if estimator == 'sitkRigid'
                   else '')
-    log.log(f'>> drift channel: {drift_channel}, normalisation: {normalisation_raw}, '
-            f'estimator: {estimator}{_est_extra}')
+    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}')
 
     # One progress scale across the whole run rather than a 4-step one, because both loops below
     # are minutes long on a real movie and the old scale stood still through each of them:
@@ -66,7 +66,7 @@ def run(params):
     log.log('>> estimate drift')
     est = correction_utils.estimate_drift(
         im_dat[0], drift_channel, dim_utils,
-        normalisation=normalisation, estimator=estimator, max_lag=max_lag,
+        estimator=estimator, max_lag=max_lag,
         max_angle_deg=max_angle_deg,
         on_progress=lambda n, _t: log.progress(n, total),
     )

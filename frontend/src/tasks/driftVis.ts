@@ -8,6 +8,12 @@
  * honest picture of that is the field rotating. Hence a `grid` row with frames, exactly the same
  * construction `smoothVis` uses to compare median vs gated.
  *
+ * **`multiLag` is the ambassador for the two translation-only options.** `chain` produces the same
+ * shift-only correction against a rotating movie at 24x24 — the two differ in how pair measurements
+ * are combined (chain integrates, multi-lag solves), which is invisible in the SCHEMATIC. Showing
+ * both would waste a column on a redundant picture; the `chain` case is still available in the
+ * dropdown for backward-compatibility with banked trajectories.
+ *
  * **The sequence is a schematic, not the user's data.** Generated deterministically at 24x24: reading
  * real frames would mean fetching planes and re-deriving the whole streaming pipeline in the browser
  * to show a thumbnail of it. What the figure claims is a property of the METHOD — that phase
@@ -281,22 +287,61 @@ function cell(text: string, frames?: VisFrame[]): VisCell {
   return { value: 0, px: null, r: 0, at: 0, text, pxText: '', frames }
 }
 
-/** The columns the figure knows about. Matches the JSON estimator options in RUN order (multiLag /
- *  chain fall under `phase`; sitkRigid is `rigid`; the deferred sitkRigid3d is `ask3d`). */
-export const DRIFT_VIS_COLUMNS = ['input', 'phase', 'rigid', 'ask3d'] as const
+/** The columns the figure knows about. Matches the dropdown options `multiLag` / `chain` /
+ *  `sitkRigid` — `chain` shares a visual with `multiLag` at 24x24 so one column represents both
+ *  (see the header). `ask3d` is the deferred full 6-DOF 3D rigid, always a placeholder. */
+export const DRIFT_VIS_COLUMNS = ['input', 'multiLag', 'rigid', 'ask3d'] as const
+
+/** How each estimator is described in the "Corrects for" row — static prose, one line per column. */
+const CORRECTS_FOR: Record<typeof DRIFT_VIS_COLUMNS[number], string> = {
+  input:    '',
+  multiLag: 'translation',
+  rigid:    'translation + in-plane rotation',
+  ask3d:    'translation + rotation + tilt',
+}
 
 /**
- * Build the figure's columns. One row: the sequence, four columns. A second row could carry the
- * cost of each estimator, but the cost row for `sitkRigid` on real data is dominated by the SimpleITK
- * fit and not measurable from a 24x24 schematic — the plan defers the cost tip to a per-machine
- * measurement (P5), so this row would be a guess rather than a number.
+ * The "Cap" row's per-column value. Multi-lag pulls the current form value (like `smoothVis`'
+ * window count); rigid pulls the current max-angle. Ask3d has no cap because it does not exist.
+ * Input has no cap either — it is the source, not an estimator.
  */
-export function driftVisColumns(): VisColumns {
+function capText(col: typeof DRIFT_VIS_COLUMNS[number],
+                 maxLag: number, maxAngleDeg: number): string {
+  if (col === 'multiLag') return `lag ${Math.max(1, Math.round(maxLag))}`
+  if (col === 'rigid')    return `${Number.isInteger(maxAngleDeg) ? maxAngleDeg : maxAngleDeg.toFixed(1)}°`
+  if (col === 'ask3d')    return '—'
+  return ''
+}
+
+export interface DriftVisInput {
+  /** `driftMaxLag` from the form — appears in the multi-lag column's cap cell */
+  maxLag: number
+  /** `driftMaxAngle` (degrees) from the form — appears in the rigid column's cap cell */
+  maxAngleDeg: number
+}
+
+/**
+ * Build the figure's columns. Grid row + a small parameter table underneath: what each estimator
+ * corrects for and the per-frame cap value at the current settings. Same shape `smoothVis` uses
+ * (grid → window → cost). No cost row here: `sitkRigid`'s wall-clock cost is measured only through
+ * a real run and lands in the P5 nice-to-have, not this schematic.
+ */
+export function driftVisColumns(inp: DriftVisInput): VisColumns {
   const { frames: input } = rotatingScene()
-  const phase = phaseAlignedSequence(input)
+  const shift = phaseAlignedSequence(input)
   const rigid = rigidAlignedSequence(input)
-  const [inputN, phaseN, rigidN] = normalise(input, phase, rigid)
+  const [inputN, shiftN, rigidN] = normalise(input, shift, rigid)
   const askN = [askPlaceholderFrame()]                                  // a still, not a sequence
+
+  const gridCells: VisCell[] = [
+    cell('', inputN),
+    cell('', shiftN),
+    cell('', rigidN),
+    cell('', askN),                     // no text in the cell — the heading + note carry the ask
+  ]
+  const correctsCells: VisCell[] = [...DRIFT_VIS_COLUMNS].map(col => cell(CORRECTS_FOR[col]))
+  const capCells: VisCell[] = [...DRIFT_VIS_COLUMNS].map(col =>
+    cell(capText(col, inp.maxLag, inp.maxAngleDeg)))
 
   const rows: VisRow[] = [
     {
@@ -306,8 +351,10 @@ export function driftVisColumns(): VisColumns {
       // `uniform` marks a row that reads the SAME across every column — in `paramVis` that is the
       // failure state for a two-pass config. Here the sequences DIFFER by design, so it stays false.
       uniform: false,
-      cells: [cell('', inputN), cell('', phaseN), cell('', rigidN), cell('on request', askN)],
+      cells: gridCells,
     },
+    { key: 'corrects', label: 'Corrects for', role: 'text', uniform: false, cells: correctsCells },
+    { key: 'cap',      label: 'Per-frame cap', role: 'text', uniform: false, cells: capCells },
   ]
   return { columns: [...DRIFT_VIS_COLUMNS], rows, pxSize: null, uniformKeys: [] }
 }
@@ -316,11 +363,11 @@ export function driftVisColumns(): VisColumns {
  *  the schematic exaggerates rotation so it has to. Matches `smoothVis`' rule: the figure draws the
  *  conclusion, the note names it out loud. */
 export function driftVerdict(): string {
-  return 'Phase correlation aligns the centre but not the pose; rigid locks both. '
+  return 'Multi-lag / chain correct the centre; rigid also locks the pose. '
        + 'Full 3D rigid (X + Y tilting) is on request — see Call for Datasets.'
 }
 
 /** The figure and the line under it — what a consumer mounts. */
-export function driftFigure(): { vis: VisColumns; note: string } {
-  return { vis: driftVisColumns(), note: driftVerdict() }
+export function driftFigure(inp: DriftVisInput): { vis: VisColumns; note: string } {
+  return { vis: driftVisColumns(inp), note: driftVerdict() }
 }
