@@ -1494,11 +1494,15 @@ function api_images_register(body_bytes::Vector{UInt8})
     end
     project_uid = String(get(body, :projectUid, ""))
     set_uid     = String(get(body, :setUid, ""))
-    filepaths   = [String(p) for p in get(body, :filepaths, [])]
+    # `filepaths` is either a list of strings (each path = one image, no series pick — the classic
+    # single-series case) OR a list of objects `{path, series?, name?}` (series-picker output, one
+    # entry per (file, series)). Both shapes go through the same loop; a `series` field lands in
+    # `meta.ori_series` and the importImages.omezarr task threads it into `bioformats2raw --series N`.
+    raw_records = get(body, :filepaths, [])
 
-    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
-    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
-    isempty(filepaths)   && return 400, JSON3.write((; error="filepaths required"))
+    isempty(project_uid)   && return 400, JSON3.write((; error="projectUid required"))
+    isempty(set_uid)       && return 400, JSON3.write((; error="setUid required"))
+    isempty(raw_records)   && return 400, JSON3.write((; error="filepaths required"))
 
     proj_dir      = joinpath(projects_dir(), project_uid)
     set_meta_file = state_file(proj_dir, set_uid)
@@ -1511,20 +1515,41 @@ function api_images_register(body_bytes::Vector{UInt8})
     s = proj._sets[set_]
 
     registered = Dict{String,Any}[]
-    for filepath in filepaths
+    for rec in raw_records
+        filepath, series, name_override = if rec isa AbstractString || rec isa AbstractDict
+            if rec isa AbstractString
+                (String(rec), nothing, nothing)
+            else
+                p  = String(get(rec, :path, get(rec, "path", "")))
+                si = get(rec, :series, get(rec, "series", nothing))
+                nm = get(rec, :name,   get(rec, "name",   nothing))
+                (p,
+                 isnothing(si) ? nothing : Int(si),
+                 (isnothing(nm) || isempty(String(nm))) ? nothing : String(nm))
+            end
+        else
+            @warn "Skipping unrecognised filepath record" record=rec
+            continue
+        end
+        isempty(filepath) && continue
+
         abs_path = isabspath(filepath) ? filepath : joinpath(FS_ROOT, filepath)
         isfile(abs_path) || begin; @warn "Skipping missing file" path=abs_path; continue; end
 
+        meta = Dict{String,Any}("ori_path" => abs_path)
+        isnothing(series) || (meta["ori_series"] = series)
+        base_name = isnothing(name_override) ? splitext(basename(abs_path))[1] : name_override
+
         # No task subdirs are created here — each one is made by whoever writes into it (see
         # docs/OBJECTMODEL.md → Disk layout), so an image folder holds only what has actually run.
-        img = add_image!(s; name=splitext(basename(abs_path))[1],
-                         meta=Dict{String,Any}("ori_path" => abs_path))
+        img = add_image!(s; name=base_name, meta=meta)
 
         push!(registered, Dict{String,Any}(
             "uid"       => img.uid,
             "name"      => img.name,
             "status"    => "pending",
             "filepath"  => abs_path,            # SOURCE path, for display only (not the converted zarr)
+            "oriSeries" => something(series, nothing),
             # No versioned `filepaths` yet — the OME-ZARR doesn't exist until the import task converts it.
             # (Faking `{default: …}` here made a pending row look "imported" — see isImported / the crop
             # + open gates. The conversion task writes the real versioned filepath.)
@@ -1534,6 +1559,39 @@ function api_images_register(body_bytes::Vector{UInt8})
 
     @info "Registered images" count=length(registered) set=set_uid
     200, JSON3.write((; images=registered))
+end
+
+# POST /api/import/series/probe {filepath, maxPx?} → enumerate the series of a multi-series microscopy
+# file (currently .lif via readlif; other formats fall through with format="unsupported"). Runs the
+# Python probe via run_py; no image is registered here — the wizard shows the picker and only then
+# calls /api/images/register with the chosen (path, series) pairs. See probe_series_run.py.
+function api_import_series_probe(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body")) end
+    fp = String(get(body, :filepath, ""))
+    isempty(fp) && return 400, JSON3.write((; error="filepath required"))
+    abs_path = isabspath(fp) ? fp : joinpath(FS_ROOT, fp)
+    isfile(abs_path) || return 404, JSON3.write((; error="File not found: $abs_path"))
+    max_px = Int(get(body, :maxPx, 128))
+
+    run_dir     = mktempdir()
+    result_file = joinpath(run_dir, "probe.result.json")
+    params = Dict{String,Any}("imPath" => abs_path, "resultPath" => result_file, "maxPx" => max_px)
+    logs = String[]
+    ok = try
+        Cecelia.run_py("tasks/importImages/probe_series_run.py", params, run_dir; on_log = l -> push!(logs, l))
+    catch e
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="probe failed: $(sprint(showerror, e))"))
+    end
+    if !(ok && isfile(result_file))
+        tail = isempty(logs) ? "no output" : join(last(logs, 8), " | ")
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="Series probe failed: $tail"))
+    end
+    payload = read(result_file, String)
+    rm(run_dir; recursive=true, force=true)
+    200, payload
 end
 
 # POST /api/import/scan-legacy {sourceProjectDir, rscript?, imageUids?} → read-only preview manifest
