@@ -277,6 +277,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/register" => (req, body_bytes) -> (api_images_register(body_bytes)),
     "/api/import/scan-legacy" => (req, body_bytes) -> (api_import_scan_legacy(body_bytes)),
     "/api/import/register-legacy" => (req, body_bytes) -> (api_import_register_legacy(body_bytes)),
+    "/api/import/series/probe" => (req, body_bytes) -> (api_import_series_probe(body_bytes)),
     "/api/images/delete" => (req, body_bytes) -> (api_images_delete(body_bytes)),
     "/api/images/move" => (req, body_bytes) -> (api_images_move(body_bytes)),
     "/api/images/version/remove" => (req, body_bytes) -> (api_images_version_remove(body_bytes)),

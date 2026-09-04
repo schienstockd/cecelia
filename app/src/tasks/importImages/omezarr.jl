@@ -103,6 +103,41 @@ function series_base(zarr_path::AbstractString)::String
 end
 
 """
+Which subdir of a bf2raw output actually carries the multiscales, when the caller can't assume it is
+`0/`. `bioformats2raw --series N` PRESERVES the source index in the output group name (`<zarr>/N/`),
+so a series-picked import writes to `<zarr>/3/`, not `<zarr>/0/` — `series_base` alone would miss it
+because it only looks under `0/`. Returns `""` when multiscales lives at the flat root (crop and
+correction outputs), `"N"` when a numbered subdir holds them; `nothing` when neither does. If
+`prefer` is given (the series index the caller asked bf2raw for), that subdir is checked first so a
+same-name collision on `0/` never masks the requested pick.
+
+Read-only; the caller decides what to do with the result (typically: store it as the relative
+filepath for the next `series_base` to resolve through the flat-store branch).
+"""
+function bf2raw_series_subdir(zarr_out::AbstractString; prefer::Union{Int,Nothing} = nothing)::Union{String,Nothing}
+    isdir(zarr_out) || return nothing
+    # flat root wins when it carries multiscales — that's how derived stores (crop/correction) look
+    root_ms = ngff_multiscales(zarr_out)
+    (isnothing(root_ms) || isempty(root_ms)) || return ""
+    candidates = String[]
+    if !isnothing(prefer)
+        push!(candidates, string(prefer))
+    end
+    for entry in readdir(zarr_out)
+        entry in candidates && continue
+        all(isdigit, entry) && push!(candidates, entry)
+    end
+    for name in candidates
+        d = joinpath(zarr_out, name)
+        isdir(d) || continue
+        ms = ngff_multiscales(d)
+        (isnothing(ms) || isempty(ms)) && continue
+        return name
+    end
+    nothing
+end
+
+"""
 NGFF attributes of a zarr GROUP directory, for **either** zarr format. `nothing` when the directory
 carries no readable group metadata.
 
@@ -769,6 +804,17 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     zarr_out      = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
     pyramid_levels = Int(get(params, "pyramidLevels", get(params, "pyramidScale", 2)))
 
+    # Multi-series source (LIF, CZI, …): the register step (or the series picker) recorded which
+    # series the user chose in `meta.ori_series`. We ask bioformats2raw to convert ONLY that series
+    # (`--series N`) instead of every series in the file — a 4-series LIF where only the last carries
+    # the timelapse used to convert all four (wasted disk + minutes of wall clock) and then be pinned
+    # to series 0 downstream via `series_base`. `bf2raw` preserves the source series index in the
+    # output subdir name (so `--series 3` writes `<zarr>/3/…`), which is why `_resolve_series_subdir!`
+    # below rewrites `filepath` to point at that subdir — the flat-store branch of `series_base` then
+    # picks it up transparently.
+    series_choice = get(img.meta, "ori_series", nothing)
+    series_flags  = isnothing(series_choice) ? `` : `--series $(Int(series_choice))`
+
     bf2raw = bioformats2raw_bin()
     if !isfile(bf2raw)
         on_log("[ERROR] bioformats2raw not found at $bf2raw")
@@ -850,7 +896,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Workers: $(isempty(worker_flags) ? "auto (bioformats2raw default: 4)" : worker_flags[1])")
     on_log("[INFO] JVM heap: $(heap_gib > 0 ? "-Xmx$(heap_gib)g" : "auto (JVM default)")")
 
-    cmd = `$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $worker_flags $eff_src $zarr_out`
+    cmd = `$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $worker_flags $series_flags $eff_src $zarr_out`
     if !isempty(java_env)
         cmd = addenv(cmd, java_env)
     end
@@ -884,9 +930,23 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
 
     on_log("[INFO] Conversion complete.")
 
+    # With `--series N`, bioformats2raw writes `<zarr>/N/` and leaves `<zarr>/0/` absent, so both the
+    # NGFF read below and every downstream `series_base` must be pointed at `<zarr>/N/` instead. When
+    # no --series was passed, this returns "" (root has multiscales? no) or "0" (the bf2raw default),
+    # so the plain-old single-series case is unchanged. See `bf2raw_series_subdir` above.
+    series_subdir = bf2raw_series_subdir(zarr_out;
+                                         prefer = isnothing(series_choice) ? nothing : Int(series_choice))
+    # zarr path pointed at whichever subdir carries the multiscales — flat root, "0/", or "N/" for a
+    # series-picked import. `store_rel` lands verbatim in `filepath["default"]`, so downstream
+    # `img_filepath(img)` → `series_base(...)` resolves to this same directory (flat-store branch).
+    resolved_zarr = isnothing(series_subdir) || isempty(series_subdir) ? zarr_out :
+                    joinpath(zarr_out, series_subdir)
+    store_rel     = isnothing(series_subdir) || isempty(series_subdir) ? basename(zarr_out) :
+                    joinpath(basename(zarr_out), series_subdir)
+
     # Read calibration metadata from the bioformats2raw (nested) output — the only layout
     # read_ome_metadata understands (CLAUDE.md → OME-ZARR dual-format).
-    zarr_meta = read_ome_metadata(zarr_out)
+    zarr_meta = read_ome_metadata(resolved_zarr)
 
     on_progress(1, 1)
 
@@ -933,7 +993,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     let run_dir     = task_run_dir(img._dir),
         result_file = joinpath(run_dir, "saturation.$(string(rand(UInt32); base = 16)).result.json")
         ok_s = run_py("tasks/importImages/saturation_run.py",
-            (; imPath = zarr_out, resultPath = result_file), run_dir;
+            (; imPath = resolved_zarr, resultPath = result_file), run_dir;
             on_log = on_log, on_progress = on_progress, on_process = on_process)
         if ok_s && isfile(result_file)
             try
@@ -962,12 +1022,16 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # unit-less-t placeholder cases). The value stays flagged for human confirmation regardless —
     # this just keeps the viewer honest about the number we've already decided to compute with.
     if haskey(zarr_meta, "PhysicalSizeZ_raw") || get(zarr_meta, "SizeT", 1) > 1
-        sync_zarr_calibration!(zarr_out, zarr_meta)
+        # NGFF sync targets the SUBDIR that actually holds multiscales (`resolved_zarr`); OME-XML
+        # lives at `<zarr_out>/OME/METADATA.ome.xml` regardless of series, so a series-picked import
+        # can't reach it via this path (update_ome_xml_pixels walks `<resolved>/OME/…`). The browser
+        # viewer + offline renderer read NGFF; the legacy napari OME-XML path is being retired.
+        sync_zarr_calibration!(resolved_zarr, zarr_meta)
     end
 
     _update_image_status!(img, "done")
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
-                                zarr_filename = basename(zarr_out),
+                                zarr_filename = store_rel,
                                 value_name    = value_name,
                                 on_log        = on_log)
     # bank calibration QC (missing/untrustworthy physical sizes) — the single source the image-table
@@ -976,6 +1040,6 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
 
     merge(zarr_meta, Dict{String,Any}(
         "valueName" => value_name,
-        "filename"  => basename(zarr_out),
+        "filename"  => store_rel,
     ))
 end

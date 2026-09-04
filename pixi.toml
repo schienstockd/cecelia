@@ -118,6 +118,13 @@ squidpy = ">=1.8.3, <1.9"
 rtree = ">=1.4.1, <2"
 pywavelets = ">=1.9.0, <2"
 skan = ">=0.13.1, <0.14"
+# Pure-Python Leica LIF reader. Used by /api/import/series/probe to enumerate a multi-series LIF and
+# render per-series thumbnails BEFORE bioformats2raw conversion — so a user picking the last series
+# of a 4-series file doesn't wait 30 s of JVM+convert just to see the picker (Bio-Formats' `showinf`
+# and bf2raw both spin the JVM). Non-LIF multi-series formats (CZI/ND2/OIR) fall back to a
+# name+dims list without a preview until an equivalent light reader lands. See probe_series_run.py.
+# PyPI-only (not on conda-forge), so it lands here, not in [dependencies].
+readlif = ">=0.6.5, <0.7"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared

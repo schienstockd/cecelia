@@ -8,7 +8,10 @@ import TaskRunner from '../tasks/TaskRunner.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 import ImageFileActions from '../components/ImageFileActions.vue'
 import LegacyMigrateDialog from '../components/LegacyMigrateDialog.vue'
+import SeriesPickerModal from '../components/SeriesPickerModal.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
+import { buildRegisterRecords, isProbeableMultiSeriesPath,
+         type RegisterRecord, type SeriesEntry } from '../utils/seriesPicker'
 
 // The page is 'Manage images', not 'Import': it hosts add/copy/move/delete alongside the import
 // tasks, and now the export ones too. Two categories rather than one — `exportImages` is its own
@@ -22,6 +25,15 @@ const projectMeta = useProjectMetaStore()
 const activeSet   = computed(() => project.activeSet())
 const showBrowser = ref(false)
 const showMigrate = ref(false)
+
+// Series-picker queue: a multi-series file (LIF, …) shows one picker before it lands in the register
+// payload; a single-series file joins the payload as-is. `pickerQueue` is the deque of remaining
+// probeable paths; `pickerCurrent` is the one whose modal is up (null when none). Kept out of the
+// register loop so opening a modal doesn't have to block a promise chain the browser can't unwind.
+const pickerQueue      = ref<string[]>([])
+const pickerCurrent    = ref<string | null>(null)
+const pendingRecords   = ref<RegisterRecord[]>([])
+const pendingSetUid    = ref<string | null>(null)
 
 function openFilePicker() {
   if (!activeSet.value) {
@@ -56,20 +68,63 @@ async function onFilesSelected(paths: string[]) {
   const set = activeSet.value
   if (!set || !projectMeta.current) return
   showBrowser.value = false
+
+  // Single-series files go straight into the register payload; multi-series-capable files are
+  // queued and the modal opens for each in turn (see advancePicker). When the queue drains we POST
+  // /api/images/register once, so a mixed selection makes ONE request rather than N.
+  pendingRecords.value = []
+  pendingSetUid.value  = set.uid
+  const queue: string[] = []
+  for (const p of paths) {
+    isProbeableMultiSeriesPath(p) ? queue.push(p) : pendingRecords.value.push({ path: p })
+  }
+  pickerQueue.value = queue
+  advancePicker()
+}
+
+function advancePicker() {
+  if (pickerQueue.value.length === 0) {
+    pickerCurrent.value = null
+    submitRegister()
+    return
+  }
+  pickerCurrent.value = pickerQueue.value[0]
+  pickerQueue.value   = pickerQueue.value.slice(1)
+}
+
+function onPickerSave(picks: SeriesEntry[]) {
+  const path = pickerCurrent.value
+  if (path) pendingRecords.value.push(...buildRegisterRecords(path, picks))
+  advancePicker()
+}
+
+function onPickerCancel() {
+  // Cancel = skip THIS file only. The rest of the queue (and the already-collected records) survive.
+  advancePicker()
+}
+
+async function submitRegister() {
+  const setUid = pendingSetUid.value
+  const set    = activeSet.value
+  if (!setUid || !set || !projectMeta.current) return
+  const records = pendingRecords.value
+  pendingRecords.value = []
+  pendingSetUid.value  = null
+  if (records.length === 0) return
   try {
     const res = await fetch('/api/images/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: projectMeta.current.uid,
-        setUid:     set.uid,
-        filepaths:  paths,
+        setUid,
+        filepaths:  records,
       }),
     })
     const body = await res.json().catch(() => ({})) as { images?: any[]; error?: string }
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
     const imgs = body.images ?? []
-    project.addImagesFromApi(set.uid, imgs)
+    project.addImagesFromApi(setUid, imgs)
     log.info(
       `Added ${imgs.length} image${imgs.length !== 1 ? 's' : ''} to "${set.name}".`,
       { source: 'manageImages' }
@@ -97,6 +152,14 @@ async function onFilesSelected(paths: string[]) {
     :set-uid="activeSet.uid"
     @imported="onLegacyImported"
     @close="showMigrate = false"
+  />
+
+  <SeriesPickerModal
+    v-if="pickerCurrent"
+    :key="pickerCurrent"
+    :filepath="pickerCurrent"
+    @save="onPickerSave"
+    @cancel="onPickerCancel"
   />
 
   <ModuleLayout
