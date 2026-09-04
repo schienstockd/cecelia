@@ -149,13 +149,18 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     estimator     = string(get(params, "driftEstimator", "multiLag"))
     max_lag       = Int(get(params, "driftMaxLag", 3))
     max_angle_deg = Float64(get(params, "driftMaxAngle", 5.0))
+    # Gaussian σ (frames) on the cumulative trajectory. Kills integer-rounding jitter on movies
+    # where estimated drift is at the PC noise floor (see `_smooth_positions` in correction_utils.py).
+    # 0 = off. Default 6 chosen from the 2h06xA / ttRMjQ audit — see docs/todo/DRIFT_JITTER_PLAN.md.
+    smooth_sigma  = Float64(get(params, "driftSmoothSigma", 6.0))
 
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_correction_path")
     on_log("[INFO] Drift ch:    $drift_channel_idx")
     on_log("[INFO] Estimator:   $estimator" *
            (estimator == "multiLag" ? " (max lag $max_lag)" :
-            estimator == "sitkRigid" ? " (max angle $(max_angle_deg)°)" : ""))
+            estimator == "sitkRigid" ? " (max angle $(max_angle_deg)°)" : "") *
+           (smooth_sigma > 0 ? ", trajectory σ=$smooth_sigma" : ", no trajectory smoothing"))
 
     qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
 
@@ -166,6 +171,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            driftEstimator     = estimator,
            driftMaxLag        = max_lag,
            driftMaxAngle      = max_angle_deg,
+           driftSmoothSigma   = smooth_sigma,
            qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

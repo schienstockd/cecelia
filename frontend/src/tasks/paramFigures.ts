@@ -23,6 +23,7 @@ import type { Severity } from '../lib/severity'
 import type { ColumnCta } from '../components/VisualAid.vue'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 import { driftFigure } from './driftVis'
+import { driftSmoothFigure } from './driftSmoothVis'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
@@ -158,6 +159,30 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       }],
       storageKey: 'drift-estimator-figure',
       defaultW: 460, defaultH: 320,
+    }
+  },
+
+  /**
+   * Drift correction's trajectory smoothing. Three columns, one per motion regime, each showing
+   * the raw trajectory (faint) and the integer-rounded output the writer would apply (opaque)
+   * at the CURRENT σ. See `driftSmoothVis` for why this exists: σ is a single number that does
+   * one thing well (kill jitter) and one thing badly (eat fast motion), and a slider without
+   * a picture leaves the user guessing which regime they're in.
+   */
+  driftSmoothing: ctx => {
+    const { vis, note } = driftSmoothFigure({
+      sigma: num(ctx.values?.driftSmoothSigma, 6),
+    })
+    return {
+      vis,
+      note,
+      title: 'Trajectory smoothing',
+      tip: 'Show what σ does to jitter, slow drift, and a fast step',
+      headings: ['Noise', 'Slow drift', 'Fast step'],
+      storageKey: 'drift-smoothing-figure',
+      // Wider than driftEstimator's 460 because this figure's story is temporal SHAPE — a
+      // ramp/staircase read reliably only when each frame gets ~10 px on screen, not ~3.
+      defaultW: 720, defaultH: 380,
     }
   },
 }
