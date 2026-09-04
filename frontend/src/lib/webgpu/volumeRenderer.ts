@@ -91,6 +91,16 @@ export interface VolumeRenderer {
    * question for the user to get wrong.
    */
   readonly vramCapped: () => boolean
+  /**
+   * Notification when `uploadFrame` hits an OOM inside its own scoped error handler and cannot hold
+   * a single timepoint — the unrecoverable case where the cache has shrunk to zero and every retry
+   * OOMs again. Fires at most once per `setImage`; a fresh image gets a fresh chance. This exists
+   * because the OOM scope is CAPTURED (it does not reach `onuncapturederror` / `onError`), so the
+   * caller has no other signal that the flat renderer is stuck on an empty canvas and needs to
+   * swap to the brick renderer. `null` clears. Optional so the brick renderer (whose OOMs surface
+   * through `onError` from `brickAtlasTexture`) can leave it undefined.
+   */
+  setOnOom?(cb: ((message: string) => void) | null): void
   /** Bind a cached timepoint for subsequent draws. False when it is not resident (nothing changes). */
   show(t: number): boolean
   hasTimepoint(t: number): boolean
@@ -577,6 +587,10 @@ export async function createVolumeRenderer(
   /** Whether a mask rides along in each timepoint's slot. Set by `setImage`, because it changes what a
    *  timepoint COSTS and therefore how many fit — a mask is 4 bytes a voxel against the image's 2. */
   let labels = false
+  /** Callback for the setOnOom hook — fired once per setImage cycle when a captured OOM leaves the
+   *  renderer unable to hold even one timepoint. See interface doc. */
+  let onOomCb: ((msg: string) => void) | null = null
+  let oomReported = false
   let steps = 256
   let destroyed = false
   /** Overlay instances, grown on demand. One buffer for the whole movie — see `setOverlayPoints`. */
@@ -714,6 +728,7 @@ export async function createVolumeRenderer(
       bytesPerTimepoint = renderNX * renderNY * depth *
         (m.bytesPerVoxel * nch + (withLabels ? LABEL_BPV : 0))
       allowed = Infinity                       // a new shape gets a fresh chance at the limit
+      oomReported = false                      // and a fresh chance to signal an unrecoverable OOM
       byteCap = cacheCapacity(budgetBytes, bytesPerTimepoint)
       recap()
       // Extent is the PHYSICAL box (µm), not the pixel grid — a coarser level is the SAME 3.3 mm image
@@ -776,6 +791,17 @@ export async function createVolumeRenderer(
         allowed = Math.max(2, slots.size - 1)
         recap()
         for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
+        // Signal OOM to the caller so it can swap in the brick renderer. Fires ONCE per setImage
+        // — a repeat message every retry frame would spam. The strict `slots.size === 0` guard
+        // (only signal when the very first frame did not fit) missed a case Dominik hit on
+        // 2h06xA in 2D mode: the OOM branch runs, `slots.size` sits at 0, but the caller-side
+        // fallback never got the signal. Relaxed to fire on the FIRST OOM inside a setImage
+        // cycle — a recoverable "shrink and continue" case is rare on plane view (the frame
+        // either fits or does not), and forcing bricks there is not worse than a stuck canvas.
+        if (!oomReported) {
+          oomReported = true
+          onOomCb?.(oom.message || 'flat renderer out of memory')
+        }
         return
       }
       if (!usable()) return
@@ -851,6 +877,7 @@ export async function createVolumeRenderer(
       for (const gone of lruEvictions(order, capacity, keep)) dropSlot(gone)
     },
     vramCapped: () => allowed !== Infinity || byteCap < requested,
+    setOnOom(cb) { onOomCb = cb },
 
     hasTimepoint(t: number) {
       const slot = slots.get(t)
