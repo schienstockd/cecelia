@@ -367,7 +367,7 @@ Three things to take:
    be a widget and a menu item without being declared twice.
 2. **`autogenerate: true` appears in the first tutorial.** A widget generated from a function
    signature via magicgui is the *canonical* path, not a fallback. Our `params` → `ParamRenderer` is
-   the same pattern, arrived at independently — **we already have napari's most-used widget form.**
+   the same pattern, arrived at independently — **we already have the legacy viewer's most-used widget form.**
 3. **The central contract is a DATA TUPLE, not a drawing:**
 
    ```
@@ -474,7 +474,7 @@ tracks appear in napari only because they registered as a `label_props` value na
 tracks path already understood. A plugin wanting a shapes overlay, a vector field or a mesh has no
 route at all — verified: only `napari_bridge.py` calls the `napari_utils.add_*` helpers.
 
-**The one place we cannot copy napari.** A napari plugin runs *inside* the napari process and hands
+**The one place we cannot copy napari.** A napari plugin runs *inside* the viewer process and hands
 it a live numpy array. Our task runs in a subprocess and exits. So `data` cannot be an array — it is
 a REFERENCE the bridge resolves:
 
@@ -482,10 +482,10 @@ a REFERENCE the bridge resolves:
 |---|---|
 | `data` = ndarray | a value_name + column selection in the h5ad, or a file the task wrote |
 | `attributes` = layer kwargs | the same, restricted to a reviewed allow-list |
-| `layer_type` = any napari layer | an allow-list: `points`, `tracks`, `shapes`, `vectors` to start |
+| `layer_type` = any viewer layer | an allow-list: `points`, `tracks`, `shapes`, `vectors` to start |
 
 The allow-list is the point. `attributes` reaching `viewer.add_*` unchecked is a plugin passing
-arbitrary kwargs into napari's constructors, which is an ABI by the back door — the thing Decision 11
+arbitrary kwargs into the legacy viewer's constructors, which is an ABI by the back door — the thing Decision 11
 was chosen to avoid. Start with what the existing overlays already need and widen on request.
 
 #### What reading the bridge and the viewer changed (2026-08-19)

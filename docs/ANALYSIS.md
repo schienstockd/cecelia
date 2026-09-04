@@ -268,7 +268,7 @@ whose natural dot is much larger (the UMAP's, beeswarm points): a gating scatter
 0.7px, so taking the slider literally would have quadrupled every existing board figure's dots.
 
 ### Image / napari-screenshot slot
-`ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Napari-screenshot
+`ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Viewer-screenshot
 slots capture the live viewer via `/api/napari/screenshot` (backend restart to activate). The per-frame
 caption (bottom-centre) and actions (recapture / remove, bottom-right) sit **above** the auto-hide
 toolbar (`.cc-panel-controls`, z-index 6) — they used to live at the top and were masked when the

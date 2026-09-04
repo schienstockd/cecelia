@@ -7,14 +7,14 @@
 // the pixels it outlines, and an outline that is one frame stale is worse than no outline, because it
 // still looks like an answer.
 //
-// napari's Labels layer is the parity bar for the 2D view: filled at 0.7 opacity by default, with an
-// optional `contour` outline in voxels (`python/cecelia/utils/napari_utils.py` → `add_labels`). For 3D
-// there is NO bar — napari cannot project a Labels layer at all — so the shader takes the nearest
+// the viewer's Labels layer is the parity bar for the 2D view: filled at 0.7 opacity by default, with an
+// optional `contour` outline in voxels (`python/cecelia/utils/viewer_utils.py` → `add_labels`). For 3D
+// there is NO bar — viewer cannot project a Labels layer at all — so the shader takes the nearest
 // surface along the ray rather than a maximum, which is the only reading of "the label you can see".
 
 import { distinctColors } from '../plots/plot'
 
-/** napari's `add_labels` default, kept so a mask reads the same in both viewers. */
+/** the viewer's `add_labels` default, kept so a mask reads the same in both viewers. */
 export const LABEL_OPACITY = 0.7
 
 /**
@@ -47,7 +47,7 @@ export function hslCssToRgb(css: string): [number, number, number] {
  * categorical palette: consecutive ids land on consecutive rows, segmentation labels neighbouring cells
  * with near-consecutive ids, and the golden angle puts consecutive rows as far apart in hue as they can
  * be. Two touching cells therefore come out contrasting, which is the only thing a mask palette has to
- * do. napari's own shuffled colormap is not reproducible here and was never part of the parity bar.
+ * do. the viewer's own shuffled colormap is not reproducible here and was never part of the parity bar.
  */
 export function labelPaletteBytes(n = LABEL_PALETTE_N): Uint8Array {
   const out = new Uint8Array(n * 4)

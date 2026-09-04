@@ -1,6 +1,6 @@
 # ── Movie / legend / view helpers (formerly napari_api.jl) ─────────────────────
 #
-# The shared, view-agnostic helpers that survived the napari retirement (P9). They compute movie
+# The shared, view-agnostic helpers that survived the viewer retirement (napari-era) (P9). They compute movie
 # output paths + suffixes, resolve label/branch value names for a movie config, build the compare
 # grid (rows/columns) that the offline renderer walks, resolve overlay pop colours, and render the
 # tidy legend content the /api/viewer/overlay-legend route serves.
@@ -193,7 +193,7 @@ _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_C
 # which is what every recording did before the setting existed.
 _show_3d(src)::Bool = Bool(get(src, :show3D, false))
 # 3D detail level from an authored config: a multiscale LEVEL index (0 = full resolution, higher =
-# coarser), or `nothing` for napari's own choice. Absent means 0, not "auto" — a config written before
+# coarser), or `nothing` for the legacy viewer's own choice. Absent means 0, not "auto" — a config written before
 # the control existed still wants visible masks.
 function _detail_3d(src)::Union{Int,Nothing}
     raw = get(src, :detail3d, 0)

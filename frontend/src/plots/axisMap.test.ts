@@ -22,7 +22,7 @@ describe('yFrac', () => {
     expect(yFrac(e, 0)).toBe(1)
   })
 
-  // an image row index: 0 is the TOP of the frame, which is what napari draws
+  // an image row index: 0 is the TOP of the frame, which is what viewer draws
   it('flipped puts yMin at the top', () => {
     expect(yFrac(e, 0, true)).toBe(0)
     expect(yFrac(e, 100, true)).toBe(1)

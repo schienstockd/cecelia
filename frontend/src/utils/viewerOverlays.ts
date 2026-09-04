@@ -125,7 +125,7 @@ const EMPTY: PointBuffer = { data: new Float32Array(0), ranges: new Map(), count
  * Instance data for every visible population's points, ordered by timepoint.
  *
  * A cell in several populations is emitted ONCE PER POPULATION, which is deliberate rather than lazy:
- * napari draws one Points layer per population, so a cell in `/A` and in `/A/B` is visible in both and
+ * viewer draws one Points layer per population, so a cell in `/A` and in `/A/B` is visible in both and
  * takes the colour of whichever is on top. Collapsing to one entry would mean picking a winner here,
  * silently, and the population hierarchy means the overlap is the normal case rather than the odd one.
  * The cost is bounded by the hierarchy depth (~2-3x the cells), not by the number of populations.
@@ -308,7 +308,7 @@ const EMPTY_SEG: SegmentBuffer = {
  * monotonic prefix indexes, so finding it is two array reads rather than a scan over L timepoints. The
  * alternative — rebuilding a buffer per frame — is an allocation and an upload on every playback tick.
  *
- * Colour cycles the population palette by track id rather than running napari's turbo ramp, because the
+ * Colour cycles the population palette by track id rather than running the viewer's turbo ramp, because the
  * job here is telling ADJACENT tracks apart, not reading a value off them: no continuous colormap exists
  * in this repo yet (see the plan's open questions), and a categorical cycle does that job exactly.
  *
@@ -405,7 +405,7 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  * Merge multiple overlays payloads into ONE segment buffer for tracks, colouring by MODE:
  *
  * - `'track'`: cycle the palette by (payload, track id) — telling adjacent tracks apart is the
- *   job, which is what napari does.
+ *   job, which is what viewer does.
  * - `'speed'`: heat-ramp by segment speed (µm per frame; Δt = 1 for consecutive hops). Fast tracks
  *   are hot, slow tracks are cool. Same ramp as the point colour-by numeric scale, so the reading
  *   is consistent across overlay kinds.
@@ -545,7 +545,7 @@ export function buildMultiTrackBuffer(
 /**
  * `[first, count]` for a tail of `tailFrames` ending at `t`, or `null` when it is empty.
  *
- * `tailFrames` is a count of FRAMES, as napari's `tail_length` is, so L gives L segments per track —
+ * `tailFrames` is a count of FRAMES, as the viewer's `tail_length` is, so L gives L segments per track —
  * the ends fall in `[t - L + 1, t]`, not `[t - L, t]`. The off-by-one matters at the small end, which
  * is where it is visible: at L = 1 the second form draws two hops and looks like the control is
  * ignoring you. `0` means no tail at all, which is what the slider's low end offers.
@@ -556,7 +556,7 @@ export function tailRange(
   const L = Math.max(0, Math.round(tailFrames))
   if (buf.count === 0 || L === 0) return null
   // `hi = t + 1` rather than `hi = t` — a segment's END is the timepoint it ARRIVES at, so the
-  // segment [t, t+1] is the "current" hop and is included in the visible tail. Napari's tail_length
+  // segment [t, t+1] is the "current" hop and is included in the visible tail. Viewer's tail_length
   // model does the same on scrub; the old `hi = t` read as broken at t = 0 (window collapsed to
   // [0, 0] and every segment ends at t ≥ 1 → nothing to draw, even though tracks were built).
   // Dominik, 2026-08-26: "still no ribbons ... there are tracks in 'default' segmentation".
@@ -581,11 +581,11 @@ export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
  * colour by.
  *
  * THE RAMP IS THE HOUSE ONE — `BLUE_HEAT_RGB`, the same lookup the gating plots colour their dots by
- * (`plots/flowColors.ts`). Not napari's viridis, and that is a deliberate reversal: this started with a
+ * (`plots/flowColors.ts`). Not the viewer's viridis, and that is a deliberate reversal: this started with a
  * generated viridis/turbo table, on the reasoning that no ramp existed to reuse. One landed on `main`
  * while this was being built (the gating colour-by, PR #646), so it does now — and one ramp for "colour
  * by a measure" means the same cell is the same colour on a plot and in the image, which is worth more
- * than matching napari's palette. Colour CHOICE was never part of the parity bar.
+ * than matching the viewer's palette. Colour CHOICE was never part of the parity bar.
  *
  * WHICH KIND OF SCALE is the server's answer, not this function's: `valueKind` comes from the same
  * `_is_categorical_col` rule the plots use, so a column that plots as a code set shades as one here.

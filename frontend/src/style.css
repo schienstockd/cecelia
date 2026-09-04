@@ -270,7 +270,7 @@ body {
      <button class="cc-btn cc-btn-ghost cc-btn-icon">   boxed
    The size steps are the same density axis as the text scale (measured: the sizes really do cluster
    at four tiers). Tone comes from the existing variants — add `.cc-btn-danger-ghost`, or set `color`
-   in scoped CSS for the one-off tones (the napari viewer green). */
+   in scoped CSS for the one-off tones (the viewer green). */
 .cc-btn-icon {
   justify-content: center;
   width: 1.5rem; height: 1.5rem;
@@ -363,7 +363,7 @@ body {
    `.cc-btn-icon` is a fixed 1.5rem square; a labelled member sizes to padding + line-height, which is
    ~1px taller at `--cc-fs-sm`. The group takes the taller, so the square's background stopped a pixel
    short of the group's bottom edge and its glyph sat a pixel high — which reads as "that icon is
-   smaller than its neighbour" even though the two glyphs are the same 1em (gating's napari brush:
+   smaller than its neighbour" even though the two glyphs are the same 1em (gating's viewer brush:
    `pi-pencil` beside `pi-clone` + "Z"). Let the square STRETCH to the group instead; its fixed width,
    and so the centring of the glyph, is untouched. Scoped with `:has` so a group of only icon buttons
    keeps its square at whatever density tier it chose (micro/dense/lg). */

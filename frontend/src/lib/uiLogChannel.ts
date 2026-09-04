@@ -4,7 +4,7 @@
 // call lands only in the store of the window that made it. That is invisible for the two popouts that
 // render no console — the volume viewer and the Task Manager — and it is why the viewer's diagnostics
 // had nowhere to go but a Debug panel you have to be in that window to read. Backend lines do not have
-// this problem: they arrive over each window's own WS from one ring, which is why napari prints
+// this problem: they arrive over each window's own WS from one ring, which is why viewer prints
 // everywhere already.
 //
 // **`localStorage` + the `storage` event**, the same transport as `lib/openProjectChannel.ts`, for the

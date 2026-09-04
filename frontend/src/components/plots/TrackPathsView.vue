@@ -1,8 +1,8 @@
 <!--
-  The napari tracks layer, as a plot: every track's path, in µm, optionally coloured by one of its
+  The viewer tracks layer, as a plot: every track's path, in µm, optionally coloured by one of its
   own properties — for a COHORT, not one image.
 
-  Until now tracks could only be LOOKED at, in napari — `lib/tips.ts` said so outright. That is fine
+  Until now tracks could only be LOOKED at, in viewer — `lib/tips.ts` said so outright. That is fine
   for judging one cell and useless for a figure: a viewer screenshot cannot be recoloured by speed,
   cannot be put beside the same field from another mouse, and cannot leave the app as vectors. This
   view is the plot half of that pair, so the Analysis board can carry tracks next to the populations
@@ -16,7 +16,7 @@
   screenshots.
 
   **Three modes, because "the tracks" is three different questions.**
-  - *Paths* — where the cells actually were. The spatial picture, the one napari shows.
+  - *Paths* — where the cells actually were. The spatial picture, the one viewer shows.
   - *Star* — every track translated to a common origin (celltrackR's `plotTracks`/rose family, Wortel
     et al. 2021, doi:10.1016/j.crmeth.2021.100006). Position is discarded and SHAPE survives, which
     is what you compare between conditions: directed migration fans out, random walk fills a disc.
@@ -351,7 +351,7 @@ async function render() {
     // facets share ONE domain so the small multiple is a comparison
     x: { domain: domain?.x, label: 'x (µm)', grid: true },
     // Y GROWS DOWNWARD. `centroid_y` is an IMAGE row index — row 0 is the top of the frame, which is
-    // what napari draws. A chart's upward y axis is a MIRROR of the image: a cell drifting down-screen
+    // what viewer draws. A chart's upward y axis is a MIRROR of the image: a cell drifting down-screen
     // appears to drift up. See docs/PLOTS.md → *Y grows downward*.
     y: { domain: domain?.y, label: 'y (µm)', grid: true, reverse: true },
     color: colourScale,

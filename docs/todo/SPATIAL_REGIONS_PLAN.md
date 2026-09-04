@@ -548,7 +548,7 @@ positional scatter, co-localization heatmap.
 `/api/analysis/spatial` + `ai/spatial.jl` + MCP `get_spatial_stats`. (Optional: raster-window parity mode,
 Decision 2.)
 
-**Phase 7 — Napari region visualization.** Region-colored points (reuse `show_populations`/`resolve_pops`,
+**Phase 7 — Viewer region visualization.** Region-colored points (reuse `show_populations`/`resolve_pops`,
 scale+units), region-fill via `colour_labels` on `regions.{suffix}`, region-adjacency network overlay
 (new; scope carefully). [[feedback_napari_layer_units]] applies.
 

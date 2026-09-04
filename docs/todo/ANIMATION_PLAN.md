@@ -34,7 +34,7 @@ Illustrative shape (final schema settled in Phase A):
   "imageUid": "…", "valueName": "corrected",           // which image + version
   "camera": { "center": [z,y,x], "zoom": 4.2, "angles": [0,0,0], "perspective": 0 },
   "dims":   { "ndisplay": 2, "order": [0,1,2], "point": [t,z,y,x] },   // incl. T/Z position
-  "layers": {                                           // captured per napari layer
+  "layers": {                                           // captured per viewer layer
     "gBT":  { "visible": true, "colormap": "green", "contrast_limits": [50, 800],
               "gamma": 1.0, "opacity": 1.0, "blending": "additive" }
   },
@@ -64,7 +64,7 @@ config face.
 `dims.dict()`), and `apply` is just `setattr` per field, wrapped in `suppress(AttributeError)` and
 only-if-changed — **very tolerant** of scalar inputs. But its captured dicts hold napari enums, pint
 `Unit`s and `ColorArray`s (verified: 6 unserialisable values in a trivial 2-channel case), so storing
-them verbatim ties our durable data to napari's internal types across versions. Instead we capture
+them verbatim ties our durable data to the legacy viewer's internal types across versions. Instead we capture
 into **settable scalar forms** (colormap by *name*, enums → strings, arrays → lists) — durable,
 human-readable, GUI-editable, and re-applied by plain `setattr`. Verified: a whitelisted/sanitised
 snapshot round-trips through `ViewerState.apply`, including a green→red colormap change.
@@ -142,7 +142,7 @@ matches how figures are actually made; F2 is the advanced follow-on.
   (letterbox) so a scale bar / timestamp isn't cropped (E2's own vector scale bar will let frames go
   edge-to-edge again).
 - **~~E. Scale bar / timestamp for stills~~ — DONE.**
-  - **~~E1 clean-capture toggle~~ — DONE:** `save_screenshot(clean=True)` hides napari's baked scale bar
+  - **~~E1 clean-capture toggle~~ — DONE:** `save_screenshot(clean=True)` hides the legacy viewer's baked scale bar
     + timestamp for the shot (restored after); threaded `POST /api/napari/screenshot {clean}` → the
     persisted **"clean capture"** toggle in the image-strip ⚙ (`settings.cleanCapture`). Scoped to stills
     (animation keyframes keep the timestamp). See docs/NAPARI.md → *Clean capture*.
@@ -240,8 +240,8 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
    `_pop_labels_for` / `pop_at().name/.colour`); extract a shared `overlay_legend_content(img, …)`
    in `napari_api.jl` so the endpoint AND the card call it (consolidation, not duplication). The board
    strip legend + napari strip already consume this — the card must produce identical rows.
-5. **Channels are read from the live napari viewer at record time**, NOT from a hardcoded map.
-   There is no Julia/Python channel-colour function — channel colour lives only in the napari layer
+5. **Channels are read from the live browser viewer at record time**, NOT from a hardcoded map.
+   There is no Julia/Python channel-colour function — channel colour lives only in the viewer layer
    state (the frontend `viewLegend.ts`/`napariColormap.ts` approximates it for the board strip, where
    there's no live viewer). Recording always drives the live window, so at record time the visible
    image layers carry the authoritative `name` + `colormap`; Python reads `layer.colormap.map([1.0])`

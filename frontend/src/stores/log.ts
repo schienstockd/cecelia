@@ -13,7 +13,7 @@ export interface LogEntry {
   level: LogLevel
   message: string
   detail?: string   // stack trace, server response body, a child's traceback block
-  source?: string   // 'backend' | 'napari' | 'preview' | 'runner' | 'notebooks' | a UI tag
+  source?: string   // 'backend' | 'viewer' | 'preview' | 'runner' | 'notebooks' | a UI tag
   timestamp: Date
   /** The backend ring's monotonic sequence, when this entry came from there. Absent for UI entries. */
   seq?: number
@@ -215,7 +215,7 @@ export const useLogStore = defineStore('log', () => {
   // Lines from the app's OTHER windows. A pop-out is a second app instance with its own store, and two
   // of them (the volume viewer, the Task Manager) render no console at all — so without this their
   // diagnostics have nowhere to go. Backend lines already reach every window from one ring, which is
-  // why napari prints everywhere; this is the same for the ones the browser says. Installed on the
+  // why viewer prints everywhere; this is the same for the ones the browser says. Installed on the
   // store rather than in App.vue because `main.ts` creates the store in every window, console or not,
   // and a window that cannot show a line is not the window that should decide to drop it.
   onUiLog(line => push(line.level, line.message,

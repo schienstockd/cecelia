@@ -31,7 +31,7 @@ export function referenceCandidates<T extends ChannelSubject>(images: T[]): T[] 
  *
  * An image with a KNOWN channel count that differs from `n` is skipped: writing 4 names onto a
  * 3-channel image doesn't fail, it just records a channel that isn't there, and every consumer
- * downstream (channel pickers, napari, measurement) then offers it. A mismatch here almost always
+ * downstream (channel pickers, viewer, measurement) then offers it. A mismatch here almost always
  * means the image doesn't share the reference's acquisition setup, so the honest outcome is to do
  * the images that match and say which were left out.
  *

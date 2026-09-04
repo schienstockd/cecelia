@@ -241,7 +241,7 @@ describe('movieChannelCells', () => {
     expect(movieChannelCells(image, ['CD8', 'SHG'], 3, 'movie')).toEqual(['', 'CD8', 'SHG'])
   })
 
-  it('matches channel names leniently — the recorder banks what the napari layer was called', () => {
+  it('matches channel names leniently — the recorder banks what the viewer layer was called', () => {
     expect(movieChannelCells(image, [' cd8 '], 3, 'movie')).toEqual(['', 'CD8', ''])
   })
 

@@ -13,7 +13,7 @@
   confirm lives on this modal's own footer button, so nothing is ever one click from deletion.
 
   Replaces three older surfaces: the `importImages.remove` task's UI entry (the task itself stays,
-  unlisted — it is a valid chain node), the napari ViewerPanel's per-label delete, and the plain
+  unlisted — it is a valid chain node), the viewer ViewerPanel's per-label delete, and the plain
   two-click Delete this button grew out of.
 -->
 <script setup lang="ts">

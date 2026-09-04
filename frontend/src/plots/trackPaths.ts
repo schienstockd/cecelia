@@ -2,12 +2,12 @@
  * Track paths in the browser — the arithmetic, kept out of the SFC so it is testable.
  *
  * THERE WAS NO TRACK-PATH PLOTTING IN THE FRONTEND BEFORE THIS. Tracks are viewed as polylines over
- * the raw image in napari, and `lib/tips.ts` states that as the project's position. That stays true:
- * napari is where you look at tracks. What napari cannot do is answer one question quickly, 31 times
+ * the raw image in viewer, and `lib/tips.ts` states that as the project's position. That stays true:
+ * viewer is where you look at tracks. What viewer cannot do is answer one question quickly, 31 times
  * in a row — "do these two pieces of track look like the same cell?" — because each answer costs a
  * seek and a frame change. So the correction worklist (docs/todo/CORRECTION_PLAN.md → P4) draws a
  * small path thumbnail per candidate, purely to let the user REJECT the obvious non-issues without
- * leaving the list, and fly to napari for the ones that need the image.
+ * leaving the list, and fly to viewer for the ones that need the image.
  *
  * ONE module for this, used by every track-path drawing that follows — not a private helper inside
  * the correction view. Observable Plot (the charting decision, see docs/PLOTS.md), `Plot.line` with
@@ -101,7 +101,7 @@ export function pathDomain(
  * The point a candidate is ABOUT — where the viewer should look.
  *
  * For a gap that is the end of the first track; for a jump/split it is the cell at `atT`. Returned
- * separately from the paths so the thumbnail can mark it and the napari fly-to can use the same
+ * separately from the paths so the thumbnail can mark it and the viewer fly-to can use the same
  * coordinate, rather than each deriving its own idea of "the spot".
  */
 export function focusPoint(

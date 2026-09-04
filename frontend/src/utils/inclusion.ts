@@ -16,7 +16,7 @@ export function isStarred(img: { starred?: boolean | null }): boolean {
 }
 
 // THE canonical "is this image usable yet?" predicate — one source of truth for every gate that needs
-// real image data (open in napari, crop, segment, measure, run a chain, …). Use this instead of
+// real image data (open in viewer, crop, segment, measure, run a chain, …). Use this instead of
 // hand-rolling checks. An image is IMPORTED once its converted OME-ZARR exists, i.e. it has a real
 // versioned `filepaths` entry (the bf2raw conversion writes it; a still-`pending` row's ccid has none).
 // This is the old R `imFilepath == null` check — and crucially it is STABLE: it does NOT flip while a

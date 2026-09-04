@@ -1133,7 +1133,7 @@ evidence and dead ends: [`docs/todo/SEGMENTATION_OPEN_PROBLEM.md`](todo/SEGMENTA
 
 ---
 
-## Napari integration
+## Viewer integration
 
 Labels are shown via `show_labels!` (Julia) → `show_labels` (napari_bridge.py):
 - `value_name` — the output value name (used as filename stem)
@@ -1179,7 +1179,7 @@ Three things differ from a normal labels layer, all forced bridge-side rather th
   only exist after `_finalize_label_pyramid` runs at the end. Asking for the image's level count
   therefore raises `KeyError: '1'`. The preview renders full-resolution at every zoom — the honest cost
   of watching an unfinished store, and why it is a manual toggle rather than automatic.
-- **Caching off.** The point is to see bytes that changed, and napari's `cachey` would serve the old
+- **Caching off.** The point is to see bytes that changed, and the legacy viewer's `cachey` would serve the old
   ones (see `napari_utils.add_labels` on why dask task names make that cache dangerous for re-run
   labels specifically).
 - **A refresh may find the store gone.** The finishing run renames the staging store onto the final
@@ -1210,7 +1210,7 @@ full run and looking at the result. Full design + every measured number:
 | Scope | whole image, as it fills | ONE z-plane of the visible region |
 
 **Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
-napari bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
+legacy bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
 segmentation would not be a preview). Resident because a process that can segment costs **17.7 s** of
 imports before it can answer: fatal per preview, irrelevant once. It calls `CellposeUtils.predict_slice`
 — the same method the full run uses — so a preview cannot drift from the thing it previews.
@@ -1523,7 +1523,7 @@ See `docs/DATAMODEL.md` for AnnData conventions.
 geometry — no bare `zarr.open` / `da.from_zarr` / `tifffile.imread` on image or label stores, and
 no reading NGFF `.zattrs` or OME-XML yourself.** There is ONE set of readers in
 `python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`); use them everywhere — the pipeline
-tasks, the napari bridge, and any external consumer (e.g. coastal).
+tasks, the legacy bridge, and any external consumer (e.g. coastal).
 
 | Need | Use |
 |---|---|

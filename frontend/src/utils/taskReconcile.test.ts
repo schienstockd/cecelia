@@ -94,7 +94,7 @@ describe('recoveredTaskFrames', () => {
   })
 
   // `since` is inclusive server-side, so a poll re-reads its own newest row: one frame per task, or the
-  // completion side effects (plot refetch, napari reload, observer attempt count) run twice.
+  // completion side effects (plot refetch, viewer reload, observer attempt count) run twice.
   it('emits at most one frame per task even if the ring repeats it', () => {
     const f = recoveredTaskFrames([{ id: 't1' }], [out('t1', 'done'), out('t1', 'done')])
     expect(f).toHaveLength(1)

@@ -79,7 +79,7 @@ contract. coastal has an interim `CECELIA_APP` env-var bootstrap
    resolves env-wide without `PYTHONPATH`. `run_py` keeps working and **retains `PYTHONPATH=python/` as the
    canonical, explicit launcher mechanism** for the task scripts it spawns (set once, centrally — not
    re-derived per script). The editable install is what makes `import cecelia.*` resolve in the
-   *other* contexts (external `pip install`, `pixi run`, the napari bridge, a REPL). *(Revised from an
+   *other* contexts (external `pip install`, `pixi run`, the legacy bridge, a REPL). *(Revised from an
    earlier draft that proposed dropping `PYTHONPATH`: keeping the one central mechanism is simpler and
    more robust than relying solely on the install; the real duplication — the scattered per-file
    `sys.path` hacks — was removed instead.)* *Source-of-truth split (this is what keeps the two files from drifting):* `pyproject.toml`
@@ -101,7 +101,7 @@ contract. coastal has an interim `CECELIA_APP` env-var bootstrap
    websockets, trimesh — are **not declared as package deps at all**; they stay in `pixi.toml` as
    cecelia's *environment* requirements. So `pip install cecelia` yields a light IO package and
    `import cecelia.utils.zarr_utils` resolves with **no** napari/torch/scanpy pulled in; cecelia's own
-   heavy modules (`cellpose_utils`, `tracking_utils`, `clustering_utils`, the napari bridge) still
+   heavy modules (`cellpose_utils`, `tracking_utils`, `clustering_utils`, the legacy bridge) still
    import fine because pixi provides their deps in cecelia's env. Rejected: per-module extras
    (`[segment]`/`[cluster]`/…) — YAGNI, the only external consumer (coastal) needs just the IO tier.
    *If* a future non-cecelia consumer ever needs the anndata/h5ad readers (`label_props_utils`,

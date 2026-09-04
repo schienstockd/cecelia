@@ -9,8 +9,8 @@
  * Two styles, because two surfaces already had a house format and neither is wrong:
  *  - `'compact'` (default) — "3h 18m", or "18m" under an hour. What the stills and the timeline show,
  *    where the label is decoration on a thumbnail and a seconds field would be noise.
- *  - `'clock'` — "3:18:00", zero-padded, exactly what napari's text overlay shows
- *    (`str(datetime.timedelta(...))` in napari_bridge.py) down to the `t = N` fallback. The volume
+ *  - `'clock'` — "3:18:00", zero-padded, exactly what the viewer's text overlay shows
+ *    (`str(datetime.timedelta(...))` in viewer_bridge.py) down to the `t = N` fallback. The volume
  *    viewer uses it because it is replacing that overlay and people read the two side by side.
  */
 export function elapsedLabel(

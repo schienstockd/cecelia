@@ -3,7 +3,7 @@
 > to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
 >
 > **OUTCOME (2026-08-24):** answered in
-> [`docs/todo/NAPARI_WEBGPU_AUDIT.md`](../todo/NAPARI_WEBGPU_AUDIT.md), with the gate ladder and the
+> [`docs/archive/napari-webgpu-audit.md`](../todo/NAPARI_WEBGPU_AUDIT.md), with the gate ladder and the
 > real dataset geometry in [`NAPARI_WEBGPU_AUDIT_PLAN.md`](../todo/NAPARI_WEBGPU_AUDIT_PLAN.md).
 > Recommendation: build the web renderer for display, chunk geometry first; keep napari for movies,
 > keyframes and (until designed) mask correction. The prompt's stated one-real-risk — 3D volumetric

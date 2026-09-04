@@ -223,7 +223,7 @@ const clusterOptions = computed(() => {
   }
   return out
 })
-// image-content views (napari screenshot slots) — grouped separately in the picker
+// image-content views (viewer screenshot slots) — grouped separately in the picker
 const imageOptions = computed(() => boardViews('image'))
 
 // the "+ Plot" value is "summary:<specId>" or "interactive:<viewKey>"

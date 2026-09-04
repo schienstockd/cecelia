@@ -12,12 +12,12 @@ component (running / starting / stopped) for transparency — "what is actually 
 gives per-component **start / stop / restart**, plus one global **Quit everything** button and an
 **Open console** button (live backend/pixi console in a separate window).
 
-Trigger: a stale **napari bridge**. The bridge is a long-lived child that survives server restarts
+Trigger: a stale **legacy bridge**. The bridge is a long-lived child that survives server restarts
 and isn't Revise-tracked, so edits to `napari_bridge.py` (and PR #78's `configure_autosave`) don't
 take effect until it's killed + relaunched — today that means a second terminal (`pixi run
 stop-napari` + reopen). The old R app had a shutdown button; the feijoa app had nothing.
 
-Components managed: **Application** (Julia backend :8080), **Napari bridge** (:7655), **Notebooks /
+Components managed: **Application** (Julia backend :8080), **Viewer bridge** (:7655), **Notebooks /
 Pluto** (:7660). Vite frontend is **excluded** (prod: backend serves the built UI; dev: it's serving
 the page you're on).
 
@@ -28,7 +28,7 @@ the page you're on).
    + `GET /api/notebooks/status {running,starting,…}`. `launch`/`restart` need `projectUid`.
 2. **Global Quit / app shutdown is a new endpoint** `POST /api/app/shutdown`: best-effort stop
    children (napari `close!`, `api_notebooks_shutdown`), respond `200`, then `@async` short delay +
-   `exit(0)` so the response flushes. Napari has **no** `atexit` (notebooks does) → it MUST be killed
+   `exit(0)` so the response flushes. Viewer has **no** `atexit` (notebooks does) → it MUST be killed
    explicitly. Dev: ends `pixi run dev`; packaged: server exit ends `app.py`.
 3. **Backend restart needs a supervisor** (revised after live test — a detached relauncher does NOT
    work: it can't reattach a new server to a foreground terminal, and depended on `pixi` being on
@@ -110,7 +110,7 @@ the page you're on).
 
 ## Verification
 
-Open Settings → pills reflect reality; kill the bridge → Napari flips to Stopped within ~4s → Start →
+Open Settings → pills reflect reality; kill the bridge → Viewer flips to Stopped within ~4s → Start →
 Running. Edit `napari_bridge.py` → Restart → reopen image → new code live (timelapse selection
 respects the frame; no `configure_autosave` warning). Notebooks Start/Stop/Restart cycle. Open console
 → separate window streams live logs incl. server `@info/@warn`; docked bar + window are the same

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Presentational legend for a napari view — renders LegendSection[] (see utils/viewLegend.ts) as
+// Presentational legend for a viewer view — renders LegendSection[] (see utils/viewLegend.ts) as
 // grouped colour swatches. Style-light: text inherits `color`, size scales with the parent font-size,
 // so each host (image-strip overlay, animation page, viewer panel) styles it via its own container.
 // Section headings show only when there's more than one section (a lone group needs no title).

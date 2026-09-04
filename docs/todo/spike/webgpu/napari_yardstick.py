@@ -1,7 +1,7 @@
-"""G1 - Napari's real interactive frame cost on REAL data, in a VISIBLE window.
+"""G1 - Viewer's real interactive frame cost on REAL data, in a VISIBLE window.
 
 Why a visible window: three headless designs were tried and all three produced invalid numbers
-(see docs/todo/NAPARI_WEBGPU_AUDIT.md -> G1). The root cause is that with `show=False` there is no
+(see docs/archive/napari-webgpu-audit.md -> G1). The root cause is that with `show=False` there is no
 real paint, so every timing measures Qt plumbing - the same failure
 `docs/todo/CLOUD_MIGRATION_ASSESSMENT.md` section 2 recorded and declined to publish. A shown
 QWidget can be painted SYNCHRONOUSLY via `repaint()`, which is the one primitive that makes this
@@ -162,7 +162,7 @@ def main():
     R['scrub_3d_with_io'] = stats(scrub)
 
     # LAST: _gl_info() builds its own QOffscreenSurface + GL context and segfaults this process if
-    # called before napari's canvas exists (reproduced 3x).
+    # called before the legacy viewer's canvas exists (reproduced 3x).
     sys.path.insert(0, os.path.join(repo, 'napari'))
     import napari_bridge
     R['gl'] = napari_bridge._gl_info()

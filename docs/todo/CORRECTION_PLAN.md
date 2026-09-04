@@ -83,7 +83,7 @@ no `correctSegmentation` task; the mechanism is:
   → zarr.save(filepath, layer.data.astype(np.uint16))
 ```
 
-The user edits the **napari Labels layer with napari's own paint / fill / erase tools**, presses Save
+The user edits the **napari Labels layer with the legacy viewer's own paint / fill / erase tools**, presses Save
 Labels, and the layer is written back over `<obj>/labels/<valueName>.zarr`, registering
 `imLabelsFilepath` (value name `manual` when drawn from scratch — `trainModelsServer.R:80-89`).
 
@@ -95,7 +95,7 @@ declared **per module** by the page that needs to edit (`showLabelsAsNpArray = T
 `trainModelsServer.R:198`, plumbed through `imageViewerManager.R:42-46` → `viewerManager.R:189`).
 There is even an abandoned `mode = 'PAN_ZOOM' if as_np_array is False else 'PAINT'` at `:655`.
 
-This is not incidental — it is the only reason napari's paint tools worked at all, and both halves
+This is not incidental — it is the only reason the legacy viewer's paint tools worked at all, and both halves
 of it matter (see Decision 2): napari sets `editable = not multiscale`
 (`napari/layers/labels/labels.py:852`), and `data_setitem` (`:1438`) assigns into `self.data`,
 which a dask array refuses. Feijoa currently loads every label store the opposite way —
@@ -191,7 +191,7 @@ Both from `app/src/label_props.jl:657-692`:
    `docs/MODULES.md` (`.jl` + `.json` [+ `_run.py`]). They therefore get the scheduler's log file,
    cancellation, resource pool, QC banking and chain-ability for free, and run identically from the
    REPL. A correction that only exists as a button in a Vue page cannot be replayed or audited.
-2. **napari is the editing surface; Cecelia owns the write.** For segmentation: napari's native
+2. **napari is the editing surface; Cecelia owns the write.** For segmentation: the legacy viewer's native
    Labels tools (no bespoke editor). For tracks: **reuse the shipped linked-brushing selection path**
    — `start_cell_selection` (`napari/napari_bridge.py:1438`) draws a Shapes polygon, resolves the
    label ids inside it and POSTs them to Julia (`_post_selection`, `:1550`). Old R's `k`-hotkey
@@ -333,7 +333,7 @@ Both from `app/src/label_props.jl:657-692`:
    output. Recommend: **ops journal + undo of the pending (uncommitted) stack only**, which is what
    3b's staging makes cheap and covers the real use ("that join was wrong, take it back"). Full
    rollback across committed corrections is replay, and the UI should say so rather than implying an
-   undo stack that reaches back through commits. Note napari's Labels layer keeps its **own** undo
+   undo stack that reaches back through commits. Note the legacy viewer's Labels layer keeps its **own** undo
    history for paint strokes (`data_setitem`, `labels.py:1438`) — that covers the segmentation half
    pre-commit for free; do not build a second one.
 8. **QC is mandatory** (`docs/MODULES.md`): `metrics` = objects/tracks edited, ops by kind;

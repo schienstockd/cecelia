@@ -58,7 +58,7 @@ describe('viewerColormapForHex (reverse)', () => {
 })
 
 describe('CHANNEL_COLORMAP_OPTIONS (batch-movie swatch palette)', () => {
-  it('every option has a valid napari colormap value + a real hex swatch (single source of truth)', () => {
+  it('every option has a valid viewer colormap value + a real hex swatch (single source of truth)', () => {
     expect(CHANNEL_COLORMAP_OPTIONS.length).toBeGreaterThan(0)
     for (const o of CHANNEL_COLORMAP_OPTIONS) {
       expect(o.hex).toMatch(/^#[0-9a-f]{6}$/i)

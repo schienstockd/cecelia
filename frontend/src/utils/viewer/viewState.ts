@@ -1,12 +1,12 @@
-// A napari-shaped viewState snapshot built from the browser volume viewer's state.
+// A viewer-shaped viewState snapshot built from the browser volume viewer's state.
 //
 // The offline movie renderer (`api/src/movie_render.jl` → `viewstate_to_render_args`) reads a fixed
 // schema:
 //   { camera: { center: [z,y,x], zoom, angles: [rx,ry,rz], perspective? },
 //     dims:   { ndisplay, current_step: [t,z,...], point?: [t,z,...] },
 //     layers: { [name]: { visible, colormap?, contrast_limits: [lo,hi] } } }
-// This is napari's `capture_view_state` shape. Keeping it identical means an animation captured
-// from the browser viewer and one captured from napari render THROUGH THE SAME code path — no
+// This is the viewer's `capture_view_state` shape. Keeping it identical means an animation captured
+// from the browser viewer and one captured from viewer render THROUGH THE SAME code path — no
 // second renderer, no divergent overlay author. A keyframe is a keyframe.
 //
 // Two decisions worth stating:
@@ -22,7 +22,7 @@
 //    every channel is what broke `seedConfigFromViewState` (batch/one-shot fill-from-view read no
 //    channels → record fell back to the autosaved props, so a live colour change was invisible).
 //
-// 2) **3D `angles` are approximate.** OrbitCamera holds yaw + pitch in RADIANS; napari expects
+// 2) **3D `angles` are approximate.** OrbitCamera holds yaw + pitch in RADIANS; viewer expects
 //    (rx, ry, rz) in DEGREES with its own axis convention. We emit `[pitch_deg, yaw_deg, 0]` as a
 //    best-effort mapping. 2D animations (`ndisplay = 2`) don't read angles at all — the
 //    renderer's 2D branch computes a crop from `center` + `zoom` — so this only affects animations
@@ -43,12 +43,12 @@ export interface ViewerViewState {
     center: [number, number, number]        // [cz, cy, cx] in image L0 pixels
     zoom:   number                          // canvas_h_px / visible_image_h_pixels
     angles: [number, number, number]        // (rx, ry, rz) degrees; [0,0,0] in 2D
-    perspective: number                     // napari always emits it; 0 for orthographic
+    perspective: number                     // viewer always emits it; 0 for orthographic
   }
   dims: {
     ndisplay: 2 | 3
-    current_step: number[]                  // [t, z, y, x] — matches napari's order (T, Z, Y, X)
-    point:        number[]                  // same as current_step but floats — kept because napari does
+    current_step: number[]                  // [t, z, y, x] — matches the viewer's order (T, Z, Y, X)
+    point:        number[]                  // same as current_step but floats — kept because viewer does
   }
   layers: Record<string, ViewerLayerState>
   // Canvas size the zoom is written AGAINST. The renderer takes canvas_h/canvas_w as kwargs, so
@@ -82,14 +82,14 @@ export interface BuildViewStateInput {
   viewHalfAngle: number
 }
 
-/** Build a napari-shaped view state from the browser viewer's current camera + meta + slider
+/** Build a viewer-shaped view state from the browser viewer's current camera + meta + slider
  *  positions + canvas size. Pure → testable, no DOM / no store. */
 export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   const { cam, meta, t, zPlane, ndisplay, canvasW, canvasH, viewHalfAngle } = input
   const umPerL0X = meta.voxelUm?.[0] || 1
   const umPerL0Y = meta.voxelUm?.[1] || 1
 
-  // Camera → napari's (center, zoom). Same arithmetic as `publishRegionSink` in ViewerWindow, kept
+  // Camera → the viewer's (center, zoom). Same arithmetic as `publishRegionSink` in ViewerWindow, kept
   // in ONE place so a bug in one publish path is a bug in the other.
   const panXpx = cam.panX / umPerL0X                      // image-pixel pan X
   const panYpx = -cam.panY / umPerL0Y                     // screen-up = negative image-Y
@@ -103,7 +103,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   const visibleL0H = Math.max(1, visibleHeightUm / umPerL0Y)
   const zoom = Math.max(1e-6, canvasH / visibleL0H)
 
-  // Angles. 2D → identity. 3D → best-effort orbit→napari mapping (yaw around Y, pitch around X).
+  // Angles. 2D → identity. 3D → best-effort orbit→viewer mapping (yaw around Y, pitch around X).
   // See file header — this is the approximate half of the shape.
   const angles: [number, number, number] = ndisplay === 3
     ? [cam.pitch * RAD_TO_DEG, cam.yaw * RAD_TO_DEG, 0]
@@ -131,7 +131,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
   }
 }
 
-/** Inverse of `buildViewState`: napari-shape snapshot → what the browser viewer needs to APPLY it
+/** Inverse of `buildViewState`: viewer-shape snapshot → what the browser viewer needs to APPLY it
  *  (orbit camera position, plane / t indices, ndisplay, per-channel contrast + visibility). Kept
  *  next to the forward direction so the two mappings can't drift; testable without the store. */
 export interface AppliedViewState {

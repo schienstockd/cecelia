@@ -132,9 +132,9 @@ export const useViewerStore = defineStore('viewer', () => {
   }
 
   /** ViewerWindow calls this on every pan/zoom/z/t/ndisplay/channel change — same debounced sink as
-   *  `visibleRegion`, but the payload is a napari-shaped viewState snapshot the AnimationPanel and
+   *  `visibleRegion`, but the payload is a viewer-shaped viewState snapshot the AnimationPanel and
    *  movie recorder can consume. Same JSON round-trip as the region, so a popup writer reaches the
-   *  main-window animation page through the storage bridge. Deliberately napari's schema so the
+   *  main-window animation page through the storage bridge. Deliberately the viewer's schema so the
    *  offline renderer's `viewstate_to_render_args` reads them identically. */
   function setViewState(next: ViewerViewState | null) {
     viewState.value = next

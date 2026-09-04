@@ -152,7 +152,7 @@ async function main() {
       tex.destroy();
     }
 
-    const NAPARI = 1241;           // G1, measured: napari's t-slider step, 4 channels
+    const NAPARI = 1241;           // G1, measured: the legacy viewer's t-slider step, 4 channels
     const bestA = Math.min(...[1, 8, 32, 64, 128].map(c => R.runs['chunks_conc_' + c].ms));
     const totalB = R.runs.slabs_second_timepoint.ms + (R.runs.upload ? R.runs.upload.ms : 0);
     R.comparison = {napari_scrub_ms: NAPARI, design_A_best_fetch_ms: +bestA.toFixed(0),

@@ -93,7 +93,7 @@ describe('lookRestore — the viewer shape', () => {
   it('carries the output fields, including a deliberately cleared suffix', () => {
     const r = lookRestore(banked)!
     expect(r.output.suffix).toBe('')          // '' is an edit, not an absence
-    expect(r.output.sizeX).toBeNull()          // null = the napari canvas size
+    expect(r.output.sizeX).toBeNull()          // null = the viewer canvas size
     expect(r.output.showTimestamp).toBe(false)
     expect(r.output.titleCard).toEqual({ enabled: true, note: 'day 3', durationSec: 4 })
   })

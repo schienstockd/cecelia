@@ -60,7 +60,7 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
 | `--cc-danger` | `#ef4444` | The **destructive-action** tone (a delete button's hover/armed state) — an action, not a status |
-| `--cc-viewer` | `#22c55e` | Green accent for the napari viewer controls button + its floating-panel border (stands apart from purple chrome) |
+| `--cc-viewer` | `#22c55e` | Green accent for the browser viewer controls button + its floating-panel border (stands apart from purple chrome) |
 | `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
 | `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
 | `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
@@ -143,7 +143,7 @@ shell's background workers (`isPopoutWindow()`).
 | **App** | this browser: user actions, fetch failures, Vue render errors, unhandled rejections | the ~19 fine-grained UI tags (`manageImages`, `gating`, `movies`, …), `ws`, `frontend` |
 | **Backend** | the Julia server's own `@info`/`@warn`/`@error` | `backend` |
 | **Tasks** | a failed task or chain step (the full run log stays in the task drawer) | `task`, `chain` |
-| **Napari** · **Preview** · **Runner** · **Notebooks** | each child process's stdout/stderr | `napari`, `preview`, `runner`, `notebooks` |
+| **Viewer** · **Preview** · **Runner** · **Notebooks** | each child process's stdout/stderr | `napari`, `preview`, `runner`, `notebooks` |
 
 Four rules, all of them load-bearing:
 
@@ -166,7 +166,7 @@ Filtering, grouping, gap detection and the copy format are pure functions in `ut
 
 ## Settings → System (service control panel)
 
-`SettingsModule.vue` has a **System** section: one row per runtime component (Application / Napari /
+`SettingsModule.vue` has a **System** section: one row per runtime component (Application / Viewer /
 Notebooks) with a status pill (Running / Starting… / Stopped, polled every ~4 s from the existing
 `/api/{napari,notebooks}/status` endpoints — ephemeral UI state, a plain `ref`, NOT persisted) and
 start/stop/restart buttons that reuse the existing control endpoints, plus a
@@ -328,7 +328,7 @@ keeps a result and must discard the stale one, a paint has no result at all, and
 but does have a restore to defend against. **Do not hand-roll a fourth** `setTimeout` + sequence-token
 pair — that is what these were extracted from.
 
-**Put the coalescing at the SINK, not at each call site.** There is one napari viewer, so
+**Put the coalescing at the SINK, not at each call site.** There is one browser viewer, so
 `utils/napariOverlays.ts` owns one scheduler per live endpoint (`pushZView`, `pushLabelContour`) and a
 second call site cannot reintroduce the spam. Same reflex as every other cross-cutting helper here: one
 way to do it, and the second way is the bug. A slider three components away from the sink can't be
@@ -438,7 +438,7 @@ Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 u
 
 - **One meaning per glyph.** `pi-replay` meant both "run it again" (task re-run, notebook restore) *and*
   "cancel" (the canvas confirm pairs' Keep button, now `pi-undo`). `pi-sliders-h` meant both "Settings"
-  and "napari viewer controls" — 40 px apart in the same sidebar; Settings is now `pi-cog`. A cog
+  and "browser viewer controls" — 40 px apart in the same sidebar; Settings is now `pi-cog`. A cog
   labelled "Run history" is now `pi-history`.
 - **One glyph per meaning.** The busy state was split almost exactly 50/50 between `pi-spin pi-cog` (29
   uses) and `pi-spin pi-spinner` (28) with nothing choosing between them; it is now **always
@@ -1670,8 +1670,8 @@ Two things are NOT the same as the console's, and both are load-bearing:
   publish bounces back as an event every reader no-ops on.
 - **A popout does not run the shell's background workers.** It is a second full app instance with its
   own WS, so everything `App.vue` starts, it starts again — and three of those act on the backend or
-  on shared state rather than on the window: the napari overlay restore (two requests per
-  `napari:opened`), the lab-log auto-capture (two captures per finished task) and the tip of the day
+  on shared state rather than on the window: the viewer overlay restore (two requests per
+  image open), the lab-log auto-capture (two captures per finished task) and the tip of the day
   (stamped as shown by a window whose bare route never renders the dialog). `lib/popout.ts`
   `isPopoutWindow()` gates all three. It answers synchronously — App.vue's setup runs before the first
   navigation resolves, so it reads the window, never the router — and it covers the three popout routes
@@ -1701,8 +1701,7 @@ Two things are NOT the same as the console's, and both are load-bearing:
 (`/viewer-window`, window `cecelia-viewer`) opened from the ViewerPanel's ↗ — an in-browser WebGPU MIP
 raycast of the image napari is showing, so the two can be looked at side by side while the browser side
 catches up. It has no docked half because napari occupies that slot until it is removed; the plan and
-the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md) and
-[`NAPARI_WEBGPU_AUDIT.md`](todo/NAPARI_WEBGPU_AUDIT.md).
+the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md).
 
 Three things differ from the other two popouts, each for a stated reason:
 
@@ -1712,7 +1711,7 @@ Three things differ from the other two popouts, each for a stated reason:
   URL (`?project=&image=&valueName=&name=`) and stays there; clicking ↗ again re-seeds the same window.
 - **Contrast is not persisted locally, which is the opposite of the usual rule.** Every user-settable
   option on a module page must live in persisted view state, because a bare `ref()` silently RESETS and
-  the option vanishes. Here the server answers contrast — napari's own saved props file when the image
+  the option vanishes. Here the server answers contrast — the legacy viewer's own saved props file when the image
   has one, otherwise a percentile of one mid-stack plane — so the reset *is* the correct value, and a
   local copy would be a second source of truth for a window napari also writes. The two options that
   genuinely belong to this window (raycast `steps`, wire `compress`) are in the settings store and do
@@ -2127,10 +2126,10 @@ Subscribe in `onMounted`, unsubscribe in `onUnmounted`:
 import { ws } from '../ws'
 
 onMounted(() => {
-  ws.on('napari:event:mySignal', (data) => { ... })
+  ws.on('task:status', (data) => { ... })
 })
 onUnmounted(() => {
-  ws.off('napari:event:mySignal')
+  ws.off('task:status')
 })
 ```
 
@@ -2145,7 +2144,7 @@ just parses and calls it. That matters because a task's terminal frame (`task:st
 `chain:node:done`/`failed` for a whiteboard node) is the ONE frame carrying its outcome, and the server
 drops frames for a slow client **by design** (per-client drop-on-full queue — `docs/API.md`). Lose it and
 the store pinned the task at `running` forever *and* silently skipped everything hanging off completion:
-the image status, `bumpDataVersion` (so plots never auto-refresh), `refreshImageMeta`, the napari reload,
+the image status, `bumpDataVersion` (so plots never auto-refresh), `refreshImageMeta`, the viewer reload,
 the observer's completion watch. Five listeners, one missing frame.
 
 So while this tab has work in flight, the ws store polls `GET /api/tasks/recent` (the rail's banked terminal
@@ -2291,7 +2290,7 @@ This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old
 All nav group headings are collapsible buttons. Clicking a heading toggles the group open/closed;
 a chevron icon (`pi-chevron-down` / `pi-chevron-right`) reflects the current state.
 
-The **napari viewer controls** are NOT in the sidebar — the sidebar only carries the button that
+The **browser viewer controls** are NOT in the sidebar — the sidebar only carries the button that
 toggles them. They live in a `FloatingPanel` mounted in `App.vue`; see *Floating panels* above and
 *ViewerPanel component* below.
 
@@ -2370,7 +2369,7 @@ inside a `FloatingPanel` (`storage-key="viewer"`), toggled by the sidebar's "Vie
 (`settings.viewerPanelOpen`, persisted) — it was a sidebar group once and outgrew the 190px nav.
 
 **State**: image name, `valueName` dropdown (options from `img.filepaths` keys in the project
-store). Changing `valueName` auto-opens the image in Napari via the REST `/api/napari/open`
+store). Changing `valueName` auto-opens the image in Viewer via the REST `/api/napari/open`
 endpoint.
 
 **Auto-refresh**: subscribes to `task:status` WS events in `onMounted`; when a task transitions
@@ -2708,7 +2707,7 @@ columns, stats, CRUD, `applyBroadcast` for the `gating:popmap` WS push; `valueNa
 real segmentation). API: `docs/API.md` gating routes.
 
 **Dot size lives with the other plot options, not on the plot.** The manager's Options box gained a
-**Dot size** slider beside *Line width* — the plot twin of its *Napari dots* slider, scoped global/local
+**Dot size** slider beside *Line width* — the plot twin of its *Viewer dots* slider, scoped global/local
 like every option there. The board's gating tiles reuse the panel's existing *Point size* instead of
 growing a second control. See `docs/PLOTS.md` → *Dot RADIUS is a user knob*.
 
@@ -2732,10 +2731,10 @@ the store/API read — flow cells vs the per-track table, handled server-side (`
 + Points layers, track shows a **"Tracks"** button (`g.showTracks()` → napari Tracks layers via
 `POST /api/napari/show-tracks`). `GatePlotPanel` and `PopulationManager` are shared unchanged; two
 small popType-driven touches: panels default the axis transform to **linear** for track (motility is
-continuous, not logicle-scaled), and the manager hides its **"Napari dots"** point-size option for
+continuous, not logicle-scaled), and the manager hides its **"Viewer dots"** point-size option for
 track (tracks are ribbons, not points — `popType` prop). The store gained `cellMeasures` /
 `trackAggregates` (track `/channels` fields, for building `{measure}.{agg}` axes) and
-`showTracks` / `refreshNapari` (the latter routes the per-pop visibility re-push to Tracks vs Points
+`showTracks` / `refreshViewer` (the latter routes the per-pop visibility re-push to Tracks vs Points
 by `popType`).
 
 ## Interactive vs summary plots

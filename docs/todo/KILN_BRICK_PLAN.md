@@ -213,7 +213,7 @@ default on. Update `WEB_VIEWER_PLAN.md` → Decision 7 to point at this plan.
 ## References
 
 - Upstream: [`mpanknin/kiln-render`](https://github.com/mpanknin/kiln-render) (GPL-3)
-- Audit that grounds the perf targets: [`NAPARI_WEBGPU_AUDIT.md`](NAPARI_WEBGPU_AUDIT.md)
+- Audit that grounds the perf targets: `NAPARI_WEBGPU_AUDIT.md` (removed with the napari purge — see git history)
 - 2D LOD conventions to mirror: [`VIEWER_TILES_PLAN.md`](VIEWER_TILES_PLAN.md), PR #682 (2D LOD hysteresis, `cecelia-lodhyst`)
 - Locked decision this plan revises: [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md) → Decision 7
 - Uint8 support (prereq for using SispLk/35uedD as reference): #684 (`fix/viewer-uint8-support`)

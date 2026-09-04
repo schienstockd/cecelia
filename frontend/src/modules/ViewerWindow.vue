@@ -1,25 +1,24 @@
 <!--
-  The in-browser volume viewer, in its own window — the "web eye" beside napari, and the first step of
-  replacing it (docs/todo/WEB_VIEWER_PLAN.md → P1/P2). A WebGPU MIP raycast: drag to rotate, wheel to
-  zoom, per-channel contrast and visibility, and a scrubbable/playable timecourse over a VRAM cache.
+  The in-browser volume viewer, in its own window (docs/todo/WEB_VIEWER_PLAN.md → P1/P2). A WebGPU MIP
+  raycast: drag to rotate, wheel to zoom, per-channel contrast and visibility, and a scrubbable /
+  playable timecourse over a VRAM cache.
 
-  WHY ITS OWN WINDOW. napari has one, so a side-by-side comparison needs a second one, and the two are
-  meant to be looked at together while the browser side catches up. Same idiom as the console and the
-  Task Manager: a named window (`lib/popout.ts`) opened from the ViewerPanel's ↗.
+  WHY ITS OWN WINDOW. A side-by-side comparison needs a second view surface — same idiom as the
+  console and the Task Manager: a named window (`lib/popout.ts`) opened from the ViewerPanel's ↗.
 
   WHAT IT IS TOLD, and why. A popup is a fresh app instance with no project open, so the image comes
   from the `?project=&image=&valueName=` seed written when the window was opened. Unlike the Task
   Manager it does NOT follow the main window's switches: it is a comparison surface, and a view you are
-  measuring against napari must not move under you because someone clicked another row.
+  measuring against must not move under you because someone clicked another row.
 
-  WHERE THE CONTRAST COMES FROM, and why it is not persisted here. The server answers it — napari's own
-  saved props file when the image has one, otherwise a percentile from a fixed (t, z) sample — so a
-  reload restores the authoritative value rather than a stale local copy. That is the opposite of the
-  usual "persist every user-settable option" case, whose bug is an option silently RESETTING; here the
-  reset IS the correct value, and the alternative would be two disagreeing sources of truth for a
-  window napari also writes. Which side owns it after napari is gone is P8's decision, not this
-  file's. The options that are genuinely this window's — raycast steps, wire encoding, playback fps and
-  loop, the VRAM budget — live in the settings store, so they survive a reload.
+  WHERE THE CONTRAST COMES FROM, and why it is not persisted here. The server answers it — the
+  autosaved props file when the image has one (originally the viewer's shape, still consumed), otherwise
+  a percentile from a fixed (t, z) sample — so a reload restores the authoritative value rather than
+  a stale local copy. That is the opposite of the usual "persist every user-settable option" case,
+  whose bug is an option silently RESETTING; here the reset IS the correct value, and the alternative
+  would be two disagreeing sources of truth for the same on-disk shape. The options that are
+  genuinely this window's — raycast steps, wire encoding, playback fps and loop, the VRAM budget —
+  live in the settings store, so they survive a reload.
 
   SHOWING AND FETCHING ARE SEPARATE, and that is the design, not tidiness. `showT` is synchronous: it
   binds a cached timepoint and paints. `pump` is the async half that fills the prefetch window around
@@ -461,7 +460,7 @@ function recomputeAutoWin() {
     contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
                      undefined, settings.viewerAutoContrastPercent))
 }
-/** The channels' `lo`/`hi` as the SERVER shipped them (napari-saved or first-load percentile) — the
+/** The channels' `lo`/`hi` as the SERVER shipped them (autosaved or first-load percentile) — the
  *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
  *  restoring these gets the user back to a picture they know worked. */
 const initialContrast = ref<{ lo: number; hi: number }[]>([])
@@ -573,7 +572,7 @@ const canvasProbe = ref<CanvasSample | null>(null)
  *
  * This is a pop-out — a second app instance with its own store and NO console rail (App.vue renders one
  * only for the shell) — so a `logStore` call here would go somewhere nobody can read. The channel puts
- * the line in the console you already watch napari in, which is the whole ask: "can't we print this to
+ * the line in the app's console you already watch, which is the whole ask: "can't we print this to
  * the console" (Dominik, 2026-08-25).
  */
 const vlog = (level: 'info' | 'warn' | 'error', message: string, detail?: string) =>
@@ -606,7 +605,7 @@ const overlaysErr = ref('')
  * ticked — so a user can see coastalFg's tracks AND coastalSm15's tracks at the same time, even
  * while the pop manager (which drives the main `overlays` fetch) is on a third, un-tracked vn like
  * `default`. Cached across renders so a repeat toggle is instant; refreshed when trackVisibility
- * changes or the viewer is pinged for an overlay update. Napari draws one Tracks layer per vn;
+ * changes or the viewer is pinged for an overlay update. Viewer draws one Tracks layer per vn;
  * this is the WebGPU analogue.
  */
 const trackPayloads = ref<Map<string, OverlayPayload>>(new Map())
@@ -928,7 +927,7 @@ const camZoom = computed(() => {
   return visibleL0Y / devicePxY
 })
 /**
- * Pyramid level the current view fetches at. napari renders 3D at the coarsest level, and a full-res
+ * Pyramid level the current view fetches at. The volume viewer picks the coarsest level, and a full-res
  * volume of a wide-XY image exceeds WebGPU's `maxBufferSize` (`f8gzA2` needs 1.28 GB against a 256 MB
  * cap) — so the 3D view picks the deepest level by default, user-overridable via
  * `settings.viewerVolumeLevel`.
@@ -1000,7 +999,7 @@ const activeAdapter = computed(() =>
  * A picked colour becomes a two-stop black→colour LUT, which is EXACT for a channel: `image_render.jl`
  * verified every channel colormap is a linear ramp from black. It is a SESSION-LOCAL override — the
  * server still ships the real stops on load (`resolved_display_specs`, which handles the perceptual maps
- * a two-stop ramp cannot). Which side owns colour once napari is gone is P8's decision, like contrast.
+ * a two-stop ramp cannot).
  */
 const CHANNEL_PALETTE = [...new Set(CHANNEL_COLORMAP_OPTIONS.map(o => o.hex))]
 const channelHex = (ch: { lut: number[][] }): string => {
@@ -1346,7 +1345,7 @@ function rebuildOverlays() {
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
   // main `overlays` fetch. That way a user with the pop manager on a non-tracked vn (e.g. `default`)
   // still sees ribbons for whichever tracked vns they have the "directions" eye on, and can show
-  // several vns at once — matching napari's one-Tracks-layer-per-segmentation model. P7 of
+  // several vns at once — one Tracks layer per segmentation. P7 of
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
   // Source list mixes THREE track kinds, in this order:
   //   1. Per-vn base tracks — from `trackPayloads`, the panel's "directions" eye per segmentation.
@@ -2723,8 +2722,8 @@ watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
 const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
- * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — napari draws both, and a fourth
- * implementation of a scale bar is how three of them end up disagreeing.
+ * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — a fourth implementation of a scale bar
+ * is how three of them end up disagreeing.
  *
  * The extent passed is what the camera can SEE, not the image, so the bar shrinks as you zoom in. The
  * component's SVG letterboxes its viewBox exactly as an `object-fit: contain` image would, which is a
@@ -2976,8 +2975,7 @@ const overlayExtent = computed(() => {
 })
 /**
  * In BOTH views and at any orientation — the rendered space is uniform in µm, so the bar is correct
- * wherever the camera is (see `visibleExtentUm`). `'clock'` because this overlay is replacing napari's,
- * which shows H:MM:SS.
+ * wherever the camera is (see `visibleExtentUm`). `'clock'` for H:MM:SS.
  */
 const timeLabel = computed(() => {
   const m = meta.value
@@ -3302,8 +3300,8 @@ watch(() => settings.viewerAutoContrastPercent, () => { recomputeAutoWin() })
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────────
 
-// PY — per-image viewer props autosave. Same on-disk file napari's autosave writes to
-// (`<task_dir>/data/<basename(zarr)>.json`), so an animation-card snapshot stays portable across
+// PY — per-image viewer props autosave. Legacy on-disk shape at
+// `<task_dir>/data/<basename(zarr)>.json`, so an animation-card snapshot stays portable across
 // viewers. The debounce is trailing so a slider/wheel gesture writes ONCE per settle, not per input
 // event. `duringRestore` suppresses the echo when a load applies mutations that would otherwise
 // trip these same watchers. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
@@ -3486,7 +3484,7 @@ watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
        zPlane, t, mode, meta],
       () => publishRegionSink.schedule(undefined))
 
-// ── Publish a napari-shaped viewState alongside the visibleRegion ─────────────
+// ── Publish a viewState alongside the visibleRegion ──────────────────────────
 // Same signal set + same debounce as the region sink — a keyframe capture (AnimationPanel) or a
 // title-card reader is a downstream subscriber of the SAME viewer state the region publishes,
 // so they should coalesce identically. Shape lives in `utils/viewer/viewState.ts` so a bug in the
@@ -3531,8 +3529,8 @@ onMounted(() => {
 onUnmounted(() => { publishResizeObs?.disconnect(); publishResizeObs = null })
 
 // ── Consume a pending viewState from the AnimationPanel ──────────────────────
-// AnimationPanel writes a `PendingViewState` when the user clicks a keyframe (Sync napari on) or
-// toggles Sync while a keyframe is selected. We convert the napari-shaped snapshot back to the
+// AnimationPanel writes a `PendingViewState` when the user clicks a keyframe (Sync viewer on) or
+// toggles Sync while a keyframe is selected. We convert the viewer-shaped snapshot back to the
 // orbit-camera form via the SAME `applyViewStateToBrowser` reader the unit tests exercise, then
 // apply — mutating cam / t / zPlane / mode / channels in place so the existing renderer paths
 // (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
@@ -3807,8 +3805,8 @@ function onSlabsTick(e: StorageEvent) {
 }
 // Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
 // toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
-// clicked. Mirrors the napari path, where `viewerImageUid` is set by napari's WS `open` event so
-// panel + napari always agree on WHICH image the toggles govern. Written on mount + on every focus
+// clicked. Sets `viewerImageUid` on mount so the panel + the popup viewer always agree on WHICH
+// image the toggles govern. Written on mount + on every focus
 // so switching between several open popups follows attention (Dominik, 2026-08-31: "popup shows
 // dots despite panel off" — panel keyed to M2b, popup to fXgbTl).
 function publishViewerFocus() {
@@ -4100,7 +4098,7 @@ onUnmounted(() => {
             @change="reallocate()"
           />
         </template>
-        <!-- 3D pyramid level. napari also renders 3D at the coarsest resolution, and a full-res volume
+        <!-- 3D pyramid level. The volume viewer picks the coarsest resolution by default, and a full-res volume
              of a wide-XY image exceeds the WebGPU max buffer (`f8gzA2` → 1.28 GB against a 256 MB cap).
              So auto = the deepest level; the dropdown lets a user step finer if their card can hold it.
              `@change` (not `@update:*`) so it commits on release, same discipline as Depth. -->

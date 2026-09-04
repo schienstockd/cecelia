@@ -44,8 +44,8 @@ describe('previewBlocker', () => {
   })
 
   it('blocks when the viewer has nothing open', () => {
-    // P7: with no browser viewer window open and no napari-side status either, it's `no-viewer-open`
-    // (was `no-image-open` under napari). Same UX — a message asking the user to open the viewer.
+    // P7: with no browser viewer window open and no viewer-side status either, it's `no-viewer-open`
+    // (was `no-image-open` under viewer). Same UX — a message asking the user to open the viewer.
     expect(previewBlocker(ctx(), null, on)).toBe('no-viewer-open')
     expect(previewBlocker(ctx(), status({ imageUid: null }), on)).toBe('no-viewer-open')
   })
@@ -126,7 +126,7 @@ describe('the params these readers get must be flat', () => {
 })
 
 describe('previewValueName — the layer belongs to the OUTPUT, not the input version', () => {
-  // THE reported bug: the preview layer was keyed by the input image version. napari uses this name
+  // THE reported bug: the preview layer was keyed by the input image version. viewer uses this name
   // as the label stem, and a segmentation's own layers are named after the LABEL SET, so segmenting
   // `corrected` into label set `default` put `(corrected) Preview` on screen while `(default) Labels`
   // was never evicted — two masks stacked — and the finished run then looked for a `(default) Preview`

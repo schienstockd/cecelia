@@ -1,6 +1,6 @@
-// Parse the napari overlay layers out of a captured view snapshot. The bridge names overlay layers
+// Parse the viewer overlay layers out of a captured view snapshot. The bridge names overlay layers
 // "(popType) (valueName) {path}" for population POINTS and "(popType) (valueName) Tracks {path}" for
-// TRACK ribbons (see napari_bridge pop_layer_name / track_layer_name); image channels are plain-named
+// TRACK ribbons (see viewer_bridge pop_layer_name / track_layer_name); image channels are plain-named
 // and "(vn) Labels" is the label mask. From these names alone we can tell which overlays were on when
 // the frame was captured — the durable source for restoring them (zoom-to-source) and for the strip
 // legend. Pure → unit-tested.

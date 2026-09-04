@@ -24,14 +24,14 @@ using Zarr, JSON3, PNGFiles, ColorTypes, FixedPointNumbers
 # A channel's colour comes from napari, as a LUT (`colormap_lut` in the props JSON: black→colour stops
 # that this renderer interpolates). napari is the authority on its own palette, so we do not re-derive
 # it — it has ~30 colormaps and the user can pick any of them, so a name table here can never be
-# complete. It was not: `bop blue` was missing, hit the unknown-name fallback, and rendered napari's
+# complete. It was not: `bop blue` was missing, hit the unknown-name fallback, and rendered the legacy viewer's
 # blue SHG channel as full WHITE — the worst possible fallback, because white adds to all three
 # accumulators and washes the composite out.
 #
 # CMAP_RGB stays as the fallback for props files written BEFORE the LUT was saved, so existing images
-# render correctly without being re-opened in napari. Values are napari's own LUT end colours
+# render correctly without being re-opened in napari. Values are the legacy viewer's own LUT end colours
 # (`napari.utils.colormaps.AVAILABLE_COLORMAPS[name].colors[-1]`) — all of these are linear ramps from
-# black (verified: max deviation 0.007), so a 2-stop LUT reproduces them exactly. napari's remaining
+# black (verified: max deviation 0.007), so a 2-stop LUT reproduces them exactly. the legacy viewer's remaining
 # colormaps are NOT ramps from black — the perceptual ones (viridis/turbo/…) and the `I *` set, which
 # run WHITE→colour — so they cannot be approximated from a name at all and fall back to gray here.
 # Only a props file with `colormap_lut` renders those faithfully.
@@ -157,7 +157,7 @@ file is missing or describes fewer channels than the store has.
 
 This exists for consumers that must SHIP the colours somewhere else rather than composite here — the
 browser renderer serves them as JSON (`viewer_api.jl`) and uploads them as a lookup texture. They must
-not resolve a colormap name themselves: that is a second copy of napari's palette, and the first copy
+not resolve a colormap name themselves: that is a second copy of the legacy viewer's palette, and the first copy
 being incomplete is what rendered the SHG channel WHITE (see `CMAP_RGB` above). One resolver, two
 consumers.
 """
@@ -313,7 +313,7 @@ by the caller (µm → pixel, crop / stride honoured); this file is pure drawing
 
 `mask` is a same-shape `AbstractMatrix{<:Integer}` — the P4 label store's frame with whatever z
 projection the caller applied. Present WITH `mask_colours::AbstractDict{<:Integer,<:RGB}` = label →
-outline colour, or the mask is skipped. `mask_contour_px` is the outline width (napari's `contour`
+outline colour, or the mask is skipped. `mask_contour_px` is the outline width (the legacy viewer's `contour`
 setting). Ids absent from `mask_colours` are skipped, so hiding populations does not require
 rewriting the mask.
 """
@@ -413,7 +413,7 @@ end
 # and MIPs along the rotated view-Z. NO Qt/vispy/GL: pure Julia trilinear interp + ray-cast MIP —
 # what the toy demo of 2026-08-27 (scratchpad/rotate_demo.jl) proved viable on fXgbTl.
 #
-# Rotation is Euler `(rx, ry, rz)` in degrees, matching napari's `camera.angles` docstring
+# Rotation is Euler `(rx, ry, rz)` in degrees, matching the legacy viewer's `camera.angles` docstring
 # (`vispy.scene.cameras.turntable`; the same field `capture_view_state` writes). The rotation matrix
 # is `R = Rz * Ry * Rx` — rotate around X first, then Y, then Z — which is vispy's default when its
 # `Base3DRotationCamera` applies the transform to the volume before projection.
@@ -503,7 +503,7 @@ function render_view_frame_3d(arr, caxes, t::Int;
                 m = 0.0f0
                 for s in 1:n_samples
                     zv = (s - (n_samples + 1) / 2) * step_v
-                    # world = R * (xv, yv, zv)  (view-Y stays "up" because napari's canvas Y is world-Y).
+                    # world = R * (xv, yv, zv)  (view-Y stays "up" because the legacy viewer's canvas Y is world-Y).
                     xw = R11 * xv + R12 * yv + R13 * zv
                     yw = R21 * xv + R22 * yv + R23 * zv
                     zw = R31 * xv + R32 * yv + R33 * zv

@@ -8,8 +8,8 @@
   the manager can drive the ACTIVE plot.
 
   popType only changes (a) the data source the store/API reads (flow cells vs the per-track table —
-  handled server-side) and (b) the napari overlay: flow offers cell-selection linked brushing
-  (transient pops) + Points layers; track offers a "Show tracks" push (napari Tracks layers). The
+  handled server-side) and (b) the viewer overlay: flow offers cell-selection linked brushing
+  (transient pops) + Points layers; track offers a "Show tracks" push (viewer Tracks layers). The
   panel/manager components and the workspace logic (useCanvasPanels: add/remove, Tile/Cascade,
   active panel) are shared as-is — no track-specific clone.
 -->
@@ -183,7 +183,7 @@ const { scope, hl: gHL, lineWidth: gLineWidth, labels: gLabels, fromZero: gFromZ
   // track panels unable to say which family their populations belonged to.
   trackPops: [] as string[],
   // WHICH TRACKS THE CANVAS IS TALKING ABOUT — the cross-panel link. Selecting lanes in the timeline
-  // is the same act as choosing what the x/y track plot draws and what napari flies to, so the
+  // is the same act as choosing what the x/y track plot draws and what viewer flies to, so the
   // selection lives on the CANVAS rather than in one panel's state. Same mechanism the highlighted
   // populations already use, so it persists across navigation with no extra wiring.
   //
@@ -333,7 +333,7 @@ function navTo(delta: number) {
 
 // "Copy gating strategy to other images" dialog (per current pop type; see GatingCopyDialog).
 const showCopy = ref(false)
-const setUid = computed(() => g.napariSetUid())   // the set the gated image belongs to
+const setUid = computed(() => g.viewerSetUid())   // the set the gated image belongs to
 
 // Defining-plot: retune a single-scatter plot to the pop's PARENT (the cloud the gate was drawn on)
 // on the gate's own channels + transforms. The gate outline appears automatically (it's a child of
@@ -379,12 +379,12 @@ watch(() => g.valueName, vn => _writeLastVn(vn))
 function onBroadcast(d: unknown) { g.applyBroadcast(d as any) }
 
 watch(() => props.imageUid, load)
-// a transient pop (napari cell selection) appears → auto-highlight it on every plot so the
+// a transient pop (viewer cell selection) appears → auto-highlight it on every plot so the
 // spatially-selected cells light up in channel space immediately (linked brushing)
 watch(() => g.transientPaths, (paths) => {
   for (const p of paths) if (!gHL.value.includes(p)) gHL.value = [...gHL.value, p]
 }, { deep: true })
-// a pop disappeared (cleared napari selection, deleted pop) → drop it from highlights and any
+// a pop disappeared (cleared viewer selection, deleted pop) → drop it from highlights and any
 // plot displaying it. Without this a stale highlight keeps showPops true, so the base plot stays
 // dimmed/flat with no overlay to load (grey) instead of reverting to pseudocolour/contour.
 watch(() => g.flat.map(p => p.path).join('\n'), () => {
@@ -400,7 +400,7 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
     if (p.state.parent !== 'root' && !exist.has(p.state.parent)) p.state.parent = 'root'
   }
 })
-// WS (re)connect resync: the transient napari-selection pop lives ONLY in the server's in-memory
+// WS (re)connect resync: the transient viewer-selection pop lives ONLY in the server's in-memory
 // registry (never persisted — see docs/POPULATION.md), so a backend restart wipes it. But the client's
 // tree (and the persisted highlight referencing it) survive, so without a resync the stale selection
 // keeps a plot greyed on the same image. On a RECONNECT (not the first connect — onMounted already

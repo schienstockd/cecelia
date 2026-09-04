@@ -42,7 +42,7 @@ const log          = useLogStore()
 const taskStore    = useTaskStore()
 const viewerStore  = useViewerStore()
 
-// Is a recording in flight? The napari viewer is UI-serial — one render at a time — so the Record
+// Is a recording in flight? The viewer is UI-serial — one render at a time — so the Record
 // button reflects the TASK, not a local flag: the render outlives this component's request and its
 // progress/Cancel live in the task list. Covers the batch too, which drives the same viewer.
 const recordingTask = computed(() => taskStore.tasks.some(t =>
@@ -54,7 +54,7 @@ const visibleLabels     = ref<Record<string, boolean>>({})
 // Master "show cell-track ribbons" toggle: draws ribbons for flow pops whose cells have
 // `track_id > 0` (a hand-drawn cell gate over cells that were later tracked). Distinct from
 // "gated tracks" — a future track-poptype pop gated on TRACK measures (speed, straightness);
-// see docs/TRACKING.md → "Track-property gating — backend done, frontend/napari deferred".
+// see docs/TRACKING.md → "Track-property gating — backend done, frontend deferred".
 // The internal setting key is still `showGatedTracks` for continuity with persisted user state.
 const gatedTracksShown  = ref(false)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
@@ -63,7 +63,7 @@ const recording         = ref(false)   // a one-click timelapse recording is in 
 // utils/overlayAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
 // new pop type can't end up toggleable-but-never-restored. Only CELL-grained types are in that list:
 // show-populations plots by cell label, whereas track/trackclust are track-grained (membership is
-// track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
+// track_ids) — their viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
 // directions), and trackclust ribbons are still to come. Layers are namespaced by pop type in the
 // bridge, so flow + clust + region coexist. resolve_pops is generic over pop_type, so region (a filter
 // on regions.{suffix}) resolves + colours its centroids like any other cell pop.
@@ -81,10 +81,9 @@ const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
 
-// The image the user is focused on — napari OR the browser viewer. This computed name is a legacy
-// (P6 renames it). The read is now `openImageUid`: the panel gates its content on ANY viewer being
-// open, not just napari. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
-const napariImage = computed(() => {
+// The image the user is focused on — whichever viewer is open. The read is `openImageUid`: the
+// panel gates its content on ANY viewer being open. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
+const openedImage = computed(() => {
   const uid = projectStore.openImageUid
   if (!uid) return null
   for (const set of projectStore.sets) {
@@ -94,8 +93,8 @@ const napariImage = computed(() => {
   return null
 })
 
-const valueNames = computed(() => Object.keys(napariImage.value?.filepaths ?? {}))
-const labelNames  = computed(() => Object.keys(napariImage.value?.labels ?? {}))
+const valueNames = computed(() => Object.keys(openedImage.value?.filepaths ?? {}))
+const labelNames  = computed(() => Object.keys(openedImage.value?.labels ?? {}))
 
 // One row per label set, registered ones plus any store a task is writing RIGHT NOW (see
 // `livePreviews`). A live-only set has no h5ad, no tracks and no branches yet — and deleting a store
@@ -107,7 +106,7 @@ const labelNames  = computed(() => Object.keys(napariImage.value?.labels ?? {}))
 // no tracks toggle, nothing, while gating and the observer listed it. It is a real analysis object
 // with no pixels, which is a row that offers fewer toggles — not an absent row.
 const pointsOnlyNames = computed(() =>
-  (napariImage.value?.labelPropsNames ?? []).filter(vn => !labelNames.value.includes(vn)))
+  (openedImage.value?.labelPropsNames ?? []).filter(vn => !labelNames.value.includes(vn)))
 
 const labelRows = computed(() => {
   const live = new Set(livePreviews.value.map(p => p.valueName))
@@ -143,7 +142,7 @@ const shownLabelRows = computed(() =>
   labelsExpanded.value ? labelRows.value : activeLabelRows.value)
 const foldedLabelCount = computed(() => labelRows.value.length - activeLabelRows.value.length)
 
-// the set the open image belongs to — the key for per-set napari viewer prefs (colour-by, show-3D,
+// the set the open image belongs to — the key for per-set viewer prefs (colour-by, show-3D,
 // point size, overlay toggles). These are experiment-level: set once, hold across the set's images.
 const currentSetUid = computed(() =>
   projectStore.openImageUid ? projectStore.setUidOfImage(projectStore.openImageUid) : null)
@@ -182,7 +181,7 @@ const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
   if (currentSetUid.value) settings.setPopVisible(currentSetUid.value, popType, v) }
-// timelapse-recording params (per set): frame rate + output size (null size = the napari canvas size)
+// timelapse-recording params (per set): frame rate + output size (null size = the viewer canvas size)
 const movieFps = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).fps : 15,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { fps: v }) } })
@@ -193,10 +192,10 @@ const movieSizeY = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).sizeY : null,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { sizeY: v }) } })
 // Filename addition. A movie is named after the IMAGE, so recording the AF-corrected version and then
-// the raw import would overwrite the first — hence a suffix, prefilled with the version SHOWN in napari
-// (`null` = never touched → use that default; `''` = the user cleared it, which must stick).
+// the raw import would overwrite the first — hence a suffix, prefilled with the version SHOWN in the
+// viewer (`null` = never touched → use that default; `''` = the user cleared it, which must stick).
 // A comparison names itself after the versions it shows, so it can't overwrite either single-version
-// recording; a plain record still falls back to the version shown in napari.
+// recording; a plain record still falls back to the version shown in the viewer.
 const movieSuffixDefault = computed(() =>
   (compareVersions.value.length || compareSegmentations.value.length)
     ? compareSuffix(compareVersions.value, compareSegmentations.value)
@@ -232,7 +231,7 @@ const compareSegmentations = computed<string[]>({
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareSegmentations: v }) } })
 // Mask outline width for the NEXT recording (persisted per-set). The live WebGPU viewer draws
 // its outline from `settings.viewerLabelContour` (global), which is a separate control; two knobs
-// that used to converge on the napari canvas and now don't. Kept as-is: unifying them is a
+// that used to converge on a single viewer canvas and now don't. Kept as-is: unifying them is a
 // panel-UX call, not a P9-scope change.
 const labelContour = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).labelContour : 0,
@@ -252,7 +251,7 @@ const movieLabelValueNames = computed<string[]>(() =>
 // picker for them (they are deliberately kept out of the generic labels picker), so the recorder
 // takes what is ON SCREEN, which is what "record what's shown" means for an overlay with no config.
 const movieBranchValueNames = computed<string[]>(() =>
-  Object.keys(napariImage.value?.branchLabels ?? {}).filter(vn => branchVns.value[vn]))
+  Object.keys(openedImage.value?.branchLabels ?? {}).filter(vn => branchVns.value[vn]))
 const compareLayout = computed<CompareLayout>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
@@ -266,9 +265,9 @@ const compareContrast = computed<CompareContrast>({
 
 // The movie OPTIONS (fps / size / name / title card) live in a popover off the gear — see
 // MovieOptionsButton, which owns that chrome for both this panel and the Animation page.
-// napari's baked overlays. They are drawn into the canvas, so a recording burns them in — hiding them
+// Baked overlays. They are drawn into the canvas, so a recording burns them in — hiding them
 // is a record-time decision, and the batch RE-OPENS each image (which turns the scale bar back on),
-// so toggling them in the napari window is not an alternative.
+// so toggling them in the viewer window is not an alternative.
 const movieTimestamp = computed<boolean>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showTimestamp : true,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showTimestamp: v }) } })
@@ -290,8 +289,8 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 
 // These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
 // useOverlayAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
-// can no longer affect what actually reaches napari (it once did: see useOverlayAutoShow's rules).
-watch(napariImage, (img) => {
+// can no longer affect what actually reaches the viewer (it once did: see useOverlayAutoShow's rules).
+watch(openedImage, (img) => {
   // restore the remembered preference rather than always starting hidden
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
@@ -325,10 +324,9 @@ function openInViewer(valueName: string) {
 // the movie was finished — a frozen button, no progress, and no way out of a 4K render started by
 // mistake. The button no longer owns the "in progress" state either; the task list does.
 async function recordTimelapse() {
-  // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whether the popup
-  // browser viewer OR napari has the image. Was `viewerImageUid`, which stayed null when only the
-  // browser viewer was open, so the Record button silently early-returned (a regression the user
-  // hit after napari was retired from the record path).
+  // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whenever any viewer
+  // has the image. Was `viewerImageUid`, which stayed null when only the popup viewer was open,
+  // so the Record button silently early-returned.
   const uid        = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid || recording.value || recordingTask.value) return
@@ -356,14 +354,14 @@ async function recordTimelapse() {
     const overrides = (currentSetUid.value && colourBy) ? settings.getColourOverrides(currentSetUid.value, colourBy) : {}
     let titleCard: TitleCardPayload | undefined
     if (movieTitleCard.value.enabled) {
-      titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
+      titleCard = await buildTitleCard(projectUid, uid, snapshot, openedImage.value,
         { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
     // The look, in the SAME shape the Batch page authors — one config kind, so a recorded look edits
     // on the page built to edit looks. `seedConfigFromViewState` is the existing live-view → config
     // reader ("fill from view" on that page); the colour-by is not in the layer names, so it rides
     // along from the per-set setting the overlays were actually drawn with.
-    const look = { ...seedConfigFromViewState(snapshot, napariImage.value?.channelNames ?? []),
+    const look = { ...seedConfigFromViewState(snapshot, openedImage.value?.channelNames ?? []),
                    ...(colourBy ? { colourBy } : {}) }
     const versions = compareVersions.value
     const shape    = compareShapeNow.value
@@ -371,9 +369,9 @@ async function recordTimelapse() {
       module: 'viewer',
       label: shape.cells > 1
         ? (shape.grid ? `Compare ${shape.cols} x ${shape.rows}` : `Compare ${shape.cells}`)
-          + ` — ${napariImage.value?.name ?? 'movie'}`
-        : `Record ${napariImage.value?.name ?? 'movie'}`,
-      imageUid: uid, imageName: napariImage.value?.name ?? '', status: 'queued',
+          + ` — ${openedImage.value?.name ?? 'movie'}`
+        : `Record ${openedImage.value?.name ?? 'movie'}`,
+      imageUid: uid, imageName: openedImage.value?.name ?? '', status: 'queued',
       taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
     })
     ws.send({
@@ -393,30 +391,29 @@ async function recordTimelapse() {
       // banked with the movie, not acted on by the recorder — it already records this look by
       // recording the screen (MOVIE_MANAGEMENT_PLAN.md Phase 4)
       look,
-      // The full napari-shape snapshot rides alongside `look`. `look` covers the channel picks +
+      // The full viewer-shape snapshot rides alongside `look`. `look` covers the channel picks +
       // overlay flags; the snapshot's `camera` + `canvas` are what the offline record needs to
       // reproduce the visible rectangle — a viewer zoomed into a corner would otherwise record
       // the whole image at native aspect (bug reported 2026-08-29, the movie/viewer side-by-side).
-      // Absent when the snapshot fell through the napari fallback.
+      // Absent when no snapshot was published.
       ...(snapshot ? { viewState: snapshot } : {}),
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
   } catch (e) {
-    log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
   } finally {
     // the RENDER is the task's business now; this flag only covers assembling the request
     recording.value = false
   }
 }
 
-// Push a pop type's populations to napari as centroid points. The server shows EVERY segmentation's
-// pops at once (each as its own value_name-tagged layer), so `valueName` no longer selects which pops
-// appear — the overlay is independent of which segmentation is "active" (opening the image shows all,
-// not just the active/first one). The `valueName` used to be forwarded as the bridge's per-pop
-// default; the WebGPU viewer reads pop visibility off the shared settings bag now (P5).
+// Push a pop type's populations to the viewer as centroid points. The server shows EVERY
+// segmentation's pops at once (each as its own value_name-tagged layer), so `valueName` no longer
+// selects which pops appear — the overlay is independent of which segmentation is "active" (opening
+// the image shows all, not just the active/first one). The WebGPU viewer reads pop visibility off
+// the shared settings bag (P5).
 
 // Per-pop-type visibility toggle. Persist + ping the WebGPU viewer to re-derive its hidden-pop set.
-// Was dual-write to napari; the mirror went with the P9 slice.
 function togglePopType(popType: string) {
   setPopVisible(popType, !popVisible(popType))
   pingViewerOverlays()
@@ -426,8 +423,8 @@ function togglePopType(popType: string) {
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, ping the viewer.
 function toggleTrack(vn: string) {
-  // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy napari WS
-  // event has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
+  // `openImageUid`, not `viewerImageUid`: this write must land whether or not any legacy image-open
+  // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write (Dominik, 2026-08-26: "i can toggle. but nothing happens").
   const uid = projectStore.openImageUid
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
@@ -439,7 +436,7 @@ function toggleTrack(vn: string) {
 // ping; the WebGPU viewer reads `settings.getBranchVisibility` (via P4-style store).
 function toggleBranch(vn: string) {
   const uid   = projectStore.openImageUid
-  const files = napariImage.value?.branchLabels?.[vn] ?? []
+  const files = openedImage.value?.branchLabels?.[vn] ?? []
   if (!files.length) {
     log.error(`No branch label files registered for "${vn}"`, { source: 'viewer' })
     return
@@ -542,7 +539,7 @@ const legendItems = computed(() => {
  * must read as no claim, not as a pass.
  */
 const versionNote = computed(() => {
-  const img = napariImage.value
+  const img = openedImage.value
   const active = img?.activeValueName
   const vn = selectedValueName.value
   if (!active || !vn || valueNames.value.length < 2) return null
@@ -593,7 +590,7 @@ function toggleLabel(valueName: string) {
   // false when disabling. Build the full name set from the panel + the store's current view so
   // no name gets orphaned.
   const allNames = new Set<string>([
-    ...Object.keys(napariImage.value?.labels ?? {}),
+    ...Object.keys(openedImage.value?.labels ?? {}),
     ...Object.keys(visibleLabels.value),
   ])
   const bag: Record<string, boolean> = {}
@@ -654,7 +651,7 @@ function onTaskResult(data: Record<string, unknown>) {
     // fired by pingViewerOverlays. Radio-like — clear the others so only this new one is on.
     const uid = projectStore.openImageUid
     const bag: Record<string, boolean> = {}
-    for (const n of Object.keys(napariImage.value?.labels ?? {})) bag[n] = n === labelValueName
+    for (const n of Object.keys(openedImage.value?.labels ?? {})) bag[n] = n === labelValueName
     bag[labelValueName] = true
     visibleLabels.value = bag
     if (uid) settings.setLabelVisibility(uid, bag)
@@ -715,13 +712,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <template v-if="napariImage">
+    <template v-if="openedImage">
       <!-- ── Current image: what's open + its versions + segmentation label sets ── -->
       <div class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Current image</div>
         <div class="viewer-image">
           <i class="pi pi-eye viewer-eye" />
-          <span class="viewer-name" :title="napariImage.name">{{ napariImage.name }}</span>
+          <span class="viewer-name" :title="openedImage.name">{{ openedImage.name }}</span>
         </div>
         <select
           v-if="valueNames.length"
@@ -762,7 +759,7 @@ onUnmounted(() => {
                  rightmost, because the segmentation is what the other two are computed from. -->
             <template v-if="row.registered">
               <button
-                v-if="row.masked && (napariImage?.branchLabels?.[row.valueName]?.length ?? 0) > 0"
+                v-if="row.masked && (openedImage?.branchLabels?.[row.valueName]?.length ?? 0) > 0"
                 class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[row.valueName] }"
                 @click="toggleBranch(row.valueName)"
                 v-tooltip.right="branchVns[row.valueName] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
@@ -778,7 +775,7 @@ onUnmounted(() => {
                 class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" data-guide="viewer.toggleLabels"
                 :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
                 @click="toggleLabel(row.valueName)"
-                v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Napari' : 'Show labels in Napari'"
+                v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Viewer' : 'Show labels in Viewer'"
               ><i class="pi pi-eye" /></button>
               <!-- No delete here. Deleting a label set is one scope of the Import page's Delete modal
                    (docs/todo/IMAGE_DELETE_PLAN.md Decision 4) — the viewer shows and hides layers, it
@@ -872,12 +869,12 @@ onUnmounted(() => {
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
-                                 :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
+                                 :size-z="openedImage?.sizeZ" v-model:show3D="show3D"
                                  v-model:zSlice="zSlice" :default-z="viewerZ"
                                  :levels="multiscaleLevels" v-model:detail3d="detail3d" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
-            <MovieTimeRange v-if="(napariImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
-                            v-model:tEnd="movieTEnd" :frames="napariImage?.sizeT ?? 1" />
+            <MovieTimeRange v-if="(openedImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
+                            v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1" />
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" data-guide="viewer.record"

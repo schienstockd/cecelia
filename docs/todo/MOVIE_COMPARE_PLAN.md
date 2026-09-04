@@ -53,7 +53,7 @@ Everything below is canonical; the feature is mostly wiring, plus one genuinely 
 | Popover that escapes a clipping ancestor | `components/TeleportPopover.vue` | ViewerPanel is a `FloatingPanel`, so an inline popup would clip — this exists for exactly that |
 | Version list for an image | `Object.keys(image.filepaths)` — `valueNames` in `ViewerPanel.vue:91`, `versionNames` in `BatchMoviesPanel.vue:57` | Same derivation in both; extract once |
 | Batch config build/persist | `utils/batchMovie.ts` (`buildBatchMovieConfig`, `movieFilename`, `seedConfigFromViewState`) + `stores/settings.ts` (`get/setBatchMovieConfig`, `get/setMovieConfig`) | Per-set persisted — the "persist every option" rule already satisfied |
-| Canvas size for the size placeholder | `composables/useNapariStatus.ts` | one shared poll, don't add a second |
+| Canvas size for the size placeholder | `composables/useViewerStatus.ts` | one shared poll, don't add a second |
 
 ### Julia (`api/`, `app/`)
 
@@ -93,9 +93,9 @@ writer, one size policy, staged-then-promoted output, per-frame progress, workin
 overlay support per column (tracks/pops/labels/colour-by all work, because each pass IS today's
 recording).
 
-**D2 — Rejected: N versions as translated layers in one napari canvas.**
+**D2 — Rejected: N versions as translated layers in one viewer canvas.**
 It would be one render pass and would also give a live side-by-side in the window, but
-`NapariState` binds `_im_data` / `_axes` / `_channel_axis` / `_im_scale` to a **single** store, and
+`ViewerState` binds `_im_data` / `_axes` / `_channel_axis` / `_im_scale` to a **single** store, and
 every overlay, the timestamp, the colour-by cache, the props autosave and the layer-name namespace
 read that state. It is a rewrite of the bridge's core model to save render time. Revisit only if
 somebody actually asks to *interact* with a side-by-side view.

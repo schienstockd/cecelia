@@ -2,7 +2,7 @@
 //
 // The WebGPU viewer autosaves per-channel contrast + colormap, camera and T/Z to
 // `<task_dir>/data/<basename(zarr)>.json`. The on-disk schema is a superset of the historical
-// napari-autosave format (the codebase used to write it, so existing files carry that shape):
+// viewer-autosave format (the codebase used to write it, so existing files carry that shape):
 //
 //   - `camera` / `dims` / `layers` — the historical shape: channel contrast/colormap by name, dims
 //     by index, camera zoom/pose. Populated by mapping the WebGPU channel index to its name; the
@@ -23,7 +23,7 @@ import type { ViewerChannel, ViewerMeta, OrbitCamera } from './volumeViewer'
 /** Palette hex of a channel (single-hue), from the last LUT stop. Empty string if unavailable.
  *
  *  Stops are 0-1 (see `lutFromHex` in volumeViewer.ts), so scale to 0-255 before `toHex`. Matches
- *  the SFC's own `channelHex` — a second table is how napari's SHG once came out WHITE. */
+ *  the SFC's own `channelHex` — a second table is how the viewer's SHG once came out WHITE. */
 export function channelHexFrom(lut: number[][]): string {
   if (!lut.length) return ''
   const last = lut[lut.length - 1]

@@ -4,7 +4,7 @@
   scatter (R pairs()). A sibling of GatePlotPanel: same free-floating CanvasPanel chrome, same page
   (added via GatingPlots' "+ Pairs" button, so BOTH flow and track gating get it). It does NOT draw
   gates — but it DOES show the gates that define the displayed population's children, and it honours the
-  SAME highlight pipeline as the normal plot: the manager's "eye" populations AND the transient napari
+  SAME highlight pipeline as the normal plot: the manager's "eye" populations AND the transient viewer
   cell-selection light up across every tile (linked brushing). Rendering/fetching is the shared
   GateMontage (feedback_use_existing_framework); the tiles come from the pure buildPairDefs.
 
@@ -83,7 +83,7 @@ const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
 const parentChildren = computed(() => g.flat.filter(p => p.parent === parent.value && p.gate))
 const defs = computed(() => buildPairDefs(channels.value, parent.value, transform.value, parentChildren.value))
 
-// coloured overlays: the pops highlighted for THIS panel (manager eye + napari transient), with colours
+// coloured overlays: the pops highlighted for THIS panel (manager eye + viewer transient), with colours
 // resolved from the store (GateMontage is store-agnostic).
 const highlightPops = computed(() => (props.highlight ?? []).map(path =>
   ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee' })))
@@ -95,7 +95,7 @@ const taskReload = ref(0)
 // data should not force a tile refetch of this panel against a store transiently on the wrong popType.
 useDataRefresh(() => (g.imageUid ? [g.imageUid] : []),
                () => { if (g.popType === props.popType) taskReload.value++ })
-// force a point refresh when membership moves without the tiles changing (ancestor gate edit, napari
+// force a point refresh when membership moves without the tiles changing (ancestor gate edit, viewer
 // selection re-evaluated) — the parent's / a highlighted pop's version bumps in the store.
 const reloadKey = computed(() =>
   `${taskReload.value}:${g.popVersion[parent.value] ?? 0}:${(props.highlight ?? []).map(p => g.popVersion[p] ?? 0).join(',')}`)

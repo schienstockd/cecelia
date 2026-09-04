@@ -64,7 +64,7 @@ R["full_z_512px"] = timeit(() -> render_preview_frame(ZP, PROPS, 0; max_px = 512
 # 4. what a real viewer needs: all planes, full resolution
 R["full_z_full_res"] = timeit(() -> render_preview_frame(ZP, PROPS, 0; max_px = 4096, z_keep = NZ), 3)
 
-# 5. all planes at napari's measured canvas size (G1: 1566x1003), the like-for-like comparison
+# 5. all planes at the legacy viewer's measured canvas size (G1: 1566x1003), the like-for-like comparison
 R["full_z_1566px"] = timeit(() -> render_preview_frame(ZP, PROPS, 0; max_px = 1566, z_keep = NZ), 3)
 
 # 6. THE NUMBER THAT ACTUALLY MATTERS FOR OPTION C. Everything above re-reads the volume every

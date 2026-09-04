@@ -1,18 +1,15 @@
 // Task preview — the frontend's single owner of "show me what these params do, here".
 //
 // A STORE rather than a composable because there is exactly one of everything behind it: one worker
-// process holding a GPU model, one napari layer. A per-component composable would let two module pages
+// process holding a GPU model, one viewer layer. A per-component composable would let two module pages
 // fight over both, and the state would reset on every remount — while the worker kept running.
 //
 // The decisions live in `utils/taskPreview.ts` and the timing in `utils/debouncedLatest.ts`, both
 // unit-tested; this file is the wiring (refs, WS subscription, HTTP) and should stay that way.
 //
-// Two triggers, one scheduler:
-//   * the user edits a parameter    → `setContext`
-//   * the user moves the napari view → `napari:view-changed` (the bridge posts it; see
-//     `napari_bridge._attach_view_listener`)
-// Both funnel into one debounced, latest-wins run, because a preview that fires per event queues
-// seconds of stale cellpose behind the one result the user is waiting for.
+// One trigger, one scheduler: the user edits a parameter → `setContext`. Funnels into one debounced,
+// latest-wins run, because a preview that fires per event queues seconds of stale cellpose behind
+// the one result the user is waiting for.
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -24,7 +21,6 @@ import {
   PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker, type PreviewPass,
   previewFailureLog } from '../utils/taskPreview'
-import { useWsStore } from './ws'
 import { useLogStore } from './log'
 import { useViewerStore } from './viewer'
 
@@ -310,22 +306,14 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // Subscribed once, at store creation, NOT in a component's onMounted: the preview must keep tracking
   // the view while the user is on another page (the worker and the layer both outlive the panel).
   //
-  // Under P7, the BROWSER VIEWER writes to `useViewerStore().visibleRegion`, and we watch that
-  // directly rather than routing through a WS message: the store update happens in the same tab,
-  // debounce is already done at the viewer store's sink, and this saves a round trip through the
-  // backend just to reach a peer store. `napari:view-changed` stays as a fallback while other
-  // callers still act through napari.
-  const ws = useWsStore()
+  // The BROWSER VIEWER writes to `useViewerStore().visibleRegion`, and we watch that directly rather
+  // than routing through a WS message: the store update happens in the same tab, debounce is already
+  // done at the viewer store's sink, and this saves a round trip through the backend just to reach a
+  // peer store.
   watch(() => viewerStore.visibleRegion, () => { request() })
   watch(() => viewerStore.openImage, () => {
     // Opening a different image (route load, valueName picker) invalidates the mask on screen — the
     // preview labels store belongs to the previous vn/uid pair.
-    scheduler.cancel()
-    clearResult()
-    void refreshStatus().then(request)
-  })
-  ws.on('napari:view-changed', () => { request() })
-  ws.on('napari:opened', () => {
     scheduler.cancel()
     clearResult()
     void refreshStatus().then(request)

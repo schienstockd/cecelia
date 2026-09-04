@@ -7,7 +7,7 @@
     • the channel-pairs matrix (Gate/Tracking pages) — channel-product tiles, strict N×N matrix.
   The host owns WHICH tiles to render (`defs`, built by tree walk or buildPairDefs); this owns the
   per-tile fetch (plotmeta/plotdata/stats), the transpose reuse (mirror tiles share one fetch), the
-  optional coloured population overlays (`highlight` — the "show pops" / napari-brushing layers, same as
+  optional coloured population overlays (`highlight` — the "show pops" / viewer-brushing layers, same as
   the normal gating plot), the optional COLOUR-BY measure (`colourBy` — every tile's dots take the ramp
   from one third measure, with ONE legend for the grid rather than a bar per tile), the layout, and
   PNG/PDF export. Store-agnostic (the board fetches its own
@@ -38,7 +38,7 @@ const props = withDefaults(defineProps<{
   renderMode?: RenderMode
   gateLabels?: boolean
   gateLineWidth?: number
-  // coloured population overlays drawn on every tile (the manager's "eye" pops + transient napari
+  // coloured population overlays drawn on every tile (the manager's "eye" pops + transient viewer
   // selection). Host resolves the colour; empty on the read-only board.
   highlight?: { path: string; colour: string }[]
   // COLOUR BY a third measure, for the whole grid (null = the local-density pseudocolour). The ramp's
@@ -51,7 +51,7 @@ const props = withDefaults(defineProps<{
   // different parents), so it leaves this at the default; the pairs matrix honours the page's toggle.
   axisFromZero?: boolean
   // bump to force a data refresh when tiles are unchanged but membership moved (ancestor gate edit,
-  // napari selection) — the parent's point cloud can change without any def changing.
+  // viewer selection) — the parent's point cloud can change without any def changing.
   reloadKey?: string | number
   fontSize?: number                              // axis font size (px) forwarded to each tile (vis slider)
   dotSize?: number                               // dot radius (px) forwarded to each tile (see plots/density DOT_R)

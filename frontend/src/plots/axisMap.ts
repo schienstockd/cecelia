@@ -8,7 +8,7 @@
  * survivable the moment it must — which is now.
  *
  * **Y GROWS DOWNWARD IN AN IMAGE.** `centroid_y` is a row index: 0 is the top of the frame. That is
- * what napari draws and what every pixel coordinate in the pipeline means. A plot that puts y
+ * what viewer draws and what every pixel coordinate in the pipeline means. A plot that puts y
  * increasing upward — the default for a chart, and correct for an intensity — is a MIRROR of the
  * image whenever the axis is a position. A cell drifting down-screen appears to drift up, and
  * comparing the plot against the viewer means comparing a shape with its reflection without being

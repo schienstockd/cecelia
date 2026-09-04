@@ -54,7 +54,7 @@ Four were put up; **A** was chosen.
 | | Design | Why not (or why) |
 |---|---|---|
 | **A** | **Timeline first** — lanes over frames, XY beside it | **Chosen.** Answers "when" structurally; merge/split/add all become gestures on a bar; the blocked case explains itself. |
-| B | Napari-first, app as inspector | Right for the hard cases, but needs a bridge event that does not exist ("track N was clicked"), and makes the viewer mandatory for the easy 80%. Keep as a later escalation (Phase 5). |
+| B | Viewer-first, app as inspector | Right for the hard cases, but needs a bridge event that does not exist ("track N was clicked"), and makes the viewer mandatory for the easy 80%. Keep as a later escalation (Phase 5). |
 | C | Candidate inbox, one at a time | Fast for the obvious majority and useless for "I can see that one is wrong" — it hard-codes the unit of work, which is the thing to avoid. Survives as a *filter* over A (Decision 2). |
 | D | Edit the LINKS, scored by morphology | The most powerful and the biggest build; overlaps with re-tracking. Its scoring half is worth taking on its own — Phase 4. |
 

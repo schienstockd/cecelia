@@ -37,7 +37,7 @@ export const axisLabelWithUnit = (name: string, unit?: string | null): string =>
  * Is this axis an IMAGE ROW coordinate — i.e. does it grow downward on screen?
  *
  * Only `centroid_y`. An image is indexed from the top-left, so row 0 is the top of the frame: that is
- * what napari draws, what every pixel index in the pipeline means, and what the segmentation wrote.
+ * what viewer draws, what every pixel index in the pipeline means, and what the segmentation wrote.
  * A chart's default y axis grows upward, which is right for an intensity and a MIRROR for a position —
  * a cell drifting down-screen appears to drift up, and comparing a plot with the viewer silently means
  * comparing a shape with its reflection.

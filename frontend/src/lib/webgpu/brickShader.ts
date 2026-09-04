@@ -243,8 +243,8 @@ fn labAtlasSample(vi: vec3<i32>) -> u32 {
     vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz), 0).r;
 }
 
-// napari's contour: the label's OUTLINE, w voxels thick, in-plane only (x/y). Mirrors
-// mipShader.ts's labEdge — filled at w = 0 (napari's default), which draws the region rather
+// the viewer's contour: the label's OUTLINE, w voxels thick, in-plane only (x/y). Mirrors
+// mipShader.ts's labEdge — filled at w = 0 (the viewer's default), which draws the region rather
 // than the boundary.
 fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
   if (w <= 0) { return true; }
@@ -329,7 +329,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   }
   // Label composite: mix the id's palette colour on top of the raycast result at p.lab.x. The
   // ray already found the front-most id; labEdge decides whether THIS voxel is on the contour.
-  // No cascade to the outer channels -- napari draws the mask on top of the signal.
+  // No cascade to the outer channels -- viewer draws the mask on top of the signal.
   if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
     acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
   }

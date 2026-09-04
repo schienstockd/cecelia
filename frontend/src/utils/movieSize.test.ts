@@ -24,7 +24,7 @@ describe('parseMovieAxis', () => {
 })
 
 describe('movieAxisPlaceholder', () => {
-  it('shows the canvas size when napari reported one', () => {
+  it('shows the canvas size when viewer reported one', () => {
     expect(movieAxisPlaceholder(1512)).toBe('1512')
   })
 

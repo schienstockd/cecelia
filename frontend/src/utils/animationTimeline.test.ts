@@ -13,7 +13,7 @@ describe('layersOf / isOverlay', () => {
     expect(layersOf(undefined)).toEqual({})
   })
 
-  // The one rule that splits the matrix into its two row groups. napari names an overlay layer
+  // The one rule that splits the matrix into its two row groups. viewer names an overlay layer
   // "(flow) (cellsA) tracks"; a channel is just "DAPI".
   it('calls a parenthesised layer an overlay and a plain one a channel', () => {
     expect(isOverlay('(flow) (cellsA) points')).toBe(true)
@@ -37,14 +37,14 @@ describe('framesFor', () => {
 
 describe('activeAnimationUid', () => {
   it('lets the table selection lead', () => {
-    expect(activeAnimationUid(['sel'], 'napari')).toBe('sel')
+    expect(activeAnimationUid(['sel'], 'viewer')).toBe('sel')
   })
 
   // Landing on the page with nothing selected used to be the whole problem — the page said "open an
-  // image in napari" and offered no way to. It now falls back the other way round: whatever napari
+  // image in viewer" and offered no way to. It now falls back the other way round: whatever viewer
   // has open is a timeline worth showing until the user picks one.
-  it('falls back to the image open in napari', () => {
-    expect(activeAnimationUid([], 'napari')).toBe('napari')
+  it('falls back to the image open in viewer', () => {
+    expect(activeAnimationUid([], 'viewer')).toBe('viewer')
     expect(activeAnimationUid([], null)).toBe('')
   })
 })

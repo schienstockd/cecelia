@@ -996,7 +996,7 @@ const unselectableUids = computed(() =>
   .spinner { animation-duration: 1ms; }
 }
 
-/* ── Napari eye button ───────────────────────────────────────────────────────── */
+/* ── Viewer eye button ───────────────────────────────────────────────────────── */
 
 .viewer-btn {
   background: none; border: none; cursor: pointer;

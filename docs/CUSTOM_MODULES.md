@@ -328,10 +328,10 @@ render functions would load fine. It is excluded because shipping renderable cod
 between a plugin and the app drawing it. Declarative specs cost a plugin author far less to maintain
 across releases.
 
-**If you are coming from napari, this is less of a difference than it looks.** napari's own first
+**If you are coming from napari, this is less of a difference than it looks.** the legacy viewer's own first
 tutorial builds its widget with `autogenerate: true` — generated from a function signature by
 magicgui — which is the same pattern as a task spec's `params` here. Hand-written widgets are its
-escape hatch, not its standard path. And napari's most-used contributions put data on screen by
+escape hatch, not its standard path. And the legacy viewer's most-used contributions put data on screen by
 *returning a data tuple* (`LayerData = (data, [attributes, [layer_type]])`), not by drawing.
 
 A plugin CAN now borrow one of cecelia's own interactive plots for its page

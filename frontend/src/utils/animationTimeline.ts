@@ -1,10 +1,10 @@
-// The animation timeline's pure reading logic — what a captured napari view SAYS, with no store, no
+// The animation timeline's pure reading logic — what a captured viewer view SAYS, with no store, no
 // fetch and no DOM. Extracted when the page was split into a controls panel and a timeline matrix
 // (modules/animation/), because both halves read the same snapshots: the panel needs "is there
 // anything to render", the matrix needs the rows and the per-cell state, and a second copy of
 // `isOverlay` in one of them is exactly the divergence this repo keeps paying for.
 //
-// A "snapshot" here is one keyframe's napari view state: `layers` (per-layer visibility + colormap),
+// A "snapshot" here is one keyframe's viewer view state: `layers` (per-layer visibility + colormap),
 // `camera`, `dims`. It is stored verbatim as the bridge returned it, so every read is defensive.
 import { elapsedLabel } from './stillOverlay'
 import type { AnimSnapshot } from '../stores/animation'
@@ -14,7 +14,7 @@ export type Layers = Record<string, { visible?: boolean; colormap?: string }>
 export const layersOf = (s: AnimSnapshot | undefined): Layers =>
   (s?.snapshot?.layers ?? {}) as Layers
 
-/** Overlays (populations / tracks / labels) are napari layers whose name is parenthesised —
+/** Overlays (populations / tracks / labels) are viewer layers whose name is parenthesised —
  *  "(popType) (vn) …", "(vn) Labels". Image channels are the plain-named layers. */
 export const isOverlay = (name: string): boolean => name.startsWith('(')
 
@@ -23,10 +23,10 @@ export const framesFor = (snapshots: AnimSnapshot[], imageUid: string): AnimSnap
   imageUid ? snapshots.filter(s => s.imageUid === imageUid) : []
 
 /** Which image the page is working on. The table's selection leads; with nothing selected we fall back
- *  to whatever napari has open, so the page still shows a timeline the moment you land on it (and a
+ *  to whatever viewer has open, so the page still shows a timeline the moment you land on it (and a
  *  restored animation for another image is not invisible). */
-export const activeAnimationUid = (selectedUids: string[], napariUid: string | null | undefined): string =>
-  selectedUids[0] || napariUid || ''
+export const activeAnimationUid = (selectedUids: string[], viewerUid: string | null | undefined): string =>
+  selectedUids[0] || viewerUid || ''
 
 /** Row set = the union of layer names across the image's keyframes, split by `pred`. Union, not the
  *  first frame's: a layer added halfway through the animation still needs a row. */

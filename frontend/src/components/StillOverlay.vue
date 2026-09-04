@@ -4,7 +4,7 @@
   object-fit: contain — so annotations stay geometrically correct AND aligned to the image content even
   when the frame is letterboxed. The scale bar length is drawn in µm (viewBox units), so it's correct by
   construction; text/bar sizes are fractions of the extent so they scale proportionally with the frame.
-  Drawn on the CLEAN capture (napari's own scale bar/timestamp hidden — see E1). Absolutely fills the
+  Drawn on the CLEAN capture (the viewer's own scale bar/timestamp hidden — see E1). Absolutely fills the
   parent (which must be position:relative and the frame's box).
 -->
 <script setup lang="ts">
@@ -41,7 +41,7 @@ const ok = computed(() => ex.value > 0 && ey.value > 0)
 const bar = computed(() => niceScaleBar(ex.value, props.extentUm?.unit ?? 'µm'))
 
 // Margin in screen px for `chrome: 'fixed'`; the bar's thickness follows its label so a large label
-// does not sit on a hairline. The 20 px default is Dominik's call (2026-08-24) — napari's own overlays
+// does not sit on a hairline. The 20 px default is Dominik's call (2026-08-24) — the viewer's own overlays
 // are 12 px, which read as too small on a full window.
 const MARGIN_PX = 12
 const barPx = computed(() => Math.max(3, props.barFontPx * 0.3))
@@ -107,7 +107,7 @@ const barY = computed(() => ey.value - my.value - barH.value)
   font-family: system-ui, sans-serif; font-size: var(--cc-fs-xs);
   text-shadow: -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85),
                -1px 1px 0 rgba(0,0,0,0.85), 1px 1px 0 rgba(0,0,0,0.85); }
-/* white with a dark outline so it reads on any background (like napari's overlays) */
+/* white with a dark outline so it reads on any background (like the viewer's overlays) */
 .ovl-text { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,0.85); stroke-width: 0.5;
   font-weight: 700; font-family: system-ui, sans-serif; }
 .ovl-fill { fill: #fff; stroke: rgba(0,0,0,0.85); stroke-width: 0.3; }

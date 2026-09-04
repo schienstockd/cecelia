@@ -1,4 +1,4 @@
-// The shared "view legend" model — the backbone for describing what a napari view shows, as
+// The shared "view legend" model — the backbone for describing what a viewer view shows, as
 // colour swatches: image channels (by colormap), populations, and a categorical colour-by. One model
 // feeds every legend: the analysis-board image strip, the animation page, and (later) movie overlays.
 // Pure + unit-tested; the presentational <ViewLegend> component renders a LegendSection[].
@@ -9,7 +9,7 @@ export interface LegendItem { label: string; colour: string }
 export interface LegendSection { title: string; items: LegendItem[] }
 
 /**
- * Channel legend from a view snapshot's napari layers: visible layers whose colormap is a single-hue
+ * Channel legend from a view snapshot's viewer layers: visible layers whose colormap is a single-hue
  * channel colour (continuous maps / labels / tracks return no colour and are skipped). Ported from
  * `ImageStripView.legendFor` so the strip and everything else derive channels the same way.
  */
