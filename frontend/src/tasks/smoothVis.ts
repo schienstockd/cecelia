@@ -335,6 +335,8 @@ export interface SmoothSpatialVisInput {
   bilateralColor: number
   /** `bilateralReach` — spatial σ in px, shared unit with gaussian */
   bilateralReach: number
+  /** `bilateralPolish` — sub-pixel Gaussian applied AFTER bilateral. 0 disables. Same unit (px). */
+  bilateralPolish: number
 }
 
 /**
@@ -345,22 +347,73 @@ export interface SmoothSpatialVisInput {
  */
 export const SPATIAL_COLOR_TO_SCHEMATIC = 1 / 45
 
-export function smoothSpatialVisColumns(inp: SmoothSpatialVisInput): VisColumns {
-  const input = sparseCellsFrame()
-  const g = blur(input, Math.max(0, inp.sigma))
+/**
+ * A proper 3x3 Gaussian at sub-pixel σ, for the polish step. The `blur` helper above is a box-blur
+ * stand-in with `passes = round(σ*2)` — accurate enough for σ≥1 but at σ=0.6 it flattens to a plain
+ * 3x3 mean, which halves the cell peaks the polish is supposed to LEAVE alone. Polish σ is always
+ * sub-pixel (0..1.5 in the task), so a fixed 3x3 kernel with real Gaussian weights matches what the
+ * real `cv2.GaussianBlur` at the same σ produces — the picture then reflects the engine.
+ */
+function gaussianPolish(f: VisFrame, sigma: number): VisFrame {
+  if (sigma <= 0) return f.map(r => r.slice())
+  const inv2s2 = 1 / (2 * sigma * sigma)
+  const w1 = Math.exp(-1 * inv2s2)   // side
+  const w2 = Math.exp(-2 * inv2s2)   // corner
+  const out: VisFrame = f.map(r => r.slice())
+  for (let y = 0; y < f.length; y++) {
+    for (let x = 0; x < f[y].length; x++) {
+      let acc = f[y][x], wsum = 1
+      for (const [dy, dx, w] of [
+        [-1, 0, w1], [1, 0, w1], [0, -1, w1], [0, 1, w1],
+        [-1, -1, w2], [-1, 1, w2], [1, -1, w2], [1, 1, w2],
+      ] as const) {
+        const yy = y + dy, xx = x + dx
+        if (yy < 0 || yy >= f.length || xx < 0 || xx >= f[y].length) continue
+        acc += f[yy][xx] * w; wsum += w
+      }
+      out[y][x] = acc / wsum
+    }
+  }
+  return out
+}
+
+/**
+ * The bilateral column shows the ENGINE that runs — bilateral, then the polish σ if it is on. The
+ * polish is a within-bilateral refinement (a sub-pixel Gaussian after the inverse VST), so it lives
+ * in the same column: a fourth column would spend a third of the width on the polish-vs-no-polish
+ * comparison, which is not the choice the figure is about. The params row states the polish value so
+ * the slider has something to move; polish=0 shows "polish off" instead of a bare number so a user
+ * sliding it to 0 sees the state it produces named rather than reading it as "polish=0 px".
+ */
+function bilateralWithPolish(input: VisFrame, inp: SmoothSpatialVisInput): VisFrame {
   const bl = bilateralPass(input,
                            Math.max(1e-3, inp.bilateralColor * SPATIAL_COLOR_TO_SCHEMATIC),
                            Math.max(0.5, inp.bilateralReach))
+  return inp.bilateralPolish > 0 ? gaussianPolish(bl, inp.bilateralPolish) : bl
+}
+
+export function smoothSpatialVisColumns(inp: SmoothSpatialVisInput): VisColumns {
+  const input = sparseCellsFrame()
+  const g = blur(input, Math.max(0, inp.sigma))
+  const bl = bilateralWithPolish(input, inp)
   const [normIn, normG, normBl] = normalise([input], [g], [bl]).map(s => s[0])
   const wrap = (fr: VisFrame): VisFrame[] => [fr]
+  // One parameter per row, same layout as the temporal figure (`window`, `cost`). A named row per
+  // knob means the slider the user just moved has an obvious home in the figure; a single-cell
+  // "Params" text row hides which value changed.
+  const polishText = inp.bilateralPolish > 0 ? `${inp.bilateralPolish.toFixed(1)}px` : 'off'
 
   const rows: VisRow[] = [
     { key: 'result', label: 'Simulated', role: 'grid', uniform: false,
       cells: [cell('', wrap(normIn)), cell('', wrap(normG)), cell('', wrap(normBl))] },
-    { key: 'params', label: 'Params', role: 'text', uniform: false,
-      cells: [cell(''),
-              cell(`σ=${inp.sigma.toFixed(1)}px`),
-              cell(`color=${inp.bilateralColor.toFixed(0)} reach=${inp.bilateralReach.toFixed(1)}px`)] },
+    { key: 'sigma', label: 'σ', role: 'text', uniform: false,
+      cells: [cell(''), cell(`${inp.sigma.toFixed(1)}px`), cell('')] },
+    { key: 'color', label: 'Color', role: 'text', uniform: false,
+      cells: [cell(''), cell(''), cell(inp.bilateralColor.toFixed(0))] },
+    { key: 'reach', label: 'Reach', role: 'text', uniform: false,
+      cells: [cell(''), cell(''), cell(`${inp.bilateralReach.toFixed(1)}px`)] },
+    { key: 'polish', label: 'Polish', role: 'text', uniform: false,
+      cells: [cell(''), cell(''), cell(polishText)] },
   ]
   return { columns: ['input', ...SMOOTH_SPATIAL_METHODS], rows, pxSize: null, uniformKeys: [] }
 }
@@ -385,10 +438,17 @@ export function smoothSpatialFigure(inp: SmoothSpatialVisInput): { vis: VisColum
   const vis = smoothSpatialVisColumns(inp)
   const input = sparseCellsFrame()
   const g = blur(input, Math.max(0, inp.sigma))
-  const bl = bilateralPass(input,
-                           Math.max(1e-3, inp.bilateralColor * SPATIAL_COLOR_TO_SCHEMATIC),
-                           Math.max(0.5, inp.bilateralReach))
-  return { vis, note: spatialVerdict(input, g, bl) }
+  // Verdict is the ENGINE choice — gaussian vs bilateral — read off the bare bilateral, not the
+  // polished one. Polish is a within-bilateral refinement; a 3x3 Gaussian at sub-pixel σ on a 16x16
+  // schematic dampens cell peaks by ~10% (measured), which would trip the peak-margin threshold at
+  // the DEFAULT polish=0.6 and make the verdict recommend gaussian on the same figure whose picture
+  // shows bilateral doing its job. On a 441x441 image the same σ is proportionally negligible —
+  // that gap is a schematic artifact, so the verdict reads off the frames the engine choice is
+  // actually about.
+  const bareBl = bilateralPass(input,
+                               Math.max(1e-3, inp.bilateralColor * SPATIAL_COLOR_TO_SCHEMATIC),
+                               Math.max(0.5, inp.bilateralReach))
+  return { vis, note: spatialVerdict(input, g, bareBl) }
 }
 
 export interface SmoothVisInput {
