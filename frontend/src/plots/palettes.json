@@ -7,6 +7,6 @@
     "tol-muted": ["#88CCEE", "#44AA99", "#117733", "#332288", "#DDCC77", "#999933", "#CC6677", "#882255", "#AA4499"],
     "tol-light": ["#77AADD", "#EE8866", "#EEDD88", "#FFAABB", "#99DDFF", "#44BB99", "#BBCC33", "#AAAA00"]
   },
-  "trackColorModes": ["track", "speed", "solid"],
+  "trackColorModes": ["track", "speed", "solid", "pop"],
   "heatRamp": ["#0B1A4D", "#1793FF", "#04FA00", "#FFA805", "#FF3856"]
 }

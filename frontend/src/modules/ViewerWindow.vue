@@ -667,7 +667,7 @@ const popsPanelOn = computed(() => {
 })
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
-const trackColorMode = computed<'track' | 'speed' | 'solid'>({
+const trackColorMode = computed<'track' | 'speed' | 'solid' | 'pop'>({
   get: () => setUid.value ? settings.getTrackColorMode(setUid.value) : 'track',
   set: (v) => { if (setUid.value) settings.setTrackColorMode(setUid.value, v); rebuildOverlays() },
 })
@@ -1411,7 +1411,7 @@ function rebuildOverlays() {
   const gatedOn = setUid.value ? settings.getShowGatedTracks(setUid.value) : false
   const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
-  const sources: { vn: string; payload: OverlayPayload; colour?: string }[] = []
+  const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
   for (const [vn, payload] of trackPayloads.value.entries()) {
     sources.push({ vn, payload, colour: overrides[vn] })
   }
@@ -1429,7 +1429,8 @@ function rebuildOverlays() {
       const filtered = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
       if (!filtered.nCells) continue
       const key = `${popMgrVn}::${pop.path}`
-      sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour })
+      sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour,
+                     popColour: pop.colour })
     }
   }
   if (trackclustOn) {
@@ -1440,7 +1441,8 @@ function rebuildOverlays() {
         const filtered = filterPayloadByLabels(tcPayload, new Set(pop.labels))
         if (!filtered.nCells) continue
         const key = `${popMgrVn}::trackclust::${pop.path}`
-        sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour })
+        sources.push({ vn: key, payload: filtered, colour: overrides[key] ?? pop.colour,
+                       popColour: pop.colour })
       }
     }
   }
@@ -4727,6 +4729,7 @@ onUnmounted(() => {
                 <option value="track">track</option>
                 <option value="speed">speed</option>
                 <option value="solid">source</option>
+                <option value="pop">population</option>
               </select>
             </div>
             <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading

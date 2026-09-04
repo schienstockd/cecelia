@@ -129,7 +129,12 @@ function syncChannels() {
   const changed = next.length !== channels.value.length || next.some((c, i) => c !== channels.value[i])
   if (changed) channels.value = next
 }
-watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName, () => g.popType],
+// Watch sources omit `g.popType` on purpose: `selectImage` sets `popType.value` synchronously
+// before awaiting `fetchChannels()`, so a popType-only fire would run `syncChannels` with the
+// previous popType's columns still in `g.columns` — reconcile would then drop the persisted
+// selection as "no longer valid". Waiting for the columns change instead is race-free — the
+// matching popType is always in place by the time the new columns land.
+watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName],
       () => { if (g.popType === props.popType) syncChannels() }, { immediate: true })
 
 // ── heavy-matrix warning ────────────────────────────────────────────────────────────────────────

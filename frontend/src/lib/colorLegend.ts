@@ -162,6 +162,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: gradientSwatch(HEAT_HEXES) },
       { token: 'track-mode:solid', means: 'One palette colour per source — several sources stay separable',
         swatch: noSwatch },
+      { token: 'track-mode:pop', means: "The parent gated population's own colour — ribbons match the pop's swatch",
+        swatch: noSwatch },
     ],
   },
 ]

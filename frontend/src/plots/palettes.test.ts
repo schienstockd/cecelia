@@ -25,8 +25,8 @@ describe('palettes.json parity wrappers', () => {
     expect(BLUE_HEAT_ANCHORS).toHaveLength(5)
   })
 
-  it('TRACK_COLOR_MODES is the JSON trackColorModes — exact three names, in order', () => {
+  it('TRACK_COLOR_MODES is the JSON trackColorModes — exact four names, in order', () => {
     expect(TRACK_COLOR_MODES).toStrictEqual(palettesJson.trackColorModes)
-    expect(TRACK_COLOR_MODES).toStrictEqual(['track', 'speed', 'solid'])
+    expect(TRACK_COLOR_MODES).toStrictEqual(['track', 'speed', 'solid', 'pop'])
   })
 })
