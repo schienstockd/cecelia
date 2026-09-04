@@ -610,18 +610,17 @@ function onTaskStatus(data: Record<string, unknown>) {
   if (!openUid || taskUid !== openUid) return
   reloadViewer()
   // Ping the WebGPU popup so it refetches overlays (pop counts / colours may have changed after a
-  // seg or gating task). Slabs are NOT re-invalidated from here — a mask-writing task rewrites the
-  // label store on disk, and the popup keeps its cached mask until `labelName` changes. That gap
-  // is spelled out in VIEWER_CONTROLS_SPLIT_PLAN.md → Audit § refresh-labels.
+  // seg or gating task).
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
   }
-  // Same-store rewrite (e.g. a re-run of smoothing overwriting `ccidSmoothed.ome.zarr` in place)
-  // does not change `(imageUid, valueName)`, so #779's store-identity check can't detect it and the
-  // tile atlas / brick page table would keep serving cached bytes from the previous run. Bump the
-  // shared cache-clear rev — every viewer window threads it into its sourceId, so the next
-  // reallocate invalidates the same way a version swap does.
-  publishViewerCacheClear()
+  // Same-store rewrite (e.g. a re-run of smoothing overwriting `ccidSmoothed.ome.zarr` in place, or
+  // a re-run of segmentation overwriting a label store) does not change `(imageUid, valueName)`, so
+  // #779's store-identity check can't detect it and the tile atlas / brick page table / label
+  // slab cache would keep serving stale bytes. Publish scoped by image — task-done here doesn't
+  // yet name a specific vn, so any viewer on THIS image reallocates and every other viewer
+  // (different image, or no image) is left alone. See onTaskResult below for the vn-scoped signal.
+  publishViewerCacheClear({ imageUid: openUid })
 }
 
 // Refresh the SHOWN image. Data-only by default (ping the viewer to refetch overlays; the pyramid
@@ -644,19 +643,20 @@ function onTaskResult(data: Record<string, unknown>) {
     selectedValueName.value = addedValueName
     if (settings.viewerAutoUpdate) {
       reloadViewer()
-      // Same rationale as `onTaskStatus`: task result carrying a valueName means the store's
-      // pixels changed. Bump the cache-clear rev so a same-store rewrite invalidates too.
-      publishViewerCacheClear()
+      // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
+      // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
+      // on the same image but a different vn keeps its atlas.
+      publishViewerCacheClear({ imageUid, valueName: addedValueName })
     }
   }
 
   const labelValueName = meta.labelValueName as string | undefined
-  // A task that wrote a label store — the popup's cached mask pixels for THIS vn are stale. Ping
-  // the popup so it invalidates its slabs. The listener on the other side matches on `imageUid`
-  // AND `valueName`, so only the popup showing the affected mask reallocates.
-  if (labelValueName && typeof localStorage !== 'undefined') {
-    localStorage.setItem('cc.viewerSlabsTick',
-                          `${imageUid}:${labelValueName}:${Date.now()}`)
+  // A task that wrote a label store — same rev channel as the intensity path (retired the old
+  // `cc.viewerSlabsTick`: it was labels-only, cross-window-only, and never invalidated the panel
+  // viewer at all). Scoped to `(imageUid, labelValueName)` so only the viewer showing this exact
+  // mask reallocates — a viewer on a different mask on the same image keeps its slabs.
+  if (labelValueName) {
+    publishViewerCacheClear({ imageUid, labelValueName })
   }
   if (labelValueName && settings.viewerAutoUpdate) {
     // Mark newly added label as visible; the WebGPU viewer picks it up via the overlay tick
