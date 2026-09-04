@@ -24,8 +24,8 @@ describe('tileGrid — fill mode (free-form panels)', () => {
     const g = tileGrid(40, W, H)
     expect(g.w).toBe(MIN_TILE_W)
     expect(g.h).toBe(MIN_TILE_H)
-    expect(g.cols).toBe(5)                          // columns from the WIDTH, not ceil(sqrt(40))
-    expect(g.rows).toBe(8)
+    expect(g.cols).toBe(Math.max(1, Math.floor((W - 8) / (MIN_TILE_W + 8))))   // columns from the WIDTH, not ceil(sqrt(40))
+    expect(g.rows).toBe(Math.ceil(40 / g.cols))
     expect(g.gridW).toBeLessThanOrEqual(W)
     expect(g.gridH).toBeGreaterThan(H)              // the workspace grows; the canvas scrolls
   })
@@ -35,6 +35,33 @@ describe('tileGrid — fill mode (free-form panels)', () => {
     const g = tileGrid(4, 0, 0)
     expect(g.w).toBe(MIN_TILE_W)
     expect(g.h).toBe(MIN_TILE_H)
+  })
+
+  // the "narrow / unmeasured viewport collapses to 1 column" report — fixed by the `cols` knob (the
+  // UI escape hatch) AND by the useCanvasWorkspace late-mount fix that keeps this from happening
+  // silently in the first place. Here we cover the arithmetic half of it.
+  it('honours a pinned column count even when a cell would fall below the width floor', () => {
+    // 4 panels, unmeasured viewport (w=1) — the natural fallback is 1 col; the knob overrides
+    const g = tileGrid(4, 1, 1, { cols: 2 })
+    expect(g.cols).toBe(2)
+    expect(g.rows).toBe(2)
+    // width floor is skipped by design — the knob is the escape hatch — but the height floor still
+    // applies so rows keep flowing down when there is no vertical room
+    expect(g.h).toBe(MIN_TILE_H)
+  })
+
+  it('clamps a pinned column count to the panel count (no empty columns)', () => {
+    const g = tileGrid(3, W, H, { cols: 6 })
+    expect(g.cols).toBe(3)
+    expect(g.rows).toBe(1)
+  })
+
+  it('splits the workspace evenly across the pinned columns on a wide viewport', () => {
+    // 4 panels pinned to 4 columns in a wide viewport — each cell is (W - 5*gap)/4
+    const g = tileGrid(4, W, H, { cols: 4 })
+    expect(g.cols).toBe(4)
+    expect(g.rows).toBe(1)
+    expect(g.w).toBe(Math.floor((W - 40) / 4))
   })
 })
 
@@ -65,13 +92,17 @@ describe('tileGrid — square mode (panels that snap to 1:1)', () => {
   })
 
   it('flows DOWN rather than shrink below the floor — the workspace grows to hold it', () => {
-    // 12 plots in 1600x800 want a 257px cell, just under the floor. Rather than cram (or overflow
-    // sideways), the columns come from the WIDTH at floor size and the extra rows go below the fold.
+    // 12 plots in 1600x800: the best square cell (cols=4, rows=3) is 256 px, below the 320-px floor.
+    // Rather than cram (or overflow sideways), the columns come from the WIDTH at floor size and the
+    // extra rows go below the fold. Column count depends on MIN_TILE_H — read it back rather than
+    // baking the number in so the two stay in sync if the floor moves again.
+    const expectedCols = Math.max(1, Math.floor((W - 8) / (MIN_TILE_H + 8)))
     const g = tileGrid(12, W, H, { mode: 'square' })
-    expect(g).toMatchObject({ cols: 5, rows: 3, w: MIN_TILE_H, h: MIN_TILE_H })
+    expect(g).toMatchObject({ cols: expectedCols, rows: Math.ceil(12 / expectedCols),
+                              w: MIN_TILE_H, h: MIN_TILE_H })
     expect(g.gridW).toBeLessThanOrEqual(W)          // never sideways
     expect(g.gridH).toBeGreaterThan(H)              // taller than the viewport, on purpose
-    expect(g.gridH).toBe(8 + 3 * (MIN_TILE_H + 8))
+    expect(g.gridH).toBe(8 + g.rows * (MIN_TILE_H + 8))
   })
 
   it('is IDEMPOTENT — the grown workspace is not fed back in', () => {
@@ -79,8 +110,12 @@ describe('tileGrid — square mode (panels that snap to 1:1)', () => {
     // property directly: the grid for the box it produced must be the grid it produced.
     const g = tileGrid(12, W, H, { mode: 'square' })
     expect(tileGrid(12, W, H, { mode: 'square' })).toEqual(g)
-    // and the wrong thing to do — re-tiling into the grown height — would NOT be stable
-    expect(tileGrid(12, W, g.gridH, { mode: 'square' })).not.toEqual(g)
+    // (An earlier counter-example — re-tiling into the grown height would give a different grid —
+    // was dropped when the floor was aligned with the panel's own min-height: the grown height now
+    // lands EXACTLY on `rows * (floor + gap) + gap`, so feeding it back happens to be a fixed point
+    // rather than a different layout. Idempotency still holds; the failure mode this test protected
+    // against — measuring the WORKSPACE instead of the viewport — is now protected in the host,
+    // where `SummaryCanvas` / etc. pass `workspaceBase`, not the grown size, into `arrangeGrid`.)
   })
 
   it('keeps flowing down as the count climbs, at a constant cell size', () => {
@@ -123,8 +158,10 @@ describe('tileGrid — square mode (panels that snap to 1:1)', () => {
 
 describe('fitSquare — the panel’s own last word', () => {
   it('THE BUG, at the panel: a wide cell yields the cell’s HEIGHT, not its width', () => {
-    // 788x388 cell, 90px of chrome (title row + the gate page's in-flow axis selectors)
-    expect(fitSquare({ w: 788, h: 388 }, 90)).toEqual({ w: 298, h: 388 })
+    // 788x420 cell, 90px of chrome (title row + the gate page's in-flow axis selectors) — the
+    // plot region is limited by the SHORT edge (420 - chrome = 330), never the width. The exact
+    // plot-region size read back is `h - chrome`, so this shows the box height's authority.
+    expect(fitSquare({ w: 788, h: 420 }, 90)).toEqual({ w: 330, h: 420 })
   })
 
   it('never exceeds the cell in either direction', () => {

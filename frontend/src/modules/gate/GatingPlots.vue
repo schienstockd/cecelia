@@ -97,6 +97,8 @@ const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGr
     { squareCells: true, tileBox: () => workspaceBase.value })
 // show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
+// Tile Columns knob (0 = Auto). Persisted per canvas so the last pick survives navigation.
+const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 
 // visual zoom (shared control): scale the free-floating plot workspace to see everything at once. Fit
 // fits the actual plot bounding box; drag is zoom-corrected via the injected zoom. The workspace GROWS
@@ -458,7 +460,9 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
              gating-capable module page via `CellSelectionTools`. Track pops have no spatial
              selection, so hide the whole cluster. Dominik, 2026-08-26. -->
         <CellSelectionTools :show="!isTrack" />
-        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
+                              @update:cols="tileCols = $event"
+                              @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="gate.popManager"

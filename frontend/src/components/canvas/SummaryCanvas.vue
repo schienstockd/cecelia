@@ -92,6 +92,9 @@ const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGr
     ckey, { tileBox: () => workspaceBase.value })
 // show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
+// Tile Columns knob (0 = Auto). Persisted per canvas so the last pick survives navigation. See
+// CanvasArrangeButtons — the escape hatch for a narrow/unmeasured workspace falling back to 1 col.
+const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 
 // ── visual zoom (shared control) — scale the free-floating workspace to see everything at once. Fit
 // fits the actual plot bounding box; drag is zoom-corrected via the injected zoom (CanvasPanel →
@@ -247,7 +250,7 @@ function explodePanel(src: { state: PanelState }, measures: string[]) {
     const p = panels.value.at(-1)
     if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis }, measure: m }
   }
-  arrangeGrid()   // tile them so the whole set is visible at once (the point of "show series")
+  arrangeGrid(tileCols.value)   // tile them so the whole set is visible at once (the point of "show series")
 }
 
 // useSummaryData prunes the GLOBAL selection when pops vanish; prune each panel's LOCAL selection here.
@@ -304,7 +307,9 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
-        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
+                              @update:cols="tileCols = $event"
+                              @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAllPanels" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
