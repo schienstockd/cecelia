@@ -59,7 +59,9 @@ def run(params):
 
     axis_idx    = {ax: dim_utils.dim_idx(ax) for ax in ('X', 'Y', 'Z', 'T')}
     src_slices  = crop_slice_tuple(level_in.ndim, axis_idx, bounds)
-    out_shape   = tuple(s.stop - s.start for s in src_slices)
+    # Un-cropped axes (channels; also Z/T when bounds are -1) come back as `slice(None)`, so
+    # resolve against the source shape rather than subtracting `.stop - .start` directly.
+    out_shape   = tuple(len(range(*s.indices(n))) for s, n in zip(src_slices, level_in.shape))
     log.log(f'>> crop {level_in.shape} -> {out_shape}  bounds={bounds}')
 
     # Update dim_utils to reflect the OUTPUT shape so `open_multiscales_for_writing` chunks it, the
