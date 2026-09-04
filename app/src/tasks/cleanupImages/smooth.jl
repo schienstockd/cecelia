@@ -103,10 +103,11 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                "(SHG/THG) out if they are not cells.")
     end
 
-    spatial_method  = string(get(params, "spatialMethod", "gaussian"))
-    spatial_sigma   = Float64(get(params, "spatialSigma", 1.0))
-    bilateral_color = Float64(get(params, "bilateralColor", 10.0))
-    bilateral_reach = Float64(get(params, "bilateralReach", 3.0))
+    spatial_method   = string(get(params, "spatialMethod", "gaussian"))
+    spatial_sigma    = Float64(get(params, "spatialSigma", 1.0))
+    bilateral_color  = Float64(get(params, "bilateralColor", 10.0))
+    bilateral_reach  = Float64(get(params, "bilateralReach", 3.0))
+    bilateral_polish = Float64(get(params, "bilateralPolish", 0.6))
     # Fallback = 1 (one frame, temporal term off). The spec's default is 3, but on a static image
     # `_apply_param_requires` has dropped these keys entirely (guarded by `requires.axes: ["T"]`) and
     # the "off" value is what the handler must fall back to. Same reason `temporalStat` is irrelevant
@@ -130,7 +131,7 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Channels: $(isempty(channel_idx) ? "all" : channel_idx)")
     if spatial_method == "bilateral_vst"
         on_log("[INFO] spatial=bilateral_vst color=$bilateral_color reach=$bilateral_reach " *
-               "frames=$temporal_frames stat=$temporal_stat")
+               "polish=$bilateral_polish frames=$temporal_frames stat=$temporal_stat")
     else
         on_log("[INFO] spatial=gaussian sigma=$spatial_sigma " *
                "frames=$temporal_frames stat=$temporal_stat")
@@ -139,17 +140,18 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     qc_out_path = joinpath(task_run_dir(img._dir), "smooth_stats.json")
 
     ok = run_py("tasks/cleanupImages/smooth_run.py",
-        (; imPath         = im_path,
-           imOutputPath   = im_output_path,
-           channels       = channel_idx,
-           spatialMethod  = spatial_method,
-           spatialSigma   = spatial_sigma,
-           bilateralColor = bilateral_color,
-           bilateralReach = bilateral_reach,
-           temporalFrames = temporal_frames,
-           temporalStat   = temporal_stat,
-           restoreGain    = restore_gain,
-           qcOutPath      = qc_out_path),
+        (; imPath          = im_path,
+           imOutputPath    = im_output_path,
+           channels        = channel_idx,
+           spatialMethod   = spatial_method,
+           spatialSigma    = spatial_sigma,
+           bilateralColor  = bilateral_color,
+           bilateralReach  = bilateral_reach,
+           bilateralPolish = bilateral_polish,
+           temporalFrames  = temporal_frames,
+           temporalStat    = temporal_stat,
+           restoreGain     = restore_gain,
+           qcOutPath       = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
@@ -172,9 +174,10 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                          "channels"       => get(qmeta, "channels", Int[]),
                          "spatialMethod"  => get(qmeta, "spatialMethod", spatial_method),
                          "spatialSigma"   => get(qmeta, "spatialSigma", spatial_sigma),
-                         "bilateralColor" => get(qmeta, "bilateralColor", bilateral_color),
-                         "bilateralReach" => get(qmeta, "bilateralReach", bilateral_reach),
-                         "temporalFrames" => get(qmeta, "temporalFrames", temporal_frames),
+                         "bilateralColor"  => get(qmeta, "bilateralColor", bilateral_color),
+                         "bilateralReach"  => get(qmeta, "bilateralReach", bilateral_reach),
+                         "bilateralPolish" => get(qmeta, "bilateralPolish", bilateral_polish),
+                         "temporalFrames"  => get(qmeta, "temporalFrames", temporal_frames),
                          "temporalStat"   => get(qmeta, "temporalStat", temporal_stat),
                          "zeroFracIn"     => get(qmeta, "zeroFracIn", Dict()),
                          "zeroFracOut"    => get(qmeta, "zeroFracOut", Dict())))

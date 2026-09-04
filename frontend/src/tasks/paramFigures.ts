@@ -105,6 +105,7 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       sigma: num(ctx.values?.spatialSigma, 1),
       bilateralColor: num(ctx.values?.bilateralColor, 10),
       bilateralReach: num(ctx.values?.bilateralReach, 3),
+      bilateralPolish: num(ctx.values?.bilateralPolish, 0.6),
     })
     return {
       vis,

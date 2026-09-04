@@ -76,24 +76,39 @@ def _inv_anscombe(s):
     return np.clip(inv, 0.0, None).astype(np.float32)
 
 
-def _bilateral_vst(frame, sigma_color, sigma_spatial):
-    """Anscombe VST → cv2 bilateral → unbiased inverse. All the "one shared kernel per channel"
-    invariant needs is one filter with fixed params applied identically — that holds here."""
+def _bilateral_vst(frame, sigma_color, sigma_spatial, polish_sigma=0.0):
+    """Anscombe VST → cv2 bilateral → unbiased inverse [→ gentle Gaussian polish]. All the "one shared
+    kernel per channel" invariant needs is one filter with fixed params applied identically — that
+    holds here, and the polish (a fixed-sigma Gaussian) preserves it.
+
+    `polish_sigma` breaks bilateral's bimodal weight distribution near transitions: after
+    variance-stabilised bilateral, single-pixel jitter shows up because the color-weight is ~1 on the
+    same-brightness side of an edge and ~0 across it, so quantising back to the integer store leaves
+    isolated pixels sticking out. A sub-pixel Gaussian on top of the inverse averages that jitter into
+    the neighbours the bilateral already agreed with, without pulling in the cross-edge neighbours it
+    excluded. Measured on `zolIMa/fXgbTl` — see docs/todo/SMOOTHING_PLAN.md.
+    """
     a = _anscombe(frame)
     b = cv2.bilateralFilter(a.astype(np.float32), d=-1,
                             sigmaColor=float(sigma_color),
                             sigmaSpace=float(sigma_spatial))
-    return _inv_anscombe(b)
+    out = _inv_anscombe(b)
+    if polish_sigma > 0:
+        # ksize=0 lets cv2 derive an odd kernel width from sigma. Sub-pixel sigmas need at least 3.
+        out = cv2.GaussianBlur(out, ksize=(0, 0), sigmaX=float(polish_sigma),
+                               sigmaY=float(polish_sigma))
+    return out
 
 
-def _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach):
+def _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach, bilateral_polish):
     """Return the per-frame spatial callable used by the streaming loop AND the gain estimator.
 
     One callable so both paths run identical arithmetic — the gain the estimator picks is the gain
     the streaming loop needs. `gaussian` routes to coastal.smooth's `spatial_smooth` unchanged.
     """
     if method == "bilateral_vst":
-        return lambda frame: _bilateral_vst(frame, bilateral_color, bilateral_reach)
+        return lambda frame: _bilateral_vst(frame, bilateral_color, bilateral_reach,
+                                            bilateral_polish)
     return lambda frame: spatial_smooth(frame, sigma)
 
 #: How many (t, z) planes to sample when estimating the dynamic-range gain. The gain only needs the
@@ -123,20 +138,22 @@ def _plane_slice(ndim, t_idx, t, c_idx, c, z_idx, z):
 def run(params):
     log = script_utils.get_logfile_utils(params)
 
-    im_path         = params['imPath']
-    out_path        = params['imOutputPath']
-    channels        = [int(c) for c in (params.get('channels') or [])]
-    method          = str(params.get('spatialMethod', 'gaussian'))
-    sigma           = float(params.get('spatialSigma', 1.0))
-    bilateral_color = float(params.get('bilateralColor', 10.0))
-    bilateral_reach = float(params.get('bilateralReach', 3.0))
-    frames          = int(params.get('temporalFrames', 3))
-    stat            = str(params.get('temporalStat', 'median'))
-    restore_gain    = bool(params.get('restoreGain', True))
+    im_path          = params['imPath']
+    out_path         = params['imOutputPath']
+    channels         = [int(c) for c in (params.get('channels') or [])]
+    method           = str(params.get('spatialMethod', 'gaussian'))
+    sigma            = float(params.get('spatialSigma', 1.0))
+    bilateral_color  = float(params.get('bilateralColor', 10.0))
+    bilateral_reach  = float(params.get('bilateralReach', 3.0))
+    bilateral_polish = float(params.get('bilateralPolish', 0.6))
+    frames           = int(params.get('temporalFrames', 3))
+    stat             = str(params.get('temporalStat', 'median'))
+    restore_gain     = bool(params.get('restoreGain', True))
 
     # ONE spatial function for the estimators AND the streaming loop — see `_build_spatial_fn`.
     # A separate closure per path would let the gain estimate drift from the loop that uses it.
-    spatial_fn = _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach)
+    spatial_fn = _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach,
+                                   bilateral_polish)
 
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read is one chunk-aligned plane, so a dask graph only adds
@@ -163,8 +180,8 @@ def run(params):
     log.log(f'>> dims {dim_utils.im_dim_order} {shape}')
     if method == 'bilateral_vst':
         log.log(f'>> smoothing channels {sel} (passing through {others}); '
-                f'spatial=bilateral_vst color={bilateral_color} reach={bilateral_reach}, '
-                f'frames={frames}, stat={stat}')
+                f'spatial=bilateral_vst color={bilateral_color} reach={bilateral_reach} '
+                f'polish={bilateral_polish}, frames={frames}, stat={stat}')
     else:
         log.log(f'>> smoothing channels {sel} (passing through {others}); '
                 f'spatial=gaussian sigma={sigma}, frames={frames}, stat={stat}')
@@ -398,9 +415,10 @@ def run(params):
     stats['channels'] = sel
     stats['spatialMethod'] = method
     stats['spatialSigma'] = sigma
-    stats['bilateralColor'] = bilateral_color
-    stats['bilateralReach'] = bilateral_reach
-    stats['temporalFrames'] = frames
+    stats['bilateralColor']  = bilateral_color
+    stats['bilateralReach']  = bilateral_reach
+    stats['bilateralPolish'] = bilateral_polish
+    stats['temporalFrames']  = frames
     stats['temporalStat'] = stat
     stats['shape'] = [int(x) for x in shape]
     for c in sel:

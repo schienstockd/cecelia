@@ -230,19 +230,50 @@ describe('spatial method figure', () => {
 
   it('smoothSpatialVisColumns exposes the two methods beside the input', () => {
     const vis = smoothSpatialVisColumns({
-      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3,
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3, bilateralPolish: 0.6,
     })
     expect(vis.columns).toEqual(['input', ...SMOOTH_SPATIAL_METHODS])
     expect(vis.rows.find(r => r.key === 'result')!.cells).toHaveLength(3)
   })
 
   it('smoothSpatialFigure carries a verdict line about the CHOICE', () => {
-    // Sparse-count regime with a bilateral: it should say bilateral is the pick, not that gaussian
-    // is enough — since the whole schematic exists to show what gaussian smears.
+    // Sparse-count regime with a bilateral, polish OFF: it should say bilateral is the pick, not
+    // that gaussian is enough — since the whole schematic exists to show what gaussian smears.
+    // (Polish is a within-bilateral refinement; testing with it OFF isolates the gaussian-vs-
+    // bilateral verdict from a change to the polish default.)
     const fig = smoothSpatialFigure({
-      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3,
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3, bilateralPolish: 0,
     })
     expect(fig.note.toLowerCase()).toContain('bilateral')
+  })
+
+  it('polish σ changes the bilateral column and its params text', () => {
+    // The whole point of putting polish in the visual aid: moving the slider must move something
+    // visible. The polished bilateral must differ from the bare one, and the params row must name
+    // the polish value so the picture and the label agree.
+    const bare = smoothSpatialVisColumns({
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3, bilateralPolish: 0,
+    })
+    const polished = smoothSpatialVisColumns({
+      method: 'bilateral_vst', sigma: 1, bilateralColor: 10, bilateralReach: 3, bilateralPolish: 0.8,
+    })
+    const blCol = SMOOTH_SPATIAL_METHODS.indexOf('bilateral_vst') + 1  // +1 for the input column
+    const bareBl = bare.rows.find(r => r.key === 'result')!.cells[blCol].frames![0]
+    const polBl  = polished.rows.find(r => r.key === 'result')!.cells[blCol].frames![0]
+    // Not byte-identical — the polish had a visible effect
+    let differ = false
+    for (let y = 0; y < bareBl.length && !differ; y++) {
+      for (let x = 0; x < bareBl[y].length; x++) {
+        if (Math.abs(bareBl[y][x] - polBl[y][x]) > 1e-6) { differ = true; break }
+      }
+    }
+    expect(differ).toBe(true)
+    // The polish row names the state — "off" when 0, an "px" reading otherwise. One row per param,
+    // same layout as the temporal figure's window/cost rows.
+    const barePolish = bare.rows.find(r => r.key === 'polish')!.cells[blCol].text
+    const polPolish  = polished.rows.find(r => r.key === 'polish')!.cells[blCol].text
+    expect(barePolish).toBe('off')
+    expect(polPolish).toBe('0.8px')
   })
 })
 
