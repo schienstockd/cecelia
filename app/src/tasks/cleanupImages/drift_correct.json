@@ -38,6 +38,18 @@
       "tip": "Multi-lag and chain correct translation only; rigid also fits in-plane rotation"
     },
     {
+      "key": "driftNormalisation",
+      "label": "Correlation normalisation",
+      "type": "select",
+      "default": "none",
+      "options": [
+        { "label": "None",  "value": "none" },
+        { "label": "Phase", "value": "phase" }
+      ],
+      "showIf": { "driftEstimator": ["multiLag", "chain"] },
+      "tip": "Phase whitens the cross-power spectrum — try it on low-SNR frames or large per-frame drift"
+    },
+    {
       "key": "driftMaxLag",
       "label": "Max frame gap",
       "type": "int",

@@ -213,6 +213,21 @@ class DriftEstimateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cu.estimate_drift(arr, 0, du, estimator='bundleAdjust')
 
+    def test_phase_normalisation_wire(self):
+        """`normalisation="phase"` reaches skimage without an error and recovers the same clean
+        drift as the default. Same rolls as `test_recovers_a_known_linear_drift`, but with the
+        phase-whitened cross-power spectrum — a wiring test, not a numeric-equivalence claim
+        (phase normalisation is expected to differ from the default on hard movies, which is why
+        it exists; on this clean synthetic they agree within the same 0.5 px tolerance)."""
+        arr, du, expected = _movie([[0, 2 * t, t] for t in range(8)])
+        est = cu.estimate_drift(arr, 0, du, estimator='multiLag', normalisation='phase')
+        np.testing.assert_allclose(est.positions, expected, atol=0.5)
+        self.assertTrue(np.all(np.isfinite(est.positions)))
+        # `chain` also flows through `_drift_pair_measurements` — one call each, so a future
+        # regression that skips the kwarg on one branch fails here.
+        est_chain = cu.estimate_drift(arr, 0, du, estimator='chain', normalisation='phase')
+        self.assertTrue(np.all(np.isfinite(est_chain.positions)))
+
     @unittest.skipUnless(_SITK_LOADS, "SimpleITK's shared library failed to load")
     def test_sitk_rigid_dispatches_and_reports_angles(self):
         """Dispatch smoke test: `estimate_drift(estimator='sitkRigid')` returns a `DriftEstimate`
