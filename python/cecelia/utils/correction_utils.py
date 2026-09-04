@@ -84,6 +84,236 @@ DRIFT_DEFAULT_MAX_ANGLE = 5.0
 DRIFT_DEFAULT_SMOOTH_SIGMA = 0.0
 DRIFT_TASK_SMOOTH_SIGMA = 6.0
 
+# ── Within-stack XY alignment ────────────────────────────────────────────────
+#
+# For each timepoint's Z stack, each plane gets its own XY shift relative to
+# a reference plane, so a sample that moved DURING acquisition of the stack
+# comes out with all planes at the same lateral position. The measurement is
+# whole-plane phase correlation on a chosen channel; the guards below stop
+# the aligner from forcing structural Z differences into per-plane shifts
+# on movies where planes are just at different depths.
+#
+# Measured on `d5vw7z/c91ICQ` (formerly ttRMjQ), 126 timepoints × 6 z-planes,
+# 5 µm Z spacing:
+#   • median shift 0.9 px, max 7.8 px — realistic sample motion.
+#   • ~40% of non-reference planes reject through the confidence gate. Those
+#     are the top/bottom edge planes at 10-15 µm from the reference; on
+#     this movie they read as structurally distinct (different tissue at
+#     depth), so the gate correctly leaves them alone.
+#   • ref choice matters when the reference plane itself is smeared during
+#     a breath: `sharpest` (highest per-plane sharpness in the stack) picks
+#     an unaffected anchor and avoids spreading the smear laterally.
+
+# Reject a plane's fit if PC confidence (1 - NRMSE) is below this. Empirical:
+# on `d5vw7z/c91ICQ` middle-vs-adjacent-plane confidences sit around 0.5-0.6,
+# while structurally different edge planes drop below 0.35. Not a physical
+# threshold, so exposed as a task param.
+STACK_ALIGN_DEFAULT_MIN_CONF = 0.35
+
+# Reject a plane's fit if the estimated shift exceeds this many pixels — a
+# large shift on a real 30-µm-tall stack is almost always PC latching onto a
+# wrong peak, not real motion. Also exposed.
+STACK_ALIGN_DEFAULT_MAX_SHIFT_PX = 8.0
+
+
+def _plane_sharpness(plane):
+    """A scalar sharpness proxy for one plane: mean |∇I| of the DoG-whitened
+    image. Used by the `sharpest` reference option to pick an anchor plane
+    that isn't itself motion-blurred."""
+    x = plane.astype(np.float32)
+    lo, hi = np.percentile(x, (1, 99))
+    if hi - lo < 1e-6:
+        return 0.0
+    x = np.clip((x - lo) / (hi - lo), 0, 1)
+    w = skimage.filters.difference_of_gaussians(x, 1.0, 6.0)
+    return float(np.abs(np.diff(w, axis=0)).mean() + np.abs(np.diff(w, axis=1)).mean())
+
+
+def _pc_prep(plane):
+    """DoG-whitened, contrast-stretched plane for phase correlation. Same
+    prep the smear audit and the σ-smoother probes use — sharpens PC's
+    correlation peak on faint, low-contrast tissue."""
+    x = plane.astype(np.float32)
+    lo, hi = np.percentile(x, (1, 99))
+    x = np.clip((x - lo) / (hi - lo + 1e-8), 0, 1)
+    x = skimage.filters.difference_of_gaussians(x, 1.0, 6.0)
+    lo, hi = np.percentile(x, (1, 99))
+    return np.clip((x - lo) / (hi - lo + 1e-8), 0, 1).astype(np.float32)
+
+
+StackAlignment = collections.namedtuple('StackAlignment', [
+    'shifts',    # (T, Z, 2) — (dy, dx) per (t, z). Zero for the reference plane
+                 # and for planes the gate rejected (see `applied`).
+    'confidence',# (T, Z) — PC confidence 1-NRMSE; 1.0 at the reference by construction
+    'applied',   # (T, Z) bool — True where the fit was applied (or is the ref);
+                 # False where the gate rejected it and the plane was left as-is
+    'ref_idx',   # (T,) — the reference plane index used for each timepoint
+])
+
+
+def _pick_ref(stack, mode):
+    """Reference plane index for one stack. `mode` is `'middle'`, `'sharpest'`,
+    or an explicit int. Raises on out-of-range int rather than silently
+    clamping — a bad param should fail loudly, not register the whole movie
+    against a plane the user didn't mean."""
+    z = stack.shape[0]
+    if isinstance(mode, (int, np.integer)):
+        m = int(mode)
+        if not 0 <= m < z:
+            raise ValueError(f"stack-align reference {m} out of range for Z={z}")
+        return m
+    if mode == 'middle':
+        return z // 2
+    if mode == 'sharpest':
+        return int(np.argmax([_plane_sharpness(stack[i]) for i in range(z)]))
+    raise ValueError(f"unknown stack-align reference '{mode}' "
+                     f"(middle | sharpest | int)")
+
+
+def estimate_stack_alignment(image_array, align_channel, dim_utils,
+                             reference='middle',
+                             min_conf=STACK_ALIGN_DEFAULT_MIN_CONF,
+                             max_shift_px=STACK_ALIGN_DEFAULT_MAX_SHIFT_PX,
+                             upsample_factor=20,
+                             time_idx=None, channel_idx=None,
+                             on_progress=None):
+    """Per-plane XY shift for every (t, z), computed on ``align_channel``.
+
+    Two guards protect against forcing structural Z differences into shifts:
+    a confidence gate on the PC peak (below ``min_conf`` → don't apply) and
+    a magnitude clamp (|shift| > ``max_shift_px`` → don't apply). Skipped
+    planes come back with shift (0, 0) and `applied=False`; the reference
+    plane comes back with shift (0, 0) and `applied=True`.
+
+    ``reference`` = 'middle' | 'sharpest' | int:
+      - 'middle' (default) — cheap, deterministic. Fine when the middle
+        plane is sharp on most frames.
+      - 'sharpest' — per-timepoint pick, so if the middle plane itself is
+        motion-blurred during a breath the aligner anchors elsewhere.
+      - int — force a specific plane; useful for a diagnostic re-run.
+
+    Returns a `StackAlignment`. The rest of this module treats it exactly
+    like `estimate_drift`'s `DriftEstimate`: numbers a caller banks into QC,
+    then feeds back to the writer.
+    """
+    if time_idx is None:
+        time_idx = dim_utils.dim_idx('T')
+    if channel_idx is None:
+        channel_idx = dim_utils.dim_idx('C')
+    z_idx = dim_utils.dim_idx('Z')
+
+    n_t = dim_utils.dim_val('T')
+    n_z = dim_utils.dim_val('Z')
+
+    shifts = np.zeros((n_t, n_z, 2), dtype=np.float32)
+    conf = np.zeros((n_t, n_z), dtype=np.float32)
+    applied = np.zeros((n_t, n_z), dtype=bool)
+    ref_out = np.zeros(n_t, dtype=np.int32)
+
+    for t in range(n_t):
+        # Load ONE (t, ch) stack as [Z, Y, X].
+        sl = [slice(None)] * len(image_array.shape)
+        sl[time_idx] = slice(t, t + 1)
+        sl[channel_idx] = slice(align_channel, align_channel + 1)
+        stack = np.squeeze(zarr_utils.fortify(image_array[tuple(sl)]),
+                           axis=(time_idx, channel_idx)).astype(np.float32)
+        # After the squeeze the axis order over the SPATIAL dims is what
+        # dim_utils reports for the source; we want [Z, Y, X] regardless.
+        # Reorder if the source stored Z somewhere other than the leading
+        # spatial axis. Cheap; a no-op on the (T, C, Z, Y, X) canonical case.
+        spatial = list(dim_utils.spatial_axis())
+        if spatial != ['Z', 'Y', 'X']:
+            perm = [spatial.index(ax) for ax in ('Z', 'Y', 'X')]
+            stack = np.transpose(stack, perm)
+
+        ref = _pick_ref(stack, reference)
+        ref_out[t] = ref
+        ref_pc = _pc_prep(stack[ref])
+        conf[t, ref] = 1.0
+        applied[t, ref] = True
+
+        for z in range(n_z):
+            if z == ref:
+                continue
+            plane_pc = _pc_prep(stack[z])
+            (dy, dx), err, _ = phase_cross_correlation(
+                ref_pc, plane_pc, upsample_factor=upsample_factor,
+                normalization=None)
+            c = max(0.0, 1.0 - float(err))
+            conf[t, z] = c
+            mag = float(np.hypot(dy, dx))
+            if c >= min_conf and mag <= max_shift_px:
+                shifts[t, z] = (dy, dx)
+                applied[t, z] = True
+            # else: shifts stays (0,0), applied stays False — the plane is
+            # left where it was and QC records it as skipped.
+        if on_progress is not None:
+            on_progress(t + 1, n_t)
+
+    return StackAlignment(shifts=shifts, confidence=conf,
+                          applied=applied, ref_idx=ref_out)
+
+
+def apply_stack_alignment(image_array, alignment, dim_utils, out=None,
+                          on_progress=None):
+    """Write a stack-aligned copy of ``image_array`` — every plane shifted
+    by ``alignment.shifts[t, z]`` (subpixel, cubic). Output shape matches
+    the input; unlike `drift_correct_im`, no canvas expansion, because the
+    per-plane shifts are small and confined to the stack. Content clipped
+    against the frame edge becomes zero (same edge policy the writer's
+    integer-shifted `drift_correct_im` uses for its expanded canvas)."""
+    t_idx = dim_utils.dim_idx('T')
+    c_idx = dim_utils.dim_idx('C')
+    z_idx = dim_utils.dim_idx('Z')
+
+    n_t = dim_utils.dim_val('T')
+    n_c = dim_utils.dim_val('C')
+    n_z = dim_utils.dim_val('Z')
+
+    result_dtype = out.dtype if out is not None else image_array.dtype
+    result = out if out is not None else np.zeros(image_array.shape, dtype=result_dtype)
+
+    for t in range(n_t):
+        for z in range(n_z):
+            dy, dx = alignment.shifts[t, z]
+            if not alignment.applied[t, z] or (dy == 0 and dx == 0):
+                # Copy verbatim — skipped-by-gate planes AND the reference
+                # take this branch. Same code path so a byte-exact "no
+                # alignment happened" case stays trivially reproducible.
+                for c in range(n_c):
+                    sl = [slice(None)] * len(image_array.shape)
+                    sl[t_idx] = slice(t, t + 1)
+                    sl[c_idx] = slice(c, c + 1)
+                    sl[z_idx] = slice(z, z + 1)
+                    src = zarr_utils.fortify(image_array[tuple(sl)])
+                    result[tuple(sl)] = src.astype(result_dtype, copy=False)
+                continue
+            for c in range(n_c):
+                sl = [slice(None)] * len(image_array.shape)
+                sl[t_idx] = slice(t, t + 1)
+                sl[c_idx] = slice(c, c + 1)
+                sl[z_idx] = slice(z, z + 1)
+                src = np.squeeze(zarr_utils.fortify(image_array[tuple(sl)]),
+                                 axis=(t_idx, c_idx, z_idx)).astype(np.float32)
+                # After the squeeze `src` is 2D — (Y, X) in the source's
+                # order. Build a length-2 shift matching that.
+                shifted = scipy.ndimage.shift(
+                    src, shift=(float(dy), float(dx)),
+                    order=3, mode='constant', cval=0)
+                # Clip back to result dtype range so uint16 doesn't wrap on
+                # negative undershoots from the cubic spline.
+                if np.issubdtype(result_dtype, np.integer):
+                    info = np.iinfo(result_dtype)
+                    shifted = np.clip(shifted, info.min, info.max)
+                out_slab = shifted.astype(result_dtype, copy=False)
+                # Restore the T/C/Z axes so the assignment lines up.
+                out_slab = np.expand_dims(out_slab, axis=(t_idx, c_idx, z_idx))
+                result[tuple(sl)] = out_slab
+        if on_progress is not None:
+            on_progress(t + 1, n_t)
+
+    return result
+
 DriftEstimate = collections.namedtuple('DriftEstimate', [
     'shifts',        # (T-1, D) per-frame deltas — what the writer applies. The historic return value.
     'positions',     # (T, D) absolute position of each frame, positions[0] == 0

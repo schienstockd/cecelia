@@ -24,6 +24,7 @@ import type { ColumnCta } from '../components/VisualAid.vue'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 import { driftFigure } from './driftVis'
 import { driftSmoothFigure } from './driftSmoothVis'
+import { stackAlignFigure } from './stackAlignVis'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
@@ -169,6 +170,29 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
    * one thing well (kill jitter) and one thing badly (eat fast motion), and a slider without
    * a picture leaves the user guessing which regime they're in.
    */
+  /**
+   * Within-stack alignment. Three columns show what the aligner does in each of the three
+   * regimes the audit turned up (offset planes, structural depth, smeared middle) at the
+   * current form values. Same three-row shape as the other vis-aids.
+   */
+  stackAlign: ctx => {
+    const mode = String(ctx.values?.referenceMode ?? 'middle') === 'sharpest' ? 'sharpest' : 'middle'
+    const { vis, note } = stackAlignFigure({
+      referenceMode: mode,
+      minConfidence: num(ctx.values?.minConfidence, 0.35),
+      maxShiftPx:    num(ctx.values?.maxShiftPx,    8),
+    })
+    return {
+      vis,
+      note,
+      title: 'Within-stack alignment',
+      tip: 'Show what the aligner does to a Z stack under the current gates',
+      headings: ['Offset planes', 'Different depths', 'Middle smeared'],
+      storageKey: 'stack-align-figure',
+      defaultW: 620, defaultH: 380,
+    }
+  },
+
   driftSmoothing: ctx => {
     const { vis, note } = driftSmoothFigure({
       sigma: num(ctx.values?.driftSmoothSigma, 6),

@@ -214,11 +214,26 @@ def _parse_ome_xml_cached(xml_path, _mtime):
 def load_ome_xml(path):
   """Locate + parse a store's OME-XML (OME/METADATA.ome.xml, else the legacy root METADATA.ome.xml),
   or None if absent/unparseable. The ONE OME-XML reader — the napari bridge and the pipeline both
-  go through here instead of re-opening the file themselves."""
-  for candidate in (
+  go through here instead of re-opening the file themselves.
+
+  Handles the bioformats2raw multi-series layout: for a store whose `filepath` in `ccid.json`
+  points at a series subgroup (``.../ccidImage.ome.zarr/0``), the OME-XML lives at the store
+  ROOT one level up, not inside the subseries. Fall back to the parent directory when the
+  direct lookup fails — cheap, and it is what any reader would have to do by hand otherwise.
+  Measured cost on a match at the direct path: zero — the parent lookup only runs on a miss."""
+  candidates = [
       os.path.join(path, "OME", "METADATA.ome.xml"),
       os.path.join(path, "METADATA.ome.xml"),
-  ):
+  ]
+  # For bioformats2raw multi-series stores the filepath in ccid.json points at a series
+  # subgroup (`.../store.ome.zarr/0`), and OME-XML lives at the store root — one level up.
+  parent = os.path.dirname(path.rstrip(os.sep))
+  if parent and parent != path:
+    candidates.extend([
+        os.path.join(parent, "OME", "METADATA.ome.xml"),
+        os.path.join(parent, "METADATA.ome.xml"),
+    ])
+  for candidate in candidates:
     if os.path.isfile(candidate):
       try:
         return _parse_ome_xml_cached(candidate, os.path.getmtime(candidate))
