@@ -20,8 +20,10 @@ import type { AdvisorContext } from './paramAdvisors'
 import type { ParamDef } from './types'
 import type { VisColumns } from './paramVis'
 import type { Severity } from '../lib/severity'
+import type { ColumnCta } from '../components/VisualAid.vue'
 import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 import { driftFigure } from './driftVis'
+import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
 export interface ParamFigureDef {
@@ -30,6 +32,13 @@ export interface ParamFigureDef {
   /** the button's tooltip — what this particular figure shows */
   tip: string
   headings?: string[]
+  /**
+   * Optional per-column CTA — one small button under a column's heading. Sparse: `undefined` for
+   * columns without a CTA. Used by drift's `ask3d` (4th) column to open the Call for Datasets
+   * modal at the matching card. Nothing here today asks for more than one per figure, but the
+   * shape is per-column so the primitive stays honest.
+   */
+  columnCtas?: (ColumnCta | null | undefined)[]
   note?: string
   noteSeverity?: Severity
   /** `FloatingPanel`'s namespace — per figure, so two of them never fight over one position */
@@ -139,6 +148,14 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       title: 'Estimator',
       tip: 'Show what each estimator does to a rotating field',
       headings: ['Input', 'Multi-lag', 'Rigid', '3D full'],
+      // The 4th column (`ask3d`, deferred full 6-DOF 3D rigid) offers a chip that opens the
+      // Call for Datasets modal at the `sitk-rigid-3d-full` card. `columnCtas` is indexed by
+      // `vis.columns` — three `undefined`s keep the layout honest without a placeholder object.
+      columnCtas: [undefined, undefined, undefined, {
+        text: 'Request',
+        tip: 'Open Call for Datasets',
+        onClick: () => openCallForDatasets('sitk-rigid-3d-full'),
+      }],
       storageKey: 'drift-estimator-figure',
       defaultW: 460, defaultH: 320,
     }

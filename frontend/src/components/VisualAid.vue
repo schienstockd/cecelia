@@ -51,11 +51,32 @@ import { type VisColumns, type VisFrame, MAX_R } from '../tasks/paramVis'
 import InlineNote from './InlineNote.vue'
 import type { Severity } from '../lib/severity'
 
+/**
+ * One column's call-to-action — a small button under the heading. Undefined = no chip on that
+ * column. Used to route the deferred "on request" column (drift's `ask3d`) into the Call for
+ * Datasets modal without inventing a second surface. The producer decides text + click, so nothing
+ * about the modal (or any target) leaks into the figure primitive.
+ */
+export interface ColumnCta {
+  /** the button's label */
+  text: string
+  /** what runs when it's clicked */
+  onClick: () => void
+  /** optional tooltip — the label alone often carries it */
+  tip?: string
+}
+
 const props = defineProps<{
   /** the figure, already computed — see `tasks/paramVis.ts` for one producer */
   vis: VisColumns
   /** column headings; falls back to 1-based numbering */
   headings?: string[]
+  /**
+   * Optional CTA per column — indexed the same as `vis.columns`. A sparse array (`undefined` for
+   * columns that have no CTA) is the caller shape; a `null` is treated identically. Columns without
+   * a CTA render just the heading, as before.
+   */
+  columnCtas?: (ColumnCta | null | undefined)[]
   /** a line under the figure, when the caller has something to say about it */
   note?: string
   /** severity of that line — the canonical union, not a second spelling of it */
@@ -126,7 +147,16 @@ function cellSize(f: VisFrame): number {
         {{ vis.pxSize ? `${Number(vis.pxSize.toFixed(3))} µm/px` : '' }}
       </div>
       <div v-for="(c, i) in vis.columns" :key="`h-${c}`" class="vis-head cc-eyebrow cc-fs-2xs">
-        {{ heading(i) }}
+        <span class="vis-head-txt">{{ heading(i) }}</span>
+        <!-- The heading's optional CTA — one small ghost button under the heading text. Kept
+             sibling-not-nested to the heading text so the eyebrow's letter-spacing does not
+             cascade into it. Nothing is drawn when the caller omits this column's CTA. -->
+        <button v-if="props.columnCtas?.[i]"
+          type="button" class="vis-head-cta cc-btn cc-btn-ghost cc-btn-micro"
+          @click="props.columnCtas![i]!.onClick()"
+          v-tooltip.bottom="props.columnCtas![i]!.tip">
+          {{ props.columnCtas![i]!.text }}
+        </button>
       </div>
 
       <!-- `ri` only to drop the rule under the LAST row: a grid row is not an element, so the divider
@@ -210,7 +240,24 @@ function cellSize(f: VisFrame): number {
 }
 
 .vis-corner, .vis-head { padding: 0 0 0.25rem; }
-.vis-head { text-align: center; }
+.vis-head {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+.vis-head-txt { display: block; }
+/* The eyebrow's uppercase + tracking is right for the heading text but wrong for a CTA label. */
+.vis-head-cta {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--cc-fs-2xs);
+  padding: 0 0.35rem;
+  line-height: 1.2;
+  height: auto;
+  min-height: 1.1rem;
+}
 
 /* The rule per row, on the cells as well as the label: a grid row is not an element, so one border
    would stop at the label's edge. */
