@@ -72,9 +72,11 @@ for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.s
 // Highlighting the eye shows a pop on the UMAP (its colour, other clusters greyed) + breaks the
 // heatmap out per-population. `scope` mirrors gating: GLOBAL = one highlight set for every plot;
 // LOCAL = each plot (panel) has its own (state.hl). All persisted per canvas via the shared bag.
-const { suffix, highlighted, scope, vis: gVis, showManager } = useViewState(shared, {
+const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useViewState(shared, {
   suffix: 'default', highlighted: [] as string[], scope: 'global' as 'global' | 'local',
-  vis: defaultVis() as VisProps, showManager: true })
+  vis: defaultVis() as VisProps, showManager: true,
+  // Tile Columns knob (0 = Auto) — persisted per canvas; see CanvasArrangeButtons
+  tileCols: 0 })
 
 // visual zoom (shared control): scale the free-floating cluster workspace; drag is zoom-corrected via
 // the injected zoom (CanvasPanel → useFloatingPanel). Fit fits the actual plot bounding box; the
@@ -209,7 +211,9 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           <option value="" disabled selected>+ Plot…</option>
           <option v-for="t in plotTypes" :key="t.kind" :value="t.kind">{{ t.label }}</option>
         </select>
-        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
+                              @update:cols="tileCols = $event"
+                              @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="cluster.popManager"

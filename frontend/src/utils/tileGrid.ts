@@ -41,9 +41,12 @@ export interface TileGrid {
   gridH: number
 }
 
-/** Smallest cell worth tiling into. Below this a plot is unreadable, so overflow beats shrinking. */
-export const MIN_TILE_W = 300
-export const MIN_TILE_H = 260
+/** Smallest cell worth tiling into. Match `CanvasPanel`'s own `min-width` / `min-height` (see
+ *  frontend/src/components/canvas/CanvasPanel.vue → `.panel`): the panel refuses to be smaller anyway,
+ *  so handing out a cell below its floor means the panel expands past its allotted row and eats the
+ *  next one (the "plots overlap vertically" report). Keep these two in sync. */
+export const MIN_TILE_W = 340
+export const MIN_TILE_H = 320
 
 const cellW = (W: number, cols: number, gap: number) => (W - gap * (cols + 1)) / cols
 const cellH = (H: number, rows: number, gap: number) => (H - gap * (rows + 1)) / rows
@@ -64,11 +67,22 @@ const finish = (cols: number, rows: number, w: number, h: number, gap: number): 
 
 export function tileGrid(
   n: number, W: number, H: number,
-  opts: { gap?: number; mode?: 'fill' | 'square' } = {},
+  // `cols`: pin the column count instead of picking it from the workspace. Escape hatch for the
+  // narrow-workspace collapse — auto picks `ceil(sqrt(n))` then falls back to `colsAcross` when a cell
+  // would go below the floor, and on a very narrow (or unmeasured) viewport that lands on 1. A pinned
+  // value skips the floor check on the WIDTH: cells shrink to `(W-gap)/cols`, the height floor still
+  // applies so rows keep flowing down when the vertical space runs out. Clamped to [1, n].
+  opts: { gap?: number; mode?: 'fill' | 'square'; cols?: number } = {},
 ): TileGrid {
   const gap = opts.gap ?? 8
   const count = Math.max(1, Math.floor(n))
+  const pinned = opts.cols && opts.cols > 0 ? Math.min(count, Math.floor(opts.cols)) : 0
   if (opts.mode === 'square') {
+    if (pinned) {
+      const rows = Math.ceil(count / pinned)
+      const side = Math.max(MIN_TILE_H, Math.floor(Math.min(cellW(W, pinned, gap), cellH(H, rows, gap))))
+      return finish(pinned, rows, side, side, gap)
+    }
     let best = { cols: 1, rows: count, side: -Infinity }
     for (let cols = 1; cols <= count; cols++) {
       const rows = Math.ceil(count / cols)
@@ -82,12 +96,15 @@ export function tileGrid(
     const cols = colsAcross(W, MIN_TILE_H, gap)
     return finish(cols, Math.ceil(count / cols), MIN_TILE_H, MIN_TILE_H, gap)
   }
-  let cols = Math.ceil(Math.sqrt(count))
+  let cols = pinned || Math.ceil(Math.sqrt(count))
   let w = Math.floor(cellW(W, cols, gap))
-  if (w < MIN_TILE_W) {                       // too narrow → fewer columns, more rows, and scroll
+  if (!pinned && w < MIN_TILE_W) {            // too narrow → fewer columns, more rows, and scroll
     w = MIN_TILE_W
     cols = colsAcross(W, w, gap)
   }
+  // A pinned column count keeps the user's chosen columns even when cells fall below the floor — the
+  // knob is the escape hatch, so honour it. The height floor still applies, so rows still flow down.
+  if (pinned) w = Math.max(1, w)
   const rows = Math.ceil(count / cols)
   return finish(cols, rows, w, Math.max(MIN_TILE_H, Math.floor(cellH(H, rows, gap))), gap)
 }

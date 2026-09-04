@@ -78,14 +78,17 @@ export function useCanvasPanels<S>(
     e.panels = e.panels.map((p, i) =>
       ({ ...p, arrange: { x: 16 + i * 34, y: 16 + i * 34, w: 460, h: 440, seq: ++e.arrangeSeq } }))
   }
-  // Tile (grid): fill the workspace with a near-square grid
-  function arrangeGrid() {
+  // Tile (grid): fill the workspace with a near-square grid. `cols` (optional) pins the column
+  // count — the UI's Columns knob (`CanvasArrangeButtons`) → escape hatch for the
+  // narrow/unmeasured-viewport collapse to 1 column. Auto (undefined/0) keeps the default sqrt-shape.
+  function arrangeGrid(cols?: number) {
     const e = cur()
     const n = e.panels.length
     const box = opts.tileBox?.() ??
       (canvasRef.value && { w: canvasRef.value.clientWidth, h: canvasRef.value.clientHeight })
     if (!box || !n) return
-    const g = tileGrid(n, box.w, box.h, { mode: opts.squareCells ? 'square' : 'fill' })
+    const g = tileGrid(n, box.w, box.h,
+      { mode: opts.squareCells ? 'square' : 'fill', cols: cols && cols > 0 ? cols : undefined })
     e.panels = e.panels.map((p, i) =>
       ({ ...p, arrange: { ...tileCell(i, g), w: g.w, h: g.h, cell: true, seq: ++e.arrangeSeq } }))
   }

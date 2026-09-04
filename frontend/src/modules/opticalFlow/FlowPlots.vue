@@ -60,8 +60,10 @@ const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCa
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
 // `model` + `scope` are the vault's selection, in exactly the shape the population manager's
 // highlight set uses: GLOBAL = one pick for every plot, LOCAL = the active plot's own.
-const { showManager, scope, model } = useViewState(shared, {
-  showManager: true, scope: 'global' as 'global' | 'local', model: '' })
+const { showManager, scope, model, tileCols } = useViewState(shared, {
+  showManager: true, scope: 'global' as 'global' | 'local', model: '',
+  // Tile Columns knob (0 = Auto) — persisted per canvas; see CanvasArrangeButtons
+  tileCols: 0 })
 
 // migrate persisted panel kinds to the current registry keys, like ClusterPlots does — a restored
 // canvas holding a renamed kind renders nothing at all, silently.
@@ -127,7 +129,9 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
           <option value="" disabled selected>+ Plot…</option>
           <option v-for="t in plotTypes" :key="t.key" :value="t.key">{{ t.label }}</option>
         </select>
-        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
+                              @update:cols="tileCols = $event"
+                              @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"

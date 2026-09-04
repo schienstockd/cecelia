@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onBeforeUnmount, type Ref } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, type Ref } from 'vue'
 
 // The free-floating module canvases (summary / gating / cluster) size their logical WORKSPACE to the
 // zoom level: at < 100% the workspace grows to `viewport / zoom`, so zooming OUT gives real extra room
@@ -48,12 +48,21 @@ export function useCanvasWorkspace(
     const el = viewport.value
     if (el) { vpW.value = el.clientWidth; vpH.value = el.clientHeight }
   }
-  onMounted(() => {
+  // (Re-)attach the observer to whatever element `viewport` currently points at. Hosts often mount
+  // the workspace inside a `v-else` that only renders once an image is selected — the ref is still
+  // `null` at `onMounted`, so a one-shot observation there would silently never fire. Tile then reads
+  // vpW=0 and collapses to a single column on a workspace that has plenty of room — the report on a
+  // wide canvas. Rebinding whenever the ref changes closes that hole (and covers a later swap too).
+  const attach = () => {
+    ro?.disconnect(); ro = null
     measure()
-    if (viewport.value && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure); ro.observe(viewport.value)
+    const el = viewport.value
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure); ro.observe(el)
     }
-  })
+  }
+  onMounted(attach)
+  watch(viewport, attach)
   onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 
   const box = computed(() => workspaceBox(vpW.value, vpH.value, zoom.value, content?.()))
