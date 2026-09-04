@@ -1,0 +1,60 @@
+{
+  "task": "stackAlign",
+  "fun_name": "cleanupImages.stackAlign",
+  "label": "Within-stack alignment",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "outputValueName": "stackAligned",
+  "requires": { "axes": ["Z"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to align",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to align — usually the raw or drift-corrected one"
+    },
+    {
+      "key": "alignChannel",
+      "label": "Reference channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "tip": "Channel used to estimate per-plane XY shifts — use the brightest structured channel"
+    },
+    {
+      "key": "referenceMode",
+      "label": "Anchor plane",
+      "type": "select",
+      "default": "middle",
+      "options": [
+        { "label": "Middle plane",           "value": "middle" },
+        { "label": "Sharpest plane per t",   "value": "sharpest" }
+      ],
+      "figure": "stackAlign",
+      "tip": "Which plane in each timepoint's stack the others are aligned to"
+    },
+    {
+      "key": "minConfidence",
+      "label": "Minimum PC confidence",
+      "type": "float",
+      "default": 0.35,
+      "min": 0,
+      "max": 1,
+      "step": 0.05,
+      "tip": "Reject a plane's fit when the correlation peak is weaker than this"
+    },
+    {
+      "key": "maxShiftPx",
+      "label": "Max per-plane shift (px)",
+      "type": "float",
+      "default": 8.0,
+      "min": 1,
+      "max": 64,
+      "step": 1,
+      "tip": "Reject fits over this size — usually structural difference, not motion"
+    }
+  ]
+}
