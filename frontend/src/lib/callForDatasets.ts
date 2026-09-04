@@ -82,11 +82,11 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
       "`editImages.register` uses sitkibex for 2D staining-cycle alignment. A 3D extension would " +
       "let a multi-round staining protocol be registered across cycles in 3D, or align a set of " +
       "3D tiles into one volume. The path is straightforward (SimpleITK does this natively), but " +
-      "we've never had a dataset to profile against — real stores are ~40 GB per cycle and the " +
-      "cost-vs-quality trade of the metric / pyramid choice needs to be measured on one.",
+      "we've never had a dataset to profile against — the cost-vs-quality trade of the metric / " +
+      "pyramid choice needs to be measured on a real store.",
     sceneryHint:
       'A multi-cycle 3D acquisition (e.g. CODEX / MERFISH / IBEX) or a set of 3D tiles that need ' +
-      'stitching. Anything above ~10 GB per cycle so the streaming path is exercised.',
+      'stitching.',
     issueTitle: 'Call for dataset: large static 3D registration',
     labels: ['call-for-datasets', 'area:registration'],
     planPath: 'docs/audit/simpleitk-opportunities.md',
