@@ -684,7 +684,7 @@ async function switchWt(path: string) {
            on apply, so needs Node.js — same requirement as the install-time dev channel. -->
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.preferDevChannel" label="Track main (dev builds)"
-          v-tooltip.bottom="'Follow the main branch instead of tagged releases. Applies as a source build; needs Node.js and can break.'" />
+          v-tooltip.bottom="'Track main HEAD instead of tagged releases; source build, needs Node.js'" />
       </div>
 
       <!-- per-user install: in-app update -->
