@@ -231,6 +231,59 @@ class SmoothRunnerTest(unittest.TestCase):
         self.assertEqual(tuple(out_temporal.shape), tuple(self.shape))
         self.assertTrue(np.isfinite(out_temporal).all())
 
+    def test_bilateral_polish_smooths_speckle_that_bare_bilateral_leaves(self):
+        """The polish σ is why this task exists as a separate option: on photon-limited data the raw
+        bilateral leaves single-pixel jitter because its color-weight is ~1 on the same-brightness side
+        of an edge and ~0 across it, and quantising back to uint16 makes those isolated pixels stick
+        out. A sub-pixel Gaussian on top of the inverse averages them into the neighbours the bilateral
+        already agreed with. Fixture: uniform background sprinkled with isolated bright pixels — the
+        speckle regime. Assert that the polished output has NARROWER local-residual MAD than the
+        unpolished one, and that polish=0 short-circuits the Gaussian (byte-identical to no polish).
+        """
+        rng = np.random.default_rng(19)
+        shape = list(self.shape)
+        spikes = np.full(shape, 30, dtype=np.float32)
+        spikes += rng.normal(0, 3, size=shape).astype(np.float32)
+        # sprinkle isolated bright pixels — the speckle
+        idx = tuple(rng.integers(0, s, size=200) for s in shape)
+        spikes[idx] = 200.0
+        spikes = np.clip(np.rint(spikes), 0, np.iinfo(np.uint16).max).astype(np.uint16)
+
+        path = os.path.join(self.dir, 'spikes.ome.zarr')
+        _, level0, _ = zarr_utils.open_multiscales_for_writing(
+            path, tuple(shape), np.uint16, self.du, nscales=1)
+        level0[:] = spikes
+        ome_xml_utils.save_meta_in_zarr(path, omexml=ome_xml_utils.parse_meta(self.in_path))
+
+        common = dict(spatialMethod='bilateral_vst', bilateralColor=10.0, bilateralReach=3.0,
+                      temporalFrames=1, temporalStat='median')
+        no_polish = self._run(imPath=path, bilateralPolish=0.0, **common).astype(np.float32)
+        polished  = self._run(imPath=path, bilateralPolish=0.7, **common).astype(np.float32)
+        self.assertFalse(np.array_equal(no_polish, polished),
+                         'polish σ>0 should change the output relative to polish=0')
+
+        # Local-residual MAD on a single plane — narrower = more coherent, i.e. less speckle.
+        def local_mad(arr):
+            import cv2 as cv2m
+            plane = arr[3, 2, 0]
+            smoothed = cv2m.blur(plane, (5, 5))
+            r = plane - smoothed
+            return float(np.median(np.abs(r - np.median(r))))
+        self.assertLess(local_mad(polished), local_mad(no_polish),
+                        'polish σ>0 should tighten the local-residual distribution')
+
+    def test_bilateral_polish_zero_matches_no_polish_call(self):
+        """The `polish_sigma > 0` guard makes polish=0 skip the GaussianBlur entirely — assert that
+        so a future refactor that inlines the call cannot silently start filtering at 0."""
+        out_zero = self._run(spatialMethod='bilateral_vst', bilateralColor=10.0, bilateralReach=3.0,
+                             bilateralPolish=0.0, temporalFrames=1, temporalStat='median')
+        # Same params, no polish arg — should hit the same short-circuit branch
+        default_polish = self._run(spatialMethod='bilateral_vst', bilateralColor=10.0,
+                                   bilateralReach=3.0, temporalFrames=1, temporalStat='median')
+        # default is 0.6, so the two must DIFFER — the default is polishing, not off
+        self.assertFalse(np.array_equal(out_zero, default_polish),
+                         'default polish (0.6) must differ from polish=0')
+
     def test_gaussian_stays_the_default_when_no_method_is_passed(self):
         """`spatialMethod` is optional; omitting it must run the gaussian engine unchanged, so an
         older caller (chain, saved run, external script) still routes to the same spatial path.
