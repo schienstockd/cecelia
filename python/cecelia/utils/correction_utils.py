@@ -57,11 +57,18 @@ _FFT_WORKERS = max(1, min(8, os.cpu_count() or 1))
 DRIFT_DEFAULT_MAX_LAG = 3
 DRIFT_DEFAULT_SMOOTHNESS = 0.5
 
+# Default cap on |angle| per frame for the `sitkRigid` estimator (see `sitk_estimate_rigid`).
+# Above this, the frame is marked interpolated and its (angle, translation) is predicted from its
+# neighbours. 5° is well above any real stage bump on the author's rigs (usually sub-degree);
+# above 10°, the fit is almost always dominated by a moving object in the reference channel
+# rather than by the frame itself. See docs/todo/DRIFT_RIGID_PLAN.md Decision 6.
+DRIFT_DEFAULT_MAX_ANGLE = 5.0
+
 DriftEstimate = collections.namedtuple('DriftEstimate', [
     'shifts',        # (T-1, D) per-frame deltas — what the writer applies. The historic return value.
     'positions',     # (T, D) absolute position of each frame, positions[0] == 0
     'axes',          # ['Z','Y','X'] or ['Y','X'] — what the D columns mean
-    'estimator',     # 'multiLag' | 'chain'
+    'estimator',     # 'multiLag' | 'chain' | 'sitkRigid'
     'max_lag',
     'n_pairs',       # how many pairwise measurements went in
     'n_rejected',    # …and how many the robust fit outvoted
@@ -72,6 +79,10 @@ DriftEstimate = collections.namedtuple('DriftEstimate', [
     # would report a flawless registration for the one estimator that cannot check itself.
     'residual_rms',
     'residual_p90',
+    # Rigid estimator only: (T,) degrees, ``angles[0] == 0``. None for translation-only estimators
+    # (multiLag / chain) so existing consumers ignore it. Same "None means not measured, not 0.0"
+    # discipline as ``residual_rms`` — see docs/todo/DRIFT_RIGID_PLAN.md Decision 4.
+    'angles',
 ])
 
 
@@ -223,6 +234,7 @@ def drift_residuals(pairs, positions):
 def estimate_drift(image_array, phase_shift_channel, dim_utils,
                    upsample_factor=100, normalisation=None,
                    estimator='multiLag', max_lag=DRIFT_DEFAULT_MAX_LAG,
+                   max_angle_deg=DRIFT_DEFAULT_MAX_ANGLE,
                    smoothness=DRIFT_DEFAULT_SMOOTHNESS, robust=True,
                    time_idx=None, channel_idx=None, on_progress=None):
     """Per-frame drift of ``image_array`` on ``phase_shift_channel``, as a `DriftEstimate`.
@@ -239,14 +251,44 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
     * ``'chain'`` — neighbours only, integrated in order. What the task did before, kept so a
       banked trajectory can be reproduced. Note it is not bit-identical to pre-2026-08 runs: the
       transforms are float32 now (≤0.02 px cumulative, below the whole-pixel placement grid).
+    * ``'sitkRigid'`` — 2D rigid (translation + rotation) via SimpleITK's `ImageRegistrationMethod`.
+      For movies where the stage picked up rotation as well as translation, which phase correlation
+      cannot see at all. Each frame is fit directly against ``t = 0`` seeded by the previous
+      frame's transform, and any per-frame ``|angle| > max_angle_deg`` is rejected and
+      interpolated from its neighbours. Design: `docs/todo/DRIFT_RIGID_PLAN.md`.
 
     ``on_progress(n, total)`` is called once per frame transformed.
     """
-    if estimator not in ('multiLag', 'chain'):
-        raise ValueError(f"unknown drift estimator '{estimator}' (multiLag | chain)")
+    if estimator not in ('multiLag', 'chain', 'sitkRigid'):
+        raise ValueError(
+            f"unknown drift estimator '{estimator}' (multiLag | chain | sitkRigid)")
 
     n_t = dim_utils.dim_val('T')
     axes = ['Z', 'Y', 'X'] if dim_utils.is_3D() else ['Y', 'X']
+
+    if estimator == 'sitkRigid':
+        # In-plane rotation only, on 2D OR 3D volumes (option B). Positions come back in the same
+        # (Y, X) / (Z, Y, X) axis order as the translation estimators, so the writer treats the
+        # result the same way.
+        positions, angles, interpolated, n_rejected = sitk_estimate_rigid(
+            image_array, phase_shift_channel, dim_utils, n_t,
+            max_angle_deg=max_angle_deg,
+            time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+        n_dim = positions.shape[1]
+        return DriftEstimate(
+            shifts=np.diff(positions, axis=0) if n_t > 1 else np.zeros((0, n_dim)),
+            positions=positions,
+            axes=axes,
+            estimator=estimator,
+            max_lag=1,                    # every fit is direct-to-t=0, so "lag" doesn't apply
+            n_pairs=max(0, n_t - 1),      # one per frame after 0
+            n_rejected=n_rejected,
+            interpolated=interpolated,
+            residual_rms=None,            # direct-to-reference fits have no redundancy — see Decision 4
+            residual_p90=None,
+            angles=angles,
+        )
+
     lag = 1 if estimator == 'chain' else max(1, int(max_lag))
 
     pairs = _drift_pair_measurements(
@@ -287,7 +329,251 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
         interpolated=interpolated,
         residual_rms=float(np.sqrt(np.mean(res ** 2))) if len(res) else None,
         residual_p90=float(np.percentile(res, 90)) if len(res) else None,
+        angles=None,
     )
+
+
+# ── Rigid (rotation-aware) drift estimation ──────────────────────────────────
+#
+# For movies where the stage picked up rotation as well as translation. Phase correlation cannot
+# see rotation at all — the correlation peak sits on whatever translation best aligns the two
+# frames' rotational average, which is a lie the eye picks up immediately once you plot a track
+# through the corrected canvas. This section fits a per-frame `Euler2DTransform` with SimpleITK's
+# `ImageRegistrationMethod` instead: (angle, ty, tx) per frame, in frame 0's coordinate system.
+#
+# Design lives in docs/todo/DRIFT_RIGID_PLAN.md. In particular:
+# - Direct-to-t=0 fits, seeded by the previous frame's fit (Decisions 3, 7). No chain composition:
+#   the fit at frame t returns the answer we want (T_t maps frame_0 → frame_t) directly, so we
+#   never compose Euler2Ds through 3x3 matrices and re-extract angles.
+# - `sitk.Resample(frame_t, frame_0_reference, T_t)` warps frame t into frame 0's canvas — that
+#   is what `apply_shifts` will do in P3.
+# - Rotation centre is the frame centre, shared by the fit and the applier via `_rigid_centre`.
+
+def _rigid_pyramid(shape):
+    """Shrink factors + smoothing sigmas for `ImageRegistrationMethod`'s multi-resolution pyramid,
+    adapted to the smallest spatial axis. `SmoothingRecursiveGaussianImageFilter` needs at least 4
+    samples per axis, and a confocal Z-stack routinely has 3–20 slices, so the default
+    ``[4, 2, 1] / [2, 1, 0]`` blows up on a 4-slice volume. Shape is checked once for the movie —
+    all frames come from the same store, so the pyramid does not vary per frame.
+    """
+    m = int(min(shape))
+    if m >= 16:
+        return [4, 2, 1], [2.0, 1.0, 0.0]
+    if m >= 8:
+        return [2, 1], [1.0, 0.0]
+    # 4–7 voxels along the tightest axis — no shrink, no smoothing. Convergence is slower but the
+    # fit still runs; a stack this thin has little content to lose in a pyramid anyway.
+    return [1], [0.0]
+
+
+def _rigid_centre(shape):
+    """Rotation centre used by both the fit and the applier — the frame centre in SimpleITK's
+    order (x, y) for 2D or (x, y, z) for 3D. Shared between the fit and the applier so a rejected
+    fit and its interpolated replacement land in the same coordinate system."""
+    if len(shape) == 2:
+        h, w = shape
+        return ((float(w) - 1.0) / 2.0, (float(h) - 1.0) / 2.0)
+    if len(shape) == 3:
+        d, h, w = shape
+        return ((float(w) - 1.0) / 2.0, (float(h) - 1.0) / 2.0, (float(d) - 1.0) / 2.0)
+    raise ValueError(f"_rigid_centre expects 2D or 3D shape, got {shape}")
+
+
+def _interpolate_rigid_gaps(positions, angles, rejected):
+    """Fill in ``positions[t]`` and ``angles[t]`` for frames the cap rejected.
+
+    Linear interpolation between the two nearest kept frames on either side; nearest-copy at the
+    ends. Same rule the multi-lag translation estimator uses for a frame no measurement reached —
+    the position is predicted from its neighbours, which is the best answer available for a frame
+    that could not be registered on its own.
+    """
+    n_t = positions.shape[0]
+    kept = np.where(~rejected)[0]
+    if len(kept) == 0:                                 # every frame rejected — nothing to predict from
+        return positions, angles
+    out_p = positions.copy()
+    out_a = angles.copy()
+    for t in range(n_t):
+        if not rejected[t]:
+            continue
+        # nearest kept neighbours
+        prev = kept[kept < t]
+        nxt = kept[kept > t]
+        if len(prev) and len(nxt):
+            a, b = int(prev.max()), int(nxt.min())
+            w = (t - a) / (b - a)
+            out_p[t] = (1 - w) * positions[a] + w * positions[b]
+            out_a[t] = (1 - w) * angles[a] + w * angles[b]
+        elif len(prev):
+            out_p[t] = positions[int(prev.max())]
+            out_a[t] = angles[int(prev.max())]
+        else:
+            out_p[t] = positions[int(nxt.min())]
+            out_a[t] = angles[int(nxt.min())]
+    return out_p, out_a
+
+
+def _sitk_rigid_pair(fixed_np, moving_np, init_angle_rad=0.0, init_translation=(0.0, 0.0),
+                     centre=None):
+    """Fit a rigid transform mapping fixed → moving, seeded at ``(init_angle, init_translation)``.
+
+    Dispatches on ``fixed_np.ndim``:
+    - **2D input** → `Euler2DTransform` (1 in-plane angle + 2 translations). ``init_translation``
+      is ``(tx, ty)`` in SimpleITK's (x, y) order.
+    - **3D input** → `Euler3DTransform` (1 in-plane angle around Z + 3 translations), with
+      rotation around X and Y **frozen** via ``SetOptimizerWeights([0, 0, 1, 1, 1, 1])``. This is
+      option B in DRIFT_RIGID_PLAN.md: a rigid stage bump is in-plane by construction, and letting
+      the fit try X/Y rotations makes it trade small tilts against noise on a clean movie.
+      ``init_translation`` is ``(tx, ty, tz)`` in (x, y, z) order.
+
+    Returns ``(angle_rad, translation)`` where ``translation`` has the same length as
+    ``init_translation``. SimpleITK images are built with unit spacing so translations are in
+    pixels/voxels — matching the translation estimators, whose Z-shifts are already in slice units.
+    """
+    import SimpleITK as sitk
+    ndim = fixed_np.ndim
+    if ndim not in (2, 3):
+        raise ValueError(f"_sitk_rigid_pair expects 2D or 3D input, got ndim={ndim}")
+    if centre is None:
+        centre = _rigid_centre(fixed_np.shape)
+
+    fixed = sitk.GetImageFromArray(fixed_np.astype(np.float32, copy=False))
+    moving = sitk.GetImageFromArray(moving_np.astype(np.float32, copy=False))
+
+    if ndim == 2:
+        tx = sitk.Euler2DTransform()
+        tx.SetCenter(centre)
+        tx.SetAngle(float(init_angle_rad))
+        tx.SetTranslation(tuple(float(v) for v in init_translation))
+        weights = None                      # nothing to freeze in 2D
+    else:
+        tx = sitk.Euler3DTransform()
+        tx.SetCenter(centre)
+        # Euler3DTransform parameters: (angleX, angleY, angleZ, tx, ty, tz).
+        tx.SetRotation(0.0, 0.0, float(init_angle_rad))
+        tx.SetTranslation(tuple(float(v) for v in init_translation))
+        # 0 weight = the optimiser cannot move that parameter. Freezes X/Y rotation to zero so
+        # the fit stays in-plane, matching option B — real stage bumps are only in-plane. See
+        # DRIFT_RIGID_PLAN.md Decisions 3 and 6. If a user later reports a movie with genuine
+        # sample tilting (option A follow-up), the weights vector is the only knob that changes.
+        weights = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+
+    reg = sitk.ImageRegistrationMethod()
+    reg.SetMetricAsMeanSquares()
+    reg.SetMetricSamplingStrategy(reg.NONE)
+    reg.SetInterpolator(sitk.sitkLinear)
+    reg.SetOptimizerAsRegularStepGradientDescent(
+        learningRate=1.0, minStep=1e-4, numberOfIterations=200,
+        gradientMagnitudeTolerance=1e-8)
+    # Scale the parameters so a 1-unit step in each is roughly the same effect on the metric —
+    # otherwise the angle (in radians) is thousands of times "cheaper" to move than a pixel and the
+    # optimiser wanders into large rotations before touching the translation.
+    reg.SetOptimizerScalesFromPhysicalShift()
+    if weights is not None:
+        reg.SetOptimizerWeights(weights)
+    shrinks, sigmas = _rigid_pyramid(fixed_np.shape)
+    reg.SetShrinkFactorsPerLevel(shrinks)
+    reg.SetSmoothingSigmasPerLevel(sigmas)
+    reg.SmoothingSigmasAreSpecifiedInPhysicalUnitsOff()
+    # inPlace=True so `tx` itself receives the converged parameters — `Execute` otherwise returns
+    # a generic `Transform` that cannot be re-wrapped for a typed `.GetAngle()` read.
+    reg.SetInitialTransform(tx, inPlace=True)
+    reg.Execute(fixed, moving)
+
+    if ndim == 2:
+        return float(tx.GetAngle()), tuple(float(v) for v in tx.GetTranslation())
+    # Euler3DTransform.GetAngleZ() returns the in-plane rotation; X/Y are 0 by construction.
+    return float(tx.GetAngleZ()), tuple(float(v) for v in tx.GetTranslation())
+
+
+def sitk_estimate_rigid(image_array, phase_shift_channel, dim_utils, n_t,
+                        max_angle_deg=DRIFT_DEFAULT_MAX_ANGLE,
+                        time_idx=None, channel_idx=None, on_progress=None):
+    """Per-frame rigid drift of a timelapse against ``t = 0``, in-plane rotation only.
+
+    Returns ``(positions, angles, interpolated, n_rejected)`` where:
+
+    - ``positions`` is ``(T, 2)`` in (Y, X) order for a 2D movie, or ``(T, 3)`` in (Z, Y, X) for a
+      3D movie — matching the axis order the translation estimators use, so the writer treats the
+      result the same way.
+    - ``angles`` is ``(T,)`` in **degrees** — the single in-plane rotation per frame. 3D movies
+      report ONE angle (the Z-axis rotation); X/Y rotations are frozen at zero at fit time. See
+      DRIFT_RIGID_PLAN.md Decision 3 ("option B — in-plane rotation only, on a 3D volume") for
+      the rationale: a rigid stage bump is in-plane by construction, and letting the fit try X/Y
+      rotations makes it trade small tilts against noise on a clean movie. If a user reports a
+      movie with genuine sample tilting, that is the "option A" follow-up.
+    - ``interpolated`` is the sorted list of frame indices whose fit was rejected by the angle
+      cap and predicted from neighbours instead; ``n_rejected == len(interpolated)``.
+
+    Each frame is fit **directly against frame 0**, seeded by the previous frame's converged
+    transform as the initial guess. Adjacent-frame overlap is the property that makes chain
+    estimators robust; the seeded direct fit gets the same property without accumulating
+    chain-bias — see docs/todo/DRIFT_RIGID_PLAN.md Decision 3.
+    """
+    if channel_idx is None:
+        channel_idx = dim_utils.dim_idx('C')
+    if time_idx is None:
+        time_idx = dim_utils.dim_idx('T')
+
+    frame0 = _drift_frame(image_array, dim_utils, phase_shift_channel, 0,
+                          time_idx=time_idx, channel_idx=channel_idx)
+    ndim = frame0.ndim
+    if ndim not in (2, 3):
+        raise ValueError(f"sitkRigid needs 2D or 3D spatial frames, got ndim={ndim}")
+    # SimpleITK's `ImageRegistrationMethod` uses a `RecursiveGaussianImageFilter` internally for
+    # the metric's gradient regardless of pyramid settings, and that filter needs ≥4 samples per
+    # axis. Confocal Z-stacks routinely have 4-40 slices so this only fires on a genuinely
+    # degenerate input (2- or 3-slice stack), where the honest answer is to refuse rather than
+    # silently max-project or plane-select.
+    if min(frame0.shape) < 4:
+        raise ValueError(
+            f"sitkRigid needs at least 4 samples along every spatial axis "
+            f"(got shape {frame0.shape}). For a 2- or 3-slice stack, use 'multiLag' or 'chain'.")
+    centre = _rigid_centre(frame0.shape)
+
+    angles_rad = np.zeros(n_t, dtype=float)
+    # SimpleITK's translation order: (x, y) in 2D, (x, y, z) in 3D. Stored in that order here and
+    # rearranged to the writer's (Y, X) / (Z, Y, X) order once at the end, so this loop doesn't
+    # have to remember two conventions.
+    translations = np.zeros((n_t, ndim), dtype=float)
+    max_angle_rad = float(np.deg2rad(max_angle_deg))
+    rejected = np.zeros(n_t, dtype=bool)
+
+    prev_angle = 0.0
+    prev_translation = tuple(0.0 for _ in range(ndim))
+    for t in range(1, n_t):
+        frame_t = _drift_frame(image_array, dim_utils, phase_shift_channel, t,
+                               time_idx=time_idx, channel_idx=channel_idx)
+        angle, translation = _sitk_rigid_pair(
+            frame0, frame_t,
+            init_angle_rad=prev_angle,
+            init_translation=prev_translation,
+            centre=centre)
+
+        if abs(angle) > max_angle_rad:
+            rejected[t] = True
+            # Do NOT seed the next frame from a rejected fit — a runaway would poison the whole
+            # tail. Keep the previous good seed instead.
+        else:
+            angles_rad[t] = angle
+            translations[t] = translation
+            prev_angle = angle
+            prev_translation = translation
+
+        if on_progress is not None:
+            on_progress(t + 1, n_t)
+
+    angles_deg = np.rad2deg(angles_rad)
+    if ndim == 2:
+        # (x, y) → (y, x)
+        positions = np.column_stack([translations[:, 1], translations[:, 0]])
+    else:
+        # (x, y, z) → (z, y, x)
+        positions = np.column_stack([translations[:, 2], translations[:, 1], translations[:, 0]])
+
+    positions, angles_deg = _interpolate_rigid_gaps(positions, angles_deg, rejected)
+    interpolated = [int(t) for t in np.where(rejected)[0]]
+    return positions, angles_deg, interpolated, int(rejected.sum())
 
 
 def drift_correction_shifts(
@@ -495,6 +781,254 @@ def drift_correct_im(
             on_progress(n + 1, len(timepoints))
 
     return result
+
+
+# ── Rigid (rotation-aware) drift application ─────────────────────────────────
+#
+# Applies a per-frame `(angle, translation)` trajectory to a timelapse. The translation-only
+# applier above places each frame at a slice offset — no resampling, so the pixels are copied
+# verbatim. Rigid needs a real resample per frame (SimpleITK `Euler2D/3DTransform`), and the
+# canvas is the union of the axis-aligned bounding boxes of every rotated frame in frame 0's
+# coord system — which is bigger than the translation-only canvas for the same trajectory.
+#
+# Design lives in docs/todo/DRIFT_RIGID_PLAN.md. The transform's rotation centre is the frame
+# centre — the same `_rigid_centre` the fit used, so the geometry and the applier stay honest to
+# each other. Frame-t → canvas maps through `T_t.GetInverse()`, since SimpleITK's Euler transform
+# maps fixed→moving (frame_0 → frame_t) and we want the direction that goes the other way.
+
+
+def _rigid_transform(angle_deg, translation_yx_or_zyx, centre):
+    """Build the `Euler2DTransform` / `Euler3DTransform` for a per-frame `(angle, translation)`.
+
+    ``translation_yx_or_zyx`` is (Y, X) for 2D or (Z, Y, X) for 3D — the axis order the writer
+    stores in ``DriftEstimate.positions``. This helper flips it to SimpleITK's (x, y[, z]) order
+    once, so callers do not have to remember two conventions.
+    """
+    import SimpleITK as sitk
+    trans = np.asarray(translation_yx_or_zyx, dtype=float)
+    if trans.size == 2:
+        tx = sitk.Euler2DTransform()
+        tx.SetCenter(centre)                                       # already (x, y)
+        tx.SetAngle(float(np.deg2rad(angle_deg)))
+        tx.SetTranslation((float(trans[1]), float(trans[0])))      # (y, x) → (x, y)
+        return tx
+    if trans.size == 3:
+        tx = sitk.Euler3DTransform()
+        tx.SetCenter(centre)                                       # already (x, y, z)
+        tx.SetRotation(0.0, 0.0, float(np.deg2rad(angle_deg)))     # in-plane only — option B
+        tx.SetTranslation((float(trans[2]), float(trans[1]), float(trans[0])))
+        return tx
+    raise ValueError(f"_rigid_transform expects 2 or 3 translation components, got {trans.size}")
+
+
+def _rigid_frame_bbox(shape_yx_or_zyx, angle_deg, translation_yx_or_zyx, centre):
+    """Axis-aligned bbox of the source rectangle rotated + translated back into frame 0's coord
+    system. Returns ``{'Y': (yMin, yMax), 'X': (xMin, xMax), 'Z': ...}`` as **floats** — the
+    canvas-shape helper rounds; the applier uses the same floats to place its frames.
+
+    The transform SimpleITK fitted maps fixed (frame 0) → moving (frame t). The inverse maps
+    frame t → frame 0, which is the direction we need to say "where does this source pixel end up
+    in the canvas". Uses `.GetInverse()` on the SimpleITK transform so the math stays honest to
+    what `sitk.Resample` will actually paint.
+    """
+    tx = _rigid_transform(angle_deg, translation_yx_or_zyx, centre)
+    inv = tx.GetInverse()
+    ndim = len(shape_yx_or_zyx)
+    if ndim == 2:
+        h, w = shape_yx_or_zyx
+        corners = [(0.0, 0.0), (float(w) - 1.0, 0.0),
+                   (0.0, float(h) - 1.0), (float(w) - 1.0, float(h) - 1.0)]
+        mapped = [inv.TransformPoint(c) for c in corners]           # (x, y)
+        xs = [p[0] for p in mapped]; ys = [p[1] for p in mapped]
+        return {'Y': (min(ys), max(ys)), 'X': (min(xs), max(xs))}
+    if ndim == 3:
+        d, h, w = shape_yx_or_zyx
+        # 8 corners of the box, in SimpleITK's (x, y, z) order
+        corners = [(0.0, 0.0, 0.0), (float(w) - 1.0, 0.0, 0.0),
+                   (0.0, float(h) - 1.0, 0.0), (float(w) - 1.0, float(h) - 1.0, 0.0),
+                   (0.0, 0.0, float(d) - 1.0), (float(w) - 1.0, 0.0, float(d) - 1.0),
+                   (0.0, float(h) - 1.0, float(d) - 1.0),
+                   (float(w) - 1.0, float(h) - 1.0, float(d) - 1.0)]
+        mapped = [inv.TransformPoint(c) for c in corners]           # (x, y, z)
+        xs = [p[0] for p in mapped]; ys = [p[1] for p in mapped]; zs = [p[2] for p in mapped]
+        return {'Z': (min(zs), max(zs)), 'Y': (min(ys), max(ys)), 'X': (min(xs), max(xs))}
+    raise ValueError(f"_rigid_frame_bbox expects 2D or 3D shape, got {shape_yx_or_zyx}")
+
+
+def rigid_correct_geometry(input_array, dim_utils, positions, angles):
+    """Canvas shape and per-frame valid box for a rigid-corrected timelapse.
+
+    Returns ``(canvas_shape_round, canvas_origin_xyz, frame_bboxes)`` where:
+    - ``canvas_shape_round`` matches the layout of ``input_array.shape`` — non-spatial axes
+      unchanged, spatial axes expanded to hold every frame's rotated bbox.
+    - ``canvas_origin_xyz`` is SimpleITK's (x, y) or (x, y, z) origin for the canvas — the
+      applier passes it as `SetOrigin` on the reference image so a `sitk.Resample` from frame_0
+      coordinates lands each frame in the right place.
+    - ``frame_bboxes`` is ``{t: {axis: (start, stop)}}`` in **canvas index space, integer** — the
+      valid region per frame, ready for `zarr_utils.write_valid_box`.
+
+    Pure shape arithmetic; no pixels read. Same discipline as `drift_frame_slices`.
+    """
+    src_shape = tuple(getattr(input_array, 'shape', input_array))
+    spatial_axes = list(dim_utils.spatial_axis())                    # ['Z','Y','X'] or ['Y','X']
+    is_3d = dim_utils.is_3D()
+
+    # Frame's spatial shape in ZYX / YX order (numpy)
+    if is_3d:
+        frame_shape = (src_shape[dim_utils.dim_idx('Z')],
+                       src_shape[dim_utils.dim_idx('Y')],
+                       src_shape[dim_utils.dim_idx('X')])
+    else:
+        frame_shape = (src_shape[dim_utils.dim_idx('Y')],
+                       src_shape[dim_utils.dim_idx('X')])
+    centre = _rigid_centre(frame_shape)
+
+    # Union of per-frame bboxes in frame_0's coord frame (unshifted).
+    axes_bounds = {ax: [np.inf, -np.inf] for ax in spatial_axes}
+    per_frame = []
+    for t in range(positions.shape[0]):
+        b = _rigid_frame_bbox(frame_shape, float(angles[t]), positions[t], centre)
+        per_frame.append(b)
+        for ax in spatial_axes:
+            lo, hi = b[ax]
+            if lo < axes_bounds[ax][0]:
+                axes_bounds[ax][0] = lo
+            if hi > axes_bounds[ax][1]:
+                axes_bounds[ax][1] = hi
+
+    # Canvas origin: the negative of the lowest per-axis extent, so every frame's bbox is
+    # non-negative in canvas space. In SimpleITK (x, y[, z]) order for the reference image origin.
+    if is_3d:
+        canvas_origin_xyz = (axes_bounds['X'][0], axes_bounds['Y'][0], axes_bounds['Z'][0])
+    else:
+        canvas_origin_xyz = (axes_bounds['X'][0], axes_bounds['Y'][0])
+
+    # Canvas shape per axis: ceil(hi - lo) + 1, at least the source shape.
+    canvas_shape = list(src_shape)
+    for ax in spatial_axes:
+        lo, hi = axes_bounds[ax]
+        n = int(np.ceil(hi - lo)) + 1
+        src_n = src_shape[dim_utils.dim_idx(ax)]
+        canvas_shape[dim_utils.dim_idx(ax)] = max(n, src_n)
+
+    # Per-frame bbox in canvas-index space (int).
+    frame_bboxes = {}
+    for t, b in enumerate(per_frame):
+        entry = {}
+        for ax in spatial_axes:
+            lo, hi = b[ax]
+            axis_origin = canvas_origin_xyz[
+                {'X': 0, 'Y': 1, 'Z': 2}[ax] if is_3d else {'X': 0, 'Y': 1}[ax]]
+            entry[ax] = (int(np.floor(lo - axis_origin)),
+                         int(np.ceil(hi - axis_origin)) + 1)
+        frame_bboxes[t] = entry
+    return tuple(canvas_shape), canvas_origin_xyz, frame_bboxes
+
+
+def rigid_correct_im(input_array, dim_utils, positions, angles,
+                     timepoints=None, chunk_size=None, out=None, on_progress=None):
+    """Apply a rigid trajectory to every channel of a timelapse and stream the result into ``out``.
+
+    Same streaming pattern as `drift_correct_im`: create the canvas once, fill one timepoint at a
+    time so the expanded corrected image never lives in RAM. Per timepoint, per channel:
+    `sitk.Resample` maps canvas → source using the `Euler2D/3DTransform` that carries this frame's
+    `(angle, translation)`, and the resampled slab lands at the whole-frame position (no
+    per-channel offset — a rigid trajectory is the same for every channel by construction).
+
+    Returns whichever it wrote into (`out` if provided, otherwise a freshly allocated numpy).
+    """
+    import SimpleITK as sitk
+
+    if timepoints is None:
+        timepoints = range(dim_utils.dim_val('T'))
+    timepoints = list(timepoints)
+
+    canvas_shape, canvas_origin_xyz, _ = rigid_correct_geometry(
+        input_array, dim_utils, positions, angles)
+    result_dtype = out.dtype if out is not None else input_array.dtype
+    result = out if out is not None else np.zeros(canvas_shape, dtype=result_dtype)
+
+    t_idx = dim_utils.dim_idx('T')
+    c_idx = dim_utils.dim_idx('C')
+    is_3d = dim_utils.is_3D()
+
+    # Frame's spatial shape (Z,Y,X or Y,X) — same layout the fit used.
+    if is_3d:
+        frame_shape = (input_array.shape[dim_utils.dim_idx('Z')],
+                       input_array.shape[dim_utils.dim_idx('Y')],
+                       input_array.shape[dim_utils.dim_idx('X')])
+    else:
+        frame_shape = (input_array.shape[dim_utils.dim_idx('Y')],
+                       input_array.shape[dim_utils.dim_idx('X')])
+    centre = _rigid_centre(frame_shape)
+
+    # SimpleITK canvas shape: (x, y[, z]) order — the reverse of numpy's (z, y, x). Same reference
+    # image reused for every frame; only its default pixel value + input differ per resample.
+    if is_3d:
+        canvas_size_sitk = (canvas_shape[dim_utils.dim_idx('X')],
+                            canvas_shape[dim_utils.dim_idx('Y')],
+                            canvas_shape[dim_utils.dim_idx('Z')])
+    else:
+        canvas_size_sitk = (canvas_shape[dim_utils.dim_idx('X')],
+                            canvas_shape[dim_utils.dim_idx('Y')])
+
+    ref = sitk.Image(canvas_size_sitk, sitk.sitkFloat32)
+    ref.SetOrigin(canvas_origin_xyz)
+    # spacing = 1 by default; pixel values in `ref` are irrelevant (only its geometry is used).
+
+    n_channels = dim_utils.dim_val('C')
+    channels = list(range(n_channels)) if n_channels else [0]
+
+    for n, t in enumerate(timepoints):
+        tx = _rigid_transform(float(angles[t]), positions[t], centre)
+        for c in channels:
+            # Pull one (t, c) spatial slab out of the source.
+            sl_src = [slice(None)] * len(input_array.shape)
+            sl_src[t_idx] = slice(t, t + 1, 1)
+            if c_idx is not None:
+                sl_src[c_idx] = slice(c, c + 1, 1)
+            src = np.squeeze(zarr_utils.fortify(input_array[tuple(sl_src)]))
+            # `Resample` needs a float image; the OUTPUT is cast back to the store's dtype below.
+            src_img = sitk.GetImageFromArray(src.astype(np.float32, copy=False))
+            src_img.SetOrigin(tuple(0.0 for _ in canvas_size_sitk))
+
+            out_img = sitk.Resample(src_img, ref, tx, sitk.sitkLinear, 0.0)
+            painted = sitk.GetArrayFromImage(out_img)                # (Z, Y, X) or (Y, X)
+
+            # Cast + clip to the destination dtype. `result_dtype` is uint8/uint16 for microscopy
+            # stores; the linear resampler produces floats in the same range so rounding is enough.
+            if np.issubdtype(result_dtype, np.integer):
+                info = np.iinfo(result_dtype)
+                painted = np.clip(np.round(painted), info.min, info.max).astype(result_dtype)
+            else:
+                painted = painted.astype(result_dtype, copy=False)
+
+            # Write back into result at (t, c, spatial).
+            sl_dst = [slice(None)] * len(canvas_shape)
+            sl_dst[t_idx] = slice(t, t + 1, 1)
+            if c_idx is not None:
+                sl_dst[c_idx] = slice(c, c + 1, 1)
+            # `painted` has no T/C axes — expand to fit the destination slab shape.
+            expanded_shape = list(canvas_shape)
+            expanded_shape[t_idx] = 1
+            if c_idx is not None:
+                expanded_shape[c_idx] = 1
+            result[tuple(sl_dst)] = painted.reshape(expanded_shape)
+
+        if on_progress is not None:
+            on_progress(n + 1, len(timepoints))
+
+    return result
+
+
+def rigid_frame_origins(input_array, dim_utils, positions, angles):
+    """`rigid_correct_geometry`'s per-frame bboxes in the same shape `drift_frame_origins`
+    returns: ``{t: {axis: [start, stop]}}`` as plain ints, for `zarr_utils.write_valid_box`.
+    Kept structurally parallel to the translation helper so the writer doesn't branch."""
+    _, _, bboxes = rigid_correct_geometry(input_array, dim_utils, positions, angles)
+    return {t: {ax: [int(bboxes[t][ax][0]), int(bboxes[t][ax][1])]
+                for ax in bboxes[t]}
+            for t in bboxes}
 
 
 # ── Autofluorescence correction ───────────────────────────────────────────────

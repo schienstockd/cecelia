@@ -21,7 +21,7 @@
  */
 import { ref, watch } from 'vue'
 import FloatingPanel from './FloatingPanel.vue'
-import VisualAid from './VisualAid.vue'
+import VisualAid, { type ColumnCta } from './VisualAid.vue'
 import type { VisColumns } from '../tasks/paramVis'
 import type { Severity } from '../lib/severity'
 
@@ -32,6 +32,13 @@ const props = withDefaults(defineProps<{
   title: string
   /** column headings; `VisualAid` falls back to 1-based numbering */
   headings?: string[]
+  /**
+   * Optional per-column CTA button under the heading. One-off use today — the drift figure's
+   * "3D full" column routes to Call for Datasets. Kept as a prop rather than a heading convention
+   * because a heading string cannot carry an onClick, and the string "Call for Datasets" is not the
+   * chip's label anyway.
+   */
+  columnCtas?: (ColumnCta | null | undefined)[]
   /** a line under the figure, when the caller has something to say about it */
   note?: string
   /**
@@ -75,6 +82,7 @@ watch(() => props.vis.rows.length, n => { if (!n) open.value = false })
 
   <FloatingPanel v-if="open" :title="title" :storage-key="storageKey" icon="pi-chart-bar"
     :default-w="defaultW" :default-h="defaultH" @close="open = false">
-    <VisualAid :vis="vis" :headings="headings" :note="note" :note-severity="noteSeverity" />
+    <VisualAid :vis="vis" :headings="headings" :column-ctas="columnCtas"
+      :note="note" :note-severity="noteSeverity" />
   </FloatingPanel>
 </template>

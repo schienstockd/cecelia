@@ -35,7 +35,8 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # the image whose registration disagreed with itself (`residualPx`) or whose canvas had to grow
     # far more than its peers (`canvasExpansion`) is exactly what a cohort check should surface —
     # neither is visible from the image alone without knowing what normal looks like for that set.
-    "cleanupImages.driftCorrect" => ["residualPx", "canvasExpansion", "maxDriftPx"],
+    "cleanupImages.driftCorrect" => ["residualPx", "canvasExpansion", "maxDriftPx",
+                                     "maxAngleDeg"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.measureLabels"      => ["nCells"],

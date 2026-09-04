@@ -6,6 +6,7 @@ import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
 import { openIconLegend } from '../lib/iconLegendOpen'
 import { openColorLegend } from '../lib/colorLegendOpen'
+import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 
 const ws = useWsStore()
@@ -88,6 +89,16 @@ const statusTip: Record<string, string> = {
          "walk me through it" to "this is broken" to "does anyone know?" reads left to right. Plain
          `<a target="_blank">`, not a router link: both leave the app. -->
     <span class="help-links" data-guide="header.help">
+      <!-- Call for Datasets — the entry into the modal that lists capabilities we can build once
+           a real dataset lands. Before the GitHub icon on purpose: the row now reads "help us
+           build this → report a broken thing → chat", which is the direction the user's ask
+           usually escalates. See docs/todo/CALL_FOR_DATASETS_PLAN.md. -->
+      <button type="button" class="help-link cc-btn cc-btn-bare cc-btn-icon"
+              v-tooltip.bottom="'Call for Datasets — capabilities we can build with your data'"
+              aria-label="Call for Datasets"
+              @click="openCallForDatasets()">
+        <i class="pi pi-database" />
+      </button>
       <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_ISSUES_URL"
          target="_blank" rel="noopener"
          v-tooltip.bottom="'Report a problem or browse known issues'"

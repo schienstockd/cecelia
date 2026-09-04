@@ -11595,10 +11595,55 @@ end
         @test m["residualPx"] == 24.3
         @test m["canvasExpansion"] > 1.0
         @test m["framesInterpolated"] == 0
-        # everything the cohort pass is told to aggregate must actually be banked
+        # everything the cohort pass is told to aggregate must actually be banked, EXCEPT the
+        # rigid-only metric (`maxAngleDeg`) — a translation run has no rotation to measure, so its
+        # absence here is the "not measured" discipline `residualPx` follows too. The rigid case
+        # is exercised in the "drift rigid findings" testset below.
         for k in Cecelia.COHORT_METRICS["cleanupImages.driftCorrect"]
+            k == "maxAngleDeg" && continue
             @test haskey(m, k)
         end
+    end
+
+    @testset "drift rigid findings" begin
+        # A rigid trajectory carries an `angles` field. Its `interpolated` frames are ones whose
+        # rotation exceeded the cap and were predicted from neighbours — a different action for
+        # the user than a translation run's lost-lock frames, so a different finding code, and a
+        # detail block that names the cap so the QC badge can explain itself without the reader
+        # opening the sidecar. `maxAngleDeg` becomes a cohort metric on this run.
+        base = Dict{String,Any}("dimOrder" => "TCZYX", "shiftAxes" => ["Y", "X"],
+                                "sourceShape" => [20, 4, 1, 512, 512],
+                                "outputShape" => [20, 4, 1, 541, 527],
+                                "shifts"      => [[0.5, 0.5] for _ in 1:20],
+                                "angles"      => [0.05 * t for t in 0:19],
+                                "maxAngleDeg" => 0.95,
+                                "maxAngleCap" => 5.0)
+        # clean rigid run — no interpolated, no findings other than any translation-side ones
+        clean = base
+        fc, _, _ = Cecelia._drift_qc_findings(clean)
+        @test !any(f -> f["code"] == "drift.rotation.capped", fc)
+
+        # capped rigid run — some frames rejected; the finding code names the rigid path and
+        # carries the cap value so a reader knows what threshold was hit
+        capped = merge(base, Dict("interpolated" => [3, 12],
+                                  "maxAngleDeg" => 12.4))
+        fk, _, _ = Cecelia._drift_qc_findings(capped)
+        cap = first(f for f in fk if f["code"] == "drift.rotation.capped")
+        @test cap["level"] == "warn"
+        @test cap["detail"]["frames"] == [3, 12]
+        @test cap["detail"]["maxAngleCap"] == 5.0
+        @test cap["detail"]["maxAngleDeg"] == 12.4
+        # a rigid run must NEVER emit the translation-side unregistered_frames code for the same
+        # `interpolated` field — the two codes are mutually exclusive by construction
+        @test !any(f -> f["code"] == "drift.unregistered_frames", fk)
+
+        # Metrics: the rigid run banks `maxAngleDeg` alongside the translation metrics
+        m = Cecelia._drift_qc_metrics(capped, [20, 4, 1, 512, 512], [20, 4, 1, 541, 527])
+        @test m["maxAngleDeg"] == 12.4
+        @test m["canvasExpansion"] > 1.0
+        # And the CATALOG carries the code, so the QC badge can render its message. Same rule the
+        # frontend's `qc.ts` checks — a code without a catalog entry becomes a blank pill.
+        @test haskey(Cecelia.QC_TEXT, "drift.rotation.capped")
     end
 
     @testset "OIR companion-file staging" begin

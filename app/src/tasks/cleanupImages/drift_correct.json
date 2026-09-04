@@ -25,26 +25,17 @@
       "tip": "Channel used for phase cross-correlation to estimate per-timepoint drift"
     },
     {
-      "key": "driftNormalisation",
-      "label": "Drift normalisation",
-      "type": "select",
-      "default": "none",
-      "options": [
-        { "label": "None",  "value": "none" },
-        { "label": "Phase", "value": "phase" }
-      ],
-      "tip": "Normalisation of the phase cross-correlation"
-    },
-    {
       "key": "driftEstimator",
       "label": "Estimator",
       "type": "select",
       "default": "multiLag",
       "options": [
-        { "label": "Multi-lag", "value": "multiLag" },
-        { "label": "Chain",     "value": "chain" }
+        { "label": "Multi-lag",       "value": "multiLag" },
+        { "label": "Chain",           "value": "chain" },
+        { "label": "Rigid (SimpleITK)", "value": "sitkRigid" }
       ],
-      "tip": "Multi-lag compares non-adjacent frames too, so one bad frame cannot offset the rest"
+      "figure": "driftEstimator",
+      "tip": "Multi-lag and chain correct translation only; rigid also fits in-plane rotation"
     },
     {
       "key": "driftMaxLag",
@@ -54,7 +45,19 @@
       "min": 1,
       "max": 8,
       "step": 1,
+      "showIf": { "driftEstimator": ["multiLag"] },
       "tip": "How far apart two frames may be and still be compared — higher is more robust but slower"
+    },
+    {
+      "key": "driftMaxAngle",
+      "label": "Max rotation per frame (°)",
+      "type": "float",
+      "default": 5.0,
+      "min": 0.5,
+      "max": 30.0,
+      "step": 0.5,
+      "showIf": { "driftEstimator": ["sitkRigid"] },
+      "tip": "Above this, the frame's fit is discarded and its rotation is predicted from neighbours"
     }
   ]
 }

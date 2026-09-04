@@ -202,6 +202,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "drift.unregistered_frames" => (
         short = "{value} frame(s) could not be registered",
         long  = "Their position was predicted from neighbours — check those timepoints before measuring on them."),
+    "drift.rotation.capped" => (
+        short = "{value} frame(s) rotated past the cap",
+        long  = "The rigid estimator hit the per-frame rotation cap and predicted those frames' rotation from neighbours — check whether the stage really rotated that much, or a moving object dominates the reference channel."),
 
     # cohort comparison (qc_cohort.jl `_cohort_finding`)
     "cohort.outlier" => (
