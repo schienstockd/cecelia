@@ -51,6 +51,7 @@ import {
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
+import { onViewerCacheClear, readViewerCacheClearRev } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
@@ -104,6 +105,13 @@ const viewerStore = useViewerStore()
 
 const projectUid = String(route.query.project ?? '')
 const imageUid = String(route.query.image ?? '')
+
+// The cache-clear rev — bumped by `ViewerPanel` on task completion (or by any other publisher on the
+// channel). Threaded into `sourceId` (tile atlas) and `BrickSource.rev` (brick page table) so a
+// same-store rewrite invalidates the same way a version swap does: #779's mechanism reused, one
+// more field. Reallocate() is called from the subscribe callback, so the atlas drops on the next
+// tick. Read at mount so a viewer opened AFTER a publish still starts on the current rev.
+const cacheClearRev = ref(readViewerCacheClearRev())
 /**
  * `?bricks=1` — swap the flat-3D volume renderer for the brick-atlas one
  * (`docs/todo/KILN_BRICK_PLAN.md`). URL-scoped rather than a setting so the two paths can be
@@ -3194,7 +3202,7 @@ async function reallocate(refit = false) {
     // the viewer serves old pixels. See `tileRenderer.setImage` docs.
     tr.setImage(m, slabLevel.value, effectiveCacheBytes.value,
                 lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch,
-                `${imageUid}/${valueName.value}`)
+                `${imageUid}/${valueName.value}/${cacheClearRev.value}`)
     tr.setChannels(m.channels)
     tr.resize()
     loadedLevel.value = slabLevel.value
@@ -3232,6 +3240,11 @@ async function reallocate(refit = false) {
       // allocated. `undefined` when no mask is picked, which lets the brick loader skip label
       // requests entirely on projects with no segmentation.
       labelName: wantLabels ? (labelName.value || undefined) : undefined,
+      // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
+      // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
+      // `setBrickSource`'s compare treats a rev change as a full source switch and drops the
+      // atlas — same discipline as the tile atlas's sourceId change.
+      rev: cacheClearRev.value || undefined,
     })
     // Brick scheduler floor = slabLevel (dropdown). SSE picks finer as user zooms in; over-fetch
     // on wide viewports is bounded by MAX_INTERSECT_BRICKS. See the slabLevel watcher above.
@@ -3819,12 +3832,26 @@ function publishViewerFocus() {
     localStorage.setItem('cc.viewerFocus', `${imageUid}:${Date.now()}`)
   }
 }
+// Cache-clear signals from `ViewerPanel` (main window) or any other publisher on the channel —
+// pushed via localStorage for cross-window pop-outs and via a same-window CustomEvent for the
+// panel-viewer path. A bumped rev threads into `sourceId`/`BrickSource.rev`, so the same
+// invalidation logic #779 wired for a version swap fires for a same-store rewrite too.
+let stopCacheClearWatch: (() => void) | null = null
+
 onMounted(() => {
   window.addEventListener('storage', onOverlaysTick)
   window.addEventListener('storage', onSlabsTick)
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
+  stopCacheClearWatch = onViewerCacheClear((rev) => {
+    if (rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
+    cacheClearRev.value = rev
+    // Reallocate reads `cacheClearRev.value` fresh, so the new sourceId / rev flow through to the
+    // tile atlas and the brick page table on this pass. `refit=false` keeps the camera put — the
+    // point of this path is to swap pixels without yanking the view.
+    reallocate()
+  })
 })
 
 onUnmounted(() => {
@@ -3833,6 +3860,7 @@ onUnmounted(() => {
   window.removeEventListener('storage', onSlabsTick)
   window.removeEventListener('storage', onSelectModeTick)
   window.removeEventListener('focus', publishViewerFocus)
+  stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopPlay()
   pump.cancel()
   zPump.cancel()

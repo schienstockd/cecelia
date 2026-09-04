@@ -60,6 +60,11 @@ export interface BrickSource {
    *  same slot. Undefined = no labels shown; the placeholder texture stays bound and the
    *  shader's label path is skipped via `p.lab.x == 0`. */
   labelName?: string
+  /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
+   *  overwriting `ccidSmoothed.ome.zarr`). Handled the same way as a projectUid/imageUid/valueName
+   *  change: any diff drops the atlas. Undefined defaults to no rev, so callers that don't opt in
+   *  keep the pre-#779 behaviour. */
+  rev?: string
 }
 
 /** Brick edge in voxels — Decision 2 in KILN_BRICK_PLAN.md. Kept a module constant so both the
@@ -1661,6 +1666,7 @@ export async function createBrickVolumeRenderer(
         && source.imageUid === next.imageUid
         && source.valueName === next.valueName
         && source.labelName === next.labelName
+        && (source.rev ?? '') === (next.rev ?? '')
       if (same) { source = next; return }
       source = next
       inflight.forEach(ac => ac.abort())

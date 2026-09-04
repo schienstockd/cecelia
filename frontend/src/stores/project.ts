@@ -83,8 +83,9 @@ export const useProjectStore = defineStore('project', () => {
   // focus) and the ImageTable eye click that opens the browser viewer (setting this one only).
   const openImageUid = ref<string | null>(null)
   // Reload signal for the browser viewer: bumped by anything asking to refresh the SHOWN image (the
-  // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic, so it
-  // watches this tick and decides data-only vs full reopen (see settings.viewerResetOnReload).
+  // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic —
+  // data-only via a ping, and a same-store rewrite is caught by the cache-clear channel published
+  // from `onTaskStatus`, not by yanking the image.
   const viewerReloadTick = ref(0)
   const requestViewerReload = () => { viewerReloadTick.value++ }
   // Data freshness — TARGETED per-image invalidation. A finished task (ws `task:status` == 'done')
