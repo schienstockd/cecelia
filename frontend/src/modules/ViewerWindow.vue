@@ -1819,13 +1819,14 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
     const ok = await fetchTimepoint(u)
     syncCacheState()
     if (!ok || !isCurrent()) return
-    // Symptom-based OOM guard. The flat renderer's `uploadFrame` catches VRAM OOMs INSIDE its own
-    // error scope: on failure it silently returns without adding a slot, and the promise resolves
-    // truthy. `hasTimepoint(u)` is the only place we can catch the silent case that the whole
-    // callback plumbing was supposed to catch upstream — a defence-in-depth check, so a driver
-    // spelling my `isViewerOom` marker list did not anticipate still triggers the brick fallback
-    // (Dominik, 2026-09-04 on 2h06xA: `handleRendererError` never fired, canvas stayed empty).
-    if (!r.hasTimepoint(u)) {
+    // Symptom-based OOM guard for the FLAT path only. Flat's `uploadFrame` catches VRAM OOMs
+    // INSIDE its own error scope: on failure it silently returns without adding a slot, and the
+    // promise resolves truthy — `hasTimepoint(u)` is the only reliable "did the upload actually
+    // land" signal. Gated on `currentRendererKind === 'flat'` because brick's `hasTimepoint`
+    // returns false during normal LOD paging (bricks arrive per-view, not per-timepoint), which
+    // spuriously fired the flat-OOM fallback with a bricks renderer already active (Dominik,
+    // 2026-09-04: dismissed chip kept re-firing in bricks mode).
+    if (currentRendererKind.value === 'flat' && !r.hasTimepoint(u)) {
       handleRendererError('flat', 'flat renderer out of memory: uploaded frame is not resident')
       return
     }
