@@ -202,6 +202,6 @@ renderer. Bench blobs: `~/Downloads/TMP/bench7/*.json`.
 
 - Bench data (2026-08-29): `~/Downloads/TMP/bench/bench-{image}-{mode}-*.json`
 - Predecessor plan: [`KILN_BRICK_PLAN.md`](KILN_BRICK_PLAN.md) (P0–P5 shipped; superseded)
-- Perf ratchet: [`NAPARI_WEBGPU_AUDIT.md`](NAPARI_WEBGPU_AUDIT.md) → 5.3 ms MIP budget
+- Perf ratchet: `NAPARI_WEBGPU_AUDIT.md` (removed with the napari purge — see git history) → 5.3 ms MIP budget
 - Related renderer contract: `frontend/src/lib/webgpu/volumeRenderer.ts` → `VolumeRenderer.brickResidency()`
 - Related PRs (post-KILN_BRICK P5): #691–#704

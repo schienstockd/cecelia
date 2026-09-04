@@ -135,6 +135,6 @@ this then. Parked until the test says so.
 
 - [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md) — the parent plan (browser + offline renderer). This
   plan is the maintenance discipline for the shape it built.
-- [`NAPARI_WEBGPU_AUDIT.md`](NAPARI_WEBGPU_AUDIT.md) — why we have two renderers at all.
+- `NAPARI_WEBGPU_AUDIT.md` (removed with the napari purge — see git history) — why we have two renderers at all.
 - `frontend/src/utils/viewerOverlays.ts` — the browser layout code the parity test mirrors.
 - `api/src/overlay_author.jl` — the Julia author the parity test compares against.

@@ -1701,8 +1701,7 @@ Two things are NOT the same as the console's, and both are load-bearing:
 (`/viewer-window`, window `cecelia-viewer`) opened from the ViewerPanel's ↗ — an in-browser WebGPU MIP
 raycast of the image napari is showing, so the two can be looked at side by side while the browser side
 catches up. It has no docked half because napari occupies that slot until it is removed; the plan and
-the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md) and
-[`NAPARI_WEBGPU_AUDIT.md`](todo/NAPARI_WEBGPU_AUDIT.md).
+the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md).
 
 Three things differ from the other two popouts, each for a stated reason:
 

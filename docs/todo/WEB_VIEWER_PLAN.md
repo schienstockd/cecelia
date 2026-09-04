@@ -11,7 +11,7 @@ parity to what we have now in the repo, rather than adding new stuff" — Domini
 phase list is derived from the bridge's own 31 commands (the checklist below), not from what a viewer
 could be; anything the browser gains along the way is a bonus, never a reason to reorder.
 
-Evidence this rests on: [`NAPARI_WEBGPU_AUDIT.md`](NAPARI_WEBGPU_AUDIT.md) — every number below was
+Evidence this rests on: `NAPARI_WEBGPU_AUDIT.md` (removed with the napari purge — see git history) — every number below was
 measured on Dominik's RTX 2000 Ada with real data from `zolIMa`. Read it before revisiting a
 decision here. Prior context: [`CLOUD_MIGRATION_ASSESSMENT.md`](CLOUD_MIGRATION_ASSESSMENT.md)
 (storage + headless GL, still valid), [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) (the first
