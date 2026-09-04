@@ -316,6 +316,88 @@ function _config_overlay_pops(img, config)
     out
 end
 
+# ── Overlay legend content ────────────────────────────────────────────────────
+# Canonical legend rows shared by /api/viewer/overlay-legend (viewer_api.jl) and the movie title card
+# (`_title_card_content` below). Pure — walks pop maps, no viewer canvas.
+
+# Gather a {value(str) => X} map for colouring by `column`, pooling every user population (across
+# segmentations, in the given pop_types) that FILTERS on `column` via `getter` (a `PopulationMap →
+# Dict` — `pop_colour_overrides` for hex, `pop_label_overrides` for the pop name). First pop (by
+# segmentation/type order) wins a shared value. Empty when `column` is blank / a special key.
+function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::Dict{String,String}
+    out = Dict{String,String}()
+    (isempty(column) || column == "track_id") && return out
+    for vn in versioned_keys(img.label_props)
+        is_reserved_value_name(vn) && continue
+        for pt in pop_types
+            try
+                for (k, val) in getter(_live_map(img, vn, pt), column)
+                    get!(out, k, val)
+                end
+            catch
+                # pop map for this (vn, pop_type) unavailable → nothing to contribute
+            end
+        end
+    end
+    out
+end
+
+# {value(str) => hex} — the population colour a value takes on `column`.
+_colour_overrides_for(img, column::AbstractString, pop_types) =
+    _gather_pop_overrides(img, column, pop_types, pop_colour_overrides)
+# {value(str) => population name} — so the colour-by legend reads the pop name where one defines a value.
+_pop_labels_for(img, column::AbstractString, pop_types) =
+    _gather_pop_overrides(img, column, pop_types, pop_label_overrides)
+
+# Merge the client's user colour overrides ({value(str) => hex}, from recolouring a legend swatch) on
+# TOP of the pop-derived overrides — the user's explicit choice wins (categories with no population have
+# no colour defined anywhere, so this is the only source; for pop-backed values it's a display override).
+function _apply_user_overrides!(overrides::Dict{String,String}, user)::Dict{String,String}
+    (user === nothing || !(user isa AbstractDict)) && return overrides
+    for (k, v) in pairs(user)
+        (v === nothing || isempty(String(v))) && continue
+        overrides[String(k)] = String(v)
+    end
+    overrides
+end
+
+# CANONICAL legend content for an image's overlays — one source of truth for the overlay-legend route
+# (analysis-board strip) and the title card. Given a `column` (colour-by measure), an `overlay_pops`
+# list ({valueName, popType, path} or nothing) and user recolours, returns:
+#  • colourBy:    {column, items:[{value, colour(pop hex), label(pop name)}]} for each value on `column`
+#  • populations: [{name, colour}] for each requested point/track pop (deduped by name).
+function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
+    pt_all  = ("trackclust", "track", "clust", "flow")
+    colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
+    labels  = _pop_labels_for(img, column, pt_all)
+    cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
+           for k in sort(collect(keys(colours)))]
+
+    pops = Vector{Dict{String,Any}}()
+    if overlay_pops !== nothing
+        seen = Set{String}()   # dedupe by pop NAME — one pop spans segmentations (one layer each)
+        for pp in overlay_pops
+            vn   = String(get(pp, :valueName, ""))
+            pt   = String(get(pp, :popType, ""))
+            path = String(get(pp, :path, ""))
+            (isempty(vn) || isempty(pt)) && continue
+            if endswith(path, "_tracked")   # whole-segmentation "all tracks" → one generic grey row
+                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => "#9ca3af")); end
+                continue
+            end
+            try
+                p = pop_at(_live_map(img, vn, pt), path)
+                p.name in seen && continue
+                push!(seen, p.name)
+                push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
+            catch
+                # pop map / path unavailable → skip
+            end
+        end
+    end
+    (; colourBy = Dict{String,Any}("column" => column, "items" => cby), populations = pops)
+end
+
 # Assemble the Julia-side title-card content for an image under a movie config (Phase H). Title = image
 # name + its attribute values ("MERTK — mouse 1 — location B"); the Populations / Tracks / Colour-by
 # sections all come from the CANONICAL `overlay_legend_content` helper. CHANNELS are NOT added here — the
