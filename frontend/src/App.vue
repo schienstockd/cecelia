@@ -22,11 +22,13 @@ import WhatsNewDialog from './components/WhatsNewDialog.vue'
 import GuidesDialog from './components/GuidesDialog.vue'
 import IconLegendDialog from './components/IconLegendDialog.vue'
 import ColorLegendDialog from './components/ColorLegendDialog.vue'
+import CallForDatasetsModal from './components/CallForDatasetsModal.vue'
 import GuideBubble from './components/GuideBubble.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
 import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { isColorLegendOpen } from './lib/colorLegendOpen'
+import { isCallForDatasetsOpen, openCallForDatasets } from './lib/callForDatasetsOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
@@ -127,6 +129,14 @@ onMounted(async () => {
     settings.tipsLastShown = today
     openWhatsNew({ withTip: true })
   }
+
+  // Call-for-Datasets deep link: `?ask=<id>` opens the modal at that card. Handled here (not in
+  // the modal itself) because the query string is set BEFORE the modal mounts, and the modal
+  // does not know how to open itself. See docs/todo/CALL_FOR_DATASETS_PLAN.md → P2.
+  if (!popout) {
+    const ask = new URLSearchParams(window.location.search).get('ask')
+    if (ask) openCallForDatasets(ask)
+  }
 })
 
 // `bare` routes (e.g. the standalone console window) render full-window without the app shell
@@ -190,6 +200,10 @@ const bare = computed(() => popout || route.meta.bare === true)
     <GuidesDialog v-if="isGuidesOpen" />
     <IconLegendDialog v-if="isIconLegendOpen" />
     <ColorLegendDialog v-if="isColorLegendOpen" />
+    <!-- Call for Datasets — capabilities we can build once a real dataset lands. State lives in
+         lib/callForDatasetsOpen.ts; opened from AppHeader and (once wired) from vis-aid chips via
+         `?ask=<id>`. -->
+    <CallForDatasetsModal v-if="isCallForDatasetsOpen" />
     <GuideBubble v-if="guide.active" />
   </div>
 </template>
