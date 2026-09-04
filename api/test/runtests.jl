@@ -2583,6 +2583,21 @@ end
     @test _grid_frame_total(wrapped, 20) == 140
     @test _grid_frame_total(four, 20) == 100
 
+    # Per-cell max_px scales UP to the cell's native long side. `render_view_frame` treats
+    # `max_px` as a stride cap (`step = cld(max(H,W), max_px)`), so a cell whose native canvas
+    # EXCEEDS the grid-wide cap gets stride-subsampled while smaller siblings render at native —
+    # the two land at different µm/output-pixel and a compare-grid reader sees them at different
+    # scales. Regression cover for `d5vw7z/c91ICQ` where driftCorrected (598 wide) rendered at
+    # half-size next to default and stackAligned (both 512) with a viewer canvas of 512.
+    @test _grid_cell_max_px(512, 512) == 512                     # native fits: no change
+    @test _grid_cell_max_px(512, 598) == 598                     # native exceeds cap: scaled up
+    @test _grid_cell_max_px(512, 300) == 512                     # native under cap: cap wins
+    @test _grid_cell_max_px(0,   598) == 0                       # explicit "no cap" stays a no-op
+    @test _grid_cell_max_px(0,   0)   == 0
+    # And the stride-cost check the fix is defending against: a 598-wide native at cap 512 gets
+    # `step = cld(598, 512) = 2`, which subsamples by 2×; at the scaled cap 598 it stays at step 1.
+    @test cld(598, 512) == 2 && cld(598, _grid_cell_max_px(512, 598)) == 1
+
     # D4 — the contrast toggle. Anything unrecognised reads as the default rather than failing a batch.
     @test _share_contrast("reference") && _share_contrast("") && _share_contrast("nonsense")
     @test !_share_contrast("version")
