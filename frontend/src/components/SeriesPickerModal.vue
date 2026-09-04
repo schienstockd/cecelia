@@ -59,7 +59,7 @@ function save() {
             <img v-if="s.thumbnailPngB64"
                  :src="`data:image/png;base64,${s.thumbnailPngB64}`"
                  :alt="`series ${s.index}`" draggable="false" />
-            <div v-else class="sp-thumb-empty"><i class="pi pi-image" /></div>
+            <div v-else class="cc-empty cc-empty-overlay"><i class="pi pi-image" /></div>
           </div>
           <div class="sp-meta">
             <span class="sp-name">{{ s.name || `Series ${s.index}` }}</span>
@@ -89,10 +89,10 @@ function save() {
 .sp-card {
   position: relative; display: flex; flex-direction: column; gap: 0.25rem;
   padding: 0.4rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
-  cursor: pointer; background: var(--cc-bg-2);
+  cursor: pointer; background: var(--cc-surface-2);
 }
 .sp-card:hover { border-color: var(--cc-accent); }
-.sp-picked { border-color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 8%, var(--cc-bg-2)); }
+.sp-picked { border-color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 8%, var(--cc-surface-2)); }
 .sp-cb { position: absolute; top: 0.4rem; left: 0.4rem; }
 .sp-thumb {
   aspect-ratio: 1 / 1; width: 100%; background: #000;
@@ -100,7 +100,6 @@ function save() {
   display: flex; align-items: center; justify-content: center;
 }
 .sp-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.sp-thumb-empty { color: var(--cc-text-dim); font-size: var(--cc-fs-lg); }
 .sp-meta { display: flex; flex-direction: column; gap: 0.1rem; padding-left: 1.4rem; }
 .sp-name { font-size: var(--cc-fs-xs); color: var(--cc-text); }
 .sp-dims { font-variant-numeric: tabular-nums; }
