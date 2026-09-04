@@ -1,6 +1,6 @@
 // Pure conversion from a viewer's camera state to LEVEL-0 pixel bounds — the shape the task-preview
-// worker expects in its `region` field, and the same one napari used to report from
-// `preview_region_from_corners` (see `napari/napari_utils.py`). Kept as its own file so the maths is
+// worker expects in its `region` field, and the same one viewer used to report from
+// `preview_region_from_corners` (see `viewer/viewer_utils.py`). Kept as its own file so the maths is
 // unit-tested without a WebGPU context, and so the ViewerWindow SFC and any future viewer surface
 // (the offline renderer's preview leg) both go through one derivation rather than open-code it.
 //
@@ -11,7 +11,7 @@
 // treat as an empty region.
 //
 // Under `ndisplay: 3` (3D volume) there is no single "visible plane", so the report is the whole XY
-// extent and the worker previews the plane at `z` — mirrors the napari path that also reported
+// extent and the worker previews the plane at `z` — mirrors the viewer path that also reported
 // full-XY under 3D and let the worker's `preview_region_bounds` fall back to the current plane.
 
 export interface VisibleRegionInput {
@@ -63,7 +63,7 @@ export function visibleRegion(input: VisibleRegionInput): VisibleRegion {
 
   if (ndisplay === 3) {
     // 3D view: report the whole XY extent — the worker previews the plane at `z`, and any XY window
-    // would exclude cells the user CAN see through the volume. Same choice napari made.
+    // would exclude cells the user CAN see through the volume. Same choice viewer made.
     return {
       xy: { X: [0, Math.max(1, Math.floor(imageW))],
             Y: [0, Math.max(1, Math.floor(imageH))] },

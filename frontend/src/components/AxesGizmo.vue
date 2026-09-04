@@ -31,7 +31,7 @@ const radius = computed(() => props.size / 2 - PAD)
 const tips = computed(() =>
   projectAxes(props.yaw, props.pitch, radius.value, centre.value))
 
-/** Blender/napari convention — the axis identity, not tied to the app's purple/warn palette
+/** Blender/viewer convention — the axis identity, not tied to the app's purple/warn palette
  *  (which is UI chrome, not a coordinate frame). */
 const COLOUR: Record<string, string> = {
   X: '#e5484d',

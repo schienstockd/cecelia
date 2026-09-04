@@ -11,14 +11,14 @@ describe('normalise', () => {
   })
 
   it('unescapes the quote form Vue attributes use', () => {
-    expect(normalise("napari\\'s scale bar")).toBe("napari's scale bar")
+    expect(normalise("viewer\\'s scale bar")).toBe("viewer's scale bar")
   })
 })
 
 describe('isMultiSentence', () => {
   it('flags a second sentence', () => {
     expect(isMultiSentence('Remove this image. The original file is not deleted.')).toBe(true)
-    expect(isMultiSentence('Render on the GPU. Restarts napari. Linux only.')).toBe(true)
+    expect(isMultiSentence('Render on the GPU. Restarts viewer. Linux only.')).toBe(true)
   })
 
   it('does not flag an abbreviation', () => {

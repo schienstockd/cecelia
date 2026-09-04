@@ -372,9 +372,9 @@ export function thresholdsChanged(t: TrackThresholds, defaults: TrackThresholds)
   return thresholdQuery(t, defaults).length > 0
 }
 
-// ── The napari bridge (CORRECTION_PLAN.md → P4d, the other half) ───────────────
+// ── The legacy bridge (CORRECTION_PLAN.md → P4d, the other half) ───────────────
 
-/** `GET /api/tracking/selection` — what is drawn in napari, resolved to tracks. */
+/** `GET /api/tracking/selection` — what is drawn in viewer, resolved to tracks. */
 export interface TrackSelection {
   valueName: string
   labels: number[]
@@ -398,7 +398,7 @@ export function selectionSummary(sel: TrackSelection | null): string {
 }
 
 /**
- * The tracks a napari selection touches, most-represented first.
+ * The tracks a viewer selection touches, most-represented first.
  *
  * Order matters for the two-track ops: the tracks with the most cells inside the drawn region are the
  * ones the user meant, so preselecting the top two makes "draw around the break, hit Join" work.

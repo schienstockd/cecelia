@@ -41,8 +41,8 @@ export interface PopNode {
   filter?: FilterSpec
   boolean?: BooleanSpec
   is_track?: boolean
-  transient?: boolean              // ephemeral (napari cell selection) — not persisted
-  membership_sig?: string          // explicit-label pops (napari selection): hash of label set
+  transient?: boolean              // ephemeral (viewer cell selection) — not persisted
+  membership_sig?: string          // explicit-label pops (viewer selection): hash of label set
   children: PopNode[]
 }
 export interface PopTree { value_name: string; pop_type: string; populations: PopNode[] }
@@ -75,7 +75,7 @@ function gateSignatures(tree: PopTree): Map<string, string> {
   const walk = (nodes: PopNode[], parent: string) => {
     for (const n of nodes) {
       const path = popPath(parent, n.name)
-      // include membership_sig so explicit-label pops (the napari selection) bump their version
+      // include membership_sig so explicit-label pops (the viewer selection) bump their version
       // when their cell set changes — they have no gate/filter to diff on.
       m.set(path, JSON.stringify(n.gate ?? null) + '|' + JSON.stringify(n.filter ?? null)
                   + '|' + JSON.stringify(n.boolean ?? null) + '|' + (n.membership_sig ?? ''))
@@ -102,7 +102,7 @@ export const useGatingStore = defineStore('gating', () => {
   const mirrorUids = ref<string[]>([])
 
   // Cell-selection Z scope for the WebGPU viewer's rectangle picker: 'stack' = read the whole
-  // z-stack (napari's original semantics; ignores the viewer's z-plane), 'slice' = read only ±N
+  // z-stack (the viewer's original semantics; ignores the viewer's z-plane), 'slice' = read only ±N
   // planes around the viewer's live z. Written by `CellSelectionTools.vue`; read by
   // `ViewerWindow.vue`'s `pickRectAt` which passes `zLo`/`zHi` to `/api/viewer/pick-rect`.
   const pickZMode   = ref<'stack' | 'slice'>('stack')
@@ -139,11 +139,11 @@ export const useGatingStore = defineStore('gating', () => {
     defaultTransformForCol(col, { spatialAxes: spatialAxes.value, popType: popType.value })
 
   const flat = computed(() => flatten(tree.value))
-  // transient pops (e.g. the napari cell selection) — auto-highlighted on the plots
+  // transient pops (e.g. the viewer cell selection) — auto-highlighted on the plots
   const transientPaths = computed(() => flat.value.filter(p => p.transient).map(p => p.path))
   const projectUid = () => meta.current?.uid ?? ''
-  // the set the gated image belongs to — keys the per-set napari point size (see settings store)
-  const napariSetUid = () => (imageUid.value ? projStore.setUidOfImage(imageUid.value) : null) ?? ''
+  // the set the gated image belongs to — keys the per-set viewer point size (see settings store)
+  const viewerSetUid = () => (imageUid.value ? projStore.setUidOfImage(imageUid.value) : null) ?? ''
 
   // resolve a raw column to its display label: intensity columns → channel name (R
   // change_channel_names), centroids → "X position"/"Time" (centroidLabel), everything else
@@ -156,7 +156,7 @@ export const useGatingStore = defineStore('gating', () => {
 
   // ── Undo / redo (hand-drawn gating only: flow + track) ────────────────────────
   // History lives on the SERVER — the whole population tree is one serialisable document, and the
-  // server is the only place that sees every writer (this tab, another tab, napari). Keeping a
+  // server is the only place that sees every writer (this tab, another tab, viewer). Keeping a
   // client stack would give each tab its own idea of "before". So these two are just the server's
   // answer, refreshed with the tree on every fetch and every broadcast.
   const canUndo = ref(false)
@@ -335,7 +335,7 @@ export const useGatingStore = defineStore('gating', () => {
                       patch: { colour?: string; show?: boolean; filter?: Record<string, unknown> }) =>
     _post('/api/gating/pop/update', { path, ...patch })
 
-  // WS push: server broadcasts gating:popmap after any mutation (incl. from other clients / napari)
+  // WS push: server broadcasts gating:popmap after any mutation (incl. from other clients / viewer)
   // The guard matches the DOCUMENT the broadcast is about — image + segmentation + pop type. popType
   // was missing: an edit to the same image's cluster pops (another tab, the cluster page) broadcasts
   // under the same image/valueName, and its tree would have been applied straight onto the gating
@@ -437,7 +437,7 @@ export const useGatingStore = defineStore('gating', () => {
     spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, pickZMode, pickZWindow,
-    projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
+    projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,

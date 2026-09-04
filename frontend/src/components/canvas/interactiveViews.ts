@@ -90,7 +90,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true },
   filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none', pluginPage: true },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
-  // from `filmstrip`, which is a napari SCREENSHOT montage — these planes are computed, are not
+  // from `filmstrip`, which is a viewer SCREENSHOT montage — these planes are computed, are not
   // viewer layers, and have no reason to become any.
   // `rail: 'none'` is the same statement its header makes: this question is asked BEFORE a model
   // exists, so it must not be handed one.
@@ -102,7 +102,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability', component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
-  // Tracks as a PLOT (the napari layer's counterpart): read-only, so unlike the timeline below it
+  // Tracks as a PLOT (the viewer layer's counterpart): read-only, so unlike the timeline below it
   // belongs on the board. It takes the board's COMPARISON (`rail: 'pops'` + `TRACK_FAMILIES`): one group
   // per (images × population), so treatments and populations sit side by side like every other plot here
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is

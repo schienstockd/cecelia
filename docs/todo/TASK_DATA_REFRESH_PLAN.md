@@ -3,7 +3,7 @@
 **Status: BUILT** — confirmed done 2026-08-20 (Dominik). Kept as the record of the design; for how it works now read the permanent `docs/<AREA>.md`.
 
 **Goal.** When a task finishes, dependent views should refresh **without** per-plot "reload" buttons,
-and the napari viewer should reload **data (overlays) only** — never the (expensive) image pyramid —
+and the browser viewer should reload **data (overlays) only** — never the (expensive) image pyramid —
 unless the user explicitly asks to reset. Kills the "weird reload buttons" on plots.
 
 **Reference (not a hard rule):** the old R app — `taskManager.R` (reload state on success +
@@ -41,19 +41,19 @@ from the start? Lean scoped-by-uID (mirrors `onPopmap`'s imageUid guard + `gatin
 
 ---
 
-## Part B — Napari: reload data only; reset toggle for the image
+## Part B — Viewer: reload data only; reset toggle for the image
 
 Today: every viewer refresh path (`onValueNameChange`, `onTaskResult`, `onTaskStatus`, the eye) calls
-`openInNapari` → `POST /api/napari/open` → the bridge does `layers.clear()` + reopens the pyramid
+`openInViewer` → `POST /api/napari/open` → the bridge does `layers.clear()` + reopens the pyramid
 (`napari/napari_bridge.py::open_image`). So reloading DATA needlessly reopens the IMAGE.
 
 **Design**
 - New `reloadViewer(reset)` in `ViewerPanel.vue`:
-  - **image reopen** (`openInNapari`) only when `reset` **OR** the requested uID ≠ the shown uID
+  - **image reopen** (`openInViewer`) only when `reset` **OR** the requested uID ≠ the shown uID
     (`projectStore.napariImageUid`) **OR** nothing shown. (viewerManager.R's condition.)
   - else **data-only**: re-push the visible overlays via the existing endpoints — `show-populations`,
     `show-tracks`, `show-labels` (+ new label layers without a reopen), `colour-labels` (this is exactly
-    what `onNapariOpened` does minus the image open; factor it out and reuse).
+    what `onViewerOpened` does minus the image open; factor it out and reuse).
 - New setting `napariResetOnReload` (default **false**; same localStorage pattern as `napariUpdateImage`)
   + a **"reset" toggle** button in the viewer panel, next to the existing auto-update toggle. Tooltip:
   "Reset: reopen the image (not just data) on reload — needed when a task changed the image pixels
@@ -69,7 +69,7 @@ Today: every viewer refresh path (`onValueNameChange`, `onTaskResult`, `onTaskSt
 
 ## Build order — BOTH LANDED (pending review)
 1. **Part B (done):** `napariResetOnReload` setting (`pi-image` toggle, default off) +
-   `ViewerPanel.reloadViewer()`/`pushAllOverlays()` + `project.napariReloadTick`/`requestNapariReload`;
+   `ViewerPanel.reloadViewer()`/`pushAllOverlays()` + `project.napariReloadTick`/`requestViewerReload`;
    image-table eye on the open image + task-completion now data-only unless reset. Pure frontend
    (endpoints re-read + replace layers), no bridge change / server restart. Documented in `docs/NAPARI.md`.
 2. **Part A (done):** `project.dataVersion` — a **per-image version map** — + `bumpDataVersion(uid)`,

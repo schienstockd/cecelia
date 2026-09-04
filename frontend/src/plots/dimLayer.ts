@@ -6,7 +6,7 @@
  * dots overlap composites twice: coverage is `1-(1-alpha)^k`, so `alpha = 0.4` reaches 0.87 after four
  * overlaps and ~0.95 after six. The wash therefore vanishes precisely where the data is dense — which
  * is where the cells are, and the whole point of dimming. The gating dot plot shipped that bug the day
- * it replaced a single-`drawImage` density raster (which had been immune for free): a napari cell
+ * it replaced a single-`drawImage` density raster (which had been immune for free): a viewer cell
  * selection lit up cyan over a base that was supposed to grey out and didn't.
  *
  * So: paint the layer OPAQUE on an offscreen at the host's device scale, then lay it down ONCE at

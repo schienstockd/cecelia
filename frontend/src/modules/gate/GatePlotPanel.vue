@@ -394,7 +394,7 @@ watch(() => props.highlight, loadPopLayers, { deep: true })
 const parentVersion = computed(() => g.popVersion[parent.value] ?? 0)
 watch(parentVersion, refreshMembership)
 // the outlines we draw are the DIRECT CHILDREN of `parent`. Their set/geometry changes when a child
-// is added, deleted, or edited — here, on another plot, from napari, or via a WS broadcast — but that
+// is added, deleted, or edited — here, on another plot, from viewer, or via a WS broadcast — but that
 // bumps the CHILD's popVersion, never the displayed parent's, so neither parentVersion nor fetchPlot
 // (axis/parent watch) fires and a deleted child's outline would linger. Watch a signature of the
 // parent's children and refresh on any change. Use fetchMeta (not the outlines-only fetchGates) so the

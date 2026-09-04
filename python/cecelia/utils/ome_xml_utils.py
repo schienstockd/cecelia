@@ -229,7 +229,7 @@ def load_ome_xml(path):
 
 def read_pixel_unit(path, default="µm"):
   """Physical pixel unit from a store's OME-XML (physical_size_x_unit), e.g. 'µm'/'nm'/'mm'. The
-  RAW unit string is preserved (NOT normalised to 'um') so napari's unit-aware rendering matches
+  RAW unit string is preserved (NOT normalised to 'um') so the legacy viewer's unit-aware rendering matches
   the image. Returns `default` when the metadata is absent."""
   omexml = load_ome_xml(path)
   if omexml is not None:

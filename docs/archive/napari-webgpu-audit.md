@@ -1,6 +1,7 @@
-# Napari vs. a WebGPU web renderer — audit
+# ARCHIVED — Napari vs. a WebGPU web renderer — audit
 
-> **STATUS: audit finished 2026-08-24, recommendation made — a decision record, not a plan.**
+> **STATUS: audit finished 2026-08-24, decision applied (napari retired).** Archived as a historical
+> record of how the WebGPU browser viewer was chosen. Do not act on anything below.
 > Nothing here is built; nothing is scheduled. Branch `audit/napari-webgpu`. Plan + gate ladder:
 > [`NAPARI_WEBGPU_AUDIT_PLAN.md`](NAPARI_WEBGPU_AUDIT_PLAN.md). Prior decision record:
 > [`CLOUD_MIGRATION_ASSESSMENT.md`](CLOUD_MIGRATION_ASSESSMENT.md).

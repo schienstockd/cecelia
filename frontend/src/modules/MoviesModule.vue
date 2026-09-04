@@ -606,7 +606,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                              :rows="allRows" v-model="attrFilter" />
             <!-- Multi-select: the checkbox is the working SET the bulk actions apply to, and the eye is
                  what plays — the same split as the image table, where selection drives the run and the
-                 eye drives napari. -->
+                 eye drives viewer. -->
             <!-- The TABLE scrolls, not the card. With the Details columns on it is wider than the
                  panel, and a card-level `overflow:auto` slid the count, the chip picker and the Details
                  toggle out of view along with it (Dominik, 2026-08-10). -->

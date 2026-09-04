@@ -1,6 +1,6 @@
 <!--
   ImagePickerModal — a task-param picker that renders a coloured, scrubbable z-MIP of one image
-  (backend /api/crop/frame, Julia in-process — no napari), lets the user draw a spatial selection on
+  (backend /api/crop/frame, Julia in-process — no viewer), lets the user draw a spatial selection on
   it, then emits the value up. Generalises the old CropDialog + CropPanel so tasks other than crop
   can define spatial params visually (see docs/todo/PREPROCESSING_PLAN once written).
 

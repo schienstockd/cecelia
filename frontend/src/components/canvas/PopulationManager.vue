@@ -1,7 +1,7 @@
 <!--
   Floating, collapsible population manager — shared across canvases (gating today; track-gating and
   the universal canvas next). Flat list (indented by depth): colour swatch, name (rename inline),
-  count + %parent, an EYE that toggles whether the pop is colour-highlighted on the plots, napari
+  count + %parent, an EYE that toggles whether the pop is colour-highlighted on the plots, viewer
   visibility, and delete. Clicking a row sets it as the displayed parent on the active plot.
 
   Population SOURCE is the gating store, which is pop_type-agnostic (`g.popType` = flow / live /
@@ -48,7 +48,7 @@ const props = withDefaults(defineProps<{
   highlighted: string[]            // pops highlighted in the current scope (global / active plot)
   scope: 'global' | 'local'
   lineWidth: number                // gate stroke width
-  dotSize?: number                 // scatter dot radius (px) — the plot-side twin of "Napari dots" below
+  dotSize?: number                 // scatter dot radius (px) — the plot-side twin of "Viewer dots" below
   gateLabels: boolean              // show population names on gates
   axisFromZero: boolean            // axis origin at 0 vs autoscale
   popType?: string                 // 'flow' (default) | 'track' | 'clust' | 'trackclust'
@@ -77,12 +77,12 @@ const log = useLogStore()
 const projectStore = useProjectStore()
 const settings = useSettingsStore()
 
-// napari point size is a PER-SET viewer preference (keyed by the gated image's set), set once and
+// viewer point size is a PER-SET viewer preference (keyed by the gated image's set), set once and
 // held across the set's images. Guard the setter so we never write under an empty set key.
-const napariSetUid = computed(() => (g.imageUid ? projectStore.setUidOfImage(g.imageUid) : null) ?? '')
-const napariPointSize = computed<number>({
-  get: () => settings.getPointSize(napariSetUid.value),
-  set: v => { if (napariSetUid.value) settings.setPointSize(napariSetUid.value, v) },
+const viewerSetUid = computed(() => (g.imageUid ? projectStore.setUidOfImage(g.imageUid) : null) ?? '')
+const viewerPointSize = computed<number>({
+  get: () => settings.getPointSize(viewerSetUid.value),
+  set: v => { if (viewerSetUid.value) settings.setPointSize(viewerSetUid.value, v) },
 })
 
 const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
@@ -111,7 +111,7 @@ const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
 // Per-pop visibility: flip the persisted `show` flag, then ping the WebGPU viewer so it re-derives
 // the overlay set from the shared bag. The viewer routes to the right overlay for the popType
 // (Tracks layers vs Points) internally.
-async function toggleNapari(p: FlatPop) {
+async function toggleViewer(p: FlatPop) {
   await g.updatePop(p.path, { show: !p.show })
   g.refreshOverlays()
 }
@@ -287,7 +287,7 @@ const bpColour = ref(POP_PALETTE[0])
 const bpOp = ref<'and' | 'or'>('or')
 const bpTerms = ref<BooleanTerm[]>([{ path: '', negate: false }])
 // What can be combined: any real population except the one being edited and its own subtree (which
-// depends on it, so combining it would be a loop the server rejects) and the transient napari pop.
+// depends on it, so combining it would be a loop the server rejects) and the transient viewer pop.
 const boolTermOptions = computed(() => visiblePops.value
   .filter(p => !p.transient && (!bpEditPath.value || !isInSubtree(p.path, bpEditPath.value)))
   .map(p => p.path))
@@ -346,7 +346,7 @@ const popBoolSummary = (p: FlatPop) => booleanSummary(p.boolean, popLabel)
 // ── Row actions overflow menu (⋯) ────────────────────────────────────────────────────────────
 // Same shape as the image table's per-image menu (TeleportPopover + the shared `.cc-actions-*`
 // utilities in style.css). The row keeps only what the user toggles WHILE reading it — colour,
-// highlight, napari visibility — and everything episodic (convert the gate, open its plot, re-parent,
+// highlight, viewer visibility — and everything episodic (convert the gate, open its plot, re-parent,
 // delete) moves in here. This panel is ~250px wide, so each icon added to a row came straight out of
 // the name and the count; the actions were also outgrowing what fits beside them.
 const actionsPath   = ref<string | null>(null)
@@ -380,7 +380,7 @@ const moveTargets = computed<string[]>(() => {
   const p = actionsPop.value
   if (!p) return []
   // every pop except the one being moved, its own subtree (that would be a cycle), the transient
-  // napari selection (never persisted, so it can't parent anything) and its current parent.
+  // viewer selection (never persisted, so it can't parent anything) and its current parent.
   return ['root', ...visiblePops.value
     .filter(t => !isInSubtree(t.path, p.path) && !t.transient)
     .map(t => t.path)].filter(t => t !== p.parent)
@@ -531,10 +531,10 @@ function moveTo(target: string) {
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">
           <!-- `.bottom`, not `.left`: this marker is the row's LEFTMOST element, so there is never room
-               beside it and PrimeVue drops the tip somewhere it covers a pop row. The injected napari
+               beside it and PrimeVue drops the tip somewhere it covers a pop row. The injected viewer
                pop is always the last root child, so below it is the panel edge, not a control. The row
-               already reads "Napari selection" — the tip carries only what the label can't. -->
-          <i v-if="p.transient" class="pi pi-map-marker pm-napari"
+               already reads "Viewer selection" — the tip carries only what the label can't. -->
+          <i v-if="p.transient" class="pi pi-map-marker pm-viewer"
              v-tooltip.bottom="'Temporary — not saved'" :style="{ color: p.colour }" />
           <ColourPicker
             v-else :model-value="p.colour" :disabled="readonly || p.transient"
@@ -578,8 +578,8 @@ function moveTo(target: string) {
             <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
           </button>
           <button v-if="!p.transient" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: p.show }"
-                  v-tooltip.left="p.show ? 'Hide in napari' : 'Show in napari'"
-                  @click.stop="toggleNapari(p)">
+                  v-tooltip.left="p.show ? 'Hide in viewer' : 'Show in viewer'"
+                  @click.stop="toggleViewer(p)">
             <i class="pi pi-images" />
           </button>
           <!-- everything episodic (gate shape, its plot, move, delete) is one ⋯ menu — same pattern
@@ -693,7 +693,7 @@ function moveTo(target: string) {
                    @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
             <span class="pm-opt-val cc-readout cc-fs-xs">{{ lineWidth.toFixed(1) }}</span>
           </div>
-          <!-- scatter dot size: the PLOT twin of the napari point size below. The default (0.7 → a
+          <!-- scatter dot size: the PLOT twin of the viewer point size below. The default (0.7 → a
                1.4px square) is the FlowJo speckle, which reads on a dense cloud but is hard to see on a
                sparse one or when the dots carry a colour-by measure. Scales every dot on the plot. -->
           <div class="pm-opt-row">
@@ -711,19 +711,19 @@ function moveTo(target: string) {
           </div>
           </template>
 
-          <!-- viewer-option group is popType-specific: flow/live/clust populations render as napari
+          <!-- viewer-option group is popType-specific: flow/live/clust populations render as viewer
                Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
                width is a plot-panel concern), so the group is hidden for those. -->
           <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
             <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>viewer</span></div>
-            <!-- napari point size (re-renders the napari overlay on release) -->
+            <!-- viewer point size (re-renders the viewer overlay on release) -->
             <div class="pm-opt-row">
               <span class="pm-opt-label cc-muted cc-fs-xs">Point size</span>
-              <input type="range" min="1" max="20" step="1" :value="napariPointSize"
+              <input type="range" min="1" max="20" step="1" :value="viewerPointSize"
                      v-tooltip.top="'Population point size on the viewer (per experiment/set)'"
-                     @input="napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
+                     @input="viewerPointSize = parseInt(($event.target as HTMLInputElement).value)"
                      @change="g.refreshPops()" />
-              <span class="pm-opt-val cc-readout cc-fs-xs">{{ napariPointSize }}</span>
+              <span class="pm-opt-val cc-readout cc-fs-xs">{{ viewerPointSize }}</span>
             </div>
           </template>
         </div>
@@ -740,7 +740,7 @@ function moveTo(target: string) {
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
 .pm-row.transient { font-style: italic; background: color-mix(in srgb, #22d3ee 8%, transparent); }
-.pm-napari { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
+.pm-viewer { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-rename { flex: 1; background: var(--cc-bg); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }

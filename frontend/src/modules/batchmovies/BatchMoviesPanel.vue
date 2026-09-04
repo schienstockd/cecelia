@@ -263,7 +263,7 @@ async function loadPopPaths() {
     const out: { path: string; label: string }[] = []
     const walk = (nodes: PopNode[] | undefined, parent: string, depth: number) => {
       for (const n of nodes ?? []) {
-        if (n.transient) continue                // ephemeral (napari selection), never a batch input
+        if (n.transient) continue                // ephemeral (viewer selection), never a batch input
         const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
         out.push({ path, label: `${'  '.repeat(depth)}${n.name}` })
         walk(n.children, path, depth + 1)

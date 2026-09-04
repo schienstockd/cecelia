@@ -333,7 +333,7 @@ end
 # Declaring is never required and never restricts — a task on disk is a task whether or not the
 # manifest mentions it, so no author can hide their own work by adding a block and forgetting a line.
 #
-# Modelled on napari's `contributions` (npe2), with its `commands` indirection deliberately dropped:
+# Modelled on the legacy viewer's `contributions` (npe2), with its `commands` indirection deliberately dropped:
 # napari needs it because one Python function can surface as a widget AND a menu item, whereas our
 # tasks are already addressable by `fun_name`.
 #
@@ -349,7 +349,7 @@ const CONTRIBUTION_KINDS = ("tasks", "plots", "views", "layers")
 const CONTRIBUTIONS_HONOURED = ("tasks", "plots", "views")
 
 # Layer kinds a `layers` contribution may ask napari for — an ALLOW-LIST, not a passthrough
-# (Decision 12). `layerType` reaching `viewer.add_*` unchecked would make napari's constructor
+# (Decision 12). `layerType` reaching `viewer.add_*` unchecked would make the legacy viewer's constructor
 # signatures a plugin ABI by the back door, which is the thing the whole design avoids.
 const CONTRIBUTION_LAYER_TYPES = ("points", "tracks", "shapes", "vectors")
 

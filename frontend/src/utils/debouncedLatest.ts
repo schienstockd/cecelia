@@ -3,7 +3,7 @@
 // component side is then just "build the arg, render the state".
 //
 // Written for the task preview, whose two triggers both fire in bursts: editing a parameter, and
-// moving the napari view (a pan emits many camera events). Each run is real cellpose on the GPU
+// moving the viewer view (a pan emits many camera events). Each run is real cellpose on the GPU
 // (~0.3 s on 512², ~2 s on 2048²), so firing per event would queue seconds of stale work behind the
 // one result the user actually wants.
 //

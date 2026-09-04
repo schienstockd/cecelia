@@ -418,7 +418,7 @@ ome_xml_unit_name(ngff_unit::AbstractString)::String = get(_OME_XML_UNIT, ngff_u
 """
 Patch `OME/METADATA.ome.xml`'s `<Pixels>` attributes directly (regex text edit — no XML
 dependency, see `image.jl` header note). This is a THIRD, separate metadata location from
-`.zattrs`: napari's `_read_time_increment` (`napari_bridge.py`) reads `TimeIncrement` from here
+`.zattrs`: the legacy viewer's `_read_time_increment` (`napari_bridge.py`) reads `TimeIncrement` from here
 UNCONDITIONALLY, with no NGFF/`.zattrs` fallback the way spatial scale has — so correcting
 `.zattrs` alone (`update_ome_scale!`) fixes the 3D view but leaves the timestamp overlay showing
 the raw frame index ("t = N") because this file still has the old/absent value. `attrs` maps the

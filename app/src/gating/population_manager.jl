@@ -1820,7 +1820,7 @@ segmentation returns instantly, and a saved gate edit on ONE segmentation invali
 that changed). Complements `cells_in_pop` (one pop, live map): this is the whole set, cached.
 
 The transient napari-selection pop is intentionally excluded (it's the selection *source*; rendering
-it back would steal napari's active layer). Cell pop_types only (`flow`/`clust`) — track pops go
+it back would steal the legacy viewer's active layer). Cell pop_types only (`flow`/`clust`) — track pops go
 through the Tracks overlay (`show_tracks`), not this points path.
 """
 function resolve_pops(img::CciaImage, pop_type::AbstractString;

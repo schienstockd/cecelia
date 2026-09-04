@@ -4,7 +4,7 @@
 //
 // The two things worth testing are the two silent failures. A slab whose shape does not match the
 // metadata still uploads and still renders — it just renders the wrong thing (`slabShapeError`). And a
-// channel colour derived from a name rather than from the server's LUT is how napari's SHG channel
+// channel colour derived from a name rather than from the server's LUT is how the viewer's SHG channel
 // once came out WHITE (`lutTextureBytes` takes the server's stops and nothing else).
 
 import { parseHex } from './colour'
@@ -15,7 +15,7 @@ export interface ViewerChannel {
   lo: number
   hi: number
   visible: boolean
-  /** Black→colour (or white→colour) ramp stops, 0-1 RGB. napari owns its palette; we interpolate. */
+  /** Black→colour (or white→colour) ramp stops, 0-1 RGB. viewer owns its palette; we interpolate. */
   lut: number[][]
 }
 
@@ -86,7 +86,7 @@ export interface ViewerMeta {
   /**
    * The store the browser viewer is looking at, and the image's meta dir on disk. Body-carried into
    * `/api/preview/run` so the task-preview API uses these as source of truth for "what's on screen"
-   * rather than reaching sideways into napari (P7).
+   * rather than reaching sideways into viewer (P7).
    */
   zarrPath?: string
   taskDir?: string
@@ -286,7 +286,7 @@ export function pickTileLevel(zoom: number, meta: ViewerMeta, previousLevel?: nu
 /**
  * 3D volume LOD: the pyramid level to load a whole (t, c) volume from.
  *
- * napari also renders 3D at the coarsest level; Imaris-style octree LOD was on the wishlist but never
+ * viewer also renders 3D at the coarsest level; Imaris-style octree LOD was on the wishlist but never
  * shipped. Default to the DEEPEST level so a big-XY volume request can never exceed WebGPU's
  * `maxBufferSize` (256 MB on a Dawn adapter, and a full-res f8gzA2-shape volume is 687 MB per
  * channel — the error the audit's user hit).
@@ -414,7 +414,7 @@ export function slabZ(
 
 /**
  * Physical extent of the loaded box in µm, `[x, y, z]`. Uncalibrated axes come back as voxel counts,
- * which renders isotropic — the same thing napari shows for an uncalibrated stack.
+ * which renders isotropic — the same thing viewer shows for an uncalibrated stack.
  *
  * `zDepth` is how many planes are actually loaded (1 in the 2D view), not how many the image has. It
  * must never reach zero: a zero-thickness box makes the ray's entry and exit distances coincide, the
@@ -430,7 +430,7 @@ export function extentUm(meta: ViewerMeta, zDepth = meta.nZ): [number, number, n
  * ramp resampled to a fixed width. Rows past `channels.length` are left black, so an out-of-range
  * channel index contributes nothing rather than picking up a neighbour's colour.
  *
- * Stops come from the server (`resolved_display_specs`), which is the ONE place a napari colormap name
+ * Stops come from the server (`resolved_display_specs`), which is the ONE place a viewer colormap name
  * becomes RGB. Nothing here guesses a colour from a name — that is the bug this shape exists to
  * prevent, and it is why a channel with an empty `lut` renders black instead of falling back to white
  * (white adds to all three accumulators and washes the whole composite out).
@@ -465,7 +465,7 @@ export function sampleLut(stops: number[][], n: number): [number, number, number
 const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
 
 /**
- * A channel's LUT stops for a napari colormap picked in the browser: black → that colormap's colour.
+ * A channel's LUT stops for a viewer colormap picked in the browser: black → that colormap's colour.
  *
  * Two stops is EXACT for the channel colormaps, not an approximation — `image_render.jl` verified that
  * every one of them is a linear ramp from black (max deviation 0.007), which is why a name and an end

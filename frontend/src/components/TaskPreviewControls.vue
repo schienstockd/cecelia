@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * The task-preview control: run this task's real compute over the region napari is showing, so params
+ * The task-preview control: run this task's real compute over the region viewer is showing, so params
  * can be judged before committing to a full run. Sits beside Run because that is the choice it informs.
  *
  * All state and timing live in `stores/taskPreview` (which delegates to the tested
  * `utils/taskPreview` + `utils/debouncedLatest`); this file only renders it. In particular the preview
- * re-runs on view change by itself — the store subscribes to `napari:view-changed` — so there is
+ * re-runs on view change by itself — the store subscribes to `viewer:view-changed` — so there is
  * nothing to drive from here.
  */
 import { computed, onMounted, watch } from 'vue'
@@ -53,7 +53,7 @@ const label = computed(() => {
       @click="preview.toggle()"
       v-tooltip.left="preview.enabled
         ? 'Stop previewing (frees the GPU model)'
-        : 'Preview these params on the region napari is showing'"
+        : 'Preview these params on the region viewer is showing'"
     >
       <i class="pi" :class="preview.busy ? 'pi-spinner pi-spin' : 'pi-bolt'" />
     </button>

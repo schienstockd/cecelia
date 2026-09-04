@@ -11,12 +11,12 @@
 //    "show me that window" rather than nothing at all;
 //  - `isPopoutWindow()`, so the shell can decline to install its background workers a second time.
 //    A popup is a full second app instance with its own WS: whatever App.vue starts, it starts again
-//    (see App.vue — the napari overlay restore and the lab-log auto-capture both act on the BACKEND,
+//    (see App.vue — the viewer overlay restore and the lab-log auto-capture both act on the BACKEND,
 //    so two windows meant two of every request).
 //
 // Not every popout follows the main window. The Task Manager does (a list scoped to the project you
 // just left, still labelled as current, is worse than an empty one); the volume viewer deliberately
-// does NOT — it is a comparison surface, and a view being measured against napari must not move
+// does NOT — it is a comparison surface, and a view being measured against viewer must not move
 // because someone clicked another row.
 //
 // **The name is the window's identity, and it is the durable half of it.** The hash says which view

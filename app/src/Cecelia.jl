@@ -218,7 +218,7 @@ export run_chain
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
-# `launch!`/`close!`/`send` are the resident-child generics defined in preview.jl. Napari used to
+# `launch!`/`close!`/`send` are the resident-child generics defined in preview.jl. Viewer used to
 # define them too — retired in P9.
 export launch!, close!, send
 export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request

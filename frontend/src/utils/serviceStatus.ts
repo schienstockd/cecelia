@@ -6,7 +6,7 @@ export type ServiceState = 'running' | 'starting' | 'stopped'
 export type Tone = 'ok' | 'warn' | 'idle'
 
 /** `{alive, starting}` → running/starting/stopped. Shared by services that report health as an
- *  alive flag plus a start-in-progress flag (the preview worker; historically napari too). */
+ *  alive flag plus a start-in-progress flag (the preview worker; historically viewer too). */
 function aliveState(s: { alive?: boolean; starting?: boolean } | null | undefined): ServiceState {
   if (!s) return 'stopped'
   if (s.starting) return 'starting'

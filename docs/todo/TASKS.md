@@ -138,11 +138,11 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       and validated its params.
 
 - [ ] **The contribution model — designed, not built.** `PLUGINS_PLAN.md` → *The contribution model*
-      (Decisions 10–13), written after reading napari's plugin docs end to end.
-      The finding that reframed it: napari's most-used contributions put data on screen by RETURNING
+      (Decisions 10–13), written after reading the legacy viewer's plugin docs end to end.
+      The finding that reframed it: the legacy viewer's most-used contributions put data on screen by RETURNING
       A DATA TUPLE — `LayerData = (data, [attributes, [layer_type]])` — not by drawing, and its first
       tutorial uses `autogenerate: true` to build the widget from a function signature. So the pattern
-      we already have (`params` → `ParamRenderer`) IS napari's canonical widget form, and the thing we
+      we already have (`params` → `ParamRenderer`) IS the legacy viewer's canonical widget form, and the thing we
       lack is their layer primitive.
       Our wall is narrower than "a plugin cannot ship Vue": `plugin.json` is metadata only and every
       contribution is inferred from file layout, so there is **nowhere to declare a kind that has no

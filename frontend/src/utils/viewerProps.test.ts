@@ -34,7 +34,7 @@ describe('captureViewState', () => {
   ]
   const meta = mkMeta(ch)
 
-  it('emits both webgpu + napari-shaped blocks', () => {
+  it('emits both webgpu + viewer-shaped blocks', () => {
     const vs = captureViewState({
       meta, channels: ch, cam: CAM, mode: 'plane', zPlane: 12, zRange: [0, 30], t: 7, valueName: 'default',
     })
@@ -44,7 +44,7 @@ describe('captureViewState', () => {
     expect(vs.webgpu?.t).toBe(7)
     expect(vs.webgpu?.zPlane).toBe(12)
     expect(vs.webgpu?.valueName).toBe('default')
-    // napari-shaped: keyed by name, contrast + colormap + visible.
+    // viewer-shaped: keyed by name, contrast + colormap + visible.
     expect(vs.layers?.['DAPI']?.contrast_limits).toEqual([100, 4000])
     expect(vs.layers?.['DAPI']?.colormap).toBe('#0000ff')
     expect(vs.layers?.['GFP']?.visible).toBe(false)
@@ -99,7 +99,7 @@ describe('applyViewState', () => {
     expect(calls.t).toBe(5)
   })
 
-  it('falls back to napari layers matched by channel name', () => {
+  it('falls back to viewer layers matched by channel name', () => {
     const vs: ViewerViewState = {
       layers: {
         DAPI: { contrast_limits: [10, 100], visible: false, colormap: '#abcdef' },
@@ -113,7 +113,7 @@ describe('applyViewState', () => {
     const dapi = calls.channel.find(x => x.c === 0)!
     expect(dapi.patch.lo).toBe(10); expect(dapi.patch.hi).toBe(100)
     expect(dapi.patch.visible).toBe(false); expect(dapi.patch.hex).toBe('#abcdef')
-    expect(calls.channel.find(x => x.c === 1)).toBeUndefined()   // GFP has no napari entry — skipped
+    expect(calls.channel.find(x => x.c === 1)).toBeUndefined()   // GFP has no viewer entry — skipped
     expect(calls.t).toBe(8)
   })
 

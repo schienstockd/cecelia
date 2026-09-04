@@ -213,11 +213,11 @@ describe('nobody hand-rolls a fourth debounce', () => {
 })
 
 // The live-viewer pushes are the ones this audit started from: the movie z slider and the mask-outline
-// slider each landed a napari command per slider event, and the bridge runs one command at a time, so
+// slider each landed a viewer command per slider event, and the bridge runs one command at a time, so
 // the viewer kept stepping through slices long after the mouse was released. The fix is at the SINK —
 // `utils/viewerOverlays` owns the coalescing — which only holds while it stays the sole owner.
-describe('live napari view-property endpoints have exactly one owner', () => {
-  const LIVE_ENDPOINTS = /\/api\/napari\/(set-z-view|apply-view-state)/
+describe('live viewer view-property endpoints have exactly one owner', () => {
+  const LIVE_ENDPOINTS = /\/api\/viewer\/(set-z-view|apply-view-state)/
   const ALL = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
   const all = Object.entries(ALL).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
 

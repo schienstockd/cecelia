@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useWsStore } from '../stores/ws'
 import {
@@ -7,23 +7,17 @@ import {
 } from '../utils/overlayAutoShow'
 
 // Turn REMEMBERED overlay state + live-write previews into VIEWER state — the app-level glue that
-// wires WS events (`napari:opened`, `gating:popmap`, `task:status`, `task:progress`, chain nodes)
-// to the panel's overlay bag and the popup viewer.
-//
-// This used to also fire napari push commands (show-labels / show-tracks / show-populations /
-// colour-labels / refresh-labels) as the second half. Deleted in the P9 decommission (PR 2): every
-// panel toggle persists to `settings` and pings `cc.viewerOverlaysTick`, which the WebGPU viewer
-// subscribes to; a second HTTP push into a Qt canvas we no longer draw was a mirror the browser
-// viewer didn't need. The WS handlers stay because the STATE they manage (the panel's live-preview
-// rows, the colour-by legend refs) still drives the panel UI regardless of who renders the frame.
+// watches the project store's `viewerImageUid` (which changes when an image is opened, whatever the
+// trigger: route load, task:result, panel click) and wires WS events (`gating:popmap`, `task:status`,
+// `task:progress`, chain nodes) to the panel's overlay bag and the popup viewer.
 //
 // TWO RULES, both learned from real bugs — read before adding a fourth WS handler:
 //
 // 1. OWNERSHIP. None of this may live in a component that can be unmounted. It used to live entirely
 //    in ViewerPanel.vue, which App.vue mounts behind `v-if="settings.viewerPanelOpen"` — and that
-//    floating panel is off by default. With it closed, nothing was subscribed to `napari:opened`, so
+//    floating panel is off by default. With it closed, nothing was subscribed to image-open events, so
 //    opening an image restored no overlays at all while the toggles (persisted in localStorage) still
-//    read ON. `useOverlayAutoShow()` is mounted ONCE in App.vue so the WS wiring runs regardless.
+//    read ON. `useOverlayAutoShow()` is mounted ONCE in App.vue so the wiring runs regardless.
 //
 // 2. READ `settings`, NEVER A COMPONENT'S REFS. These run off WS events, so no component watcher is
 //    guaranteed to have run first. Trusting ViewerPanel's refs is what previously pushed against a
@@ -43,7 +37,7 @@ export function resetColourLegend() { colourLegend.value = {}; colourLegendLabel
 // be watched while it runs. `ccid.json` only registers the set on success, so the running task itself
 // is the source of truth for what exists (`live_outputs` → GET /api/tasks).
 //
-// The napari `(vn) Labels (live)` layer that used to render this went with the P9 push helpers. The
+// The viewer `(vn) Labels (live)` layer that used to render this went with the P9 push helpers. The
 // browser viewer's own live-write preview rendering is not in this PR — the panel row's toggle now
 // only manages STATE (`previewShown`); the viewer will pick it up when that path lands.
 
@@ -83,7 +77,7 @@ export async function togglePreview(valueName: string): Promise<boolean> {
   return want
 }
 
-// Progress tick → note we saw one for the shown previews. The push that used to refresh napari's
+// Progress tick → note we saw one for the shown previews. The push that used to refresh the viewer's
 // live layer went with the P9 helpers; the browser viewer's own preview refresh will read this
 // map when that path lands.
 function _onProgressTick(): void {
@@ -106,23 +100,26 @@ export function releaseAutoShowSuppression(imageUid?: string) { _claims.release(
 // Mount ONCE, app-level (App.vue) — see rule 1. Not for use in a page or a floating panel.
 export function useOverlayAutoShow() {
   const ws = useWsStore()
-  const onOpened = (data: Record<string, unknown>) => {
-    const uid = String(data?.imageUid ?? '')
-    // previews belong to the image that was open; a different image's runs are a different set
-    previewShown.value = {}
-    void refreshLivePreviews()
-    // The `suppressAutoShowOnce` claim used to gate the napari-restore push. It stays as a hook
-    // for the eventual browser-viewer restore path — consuming the claim keeps the semantic that
-    // "this open was handled by whoever set the claim, don't run the default restore".
-    if (uid) void _claims.consume(uid)
-  }
+  const project = useProjectStore()
   // Any task lifecycle change can add or remove a watchable store. Chain nodes are included because a
   // chain-launched segmentation writes exactly the same store — the frontend never sees its params, so
   // the backend's own `live_outputs` snapshot is what makes chain runs previewable at all.
   const onTaskLifecycle = () => { void refreshLivePreviews() }
   const onProgress = () => _onProgressTick()
+  // React to the project store's `viewerImageUid` (the image the user is looking at) — set from a
+  // route load / task result / panel click. Previously subscribed to `viewer:opened` for the same
+  // signal; the store ref is authoritative regardless of who opened the image.
+  let stopWatch: (() => void) | null = null
   onMounted(() => {
-    ws.on('napari:opened', onOpened)
+    stopWatch = watch(() => project.viewerImageUid, (uid) => {
+      // previews belong to the image that was open; a different image's runs are a different set
+      previewShown.value = {}
+      void refreshLivePreviews()
+      // The `suppressAutoShowOnce` claim stays as a hook for the eventual browser-viewer restore path
+      // — consuming the claim keeps the semantic that "this open was handled by whoever set the claim,
+      // don't run the default restore".
+      if (uid) void _claims.consume(uid)
+    })
     ws.on('task:status', onTaskLifecycle)
     ws.on('chain:node:running', onTaskLifecycle)
     ws.on('chain:node:done', onTaskLifecycle)
@@ -131,7 +128,7 @@ export function useOverlayAutoShow() {
     void refreshLivePreviews()   // a run may already be in flight when the app connects
   })
   onUnmounted(() => {
-    ws.off('napari:opened', onOpened)
+    stopWatch?.()
     ws.off('task:status', onTaskLifecycle)
     ws.off('chain:node:running', onTaskLifecycle)
     ws.off('chain:node:done', onTaskLifecycle)

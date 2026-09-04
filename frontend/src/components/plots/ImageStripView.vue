@@ -31,7 +31,7 @@ const settings = useSettingsStore()
 const project = useProjectStore()
 const viewer = useViewerStore()
 
-// `snapshot` (napari view state) + `imageUid` are the frame's provenance — persisted with the board so
+// `snapshot` (viewer view state) + `imageUid` are the frame's provenance — persisted with the board so
 // zoom-to-source can reopen the image and restore the exact camera/contrast/colours months later
 // (docs/todo/ANIMATION_PLAN.md). Captured atomically with the screenshot.
 // `assetId` → the frame's PNG is a sidecar file (settings/board-assets/), served on demand; NOT stored
@@ -64,10 +64,10 @@ const separator = computed({ get: () => props.state.separator ?? 'straight', set
 // angled separators: `skew` = the horizontal lean (angle), `thick` = the white gap width between frames
 const skew = computed({ get: () => props.state.sepAngle ?? 22, set: v => (props.state.sepAngle = v) })
 const thick = computed({ get: () => props.state.sepThick ?? 2, set: v => (props.state.sepThick = v) })
-// optional channel-colour legend, read from the frame's snapshot (napari layer colormaps). Off by default.
+// optional channel-colour legend, read from the frame's snapshot (viewer layer colormaps). Off by default.
 const showLegend = computed({ get: () => props.state.showLegend ?? false, set: v => (props.state.showLegend = v) })
 // still overlays (E2): a vector scale bar (from the captured frame's physical extent) + an elapsed-time
-// timestamp — drawn crisp on the clean capture (napari's own hidden via E1). Off by default.
+// timestamp — drawn crisp on the clean capture (the viewer's own hidden via E1). Off by default.
 const showScaleBar  = computed({ get: () => props.state.showScaleBar ?? false,  set: v => (props.state.showScaleBar = v) })
 const showTimestamp = computed({ get: () => props.state.showTimestamp ?? false, set: v => (props.state.showTimestamp = v) })
 // elapsed-time label for a frame: its snapshot T index × the source image's frame interval
@@ -362,7 +362,7 @@ defineExpose({ exportImage })
 
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
-        <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="napari screenshot" />
+        <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="viewer screenshot" />
         <!-- vector scale bar + timestamp (E2), drawn on the clean capture from the frame's physical extent -->
         <StillOverlay v-if="(c.assetId || c.src) && (showScaleBar || showTimestamp)"
                       :extent-um="c.extentUm" :time-label="frameTime(c)"
@@ -371,13 +371,13 @@ defineExpose({ exportImage })
         <ViewLegend v-if="showLegend && (c.assetId || c.src) && legendSections(c).length"
                     :sections="legendSections(c)" :swatch="9" vertical class="is-legend" />
         <button v-if="!(c.assetId || c.src)" class="is-capture" @click="capture(i)" :disabled="capturing === i"
-                v-tooltip.bottom="'Capture the current napari view'">
-          <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
+                v-tooltip.bottom="'Capture the current viewer view'">
+          <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'viewer view' }}
         </button>
         <!-- per-frame actions (hidden while capturing) -->
         <div v-if="!capturingStrip" class="is-actions">
           <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="zoomToSource(i)"
-                  :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Napari and restore the exact view'">
+                  :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Viewer and restore the exact view'">
             <i class="pi pi-directions" /></button>
           <button v-if="c.assetId || c.src" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
           <button v-if="cells.length > 1" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
@@ -422,7 +422,7 @@ defineExpose({ exportImage })
 .is-strip.angled.row .is-cell + .is-cell { margin-left: calc(var(--sep-thick, 2px) - var(--sk, 22px)); }
 .is-cell { position: relative; flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column;
   overflow: hidden; background: var(--cc-bg); }
-/* contain (not cover) so the WHOLE captured frame is shown — cover cropped the edges, cutting napari's
+/* contain (not cover) so the WHOLE captured frame is shown — cover cropped the edges, cutting the viewer's
    scale bar (bottom-right) and timestamp (top-left). Trade-off: letterbox bars when the cell aspect ≠
    the image aspect; acceptable for figures (nothing is clipped). ANIMATION_PLAN E (clean capture +
    Cecelia-drawn scale bar) will let frames go edge-to-edge again without losing the annotations. */

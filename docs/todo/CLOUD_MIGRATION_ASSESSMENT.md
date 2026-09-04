@@ -19,8 +19,8 @@
 >   needs no route refactor. That was the one pleasant surprise, and it is not enough on its own.
 
 Context: IT mandates cloud, no new local analysis machines. The question raised was "ship a stripped
-Cecelia + Napari as a web version". This document answers the two things that decision depends on:
-can Napari render server-side (spike), and what does serving N users actually cost (scope).
+Cecelia + Viewer as a web version". This document answers the two things that decision depends on:
+can Viewer render server-side (spike), and what does serving N users actually cost (scope).
 
 Measured on `origin/main` @ 2e5b89fd. Numbers are counted, not estimated, unless marked.
 
@@ -43,7 +43,7 @@ So "one of everything" is a property of the *process*, not of the code's structu
 those 193 route handlers. Making the app genuinely multi-tenant in one process would mean
 threading a session through every one of them — that IS a rewrite, and it is not necessary.
 
-## 2. Spike: can Napari render with no display server?
+## 2. Spike: can Viewer render with no display server?
 
 Harness: `docs/todo/spike/qpa_gl_probe.py` (GL context per QPA platform),
 `docs/todo/spike/headless_render_spike.py` (3D+time throughput).
@@ -101,7 +101,7 @@ Explicitly **out** of this scope: making the API multi-tenant in-process. See se
 
 ## 3a. Does the h5ad data have to be streamed too? No — measured
 
-Asked because Napari shows populations, tracks and colour-by columns that live in h5ad, not in the
+Asked because Viewer shows populations, tracks and colour-by columns that live in h5ad, not in the
 pixels. It does not change the plan, and it strengthens the case for remoting.
 
 - **The bridge reads h5ad itself, server-side**, through the canonical `LabelPropsView`
@@ -154,7 +154,7 @@ do not benefit from cache at all (12.7 / 12.4 / 12.2 ms across fresh, warm and O
 
 1. **`projects_dir` must be instance-local NVMe.** Neither network location can host a working
    store. On CIFS, dragging the t slider costs 2.2 s/timepoint at 64-way concurrency and 22.9 s
-   single-threaded — and napari's reads are not guaranteed to be 64-way concurrent. That is not
+   single-threaded — and the legacy viewer's reads are not guaranteed to be 64-way concurrent. That is not
    interactive, and it is ~170x slower than local even at best concurrency.
 2. **CIFS is fine as archive/staging.** Large-file write throughput reaches ~35 MB/s (below).
 3. **Google Drive is not viable anywhere in the analysis path**, at any chunk size.
@@ -215,7 +215,7 @@ Verified on a real 249 MB / 3,849-file store (`zolIMa/0/fXgbTl/ccidSmoothed.ome.
 3. **One backend process per user, in its own container.** This is why the section 1 finding
    matters: because every singleton is per-*process*, per-user isolation needs only a distinct
    `CECELIA_DEV_DIR` + `projects_dir` per container. The 193 route handlers are untouched.
-4. **Viewer stays Napari, remoted.** X server + GPU inside the container (section 2: `offscreen`
+4. **Viewer stays Viewer, remoted.** X server + GPU inside the container (section 2: `offscreen`
    and `eglfs` are both dead, so Xorg-headless or KasmVNC, and the PRIME env must be set or it
    silently software-renders). Browser receives pixels. Both the zarr and the h5ad stay
    server-side next to compute (section 3a).

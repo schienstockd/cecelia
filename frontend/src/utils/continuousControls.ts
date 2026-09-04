@@ -3,7 +3,7 @@
 //
 // Why this exists: a slider emits an event per pixel of travel, so a short drag is 20–60 events. That
 // is harmless when the handler writes a local value, and pathological when it reaches a slow sink —
-// the napari bridge (one command at a time), an API round trip, or a full chart rebuild. The symptom
+// the legacy bridge (one command at a time), an API round trip, or a full chart rebuild. The symptom
 // is always the same and always reads as a bug: the thing you are dragging keeps moving for seconds
 // after you let go, working through requests you already superseded.
 //
@@ -25,7 +25,7 @@ export interface RangeControl {
   tag: string
   /** the `@input` (or `v-model`) expression, `''` when the tag binds neither */
   handler: string
-  /** the tag also binds `@change` — the "apply on release" escape hatch (PoolThrottle, napari dots) */
+  /** the tag also binds `@change` — the "apply on release" escape hatch (PoolThrottle, viewer dots) */
   hasChange: boolean
   sink: SinkKind
 }

@@ -84,7 +84,7 @@ def preview_region_bounds(xy_bounds, z_index, t_index, axis_len, ndisplay=2):
     ``xy_bounds``: {'X': (lo, hi), 'Y': (lo, hi)} in LEVEL-0 pixels, as the viewer reports them.
     ``axis_len``: axis letter → that axis's length, used to clamp (a zoomed-out view reports corners
     beyond the image edge, and a slice past the end would silently return fewer pixels than asked).
-    ``ndisplay``: napari's display mode. **3 means the viewer is in 3D and we preview one plane
+    ``ndisplay``: the legacy viewer's display mode. **3 means the viewer is in 3D and we preview one plane
     anyway**, returning ``fallback_2d=True`` so the caller can say so — a whole z-stack costs ~90 s
     with no available shortcut (see docs/todo/TASK_PREVIEW_PLAN.md, Decisions 2 and 8), which is not a
     preview. Per-plane inference is identical to the real run; what a single plane cannot show is

@@ -264,7 +264,7 @@ end
 
 # ── Colour-by / colour-overrides — per-vertex colouring by an obs column ──────────
 #
-# Napari colours points / track ribbons by a chosen obs column: categorical values
+# Viewer colours points / track ribbons by a chosen obs column: categorical values
 # (String, Bool, Integer) go through `colour_by_palette` (Okabe-Ito by sorted
 # position, but a user pop that filters for a value on that column donates its
 # colour); continuous columns (Float) go through a viridis-ish heat ramp
@@ -277,7 +277,7 @@ end
 # BOTH 2D and 3D atomically.
 #
 # `track_color_mode` interaction — when `colour_by` is set, tracks force to
-# `"solid"` (the arriving cell's colour). Napari's `color_by` overrides its
+# `"solid"` (the arriving cell's colour). Viewer's `color_by` overrides its
 # categorical/speed palettes the same way; matching that keeps the browser view
 # and the movie in the same colours.
 
@@ -364,7 +364,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
                               colour_overrides::Union{Nothing,AbstractDict} = nothing)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
-    # When colourBy is on, tracks paint in the arriving-cell colour (napari's `color_by`
+    # When colourBy is on, tracks paint in the arriving-cell colour (the legacy viewer's `color_by`
     # semantics on the tracks layer). "track"/"speed" would ignore what we resolved.
     effective_tcm = cb_col === nothing ? String(track_color_mode) : "solid"
     pt = String(pop_type)
@@ -817,7 +817,7 @@ Same design as `build_overlays_for`: resolve pops → id → colour ONCE at buil
 the label plane and stride it. The label store's `img_labels_path` is opened ONCE (`open_level0`)
 so a sweep pays one metadata round-trip, not `nT` — same shape as `record_view_movie`'s image read.
 
-`z` mirrors `render_view_frame`'s `z` selection: `nothing` MIPs the whole stack (napari's default
+`z` mirrors `render_view_frame`'s `z` selection: `nothing` MIPs the whole stack (the legacy viewer's default
 for a label layer), an `Int` picks one plane, a `UnitRange` MIPs that range. The z choice on the
 mask must match the frame's; the caller passes the same value in.
 

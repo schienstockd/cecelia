@@ -31,7 +31,7 @@ export const useWsStore = defineStore('ws', () => {
   let outcomePollTimer: ReturnType<typeof setInterval> | null = null
   let outcomeSince = ''
   // Tasks whose terminal frame we RECONSTRUCTED. If the real one then turns up late, it must be
-  // swallowed: re-running the completion side effects would refetch plots, reload napari and — the one
+  // swallowed: re-running the completion side effects would refetch plots, reload viewer and — the one
   // that actually corrupts something — count a second attempt in the observer's completion watch.
   // Same idea as the console's SEEN_TERM. Cleared per id, so `task:restart` on that id works normally.
   const recovered = new Set<string>()
@@ -150,7 +150,7 @@ export const useWsStore = defineStore('ws', () => {
 
   // ONE path for every task/chain frame — whether it arrived on the socket or was RECONSTRUCTED from
   // the backend's outcome ring (see startOutcomePoll). That's what makes the backstop a fix for all five
-  // completion listeners (this store's image-status/dataVersion/meta refresh, ViewerPanel's napari
+  // completion listeners (this store's image-status/dataVersion/meta refresh, ViewerPanel's viewer
   // reload, TasksModule's auto-follow, useOverlayAutoShow, the observer's completion watch) instead of a
   // second, drifting copy of the completion side effects.
   function dispatch(data: Record<string, unknown>) {
@@ -179,7 +179,7 @@ export const useWsStore = defineStore('ws', () => {
       )
     }
 
-    // Everything the BACKEND SIDE says: its own @info/@warn/@error, plus every line the napari bridge,
+    // Everything the BACKEND SIDE says: its own @info/@warn/@error, plus every line the legacy bridge,
     // the preview worker, the Pluto server and the detached runner produce (they are all on the one log
     // rail now — see app/src/log_stream.jl). The record carries `source`, `detail`, `ts` and `seq`;
     // `pushServer` is what reads them, including the gap check that repairs a dropped frame.
@@ -339,17 +339,6 @@ export const useWsStore = defineStore('ws', () => {
         startedAt:  parseRailTime(data.startedAt),
         finishedAt: parseRailTime(data.finishedAt),
       })
-    }
-
-    if (type === 'napari:opened') {
-      const imageUid = String(data.imageUid ?? '')
-      if (imageUid) {
-        // Napari opened X — record BOTH the napari-specific state and the shared "focused image"
-        // that the panel and browser viewer read. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
-        const p = useProjectStore()
-        p.viewerImageUid = imageUid
-        p.openImageUid = imageUid
-      }
     }
 
     if (type === 'task:result') {

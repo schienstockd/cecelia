@@ -165,9 +165,9 @@ label and background. Painted in `id_colours[mask[y, x]]`; ids absent from the m
 caller can hide populations without rebuilding the mask.
 
 `mask` is a same-shape `AbstractMatrix{<:Integer}` — the label store's frame at this timepoint, with
-whatever z projection the caller applied (napari's contour has no projection choice; the browser's
+whatever z projection the caller applied (the legacy viewer's contour has no projection choice; the browser's
 nearest-label rule for MIP is the P4 decision). `contour_px` widens the outline by stamping a
-(2*(contour_px÷2)+1)-side square at each boundary pixel — matching napari's `contour` parameter and
+(2*(contour_px÷2)+1)-side square at each boundary pixel — matching the legacy viewer's `contour` parameter and
 what the browser's outline pass draws.
 
 Two-pass detect-then-stamp: writing paint into the same array we're neighbour-testing propagates
@@ -175,7 +175,7 @@ just-painted colours into the interior of a large cell (the outline walks sidewa
 rather than a border). We compute boundary hits into a local list first, then stamp.
 
 Note: this draws OUTLINES only, not the 0.7-opacity fill napari uses when `contour = 0`. Outlines
-are what "contour = N" (napari's setting) means, and what most gating movies want; the fill mode is
+are what "contour = N" (the legacy viewer's setting) means, and what most gating movies want; the fill mode is
 a separate primitive.
 """
 function draw_mask_outline!(frame::AbstractMatrix{<:RGB}, mask::AbstractMatrix{<:Integer},

@@ -22,7 +22,7 @@ version comparison*, `INVENTORY.md` entries 132–134.
 
 **(a) is broken, not missing.** Label masks are supported everywhere *except* the one code path a
 movie config runs through. Every surface that applies a movie config re-opens the image — which
-clears the napari canvas — and the re-open never asks for label layers back. So a comparison drops
+clears the viewer canvas — and the re-open never asks for label layers back. So a comparison drops
 the masks, and the batch drops them for every image after the first. The `labels` chip already in the
 Batch Movies panel is a **silent no-op**.
 
@@ -105,8 +105,8 @@ recording then re-opens and drops them. Preview shows masks; the movie has none.
 ### Adjacent finding — the auto-show race
 
 Every `api_napari_open`, including the ones inside a recording, broadcasts `napari:opened`
-(`napari_api.jl:407`). The app-level `useNapariAutoShow` listens unconditionally and fires
-`pushAllOverlays()` (`useNapariAutoShow.ts:334`), which *does* push labels. Those POSTs block on
+(`napari_api.jl:407`). The app-level `useViewerAutoShow` listens unconditionally and fires
+`pushAllOverlays()` (`useViewerAutoShow.ts:334`), which *does* push labels. Those POSTs block on
 `_viewer_lock`, which `_record_columns!` holds for the whole multi-pass sequence, so they land
 **after** the movie is finished — one queued burst per column per image. Harmless to the file, but:
 the masks reappear in the window when the render ends, which is exactly why this gap is easy to miss

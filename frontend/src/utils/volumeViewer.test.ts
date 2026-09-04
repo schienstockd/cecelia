@@ -114,7 +114,7 @@ describe('LUT texture', () => {
   })
   it('interpolates between stops, and a white→colour ramp keeps its zero end', () => {
     expect(sampleLut([[0, 0, 0], [1, 0, 0]], 0.5)).toEqual([0.5, 0, 0])
-    // napari's `I *` set runs white→colour; no name table could express it, so the zero end matters
+    // viewer's `I *` set runs white→colour; no name table could express it, so the zero end matters
     expect(sampleLut([[1, 1, 1], [0, 0, 1]], 0)).toEqual([1, 1, 1])
     // a 3-stop ramp lands ON the middle stop at the midpoint
     expect(sampleLut([[0, 0, 0], [0, 1, 0], [0, 0, 1]], 0.5)).toEqual([0, 1, 0])
@@ -536,14 +536,14 @@ describe('pickTileLevel — 2D pan/zoom LOD', () => {
   })
 })
 
-describe('pickVolumeLevel — 3D LOD (napari-parity: coarsest by default)', () => {
+describe('pickVolumeLevel — 3D LOD (viewer-parity: coarsest by default)', () => {
   const withLevels = (n: number) => meta({
     levels: Array.from({ length: n }, (_, i) => ({ level: i, nX: 1000 / (1 << i), nY: 1000 / (1 << i),
                                                     chunkX: 1024, chunkY: 1024 })),
   })
   it('defaults to the DEEPEST level — the answer to the maxBufferSize crash', () => {
     // The user hit "Buffer size (1278131712) exceeds max buffer size limit (268435456)" from a full-res
-    // volume of `f8gzA2`. napari also renders 3D at the coarsest level; Imaris-style octree LOD was
+    // volume of `f8gzA2`. viewer also renders 3D at the coarsest level; Imaris-style octree LOD was
     // wishlisted but never shipped. Deepest by default is the always-correct floor.
     expect(pickVolumeLevel(withLevels(6))).toBe(5)
     expect(pickVolumeLevel(withLevels(1))).toBe(0)

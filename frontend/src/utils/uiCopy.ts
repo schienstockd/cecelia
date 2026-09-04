@@ -139,7 +139,7 @@ export function textStrings(src: string): string[] {
 // A capital mid-string is only evidence of Title Case if the word isn't EXPECTED to carry one.
 // Without this allowance "Calculate UMAP", "Use Dask" and "Flatten Z" all read as violations and the
 // signal is mostly noise — 16 real hits hid behind 23 raw ones.
-const PROPER = /^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Napari|Zarr|Pluto|Rscript)$/
+const PROPER = /^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Viewer|Zarr|Pluto|Rscript)$/
 const expectedCap = (w: string) => /^[A-Z0-9+&/–-]+$/.test(w) || w.length === 1 || PROPER.test(w)
 
 /**

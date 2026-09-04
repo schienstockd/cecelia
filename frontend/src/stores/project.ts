@@ -33,7 +33,7 @@ export interface CciaImage {
   // appears here and not in `labels` — the viewer unions the two so it is not invisible.
   labelPropsNames?: string[]
   // Skeleton-labels from segment.branching — kept separate from `labels` so the generic labels
-  // picker never lists them (see BRANCHING_PLAN Decision 6). Napari surfaces them as a distinct toggle.
+  // picker never lists them (see BRANCHING_PLAN Decision 6). Viewer surfaces them as a distinct toggle.
   branchLabels?: Record<string, string[]>
   // Spatial neighbour graphs from spatialAnalysis.cellNeighbours, keyed by RUN suffix (the graph pools
   // across segmentations, so it is not a value_name). Feeds `valueNameSelection` with
@@ -74,12 +74,12 @@ export const useProjectStore = defineStore('project', () => {
   const loadedProjectUid = ref<string | null>(null)
   const activeSetUid = ref<string | null>(null)
   const viewerImageUid = ref<string | null>(null)
-  // WHICH image the user is currently focused on IN A VIEWER — napari or the browser (WebGPU) viewer.
-  // The panel treats this as "the image whose controls I show"; napari-specific state (whether napari
+  // WHICH image the user is currently focused on IN A VIEWER — viewer or the browser (WebGPU) viewer.
+  // The panel treats this as "the image whose controls I show"; viewer-specific state (whether viewer
   // itself has this image open) stays on `viewerImageUid`. See
-  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1 for the split; when napari retires (P9) the two merge.
+  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1 for the split; when viewer retires (P9) the two merge.
   //
-  // Writers: the napari WS `open` event (setting both fields — napari opened X, that IS the current
+  // Writers: the viewer WS `open` event (setting both fields — viewer opened X, that IS the current
   // focus) and the ImageTable eye click that opens the browser viewer (setting this one only).
   const openImageUid = ref<string | null>(null)
   // Reload signal for the browser viewer: bumped by anything asking to refresh the SHOWN image (the
@@ -141,7 +141,7 @@ export const useProjectStore = defineStore('project', () => {
   const belongsToOpenProject = (uid: string | null | undefined) =>
     !loadedProjectUid.value || !uid || loadedProjectUid.value === uid
 
-  // Which set an image belongs to (an image lives in exactly one set). Used to key per-set napari
+  // Which set an image belongs to (an image lives in exactly one set). Used to key per-set viewer
   // viewer preferences (colour-by / show-3D / point size / overlay toggles) — see settings store.
   const setUidOfImage = (imageUid: string): string | null =>
     sets.value.find(s => s.images.some(i => i.uid === imageUid))?.uid ?? null
@@ -339,8 +339,8 @@ export const useProjectStore = defineStore('project', () => {
     return {}
   }
   // Cross-window focus bridge. The WebGPU viewer runs in a popup with its own Pinia store, so a
-  // focus change there doesn't reach `openImageUid` here. Mirrors the napari path (`viewerImageUid`
-  // is set by the WS `open` event whenever napari opens an image, so panel + napari agree on WHICH
+  // focus change there doesn't reach `openImageUid` here. Mirrors the viewer path (`viewerImageUid`
+  // is set by the WS `open` event whenever viewer opens an image, so panel + viewer agree on WHICH
   // image the toggles govern). The popup writes `cc.viewerFocus = imageUid` on mount and window
   // focus; this listener picks it up. Without it, the panel keeps controlling the last-eye-clicked
   // image while a stranded popup shows a different image (Dominik, 2026-08-31: "popup shows dots

@@ -434,7 +434,7 @@ export async function createBrickVolumeRenderer(
   let segPlaneHi = -1
 
   /** Label style. `setLabelStyle(0, _)` disables the label pass in the shader (via `p.lab.x`);
-   *  a non-zero opacity + zero contour = filled cells; non-zero contour = napari's outline. */
+   *  a non-zero opacity + zero contour = filled cells; non-zero contour = the viewer's outline. */
   let labelOpacity = 0
   let labelContourPx = 0
 

@@ -27,7 +27,7 @@ const visible = computed(() =>
 )
 
 // Autoscroll follows only while you are AT the bottom. Before the child processes joined the stream
-// the console was quiet enough that an unconditional jump-to-bottom was invisible; with napari and a
+// the console was quiet enough that an unconditional jump-to-bottom was invisible; with viewer and a
 // running task in it, scrolling up to read something and being yanked back a moment later makes the
 // panel unusable. Scrolling up pauses, scrolling back to the bottom resumes — no button to remember.
 const AT_BOTTOM_PX = 24
@@ -213,7 +213,7 @@ const filterOptions = computed<ChipOption[]>(() =>
       </button>
     </div>
 
-    <!-- Component chips. One per thing that can talk, so "what is napari saying" is a click rather
+    <!-- Component chips. One per thing that can talk, so "what is viewer saying" is a click rather
          than a scroll — the children are off by default (they narrate) and their errors show anyway. -->
     <div class="console-sources">
       <ChipSelect
@@ -403,7 +403,7 @@ const filterOptions = computed<ChipOption[]>(() =>
    for "which component said this" is colour, not reading */
 .src { color: #6b7280; flex-shrink: 0; font-style: italic; }
 .src.grp-backend   { color: #9ca3af; }
-.src.grp-napari    { color: #7dd3fc; }
+.src.grp-viewer    { color: #7dd3fc; }
 .src.grp-preview   { color: var(--cc-accent-soft); }
 .src.grp-runner    { color: #86efac; }
 .src.grp-notebooks { color: #fdba74; }

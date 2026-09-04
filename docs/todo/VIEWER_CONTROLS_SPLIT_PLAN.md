@@ -3,10 +3,10 @@
 Status: **P0-P8 + PY + PZ shipped** (2026-08-31). PZ landed via #687 (`feat/viewer-p5-movie-rail`).
 P9 (delete the bridge) unblocked and now in progress on `feat/napari-retire`, sequenced across
 several PRs — see the phase table's P9 row. PX (multi-mask rendering) remains optional and
-independent. Full endpoint audit below in § Napari endpoint audit.
+independent. Full endpoint audit below in § Viewer endpoint audit.
 
-Companion to [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). That plan replaced napari's *canvas* with a
-WebGPU one; this plan settles where the *controls* live now that napari's own layer list is going
+Companion to [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md). That plan replaced the legacy viewer's *canvas* with a
+WebGPU one; this plan settles where the *controls* live now that the legacy viewer's own layer list is going
 away. Two control sites (`ViewerWindow.vue` and `ViewerPanel.vue`) grew independently and now overlap
 — version picker in both, colour-by in both, single-mask in the window vs multi-seg per-vn rows in the
 panel. The user's rule (2026-08-25) is the napari model: **per-layer knobs live with the canvas
@@ -20,12 +20,12 @@ checkpointed.
 
 ## The design in one paragraph
 
-**Napari today already does what Dominik wants.** It doesn't pick its own segmentations, populations,
+**Viewer today already does what Dominik wants.** It doesn't pick its own segmentations, populations,
 or colour-by; the ViewerPanel and the pop manager on module pages feed it. The WebGPU viewer grew its
 own selectors because it started life as a standalone spike; those selectors are the whole "too mixed"
 problem. The fix is **subtractive on the viewer**, **almost zero-change on the panel**.
 
-**Store is the shared truth.** Napari needs a fat `/api/napari/*` surface because it is a separate
+**Store is the shared truth.** Viewer needs a fat `/api/napari/*` surface because it is a separate
 process. The WebGPU viewer is in the same frontend as the panel and the pop manager — they can share
 Pinia stores directly. The mechanism becomes:
 
@@ -35,13 +35,13 @@ Pinia stores directly. The mechanism becomes:
    effect** — reading from those store fields instead of panel-local refs.
 3. The **WebGPU viewer subscribes** to the same store fields directly. No push API. No `/api/viewer/*`
    mirroring the napari surface. State change → store watch → re-render.
-4. Napari is a **shadow sink** — every store change side-effects a napari push (unchanged) AND the
+4. Viewer is a **shadow sink** — every store change side-effects a napari push (unchanged) AND the
    WebGPU viewer reacts. Both viewers stay in sync until P8.
-5. **P8 deletes the shadow.** Napari-push helpers and `/api/napari/*` routes go away; the store
+5. **P8 deletes the shadow.** Viewer-push helpers and `/api/napari/*` routes go away; the store
    watches remain the only sink.
 
 Consequence: the panel loses no functionality, gains no functionality. It just rewrites its local refs
-as store fields — mechanical. The viewer loses selectors and reads from the store. The napari bridge
+as store fields — mechanical. The viewer loses selectors and reads from the store. The legacy bridge
 is untouched until P8.
 
 ## Locked decisions
@@ -64,7 +64,7 @@ is untouched until P8.
    - The viewer offers **only** per-layer visualization knobs for what those other sites have turned on.
 4. **Shared image state.** Opening image X in the WebGPU viewer means image X is "open" for the panel
    and for module-page pop managers too — one store field, watched by everyone. The current "No image
-   open in Napari" ghost in the panel is exactly the disconnect this fixes.
+   open in Viewer" ghost in the panel is exactly the disconnect this fixes.
 5. **Wean off napari, then remove all references.** ViewerPanel state is renamed off `napari*` (e.g.
    `napariImage` → `openImage`, `napariUpdateImage` → `viewerAutoUpdate`). The bridge, protocol,
    `napari.jl`, and every `napari*` symbol are deleted once WebGPU covers what they used to route.
@@ -95,7 +95,7 @@ is untouched until P8.
    option must survive remount. Row order + visibility state + per-layer opacity/contour/colour need
    to be in the module's persisted bag, not local component state.
 
-## Napari endpoint audit — wiring status 2026-08-25
+## Viewer endpoint audit — wiring status 2026-08-25
 
 Complement to the intent table below: what's actually wired to the WebGPU popup RIGHT NOW, and
 which paths still silently do nothing when napari is down. Re-audited 2026-08-25 after user
@@ -109,23 +109,23 @@ effect. **N/A** = napari-only concept, will be deleted at P6/P9.
 |---|---|---|---|---|
 | `show-labels` | `ViewerPanel.toggleLabel` | settings bag `cc.napariLabelVisibility` → popup reads `labelName` | **WIRED** | Radio-like since 2026-08-25: exclusive `valueName` on, all others explicit `false` (bag defaults unknown to `true`, so omitting others left them ticked). |
 | `show-populations` | `PopulationManager` per-pop eye → `gating.updatePop({show})` → `_post` | `_post` writes `cc.viewerOverlaysTick` on every mutation; popup refetches `/api/viewer/overlays`. `pop.show` is ground truth every fetch. | **WIRED** | Fixed 2026-08-25 — was seeding-only. |
-| `show-populations` | `gating.refreshNapariPops` (per-pop `show` change, PopulationManager sidebar) | ping | **WIRED** | Fixed 2026-08-25 — the ping was on `refreshNapari` only. |
-| `show-tracks` | `gating.refreshNapari` (popType=track) | ping | **WIRED** | Same fix path. |
+| `show-populations` | `gating.refreshViewerPops` (per-pop `show` change, PopulationManager sidebar) | ping | **WIRED** | Fixed 2026-08-25 — the ping was on `refreshViewer` only. |
+| `show-tracks` | `gating.refreshViewer` (popType=track) | ping | **WIRED** | Same fix path. |
 | `show-tracks` | `ViewerPanel.toggleTrack` per-segmentation eye → `settings.setTrackVisibility` | settings bag storage event reaches popup, but popup does NOT read `getTrackVisibility` | **SHADOW** | **P7 — WebGPU-native tracks** owns this. Tracks in the popup are rendered from the current overlays payload; per-vn selection has no viewer effect yet. |
 | `refresh-labels` | `pushAllOverlays` on task done, live preview | none | **SHADOW** | After a seg task rewrites the mask, the popup's cached slabs are stale. `labelName` didn't change → no `reallocate()`. **Gap:** need a `cc.viewerSlabsTick` or invalidation on task-done. Wired partial: task-done now pings overlays (2026-08-25); slab invalidation still open. |
 | `colour-labels` | `ViewerPanel.onColourBy`, `onRecolour` | `settings.setColourBy` writes `_setPrefs` → storage event → popup's `colourBy` computed → `watch(colourBy, loadOverlays)` refetches with new column | **WIRED** | Overrides live in same `_setPrefs` bag and reach the popup, but the palette apply lives in `buildPointBuffer` / palette utils — verify overrides propagate to the mask palette in a browser test. |
-| `set-z-view` | `napariOverlays.setZView` (movie flow, per-frame) | popup has its own z slider / show3D toggle | **N/A** | Popup owns its own view state; the panel's `settings.setShow3D` writes the bag but the popup doesn't read `getShow3D` (only used by napari's batch movie). Fine for now; check when movies land. |
+| `set-z-view` | `napariOverlays.setZView` (movie flow, per-frame) | popup has its own z slider / show3D toggle | **N/A** | Popup owns its own view state; the panel's `settings.setShow3D` writes the bag but the popup doesn't read `getShow3D` (only used by the legacy viewer's batch movie). Fine for now; check when movies land. |
 | `set-3d-level` | `napariOverlays.setDetail3d` | popup has its own detail slider | **N/A** | Same. |
 | `apply-view-state` | `napariOverlays.applyViewState`, `restoreView` | popup has its own camera | **N/A** | Movie flow only. |
 | `view-state` | `ViewerPanel.recordMovie` (GET snapshot) | movie flow reads from panel state | **N/A** | Recording moves to server compositor. |
 | `centre` | correction worklist, plot click-through | none | **SHADOW** | **P8 — WebGPU-native picking** owns this direction too. A "centre on cell" click from a plot has no popup receiver. |
-| `screenshot` | `AnimationPanel`, `ImageStripView` | none — reads napari's canvas | **N/A** | Move to popup canvas `toBlob()` at P9. |
-| `open` | `ViewerPanel.openInNapari`, `ImageStripView`, `useNapariOpen` | popup opens via `ImageTable.openViewer` writing `projectStore.openImageUid` (P1) | **N/A** | Two open paths coexist. `openInNapari` is legacy; the popup opens independently. |
-| `close` | `serviceApi.close` | popup unaffected | **N/A** | Napari process only. |
+| `screenshot` | `AnimationPanel`, `ImageStripView` | none — reads the legacy viewer's canvas | **N/A** | Move to popup canvas `toBlob()` at P9. |
+| `open` | `ViewerPanel.openInViewer`, `ImageStripView`, `useViewerOpen` | popup opens via `ImageTable.openViewer` writing `projectStore.openImageUid` (P1) | **N/A** | Two open paths coexist. `openInViewer` is legacy; the popup opens independently. |
+| `close` | `serviceApi.close` | popup unaffected | **N/A** | Viewer process only. |
 | `restart` | `ViewerPanel.restart` button | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
-| `status` | `useNapariStatus`, `SettingsModule` | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
+| `status` | `useViewerStatus`, `SettingsModule` | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
 | `gpu` | `SettingsModule` | popup unaffected | **DELETE at P6** | Bridge lifecycle. |
-| `configure-autosave` | `ViewerPanel.setAutosave` | popup unaffected | **DELETE at P6** | Napari layer-props autosave. |
+| `configure-autosave` | `ViewerPanel.setAutosave` | popup unaffected | **DELETE at P6** | Viewer layer-props autosave. |
 | `overlay-legend` | `napariOverlays.captureViewLegend` (batch movies) | popup unaffected | **N/A** | Batch legend for the compositor. |
 | `start-selection` / `stop-selection` / `selection-scope` | `gating` cell-selection UI | popup unaffected | **P8** | Draw-to-select round-trip. |
 | `apply-movie-config` | `BatchMoviesPanel` | popup unaffected | **N/A** | Batch recorder. |
@@ -143,14 +143,14 @@ Full grep 2026-08-25. `/api/napari/*` routes registered in `api/src/server.jl:21
 
 | Route | Panel/manager call site | What it does | WebGPU counterpart |
 |---|---|---|---|
-| `open` | `ViewerPanel.vue:341` (`openInNapari`) | Open image in napari, seed autoshow | Store: set `openImageUid`; ViewerWindow route responds |
+| `open` | `ViewerPanel.vue:341` (`openInViewer`) | Open image in napari, seed autoshow | Store: set `openImageUid`; ViewerWindow route responds |
 | `close` | (server-side lifecycle) | Close active image | Store: clear `openImageUid` |
 | `configure-autosave` | `ViewerPanel.vue:359` | Autosave layer props | **DELETE at P6** — WebGPU persists via `useViewState` |
 | `apply-view-state` | `napariOverlays.ts:43,71` | Restore camera + layers | Store: viewer reads camera state |
 | `view-state` | `ViewerPanel.vue:387` | Read snapshot for movie | Store or new `/api/viewer/snapshot` |
 | `overlay-legend` | `napariOverlays.ts:95` | Parse layer names for legend | Store: legend built from `visibleLabels` + pop store |
 | `apply-movie-config` | (movie flow) | Configure movie recorder | Movie flow moves to server-side compositor (see `WEB_VIEWER_PLAN.md` C-path) |
-| `restart` | `ViewerPanel.vue:682` | Restart napari process | **DELETE at P6** |
+| `restart` | `ViewerPanel.vue:682` | Restart viewer process | **DELETE at P6** |
 | `gpu` (get/set) | (settings) | Pick GPU for napari | **DELETE at P6** — GPU pick belongs in WebGPU renderer |
 | `set-z-view` | `napariOverlays.ts:33` | 2D plane / 3D mode | Store: `mode` + `zPlane` (already local to ViewerWindow) |
 | `set-3d-level` | `napariOverlays.ts:57` | Pyramid level | Store: viewer reads pyramid level |
@@ -158,11 +158,11 @@ Full grep 2026-08-25. `/api/napari/*` routes registered in `api/src/server.jl:21
 | `show-labels` | `napariOverlays.ts:193` (`pushLabels`) | Segmentation layers | Store: `visibleLabels` → viewer draws |
 | `refresh-labels` | `napariOverlays.ts:200` | Live-preview rebuild | Store: `previewShown` → viewer refreshes |
 | `show-tracks` | `napariOverlays.ts:212` (`pushTracks`) | Track ribbons | **P7 — WebGPU-native tracks** |
-| `show-populations` | `napariOverlays.ts:222` (`pushPops`), `stores/gating.ts:369,372` (`refreshNapariPops`, `refreshNapari`) | Points overlays | Store: pop `show:true` → viewer draws (already `/api/viewer/overlays`) |
+| `show-populations` | `napariOverlays.ts:222` (`pushPops`), `stores/gating.ts:369,372` (`refreshViewerPops`, `refreshViewer`) | Points overlays | Store: pop `show:true` → viewer draws (already `/api/viewer/overlays`) |
 | `colour-labels` | `napariOverlays.ts:230` | obs colour-by on labels | Store: `colourByCol` → renderer |
 | `colour-branch-labels` | (branches flow) | obs colour-by on branches | Store: same |
 | `start-selection` / `stop-selection` / `selection-scope` | `stores/gating.ts:378,382,391` | Cell picking round-trip | **P8 — WebGPU-native picking** |
-| `event` | (WS-in) | Napari-side events | Delete at P9 |
+| `event` | (WS-in) | Viewer-side events | Delete at P9 |
 | `screenshot` | (movie flow) | Save PNG | WebGPU canvas `toBlob()` |
 | `status` | (settings) | Is napari running | **DELETE at P6** |
 
@@ -170,7 +170,7 @@ Frontend napari-referencing files (30+ from `git grep`), grouped by fate:
 
 - **Rename → viewer-oriented, keep semantics:**
   `stores/project.ts` (napariImageUid, napariReloadTick), `stores/settings.ts` (per-image label vis
-  bag), `stores/gating.ts` (refreshNapari), `stores/ws.ts` (napari WS handlers become shared handlers).
+  bag), `stores/gating.ts` (refreshViewer), `stores/ws.ts` (napari WS handlers become shared handlers).
 - **Rewrite → subscribe to store:**
   `components/ViewerPanel.vue`, `modules/ViewerWindow.vue`, `components/canvas/PopulationManager.vue`,
   `modules/gate/GatePlotPanel.vue`.
@@ -247,7 +247,7 @@ in `overlays!.pops`, masks are the one exception at a single `labelName`). The c
   Bench first with N=2 to check the shader/bind-group budget before opening the UI.
 - **NAPARI-BRIDGE rows keep working through the transition.** For any layer type WebGPU cannot draw yet
   (branches, gated-tracks ribbons — the two things Dominik flagged as napari-only for now), the layer
-  row in the window carries a `via: 'napari'` badge and routes its writes to the napari bridge instead
+  row in the window carries a `via: 'napari'` badge and routes its writes to the legacy bridge instead
   of the WebGPU renderer. The user sees ONE layer list; the sink is an implementation detail.
 
 ## Phases
@@ -269,17 +269,17 @@ anchors in that phase → the referenced source. Do not re-derive the architectu
 | P3 | Delete viewer's own segmentation selector | **DONE** 2026-08-25 | Viewer reads `settings.getLabelVisibility(uid)`. Radio-like: single-slot bind group, first-ticked wins; explicit-false persistence for others. |
 | P4 | Delete viewer's own colour-by selector | **DONE** 2026-08-25 | Viewer reads `settings.getColourBy(setUid)`. |
 | P5 | Populations from module-page pop managers | **DONE** 2026-08-26 | Pop manager pings `cc.viewerOverlaysTick`; viewer refetches overlays and derives `hiddenPops` from `pop.show`. Follow-up 2026-08-26: overlays follow the manager's `(valueName, popType)` via `cc.gatingCurrent`; panel per-pop-type gate empties the overlays list when off. |
-| P6 | Rename `napari*` → viewer-oriented names | **DONE (mostly)** 2026-08-26 | Renamed: `napariUpdateImage → viewerAutoUpdate`, `napariResetOnReload → viewerResetOnReload`, `project.napariReloadTick → viewerReloadTick`, `project.requestNapariReload → requestViewerReload` (+ matching localStorage keys). Deleted: `settings.napariAsDask`, `settings.napariLabelsCache`, "Restart napari" button, `bridgeStale` panel warning, segment-cache-running warning. **KEPT**: `settings.napariAutoSaveLayerProps` — the animation page banks per-image napari view state via `POST /api/napari/screenshot`; deleting before the WebGPU equivalent exists breaks the animation-snapshot pipeline (Dominik, 2026-08-26). File renames (`napariAutoShow.ts`/`napariColormap.ts`/`napariOverlays.ts`) deferred to P9 (they get deleted anyway). |
+| P6 | Rename `napari*` → viewer-oriented names | **DONE (mostly)** 2026-08-26 | Renamed: `napariUpdateImage → viewerAutoUpdate`, `napariResetOnReload → viewerResetOnReload`, `project.napariReloadTick → viewerReloadTick`, `project.requestViewerReload → requestViewerReload` (+ matching localStorage keys). Deleted: `settings.napariAsDask`, `settings.napariLabelsCache`, "Restart napari" button, `bridgeStale` panel warning, segment-cache-running warning. **KEPT**: `settings.napariAutoSaveLayerProps` — the animation page banks per-image napari view state via `POST /api/napari/screenshot`; deleting before the WebGPU equivalent exists breaks the animation-snapshot pipeline (Dominik, 2026-08-26). File renames (`napariAutoShow.ts`/`napariColormap.ts`/`napariOverlays.ts`) deferred to P9 (they get deleted anyway). |
 | P7 | WebGPU-native tracks (per-vn selection + ribbons) | **shipped** 2026-08-26 | Per-vn cell-track ribbons: `rebuildOverlays` gates `buildTrackBuffer` on `settings.getTrackVisibility(imageUid, [payload.valueName])`, so the panel's per-segmentation "directions" eye hides tracks in the WebGPU viewer instead of only touching napari. Default OFF preserved. Gated-track pop ribbons + trackclust ribbons: `filterPayloadByLabels` (new util in `viewerOverlays.ts`) narrows the pop-manager's payload to a pop's own cells, and `rebuildOverlays` adds those filtered payloads to `buildMultiTrackBuffer` as extra sources coloured by `pop.colour`. Trackclust needs a distinct `popType=trackclust` fetch — `loadTracks` does it for the pop-manager's active vn only, cached per vn, dropped on toggle-off. Reuses the existing colour picker (no new renderer primitive). |
 | P8 | WebGPU-native picking (click → gating plot highlight) | **shipped 2026-08-26** — `frontend/src/utils/viewerPick.ts` (pure `screenToImagePx`: canvas click → image pixel via `cam`/`meta`; tested for centre + top-left + pan direction + anisotropic voxels + out-of-image), `ViewerWindow.vue` splits pointerdown/up into click-vs-drag via `CLICK_MAX_TRAVEL_PX = 4` and `pickCellAt` POSTs `/api/viewer/pick-cell`; `api/src/viewer_api.jl` reads one voxel via `read_slab`, updates the transient selection through the existing `_set_napari_selection!` / `_inject_napari_pop!` / `_broadcast_popmap` bridge (so linked-brushing highlights work with zero gating-store changes). Plane view only — MIP picking is ambiguous (see `WEB_VIEWER_PLAN.md` P6). `mode: 'replace'` default; `'add'` / `'toggle'` supported by the endpoint, not wired to the UI yet. |
 | PZ | WebGPU-era movie recording (server-side offline-renderer cutover) | **shipped** #687 2026-08-31 (`feat/viewer-p5-movie-rail`) | `handle_movie_record` now routes to `record_view_movie` via `api/src/movie_rail.jl`; title cards go through the shared helper; CPU point/segment/mask overlays composited on movie frames; batch-movie config off napari; animation-card thumbnail via `POST /api/viewer/thumbnail`. Direction locked 2026-08-26: recording stays server-side (headless, batch-friendly, task-rail integrated). |
-| P9 | Delete the bridge and everything napari | **unblocked 2026-08-31** — `feat/napari-retire` | Napari push helpers, `napariOverlays.ts`, `napariAutoShow.ts`, `napariColormap.ts`, `viewerLabels.ts`, WS handlers for napari events, `/api/napari/*` routes, `api/src/napari_api.jl`, `app/src/napari.jl`, python napari reader, tests. Grep-clean pass; nothing named `napari*` survives outside `docs/archive/`. Rename `napariAutoSaveLayerProps` → `viewerAutoSaveLayerProps` in the same pass. Sequenced across several PRs off `feat/napari-retire`: (1) panel live-slider mirrors, (2) overlay push helpers + `useNapariAutoShow`, (3) selection round-trip, (4) screenshot + view-state + open, (5) App.vue GPU probe + rename, (6) backend routes + WS handlers, (7) `napari_bridge.py` + Python reader + `docs/NAPARI.md`. |
+| P9 | Delete the bridge and everything napari | **unblocked 2026-08-31** — `feat/napari-retire` | Viewer push helpers, `napariOverlays.ts`, `napariAutoShow.ts`, `napariColormap.ts`, `viewerLabels.ts`, WS handlers for napari events, `/api/napari/*` routes, `api/src/napari_api.jl`, `app/src/napari.jl`, python napari reader, tests. Grep-clean pass; nothing named `napari*` survives outside `docs/archive/`. Rename `napariAutoSaveLayerProps` → `viewerAutoSaveLayerProps` in the same pass. Sequenced across several PRs off `feat/napari-retire`: (1) panel live-slider mirrors, (2) overlay push helpers + `useViewerAutoShow`, (3) selection round-trip, (4) screenshot + view-state + open, (5) App.vue GPU probe + rename, (6) backend routes + WS handlers, (7) `napari_bridge.py` + Python reader + `docs/NAPARI.md`. |
 | PX | Multi-mask rendering (N-slot bind group + `viewerMaxSegmentations` setting) | not started | Bitmask ruled out (would lose per-cell contours + IDs). N-slot with a user-owned cap clamped to `adapter.limits.maxSampledTexturesPerShaderStage`. Per-cell contours + palette colouring per mask preserved. Independent of the panel-split; can land at any point after P3. |
-| PY | WebGPU per-image layer props (contrast / colormap / T-Z) — animation-snapshot source | **shipped 2026-08-26** — `frontend/src/utils/viewerProps.ts` (pure capture/apply + fetch wrappers), `ViewerWindow.vue` wires a `debouncedSave` sink (800 ms) gated by `settings.napariAutoSaveLayerProps`, `api_viewer_props_get`/`api_viewer_props_post` in `api/src/viewer_api.jl` write to the SAME on-disk file napari's autosave uses (`<task_dir>/data/<basename(zarr)>.json`) with `write_json_atomic`, format is a napari-shaped superset with a `webgpu` sub-block for round-trippable native state (channel LUT hex, orbit camera, mode = plane/volume, zPlane, zRange). Deletion of `napariAutoSaveLayerProps` deferred to P9 with the rest of the bridge — the flag reads as "autosave viewer props" now, only the name still says napari. Animation card still reads napari's format for now; the WebGPU sink writes both layouts so a future recorder can switch source without a data migration. |
+| PY | WebGPU per-image layer props (contrast / colormap / T-Z) — animation-snapshot source | **shipped 2026-08-26** — `frontend/src/utils/viewerProps.ts` (pure capture/apply + fetch wrappers), `ViewerWindow.vue` wires a `debouncedSave` sink (800 ms) gated by `settings.napariAutoSaveLayerProps`, `api_viewer_props_get`/`api_viewer_props_post` in `api/src/viewer_api.jl` write to the SAME on-disk file the legacy autosave uses (`<task_dir>/data/<basename(zarr)>.json`) with `write_json_atomic`, format is a viewer-shaped superset with a `webgpu` sub-block for round-trippable native state (channel LUT hex, orbit camera, mode = plane/volume, zPlane, zRange). Deletion of `napariAutoSaveLayerProps` deferred to P9 with the rest of the bridge — the flag reads as "autosave viewer props" now, only the name still says napari. Animation card still reads the legacy viewer's format for now; the WebGPU sink writes both layouts so a future recorder can switch source without a data migration. |
 
 ### P1 — shared image state (fix the ghost)
 
-**Symptom.** ViewerPanel shows "No image open in Napari" while the WebGPU viewer has an image open.
+**Symptom.** ViewerPanel shows "No image open in Viewer" while the WebGPU viewer has an image open.
 
 **Root cause.** `projectStore.napariImageUid` (`stores/project.ts:76`) is written by ONE handler:
 `stores/ws.ts:346` — the napari `open` event. The WebGPU viewer reads its image from
@@ -300,7 +300,7 @@ paths.
    `openImage`, and every reference below. Same for `projectStore.napariImageUid` reads. Every match
    from the earlier grep (l. 48, 95, 96, 105, 106, 118, 157, 261, 300, 321, 375, 399, 406, 414, 415,
    416, 470, 480, 481, 522, 601, 602, 630, 644, 650, 664, 766, 772, 806, 916, 920, 921).
-5. UI copy: `viewer-hint cc-muted` "No image open in Napari." (line 934) → "No image open in the
+5. UI copy: `viewer-hint cc-muted` "No image open in Viewer." (line 934) → "No image open in the
    viewer." — will get another pass in P5, this is holding text.
 6. Verify: open image in WebGPU viewer → ViewerPanel populates image name + version dropdown + seg
    list. Open image in napari (bridge still alive) → same behaviour, no regression.
@@ -384,10 +384,10 @@ Locked decision 3 forbids selectors in the viewer.
 ### P5 — populations from the module-page pop manager
 
 **Shipped 2026-08-25** (subset). The pop manager already writes `pop.show` on disk via `updatePop`;
-`stores/gating.ts:refreshNapari` used to only push to napari. Now it ALSO fires a localStorage
+`stores/gating.ts:refreshViewer` used to only push to napari. Now it ALSO fires a localStorage
 `cc.viewerOverlaysTick`; the viewer popup listens for that storage event and re-fetches overlays.
 Pop-manager writes → server → cross-window ping → viewer refetches. `PopulationManager.vue:113`'s
-`toggleNapari(p)` is now effectively `togglePop(p)` — the name is P6 territory.
+`toggleViewer(p)` is now effectively `togglePop(p)` — the name is P6 territory.
 
 **Design settled — two-level model kept, not simplified to one.** Dominik's in-code note
 (`ViewerWindow.vue:534-537`, 2026-08-25) is authoritative: the gating `show` flag SEEDS the viewer's
@@ -415,14 +415,14 @@ control (napari-style), and `pop.show` seeds it on every refetch.
 | `napariImage` (computed) | `openImage` | Done in P1 |
 | `settings.napariUpdateImage` | `settings.viewerAutoUpdate` | Same semantics |
 | `settings.napariResetOnReload` | `settings.viewerResetOnReload` | Same semantics |
-| `settings.napariAsDask` | DELETE | Napari-only concept (dask vs eager); WebGPU streams slabs |
-| `settings.napariLabelsCache` | DELETE | Napari opportunistic cache; WebGPU has its own cache |
-| `settings.napariAutoSaveLayerProps` | DELETE | Napari layer-props file; WebGPU persists via viewState |
+| `settings.napariAsDask` | DELETE | Viewer-only concept (dask vs eager); WebGPU streams slabs |
+| `settings.napariLabelsCache` | DELETE | Viewer opportunistic cache; WebGPU has its own cache |
+| `settings.napariAutoSaveLayerProps` | DELETE | Viewer layer-props file; WebGPU persists via viewState |
 | `useProjectStore().napariReloadTick` | `useProjectStore().viewerReloadTick` | Rename |
-| `useProjectStore().requestNapariReload` | `useProjectStore().requestViewerReload` | Rename |
-| `refreshNapari` (gating store) | `refreshViewer` | Done in P4 |
-| `refreshNapariPops` | DELETE (or fold into `refreshViewer`) | |
-| `startCellSelection` / `clearNapariSelection` | `startSelection` / `clearSelection` | Same |
+| `useProjectStore().requestViewerReload` | `useProjectStore().requestViewerReload` | Rename |
+| `refreshViewer` (gating store) | `refreshViewer` | Done in P4 |
+| `refreshViewerPops` | DELETE (or fold into `refreshViewer`) | |
+| `startCellSelection` / `clearViewerSelection` | `startSelection` / `clearSelection` | Same |
 | `utils/napariAutoShow.ts` | `utils/viewerAutoShow.ts` | Rename file + tests |
 | `utils/napariOverlays.ts` | `utils/viewerOverlays.ts` (interim) | Deleted in P8; renaming keeps intermediate PRs grep-clean |
 | `utils/napariColormap.ts` | `utils/viewerColormap.ts` | Rename |
@@ -441,7 +441,7 @@ control (napari-style), and `pop.show` seeds it on every refetch.
 
 ### P7 — WebGPU-native tracks
 
-**Currently.** Tracks display and per-vn track visibility route through the napari bridge. The
+**Currently.** Tracks display and per-vn track visibility route through the legacy bridge. The
 per-segmentation "directions" toggle in `ViewerPanel.vue:811-816` fires
 `toggleTrack(row.valueName)` which pushes a Tracks layer to napari.
 
@@ -528,7 +528,7 @@ worth, ~5.6 GB just for masks. That's why the cap is user-owned — the setting 
 
 ### PZ — WebGPU-era movie recording (server-side offline renderer)
 
-**P9 blocker (with PY).** `handle_movie_record` still calls napari's `record_timelapse!` today.
+**P9 blocker (with PY).** `handle_movie_record` still calls the legacy viewer's `record_timelapse!` today.
 Deleting the bridge before this cuts over kills every recording surface: the single-image record
 button, the animation card, and batch movies.
 
@@ -553,7 +553,7 @@ is interactive display only, the offline renderer draws movie frames offline.
    currently spawns napari and calls `record_timelapse!`. Rewire to `record_view_movie`. Same task
    frame contract (progress/cancel through `jobs.jl`), same output path, same broadcast — just a
    different renderer under the hood.
-2. **Title cards.** Today the pre-roll slide is composed by Python via napari's PIL path. Port to a
+2. **Title cards.** Today the pre-roll slide is composed by Python via the legacy viewer's PIL path. Port to a
    Julia builder (`api/src/movie_title.jl` — Colors.jl + `FreeTypeAbstraction` or drop-in through
    `run_py` with pure PIL, no napari). Reads the movie's banked view state for the channel legend.
 3. **Overlays on movie frames** — points, tracks, masks. The offline renderer already draws pixels; extend
@@ -565,12 +565,12 @@ is interactive display only, the offline renderer draws movie frames offline.
    itself is already server-native (`utils/batchMovie.ts`).
 5. **Animation page snapshots** — the animation card banks `{assetId, viewState, imageUid}` on
    record (`ImageStripView.vue`). PY already writes the view state to the same on-disk file
-   napari's autosave used, so the animation card and the recorder read the same source once the
+   the legacy autosave used, so the animation card and the recorder read the same source once the
    frontend is switched from `/api/napari/screenshot` to a WebGPU canvas `toBlob()` for the
    thumbnail asset. See PY.
 
 **Acceptance:**
-- Single-image record button → mp4 with no napari process spawned.
+- Single-image record button → mp4 with no viewer process spawned.
 - Batch movies → N mp4s, same file names + suffixes, no napari.
 - Animation card records a keyframe; the resulting mp4 replays with contrast/camera/T matching what
   the WebGPU viewer showed at capture.
@@ -601,13 +601,13 @@ paths that routed through the bridge must be dead.
 8. Test suites: `pixi run test-pkg`, `pixi run test-api`, `pixi run test-frontend`, `pixi run test-py`
    all pass with no napari-related test files present.
 9. Verify: cold-start Cecelia, open image in viewer, gate a pop, run a task, record a movie. Nothing
-   invokes a napari process, no napari process is spawned by the backend.
+   invokes a viewer process, no viewer process is spawned by the backend.
 
 **Only when 1–9 are green:** delete napari from `pixi.toml` env, remove `napari` from Python deps.
 
 ## The two things napari still owns (Dominik, 2026-08-25)
 
-Not everything moves. Napari retention is explicit and scoped:
+Not everything moves. Viewer retention is explicit and scoped:
 
 - **Tracks display** — until the WebGPU viewer has per-vn ribbons and picking, tracks rows in the layer
   list route through the bridge.
@@ -636,7 +636,7 @@ Discovery pass ran (`frontend/CLAUDE.md` mandatory lookups + `docs/inventory/FRO
   rendering is the one exception, and it is a small extension of an already-multi-layer renderer.
 - **Removing napari.** [`WEB_VIEWER_PLAN.md`](WEB_VIEWER_PLAN.md) P8 governs decommission; this plan
   clears the UI blockers but does not delete anything napari-side.
-- **Pixel-matching napari's layer-list widget.** The napari *model* — one row per layer, canonical
+- **Pixel-matching the legacy viewer's layer-list widget.** The napari *model* — one row per layer, canonical
   knobs — is what we adopt; the exact widget shape follows the cc-btn/CollapsibleSection language this
   repo already uses.
 
@@ -659,4 +659,4 @@ files. Each is user-observed; keep this list additive as more surface.
 2. **Blending mode** per layer (napari has `additive` / `translucent` etc). The WebGPU raycast uses a
    fixed compositing rule. Not in scope unless someone asks.
 3. **Row grouping** — collapse all channels into one "Channels" fold? A 4-channel image is 4 rows; a
-   16-channel image is 16. Napari doesn't group. Revisit after seeing a real image.
+   16-channel image is 16. Viewer doesn't group. Revisit after seeing a real image.

@@ -349,13 +349,13 @@ const knobDrafts = Object.fromEntries(
   THRESHOLD_FIELDS.map(f => [f.key, useFieldDraft(() => knobs.value[f.key])]),
 ) as Record<string, ReturnType<typeof useFieldDraft<number | undefined>>>
 
-// ── from napari ───────────────────────────────────────────────────────────────
+// ── from viewer ───────────────────────────────────────────────────────────────
 //
 // The other half of "fix a track the detector missed": draw around it in the viewer rather than hunt
-// for its id. Drawing stores the enclosed labels as the transient napari selection; `GET
+// for its id. Drawing stores the enclosed labels as the transient viewer selection; `GET
 // /api/tracking/selection` resolves those to TRACKS, the vocabulary the ops speak.
-const napariSel = ref<TrackSelection | null>(null)
-const napariSummary = computed(() => selectionSummary(napariSel.value))
+const viewerSel = ref<TrackSelection | null>(null)
+const viewerSummary = computed(() => selectionSummary(viewerSel.value))
 
 async function enterSelectMode() {
   // Same reason as `showInViewer`: a region drawn on the image ON SCREEN would resolve against this
@@ -373,8 +373,8 @@ async function readSelection() {
               `&valueName=${encodeURIComponent(valueName.value)}`
     const r = await fetch(`/api/tracking/selection?${q}`)
     if (!r.ok) return
-    napariSel.value = await r.json() as TrackSelection
-    const t = selectedTracks(napariSel.value).map(String)
+    viewerSel.value = await r.json() as TrackSelection
+    const t = selectedTracks(viewerSel.value).map(String)
     if (t.length) {
       setSelected(t)
       // a drawn track can be outside the lane window — jump to the first one rather than select
@@ -678,7 +678,7 @@ function onClick(ev: MouseEvent) {
  * Point the viewer at THIS panel's image, if it is not there already.
  *
  * `false` when there is nothing to point: no viewer open, which is deliberately not force-launched —
- * the same rule the canvas's prev/next navigation follows ("don't force-launch napari when it isn't
+ * the same rule the canvas's prev/next navigation follows ("don't force-launch viewer when it isn't
  * open"). Says so rather than failing three calls later inside the bridge.
  */
 async function ensureViewerImage(): Promise<boolean> {
@@ -697,9 +697,9 @@ async function ensureViewerImage(): Promise<boolean> {
 }
 
 /**
- * Point the viewer at the selected track's segmentation. The napari-only path "show these track ids
- * as their own layer + centre the camera on the last detection" (`showTracksInNapari` +
- * `centreNapariOnTrack` via `/api/napari/*`) went with P9; the browser viewer has no equivalent
+ * Point the viewer at the selected track's segmentation. The viewer-only path "show these track ids
+ * as their own layer + centre the camera on the last detection" (`showTracksInViewer` +
+ * `centreViewerOnTrack` via `/api/viewer/*`) went with P9; the browser viewer has no equivalent
  * "explicit track-id highlight" primitive today, so this narrows to what the popup already does:
  * make sure the right image is open on the right segmentation, and turn the segmentation's tracks
  * on via the shared bag. The user pans/zooms to the track themselves.
@@ -836,7 +836,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
     <PlotSpinner v-if="loading" label="Loading tracks" />
 
     <!-- ONE ACTION ROW: edit the selection, and reach the viewer, in the same place and at the same
-         size. The napari pair used to be icon-only buttons stranded in the status footer, which made
+         size. The viewer pair used to be icon-only buttons stranded in the status footer, which made
          two related things look like one control and one afterthought. Two `.cc-btn-group` strips —
          the canonical "joined strip of related buttons" (docs/UI.md) — separate the groups without a
          bespoke divider rule.
@@ -888,7 +888,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 
     <div class="tsv-foot cc-row">
       <span class="cc-muted cc-fs-2xs">{{ hover || lastQueued || selSummary }}</span>
-      <span v-if="napariSummary" class="cc-muted cc-fs-2xs">{{ napariSummary }}</span>
+      <span v-if="viewerSummary" class="cc-muted cc-fs-2xs">{{ viewerSummary }}</span>
       <span class="tsv-spacer" />
       <span v-if="note" class="cc-muted cc-fs-2xs">{{ note }}</span>
       <button v-if="note" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense" :disabled="atStart"

@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
-// re-implementation). Per-service (napari/notebooks) controls stay local to the Settings panel.
+// re-implementation). Per-service (viewer/notebooks) controls stay local to the Settings panel.
 export const useAppControlStore = defineStore('appControl', () => {
   const dev = ref(false)        // dev server → the backend Restart control is offered (prod hides it)
   const busy = ref(false)       // a quit/restart is in flight (drives spinners in both places)

@@ -26,7 +26,7 @@ browser-rendered image surface, built).
 
 The split is on **interactivity, not difficulty**. The browser must produce a frame in ~16 ms and does
 it in 5.3 ms. The offline renderer's 117 ms/frame is irrelevant offline — a 181-frame movie is ~27 s —
-and it already reads the zarr, already applies napari's exported LUTs, and `jobs.jl` already gives the
+and it already reads the zarr, already applies the legacy viewer's exported LUTs, and `jobs.jl` already gives the
 progress/cancel contract `record_timelapse` needs.
 
 ## What is already measured, so it is not re-litigated
@@ -35,12 +35,12 @@ progress/cancel contract `record_timelapse` needs.
 |---|---|
 | 3D MIP raycast, real data, 4 ch, 1566x1003, 256 steps | **5.3 ms** (napari: 36.0 ms whole frame, 9.6 ms net of Qt) |
 | Real data vs. phantom at identical dimensions | **0.95–1.04x** — real voxels are not slower |
-| Cold timepoint: fetch / contrast / upload | 640 / 36 / 535 ms → ~1.2 s (napari's t-slider: 1241 ms) |
+| Cold timepoint: fetch / contrast / upload | 640 / 36 / 535 ms → ~1.2 s (the legacy viewer's t-slider: 1241 ms) |
 | Scrub inside a cached window | **sub-millisecond**, rAF-limited |
 | Whole `fXgbTl` movie into VRAM | 5.5 s for 1.47 GB, then every step is a hit |
 | Per-chunk HTTP (1116 requests/timepoint) | **5270 ms — dead.** Serve assembled slabs instead |
 | VRAM | 351 MB/timepoint at 4 ch; 8 GB card; `maxBufferSize` 1 GiB |
-| Zarr read, same timepoint | Julia 533 ms vs Python 1127 ms (**2.1x** — the slow path is napari's) |
+| Zarr read, same timepoint | Julia 533 ms vs Python 1127 ms (**2.1x** — the slow path is the legacy viewer's) |
 | `Dml3RG` volume timepoint (37 z, 4 ch), server read | 401 ms · 326 MB · **59 GB** per movie — never cacheable |
 | `Dml3RG` ONE z plane, server read | **13–22 ms** · 8.8 MB · **1.59 GB** per movie — fits in a 2 GB budget |
 | Striding the volume instead | 8x fewer bytes buys **1.6x**, 59x fewer buys 3x — the read is not bandwidth-bound |
@@ -93,8 +93,8 @@ them is the argument for deriving the list instead of writing it from memory.
 |---|---|
 | `open_image`, `set_z_view`, `set_3d_level`, `centre`, `clear`, `show_layer`/`hide_layer`/`remove_layer` | **P1** display + camera |
 | `load_layer_props` (contrast, colormap, T/Z) | **P1** reads it; who WRITES it is P8's call |
-| — (`scale_bar`, the elapsed-time `text_overlay`; napari's own, not commands) | **P2** — BUILT |
-| — (t-scrubbing; napari's own dims slider) | **P2** |
+| — (`scale_bar`, the elapsed-time `text_overlay`; the legacy viewer's own, not commands) | **P2** — BUILT |
+| — (t-scrubbing; the legacy viewer's own dims slider) | **P2** |
 | `show_populations`, `show_tracks` | **P3** |
 | `show_labels`, `refresh_labels`, `colour_labels`, `show_branch_labels`, `colour_branch_labels` | **P4** |
 | `record_timelapse`, `record_keyframes`, `stitch_movies`, `save_screenshot`, `capture_view_state`, `apply_view_state` | **P5** (offline renderer) |
@@ -181,7 +181,7 @@ Four things settled while building it, each of which reads as tidiness and is no
     as you zoom — "massive scale bar, tiny timestamp".
   - **`micrometer` is a micron.** OME's `PhysicalSizeUnit` is literally that word, which the helper's
     `micron` test did not match, so the bar read "100 micrometer" and never rolled up to mm.
-  - **H:MM:SS**, matching napari's `datetime.timedelta` overlay down to its `t = N` fallback, as a
+  - **H:MM:SS**, matching the legacy viewer's `datetime.timedelta` overlay down to its `t = N` fallback, as a
     second style on the one formatter rather than a second formatter.
 
   The bar is drawn against what the CAMERA sees, not the image, so it tracks the zoom — and it needs no
@@ -287,7 +287,7 @@ three passes), which is a once-per-image cost.
 
 Built so far, and the decisions worth keeping:
 
-- **Membership comes from `resolve_pops`** — the same mtime-keyed cached resolver that feeds napari's
+- **Membership comes from `resolve_pops`** — the same mtime-keyed cached resolver that feeds the legacy viewer's
   points layers. A viewer that computed its own membership would be a second answer to "which cells are
   in /A" and could disagree with the plots.
 - **The instance buffer is ordered by TIMEPOINT.** Drawing a frame is then one instanced draw over a
@@ -303,14 +303,14 @@ Built so far, and the decisions worth keeping:
 - **`ext.w` carries the z origin of the loaded slab**, so a cropped 3D view still places absolute
   overlay coordinates correctly.
 - **Point size is in screen px, not µm** — a marker is annotation: legible zoomed out, not swallowing
-  the cell zoomed in. Same choice as napari's `points_size`.
+  the cell zoomed in. Same choice as the legacy viewer's `points_size`.
 - **Two payload traps, both caught by tests rather than in a browser.** JSON has no NaN literal (JSON3
   refuses to write one) and `null` in a coordinate array becomes 0 through `Float32Array.from` — a cell
   at the origin instead of no cell; so undrawable rows are dropped and counted. And `colourBy` echoed
   back the name that was ASKED for, making a stale saved column look like a colour-by with no values.
 
 **Tracks are built too.** One screen-space QUAD per segment rather than `line-list`, because WebGPU
-draws 1px lines only and a 1px tail over a noisy MIP is close to invisible (napari's `tail_width`
+draws 1px lines only and a 1px tail over a noisy MIP is close to invisible (the legacy viewer's `tail_width`
 defaults to 4). Each endpoint is projected independently and the quad widened perpendicular to the
 screen direction, so width is in pixels and stays constant under perspective.
 
@@ -318,13 +318,13 @@ screen direction, so width is in pixels and stays constant under perspective.
   frames ending at `t` is every segment ending in `[t-L+1, t]`, and in that order it is a contiguous
   slice — two monotonic prefix indexes give it in O(1). Rebuilding a buffer per frame would be an
   allocation and an upload on every playback tick.
-- **`tail_length` is a count of FRAMES** (napari's meaning), so L gives L segments per track. The other
+- **`tail_length` is a count of FRAMES** (the legacy viewer's meaning), so L gives L segments per track. The other
   reading (`[t-L, t]`) draws two hops at L=1 and reads as the slider ignoring you — the test pins it.
 - **No segment is drawn across a gap the tracker bridged.** btrack links over a missed detection; a
   straight line there would assert a path the tracker never claimed.
 - **The plane test uses the segment's END**, so a tail arriving on the plane you are looking at is kept.
   Judging by the start drops exactly the hop you most want to see.
-- **Colour cycles the population palette by track id** rather than running napari's turbo ramp. The job
+- **Colour cycles the population palette by track id** rather than running the legacy viewer's turbo ramp. The job
   is telling adjacent tracks apart, not reading a value off them, and no continuous colormap exists in
   this repo yet — see open question 1.
 
@@ -339,7 +339,7 @@ screen direction, so width is in pixels and stays constant under perspective.
   `valueRange`.
 - **The ramp is the HOUSE one, and this is a reversal worth recording.** Colour-by was first built on a
   viridis/turbo table generated from matplotlib, reasoning that no ramp existed to reuse:
-  `image_render.jl` says outright that napari's perceptual maps are not ramps from black and cannot be
+  `image_render.jl` says outright that the legacy viewer's perceptual maps are not ramps from black and cannot be
   approximated from a name, and the plots got theirs from Observable Plot's d3 scales, which WGSL cannot
   reach. **That stopped being true mid-build** — the gating colour-by (PR #646) landed
   `plots/flowColors.ts` → `BLUE_HEAT_RGB` on `main`, a 256-entry value→RGB lookup for exactly this job.
@@ -391,11 +391,11 @@ line gives the exact per-plane mask. `shader_check.mjs` asserts it with two labe
 depths in one screen column — "nearest" is exactly the kind of claim that looks right from one angle and
 is a coin flip.
 
-Style matches napari's Labels layer: filled at 0.7 opacity, with `contour` as an outline N voxels thick
+Style matches the legacy viewer's Labels layer: filled at 0.7 opacity, with `contour` as an outline N voxels thick
 (in-plane only — the outline of a 3D object through its z neighbours is a surface, and would fill the
 region back in). Both persist. The palette is `distinctColors` (the house "N distinct colours" helper) at
 64 rows, indexed `id % 64`: golden-angle hues mean consecutive ids — which is what segmentation gives
-touching cells — come out as far apart in hue as they can be. napari's own shuffled colormap is not
+touching cells — come out as far apart in hue as they can be. the legacy viewer's own shuffled colormap is not
 reproducible here and was never part of the parity bar.
 
 **One segmentation at a time, through a picker** (question 2 below, now answered by building it). napari
@@ -450,7 +450,7 @@ either errors or silently picks a side a frame early. `visible` is the trap: a `
 Julia, so lerping it gives 0.5 and then `true` for every frame after the first.
 
 **Built: title cards** (PR #671). `record_view_movie(...; title_card = <dict>)` takes the same
-`_title_card_content` shape napari's path builds and passes it to `writers/encode_movie_run.py`,
+`_title_card_content` shape the legacy viewer's path builds and passes it to `writers/encode_movie_run.py`,
 which calls `title_card.prepend_title_to_movie` after the encode. One path for both renderers — a
 card composited into the raw frames from Julia would have to duplicate `movie_io`'s even-crop rule
 and the font stack, and the helper's own suite already covers the render+prepend.
@@ -479,7 +479,7 @@ bucket by `centroid_t`; tracks bucket by arrival timepoint and the closure slice
 `[t + 2 - L, t + 1]` — same off-by-one as `tailRange` in `frontend/src/utils/viewerOverlays.ts`,
 so `tail_length = 1` on frame `t` shows only the current hop (arrival `t + 1`) and
 `tail_length = 0` hides tracks entirely (same as `include_tracks = false`). Default 30 matches
-napari's `tail_length` and the browser's `viewerTailLength`, so a movie recorded from a look
+the legacy viewer's `tail_length` and the browser's `viewerTailLength`, so a movie recorded from a look
 reads the same as the live viewer. `pixel_transform` bakes the crop + stride `render_view_frame`
 applies into a reusable mapping so the caller stays ignorant of `_clamp_range` /
 `plane[1:step:H, 1:step:W]` — one derivation of the numbers, not two. The smoke route takes an
@@ -509,7 +509,7 @@ The overlay primitives, the point/track author and the mask author are all compl
 is the request path — off `handle_movie_record` / `run_single_movie` onto `record_view_movie`.
 
 ### P6 — the selection round-trip — **BUILT**
-`start_cell_selection` + `update_selection_scope` and the POST back to gating — napari's ONE write
+`start_cell_selection` + `update_selection_scope` and the POST back to gating — the legacy viewer's ONE write
 path into the app. Select in the image, get a transient population, see it highlighted on the plots
 (`project_napari_linked_brushing`). This was missing from the plan's first draft and is real parity,
 not an addition.
@@ -517,7 +517,7 @@ not an addition.
 **Built** (2026-08-26). Click-to-pick and rectangle-drag both go through `/api/viewer/pick-cell` and
 `/api/viewer/pick-rect`; they read the mask store the viewer is displaying via `read_slab`, register
 the picked labels in `_napari_sel` under the same key `_inject_napari_pop!` reads from, and rebroadcast
-the pop map so the plots highlight the "Napari selection" pop straight away. The pick endpoints take
+the pop map so the plots highlight the "Viewer selection" pop straight away. The pick endpoints take
 the viewer's displayed LOD as `level` so nearest-neighbour label downsampling doesn't return a
 neighbour of the visible cell. Fed the P4 label texture — the pick reads the label id directly rather
 than inferring it from a ray hit, so a MIP is unambiguous.
@@ -578,7 +578,7 @@ track-correction timeline would be a new design, not a port. Everything above is
   Python read (~160 ms in Julia). Worth doing eventually, not a prerequisite. Note `fXgbTl`'s
   whole-plane chunks are a consequence of its size (441 < 512), not a format choice.
 - **Rendering modes beyond MIP and the 2D plane.** ~~Nothing in the codebase sets `rendering`, so the
-  app only ever uses napari's default MIP.~~ **That reasoning was wrong and cost a phase.** It inferred
+  app only ever uses the legacy viewer's default MIP.~~ **That reasoning was wrong and cost a phase.** It inferred
   what people look at from what the code *sets*, and the answer was the 2D z-plane view — which is both
   a parity requirement and the only thing that makes a timecourse playable (decision 8). Iso /
   attenuated / translucent remain out of scope, and this time on the right grounds: nobody has said they
@@ -726,7 +726,7 @@ assumption; each is a place where a different answer would change what gets buil
 
 1. **ANSWERED, and then answered differently.** A generated viridis table was added, then deleted when
    `main` gained `BLUE_HEAT_RGB` (the gating colour-by, PR #646) — one ramp for "colour by a measure"
-   across both surfaces beats matching napari's palette. Nothing is open here any more; kept because the
+   across both surfaces beats matching the legacy viewer's palette. Nothing is open here any more; kept because the
    reasoning is the interesting part.
    **Colour-by needs a continuous colormap, and there is no table to reuse.** `track_state` and
    `clusters.*` are categorical and can use the population palette. `live.cell.speed` is continuous, and
@@ -735,7 +735,7 @@ assumption; each is a place where a different answer would change what gets buil
    the plots get theirs from Observable Plot's own `scheme: 'turbo'`, which is not reachable from WGSL.
    So one has to be added. *Assumption taken:* add ONE canonical stop table in TypeScript
    (`utils/colourRamp.ts`), viridis + turbo, and have the server keep resolving CHANNEL colours as it
-   does now — the two are separate concerns (a channel LUT comes from napari's saved props; an overlay
+   does now — the two are separate concerns (a channel LUT comes from the legacy viewer's saved props; an overlay
    ramp is a display choice made in the viewer). The alternative is to resolve overlay ramps server-side
    too, which keeps one palette owner but means a round trip whenever the column changes.
 2. **ANSWERED by building it (P4).** The mask picker is one segmentation at a time, and the overlays
@@ -745,7 +745,7 @@ assumption; each is a place where a different answer would change what gets buil
    **Which segmentation the overlay shows.** The viewer takes the ACTIVE labelProps and reports which,
    because its `valueName` is an image version and not a segmentation (see the namespace trap in P3).
    napari shows EVERY segmentation's populations at once, each as its own layer.
-3. **Track tails: napari's `tail_length` is in frames and `tail_width` in pixels.** WebGPU line-list
+3. **Track tails: the legacy viewer's `tail_length` is in frames and `tail_width` in pixels.** WebGPU line-list
    draws 1px lines only, so a width control needs quads (six vertices per segment instead of two).
    *Assumption taken:* build the quad version, since a 1px tail on a noisy MIP is close to invisible and
    `tail_width` defaults to 4.

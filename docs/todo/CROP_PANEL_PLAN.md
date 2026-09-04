@@ -48,7 +48,7 @@ viewer process + GPU/display + 2D/3D toggling). A headless in-app render removes
   viewer saves is JSON-native (`opacity/blending/visible/gamma`, `contrast_limits` [2 floats], `colormap`
   name, `dims.current_step`), so pickle bought nothing; JSON is Julia-readable and matches the rest of the
   codebase (ccid.json, gating json, …). Apply each channel through its colormap, clip to its contrast,
-  **additive-blend** (napari's `blending='additive'`), skip `visible=false`. **Fallback** when no props file
+  **additive-blend** (the legacy viewer's `blending='additive'`), skip `visible=false`. **Fallback** when no props file
   exists (image never opened / autosave off): `CHANNEL_COLORMAPS` (`red/green/blue/yellow`) + percentile
   contrast. Colormap→RGB: the
   additive primaries (`red/green/blue/cyan/magenta/yellow/gray/white`) are simple linear ramps
@@ -110,7 +110,7 @@ Python bridge and the Julia renderer read the same file. Unblocks the colour req
   scoping that item is throwaway — superseded here).
 - Docs: replace `docs/NAPARI.md` → "3D crop" with a pointer to the new panel; add the panel to
   `docs/UI.md`/`INVENTORY.md`; delete the superseded TODO item.
-- Done when: no `crop` references remain in the napari bridge/api, and the in-app panel is the only crop.
+- Done when: no `crop` references remain in the legacy bridge/api, and the in-app panel is the only crop.
 
 ## Open questions (settle before the phase that hits them)
 

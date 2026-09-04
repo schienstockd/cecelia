@@ -107,7 +107,7 @@ function api_notebooks_launch(body_bytes::Vector{UInt8})
         @warn "Pluto launch failed" exception = e
         return 500, JSON3.write((; error = "Could not launch notebook server: $(sprint(showerror, e))"))
     end
-    # 202 while starting (mirrors napari's starting response), 200 once serving.
+    # 202 while starting (mirrors the legacy viewer's starting response), 200 once serving.
     (ready ? 200 : 202), JSON3.write((; url = NOTEBOOKS_URL, secret = _notebook_secret(), starting = !ready))
 end
 

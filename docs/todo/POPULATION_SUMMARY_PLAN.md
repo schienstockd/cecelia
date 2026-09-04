@@ -63,7 +63,7 @@ the old R `popsSummary` (boxplot / `geom_quasirandom` / jitter over `pop.n` / `p
 - **#36 Image strip: screengrab provenance + zoom-to-source** — store which image/timepoint/napari
   viewer state a screengrab came from (napari-animation serialises viewer state), add a zoom button
   next to re-grab to reopen that exact state.
-- **#37 Napari: movie/recorder toggle** — a "show recorder" button that pops up napari-animation to
+- **#37 Viewer: movie/recorder toggle** — a "show recorder" button that pops up napari-animation to
   record an animation. (#32/#36/#37 are the image-strip/napari batch — need napari running to verify.)
 
 ## C. Notes

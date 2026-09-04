@@ -124,7 +124,7 @@ Previewability is a property of a task's *compute*, not of a category:
    belongs on the un-pooled rail (`jobs.jl:27`, "No pool or chain", how data patches and export/import
    already run). Pools stay for scheduler tasks. Consequence to observe rather than pre-empt: firing a
    preview during a run puts two cellpose processes on one card.
-7. **A resident worker process, not compute inside the napari bridge.** The bridge is tempting — already
+7. **A resident worker process, not compute inside the legacy bridge.** The bridge is tempting — already
    resident, already knows the view, already does threaded work (`threading.Thread`, `run_in_executor`,
    `QTimer`) — but two costs decide it:
    - **Bridge restarts cost the view.** It isn't Revise-tracked, so iterating on preview code means
@@ -166,7 +166,7 @@ Previewability is a property of a task's *compute*, not of a category:
    diameter, so a scaled-down diameter makes it *upscale*: at level 2, diam 4.25 → a 7× upscale, and a 256²
    tile becomes ~1800² internally. Downsampling and diameter-scaling cancel. So:
 
-   - **Previewing at napari's displayed pyramid level is NOT a shortcut** (an earlier draft claimed cost
+   - **Previewing at the legacy viewer's displayed pyramid level is NOT a shortcut** (an earlier draft claimed cost
      would "track the screen, not the image" — measured false).
    - **`batch_size` is not a shortcut either**: 88.4 s at the default 8, and slightly *worse* at 16/32/64.
    - **Z-depth is the whole problem.** 40 planes = 40× the cells, and nothing changes that arithmetic.

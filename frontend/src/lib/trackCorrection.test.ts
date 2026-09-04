@@ -320,7 +320,7 @@ describe('thresholdQuery', () => {
   })
 })
 
-describe('the napari bridge', () => {
+describe('the viewer bridge', () => {
   const sel = { valueName: 'memTom', labels: [1, 2, 3, 4], nLabels: 4, nUntracked: 1,
                 tracks: [{ track: 7, nCells: 2 }, { track: 9, nCells: 1 }] }
 

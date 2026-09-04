@@ -30,7 +30,7 @@ export interface IndexRange { i0: number; i1: number }   // 0-based, half-open [
 
 /**
  * Which slice/frame indices a 0–100 % range keeps for an axis of length `n`. A faithful mirror of the
- * bridge's `_frac_bounds` (napari_bridge.crop_box): `floor(lo·n)` → `ceil(hi·n)`, clamped, half-open,
+ * bridge's `_frac_bounds` (viewer_bridge.crop_box): `floor(lo·n)` → `ceil(hi·n)`, clamped, half-open,
  * always ≥1 wide — so a readout built from this matches EXACTLY what Save crops. Assumes `n >= 1`.
  */
 export function fracToIndexRange(loPct: number, hiPct: number, n: number): IndexRange {
@@ -66,7 +66,7 @@ const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(Ma
  * `editImages.cropImage` task expects: `{x0,x1,y0,y1,z0,z1,t0,t1}`. XY map normalised→full px (floor lo,
  * ceil hi, ≥1 wide, clamped). z/t use `fracToIndexRange` when the axis exists AND the range actually
  * trims; otherwise `-1` (the task's "keep the whole axis" sentinel), so a full range doesn't needlessly
- * crop. Pure — unit-tested; mirrors the bounds maths the napari `crop_box` used.
+ * crop. Pure — unit-tested; mirrors the bounds maths the viewer `crop_box` used.
  */
 export function cropBoxFromRect(rect: NormRect, info: CropInfo,
                                 zPct: { lo: number; hi: number },

@@ -130,7 +130,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
 
   // NOTE: there is no manual "save project" anymore. The /analysis boards autosave (debounced) from the
   // analysisLayout store; everything else (image metadata, inclusion/notes, attrs, gating pops, chains,
-  // module canvases, napari layer props) already persists immediately via its own routes; and
+  // module canvases, viewer layer props) already persists immediately via its own routes; and
   // `lastOpenedAt` is stamped on open (api_projects_load). See docs/todo/ANIMATION_PLAN.md.
 
   async function renameProject(name: string): Promise<boolean> {

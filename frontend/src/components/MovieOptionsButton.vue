@@ -2,7 +2,7 @@
   The gear that holds a movie's OPTIONS — frame rate, size, file name, title card. This owns the
   CHROME only: the button, its tooltip, the popover, and the stack the control blocks sit in. The
   blocks come in through the slot, because the two sites feed them different props (the viewer also
-  owns napari's baked overlays and the z range; the Animation page has neither).
+  owns the viewer's baked overlays and the z range; the Animation page has neither).
 
   Shared rather than written twice: the viewer had this inline and the Animation page needed the same
   thing, which is how one surface ends up with a different tooltip, icon or popover width. Same split

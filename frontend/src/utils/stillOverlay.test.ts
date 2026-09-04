@@ -18,7 +18,7 @@ describe('elapsedLabel', () => {
   })
 })
 
-describe("elapsedLabel, clock style — what napari's overlay shows", () => {
+describe("elapsedLabel, clock style — what viewer's overlay shows", () => {
   it('is H:MM:SS, zero-padded, so the two read alike side by side', () => {
     expect(elapsedLabel(0, 30, 'second', 'clock')).toBe('0:00:00')
     expect(elapsedLabel(10, 30, 'second', 'clock')).toBe('0:05:00')     // 300 s
@@ -28,7 +28,7 @@ describe("elapsedLabel, clock style — what napari's overlay shows", () => {
   it('takes the interval in minutes too, which is what the image accessor reports', () => {
     expect(elapsedLabel(99, 0.3167, 'min', 'clock')).toBe('0:31:21')
   })
-  it("falls back to napari's own wording when the interval is unknown", () => {
+  it("falls back to viewer's own wording when the interval is unknown", () => {
     expect(elapsedLabel(4, undefined, 'min', 'clock')).toBe('t = 4')
     expect(elapsedLabel(null, 30, 'min', 'clock')).toBe('')
   })

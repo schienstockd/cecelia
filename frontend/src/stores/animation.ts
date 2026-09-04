@@ -1,4 +1,4 @@
-// Animation page state: captured napari "view snapshots" = the keyframes of the timeline editor. Each
+// Animation page state: captured viewer "view snapshots" = the keyframes of the timeline editor. Each
 // is a screenshot (sidecar PNG via assetId, shared with the board strip) + its view state + the image
 // it came from + a duration. A timeline is per-image (keyframes interpolate views of ONE image); the
 // page filters to the open image, in list order. Debounced autosave → settings/animations.json (mirrors
@@ -12,7 +12,7 @@ import { debouncedSave } from '../utils/debouncedSave'
 export interface AnimSnapshot {
   id: string
   assetId?: string                      // sidecar PNG id (served via /api/board-assets)
-  snapshot?: Record<string, unknown>    // napari view state (camera + dims + per-layer props) — the keyframe (edited)
+  snapshot?: Record<string, unknown>    // viewer view state (camera + dims + per-layer props) — the keyframe (edited)
   original?: Record<string, unknown>    // the captured baseline viewState — reset target; unchanged by row edits
   imageUid?: string | null              // the image this keyframe belongs to
   imageName?: string
@@ -28,7 +28,7 @@ export const useAnimationStore = defineStore('animation', () => {
   // edit, not part of the animation.
   const selectedId = ref<string | null>(null)
   const fps = ref(15)                    // output frame rate (per project)
-  // output size in pixels (per project); null = the napari canvas size, which is the default. A `scale`
+  // output size in pixels (per project); null = the viewer canvas size, which is the default. A `scale`
   // supersample lived here and was removed — see MovieOutputControls.vue.
   const sizeX = ref<number | null>(null)
   const sizeY = ref<number | null>(null)

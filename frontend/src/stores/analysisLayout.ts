@@ -17,7 +17,7 @@ import { debouncedSave } from '../utils/debouncedSave'
 // persisted at all.) A slot's content is routed by `kind`:
 //   summary     → a SummaryPanel bound to a plot spec (ref = specId)
 //   interactive → an InteractivePanel view (ref = view key; Phase B)
-//   image       → a static PNG (napari screenshot; Phase D)
+//   image       → a static PNG (viewer screenshot; Phase D)
 //   filmstrip   → N captioned images with separators (Phase D)
 export interface SlotContent { kind: 'summary' | 'interactive' | 'image' | 'filmstrip'; ref: string; state: Record<string, unknown> }
 interface LayoutEntry {

@@ -45,7 +45,7 @@ const results = {version: 3, geometry: {NZ, NY, NX, NCH, voxel_um: [VZ, VY, VX],
                                         bytes_all_channels: NCH * NZ * NY * NX * 2},
                  diagnostics: {}, runs: [], gates: {}};
 
-const VIEWPORTS = [[1566, 1003], [1920, 1080]];  // napari's measured canvas (G1) first
+const VIEWPORTS = [[1566, 1003], [1920, 1080]];  // the legacy viewer's measured canvas (G1) first
 const STEPS = [128, 256, 512, 1024];             // 1024 included purely to test that time SCALES
 const CHANNELS = [1, 4];
 const BATCH = 20;                                // frames per submit

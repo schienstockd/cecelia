@@ -5,7 +5,7 @@ DimUtils wraps an ome_types OME object and provides a clean API for:
   - Resolving dimension order (TZCYX) from the zarr/OME metadata.
   - Mapping named axes ('T', 'Z', 'C', 'Y', 'X') to array indices.
   - Generating numpy slice tuples for per-channel or per-plane access.
-  - Querying physical pixel sizes and computing display scales for Napari.
+  - Querying physical pixel sizes and computing display scales for Viewer.
   - Building padded crop cubes around spatial coordinates.
 
 The dimension order determined by calc_image_dimensions() is stored in

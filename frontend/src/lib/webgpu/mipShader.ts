@@ -3,7 +3,7 @@
 // and adds the channels together — the same additive composite `image_render.jl` does on the CPU.
 //
 // Measured on an RTX 2000 Ada with real data at 1566x1003, 4 channels, 256 steps: 5.3 ms/frame,
-// against napari's 36.0 ms for the same view (docs/todo/NAPARI_WEBGPU_AUDIT.md → G2).
+// against the viewer's 36.0 ms for the same view (docs/archive/napari-webgpu-audit.md → G2).
 //
 // IT ALSO DRAWS THE 2D VIEW, and that is deliberate rather than lazy. A single z plane is a volume one
 // plane deep seen face-on: `steps = 1` samples the box midpoint, which IS that plane, exactly. So there
@@ -27,7 +27,7 @@
 // exact for any row count, drops a binding, and stops the LUT needing to be filterable at all.
 //
 // Channel colours must never be derived from a colormap NAME on this side — the server resolves them,
-// because a name table here is a second copy of napari's palette and the first copy being incomplete
+// because a name table here is a second copy of the viewer's palette and the first copy being incomplete
 // rendered a channel white.
 
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
@@ -40,7 +40,7 @@ import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeView
  * sign, a marker sits beside the cell it marks and still looks plausible.
  *
  * THE VERTICAL FLIP IS HERE, in `up`. `cross(right, fwd)` rather than `cross(fwd, right)` — i.e. screen
- * up is -y in world. Image row 0 must appear at the TOP, as it does in napari and in every image
+ * up is -y in world. Image row 0 must appear at the TOP, as it does in viewer and in every image
  * viewer, and the naive basis puts it at the bottom: WebGPU's NDC y points up while a framebuffer's
  * rows count down from the top, so a right-handed basis and a raster image disagree by exactly this
  * sign. Derived rather than guessed (screen top mapped to the LAST texture row), and asserted by
@@ -151,9 +151,9 @@ fn labAt(vi: vec3<i32>) -> u32 {
   return textureLoad(lab, vi, 0).r;
 }
 
-// napari's 'contour': the label's OUTLINE, w voxels thick, instead of a filled region — which is what
+// the viewer's 'contour': the label's OUTLINE, w voxels thick, instead of a filled region — which is what
 // lets the channel signal under the mask stay readable while the boundary stays exact. Filled at w = 0,
-// which is napari's default and this one. In-plane only (x/y): the outline of a 3D object through its
+// which is the viewer's default and this one. In-plane only (x/y): the outline of a 3D object through its
 // z neighbours is a surface, not a contour, and would fill the region back in.
 fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
   if (w <= 0) { return true; }
@@ -200,7 +200,7 @@ fn labColour(id: u32) -> vec3<f32> {
 
   var mx = array<f32, ${MAX_CHANNELS}>();
   // The NEAREST label along the ray, not the maximum. A maximum over label ids is meaningless — the
-  // largest id is not a visible feature, it is whichever cell happened to be labelled last — and napari
+  // largest id is not a visible feature, it is whichever cell happened to be labelled last — and viewer
   // cannot project a Labels layer at all ('projection_mode' accepts only 'none'), so there is no
   // behaviour to copy either. The ray marches front to back, so the first non-zero id IS the nearest
   // surface, which is the one thing a person can actually point at. In 2D ('steps == 1') the single
@@ -230,7 +230,7 @@ fn labColour(id: u32) -> vec3<f32> {
     let win = clamp((mx[c] - p.ch[c].x) / max(p.ch[c].y - p.ch[c].x, 1.0), 0.0, 1.0);
     acc = acc + ramp(c, win);
   }
-  // The mask goes OVER the composite at its opacity, the way napari layers a Labels layer over the
+  // The mask goes OVER the composite at its opacity, the way viewer layers a Labels layer over the
   // image — not added to it. Adding would brighten the signal it is meant to annotate, and two masks
   // over one bright cell would saturate to white.
   if (labId != 0u && labEdge(labVi, labId, i32(p.lab.y))) {
@@ -253,7 +253,7 @@ fn labColour(id: u32) -> vec3<f32> {
  * cell, and it would drift silently — the overlay would still look plausible.
  *
  * SIZE IS IN SCREEN PIXELS, not µm. A cell marker is annotation: it has to stay legible when you zoom
- * out and must not swallow the cell when you zoom in — which is what napari's `points_size` does, and
+ * out and must not swallow the cell when you zoom in — which is what the viewer's `points_size` does, and
  * what a µm-sized quad would get backwards.
  *
  * The plane filter collapses the quad to zero area rather than being a CPU filter, because the 2D view
@@ -330,7 +330,7 @@ struct POut {
  * Track tails: one screen-space quad per segment, drawn over the MIP with the points.
  *
  * QUADS RATHER THAN `line-list`, because WebGPU draws 1px lines only and a 1px tail over a noisy MIP is
- * close to invisible — napari's `tail_width` defaults to 4. Each endpoint is projected independently
+ * close to invisible — the viewer's `tail_width` defaults to 4. Each endpoint is projected independently
  * and the quad is widened perpendicular to the SCREEN-space direction, so the width is in pixels and
  * stays constant under perspective while the geometry stays correct.
  *

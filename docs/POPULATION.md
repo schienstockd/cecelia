@@ -30,7 +30,7 @@ The one colour-choice rule for colouring anything (napari tracks/labels, legends
 categorical column: **a value that a user population *filters for* on that column takes that
 population's colour; every other value gets an Okabe–Ito default** (by sorted position).
 `colour_by_palette(m, column, values)` returns the full `{value→hex}`; `pop_colour_overrides(m, column)`
-returns just the population-imposed `{value(str)→hex}` for the wire (the napari bridge fills the
+returns just the population-imposed `{value(str)→hex}` for the wire (the legacy bridge fills the
 defaults and returns the legend). This generalises "use the population's colour where one exists" —
 a `clust`/`trackclust` pop is just a filter on `clusters.{suffix}`, so clusters, HMM states and any
 categorical measure resolve identically, and a track pop and its source cell pop share a colour when
@@ -217,7 +217,7 @@ as **empty membership + a warning**, never a hard error — one absent column ca
 > `label_props` stays the right tool for exactly three jobs, and nothing else:
 > 1. **Writes** — `add_obs`/`save!`. `pop_df` is read-only.
 > 2. **The Python boundary** — there is no `pop_df` in Python; a task hands Python a `propsPath` +
->    label ids, and it reads `LabelPropsView` (btrack, `spatial_utils`, the napari bridge).
+>    label ids, and it reads `LabelPropsView` (btrack, `spatial_utils`, the legacy bridge).
 > 3. **Reads with no population** — every cell of a table regardless of membership
 >    (`tracking.track_measures` wants every cell carrying a `track_id`), or a bespoke column set.
 >
@@ -638,15 +638,15 @@ per-pop CSV.
 
 Besides gate (`flow`) and filter (`live`/`clust`) membership, a `Population` may carry
 `explicit_labels` — its cells **are** that label set (∩ parent), bypassing any gate. This backs
-the napari cell selection: `add_pop!(m, "Napari selection"; explicit_labels=ids, transient=true)`.
+the napari cell selection: `add_pop!(m, "Viewer selection"; explicit_labels=ids, transient=true)`.
 `transient` pops are kept in the in-memory map and the `gating:popmap` broadcast (so every
 client and `pop_df`/`plotdata`/`stats` treat them like any population) but are **excluded from
 `save_pop_map!`** — they never reach `gating/{value_name}.json`. The API keeps the selection in
 an in-memory registry keyed by `(task_dir, value_name)` and re-injects it into every served/
 broadcast map; an empty selection clears it (the manager exposes a trash button →
-`store.clearNapariSelection`, since there's no persisted pop to delete). Because a transient pop
+`store.clearViewerSelection`, since there's no persisted pop to delete). Because a transient pop
 can vanish between renders, `_plot_xy` returns empty data for an unknown pop rather than throwing
-— a stale plot/highlight pointing at a cleared "Napari selection" no longer 500s.
+— a stale plot/highlight pointing at a cleared "Viewer selection" no longer 500s.
 
 `_node_dict` emits a **`membership_sig`** (hash of the sorted label set) for explicit-label pops.
 They have no gate/filter for the client to diff, so without this a resized napari selection would
@@ -803,7 +803,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   manager's collapsible **Options** box (grouped into `plot` / `viewer` sub-headings): a **gate-labels** toggle (subtle
   population name centred above each gate — bold with a dark halo for legibility, drawn on
   `GateOverlay`; **on by default**), a **line-width** slider (gate stroke thickness) and a **dot-size**
-  slider — the PLOT twin of the manager's "Napari dots", scaling every dot on the scatter (base speckle,
+  slider — the PLOT twin of the manager's "Viewer dots", scaling every dot on the scatter (base speckle,
   population overlays and the outlier tail together, so their relative sizes hold). Its default is
   `plots/density.ts` `DOT_R` = 0.7, the FlowJo speckle that reads on a dense cloud; a sparse cloud, or one
   carrying a colour-by measure, wants more. Passed to
@@ -850,10 +850,10 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   (so a plot with no other selection reverts from the dimmed backdrop to normal pseudocolour /
   contour). It is never persisted, so there is no pop to delete. The manager's per-pop `pi-images`
   column toggles a pop's viewer visibility (its `show` flag) and re-pushes via
-  `store.refreshNapariPops` (silent); the Options box has a **Point size** slider (per-set
+  `store.refreshViewerPops` (silent); the Options box has a **Point size** slider (per-set
   `settings.get/setPointSize(setUid)`, re-pushes on release). The *Show populations* preference
   re-pushes live on every `gating:popmap` while on, so the viewer overlay tracks gate edits / pop
-  add-remove as you gate — driven by `handleGatingChange` in `composables/useNapariAutoShow`, which
+  add-remove as you gate — driven by `handleGatingChange` in `composables/useViewerAutoShow`, which
   `App.vue` mounts app-level, so it works whether or not the floating Viewer panel is open. The
   transient selection pop is **not** pushed back to the viewer (it is the selection *source* — a
   round trip would loop through the picker).

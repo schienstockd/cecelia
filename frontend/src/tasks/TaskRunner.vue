@@ -712,7 +712,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           {{ runLabel }}
         </button>
 
-        <!-- Preview: run these params on the region napari is showing, before committing to a full run -->
+        <!-- Preview: run these params on the region viewer is showing, before committing to a full run -->
         <TaskPreviewControls
           :project-uid="projectMeta.current?.uid ?? ''"
           :image-uid="drivingImageUid"

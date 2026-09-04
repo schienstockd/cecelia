@@ -37,7 +37,7 @@ describe('buildViewState', () => {
   })
 
   it('translates pan into an image-pixel centre offset', () => {
-    // panX = +100 µm at 0.5 µm/px → +200 image px. Napari center moves the OTHER way: cx = W/2 - panXpx.
+    // panX = +100 µm at 0.5 µm/px → +200 image px. Viewer center moves the OTHER way: cx = W/2 - panXpx.
     const vs = buildViewState({
       cam: fakeCam({ panX: 100 }), meta: fakeMeta(), t: 0, zPlane: 5, ndisplay: 2,
       canvasW: 512, canvasH: 512, viewHalfAngle: VIEW_HALF_ANGLE,

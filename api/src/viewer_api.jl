@@ -22,7 +22,7 @@
 # This inherits `image_render.jl`'s SANCTIONED, NARROW carve-out of the one-canonical-reader rule:
 # Julia touches the zarr directly (Zarr.jl) for display work only. Colours are NOT re-derived here —
 # they come from `resolved_display_specs` in image_render.jl, which is the one place that knows how to
-# turn a napari props file into RGB (a name table there once missed `bop blue` and rendered a channel
+# turn a legacy props file into RGB (a name table there once missed `bop blue` and rendered a channel
 # WHITE). Do not add a second palette.
 
 using ChunkCodecLibZstd: ZstdEncodeOptions
@@ -162,10 +162,10 @@ function slab_bytes(vol)
     reinterpret(UInt8, v)
 end
 
-# ── Contrast when napari has never opened the image ───────────────────────────────
+# ── Contrast when the viewer has never seen the image ───────────────────────────────
 
 # Percentile contrast from ONE z-plane of timepoint 0, xy-subsampled to ~`target` px per side. The
-# viewer's own contrast (napari's props file) always wins; this is the cold-start answer for an image
+# viewer's own contrast (the props file) always wins; this is the cold-start answer for an image
 # nobody has opened yet, and it is deliberately cheap: z chunks are size 1, so this reads a handful of
 # chunks per channel rather than a whole volume.
 #
@@ -199,10 +199,10 @@ end
 # Everything the renderer needs BEFORE it asks for a single voxel: how many slabs exist, how big one
 # is (the client sizes its VRAM cache from `slabBytes`), and how to colour each channel. `lut` is a
 # black→colour (or white→colour) ramp the client uploads as a small 1D lookup texture; resolving it
-# here rather than in TypeScript is what keeps napari's ~30 colormaps from being re-guessed by name.
+# here rather than in TypeScript is what keeps the legacy 30 colormaps from being re-guessed by name (originally the legacy viewer's set).
 #
 # `frameIntervalMin` and `spaceUnit` are for the on-image overlays (scale bar + elapsed time), which
-# are the napari ones the browser has to match. Both are NULLABLE and that is the point: the interval
+# are the legacy ones the browser has to match. Both are NULLABLE and that is the point: the interval
 # is minutes/frame from `img_physical_sizes`, which defaults a missing value to 1.0 — a real 1 min/frame
 # and "no idea" are indistinguishable in the number, so the flag decides and the client falls back to a
 # frame index rather than inventing a duration. `calibrated.t` comes from `img_scale_axes`, the same
@@ -522,7 +522,7 @@ so this cannot drift from where the tasks write. `err` is a message when the ima
 the store on disk is missing; all three are normal states (an unsegmented image has none).
 
 A `labels` value_name can carry SEVERAL files (a base mask and a nuclear one). `img_labels_path` answers
-the FIRST, which is the base mask — the one napari shows as "(vn) Labels". Serving the others needs the
+the FIRST, which is the base mask — the one the viewer shows as "(vn) Labels". Serving the others needs the
 file to be named, which is a decision for when the client offers them.
 """
 function label_store_path(project_uid::AbstractString, image_uid::AbstractString,
@@ -562,7 +562,7 @@ end
 #   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
 #    colourColumns: [...], colourBy, values}
 #
-# Everything the browser viewer needs to draw the h5ad-derived overlays napari draws: per-cell
+# Everything the browser viewer needs to draw the h5ad-derived overlays the legacy viewer drew: per-cell
 # centroids, population membership, track ids, and one optional per-cell column to colour by
 # (WEB_VIEWER_PLAN.md → P3).
 #
@@ -577,8 +577,8 @@ end
 # be ~40% of the parse time on the 98k case. If a dataset ever arrives that makes even this too big, the
 # shape is already the one a binary body would have — see the note in the plan.
 #
-# MEMBERSHIP COMES FROM `resolve_pops`, the same cached resolver that feeds napari's points layers
-# (`api_napari_show_populations`). Not a second membership path: pop membership is gating-engine
+# MEMBERSHIP COMES FROM `resolve_pops`, the same cached resolver that feeds the legacy points layers
+# (`api_viewer_show_populations`). Not a second membership path: pop membership is gating-engine
 # business, it is cached against the gating-map and h5ad mtimes, and a viewer that computed its own
 # would be a second answer to "which cells are in /A" that could disagree with the plots.
 #
@@ -705,11 +705,11 @@ end
 
 # ── Per-image viewer layer props (PY) ─────────────────────────────────────────────
 # The WebGPU viewer's autosaved per-image view state: contrast/colormap per channel, camera, T/Z.
-# Written to the SAME file napari's autosave writes to (`<task_dir>/data/<basename(zarr)>.json`), so
-# animation-card snapshots stay portable across the two viewers. Format is a superset of napari's
+# Written to the SAME file the legacy autosave writes to (`<task_dir>/data/<basename(zarr)>.json`), so
+# animation-card snapshots stay portable across the two viewers. Format is a superset of the legacy shape's
 # schema: `camera`/`dims`/`layers` mirror what `capture_view_state` writes (so a movie recorder that
 # reads the file keeps working), and a `webgpu` sub-block carries the round-trippable native state
-# (channel index, orbit-camera pose, mode, zPlane, zRange) that napari's schema cannot represent.
+# (channel index, orbit-camera pose, mode, zPlane, zRange) that the legacy schema cannot represent.
 #
 # See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → PY.
 _viewer_props_path(task_dir::AbstractString, zarr_path::AbstractString) =
@@ -780,7 +780,7 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     err === nothing || return err
     vn   = _resolve_vn(img, String(get(body, "valueName", "")))
     # Which mask on disk. `label_store_path` answers the base mask for that segmentation — the
-    # same one shown as "(vn) Labels" in napari and rendered by the WebGPU viewer's mask slot.
+    # same one the WebGPU viewer and rendered by the WebGPU viewer's mask slot.
     zp, lerr = label_store_path(pu, iu, vn)
     zp === nothing && return 404, JSON3.write((; error = lerr))
     tint = _to_int(get(body, "t", 0))
@@ -898,9 +898,9 @@ end
 
 # ── POST /api/viewer/overlay-legend (P9) ──────────────────────────────────────────
 # Legend content for a captured viewState (analysis-board strip + movie title card). Replaces
-# `/api/napari/overlay-legend` — the computation itself is pure Julia (walks pop maps, resolves
-# colour-by categories against populations), no napari canvas required, so this reuses the same
-# `overlay_legend_content` the napari route did.
+# `/api/viewer/overlay-legend` — the computation itself is pure Julia (walks pop maps, resolves
+# colour-by categories against populations), no viewer canvas required, so this reuses the same
+# `overlay_legend_content` the legacy route did.
 #
 # Body: `{projectUid, imageUid, colourBy?, overlayPops?, colourOverrides?}`
 #   overlayPops = `[{valueName, popType, path}, …]` parsed from the snapshot's overlay layer names.
@@ -992,7 +992,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # asked for a mask stops leaking pop dots the user didn't select (reported by Dominik).
     show_pops = Bool(_ov(ov_raw, :showPopulations, true))
     include_tracks = Bool(_ov(ov_raw, :includeTracks, true))
-    # `tailLength` in FRAMES — napari's `tail_length`, default 30, `0` hides tracks entirely
+    # `tailLength` in FRAMES — the legacy `tail_length`, default 30, `0` hides tracks entirely
     # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
     tail_length      = Int(_ov(ov_raw, :tailLength, 30))
     # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
@@ -1306,8 +1306,8 @@ end
 
 # ── POST /api/viewer/thumbnail ────────────────────────────────────────────────────
 #
-# Render ONE frame from a captured viewState — the browser-viewer counterpart of napari's screenshot
-# endpoint (`/api/napari/screenshot`) that the animation module page has been using to author
+# Render ONE frame from a captured viewState — the browser-viewer counterpart of the legacy screenshot
+# endpoint (`/api/viewer/screenshot`) that the animation module page has been using to author
 # keyframes. Same rendering path as the movie recorder (`viewstate_to_render_args` +
 # `render_view_frame`), so the thumbnail matches what the movie will render — a keyframe strip that
 # actually looks like the mp4 it will produce.
@@ -1317,7 +1317,7 @@ end
 # duplicates most of `run_single_offline` here and can land as a follow-up when the current shape
 # is confirmed to work end-to-end.
 #
-# The PNG lands as a sidecar board asset — same storage the napari screenshot uses, so the animation
+# The PNG lands as a sidecar board asset — same storage the legacy screenshot used, so the animation
 # panel's existing display + delete paths (`/api/board-assets/delete`, sidecar `<id>.png` under
 # `settings/board-assets/`) work unchanged.
 #

@@ -22,7 +22,7 @@
 // THE ADAPTER TRAP, and why it is asserted rather than trusted. `requestAdapter({})` returns the
 // INTEGRATED GPU on this machine, and Firefox blanks every `adapter.info` field, so there is no name to
 // check. `maxTextureDimension3D` is the usable tell: the discrete card reports 16384, integrated 2048.
-// This is the browser-side twin of the PRIME trap in `app/src/napari.jl:55-59` — the difference is a
+// This is the browser-side twin of the PRIME trap in `app/src/viewer.jl:55-59` — the difference is a
 // 6x render cost, silently. WEB_VIEWER_PLAN.md decision 3. The check is shared with the Settings
 // diagnostic in `utils/webgpuProbe.ts` — one place, so a second consumer cannot forget the trap.
 
@@ -140,7 +140,7 @@ export interface VolumeRenderer {
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
    * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
-   * `contourPx` is napari's `contour` — an outline that many voxels thick instead of a filled region,
+   * `contourPx` is the viewer's `contour` — an outline that many voxels thick instead of a filled region,
    * which is what lets the signal under the mask stay readable.
    */
   setLabelStyle(opacity: number, contourPx: number): void
@@ -481,7 +481,7 @@ export async function createVolumeRenderer(
   })
 
   // Track tails. A third pipeline rather than a second topology: WebGPU draws 1px lines only, and a
-  // 1px tail over a noisy MIP is close to invisible (napari's tail_width defaults to 4).
+  // 1px tail over a noisy MIP is close to invisible (the viewer's tail_width defaults to 4).
   const segModule = device.createShaderModule({ code: SEGMENTS_WGSL })
   const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
   if (segErrs.length) {

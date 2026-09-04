@@ -26,7 +26,7 @@
   process, the same `CoastalUtils`, the same temporal window the real run builds. So these are the
   planes the model would actually be fed, not a re-derivation free to drift from it. Fetch-a-PNG-into
   -an-<img> is the crop panel's pattern; the planes are rendered server-side because that is where the
-  data is. Nothing here touches napari.
+  data is. Nothing here touches viewer.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
