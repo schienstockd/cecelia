@@ -50,6 +50,17 @@ end
 _max_px_from_size(size_x, size_y) =
     max(size_x === nothing ? 0 : Int(size_x), size_y === nothing ? 0 : Int(size_y))
 
+# Per-cell `max_px` in a compare grid — never below this cell's own native long side.
+# `render_view_frame` treats `max_px` as a STRIDE cap (`step = cld(max(H,W), max_px)`), so a cell
+# whose native canvas exceeds the grid-wide `max_px` gets subsampled by an integer factor while
+# smaller siblings render at native — the two cells then land in the stitcher at different
+# µm/output-pixel, and the reader sees them at different scale rather than same-scale-different-processing.
+# Scaling max_px UP per cell to at least its native long side gives every cell a step of 1;
+# stitch_movies letterboxes smaller cells inside the largest. `max_px = 0` (no cap) stays a no-op.
+# See `docs/todo/MOVIE_COMPARE_PLAN.md` — extending D10 (equal-tile safety net).
+_grid_cell_max_px(cfg_max_px::Int, native_long::Int) =
+    cfg_max_px == 0 ? 0 : max(cfg_max_px, native_long)
+
 # The size-fields' placeholder is "canvas", but the request only sends numbers when the user typed
 # them. When they didn't, the movie used to encode at NATIVE crop resolution — which for a zoomed-in
 # view is a tiny mp4, and for a zoomed-out view is a huge one, neither matching what the user was
@@ -686,6 +697,14 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                 push!(temps, cell_path); push!(cell_paths, cell_path)
                 where = n_rows > 1 ? "$(row.label) · $(col.label)" : col.label
                 ws_log(nothing, task_id, "[$(done_cells + 1)/$cells] recording $where")
+                # Per-cell `max_px` — see `_grid_cell_max_px`. Cells whose native canvas exceeds
+                # the grid-wide cap would otherwise be stride-subsampled to half (or worse) while
+                # siblings render at native, and land in the stitched output at a different µm/px.
+                d_cell = axis_dims(cell.caxes, ndims(cell.arr))
+                cell_native_long = max(
+                    haskey(d_cell, "y") ? size(cell.arr, d_cell["y"]) : 0,
+                    haskey(d_cell, "x") ? size(cell.arr, d_cell["x"]) : 0)
+                cell_max_px = _grid_cell_max_px(max_px, cell_native_long)
                 # Per-frame progress is delivered as a slot offset — one running counter across the
                 # whole render+compose, so a mid-loop wrap can't drift from the total.
                 start_slot = slot
@@ -693,7 +712,7 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  ts = ts, fps = fps,
                                                  z = cell.z_slice, channels = 0:(cell.nc - 1),
                                                  specs = cell.specs,
-                                                 crop = cell.view_crop, max_px = max_px,
+                                                 crop = cell.view_crop, max_px = cell_max_px,
                                                  title_card = nothing,           # applied at end
                                                  overlays_for = cell.ov.overlays_for,
                                                  mask_for     = cell.ov.mask_for,
