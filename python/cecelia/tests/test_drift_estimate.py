@@ -203,6 +203,42 @@ class DriftEstimateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cu.estimate_drift(arr, 0, du, estimator='bundleAdjust')
 
+    def test_sitk_rigid_dispatches_and_reports_angles(self):
+        """Dispatch smoke test: `estimate_drift(estimator='sitkRigid')` returns a `DriftEstimate`
+        with the `angles` field populated and `residual_rms` None (direct-to-reference has no
+        redundancy, so a residual is not measured — same discipline as `chain`).
+
+        Runs on BOTH a 2D and a 3D input so the dispatch is exercised on both branches: `positions`
+        picks up its Z column when the input has Z > 1, `axes` mirrors it, and `angles` stays
+        scalar per frame regardless (in-plane rotation only — DRIFT_RIGID_PLAN.md Decision 3).
+
+        Whether the numbers are correct is `test_drift_estimate_rigid.py`'s job. This pins that
+        the dispatch reaches the right estimator and packs the result into the right named-tuple
+        shape.
+        """
+        # 2D branch
+        arr, du, _ = _movie([[0, 0, 0] for _ in range(4)], shape_zyx=(1, 48, 48))
+        est = cu.estimate_drift(arr, 0, du, estimator='sitkRigid')
+        self.assertEqual(est.estimator, 'sitkRigid')
+        self.assertEqual(est.axes, ['Y', 'X'])
+        self.assertEqual(est.positions.shape, (4, 2))
+        self.assertIsNotNone(est.angles)
+        self.assertEqual(est.angles.shape, (4,))
+        self.assertIsNone(est.residual_rms)
+        self.assertIsNone(est.residual_p90)
+
+        # 3D branch — Z=4 is the SimpleITK gradient-filter minimum (see `sitk_estimate_rigid`).
+        arr3, du3, _ = _movie([[0, 0, 0] for _ in range(4)], shape_zyx=(4, 32, 32))
+        est3 = cu.estimate_drift(arr3, 0, du3, estimator='sitkRigid')
+        self.assertEqual(est3.axes, ['Z', 'Y', 'X'])
+        self.assertEqual(est3.positions.shape, (4, 3))
+        self.assertEqual(est3.angles.shape, (4,))                    # still scalar-per-frame
+
+        # translation-only estimators must still leave `angles` as None so a consumer branching
+        # on it does not read a stale array from the previous run
+        self.assertIsNone(cu.estimate_drift(arr, 0, du, estimator='chain').angles)
+        self.assertIsNone(cu.estimate_drift(arr, 0, du, estimator='multiLag').angles)
+
 
 class DriftSolverTest(unittest.TestCase):
     """The solver alone, on synthetic measurements — no images, so the behaviour is unambiguous."""

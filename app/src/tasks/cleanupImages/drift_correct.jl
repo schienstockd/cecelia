@@ -38,9 +38,18 @@ function _drift_qc_findings(meta)
 
     interp = collect(Int, get(meta, "interpolated", Int[]))
     if !isempty(interp)
-        push!(findings, qc_finding("warn", "drift.unregistered_frames";
-            value = length(interp),
-            detail = Dict{String,Any}("frames" => interp)))
+        # A rigid run's `interpolated` frames are ones whose rotation exceeded the cap and were
+        # predicted from neighbours — a different action for the user ("did the stage really
+        # rotate more than 5°, or is something else going on?") than a lost-lock frame on a
+        # translation run ("try a better reference channel"). Same field, different code.
+        rigid = haskey(meta, "angles")
+        code  = rigid ? "drift.rotation.capped" : "drift.unregistered_frames"
+        detail = Dict{String,Any}("frames" => interp)
+        if rigid
+            detail["maxAngleDeg"] = round(Float64(get(meta, "maxAngleDeg", 0.0)), digits = 2)
+            detail["maxAngleCap"] = round(Float64(get(meta, "maxAngleCap", 0.0)), digits = 2)
+        end
+        push!(findings, qc_finding("warn", code; value = length(interp), detail = detail))
     end
 
     ce = qc_canvas_expansion(src, out, String(meta["dimOrder"]); code = "drift.canvas_expansion")
@@ -84,6 +93,10 @@ function _drift_qc_metrics(meta, src, out)
     # 0, which reads as a perfect registration and would drag a cohort median with it.
     haskey(meta, "residualRms") &&
         (m["residualPx"] = round(Float64(meta["residualRms"]), digits = 2))
+    # Rigid-run addition: how far did the field of view rotate? Absent on a translation run so a
+    # cohort comparison stays honest — a 0.0 here would mean "not measured" not "did not rotate".
+    haskey(meta, "maxAngleDeg") &&
+        (m["maxAngleDeg"] = round(Float64(meta["maxAngleDeg"]), digits = 2))
     m
 end
 
@@ -133,13 +146,16 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         drift_channel_idx = first(drift_sel)
     end
 
-    estimator = string(get(params, "driftEstimator", "multiLag"))
-    max_lag   = Int(get(params, "driftMaxLag", 3))
+    estimator     = string(get(params, "driftEstimator", "multiLag"))
+    max_lag       = Int(get(params, "driftMaxLag", 3))
+    max_angle_deg = Float64(get(params, "driftMaxAngle", 5.0))
 
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_correction_path")
     on_log("[INFO] Drift ch:    $drift_channel_idx")
-    on_log("[INFO] Estimator:   $estimator" * (estimator == "multiLag" ? " (max lag $max_lag)" : ""))
+    on_log("[INFO] Estimator:   $estimator" *
+           (estimator == "multiLag" ? " (max lag $max_lag)" :
+            estimator == "sitkRigid" ? " (max angle $(max_angle_deg)°)" : ""))
 
     qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
 
@@ -150,6 +166,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            driftNormalisation = string(get(params, "driftNormalisation", "none")),
            driftEstimator     = estimator,
            driftMaxLag        = max_lag,
+           driftMaxAngle      = max_angle_deg,
            qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
