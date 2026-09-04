@@ -3188,8 +3188,13 @@ async function reallocate(refit = false) {
     if (!tr) return
     const lvl = levelMeta(m, slabLevel.value)
     const nch = Math.min(m.nC, MAX_CHANNELS)
+    // `sourceId` names the store the tiles are decoded from — `<imageUid>/<valueName>` — so the
+    // tile atlas can tell a version swap on this image apart from a level swap or a channel/window
+    // change. Without it, a fresh fetch key-collides with tiles decoded from the previous store and
+    // the viewer serves old pixels. See `tileRenderer.setImage` docs.
     tr.setImage(m, slabLevel.value, effectiveCacheBytes.value,
-                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch)
+                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch,
+                `${imageUid}/${valueName.value}`)
     tr.setChannels(m.channels)
     tr.resize()
     loadedLevel.value = slabLevel.value
