@@ -1,17 +1,18 @@
 <!--
-  SeriesPickerModal — asks the user which series of a multi-series microscopy file (typically LIF) to
-  import, ImageJ-style. Opened by ManageImagesModule between FileBrowser confirm and
-  /api/images/register when at least one selected path is a probeable multi-series format. Fetches
-  /api/import/series/probe (readlif — fast, no JVM) to enumerate series + a per-series thumbnail;
-  multi-select checkbox per series → one image per pick with `meta.ori_series` bound at register time.
+  SeriesPickerModal — asks the user which series of a multi-series microscopy file (LIF today) to
+  import, ImageJ-style. The parent (ManageImagesModule) probes /api/import/series/probe BEFORE
+  opening this modal, so we only see it when there are 2+ series to choose from — a single-series
+  LIF is imported straight through without the "pick 1 of 1" click-through. The modal itself is
+  therefore pure UI over an already-resolved ProbeResult.
 -->
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { seriesLabel, type ProbeResult, type SeriesEntry } from '../utils/seriesPicker'
 
 const props = defineProps<{
   filepath: string
+  probe:    ProbeResult
 }>()
 
 const emit = defineEmits<{
@@ -19,34 +20,9 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const probe   = ref<ProbeResult | null>(null)
-const loading = ref(true)
-const err     = ref('')
-const picked  = ref<Set<number>>(new Set())
+const picked = ref<Set<number>>(new Set())
 
 const basename = computed(() => props.filepath.replace(/^.*[\\/]/, ''))
-
-async function loadProbe() {
-  loading.value = true; err.value = ''
-  try {
-    const r = await fetch('/api/import/series/probe', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ filepath: props.filepath }),
-    })
-    const d = await r.json()
-    if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
-    probe.value = d as ProbeResult
-    if (probe.value.series.length === 1) {
-      // one series in the file — auto-pick it and let the user confirm.
-      picked.value = new Set([probe.value.series[0].index])
-    }
-  } catch (e) {
-    err.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loading.value = false
-  }
-}
 
 function toggle(idx: number) {
   const s = new Set(picked.value)
@@ -55,17 +31,13 @@ function toggle(idx: number) {
 }
 
 function pickAll() {
-  if (!probe.value) return
-  picked.value = new Set(probe.value.series.map(s => s.index))
+  picked.value = new Set(props.probe.series.map(s => s.index))
 }
 
 function save() {
-  if (!probe.value) return
-  const chosen = probe.value.series.filter(s => picked.value.has(s.index))
+  const chosen = props.probe.series.filter(s => picked.value.has(s.index))
   emit('save', chosen)
 }
-
-onMounted(loadProbe)
 </script>
 
 <template>
@@ -75,44 +47,31 @@ onMounted(loadProbe)
     </template>
 
     <div class="sp-panel">
-      <div v-if="err" class="sp-err">{{ err }}</div>
-
-      <div v-else-if="loading" class="sp-hint cc-muted cc-fs-xs">
-        <i class="pi pi-spin pi-spinner" /> Reading series…
+      <div class="sp-grid">
+        <label v-for="s in probe.series" :key="s.index"
+               class="sp-card" :class="{ 'sp-picked': picked.has(s.index) }"
+               v-tooltip.top="`Import series ${s.index} (${seriesLabel(s)})`">
+          <input type="checkbox" class="sp-cb"
+                 :checked="picked.has(s.index)"
+                 @change="toggle(s.index)"
+                 :aria-label="`Series ${s.index}`" />
+          <div class="sp-thumb">
+            <img v-if="s.thumbnailPngB64"
+                 :src="`data:image/png;base64,${s.thumbnailPngB64}`"
+                 :alt="`series ${s.index}`" draggable="false" />
+            <div v-else class="sp-thumb-empty"><i class="pi pi-image" /></div>
+          </div>
+          <div class="sp-meta">
+            <span class="sp-name">{{ s.name || `Series ${s.index}` }}</span>
+            <span class="sp-dims cc-muted cc-fs-2xs">{{ seriesLabel(s) }}</span>
+          </div>
+        </label>
       </div>
-
-      <template v-else-if="probe">
-        <div v-if="probe.format === 'unsupported'" class="sp-hint cc-muted cc-fs-xs">
-          No preview reader for this format — series will be numbered only.
-        </div>
-
-        <div class="sp-grid">
-          <label v-for="s in probe.series" :key="s.index"
-                 class="sp-card" :class="{ 'sp-picked': picked.has(s.index) }"
-                 v-tooltip.top="`Import series ${s.index} (${seriesLabel(s)})`">
-            <input type="checkbox" class="sp-cb"
-                   :checked="picked.has(s.index)"
-                   @change="toggle(s.index)"
-                   :aria-label="`Series ${s.index}`" />
-            <div class="sp-thumb">
-              <img v-if="s.thumbnailPngB64"
-                   :src="`data:image/png;base64,${s.thumbnailPngB64}`"
-                   :alt="`series ${s.index}`" draggable="false" />
-              <div v-else class="sp-thumb-empty"><i class="pi pi-image" /></div>
-            </div>
-            <div class="sp-meta">
-              <span class="sp-name">{{ s.name || `Series ${s.index}` }}</span>
-              <span class="sp-dims cc-muted cc-fs-2xs">{{ seriesLabel(s) }}</span>
-            </div>
-          </label>
-        </div>
-      </template>
     </div>
 
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="emit('cancel')">Skip file</button>
-      <button v-if="probe && probe.series.length > 1"
-              class="cc-btn cc-btn-ghost" @click="pickAll"
+      <button class="cc-btn cc-btn-ghost" @click="pickAll"
               v-tooltip.top="'Import every series as a separate image'">All</button>
       <button class="cc-btn cc-btn-primary" :disabled="picked.size === 0" @click="save">
         <i class="pi pi-check" /> Import {{ picked.size || '' }}
@@ -145,6 +104,4 @@ onMounted(loadProbe)
 .sp-meta { display: flex; flex-direction: column; gap: 0.1rem; padding-left: 1.4rem; }
 .sp-name { font-size: var(--cc-fs-xs); color: var(--cc-text); }
 .sp-dims { font-variant-numeric: tabular-nums; }
-.sp-hint { font-style: italic; }
-.sp-err { font-size: var(--cc-fs-xs); color: #f85149; }
 </style>

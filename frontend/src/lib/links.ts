@@ -35,3 +35,21 @@ export function recipeRequestUrl(name: string): string {
 // Zulip, not a GitHub Discussion: the lab already runs one, and a question people ask in chat is a
 // question they would not have opened an issue for.
 export const CECELIA_CHAT_URL = 'https://cecelia.zulipchat.com/'
+
+/**
+ * A "please support this file format for series picking" feature request, prefilled with the
+ * extensions the user just hit. The picker only reads series from `.lif` today (readlif — pure
+ * Python, no JVM); every other multi-series format falls through to a series-0 default. This turns
+ * "we can't preview this" into a directed ask — the reason we bank the request is that the fastest
+ * way to widen coverage is a sample file we can measure against (docs/PROVENANCE.md → *Real-data
+ * visual validation*), so the prompt is what to attach.
+ */
+export function formatSupportRequestUrl(exts: string[]): string {
+  const dedup = Array.from(new Set(exts.map(e => e.toLowerCase().replace(/^\./, ''))))
+  const list  = dedup.join(', ')
+  const q = new URLSearchParams({
+    template: 'feature_request.yml',
+    title:    `Series picker: support ${list}`,
+  })
+  return `${CECELIA_REPO_URL}/issues/new?${q}`
+}

@@ -24,10 +24,33 @@ export type ProbeResult = {
 // runner's dispatch (probe_series_run.py); a new reader adds its extension here AND there.
 const PROBEABLE_EXT = new Set(['.lif'])
 
-export function isProbeableMultiSeriesPath(path: string): boolean {
+// Extensions that COULD carry multiple series but which the probe runner can't read yet. Used to
+// surface a "want your format?" hint through the log rail when the user imports one — otherwise
+// non-LIF multi-series files silently import as series 0 and the user has no idea a choice existed.
+// Not a hard list; kept short + defensible (formats seen in the lab).
+const UNSUPPORTED_MULTI_SERIES_EXT = new Set(['.czi', '.nd2', '.oir', '.ims', '.lsm'])
+
+function extOf(path: string): string {
   const i = path.lastIndexOf('.')
-  if (i < 0) return false
-  return PROBEABLE_EXT.has(path.slice(i).toLowerCase())
+  return i < 0 ? '' : path.slice(i).toLowerCase()
+}
+
+export function isProbeableMultiSeriesPath(path: string): boolean {
+  return PROBEABLE_EXT.has(extOf(path))
+}
+
+export function isUnsupportedMultiSeriesPath(path: string): boolean {
+  return UNSUPPORTED_MULTI_SERIES_EXT.has(extOf(path))
+}
+
+// Extensions among the given paths that could carry multiple series but which we can't read yet.
+// Dedup'd, sorted — used to build the "request format support" GitHub URL from a batch.
+export function unsupportedMultiSeriesExts(paths: string[]): string[] {
+  const s = new Set<string>()
+  for (const p of paths) {
+    isUnsupportedMultiSeriesPath(p) && s.add(extOf(p).replace(/^\./, ''))
+  }
+  return Array.from(s).sort()
 }
 
 // One line per series: "Series 03 · 512×512 · z=6 · t=126 · c=3". Compressed enough that a picker

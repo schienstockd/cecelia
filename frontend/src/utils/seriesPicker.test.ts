@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   buildRegisterRecords,
   isProbeableMultiSeriesPath,
+  isUnsupportedMultiSeriesPath,
   seriesImageName,
   seriesLabel,
+  unsupportedMultiSeriesExts,
   type SeriesEntry,
 } from './seriesPicker'
 
@@ -21,6 +23,33 @@ describe('isProbeableMultiSeriesPath', () => {
     expect(isProbeableMultiSeriesPath('/a/b.tif')).toBe(false)
     expect(isProbeableMultiSeriesPath('/a/b.ims')).toBe(false)
     expect(isProbeableMultiSeriesPath('noext')).toBe(false)
+  })
+})
+
+describe('isUnsupportedMultiSeriesPath', () => {
+  it('flags could-be-multi-series formats we don\'t probe yet', () => {
+    expect(isUnsupportedMultiSeriesPath('/x/y.czi')).toBe(true)
+    expect(isUnsupportedMultiSeriesPath('/x/y.ND2')).toBe(true)
+    expect(isUnsupportedMultiSeriesPath('/x/y.ims')).toBe(true)
+    expect(isUnsupportedMultiSeriesPath('/x/y.oir')).toBe(true)
+    expect(isUnsupportedMultiSeriesPath('/x/y.lsm')).toBe(true)
+  })
+  it('does not flag LIF (we handle that) or single-series formats', () => {
+    expect(isUnsupportedMultiSeriesPath('/x/y.lif')).toBe(false)
+    expect(isUnsupportedMultiSeriesPath('/x/y.tif')).toBe(false)
+    expect(isUnsupportedMultiSeriesPath('/x/y.png')).toBe(false)
+  })
+})
+
+describe('unsupportedMultiSeriesExts', () => {
+  it('dedups and sorts extensions from a batch', () => {
+    // The batch hint prints one line per selection, not per file — dedup is what keeps it that way.
+    expect(unsupportedMultiSeriesExts([
+      '/a/x.czi', '/a/y.CZI', '/a/z.nd2', '/a/w.tif', '/a/v.lif'
+    ])).toEqual(['czi', 'nd2'])
+  })
+  it('returns [] when nothing in the batch qualifies', () => {
+    expect(unsupportedMultiSeriesExts(['/a/x.lif', '/a/y.tif'])).toEqual([])
   })
 })
 

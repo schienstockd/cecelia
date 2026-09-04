@@ -11,7 +11,9 @@ import LegacyMigrateDialog from '../components/LegacyMigrateDialog.vue'
 import SeriesPickerModal from '../components/SeriesPickerModal.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 import { buildRegisterRecords, isProbeableMultiSeriesPath,
-         type RegisterRecord, type SeriesEntry } from '../utils/seriesPicker'
+         unsupportedMultiSeriesExts,
+         type ProbeResult, type RegisterRecord, type SeriesEntry } from '../utils/seriesPicker'
+import { formatSupportRequestUrl } from '../lib/links'
 
 // The page is 'Manage images', not 'Import': it hosts add/copy/move/delete alongside the import
 // tasks, and now the export ones too. Two categories rather than one — `exportImages` is its own
@@ -26,12 +28,15 @@ const activeSet   = computed(() => project.activeSet())
 const showBrowser = ref(false)
 const showMigrate = ref(false)
 
-// Series-picker queue: a multi-series file (LIF, …) shows one picker before it lands in the register
+// Series-picker queue: a multi-series file (LIF) shows one picker before it lands in the register
 // payload; a single-series file joins the payload as-is. `pickerQueue` is the deque of remaining
 // probeable paths; `pickerCurrent` is the one whose modal is up (null when none). Kept out of the
 // register loop so opening a modal doesn't have to block a promise chain the browser can't unwind.
-const pickerQueue      = ref<string[]>([])
-const pickerCurrent    = ref<string | null>(null)
+// The queue carries the pre-fetched ProbeResult with each entry so the modal is a pure view — the
+// probe already ran, and we only enqueued files with ≥2 series.
+type PickerEntry = { path: string; probe: ProbeResult }
+const pickerQueue      = ref<PickerEntry[]>([])
+const pickerCurrent    = ref<PickerEntry | null>(null)
 const pendingRecords   = ref<RegisterRecord[]>([])
 const pendingSetUid    = ref<string | null>(null)
 
@@ -64,20 +69,71 @@ function onLegacyImported(images: unknown[]) {
   )
 }
 
+async function probeSeries(filepath: string): Promise<ProbeResult | null> {
+  try {
+    const r = await fetch('/api/import/series/probe', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ filepath }),
+    })
+    const d = await r.json()
+    if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+    return d as ProbeResult
+  } catch (e) {
+    // A probe failure isn't fatal — the file still imports as a single-series file (bf2raw picks
+    // series 0 by default). We just skip the picker for it and log the reason.
+    log.warn(
+      `Series probe failed for ${filepath}: ${e instanceof Error ? e.message : String(e)}. ` +
+      `Importing as single-series.`,
+      { source: 'manageImages' }
+    )
+    return null
+  }
+}
+
 async function onFilesSelected(paths: string[]) {
   const set = activeSet.value
   if (!set || !projectMeta.current) return
   showBrowser.value = false
 
-  // Single-series files go straight into the register payload; multi-series-capable files are
-  // queued and the modal opens for each in turn (see advancePicker). When the queue drains we POST
-  // /api/images/register once, so a mixed selection makes ONE request rather than N.
   pendingRecords.value = []
   pendingSetUid.value  = set.uid
-  const queue: string[] = []
-  for (const p of paths) {
-    isProbeableMultiSeriesPath(p) ? queue.push(p) : pendingRecords.value.push({ path: p })
+
+  // Probe every probeable file up front, in parallel. Only ≥2 series routes to the modal; a
+  // single-series LIF (there's always one snapshot on the same file) never sees the picker. Every
+  // other file goes straight into the register payload as before.
+  const probePromises: Array<Promise<void>> = []
+  const queue: PickerEntry[] = []
+  for (const path of paths) {
+    if (!isProbeableMultiSeriesPath(path)) {
+      pendingRecords.value.push({ path })
+      continue
+    }
+    probePromises.push((async () => {
+      const probe = await probeSeries(path)
+      if (probe && probe.series.length > 1) {
+        queue.push({ path, probe })
+      } else {
+        // 0 or 1 series → no choice to make, add as single-series (the classic path).
+        pendingRecords.value.push({ path })
+      }
+    })())
   }
+  await Promise.all(probePromises)
+
+  // One-shot hint for formats we don't yet probe (CZI/ND2/OIR/IMS/LSM). These silently pick series 0
+  // today; a request with a sample file is the fastest way to widen readlif's coverage (see
+  // formatSupportRequestUrl → feature_request.yml). One log line per BATCH, not per file.
+  const unsupportedExts = unsupportedMultiSeriesExts(paths)
+  if (unsupportedExts.length > 0) {
+    log.info(
+      `Series picking is LIF-only today; ${unsupportedExts.map(e => '.' + e).join(', ')} will ` +
+      `import series 0 by default. Request support (a sample file helps): ` +
+      formatSupportRequestUrl(unsupportedExts),
+      { source: 'manageImages' }
+    )
+  }
+
   pickerQueue.value = queue
   advancePicker()
 }
@@ -93,8 +149,8 @@ function advancePicker() {
 }
 
 function onPickerSave(picks: SeriesEntry[]) {
-  const path = pickerCurrent.value
-  if (path) pendingRecords.value.push(...buildRegisterRecords(path, picks))
+  const entry = pickerCurrent.value
+  if (entry) pendingRecords.value.push(...buildRegisterRecords(entry.path, picks))
   advancePicker()
 }
 
@@ -156,8 +212,9 @@ async function submitRegister() {
 
   <SeriesPickerModal
     v-if="pickerCurrent"
-    :key="pickerCurrent"
-    :filepath="pickerCurrent"
+    :key="pickerCurrent.path"
+    :filepath="pickerCurrent.path"
+    :probe="pickerCurrent.probe"
     @save="onPickerSave"
     @cancel="onPickerCancel"
   />
