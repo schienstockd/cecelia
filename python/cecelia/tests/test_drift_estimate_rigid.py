@@ -13,6 +13,20 @@ import scipy.ndimage
 
 import cecelia.utils.correction_utils as cu
 
+# The conda-forge SimpleITK Windows build has occasionally shipped with a DLL-resolution failure
+# ("DLL load failed while importing _SimpleITK") that runs on Windows CI cannot recover from — the
+# only existing caller in the codebase (`app/src/tasks/editImages/register_run.py`) documents the
+# same issue and lazy-imports for the same reason. When the DLL cannot be loaded, skip the whole
+# suite here: pretending to test the estimator on a runner where its engine cannot even import is
+# worse than a clear "skipped on this platform" line in the report.
+try:
+    import SimpleITK as _sitk_probe          # noqa: F401
+    _SITK_LOADS = True
+except ImportError:
+    _SITK_LOADS = False
+_SITK_SKIP_REASON = ("SimpleITK's shared library failed to load — see the top-of-file note in "
+                     "app/src/tasks/editImages/register_run.py for the Windows conda-forge case.")
+
 
 def _apply_rigid(frame_np, angle_deg, translation_yx, centre_xy=None):
     """Apply the estimator's answer to a frame — the contract P3 will use.
@@ -91,6 +105,7 @@ def _rigid_movie(angles_deg, shifts_yx, shape_yx=(64, 64), seed=0):
     return arr, du, np.asarray(angles_deg, dtype=float), np.asarray(shifts_yx, dtype=float)
 
 
+@unittest.skipUnless(_SITK_LOADS, _SITK_SKIP_REASON)
 class SitkRigidTest(unittest.TestCase):
     def test_recovers_a_known_rotation_and_translation(self):
         """Base case: a movie rotating steadily by 1° per frame and drifting 0.7 px in y, 1.1 px
@@ -221,6 +236,7 @@ class SitkRigidTest(unittest.TestCase):
         self.assertEqual(angles[0], 0.0)
 
 
+@unittest.skipUnless(_SITK_LOADS, _SITK_SKIP_REASON)
 class RigidApplyTest(unittest.TestCase):
     """The applier — `rigid_correct_im` + `rigid_correct_geometry`. The invariant is the same one
     P1 tests at the fit level, extended to the whole trajectory: every frame's corrected version

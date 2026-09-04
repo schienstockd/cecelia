@@ -17,6 +17,16 @@ import numpy as np
 
 import cecelia.utils.correction_utils as cu
 
+# See test_drift_estimate_rigid.py's top-of-file note — the conda-forge SimpleITK Windows build
+# can fail to load its DLL, and the dispatch test below exercises the `sitkRigid` estimator which
+# needs a working SimpleITK. The translation-only estimator tests do not, so this guard sits on
+# ONE test rather than the whole class.
+try:
+    import SimpleITK as _sitk_probe          # noqa: F401
+    _SITK_LOADS = True
+except ImportError:
+    _SITK_LOADS = False
+
 _OME = """<?xml version="1.0" encoding="UTF-8"?>
 <OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06"><Image ID="Image:0"><Pixels
     ID="Pixels:0" DimensionOrder="XYZCT" Type="uint8" SizeT="{t}" SizeC="1" SizeZ="{z}"
@@ -203,6 +213,7 @@ class DriftEstimateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cu.estimate_drift(arr, 0, du, estimator='bundleAdjust')
 
+    @unittest.skipUnless(_SITK_LOADS, "SimpleITK's shared library failed to load")
     def test_sitk_rigid_dispatches_and_reports_angles(self):
         """Dispatch smoke test: `estimate_drift(estimator='sitkRigid')` returns a `DriftEstimate`
         with the `angles` field populated and `residual_rms` None (direct-to-reference has no
