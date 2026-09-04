@@ -187,8 +187,13 @@ const bricksEnabled = computed<boolean>(() => {
   // Auto path: apply the fallback only WITHIN the mode it fired under. `shouldUseBricks` picks
   // the right renderer per mode from scratch on a mode change (3D → bricks for anything big, 2D
   // → flat for anything that fits), and a mode-scoped flag lets that decision run fresh.
-  if (bricksForcedByOom.value === mode.value) return true
-  if (flatForcedByOom.value === mode.value) return false
+  // Nullness gate is load-bearing: `mode` is declared LATER in the setup, so touching `mode.value`
+  // during the initial `watch(bricksEnabled)` dep-collect throws a TDZ ReferenceError. When both
+  // flags are null (the setup-time state), we cannot possibly be forcing anything anyway.
+  const brf = bricksForcedByOom.value
+  const flf = flatForcedByOom.value
+  if (brf !== null && brf === mode.value) return true
+  if (flf !== null && flf === mode.value) return false
   const m = meta.value
   if (m === null) return false
   // Runtime budget when the adapter is up (folds in `settings.viewerCacheMB`); the static floor
