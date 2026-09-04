@@ -78,36 +78,101 @@ def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
         return False          # it accepted the request but did not exit; caller escalates
 
 
+def _reprovision_env() -> None:
+    """Re-provision Pixi + Julia deps after either an apply or a revert — pixi.lock and Manifest may
+    have moved in either direction. Both paths call this."""
+    pixi = shutil.which("pixi") or os.path.expanduser("~/.pixi/bin/pixi")
+    print("Updating environment...")
+    subprocess.run([pixi, "install"], cwd=ROOT, check=False)
+    subprocess.run([_find_julia(), "--project=api", "-e", "using Pkg; Pkg.instantiate()"],
+                   cwd=ROOT, check=False)
+
+
 def _apply_pending_update() -> None:
     """Apply an update staged by a previous run (the `.pending-update` marker + `.update-staging/
     payload`), before the server starts — when nothing is using the files. Best-effort: logs and
-    continues with the current version on any error."""
+    continues with the current version on any error.
+
+    Snapshots the files it's about to overwrite into `.previous-release/payload/<item>`, so the
+    Settings → Software → Revert button has something to roll back to. Only ONE step of history is
+    kept (previous snapshot is discarded each apply)."""
     pending = os.path.join(ROOT, ".pending-update")
     if not os.path.exists(pending):
         return
     payload = os.path.join(ROOT, ".update-staging", "payload")
+    prev_root = os.path.join(ROOT, ".previous-release")
+    prev_payload = os.path.join(prev_root, "payload")
     try:
         tag = open(pending).read().strip()
         if os.path.isdir(payload):
             print(f"Applying staged update {tag}...")
+            shutil.rmtree(prev_root, ignore_errors=True)
+            os.makedirs(prev_payload)
+            # Human-readable marker of what the user is reverting FROM. .cecelia-version is written
+            # by install.sh (stable tag) and by the dev-channel apply (dev @ branch sha); absent on a
+            # source checkout, which is fine — the revert message just says "previous release".
+            cv = os.path.join(ROOT, ".cecelia-version")
+            prev_tag = ""
+            if os.path.isfile(cv):
+                try:
+                    with open(cv, "r", encoding="utf-8") as f:
+                        prev_tag = f.read().strip()
+                except Exception:
+                    prev_tag = ""
+            with open(os.path.join(prev_root, "marker"), "w", encoding="utf-8") as f:
+                f.write(prev_tag)
             for item in os.listdir(payload):
                 src, dst = os.path.join(payload, item), os.path.join(ROOT, item)
-                if os.path.isdir(dst) and not os.path.islink(dst):
-                    shutil.rmtree(dst, ignore_errors=True)
-                elif os.path.exists(dst) or os.path.islink(dst):
-                    os.remove(dst)
+                # Move (not delete) the current version aside, so revert can restore it. `shutil.move`
+                # handles files, directories AND symlinks; we only need to guard against a leftover
+                # in the snapshot dir from a mid-apply crash on a previous run.
+                snap = os.path.join(prev_payload, item)
+                if os.path.exists(snap) or os.path.islink(snap):
+                    if os.path.isdir(snap) and not os.path.islink(snap):
+                        shutil.rmtree(snap, ignore_errors=True)
+                    else:
+                        os.remove(snap)
+                if os.path.exists(dst) or os.path.islink(dst):
+                    shutil.move(dst, snap)
                 shutil.move(src, dst)
         shutil.rmtree(os.path.join(ROOT, ".update-staging"), ignore_errors=True)
         os.remove(pending)
-        # Deps may have changed (pixi.lock / Manifest) — re-provision before launch.
-        pixi = shutil.which("pixi") or os.path.expanduser("~/.pixi/bin/pixi")
-        print("Updating environment...")
-        subprocess.run([pixi, "install"], cwd=ROOT, check=False)
-        subprocess.run([_find_julia(), "--project=api", "-e", "using Pkg; Pkg.instantiate()"],
-                       cwd=ROOT, check=False)
+        _reprovision_env()
         print(f"Update {tag} applied.")
     except Exception as e:  # noqa: BLE001 — never block launch on a failed update
         print(f"Update could not be applied ({e}); continuing with the current version.",
+              file=sys.stderr)
+
+
+def _apply_pending_revert() -> None:
+    """Roll back to the snapshot the previous `_apply_pending_update` left in `.previous-release/`.
+    Same lifecycle as apply — nothing overwrites files while the server is running. Best-effort."""
+    pending = os.path.join(ROOT, ".pending-revert")
+    if not os.path.exists(pending):
+        return
+    prev_root = os.path.join(ROOT, ".previous-release")
+    prev_payload = os.path.join(prev_root, "payload")
+    try:
+        tag = open(pending).read().strip()
+        if not os.path.isdir(prev_payload):
+            print(f"Revert requested to {tag or 'previous release'} but no snapshot on disk; skipping.",
+                  file=sys.stderr)
+            os.remove(pending)
+            return
+        print(f"Reverting to {tag or 'previous release'}...")
+        for item in os.listdir(prev_payload):
+            src, dst = os.path.join(prev_payload, item), os.path.join(ROOT, item)
+            if os.path.isdir(dst) and not os.path.islink(dst):
+                shutil.rmtree(dst, ignore_errors=True)
+            elif os.path.exists(dst) or os.path.islink(dst):
+                os.remove(dst)
+            shutil.move(src, dst)
+        shutil.rmtree(prev_root, ignore_errors=True)
+        os.remove(pending)
+        _reprovision_env()
+        print(f"Revert to {tag or 'previous release'} applied.")
+    except Exception as e:  # noqa: BLE001
+        print(f"Revert could not be applied ({e}); continuing with the current version.",
               file=sys.stderr)
 
 
@@ -144,7 +209,9 @@ def main() -> int:
     while True:
         # Apply staged updates every iteration, not just at first launch — Settings → System Restart
         # re-enters this loop with the Julia backend down, which is the one moment we can swap
-        # api/src/*.jl without a running process locking them.
+        # api/src/*.jl without a running process locking them. Revert runs FIRST so a user who
+        # somehow stacked a revert on top of an unrelated apply gets what they asked for.
+        _apply_pending_revert()
         _apply_pending_update()
         proc = subprocess.Popen(
             [_find_julia(), "--project", "src/server.jl"],

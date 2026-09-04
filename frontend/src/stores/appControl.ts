@@ -44,13 +44,17 @@ export const useAppControlStore = defineStore('appControl', () => {
   // The check/apply/staging backend + Settings UI already exist; this store centralises the STATE so
   // the header badge and the Settings panel never re-implement the fetch. See docs/todo/ONBOARDING_PLAN.md D5.
   const updateCurrent   = ref('')
-  const updateLatest    = ref<string | null>(null)
+  const updateLatest    = ref<string | null>(null)    // display label ("v0.2.0" or "dev@1a2b3c4")
+  const updateLatestRef = ref<string | null>(null)    // what apply sends: a tag OR a full sha
   const updateAvailable = ref(false)
   const updateScope     = ref<'user' | 'system' | 'dev' | ''>('')  // system → admin-only; dev → no apply
+  const updateChannel   = ref<'stable' | 'dev'>('stable')
   const updateChecking  = ref(false)
   const updateBusy      = ref(false)
   const updateMsg       = ref('')
   const updateDismissed = ref(false)                               // header badge "remind me later" (session)
+  const updateHasPrevious = ref(false)                             // Revert button visibility
+  const updateRevertBusy  = ref(false)
   // Release-notes surfacing (What's New modal — WHATS_NEW_PLAN.md). The older header badge +
   // Settings panel don't read these; they're only for the modal.
   const updateUrl       = ref('')
@@ -59,33 +63,56 @@ export const useAppControlStore = defineStore('appControl', () => {
   // in-app apply is only offered for a per-user install (not a shared system install or dev checkout)
   const canApplyUpdate  = computed(() => updateScope.value === 'user')
 
-  async function checkUpdate() {
+  // Channel is a query param, not persisted server-side: the toggle is a client preference, and the
+  // running install itself is not branded stable/dev (the SAME server serves either). Reads the
+  // `cc.preferDevChannel` localStorage key set by `useSettingsStore` when the caller doesn't pass an
+  // override, so App.vue's app-wide check and WhatsNewDialog's badge check both honour the toggle
+  // without every caller threading the setting through. See docs/SHIPPING.md → install channels.
+  async function checkUpdate(channel?: 'stable' | 'dev') {
+    const ch = channel ?? (localStorage.getItem('cc.preferDevChannel') === 'true' ? 'dev' : 'stable')
     updateChecking.value = true; updateMsg.value = ''
     try {
-      const d = await (await fetch('/api/update/check')).json()
-      updateCurrent.value   = d.current ?? ''
-      updateLatest.value    = d.latest ?? null
-      updateAvailable.value = !!d.updateAvailable
-      updateScope.value     = d.scope ?? ''
-      updateUrl.value       = d.url ?? ''
-      updateNotes.value     = d.releaseNotes ?? ''
-      updatePublished.value = d.publishedAt ?? ''
+      const d = await (await fetch(`/api/update/check?channel=${ch}`)).json()
+      updateCurrent.value     = d.current ?? ''
+      updateLatest.value      = d.latest ?? null
+      updateLatestRef.value   = d.latestRef ?? d.latest ?? null   // stable: tag IS the ref; dev: full sha
+      updateAvailable.value   = !!d.updateAvailable
+      updateScope.value       = d.scope ?? ''
+      updateChannel.value     = d.channel ?? ch
+      updateUrl.value         = d.url ?? ''
+      updateNotes.value       = d.releaseNotes ?? ''
+      updatePublished.value   = d.publishedAt ?? ''
+      updateHasPrevious.value = !!d.hasPrevious
       if (d.error) updateMsg.value = d.error
     } catch { updateMsg.value = 'Could not reach the update server.' }
     finally { updateChecking.value = false }
   }
 
   async function applyUpdate() {
-    if (!updateLatest.value || updateBusy.value) return
+    if (!updateLatestRef.value || updateBusy.value) return
     updateBusy.value = true; updateMsg.value = ''
     try {
-      const res = await _post('/api/update/apply', { version: updateLatest.value })
+      const res = await _post('/api/update/apply',
+        { version: updateLatestRef.value, channel: updateChannel.value })
       const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
       updateMsg.value = res.ok ? (d.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`)
                                : (d.error ?? 'Update failed.')
-      if (res.ok) updateAvailable.value = false
+      if (res.ok) { updateAvailable.value = false; updateHasPrevious.value = true }
     } catch { updateMsg.value = 'Update failed (could not reach the server).' }
     finally { updateBusy.value = false }
+  }
+
+  async function revertUpdate() {
+    if (!updateHasPrevious.value || updateRevertBusy.value) return
+    updateRevertBusy.value = true; updateMsg.value = ''
+    try {
+      const res = await _post('/api/update/revert')
+      const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
+      updateMsg.value = res.ok ? (d.message ?? 'Revert staged — restart Cecelia to finish.')
+                               : (d.error ?? 'Revert failed.')
+      if (res.ok) updateHasPrevious.value = false
+    } catch { updateMsg.value = 'Revert failed (could not reach the server).' }
+    finally { updateRevertBusy.value = false }
   }
 
   function dismissUpdate() { updateDismissed.value = true }
@@ -155,9 +182,11 @@ export const useAppControlStore = defineStore('appControl', () => {
   }
 
   return { dev, busy, message, setupRequired, worktrees, canSwitch,
-           updateCurrent, updateLatest, updateAvailable, updateScope, updateChecking, updateBusy,
-           updateMsg, updateDismissed, updateUrl, updateNotes, updatePublished, canApplyUpdate,
-           checkUpdate, applyUpdate, dismissUpdate,
+           updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
+           updateChecking, updateBusy, updateMsg, updateDismissed,
+           updateUrl, updateNotes, updatePublished, canApplyUpdate,
+           updateHasPrevious, updateRevertBusy,
+           checkUpdate, applyUpdate, revertUpdate, dismissUpdate,
            refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
 })
 

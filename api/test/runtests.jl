@@ -260,6 +260,22 @@ end
     # Anchoring: a valid tag with junk appended must NOT pass (an unanchored regex would let it).
     @test _apply_precheck("v0.1.0/evil"; scope = "user", installed = true) !== nothing
     @test _apply_precheck("xv0.1.0"; scope = "user", installed = true) !== nothing
+
+    # Dev channel: `version` is a full 40-char sha, not a tag. Same guard-rail shape — anchored,
+    # interpolated into an archive URL, and the same scope/install rules apply.
+    okdev(sha) = _apply_precheck(sha; scope = "user", installed = true, channel = "dev")
+    @test okdev("0123456789abcdef0123456789abcdef01234567") === nothing
+    @test okdev("f"^40) === nothing
+    # Rejected: too short (short sha), too long, uppercase (GitHub returns lowercase, and the
+    # comparison in `_installed_dev_sha` lowercases both sides — but for the URL, be strict).
+    for bad in ["deadbeef", "0"^39, "0"^41, "0123456789ABCDEF0123456789abcdef01234567",
+                "v0.1.0", "main", "0"^40 * "/..", "0"^40 * " x", "../etc/passwd"]
+        r = _apply_precheck(bad; scope = "user", installed = true, channel = "dev")
+        @test r !== nothing && r[1] == 400
+    end
+    # Scope + install rules apply to dev too.
+    @test _apply_precheck("0"^40; scope = "system", installed = true, channel = "dev")[1] == 403
+    @test _apply_precheck("0"^40; scope = "dev",    installed = false, channel = "dev")[1] == 400
 end
 
 @testset "API: setup wizard" begin
@@ -4679,6 +4695,7 @@ end
         "/api/tasks/custom-modules/reload",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
+        "/api/update/revert",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
         "/api/viewer/pick-cell",
         "/api/viewer/pick-rect",
@@ -4694,7 +4711,7 @@ end
         "/api/notebooks/restart", "/api/notebooks/shutdown",
         "/api/preview/run", "/api/preview/start",
         "/api/preview/stop", "/api/storage/reclaim",
-        "/api/update/apply",
+        "/api/update/apply", "/api/update/revert",
     ]
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
@@ -4725,7 +4742,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 83 && length(POST_ROUTES) == 101
+    @test length(GET_ROUTES) == 83 && length(POST_ROUTES) == 102
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
