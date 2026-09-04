@@ -167,7 +167,7 @@ function _load_palettes()
         @warn "palettes.json missing — falling back to frozen literals. Restore \
                frontend/src/plots/palettes.json to keep browser + Julia in sync." path = _PALETTES_JSON_PATH
         return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
-                modes    = ["track", "speed", "solid"],
+                modes    = ["track", "speed", "solid", "pop"],
                 heat     = collect(_HEAT_STOPS_FALLBACK))
     end
     doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
@@ -277,9 +277,12 @@ end
 # BOTH 2D and 3D atomically.
 #
 # `track_color_mode` interaction — when `colour_by` is set, tracks force to
-# `"solid"` (the arriving cell's colour). Viewer's `color_by` overrides its
-# categorical/speed palettes the same way; matching that keeps the browser view
-# and the movie in the same colours.
+# `"pop"` (the arriving cell's colour, which the colour_by resolver already
+# baked into `col`). Viewer's `color_by` overrides its categorical/speed
+# palettes the same way; matching that keeps the browser view and the movie
+# in the same colours. NOTE the target is "pop", not "solid": after the two
+# modes diverged, "solid" paints a uniform palette[0] and would discard the
+# colour_by result.
 
 _prep_overrides(colour_overrides) = colour_overrides === nothing ? nothing :
     Dict{String,RGB{N0f8}}(String(k) => hex_to_rgb(String(v)) for (k, v) in colour_overrides)
@@ -365,8 +368,10 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
     # When colourBy is on, tracks paint in the arriving-cell colour (the legacy viewer's `color_by`
-    # semantics on the tracks layer). "track"/"speed" would ignore what we resolved.
-    effective_tcm = cb_col === nothing ? String(track_color_mode) : "solid"
+    # semantics on the tracks layer). "track"/"speed" would ignore what we resolved. Since the two
+    # per-source modes diverged, the target is "pop" (uses `col`, i.e. the colour_by result), not
+    # "solid" (uniform palette[0]) — see the docstring above `_prep_overrides`.
+    effective_tcm = cb_col === nothing ? String(track_color_mode) : "pop"
     pt = String(pop_type)
     vn = String(value_name)
     is_track_pt = pt in ("track", "trackclust")
@@ -576,12 +581,22 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::Abstrac
             end
         end
         s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
+        # "solid" collapses to ONE colour for every ribbon in this author call (there is only ever
+        # one (value_name, pop_type) source per _build_overlay_state, so the browser's palette-by-
+        # source-index reduces to palette[0] here). "pop" keeps `col` — the pop's own swatch that
+        # was baked into track_hist's key upstream. This is the Julia mirror of the browser's split.
+        solid_col = CECELIA_TRACK_PALETTE[1]
         for (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col) in raw
             colour = if tcm == "track"
                 CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
             elseif tcm == "speed"
                 s_span > 0 ? _heat_ramp((sp2 - s_min) / s_span) : RGB{N0f8}(0.9, 0.9, 0.9)
+            elseif tcm == "solid"
+                solid_col
             else
+                # "pop" (and any other future mode that falls through here): the resolved per-cell
+                # colour, which is the pop's own swatch for gated tracks and `all_tracks_colour`
+                # in the whole-segmentation path.
                 col
             end
             bag = get!(segs_by_end, t1) do

@@ -385,7 +385,7 @@ export function buildTrackBuffer(
  *  because a JSON import comes in as `string[]`; the parity test in `palettes.test.ts` asserts the
  *  array matches the union so a JSON edit that adds/removes/renames a mode still fails a test
  *  rather than silently mismatching the type. */
-export type TrackColorMode = 'track' | 'speed' | 'solid'
+export type TrackColorMode = 'track' | 'speed' | 'solid' | 'pop'
 export const TRACK_COLOR_MODES: readonly TrackColorMode[] =
   palettesJson.trackColorModes as readonly TrackColorMode[]
 
@@ -412,6 +412,10 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  * - `'solid'`: one palette colour per SOURCE vn — so a viewer showing `default` + `coastalFg` at
  *   once shows two clearly distinguishable "colour swarms" rather than a rainbow that hides which
  *   vn a ribbon came from. This is what the user asked for when multiple track sources are shown.
+ * - `'pop'`: the parent gated population's own colour (the swatch shown next to the pop in the
+ *   Tracks section), so ribbons match the population's visual identity across the app. Ignores
+ *   the Solid legend's ColourPicker override — that override is a per-source recolour and doesn't
+ *   belong here. Sources without a pop colour (per-vn track eyes) fall back to the palette cycle.
  *
  * IDs are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in payload A's track
  * 1 never links to a cell in payload B's track 1 — a naive concat would draw a phantom segment.
@@ -420,7 +424,9 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  * have solid color for all tracks. to distinguish them when multiple track sources are shown".
  */
 export function buildMultiTrackBuffer(
-  payloads: readonly { vn: string; payload: OverlayPayload; colour?: string }[],
+  payloads: readonly {
+    vn: string; payload: OverlayPayload; colour?: string; popColour?: string
+  }[],
   meta: ViewerMeta | null, palette: readonly string[], mode: TrackColorMode = 'track',
 ): MultiTrackResult {
   if (!payloads.length || !meta) return EMPTY_MULTI
@@ -489,6 +495,13 @@ export function buildMultiTrackBuffer(
   const solidCache: [number, number, number][] = payloads.map((p, i) =>
     hexToUnit(p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
   const solidRgb = (src: number): [number, number, number] => solidCache[src] ?? [0.9, 0.9, 0.9]
+  // Per-source POPULATION colour: the gated pop's own swatch (`pop.colour`) — set only for gated
+  // track pops, not for the per-vn track eye. When absent, cycle the palette (so a non-pop source
+  // still draws something rather than going invisible). Independent of `solidCache` so the Solid
+  // mode's ColourPicker override doesn't leak into Population mode.
+  const popCache: [number, number, number][] = payloads.map((p, i) =>
+    hexToUnit(p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
+  const popRgb = (src: number): [number, number, number] => popCache[src] ?? [0.9, 0.9, 0.9]
   const trackRgb = (id: number): [number, number, number] =>
     hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
   const speedRgb = (speedSq: number): [number, number, number] => {
@@ -504,6 +517,7 @@ export function buildMultiTrackBuffer(
     const s = segs[n], a = rows[s.ai], b = rows[s.bi]
     const rgb = mode === 'speed' ? speedRgb(s.speedSq)
               : mode === 'solid' ? solidRgb(s.source)
+              : mode === 'pop' ? popRgb(s.source)
               : trackRgb(a.id)
     const o = n * SEG_STRIDE
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
