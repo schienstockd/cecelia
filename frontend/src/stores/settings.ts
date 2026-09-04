@@ -51,13 +51,6 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.animationSyncViewer') === 'true'  // default false
   )
 
-  // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
-  // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
-  // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
-  const viewerResetOnReload = ref(
-    localStorage.getItem('cc.viewerResetOnReload') === 'true'  // default false
-  )
-
   // Contrast/colormap/T-Z, autosaved per image the moment they change and reloaded on open. Default ON
   // (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 8): contrast is deliberately image state rather than a
   // copy inside every movie config, and the movie path force-loads it (`autoLoadProps = true` in
@@ -535,7 +528,6 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
   watch(animationSyncViewer,      v => localStorage.setItem('cc.animationSyncViewer',      String(v)))
-  watch(viewerResetOnReload,      v => localStorage.setItem('cc.viewerResetOnReload',      String(v)))
   watch(viewerAutoSaveLayerProps, v => localStorage.setItem('cc.viewerAutoSaveLayerProps', String(v)))
   watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
   watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
@@ -611,7 +603,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncViewer, viewerResetOnReload, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, autoRefreshOnTask, viewerAutoUpdate, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerLabelOpacity, viewerLabelContour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

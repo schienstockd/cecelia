@@ -26,6 +26,7 @@ import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../ut
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
+import { publishViewerCacheClear } from '../lib/viewerCacheClearChannel'
 import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
 
@@ -607,7 +608,7 @@ function onTaskStatus(data: Record<string, unknown>) {
   const openUid = projectStore.openImageUid
   const taskUid = String(data.imageUid ?? '')
   if (!openUid || taskUid !== openUid) return
-  reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
+  reloadViewer()
   // Ping the WebGPU popup so it refetches overlays (pop counts / colours may have changed after a
   // seg or gating task). Slabs are NOT re-invalidated from here — a mask-writing task rewrites the
   // label store on disk, and the popup keeps its cached mask until `labelName` changes. That gap
@@ -615,15 +616,21 @@ function onTaskStatus(data: Record<string, unknown>) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
   }
+  // Same-store rewrite (e.g. a re-run of smoothing overwriting `ccidSmoothed.ome.zarr` in place)
+  // does not change `(imageUid, valueName)`, so #779's store-identity check can't detect it and the
+  // tile atlas / brick page table would keep serving cached bytes from the previous run. Bump the
+  // shared cache-clear rev — every viewer window threads it into its sourceId, so the next
+  // reallocate invalidates the same way a version swap does.
+  publishViewerCacheClear()
 }
 
 // Refresh the SHOWN image. Data-only by default (ping the viewer to refetch overlays; the pyramid
-// and camera stay); only reopen the whole image when the user ticked reset, or nothing is shown yet.
-// This is what the eye (on the already-open image) and finished tasks call, so a plain reload no
-// longer yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset /
-// uID change).
+// and camera stay); only reopen the whole image when nothing is shown yet. The old
+// `viewerResetOnReload` toggle existed to force a full reopen after pixels change — auto-
+// invalidation via `viewerCacheClearChannel` now handles that without swapping the store or
+// resetting the camera, so the toggle is gone.
 function reloadViewer() {
-  if (settings.viewerResetOnReload || !projectStore.openImageUid) openInViewer(selectedValueName.value)
+  if (!projectStore.openImageUid) openInViewer(selectedValueName.value)
   else pingViewerOverlays()
 }
 
@@ -635,7 +642,12 @@ function onTaskResult(data: Record<string, unknown>) {
   const addedValueName = meta.valueName as string | undefined
   if (addedValueName) {
     selectedValueName.value = addedValueName
-    if (settings.viewerAutoUpdate) reloadViewer()   // data-only unless reset
+    if (settings.viewerAutoUpdate) {
+      reloadViewer()
+      // Same rationale as `onTaskStatus`: task result carrying a valueName means the store's
+      // pixels changed. Bump the cache-clear rev so a same-store rewrite invalidates too.
+      publishViewerCacheClear()
+    }
   }
 
   const labelValueName = meta.labelValueName as string | undefined
@@ -690,12 +702,6 @@ onUnmounted(() => {
           @click="settings.viewerAutoUpdate = !settings.viewerAutoUpdate"
           v-tooltip.bottom="'Auto-update: refresh the viewer whenever a task finishes on that image'"
         ><i class="pi pi-refresh" /></button>
-
-        <button
-          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerResetOnReload }"
-          @click="settings.viewerResetOnReload = !settings.viewerResetOnReload"
-          v-tooltip.bottom="'Reopen the whole image, not just data — needed after pixels change'"
-        ><i class="pi pi-image" /></button>
 
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.viewerAutoSaveLayerProps }"
