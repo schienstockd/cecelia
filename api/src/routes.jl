@@ -2789,6 +2789,32 @@ function _extra_meta(meta::AbstractDict)
     out
 end
 
+# Enrich the per-image run log with each entry's OUTPUT value name — the version it wrote — so the
+# frontend can draw a lineage (`inputValueName → outputValueName`) without replicating the
+# spec-driven `namespace` resolution in TypeScript. The input name is already the entry's
+# `valueName` field. `task_output_name` returns "" for tasks that name no output (imports, plots,
+# measurements onto an existing set) — those become terminal nodes with no outgoing edge, which is
+# correct. Wrapped per-entry so a task removed from the registry doesn't fail the whole payload.
+function _enriched_run_log(img::CciaImage)
+    entries = read_run_log(img)
+    out = Vector{Any}(undef, length(entries))
+    for (i, e) in pairs(entries)
+        d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
+        p = get(d, "params", nothing)
+        if p isa AbstractDict
+            params = Dict{String,Any}(String(k) => v for (k, v) in p)
+            try
+                name = Cecelia.task_output_name(get(d, "fun", ""), params)
+                isempty(name) || (d["outputValueName"] = name)
+            catch
+                # unknown fun / spec load failure — leave outputValueName absent
+            end
+        end
+        out[i] = d
+    end
+    out
+end
+
 # Frontend-shaped payload for one image, sourced from the model. Response shaping
 # (camelCase, field selection) is the API's job; data access goes through CciaImage
 # so ccid.json parsing has a single home.
@@ -2876,7 +2902,7 @@ function _image_payload(img::CciaImage)
         qc              = _image_qc_payload(img),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
-        runLog          = read_run_log(img),
+        runLog          = _enriched_run_log(img),
     )
 end
 
