@@ -32,6 +32,7 @@
         { "label": "Previous frame (rolling)", "value": "previous" },
         { "label": "First frame (fixed)",      "value": "first" }
       ],
+      "figure": "flowRegister",
       "tip": "'previous' rolls each frame to t-1; 'first' pins every frame to t=0"
     },
     {

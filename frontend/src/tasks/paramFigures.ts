@@ -25,6 +25,7 @@ import { smoothFigure, smoothSpatialFigure } from './smoothVis'
 import { driftFigure } from './driftVis'
 import { driftSmoothFigure } from './driftSmoothVis'
 import { stackAlignFigure } from './stackAlignVis'
+import { flowRegisterFigure } from './flowRegisterVis'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
@@ -190,6 +191,34 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       headings: ['Offset planes', 'Different depths', 'Middle smeared'],
       storageKey: 'stack-align-figure',
       defaultW: 620, defaultH: 380,
+    }
+  },
+
+  /**
+   * Flow-based per-pixel registration. Three columns — non-rigid regional flex, uniform bulk
+   * drift, and a static scene — show the three regimes that separate a per-pixel warp from any
+   * rigid one. `referenceMode`, `aggressiveness` and `maxShiftPx` feed the simulator so what
+   * you see is what the runner will do.
+   */
+  flowRegister: ctx => {
+    const mode = String(ctx.values?.referenceMode ?? 'previous') === 'first' ? 'first' : 'previous'
+    const aggr = (['gentle', 'balanced', 'strong'] as const)
+      .includes(String(ctx.values?.aggressiveness ?? 'balanced') as never)
+      ? String(ctx.values?.aggressiveness ?? 'balanced') as 'gentle' | 'balanced' | 'strong'
+      : 'balanced'
+    const { vis, note } = flowRegisterFigure({
+      referenceMode: mode,
+      aggressiveness: aggr,
+      maxShiftPx: num(ctx.values?.maxShiftPx, 16),
+    })
+    return {
+      vis,
+      note,
+      title: 'Flow-based registration',
+      tip: 'Show what the aligner does under the current knobs',
+      headings: ['Regional flex', 'Bulk drift', 'Static'],
+      storageKey: 'flow-register-figure',
+      defaultW: 560, defaultH: 340,
     }
   },
 
