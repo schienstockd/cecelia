@@ -99,15 +99,18 @@ btrack       = ">=0.7"
 # TypeError on the first tile) and `LearnedAffinityInference(seed_blur_sigma=...)`,
 # `opticalFlow.train` calls
 # `train_with_metrics(val_frames=..., on_epoch=...)` and reads `history['floor_<term>']` (the
-# `lossFloors` the convergence plot subtracts), and `cleanupImages.smooth` calls
-# `gated_frames`/`noise_sigma` for `temporalStat="gated"` — none of which exists before this commit.
+# `lossFloors` the convergence plot subtracts), `cleanupImages.smooth` calls
+# `gated_frames`/`noise_sigma` for `temporalStat="gated"`, and the SUPPORT denoise path
+# (`cleanupImages.denoise` + `opticalFlow.trainSupportDenoise`) calls `coastal.support.train_support`
+# and `coastal.support.denoise_stack` (added when SUPPORT migrated OUT of cecelia's vendor tree into
+# coastal — same pattern as CPnet). None of these exist before this commit.
 # An older rev mostly fails at RUN time (TypeError), not at install — the Python tests stub coastal
 # deliberately. The ONE thing CI does catch is a rollback past `gated_frames`: `smooth_run.py` imports
 # it at module scope, so `test_smooth_runner` errors on load rather than skipping. Nothing catches a
 # rollback past the `segment.coastal` / `opticalFlow.train` calls above — and the floors are the
 # quietest of the three: a rollback simply writes `lossFloors: {}`, which the panel treats as "this
 # model predates floors" and greys the toggle out, so the feature disappears with no error anywhere.
-coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "5ff388746e13243d889a68cff5c4f44795c12ac2" }
+coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "8267497d067aaffd3b342eb844ac70304a311e94" }
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"

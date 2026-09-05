@@ -69,6 +69,21 @@ class InstalledCoastalContractTest(unittest.TestCase):
         missing = _accepts(train_with_metrics, ['val_frames', 'on_epoch'])
         self.assertEqual(missing, [], f'train_with_metrics lacks {missing}')
 
+    def test_support_wrappers_are_there(self):
+        """`train_support_denoise_run.py` + `denoise_run.py` import these at MODULE scope, so a
+        rollback past the SUPPORT-in-coastal migration errors on runner load. `build_model` is the
+        ONE arch-dict → SUPPORT(...) mapper that trainer + inference share; a rename here would
+        silently break manifest round-trip."""
+        from coastal.support import train_support, denoise_stack, build_model  # noqa: F401
+        train_missing = _accepts(train_support,
+                                 ['volumes', 'arch', 'epochs', 'batch_size', 'lr',
+                                  'device', 'on_progress', 'on_log'])
+        self.assertEqual(train_missing, [], f'train_support lacks {train_missing}')
+        denoise_missing = _accepts(denoise_stack,
+                                   ['arr_tyx', 'state_dict', 'arch', 'batch_size',
+                                    'device', 'on_progress', 'on_log'])
+        self.assertEqual(denoise_missing, [], f'denoise_stack lacks {denoise_missing}')
+
 
 if __name__ == '__main__':
     unittest.main()

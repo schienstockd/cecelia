@@ -56,14 +56,14 @@ def _ome_xml(size_t, size_z, size_c, size_y, size_x):
 
 try:
     import torch
-    from cecelia.vendor.support import SUPPORT
+    from coastal.support import denoise_stack
     _HAS_TORCH = True
 except Exception:
     _HAS_TORCH = False
 
 
 @unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
-@unittest.skipUnless(_HAS_TORCH, 'torch + vendored SUPPORT required')
+@unittest.skipUnless(_HAS_TORCH, 'torch + coastal.support required')
 class DenoiseRunnerTest(unittest.TestCase):
     SHAPE = dict(size_t=8, size_z=1, size_c=2, size_y=32, size_x=32)
 
@@ -98,17 +98,11 @@ class DenoiseRunnerTest(unittest.TestCase):
         self.shape = shape
 
         # ── build + save the tiny model + manifest ────────────────────────────
+        # coastal.support.build_model is the ONE mapper from `arch` → SUPPORT(...) kwargs;
+        # reuse it here so a spec change in coastal fails this test loudly rather than drifting.
+        from coastal.support import build_model
         self.model_path = os.path.join(self.dir, 'tiny.pt')
-        model = SUPPORT(
-            in_channels=self.ARCH['inputFrames'],
-            mid_channels=self.ARCH['midChannels'],
-            depth=self.ARCH['depth'],
-            blind_conv_channels=self.ARCH['blindConvChannels'],
-            one_by_one_channels=self.ARCH['oneByOneChannels'],
-            last_layer_channels=self.ARCH['lastLayerChannels'],
-            bs_size=self.ARCH['bsSize'],
-            bp=self.ARCH['bp'],
-        )
+        model = build_model(self.ARCH, torch.device('cpu'))
         torch.save(model.state_dict(), self.model_path)
         self.manifest = {'kind': 'denoise-support', 'arch': self.ARCH,
                          'training': {'imageUids': ['test'], 'epochs': 0},
