@@ -27,17 +27,25 @@ export interface DenoiseArch {
 export interface DenoiseTraining {
   imageUids?: string[]
   valueName?: string
-  channel?: number
+  channelIndices?: number[]
   epochs?: number
   batchSize?: number
   learningRate?: number
   midZOnly?: boolean
   framesPerImage?: number[]
+  // Loss curve travels with the model (banked here + in the QC sidecar). The Training convergence
+  // plot reads these — a model imported from another project has no run log to fall back on.
+  epochLosses?: number[]
+  finalLoss?: number
+  firstLoss?: number
+  lossDrop?: number
 }
 
 export interface DenoiseManifest {
   kind: 'denoise-support'
-  channelName?: string
+  // A denoise model pools N channels into one training run (DENOISE_INTEGRATION_PLAN.md D3
+  // amendment, measured on fXgbTl 2026-09-05); the list is what the vault label reads.
+  channels?: string[]
   arch?: DenoiseArch
   training?: DenoiseTraining
 }
@@ -61,15 +69,19 @@ export function denoiseModelDetailGroups(m: DenoiseManifest | null | undefined):
   const tr   = m.training ?? {}
 
   const known = new Set([
-    'kind', 'channelName', 'arch', 'training',
+    'kind', 'channels', 'arch', 'training',
   ])
   const other = Object.entries(m).filter(([k]) => !known.has(k))
     .map(([k, v]) => field(k, v, true))
 
+  // Number of loss points is user-relevant (matches `training.epochs` when the run wasn't cancelled);
+  // the raw list is rendered by the Training convergence plot, so no need to dump the vector here.
+  const nLosses = Array.isArray(tr.epochLosses) ? tr.epochLosses.length : null
+
   return [
     { label: 'Model', fields: filter([
         field('Kind', m.kind),
-        field('Channel', m.channelName),
+        field('Channels', m.channels),
     ])},
     { label: 'Architecture', fields: filter([
         field('Temporal window',   arch.inputFrames),
@@ -85,12 +97,15 @@ export function denoiseModelDetailGroups(m: DenoiseManifest | null | undefined):
     { label: 'Training', fields: filter([
         field('Images',       tr.imageUids, true),
         field('Input version', tr.valueName),
-        field('Channel index', tr.channel),
+        field('Channel indices', tr.channelIndices, true),
         field('Epochs',       tr.epochs),
         field('Batch size',   tr.batchSize),
         field('Learning rate', tr.learningRate),
         field('Middle Z only', tr.midZOnly),
         field('Frames per image', tr.framesPerImage, true),
+        field('Final loss',   tr.finalLoss),
+        field('Loss drop',    tr.lossDrop),
+        field('Loss samples', nLosses),
     ])},
     ...(other.length ? [{ label: 'Other', fields: filter(other) }] : []),
   ].filter(g => g.fields.length)

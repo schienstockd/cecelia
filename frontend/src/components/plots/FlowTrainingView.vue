@@ -44,10 +44,17 @@
   term, because the only thing you read off it is the GAP to its own training line, and a second
   colour would make that a legend lookup instead of a picture.
 
-  Data is the model's own manifest, read through `GET /api/optical-flow/models` — the route the
-  picker and the vault already use, so there is no second listing that can disagree with them. Models
-  trained before the curves were recorded say so rather than drawing an empty box; the run kept only
-  `finalLoss`, and that is not recoverable.
+  Data is the model's own manifest, resolved via `useVaultModel(chosen)` — the composable fetches
+  BOTH vaults (flow + denoise) once and dispatches on the picked name, so this plot works for either
+  kind without the caller having to know which vault the model came from. Models trained before the
+  curves were recorded say so rather than drawing an empty box; the run kept only `finalLoss`, and
+  that is not recoverable.
+
+  Denoise (SUPPORT) trains a SINGLE L1+L2 blend, so its manifest carries `training.epochLosses` — a
+  flat list, one series. The multi-term chip row + minus-floor toggle are hidden for that kind
+  because neither applies (there is only one term, and there are no per-term floors). Every other
+  control — log Y, held-out (n/a here since SUPPORT is self-supervised), CSV/PNG/SVG export — is
+  the same for both kinds because a loss curve is a loss curve.
 
   Observable Plot directly, like the cluster HMM panels. The summary `PlotChart` builds from a
   `PlotDataResponse` (server-aggregated CELL data), and its `trend` chart is a LOESS fit — the wrong
@@ -61,16 +68,14 @@ import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } fr
 import { distinctColors } from '../../plots/plot'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
-import { lossSeries, lossTable, type LossCurves } from '../../plots/lossCurves'
+import { useVaultModel } from '../../composables/useVaultModel'
+import { lossSeries, lossTable } from '../../plots/lossCurves'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import type { FlowManifest } from '../../utils/flowManifest'
+import type { DenoiseManifest } from '../../utils/denoiseManifest'
 
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
                        model?: string }
-interface Manifest { lossCurves?: LossCurves; lossFloors?: LossCurves
-                     lossWeights?: Record<string, number>; epochs?: number
-                     // NOT one of `lossWeights` — it is not a term. See the note above the terms row.
-                     foregroundBoundaryWeight?: number }
-interface FlowModel { name: string; label: string; stem: string; manifest: Manifest }
 
 // `model` comes from the HOST — the vault owns the selection and its global/local scope, exactly as
 // the population manager owns which pops the plots highlight. No picker here: two pickers for one
@@ -84,15 +89,6 @@ interface FlowModel { name: string; label: string; stem: string; manifest: Manif
 const props = defineProps<{ state: TrainState; model?: string }>()
 const project = useProjectStore()
 
-const models = ref<FlowModel[]>([])
-const loading = ref(false)
-const error = ref('')
-const host = useTemplateRef<HTMLElement>('host')
-// @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
-let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
-let node: SVGElement | HTMLElement | null = null
-const forceLight = ref(false)
-
 const state = computed(() => props.state)
 const logY = computed({ get: () => state.value.logY ?? false, set: v => (state.value.logY = v) })
 const raw = computed({ get: () => state.value.raw ?? false, set: v => (state.value.raw = v) })
@@ -104,13 +100,32 @@ const minusFloor = computed({ get: () => state.value.minusFloor ?? true,
                               set: v => (state.value.minusFloor = v) })
 // the host's pick wins; `state.model` is the board's local-scope slot value, also host-written
 const chosen = computed(() => props.model || state.value.model || '')
-const current = computed(() => models.value.find(m => m.name === chosen.value) ?? null)
+// One reactive resolver for either vault kind — the plot doesn't care which vault holds the model,
+// it just needs the manifest + a kind so it knows which shape to render.
+const { kind, manifest, loading, error, refresh } = useVaultModel(chosen)
+const flowManifest = computed(() => kind.value === 'flow' ? (manifest.value as FlowManifest | null) : null)
+const denoiseManifest = computed(() =>
+  kind.value === 'denoise' ? (manifest.value as DenoiseManifest | null) : null)
 
-const floors = computed(() => current.value?.manifest?.lossFloors ?? null)
+const host = useTemplateRef<HTMLElement>('host')
+// @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
+let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
+let node: SVGElement | HTMLElement | null = null
+const forceLight = ref(false)
+
+const floors = computed(() => flowManifest.value?.lossFloors ?? null)
 const hasFloors = computed(() => Object.keys(floors.value ?? {}).length > 0)
-const series = computed(() => lossSeries(current.value?.manifest?.lossCurves,
-                                         current.value?.manifest?.lossWeights, raw.value,
-                                         floors.value, minusFloor.value && hasFloors.value))
+// One series builder per kind. Flow → multi-term via `lossSeries` (weights, floors, val). Denoise →
+// a single L1+L2-blend series from `training.epochLosses`, with `weight:1`, no val, no floor.
+const series = computed(() => {
+  if (kind.value === 'denoise') {
+    const losses = denoiseManifest.value?.training?.epochLosses ?? []
+    if (!losses.length) return []
+    return [{ term: 'loss', values: losses, weight: 1, floored: false }]
+  }
+  return lossSeries(flowManifest.value?.lossCurves, flowManifest.value?.lossWeights, raw.value,
+                    floors.value, minusFloor.value && hasFloors.value)
+})
 const termOptions = computed<ChipOption[]>(() => series.value.map(s => ({
   value: s.term,
   label: s.term,
@@ -130,40 +145,23 @@ const rows = computed(() => shown.value.flatMap(s =>
   s.values.map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
 // Held-out curves, drawn dashed in the SAME colour as their term. The only thing anyone reads off a
 // validation curve is the gap to its own training curve, so a second colour would turn the
-// comparison into a legend lookup.
+// comparison into a legend lookup. Denoise (SUPPORT) is self-supervised, no held-out curve exists.
 const valRows = computed(() => shown.value.flatMap(s =>
-  (s.val ?? []).map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
-const hasVal = computed(() => shown.value.some(s => s.val?.length))
+  ((s as { val?: number[] }).val ?? []).map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
+const hasVal = computed(() => shown.value.some(s => (s as { val?: number[] }).val?.length))
 // Non-zero only. At 0 — the default, and every model trained before it existed — there is nothing to
-// explain and a permanent caption would be noise.
-const flowBoundary = computed(() => current.value?.manifest?.foregroundBoundaryWeight || 0)
+// explain and a permanent caption would be noise. Flow-only knob (denoise has no boundary loss).
+const flowBoundary = computed(() => flowManifest.value?.foregroundBoundaryWeight || 0)
 // Log only when every plotted value is positive — val included. Zero is a legitimate loss, and
 // log(0) would drop the point silently rather than fail.
 const isLog = computed(() =>
   logY.value && [...rows.value, ...valRows.value].every(r => r.loss > 0))
 
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const r = await fetch('/api/optical-flow/models')
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    models.value = (await r.json()).models ?? []
-    // Nothing is seeded here. An empty vault selection means "nothing picked yet" and must stay that
-    // way — quietly choosing a model would make the plot disagree with the vault it is following.
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loading.value = false
-    await nextTick()
-    await render()
-  }
-}
-
 // A finished training run adds a model. Training is set-scope and this panel is not bound to one
-// image, so it watches every image in the project — same shared primitive, same opt-out.
+// image, so it watches every image in the project — same shared primitive, same opt-out. Calling
+// `refresh` re-fetches BOTH vaults so a new model of either kind lands here.
 const allUids = computed(() => project.sets.flatMap(s => s.images.map(i => i.uid)))
-useDataRefresh(() => allUids.value, load)
+useDataRefresh(() => allUids.value, refresh)
 
 async function render() {
   if (!host.value) return
@@ -208,8 +206,10 @@ async function render() {
 }
 
 onMounted(() => {
-  load()
+  nextTick().then(render)
 })
+// Re-render whenever the resolved manifest changes (either kind, either vault fetch completes).
+watch(manifest, () => nextTick().then(render))
 // the observer's callback appends into the element it observes — usePlotResize explains why
 // that loops ("ResizeObserver loop completed with undelivered notifications") and what stops it
 const plotBox = usePlotResize(host, render)
@@ -219,7 +219,7 @@ watch([chosen, logY, raw, minusFloor, () => terms.value.join(','), hasVal],
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
 const exportFormats = ['png', 'svg', 'csv']
-const stem = computed(() => `training_${current.value?.stem ?? 'model'}`.replace(/[^\w.-]+/g, '_'))
+const stem = computed(() => `training_${chosen.value || 'model'}`.replace(/[^\w.-]+/g, '_'))
 // One row per epoch, one COLUMN per term — a long/tidy dump would make the obvious spreadsheet
 // question ("plot these against each other") a pivot first.
 const csv = () => rows.value.length ? rowsToCsv(lossTable(shown.value)) : null
@@ -254,14 +254,18 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
   <div class="ftv">
     <div class="ftv-ctrl cc-panel-controls">
       <div class="cc-row ftv-bar">
-        <label class="cc-muted cc-fs-xs ftv-opt"
+        <!-- `raw` and `− floor` are flow-only: SUPPORT has a single loss with no weighting or
+             recorded floor. Hiding them is honest — a chip that does nothing is worse than one that
+             isn't there (docs/ui/COPY.md → hover help is not optional). -->
+        <label v-if="kind !== 'denoise'" class="cc-muted cc-fs-xs ftv-opt"
                v-tooltip.top="'Show each term before its weight is applied'">
           <input type="checkbox" v-model="raw" /> raw
         </label>
         <label class="cc-muted cc-fs-xs ftv-opt" v-tooltip.top="'Log scale on the loss axis'">
           <input type="checkbox" v-model="logY" /> log
         </label>
-        <label class="cc-muted cc-fs-xs ftv-opt" :class="{ 'ftv-off': !hasFloors }"
+        <label v-if="kind !== 'denoise'" class="cc-muted cc-fs-xs ftv-opt"
+               :class="{ 'ftv-off': !hasFloors }"
                v-tooltip.top="hasFloors
                  ? 'Subtract each target\'s entropy — the loss no model can beat'
                  : 'No floors recorded — re-train to get them'">
@@ -270,11 +274,11 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         <!-- A dashed line with nothing naming it is a puzzle. Only shown when there is one. -->
         <span v-if="hasVal" class="cc-muted cc-fs-2xs">dashed = held out</span>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
-                :disabled="loading" @click="load">
+                :disabled="loading" @click="refresh">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
         </button>
       </div>
-      <label v-if="termOptions.length" class="cc-row ftv-terms">
+      <label v-if="termOptions.length > 1" class="cc-row ftv-terms">
         <span class="cc-muted cc-fs-xs"
               v-tooltip.top="'Which loss terms to draw — a term at weight 0 is off'">terms</span>
         <ChipSelect :options="termOptions" :model-value="terms" multiple aria-label="Loss terms"
@@ -290,12 +294,12 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
     </div>
 
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
-    <p v-else-if="!models.length && !loading" class="cc-muted">
-      No models yet — run Train flow model on a set.
+    <p v-else-if="!chosen && !loading" class="cc-muted">Select a model in the vault.</p>
+    <p v-else-if="chosen && kind === null && !loading" class="cc-muted">
+      Model "{{ chosen }}" is not in either vault — did it get renamed or deleted?
     </p>
-    <p v-else-if="!current && !loading" class="cc-muted">Select a model in the vault.</p>
-    <p v-else-if="current && !series.length" class="cc-muted">
-      No loss curves — {{ current.stem }} was trained before they were recorded. Re-train to get them.
+    <p v-else-if="chosen && !series.length && !loading" class="cc-muted">
+      No loss curves — {{ chosen }} was trained before they were recorded. Re-train to get them.
     </p>
 
     <div ref="host" class="ftv-host" />

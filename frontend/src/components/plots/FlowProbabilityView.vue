@@ -27,6 +27,7 @@ import { computed, ref, watch, onMounted } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
+import { useVaultModel } from '../../composables/useVaultModel'
 import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowRegion'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 import { gridColumns, imageGridPng, imageGridSvgFrom } from '../../plots/imageGrid'
@@ -49,6 +50,12 @@ const props = defineProps<{
 const project = useProjectStore()
 
 const state = computed(() => props.state)
+
+// A denoise model can't answer "flow probability" — the endpoint is `/api/optical-flow/inspect`
+// and the network doesn't know how to output a per-pixel flow-cell probability. Detect the kind
+// against the vault (composable is cached, so no extra network cost) and surface a clean empty
+// state instead of a server-side error the user can't act on.
+const { kind: modelKind } = useVaultModel(() => props.model ?? '')
 
 // ── which image version the model is run ON ──────────────────────────────────────────────────────
 // This is not cosmetic. A flow model is trained on a DENOISED movie (the page hint says so) and
@@ -136,8 +143,10 @@ watch(imageChannels, avail => {
 
 // `model` is what makes this the probability view — the route dispatches on its presence. No model
 // means no request at all rather than a metric sheet nobody asked for.
+// A denoise-vault name is skipped here too: `/api/optical-flow/inspect` can only run a flow model,
+// and firing the request would surface as a server-side error the empty state already explained.
 const request = computed<FlowRequest | null>(() =>
-  state.value.imageUid && props.model
+  state.value.imageUid && props.model && modelKind.value !== 'denoise'
     ? {
         projectUid: props.projectUid, imageUid: state.value.imageUid,
         valueName: state.value.valueName || 'default',
@@ -247,6 +256,9 @@ watch(imageOptions, opts => {
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
     <p v-else-if="starting" class="cc-muted">Starting the preview worker…</p>
     <p v-else-if="!model" class="cc-muted">Select a model in the vault.</p>
+    <p v-else-if="modelKind === 'denoise'" class="cc-muted">
+      Pick an optical-flow model in the vault — this plot doesn't apply to a denoise model.
+    </p>
     <p v-else-if="!planes.length && !loading" class="cc-muted">
       Pick an image to see what the model predicts.
     </p>
