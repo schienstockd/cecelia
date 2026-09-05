@@ -25,6 +25,10 @@ function _spec_path(::TrainFlowModel)
     joinpath(@__DIR__, "opticalFlow", "train.json")
 end
 
+function _spec_path(::TrainSupportDenoise)
+    joinpath(@__DIR__, "opticalFlow", "train_support_denoise.json")
+end
+
 function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
@@ -109,6 +113,10 @@ function _spec_path(::Smooth)
     joinpath(@__DIR__, "cleanupImages", "smooth.json")
 end
 
+function _spec_path(::Denoise)
+    joinpath(@__DIR__, "cleanupImages", "denoise.json")
+end
+
 function _spec_path(::Flip)
     joinpath(@__DIR__, "cleanupImages", "flip.json")
 end
@@ -187,6 +195,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.cellpose"                  => CellposeSegment(),
         "segment.coastal"                   => CoastalSegment(),
         "opticalFlow.train"                 => TrainFlowModel(),
+        "opticalFlow.trainSupportDenoise"   => TrainSupportDenoise(),
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),
@@ -213,6 +222,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.stackAlign"          => StackAlign(),
         "cleanupImages.flowRegister"        => FlowRegister(),
         "cleanupImages.smooth"              => Smooth(),
+        "cleanupImages.denoise"             => Denoise(),
         "cleanupImages.flip"                => Flip(),
         "cleanupImages.dtype"               => DtypeConvert(),
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),

@@ -28,6 +28,7 @@ include("runner_api.jl")     # detached task runner; uses repl_api.jl's _GIT_COM
 include("notebooks_api.jl")
 include("movies_api.jl")     # movie registry; builds on routes.jl's movies-dir + name guard
 include("optical_flow_api.jl")
+include("denoise_api.jl")
 include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("frame_overlays.jl") # CPU-side overlay drawing primitives — points/tracks for the offline renderer
@@ -214,6 +215,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
     "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
+    "/api/denoise/models" => (req, body_bytes) -> (api_denoise_models(req)),
     "/api/notebooks" => (req, body_bytes) -> (api_notebooks_list(req)),
     "/api/notebooks/content" => (req, body_bytes) -> (api_notebooks_content(req)),
     "/api/notebooks/status" => (req, body_bytes) -> (api_notebooks_status(req)),
@@ -308,6 +310,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/optical-flow/inspect" => (req, body_bytes) -> (api_optical_flow_inspect(body_bytes)),
     "/api/optical-flow/rename" => (req, body_bytes) -> (api_optical_flow_rename(body_bytes)),
     "/api/optical-flow/delete" => (req, body_bytes) -> (api_optical_flow_delete(body_bytes)),
+    "/api/denoise/rename" => (req, body_bytes) -> (api_denoise_rename(body_bytes)),
+    "/api/denoise/delete" => (req, body_bytes) -> (api_denoise_delete(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),

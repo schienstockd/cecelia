@@ -176,6 +176,19 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Smoothing changed little",
         long  = "This input was not photon-limited — the extra store is likely redundant."),
 
+    # denoise (SUPPORT) — the input is what matters, since a shot-noise denoiser can't help what it
+    # can't see. When ALL selected channels are saturated the task errors before writing anything;
+    # when only some are, the run continues on the rest and this finding records the drop.
+    "denoise.channel_saturated" => (
+        short = "{value} channel(s) skipped — saturated at import",
+        long  = "SUPPORT is a shot-noise denoiser; on channels whose noise floor is tiny relative to signal there is nothing to remove. Uncheck them, or re-acquire at lower gain."),
+
+    # denoise training (_support_train_qc_findings). One check — same as opticalFlow.train's
+    # "loss did not decrease" — because until inference runs the loss is the only signal.
+    "denoise.loss_flat" => (
+        short = "Loss did not decrease",
+        long  = "Check the channel is photon-limited (not saturated) and has real signal, then retrain."),
+
     # OME-TIFF export (_export_qc_findings). The write always "succeeds", so the only objective
     # signal is whether the CALIBRATION came out with it — which is the entire point of the task.
     "export.no_z_calibration" => (
