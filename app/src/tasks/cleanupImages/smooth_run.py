@@ -62,13 +62,6 @@ from coastal.smooth import (
     spatial_smooth, temporal_smooth, gated_frames, noise_sigma, flow_warped_frames,
 )
 
-#: Farneback per-pixel shift clamp for the `stat='farneback'` path — a safety net, not a knob. A
-#: wild flow field is rare on close-in-time frames (fusion averages a window of `temporalFrames`,
-#: typically 3-5, so real inter-frame motion is bounded), but the clamp gives the same per-pixel
-#: identity-fall-back the `flow_register` task uses. 8 px is half `flowRegister`'s 16 default —
-#: narrower windows mean less scope for drift than a whole-movie registration.
-FARNEBACK_MAX_SHIFT_PX = 8.0
-
 
 def _anscombe(x):
     """Poisson variance-stabilising transform: `y = 2 sqrt(x + 3/8)` (Anscombe 1948)."""
@@ -157,6 +150,7 @@ def run(params):
     bilateral_polish = float(params.get('bilateralPolish', 0.6))
     frames           = int(params.get('temporalFrames', 3))
     stat             = str(params.get('temporalStat', 'median'))
+    farneback_clamp  = float(params.get('farnebackMaxShiftPx', 8.0))
     restore_gain     = bool(params.get('restoreGain', True))
 
     # ONE spatial function for the estimators AND the streaming loop — see `_build_spatial_fn`.
@@ -198,6 +192,8 @@ def run(params):
     half = max(0, (frames - 1) // 2) if frames and frames > 1 else 0
     gated = stat == 'gated' and half > 0
     farneback = stat == 'farneback' and half > 0
+    if farneback:
+        log.log(f'   farneback clamp: {farneback_clamp} px')
 
     # ── the gate's noise scale ─────────────────────────────────────────────────────────────────
     # Estimated ONCE, from a sample, and handed to every frame. `gated_frames` would otherwise
@@ -361,7 +357,7 @@ def run(params):
                     order = list(sel)
                     for c, frame in zip(order, flow_warped_frames(
                             [wins[c] for c in order], guide=guide,
-                            max_shift_px=FARNEBACK_MAX_SHIFT_PX)):
+                            max_shift_px=farneback_clamp)):
                         fw_out[c] = frame
 
                 for c in sel:
@@ -450,6 +446,7 @@ def run(params):
     stats['bilateralPolish'] = bilateral_polish
     stats['temporalFrames']  = frames
     stats['temporalStat'] = stat
+    stats['farnebackMaxShiftPx'] = farneback_clamp
     stats['shape'] = [int(x) for x in shape]
     for c in sel:
         log.log(f'   ch{c}: zero voxels {100*stats["zeroFracIn"][str(c)]:.1f}% -> '

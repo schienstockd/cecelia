@@ -117,6 +117,17 @@
       "figure": "smoothMethod"
     },
     {
+      "key": "farnebackMaxShiftPx",
+      "label": "Max per-pixel shift (px)",
+      "type": "float",
+      "default": 8.0,
+      "min": 1.0,
+      "max": 32.0,
+      "step": 1.0,
+      "showIf": { "temporalStat": "farneback" },
+      "tip": "Per-pixel flow clamp — raise with wider temporalFrames, motion scales with window"
+    },
+    {
       "key": "restoreDynamicRange",
       "label": "Restore dynamic range",
       "type": "bool",

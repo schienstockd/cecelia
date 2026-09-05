@@ -114,6 +114,7 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     # once the window is one frame.
     temporal_frames = Int(get(params, "temporalFrames", 1))
     temporal_stat   = string(get(params, "temporalStat", "median"))
+    farneback_max_shift_px = Float64(get(params, "farnebackMaxShiftPx", 8.0))
     restore_gain    = Bool(get(params, "restoreDynamicRange", true))
 
     # Spatial sigma 0 with a temporal window is the one combination measured to be WORSE than doing
@@ -150,6 +151,7 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
            bilateralPolish = bilateral_polish,
            temporalFrames  = temporal_frames,
            temporalStat    = temporal_stat,
+           farnebackMaxShiftPx = farneback_max_shift_px,
            restoreGain     = restore_gain,
            qcOutPath       = qc_out_path),
         task_run_dir(img._dir);
