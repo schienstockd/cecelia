@@ -1,0 +1,131 @@
+{
+  "task": "trainSupportDenoise",
+  "fun_name": "opticalFlow.trainSupportDenoise",
+  "label": "Train denoise model (SUPPORT)",
+  "category": "Optical flow",
+  "env": ["local"],
+  "resource_pool": "gpu",
+  "scope": "set",
+  "requires": { "axes": ["T"], "scale": ["xy", "t"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Images to train on",
+      "type": "valueNameSelection",
+      "default": "driftCorrected",
+      "tip": "Use the drift-corrected version — SUPPORT compares the same pixel across frames"
+    },
+    {
+      "key": "modelName",
+      "optionsFrom": "denoiseModels",
+      "label": "Model name",
+      "type": "valueNameInput",
+      "namespace": "models",
+      "default": "",
+      "tip": "Saved to the denoise vault under this name"
+    },
+    {
+      "key": "trainChannel",
+      "label": "Channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "tip": "SUPPORT is per-channel; train one model per reporter"
+    },
+    {
+      "key": "unetSize",
+      "label": "Model size",
+      "type": "select",
+      "variant": "chips",
+      "default": "medium",
+      "tip": "Bigger = more capacity but more VRAM and longer training",
+      "options": [
+        { "label": "Small",  "value": "small",  "help": "UNet [16,32,64,128], ~0.5M params — fits on 4 GB VRAM" },
+        { "label": "Medium", "value": "medium", "help": "UNet [32,64,128,256], ~1.5M params — 8 GB VRAM" },
+        { "label": "Large",  "value": "large",  "help": "UNet [64,128,256,512], ~4.2M params — the eval winner on 2h06xA" }
+      ]
+    },
+    {
+      "key": "inputFrames",
+      "label": "Temporal window",
+      "type": "int",
+      "min": 11,
+      "max": 121,
+      "step": 2,
+      "default": 61,
+      "tip": "Frames the model sees per prediction (odd; centre is the target)"
+    },
+    {
+      "key": "patchXY",
+      "label": "Patch size",
+      "type": "int",
+      "min": 64,
+      "max": 256,
+      "step": 32,
+      "default": 128,
+      "tip": "Spatial crop per training sample — bigger keeps context, costs more VRAM"
+    },
+    {
+      "key": "epochs",
+      "label": "Epochs",
+      "type": "int",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "default": 20,
+      "tip": "Training passes over the pooled patches"
+    },
+    {
+      "key": "midZOnly",
+      "label": "Middle Z plane only",
+      "type": "bool",
+      "default": true,
+      "tip": "Train on the middle Z per movie — matches per-Z inference"
+    },
+    {
+      "key": "overwrite",
+      "label": "Overwrite existing",
+      "type": "bool",
+      "default": false,
+      "tip": "Replace a model of the same name in the vault"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "batchSize",
+          "label": "Batch size",
+          "type": "int",
+          "min": 1,
+          "max": 8,
+          "step": 1,
+          "default": 2,
+          "tip": "Patches per gradient step — lower if you hit CUDA OOM"
+        },
+        {
+          "key": "learningRate",
+          "label": "Learning rate",
+          "type": "float",
+          "min": 0.0001,
+          "max": 0.01,
+          "step": 0.0001,
+          "default": 0.0005,
+          "tip": "Adam learning rate"
+        },
+        {
+          "key": "blindConvChannels",
+          "label": "Blind-spot channels",
+          "type": "int",
+          "min": 16,
+          "max": 128,
+          "step": 16,
+          "default": 64,
+          "tip": "Width of the blind-spot branch (v2 used 64)"
+        }
+      ]
+    }
+  ]
+}

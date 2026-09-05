@@ -418,6 +418,29 @@ denoise_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
     String[first(splitext(m.name)) for m in list_denoise_models(dev_dir)]
 
 """
+    denoise_model_target(name; overwrite) -> String
+
+Absolute `.pt` path in the denoise vault for a new model, after checking the name is a plain
+filename and that nothing is being clobbered. Creates the vault directory. Mirror of
+[`flow_model_target`](@ref) — same guards, different vault.
+"""
+function denoise_model_target(name::AbstractString; overwrite::Bool = false,
+                              dev_dir::Union{String,Nothing} = nothing)::String
+    stem = strip(String(name))
+    isempty(stem) && error("Give the model a name — it is how you will pick it in the denoiser.")
+    occursin(r"[/\\]", stem) && error("Model name cannot contain a path separator: '$stem'")
+    stem in (".", "..") && error("Model name cannot be '$stem'")
+    endswith(stem, ".pt") && (stem = first(splitext(stem)))
+
+    dir = denoise_models_dir(dev_dir)
+    mkpath(dir)
+    target = joinpath(dir, "$(stem).pt")
+    (!overwrite && isfile(target)) && error(
+        "A model named '$stem' already exists. Choose another name, or tick Overwrite existing.")
+    target
+end
+
+"""
     flow_model_filename(stem) -> String
 
 The vault FILENAME for a model stem — i.e. what a consumer's `model` select carries, built from the
