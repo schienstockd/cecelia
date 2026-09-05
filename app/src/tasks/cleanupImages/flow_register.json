@@ -1,0 +1,70 @@
+{
+  "task": "flowRegister",
+  "fun_name": "cleanupImages.flowRegister",
+  "label": "Flow-based registration",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "outputValueName": "flowRegistered",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to register",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to register — usually the stack-aligned or drift-corrected one"
+    },
+    {
+      "key": "registerChannel",
+      "label": "Reference channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "tip": "Channel used to estimate the per-pixel flow — use the brightest structured channel"
+    },
+    {
+      "key": "referenceMode",
+      "label": "Reference frame",
+      "type": "select",
+      "default": "previous",
+      "options": [
+        { "label": "Previous frame (rolling)", "value": "previous" },
+        { "label": "First frame (fixed)",      "value": "first" }
+      ],
+      "tip": "'previous' rolls each frame to t-1; 'first' pins every frame to t=0"
+    },
+    {
+      "key": "aggressiveness",
+      "label": "Aggressiveness",
+      "type": "select",
+      "default": "balanced",
+      "options": [
+        { "label": "Gentle (fine detail, more residual)",   "value": "gentle" },
+        { "label": "Balanced",                              "value": "balanced" },
+        { "label": "Strong (smoother field, more warping)", "value": "strong" }
+      ],
+      "tip": "Farneback averaging window — larger = smoother field, softer fine detail"
+    },
+    {
+      "key": "pyrLevels",
+      "label": "Pyramid levels",
+      "type": "int",
+      "default": 5,
+      "min": 2,
+      "max": 8,
+      "step": 1,
+      "tip": "More levels handle larger displacements — 5 is a safe default for typical intravital drift"
+    },
+    {
+      "key": "maxShiftPx",
+      "label": "Max per-pixel shift (px)",
+      "type": "float",
+      "default": 16.0,
+      "min": 1,
+      "max": 64,
+      "step": 1,
+      "tip": "Per-pixel flow clamp — pixels above this fall back to source, guards against wild flow"
+    }
+  ]
+}

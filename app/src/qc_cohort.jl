@@ -37,6 +37,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # neither is visible from the image alone without knowing what normal looks like for that set.
     "cleanupImages.driftCorrect" => ["residualPx", "canvasExpansion", "maxDriftPx",
                                      "maxAngleDeg"],
+    # flow-based per-pixel registration: peakFlowPx / meanFlowPx are directly
+    # cohort-comparable — a movie whose per-pixel deformation the aligner
+    # measured much larger than its peers is unusual (worth a second look at
+    # sample motion during that acquisition).
+    "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.measureLabels"      => ["nCells"],

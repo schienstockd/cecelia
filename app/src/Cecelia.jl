@@ -174,7 +174,7 @@ export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
-export AfCorrect, DriftCorrect, StackAlign, Smooth, Flip, DtypeConvert, CompositeTask
+export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
 export CropImage
 export CopyImage
 export ZProject
@@ -282,6 +282,7 @@ include("tasks/importImages/migrateLegacy.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/stack_align.jl")
+include("tasks/cleanupImages/flow_register.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/cleanupImages/flip.jl")
 include("tasks/cleanupImages/dtype.jl")

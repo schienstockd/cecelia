@@ -206,6 +206,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{value} frame(s) rotated past the cap",
         long  = "The rigid estimator hit the per-frame rotation cap and predicted those frames' rotation from neighbours — check whether the stage really rotated that much, or a moving object dominates the reference channel."),
 
+    # flow-based per-pixel registration (cleanupImages.flowRegister). Fires when the dense-flow
+    # aligner is chronically saturating its per-pixel clamp — either the sample is deforming more
+    # than dense flow can capture in the current configuration (raise the clamp or the pyramid
+    # levels), or the reference channel isn't the structured one (pick a brighter one).
+    "flow_register.high_shifts" => (
+        short = "Flow saturated the clamp on {value} of frames",
+        long  = "Many frames' flow field hit the maxShiftPx clamp — either raise the clamp or the pyramid levels, or pick a structured reference channel."),
+
     # cohort comparison (qc_cohort.jl `_cohort_finding`)
     "cohort.outlier" => (
         short = "{metric} is a cohort outlier",
