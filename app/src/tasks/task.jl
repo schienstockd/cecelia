@@ -107,6 +107,8 @@ const _OPTION_SOURCES = Dict{String,Function}(
                                for m in list_cellpose_models()],
     "coastalModels"  => () -> [(value = String(m.name), label = String(m.label))
                                for m in list_coastal_models()],
+    "denoiseModels"  => () -> [(value = String(m.name), label = String(m.label))
+                               for m in list_denoise_models()],
     # value == label: the user types the stem, so the suggestion IS what goes in the field.
     "flowModels"     => () -> [(value = n, label = n) for n in flow_model_names()],
 )

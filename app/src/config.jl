@@ -324,6 +324,99 @@ this takes no image and its suggestions cannot ride the image payload.
 flow_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
     String[first(splitext(m.name)) for m in list_coastal_models(dev_dir)]
 
+# ── Denoise (SUPPORT) models ───────────────────────────────────────────────────
+# The same drop-in vault as coastal, one directory over: `<config_dir>/models/denoiseModels/`.
+# **Per-kind directory, NOT a shared `models/`** — DENOISE_INTEGRATION_PLAN.md D2. Each kind carries
+# its own manifest schema (denoise records `arch.inputFrames` / `training.framesPerImage`, coastal
+# records `metricSet` / `temporalScales`); mixing them behind a `kind` field would force branchy
+# consumers and couple schema evolution across unrelated engines.
+#
+# A model is a PAIR: `<name>.pt` (torch weights) plus `<name>.json` (the manifest that the runner
+# needs to reconstruct the exact `SUPPORT(...)` call — `mid_channels`, `depth`, `blind_conv_channels`,
+# `input_frames`). SUPPORT does not encode its own architecture in the checkpoint; inference with the
+# wrong shape errors on the first `load_state_dict`. The manifest is not documentation.
+#
+# The vault ships nothing bundled — a model has to be trained on a real acquisition (Phase B). See
+# `docs/todo/DENOISE_INTEGRATION_PLAN.md`.
+
+"""Absolute directory for user denoise models. Just a path — no I/O, no side-effects."""
+denoise_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(config_dir(dev_dir), "models", "denoiseModels")
+
+"""
+    denoise_model_path(name) -> String | Nothing
+
+Absolute path to a denoise checkpoint by filename, or `nothing` if it doesn't exist. No bundled
+fallback: cecelia ships no denoise models, so the user vault is the only location.
+"""
+function denoise_model_path(name::AbstractString,
+                            dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
+    s = strip(String(name))
+    isempty(s) && return nothing
+    isabspath(s) && isfile(s) && return s
+    p = joinpath(denoise_models_dir(dev_dir), s)
+    isfile(p) ? p : nothing
+end
+
+"""
+    denoise_model_manifest(name) -> Dict{String,Any}
+
+The `<name>.json` sidecar beside a denoise checkpoint, or an empty Dict when there is none. Parsed
+here rather than in Python because the picker label and `list_denoise_models` need it, and because
+the vault manager shows it without loading torch.
+"""
+function denoise_model_manifest(name::AbstractString,
+                                dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any}
+    path = denoise_model_path(name, dev_dir)
+    isnothing(path) && return Dict{String,Any}()
+    sidecar = string(first(splitext(path)), ".json")
+    isfile(sidecar) || return Dict{String,Any}()
+    try
+        Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(sidecar, String)))
+    catch
+        # A corrupt manifest must not take the picker down with it; the model still lists, and the
+        # runner errors loudly when it cannot rebuild the architecture.
+        Dict{String,Any}()
+    end
+end
+
+"""
+    list_denoise_models() -> Vector{NamedTuple}
+
+Every denoise model in `<config_dir>/models/denoiseModels/`, as `(name, label, source, manifest)`.
+Only `.pt` files count — the `.json` manifests sit beside them and are not separate entries.
+
+The label carries the acquisition the model was trained on (channel + set) — the one thing that
+decides whether a model fits an image (a SUPPORT model trained on mem-TOM at 45 t frame rate is not
+what an SHG channel needs). Same shape as `list_coastal_models`.
+"""
+function list_denoise_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
+    out = NamedTuple[]
+    dir = denoise_models_dir(dev_dir)
+    isdir(dir) || return out
+    for name in sort!(readdir(dir))
+        startswith(name, ".") && continue
+        last(splitext(name)) == ".pt" || continue
+        isfile(joinpath(dir, name)) || continue
+        manifest = denoise_model_manifest(name, dev_dir)
+        # Prefer channelName; fall back to whatever training recorded, or just the stem.
+        ch = get(manifest, "channelName", nothing)
+        stem = first(splitext(name))
+        label = isnothing(ch) || isempty(string(ch)) ? stem : "$(stem) ($(ch))"
+        push!(out, (name = name, label = label, source = "user", manifest = manifest))
+    end
+    out
+end
+
+"""
+    denoise_model_names(dev_dir = nothing) -> Vector{String}
+
+The denoise model names already in the vault, as stems — the value the training task's `modelName`
+field holds. Built on `list_denoise_models` so there is one enumeration of the vault.
+"""
+denoise_model_names(dev_dir::Union{String,Nothing} = nothing)::Vector{String} =
+    String[first(splitext(m.name)) for m in list_denoise_models(dev_dir)]
+
 """
     flow_model_filename(stem) -> String
 

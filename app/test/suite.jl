@@ -407,6 +407,69 @@ end
     @test names == ["gcMemTom.pt"]
 end
 
+# ── Denoise (SUPPORT) model vault ───────────────────────────────────────────────
+# Same shape as the coastal vault. Manifest is load-bearing here too — SUPPORT's architecture
+# (input_frames, mid_channels, depth, blind_conv_channels, bs_size) is not encoded in the .pt, so
+# without a sidecar the runner cannot rebuild the network.
+@testset "denoise model vault" begin
+    td = mktempdir()
+    @test Cecelia.denoise_models_dir(td) == joinpath(td, "models", "denoiseModels")
+
+    @test isempty(Cecelia.list_denoise_models(td))
+    @test Cecelia.denoise_model_path("anything.pt", td) === nothing
+    @test Cecelia.denoise_model_path("", td) === nothing
+
+    dir = joinpath(td, "models", "denoiseModels")
+    mkpath(dir)
+    pt = joinpath(dir, "supMemTom.pt")
+    open(io -> write(io, "stub"), pt, "w")
+    @test Cecelia.denoise_model_path("supMemTom.pt", td) == pt
+
+    # A checkpoint with no manifest still lists — but the runner will refuse to load it.
+    bare = Cecelia.list_denoise_models(td)
+    @test length(bare) == 1
+    @test bare[1].name == "supMemTom.pt"
+    @test bare[1].label == "supMemTom"
+    @test isempty(bare[1].manifest)
+    @test isempty(Cecelia.denoise_model_manifest("supMemTom.pt", td))
+
+    # With a manifest, the picker label carries the acquisition it was trained on.
+    write(joinpath(dir, "supMemTom.json"),
+          """{"channelName":"mem-TOM","arch":{"inputFrames":61,"midChannels":[64,128,256,512],"depth":4}}""")
+    with_manifest = Cecelia.list_denoise_models(td)
+    @test with_manifest[1].label == "supMemTom (mem-TOM)"
+    @test with_manifest[1].manifest["arch"]["inputFrames"] == 61
+    @test with_manifest[1].manifest["arch"]["midChannels"] == [64, 128, 256, 512]
+
+    # A corrupt manifest must not take the picker down with it.
+    write(joinpath(dir, "supMemTom.json"), "{not json")
+    @test isempty(Cecelia.denoise_model_manifest("supMemTom.pt", td))
+    @test length(Cecelia.list_denoise_models(td)) == 1
+
+    # Dotfiles + subdirs skipped, same as coastal.
+    open(io -> write(io, "hidden"), joinpath(dir, ".DS_Store"), "w")
+    mkpath(joinpath(dir, "subdir.pt"))
+    names = [m.name for m in Cecelia.list_denoise_models(td)]
+    @test names == ["supMemTom.pt"]
+
+    @test Cecelia.denoise_model_names(td) == ["supMemTom"]
+end
+
+# The denoise picker is entirely runtime-enumerated — cecelia ships no built-in denoise models. The
+# spec declares one literal option ("None", value ""), the resolver appends the vault, dedup by value.
+@testset "cleanupImages.denoise spec dynamic Model options" begin
+    spec = Cecelia._task_spec(Cecelia._task_from_fun_name("cleanupImages.denoise"))
+    @test !isnothing(spec)
+    model_sel = only(p for p in spec["params"] if get(p, "key", "") == "model")
+    @test model_sel["optionsFrom"] == "denoiseModels"
+    values = [string(o["value"]) for o in model_sel["options"]]
+    @test first(values) == ""
+    @test string(first(model_sel["options"])["label"]) == "None"
+    # One entry per real model, plus "None". No duplicates.
+    @test length(values) == length(unique(values))
+    @test length(values) == 1 + length(Cecelia.list_denoise_models())
+end
+
 # The coastal picker is ENTIRELY runtime-enumerated — coastal ships no built-in models, so on a
 # fresh install the only option is "None". That empty state has to stay a legible choice rather than
 # a select that rejects its own default, which is what the first version did.
