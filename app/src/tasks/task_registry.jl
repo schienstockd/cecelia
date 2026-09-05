@@ -105,6 +105,10 @@ function _spec_path(::StackAlign)
     joinpath(@__DIR__, "cleanupImages", "stack_align.json")
 end
 
+function _spec_path(::FlowRegister)
+    joinpath(@__DIR__, "cleanupImages", "flow_register.json")
+end
+
 function _spec_path(::Smooth)
     joinpath(@__DIR__, "cleanupImages", "smooth.json")
 end
@@ -216,6 +220,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.stackAlign"          => StackAlign(),
+        "cleanupImages.flowRegister"        => FlowRegister(),
         "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.denoise"             => Denoise(),
         "cleanupImages.flip"                => Flip(),

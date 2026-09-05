@@ -7451,11 +7451,51 @@ end
     @test occursin("cpCorrected", e.msg)
 end
 
+# QC helper for FlowRegister — the "aligner is chronically saturating" case is what a user needs to
+# know about (raise the clamp or accept the deformation is beyond dense flow) and the metrics are
+# cohort-comparable, so both branches deserve a pin.
+@testset "flow_register QC" begin
+    quiet = Dict{String,Any}(
+        "flowMax"    => [0.0, 3.2, 4.1, 2.8],
+        "flowMean"   => [0.0, 0.8, 1.1, 0.7],
+        "maxShiftPx" => 16.0,
+    )
+    @test isempty(Cecelia._flow_register_qc_findings(quiet))
+    qm = Cecelia._flow_register_qc_metrics(quiet)
+    @test qm["peakFlowPx"] == 4.1
+    # 2.525 -> 2.52 under Julia's banker's rounding at digits=2 (ties to even).
+    # Assert what actually ships, not the raw mean.
+    @test qm["meanPeakFlowPx"] ≈ 2.52 atol=1e-3
+    @test qm["meanFlowPx"]  ≈ 0.65  atol=1e-3
+
+    # >= 50% of frames within 85% of the 16 px clamp -> single 'high_shifts' warn.
+    saturating = Dict{String,Any}(
+        "flowMax"    => [0.0, 15.0, 14.5, 15.2, 14.0],
+        "flowMean"   => [0.0, 5.0, 4.8, 5.3, 4.9],
+        "maxShiftPx" => 16.0,
+    )
+    findings = Cecelia._flow_register_qc_findings(saturating)
+    @test length(findings) == 1
+    @test findings[1]["level"] == "warn"
+    @test findings[1]["code"]  == "flow_register.high_shifts"
+    @test findings[1]["detail"]["framesNearCap"] == 4
+    @test findings[1]["detail"]["nFrames"]       == 5
+    # numbers live in detail, not the copy (docs/UI.md → QC copy)
+    @test !occursin("14", findings[1]["long"])
+
+    # No flow trajectory at all -> no claim, rather than a spurious warn.
+    @test isempty(Cecelia._flow_register_qc_findings(Dict{String,Any}("maxShiftPx" => 16.0)))
+    @test isempty(Cecelia._flow_register_qc_findings(
+        Dict{String,Any}("flowMax" => Float64[], "maxShiftPx" => 16.0)))
+end
+
 @testset "fun_name dispatch" begin
     @test _task_from_fun_name("importImages.omezarr") isa ImportOmezarr
     @test _task_from_fun_name("importImages.remove")  isa RemoveImage
     @test _task_from_fun_name("cleanupImages.afCorrect")       isa AfCorrect
     @test _task_from_fun_name("cleanupImages.driftCorrect")    isa DriftCorrect
+    @test _task_from_fun_name("cleanupImages.stackAlign")      isa StackAlign
+    @test _task_from_fun_name("cleanupImages.flowRegister")    isa FlowRegister
     @test _task_from_fun_name("cleanupImages.smooth")          isa Smooth
     @test _task_from_fun_name("segment.cellpose")              isa CellposeSegment
     @test _task_from_fun_name("segment.measureLabels")         isa MeasureLabels
