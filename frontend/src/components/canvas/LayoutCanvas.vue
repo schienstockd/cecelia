@@ -6,7 +6,7 @@
 
   WHICH manager that rail holds comes from the active slot's registry `rail` (canvasManager.ts), not
   from a branch here: SeriesPicker for population series, the read-only PopulationManager for a cluster
-  run, the FlowModelVault for a plot that needs a trained model. See docs/ANALYSIS.md → The rail.
+  run, the ModelVault for a plot that needs a trained model. See docs/ANALYSIS.md → The rail.
 
   Reuse: the plot data + view-state come from useSummaryData (shared with the free-floating
   SummaryCanvas); each filled slot renders a DOCKED SummaryPanel (fills the slot, no float/drag). Only
@@ -41,7 +41,7 @@ import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, si
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
-import FlowModelVault from '../../modules/opticalFlow/FlowModelVault.vue'
+import ModelVault from '../../modules/modelTraining/ModelVault.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail } from '../../modules/cluster/clusterPanels'
@@ -674,9 +674,9 @@ defineExpose({ capturePage, collectCsvs })
              still renders the picker for its styling block + scope footer, with the (dead) population
              list suppressed. -->
         <div class="lc-rail" data-guide="board.rail">
-          <FlowModelVault v-if="activeRail === 'flowModels'" :docked="true"
-                          :selected="activeFlowModel" :scope="scope"
-                          @update:selected="setFlowModel" @update:scope="scope = $event" />
+          <ModelVault v-if="activeRail === 'flowModels'" :docked="true"
+                      :selected="activeFlowModel" :scope="scope"
+                      @update:selected="setFlowModel" @update:scope="scope = $event" />
           <PopulationManager v-else-if="activeIsCluster" :docked="true" :readonly="true"
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"

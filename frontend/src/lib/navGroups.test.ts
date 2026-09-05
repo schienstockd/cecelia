@@ -30,6 +30,7 @@ const NOT_IN_MENU: Record<string, string> = {
   '/viewer-window':     'bare route, the volume viewer opened in its own window from the viewer panel',
   '/setup':             'bare route, the first-launch wizard',
   '/custom/:category':  'parameterised — the Custom group is generated per category at runtime',
+  '/optical-flow':      'legacy redirect to /model-training — pinned tabs and old guide links land here, then bounce',
 }
 
 describe('the nav catalogue', () => {

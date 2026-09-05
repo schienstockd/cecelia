@@ -1976,7 +1976,7 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 **Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
 component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
-Optical Flow page (`opticalFlow/FlowPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
+Model Training page (`modelTraining/ModelPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
 there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
 registries rather than re-wiring plots per node.
 
@@ -2106,12 +2106,14 @@ the id-keyed `readouts` map.
 ### Show/hide the population manager
 
 The floating manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker` on summary
-pages, `FlowModelVault` on the optical-flow page) has a **toggle** next to the arrange-windows icons on
-**every** module canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`, `FlowPlots`),
+pages, `ModelVault` on the model-training page) has a **toggle** next to the arrange-windows icons on
+**every** module canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`, `ModelPlots`),
 persisted per canvas in the `shared` bag (`shared.showManager`, default shown). Wrap the manager
-`v-if="showManager"`. One key name across all four — the flow canvas called it `showVault` until the
+`v-if="showManager"`. One key name across all four — the training canvas called it `showVault` until the
 rail work showed that was the same switch under a second name. The icon names the CONTENTS
-(`pi-sitemap` for populations, `pi-database` for the model vault).
+(`pi-sitemap` for populations, `pi-database` for the model vault). `ModelVault` also carries a **kind
+chip row** (optical-flow / denoise) that switches which vault is being browsed — one manager, one
+refresh path, one delete/rename path.
 
 The **Analysis board** has no such toggle: its rail is always shown and swaps by the active slot's
 `rail` (`docs/ANALYSIS.md` → *The rail*).

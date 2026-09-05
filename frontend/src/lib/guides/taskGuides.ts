@@ -260,11 +260,13 @@ export const trainFlowModelGuide = moduleTaskGuide({
   group: 'Data',
   icon: 'pi-sync',
   summary: 'Teach a model what moving cells look like in your own movies — the step before motion segmentation.',
-  route: '/optical-flow',
-  navLabel: 'Optical flow',
+  route: '/model-training',
+  navLabel: 'Model training',
   taskKey: 'trainFlowModel',
   funName: 'opticalFlow.train',
   funLabel: 'Train flow model',
+  // Backend module key stays `opticalFlow` — it is baked into the fun_name prefix and stored
+  // ccid.json chain state. The page it lives on was renamed for Phase C but the taxonomy id was not.
   selectionModule: 'opticalFlow',
   waitLabel: 'Training',
   // A time series, not just an image: flow is computed between frames, so one frame trains nothing.
@@ -279,7 +281,7 @@ export const trainFlowModelGuide = moduleTaskGuide({
   after: [
     {
       anchor: 'layout.plotsSection',
-      route: '/optical-flow',
+      route: '/model-training',
       placement: 'top-start',
       title: 'Read the training curves',
       text: 'This is how you tell a model that learned from one that stalled.',

@@ -30,7 +30,11 @@ const router = createRouter({
     { path: '/preprocess', component: () => import('./modules/PreprocessingModule.vue'),  meta: { label: 'Preprocessing' } },
     { path: '/metadata',  component: () => import('./modules/MetadataModule.vue'),      meta: { label: 'Metadata' } },
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
-    { path: '/optical-flow', component: () => import('./modules/OpticalFlowModule.vue'), meta: { label: 'Optical flow' } },
+    { path: '/model-training', component: () => import('./modules/ModelTrainingModule.vue'), meta: { label: 'Model training' } },
+    // `/optical-flow` was the pre-Phase-C route; kept as a redirect so pinned tabs, bookmarks and
+    // deep links from the old guide catalogue still land on the renamed page. See
+    // docs/todo/DENOISE_INTEGRATION_PLAN.md → Phase C.
+    { path: '/optical-flow', redirect: '/model-training' },
     { path: '/segment',   component: () => import('./modules/SegmentModule.vue'),       meta: { label: 'Segment' } },
     { path: '/gate',      component: () => import('./modules/GatingModule.vue'),        meta: { label: 'Gate' } },
     { path: '/phenotype', component: () => import('./modules/PhenotypeModule.vue'),     meta: { label: 'Phenotype' } },

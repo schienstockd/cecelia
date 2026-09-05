@@ -33,7 +33,7 @@ import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import { useViewState } from '../../composables/useViewState'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import FlowModelVault from './FlowModelVault.vue'
+import ModelVault from './ModelVault.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { defaultVis } from '../../plots/plot'
 
@@ -151,8 +151,8 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
              box, so it stays put instead of scrolling away with them. -->
         <div ref="canvasRef" class="fp-scroll">
         <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
-        <FlowModelVault v-if="showManager" :selected="activeModel" :scope="scope"
-                        @update:selected="setModel" @update:scope="scope = $event" />
+        <ModelVault v-if="showManager" :selected="activeModel" :scope="scope"
+                    @update:selected="setModel" @update:scope="scope = $event" />
         <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
           <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
             <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"

@@ -2,7 +2,7 @@
   "task": "trainSupportDenoise",
   "fun_name": "opticalFlow.trainSupportDenoise",
   "label": "Train denoise model (SUPPORT)",
-  "category": "Optical flow",
+  "category": "Model training",
   "env": ["local"],
   "resource_pool": "gpu",
   "scope": "set",

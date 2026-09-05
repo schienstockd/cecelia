@@ -458,14 +458,14 @@ end
 # The denoise picker is entirely runtime-enumerated — cecelia ships no built-in denoise models. The
 # spec declares one literal option ("None", value ""), the resolver appends the vault, dedup by value.
 @testset "opticalFlow.trainSupportDenoise task wiring" begin
-    # Interim housing: registered under the OpticalFlow module category until Phase C renames the
-    # page to "Model Training" (DENOISE_INTEGRATION_PLAN.md D4). Fun-name lookup + spec category are
-    # what the frontend uses to decide which module page shows the task.
+    # Fun-name namespace stays `opticalFlow.*` (stored in ccid.json chain state — a rename would
+    # break every persisted chain). The display category was renamed to "Model training" in Phase C
+    # so the task picker shows both training tasks under one honest heading.
     task = Cecelia._task_from_fun_name("opticalFlow.trainSupportDenoise")
     @test task isa Cecelia.TrainSupportDenoise
     spec = Cecelia._task_spec(task)
     @test !isnothing(spec)
-    @test spec["category"] == "Optical flow"
+    @test spec["category"] == "Model training"
     @test spec["scope"] == "set"
     @test spec["resource_pool"] == "gpu"
 
@@ -3782,7 +3782,7 @@ end
     HOSTS = [joinpath("components", "canvas", "SummaryCanvas.vue"),
              joinpath("modules", "gate", "GatingPlots.vue"),
              joinpath("modules", "cluster", "ClusterPlots.vue"),
-             joinpath("modules", "opticalFlow", "FlowPlots.vue")]
+             joinpath("modules", "modelTraining", "ModelPlots.vue")]
     for h in HOSTS
         src = read(joinpath(fe, h), String)
         @test occursin("useCanvasPanels", src)

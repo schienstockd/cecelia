@@ -25,7 +25,7 @@ schema is load-bearing for anyone who later contributes a model. That is where t
 | Enumeration (the ONE listing) | `list_coastal_models()` (`app/src/config.jl`) — `.pt` files, label from the manifest's `channelName` |
 | Name resolution | `coastal_model_path()`, `flow_model_names()`, `flow_model_filename()` |
 | The picker | `optionsFrom: "coastalModels"` in `coastal.json`, resolved by `_OPTION_SOURCES` (`task.jl`) and re-run per request by `/api/tasks/definitions` |
-| Vault manager UI (list, rename, delete, details) | `modules/opticalFlow/FlowModelVault.vue` + `FlowModelDetails.vue` |
+| Vault manager UI (list, rename, delete, details) | `modules/modelTraining/ModelVault.vue` (+ `FlowModelDetails.vue` / `DenoiseModelDetails.vue`). ONE manager, kind chip switches which vault — endpoint dispatch table in `utils/modelVaultKinds.ts`. Renamed from `modules/opticalFlow/FlowModelVault.vue` in Phase C of `DENOISE_INTEGRATION_PLAN.md`. |
 | Manifest type + rendering rule | `utils/flowManifest.ts` — **unknown keys are SHOWN, not dropped**, which is already forward-compatible with new fields |
 | A manifest writer | `opticalFlow.train` (`train_run.py`) writes `<name>.json` **and** embeds the same dict in the checkpoint via `save_model(metadata=…)` |
 | The inference contract | `coastal_utils.temporal_config()` reads `temporalScales`, `cumulativeWindow`, `droppedMetrics` — and coastal fails **silently** on a mismatch |

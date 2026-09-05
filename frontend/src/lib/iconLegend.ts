@@ -91,7 +91,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-replay', means: 'Run it again, or restore a snapshot' },
       { icon: 'pi-undo', means: 'Undo — leave things as they were; mirrored, redo' },
       { icon: 'pi-refresh', means: 'Reload, or restart a service' },
-      { icon: 'pi-sync', means: 'Re-read from the file, or the optical-flow page' },
+      { icon: 'pi-sync', means: 'Re-read from the file, or the model-training page' },
       { icon: 'pi-trash', means: 'Delete' },
       { icon: 'pi-eraser', means: 'Delete what was derived, keep the original' },
       { icon: 'pi-plus', means: 'Add' },
