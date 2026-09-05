@@ -109,10 +109,23 @@
         { "label": "Mean",   "value": "mean",
           "help": "Rarely. Averages the whole window regardless of motion, and inflates masks ~34%." },
         { "label": "Gated",  "value": "gated",
-          "help": "Averages only where frames agree, so moving cells stay sharp. Minutes per channel." }
+          "help": "Averages only where frames agree, so moving cells stay sharp. Minutes per channel." },
+        { "label": "Farneback (flow-warped)", "value": "farneback",
+          "help": "Warps neighbours onto the centre via dense flow, then averages. Same intent as gated (motion-compensated averaging); better on smooth deformation, no identity floor if flow misfires." }
       ],
       "tip": "Gated keeps per-frame sharpness; median blurs cells that moved, mean more so",
       "figure": "smoothMethod"
+    },
+    {
+      "key": "farnebackMaxShiftPx",
+      "label": "Max per-pixel shift (px)",
+      "type": "float",
+      "default": 8.0,
+      "min": 1.0,
+      "max": 32.0,
+      "step": 1.0,
+      "showIf": { "temporalStat": "farneback" },
+      "tip": "Per-pixel flow clamp — raise with wider temporalFrames, motion scales with window"
     },
     {
       "key": "restoreDynamicRange",

@@ -58,7 +58,9 @@ from cecelia.utils.atomic_io import write_json_atomic
 
 # coastal owns the smoothing engine (array-only, imports nothing from cecelia). Declared as a git
 # dep in pixi.toml — see the note there for why it is no longer an editable sibling path.
-from coastal.smooth import spatial_smooth, temporal_smooth, gated_frames, noise_sigma
+from coastal.smooth import (
+    spatial_smooth, temporal_smooth, gated_frames, noise_sigma, flow_warped_frames,
+)
 
 
 def _anscombe(x):
@@ -148,6 +150,7 @@ def run(params):
     bilateral_polish = float(params.get('bilateralPolish', 0.6))
     frames           = int(params.get('temporalFrames', 3))
     stat             = str(params.get('temporalStat', 'median'))
+    farneback_clamp  = float(params.get('farnebackMaxShiftPx', 8.0))
     restore_gain     = bool(params.get('restoreGain', True))
 
     # ONE spatial function for the estimators AND the streaming loop — see `_build_spatial_fn`.
@@ -188,6 +191,9 @@ def run(params):
 
     half = max(0, (frames - 1) // 2) if frames and frames > 1 else 0
     gated = stat == 'gated' and half > 0
+    farneback = stat == 'farneback' and half > 0
+    if farneback:
+        log.log(f'   farneback clamp: {farneback_clamp} px')
 
     # ── the gate's noise scale ─────────────────────────────────────────────────────────────────
     # Estimated ONCE, from a sample, and handed to every frame. `gated_frames` would otherwise
@@ -320,6 +326,7 @@ def run(params):
                 # invariant, for an adaptive kernel). Built per timepoint from the same cache the
                 # other stats use, so memory is still bounded by the window.
                 gate_out = {}
+                fw_out = {}
                 if gated:
                     wins = {c: np.stack([spatial_at(tt, c)
                                          for tt in range(t - half, t + half + 1)]) for c in sel}
@@ -335,10 +342,29 @@ def run(params):
                     for c, frame in zip(order, gated_frames([wins[c] for c in order], guide=guide,
                                                             sigma=gate_sigma)):
                         gate_out[c] = frame
+                elif farneback:
+                    # Same shared-kernel shape as gated, for the same reason: Farneback is the
+                    # expensive half here (one dense flow field per neighbour), so a per-channel loop
+                    # would recompute the identical field C times. `flow_warped_frames` computes the
+                    # flow ONCE from the summed guide, then applies the same warp to each channel —
+                    # a dim channel inherits the warp found in the bright signal, matching the AF
+                    # ratio invariant the gated path also enforces.
+                    wins = {c: np.stack([spatial_at(tt, c)
+                                         for tt in range(t - half, t + half + 1)]) for c in sel}
+                    guide = None
+                    for w in wins.values():
+                        guide = w.copy() if guide is None else guide + w
+                    order = list(sel)
+                    for c, frame in zip(order, flow_warped_frames(
+                            [wins[c] for c in order], guide=guide,
+                            max_shift_px=farneback_clamp)):
+                        fw_out[c] = frame
 
                 for c in sel:
                     if gated:
                         out = gate_out[c]
+                    elif farneback:
+                        out = fw_out[c]
                     elif half == 0:
                         out = spatial_at(t, c)
                     else:
@@ -420,6 +446,7 @@ def run(params):
     stats['bilateralPolish'] = bilateral_polish
     stats['temporalFrames']  = frames
     stats['temporalStat'] = stat
+    stats['farnebackMaxShiftPx'] = farneback_clamp
     stats['shape'] = [int(x) for x in shape]
     for c in sel:
         log.log(f'   ch{c}: zero voxels {100*stats["zeroFracIn"][str(c)]:.1f}% -> '
