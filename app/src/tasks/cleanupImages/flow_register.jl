@@ -89,8 +89,8 @@ function _run_task(task::FlowRegister, img::CciaImage, params::Dict{String,Any};
     end
 
     reference_mode = string(get(params, "referenceMode", "previous"))
-    aggressiveness = string(get(params, "aggressiveness", "balanced"))
-    winsize        = get(FLOW_REGISTER_WINSIZE, aggressiveness, FLOW_REGISTER_WINSIZE["balanced"])
+    aggressiveness = string(get(params, "aggressiveness", "strong"))
+    winsize        = get(FLOW_REGISTER_WINSIZE, aggressiveness, FLOW_REGISTER_WINSIZE["strong"])
     pyr_levels     = Int(get(params, "pyrLevels", 5))
     max_shift_px   = Float64(get(params, "maxShiftPx", 16.0))
 

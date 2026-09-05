@@ -203,9 +203,9 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
   flowRegister: ctx => {
     const mode = String(ctx.values?.referenceMode ?? 'previous') === 'first' ? 'first' : 'previous'
     const aggr = (['gentle', 'balanced', 'strong'] as const)
-      .includes(String(ctx.values?.aggressiveness ?? 'balanced') as never)
-      ? String(ctx.values?.aggressiveness ?? 'balanced') as 'gentle' | 'balanced' | 'strong'
-      : 'balanced'
+      .includes(String(ctx.values?.aggressiveness ?? 'strong') as never)
+      ? String(ctx.values?.aggressiveness ?? 'strong') as 'gentle' | 'balanced' | 'strong'
+      : 'strong'
     const { vis, note } = flowRegisterFigure({
       referenceMode: mode,
       aggressiveness: aggr,

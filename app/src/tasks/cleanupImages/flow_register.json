@@ -39,13 +39,13 @@
       "key": "aggressiveness",
       "label": "Aggressiveness",
       "type": "select",
-      "default": "balanced",
+      "default": "strong",
       "options": [
         { "label": "Gentle (fine detail, more residual)",   "value": "gentle" },
         { "label": "Balanced",                              "value": "balanced" },
         { "label": "Strong (smoother field, more warping)", "value": "strong" }
       ],
-      "tip": "Farneback averaging window — larger = smoother field, softer fine detail"
+      "tip": "Farneback averaging window — larger = smoother field, softer fine detail. Strong picked as default on the c91ICQ sweep — smaller windows leave more residual morphing"
     },
     {
       "key": "pyrLevels",
