@@ -15,6 +15,8 @@ import { formatBytes } from '../utils/storage'
 import { storeFormatFacts, storeFormatTitle, storeLevelRows,
          type StoreEncoding } from '../utils/storeFormat'
 import { formatPhysicalSize, fmtNum } from '../utils/physicalSize'
+import { buildLineageForest, flattenLineage } from '../utils/versionLineage'
+import { useTaskDefsStore } from '../stores/taskDefs'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -52,6 +54,22 @@ const channels = computed(() => img.value.channelNames?.filter(c => c && c.lengt
 // valueName → filename, active first. The active version is the zarr the app currently reads.
 const versions = computed(() => Object.entries(img.value.filepaths ?? {}))
 
+// Version lineage — one row per stored version, indented under whichever version was used as
+// INPUT to produce it (derived from the automatic run log; see utils/versionLineage.ts). Only
+// meaningful when there are two or more versions AND at least one was produced from another; a lone
+// `default` (or a set with no run-log edges) collapses to nothing rather than a "flow" of a single
+// leaf.
+const taskDefs = useTaskDefsStore()
+const lineageRows = computed(() => {
+  const names = versions.value.map(([vn]) => vn)
+  const rows = flattenLineage(buildLineageForest(names, img.value.runLog))
+  return rows
+})
+const hasLineageEdges = computed(() => lineageRows.value.some(r => r.node.edge))
+// The label the caption shows for a producing task ('cleanupImages.driftCorrect' → 'Drift correct').
+// Task defs load asynchronously, so labelFor falls back to the fun's last segment while it warms.
+const funLabel = (fun: string) => taskDefs.labelFor(fun)
+
 // What each stored version IS on disk: how its pixels are ENCODED, and how much space it takes.
 // Fetched rather than stored: the codec is a property of the store (which can be re-landed on a
 // different one by rechunk_zarr.py without anything in ccid.json changing), and the size can only be
@@ -63,6 +81,10 @@ type StoreInfo = { bytes: number, label?: string } & StoreEncoding
 const stores = ref<{ versions: Record<string, StoreInfo | null>, labels: Record<string, StoreInfo> }>(
   { versions: {}, labels: {} })
 onMounted(async () => {
+  // Warm the task-defs cache so lineage captions carry the pretty task label ('Drift correct')
+  // rather than the fun's last segment ('driftCorrect'). Awaited alongside the store walk since
+  // both are display-only enrichments the modal must still open without.
+  taskDefs.ensureLoaded()
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
   try {
@@ -152,6 +174,28 @@ const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
         <h4 class="md-h cc-eyebrow">Stored files</h4>
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
+        </div>
+        <!-- Provenance flow: which version was used as INPUT to produce which. Rebuilt from the
+             per-image run log (see utils/versionLineage.ts). Only rendered when there is at least
+             one edge — for a project with a lone `default` (or a set with no run-log entries) a
+             "flow" of one node is noise. Compact tree: each version is one line; a producing task
+             sits on the line ABOVE its output as "└─ Drift correct →" so the read order is
+             input-then-task-then-output, matching a data-flow diagram left→right/top-down. -->
+        <div v-if="hasLineageEdges" class="md-lineage cc-card">
+          <ol class="md-flow">
+            <li v-for="row in lineageRows" :key="row.node.version"
+                class="md-flow-row" :style="{ '--depth': row.depth }">
+              <span v-if="row.node.edge" class="md-flow-via cc-muted cc-fs-xs">
+                <i class="pi pi-arrow-down md-flow-arrow" />
+                {{ funLabel(row.node.edge.fun) }}
+              </span>
+              <span class="md-flow-vn"
+                    :class="{ 'md-flow-active': row.node.version === img.activeValueName }">
+                {{ row.node.version }}
+                <span v-if="!row.node.edge" class="cc-muted cc-fs-2xs">imported</span>
+              </span>
+            </li>
+          </ol>
         </div>
         <!-- One CARD per stored thing, not one grid of rows. Each version carries six technical facts
              (codec, zarr format, NGFF version, chunk, shard, chunk keys) on top of its name, filename
@@ -311,4 +355,20 @@ const levelsFor = (vn: string) => storeLevelRows(stores.value.versions[vn])
 .md-pyr td { font-family: var(--cc-mono); }
 .md-pyr th { font-weight: 400; }
 .md-pyr-lvl { color: var(--cc-text-dim); font-family: var(--cc-mono); }
+
+/* Version lineage — a compact indented tree. Each row is one stored version; its inbound "via"
+   caption sits above it on the same row (arrow + task label). Depth is a CSS variable so nested
+   children inherit their parent's indent without a nested <ul>, which would break the top-to-bottom
+   read order the tree relies on. */
+.md-lineage { padding: 0.45rem 0.6rem; }
+.md-flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.md-flow-row {
+  display: flex; flex-direction: column; gap: 0.05rem;
+  padding-left: calc(var(--depth, 0) * 1rem);
+}
+.md-flow-via { display: inline-flex; align-items: center; gap: 0.3rem; }
+/* colour inherits from the .cc-muted wrapper via currentColor */
+.md-flow-arrow { font-size: var(--cc-fs-2xs); }
+.md-flow-vn { color: var(--cc-text); font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
+.md-flow-active { font-weight: 600; }
 </style>

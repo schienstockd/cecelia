@@ -22,6 +22,13 @@ export interface RunLogEntry {
   // matches the row against the live one for the same run.
   finishedAt?: string
   taskId?: string
+  // The version name this run WROTE (as opposed to `valueName`, which is the one it READ). Derived
+  // server-side from `(fun, params)` via `task_output_name` (see `_enriched_run_log` in
+  // `api/src/routes.jl`) so a spec-driven lookup stays in one place. Absent for entries that name no
+  // output of their own — an import, a plot, a measurement onto an existing set — which the
+  // provenance graph treats as terminal (no outgoing edge), and for entries whose task is no longer
+  // registered.
+  outputValueName?: string
 }
 
 export type ProcMode = 'ever' | 'last'
