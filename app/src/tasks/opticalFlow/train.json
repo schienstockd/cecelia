@@ -2,7 +2,7 @@
   "task": "trainFlowModel",
   "fun_name": "opticalFlow.train",
   "label": "Train flow model",
-  "category": "Optical flow",
+  "category": "Model training",
   "env": [
     "local"
   ],

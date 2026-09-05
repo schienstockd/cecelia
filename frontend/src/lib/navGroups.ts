@@ -33,7 +33,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: '/preprocess', label: 'Preprocessing', icon: 'pi-image', tip: 'Crop, project or resample the image into a new one.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
-      { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },
+      { to: '/model-training', label: 'Model training', icon: 'pi-sync', tip: 'Train and manage models (optical-flow segmentation, denoise).', requiresProject: true },
       { to: '/segment',  label: 'Segment',  icon: 'pi-th-large', tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
     ],
   },

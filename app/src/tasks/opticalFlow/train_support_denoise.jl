@@ -3,10 +3,10 @@ struct TrainSupportDenoise <: CciaTask end
 # SET scope, mirroring `TrainFlowModel` above. One denoise model per acquisition-class, reused across
 # the set — that is why the vault is per-config, not per-image (DENOISE_INTEGRATION_PLAN.md D3).
 #
-# Interim housing: this task's `category` is "Optical flow" so it appears on the Optical Flow module
-# page beside `opticalFlow.train`. Phase C renames that page to "Model Training" and adds a kind
-# selector; keeping the category matching the current page is what makes the interim landing spot
-# work without frontend changes.
+# The fun-name namespace stays `opticalFlow.*` because it is baked into stored ccid.json chain state
+# (a rename would break every persisted chain). The display category is "Model training" — Phase C
+# renamed the page and added a kind selector to the vault so both training tasks live on one honest
+# page together.
 
 # UNet arch by size — the three points measured 2026-09-05 on 2h06xA. "large" is the v2 config that
 # produced the "that's great" MP4; the smaller two exist for laptop VRAM budgets and quick iteration.
