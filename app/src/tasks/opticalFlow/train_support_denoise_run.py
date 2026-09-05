@@ -179,6 +179,14 @@ def run(params):
     with atomic_path(model_path) as tmp_pt:
         torch.save(state_dict, tmp_pt)
 
+    # Loss curve lives BOTH in the manifest (travels with the .pt, so the vault-side Training
+    # convergence plot has data for a model from any project) and in the QC sidecar (per-run
+    # bookkeeping alongside the task's log). Flow models carry `lossCurves` (multi-term, one dict);
+    # SUPPORT trains a single L1+L2 blend, so `epochLosses` is a flat list — one series.
+    final = float(epoch_losses[-1]) if epoch_losses else float('nan')
+    first = float(epoch_losses[0]) if epoch_losses else float('nan')
+    drop  = (first / final) if (final and final > 0) else float('nan')
+
     manifest = {
         'kind': 'denoise-support',
         'channels': channel_names,
@@ -192,6 +200,10 @@ def run(params):
             'learningRate': lr,
             'midZOnly': mid_z_only,
             'framesPerImage': [int(v.shape[0]) for v in vols],
+            'epochLosses': list(map(float, epoch_losses)),
+            'finalLoss': final,
+            'firstLoss': first,
+            'lossDrop': drop,
         },
     }
     manifest_path = str(Path(model_path).with_suffix('.json'))
@@ -200,10 +212,10 @@ def run(params):
     log.log(f'>> saved {manifest_path}')
 
     # ── QC sidecar ──────────────────────────────────────────────────────────
+    # Same three summary numbers as the manifest carries — the manifest is the persistent record,
+    # this is the per-run bookkeeping the Julia handler reads to bank QC findings against every
+    # trained-on image (docs/MODULES.md → QC — REQUIRED for every new task).
     if qc_out_path:
-        final = epoch_losses[-1] if epoch_losses else float('nan')
-        first = epoch_losses[0] if epoch_losses else float('nan')
-        drop = (first / final) if (final and final > 0) else float('nan')
         write_json_atomic(qc_out_path, {
             'finalLoss': final,
             'firstLoss': first,

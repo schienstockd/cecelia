@@ -130,6 +130,12 @@ class SupportTrainerSmokeTest(unittest.TestCase):
         self.assertEqual(arch['midChannels'], [8, 16, 32])
         self.assertEqual(manifest['training']['imageUids'], ['test'])
         self.assertEqual(manifest['training']['channelIndices'], [0, 1])
+        # Loss curve travels WITH the model in the manifest — the vault-side Training convergence
+        # plot reads it from here (a model from another project has no run log to fall back on).
+        for k in ('epochLosses', 'finalLoss', 'firstLoss', 'lossDrop'):
+            self.assertIn(k, manifest['training'],
+                          f'training.{k} missing — Training convergence plot reads it from the manifest')
+        self.assertEqual(len(manifest['training']['epochLosses']), 1)
 
         # QC sidecar carries the loss curve for _support_train_qc_findings
         with open(qc_path, encoding='utf-8') as f:
