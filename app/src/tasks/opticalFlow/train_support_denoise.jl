@@ -16,6 +16,18 @@ const _SUPPORT_UNET_SIZES = Dict{String,Any}(
     "large"  => Dict{String,Any}("midChannels" => [64,128, 256, 512], "depth" => 4),
 )
 
+# The "no image is long enough for the temporal window" refusal, spelled out with the actual T
+# values and the largest inputFrames that would fit. Was: [WARN] skipped + [ERROR] no usable
+# volumes deep in the Python runner log, and the fix was in neither. Pure so a test can pin the
+# exact numbers without a GPU or a fixture image.
+function _support_short_movie_refusal(short_ts::Vector{Tuple{String,Int}}, input_frames::Int)::Vector{String}
+    isempty(short_ts) && return String[]
+    min_t = minimum(t for (_, t) in short_ts)
+    max_odd = isodd(min_t) ? min_t : max(min_t - 1, 1)
+    ["[ERROR] No selected image has $input_frames+ timepoints — the shortest is $min_t.",
+     "[ERROR] Set Temporal window to $max_odd (largest odd value ≤ $min_t) or pick longer movies."]
+end
+
 # Two unambiguous bad cases, pure so a test can exercise them without a GPU. Both about the LOSS —
 # training's one objective signal until inference runs on real data.
 function _support_train_qc_findings(metrics::AbstractDict)
@@ -64,8 +76,16 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
         return nothing
     end
 
-    # Collect usable images (per-image existence + channel-name agreement check).
+    input_frames = Int(get(params, "inputFrames", 61))
+    isodd(input_frames) || (on_log("[ERROR] inputFrames must be odd (centre is the target); got $input_frames"); return nothing)
+
+    # Collect usable images (per-image existence + channel-name agreement + T-length check). The
+    # T-length check runs HERE (not just in the Python runner) so a user picking a 61-frame window
+    # on a 31-timepoint set sees the honest fix — including the largest inputFrames that would
+    # actually fit — before any zarr load or GPU init. Was: [WARN] skipped + [ERROR] no usable
+    # volumes deep in the runner log; the fix wasn't in either message.
     movies = Dict{String,Any}[]
+    short_ts = Tuple{String,Int}[]   # (uid, T) for images too short for the current window
     for img in imgs
         raw = read_ccid_raw(state_file(img))
         filename = versioned_get_field(raw, "filepath", value_name)
@@ -83,12 +103,21 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
             on_log("[WARN] $(img.uid): channel names differ from $(imgs[1].uid) — skipped")
             continue
         end
+        size_t = something(tryparse_i(get(img.meta, "SizeT", nothing)), 0)
+        if size_t < input_frames
+            push!(short_ts, (String(img.uid), size_t))
+            on_log("[WARN] $(img.uid): T=$size_t < inputFrames=$input_frames — skipped")
+            continue
+        end
         push!(movies, Dict{String,Any}("uID" => img.uid, "imPath" => im_path))
     end
-    isempty(movies) && (on_log("[ERROR] No usable images — nothing to train on."); return nothing)
-
-    input_frames = Int(get(params, "inputFrames", 61))
-    isodd(input_frames) || (on_log("[ERROR] inputFrames must be odd (centre is the target); got $input_frames"); return nothing)
+    if isempty(movies)
+        for line in _support_short_movie_refusal(short_ts, input_frames)
+            on_log(line)
+        end
+        isempty(short_ts) && on_log("[ERROR] No usable images — nothing to train on.")
+        return nothing
+    end
 
     joined_names = join(channel_names_selected, "+")
     joined_idx   = join(channel_indices_selected, ",")
