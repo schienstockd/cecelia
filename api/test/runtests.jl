@@ -80,6 +80,48 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     end
 end
 
+@testset "API: run-log enrichment only labels image-writing tasks with outputValueName" begin
+    # `outputValueName` on a run-log entry drives the version-lineage tree in
+    # ImageMetadataDialog. `outputValueName` is polymorphic in the task registry: for
+    # `cleanupImages.*` / `editImages.*` it names a NEW STORED IMAGE VERSION, for
+    # `segment.cellposeMeasure` (and other segmentation/measurement/tracking tasks) it names a
+    # LABEL/TRACKS/MEASUREMENT set instead. Enriching indiscriminately produced a real regression
+    # on Dominik's `zolIMa/fXgbTl`: a `segment.cellposeMeasure` written from `smoothed` with
+    # `outputValueName=default` claimed the `default` image version was produced from `smoothed`,
+    # closing a cycle (`smoothed → driftCorrected → default → smoothed`) that gave the forest zero
+    # roots and hid the whole lineage panel. Enrichment must therefore only annotate tasks that
+    # actually write a new image store.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-lineage")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        img.filepath = Dict("default" => "ccidImage.ome.zarr",
+                            "driftCorrected" => "ccidDriftCorrected.ome.zarr",
+                            "smoothed" => "ccidSmoothed.ome.zarr")
+        save!(img)
+        # A cleanupImages entry: SHOULD be enriched (writes an image version).
+        append_run_log!(img, "cleanupImages.driftCorrect", "default", "done", nothing;
+                        at = "2026-08-05T15:55:50")
+        # A segment.cellposeMeasure entry: MUST NOT be enriched — its `outputValueName` param names
+        # a labels output ('default' labels), not the 'default' image version.
+        append_run_log!(img, "segment.cellposeMeasure", "smoothed", "done",
+                        Dict("outputValueName" => "default"); at = "2026-08-08T12:34:53")
+
+        entries = _enriched_run_log(img)
+        clean  = entries[findfirst(e -> e["fun"] == "cleanupImages.driftCorrect", entries)]
+        measure = entries[findfirst(e -> e["fun"] == "segment.cellposeMeasure", entries)]
+        @test get(clean, "outputValueName", "") == "driftCorrected"     # writes a version
+        @test !haskey(measure, "outputValueName")                       # writes labels, not a version
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 # The picker's third selector. The gating/track canvas is pinned to ONE segmentation (its toolbar
 # select) and the summary canvas overlays them all; both ask the same route, so the route has to be
 # askable either way. Narrowing matters beyond tidiness: building the answer evaluates every tracked
