@@ -279,11 +279,26 @@ export function flowRegisterVisColumns(inp: FlowRegisterVisInput): VisColumns {
     cell(verdictFor('staticScene',  rStatic, inp.referenceMode)),
   ]
 
+  // Live parameter rows — the values the sliders currently hold, per column. Same
+  // "params visible in the figure, not just in the note" shape driftVis's 'Per-frame cap'
+  // uses. All three knobs are GLOBAL (not per-column), so the value repeats — but the
+  // user sees the numbers move as they change the form, which is the whole point.
+  const searchPx = searchRadiusFor(inp.aggressiveness)
+  const refText  = inp.referenceMode === 'first' ? 'first (t=0)' : 'previous (t-1)'
+  const searchText = `±${searchPx} px (${inp.aggressiveness})`
+  const clampText  = `≤ ${inp.maxShiftPx} px`
+  const referenceCells: VisCell[] = [cell(refText),    cell(refText),    cell(refText)]
+  const searchCells:    VisCell[] = [cell(searchText), cell(searchText), cell(searchText)]
+  const clampCells:     VisCell[] = [cell(clampText),  cell(clampText),  cell(clampText)]
+
   const rows: VisRow[] = [
-    { key: 'input',   label: 'Input',      role: 'grid', uniform: false, cells: gridInput },
-    { key: 'aligned', label: 'Registered', role: 'grid', uniform: false, cells: gridAligned },
-    { key: 'case',    label: 'Case',       role: 'text', uniform: false, cells: caseCells },
-    { key: 'verdict', label: 'Output',     role: 'text', uniform: false, cells: verdictCells },
+    { key: 'input',     label: 'Input',      role: 'grid', uniform: false, cells: gridInput },
+    { key: 'aligned',   label: 'Registered', role: 'grid', uniform: false, cells: gridAligned },
+    { key: 'case',      label: 'Case',       role: 'text', uniform: false, cells: caseCells },
+    { key: 'verdict',   label: 'Output',     role: 'text', uniform: false, cells: verdictCells },
+    { key: 'reference', label: 'Reference',  role: 'text', uniform: true,  cells: referenceCells },
+    { key: 'search',    label: 'Search',     role: 'text', uniform: true,  cells: searchCells },
+    { key: 'clamp',     label: 'Clamp',      role: 'text', uniform: true,  cells: clampCells },
   ]
   return { columns: [...SCENARIOS], rows, pxSize: null, uniformKeys: [] }
 }

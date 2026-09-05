@@ -128,13 +128,32 @@ describe('searchRadiusFor + aggressiveness ordering', () => {
 })
 
 describe('figure shape', () => {
-  it('flowRegisterVisColumns returns 3 columns × the expected 4 rows', () => {
+  it('flowRegisterVisColumns returns 3 columns × the expected 7 rows', () => {
     const vis = flowRegisterVisColumns({
       referenceMode: 'previous', aggressiveness: 'balanced', maxShiftPx: 16,
     })
     expect(vis.columns).toEqual([...SCENARIOS])
-    expect(vis.rows.map(r => r.key)).toEqual(['input', 'aligned', 'case', 'verdict'])
+    expect(vis.rows.map(r => r.key)).toEqual([
+      'input', 'aligned', 'case', 'verdict', 'reference', 'search', 'clamp',
+    ])
     for (const row of vis.rows) expect(row.cells.length).toBe(3)
+  })
+
+  it('parameter rows update with the form values', () => {
+    const v1 = flowRegisterVisColumns({
+      referenceMode: 'previous', aggressiveness: 'balanced', maxShiftPx: 16,
+    })
+    const v2 = flowRegisterVisColumns({
+      referenceMode: 'first', aggressiveness: 'strong', maxShiftPx: 8,
+    })
+    const cellText = (v: typeof v1, key: string) =>
+      v.rows.find(r => r.key === key)!.cells[0].text
+    expect(cellText(v1, 'reference')).toContain('previous')
+    expect(cellText(v2, 'reference')).toContain('first')
+    expect(cellText(v1, 'search')).toContain('balanced')
+    expect(cellText(v2, 'search')).toContain('strong')
+    expect(cellText(v1, 'clamp')).toContain('16')
+    expect(cellText(v2, 'clamp')).toContain('8')
   })
 
   it('flowRegisterFigure returns a note + vis and the note names the mode', () => {
