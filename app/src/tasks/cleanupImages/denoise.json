@@ -1,0 +1,50 @@
+{
+  "task": "denoise",
+  "fun_name": "cleanupImages.denoise",
+  "label": "Denoising (SUPPORT)",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "gpu",
+  "outputValueName": "denoised",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to denoise",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tips": [
+        { "text": "Use the drift-corrected version — SUPPORT compares the same pixel across frames", "requires": { "axes": ["T"] } }
+      ]
+    },
+    {
+      "key": "model",
+      "label": "Model",
+      "type": "select",
+      "optionsFrom": "denoiseModels",
+      "default": "",
+      "tip": "Trained on the Model Training page (Phase B)",
+      "options": [
+        { "label": "None", "value": "" }
+      ]
+    },
+    {
+      "key": "channels",
+      "label": "Channels to denoise",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Unselected channels are copied through unchanged — leave SHG/THG out"
+    },
+    {
+      "key": "batchSize",
+      "label": "Inference batch",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 16,
+      "step": 1,
+      "tip": "Patches per forward pass — lower if you hit CUDA OOM"
+    }
+  ]
+}
