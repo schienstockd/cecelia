@@ -2790,25 +2790,39 @@ function _extra_meta(meta::AbstractDict)
 end
 
 # Enrich the per-image run log with each entry's OUTPUT value name — the version it wrote — so the
-# frontend can draw a lineage (`inputValueName → outputValueName`) without replicating the
-# spec-driven `namespace` resolution in TypeScript. The input name is already the entry's
-# `valueName` field. `task_output_name` returns "" for tasks that name no output (imports, plots,
-# measurements onto an existing set) — those become terminal nodes with no outgoing edge, which is
-# correct. Wrapped per-entry so a task removed from the registry doesn't fail the whole payload.
+# frontend can draw a lineage (`inputValueName → outputValueName`) without replicating spec lookup
+# in TypeScript. The input name is already the entry's `valueName` field.
+#
+# Output-name resolution has TWO paths in the package and this has to try both, in order:
+#   1. `task_output_name(fun, params)` — for tasks whose output is a USER-SET param carrying a
+#      `namespace` (e.g. `segment.cellposeMeasure` → `valueNameSuffix`).
+#   2. `_spec_output_value_name(task, "")` — for tasks with a spec-declared TOP-LEVEL
+#      `outputValueName` (all the `cleanupImages.*` and most `editImages.*` — `driftCorrect` →
+#      `driftCorrected`, `smooth` → `smoothed`, …). This is what the handlers themselves call
+#      (see `_spec_output_value_name` in `app/src/tasks/task.jl` and the callsites in
+#      `app/src/tasks/cleanupImages/*.jl`).
+#
+# Anything still unresolved returns "" and becomes a terminal node (imports, plots, measurements
+# onto an existing set — correct). Wrapped per-entry so a removed task doesn't fail the payload.
 function _enriched_run_log(img::CciaImage)
     entries = read_run_log(img)
     out = Vector{Any}(undef, length(entries))
     for (i, e) in pairs(entries)
         d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
+        fun = get(d, "fun", "")
         p = get(d, "params", nothing)
-        if p isa AbstractDict
-            params = Dict{String,Any}(String(k) => v for (k, v) in p)
-            try
-                name = Cecelia.task_output_name(get(d, "fun", ""), params)
-                isempty(name) || (d["outputValueName"] = name)
-            catch
-                # unknown fun / spec load failure — leave outputValueName absent
+        params = p isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in p) : Dict{String,Any}()
+        try
+            name = Cecelia.task_output_name(fun, params)
+            if isempty(name)
+                task = Cecelia._task_from_fun_name(String(fun))
+                if !isnothing(task)
+                    name = Cecelia._spec_output_value_name(task, "")
+                end
             end
+            isempty(name) || (d["outputValueName"] = name)
+        catch
+            # unknown fun / spec load failure — leave outputValueName absent
         end
         out[i] = d
     end
