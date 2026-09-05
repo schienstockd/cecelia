@@ -489,6 +489,28 @@ end
     @test haskey(Cecelia.QC_TEXT, "denoise.loss_flat")
 end
 
+@testset "_support_short_movie_refusal — actionable T-mismatch message" begin
+    # No short movies → no refusal lines. The general-case "no usable images" fallback lives in
+    # the handler alongside this, not here.
+    @test isempty(Cecelia._support_short_movie_refusal(Tuple{String,Int}[], 61))
+
+    # One short movie names the shortest T and the largest odd inputFrames that fits.
+    lines = Cecelia._support_short_movie_refusal([("fXgbTl", 31)], 61)
+    @test length(lines) == 2
+    @test occursin("shortest is 31", lines[1])
+    @test occursin("61+ timepoints", lines[1])
+    @test occursin("31 (largest odd value ≤ 31)", lines[2])
+
+    # Even shortest → next-lower odd. min(31-1) if T=30, but here also check the T=1 clamp.
+    lines_even = Cecelia._support_short_movie_refusal([("aaa", 30), ("bbb", 45)], 61)
+    @test occursin("shortest is 30", lines_even[1])
+    @test occursin("29 (largest odd value ≤ 30)", lines_even[2])
+
+    # T=1 is the pathological edge; max_odd is clamped to 1 rather than 0.
+    lines_one = Cecelia._support_short_movie_refusal([("aaa", 1)], 5)
+    @test occursin("Set Temporal window to 1", lines_one[2])
+end
+
 @testset "_support_train_qc_findings — pure catalog" begin
     # Loss came down — no findings.
     @test isempty(Cecelia._support_train_qc_findings(Dict{String,Any}("lossDrop" => 2.5)))
