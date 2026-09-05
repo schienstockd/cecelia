@@ -33,6 +33,15 @@ The training task trains one model from N images in an experimental set, model r
 acquisitions. Matches `opticalFlow.train` and the "vault is for sharing" premise. Per-image training
 was rejected — contradicts the vault.
 
+**Amendment 2026-09-05 — one model pools N channels.** The training task takes `trainChannels`
+(multi-select), pools patches from every selected channel into ONE training set, and writes ONE `.pt`
++ manifest recording `channels: [...]`. Measured on `fXgbTl` (T=31, 3 photon-limited channels
+nuc-GFP + mem-TOM + CD169-Kat): a pooled model produced **visibly better** results than a mem-TOM
+specialist on mem-TOM itself, and generalised acceptably to the two channels it also saw. Loss
+curves converged near-identically (0.587 vs 0.597 final). The UX case for one-model-per-set follows:
+a user picks a set of channels once, one training run, done — no per-channel ritual.
+Comparison MP4s: `~/Downloads/TMP/denoise_pool_vs_specialist_fXgbTl_*.mp4`.
+
 ### D4 — Rename `OpticalFlowModule.vue` → `ModelTrainingModule.vue` NOW
 One module page hosts multiple training scenarios. The vault manager on that page gains a **kind
 selector** (Optical flow / Denoise / …). Route, sidebar entry, docs sweep. Rejected: two separate

@@ -33,7 +33,13 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.gpu_utils import torch_device, require_free_vram_gb
 from cecelia.utils.atomic_io import atomic_path, write_json_atomic
+
+# Free-VRAM budgets per UNet size, measured on RTX 2000 Ada Laptop 8 GB (~5 GB free after other
+# processes). These are the peak-training footprints — inference is much smaller and does not
+# need the pre-flight check. Keys mirror `_SUPPORT_UNET_SIZES` in train_support_denoise.jl.
+_MIN_FREE_VRAM_GB = {'small': 1.5, 'medium': 3.5, 'large': 5.0}
 
 from cecelia.vendor.support import SUPPORT, DatasetSUPPORT, random_transform
 
@@ -53,8 +59,12 @@ def _volume_for_zc(level, dim_utils, shape, c_idx, z_idx, c, z):
     return np.asarray(level[tuple(sl)], dtype=np.float32)
 
 
-def _load_training_volumes(movies, value_name, channel, input_frames, mid_z_only, log):
-    """Open each image via zarr_utils and pull one (or all) mid-Z volumes as float32 [T, Y, X]."""
+def _load_training_volumes(movies, value_name, channels, input_frames, mid_z_only, log):
+    """Open each image via zarr_utils and pull one (or all) mid-Z volumes per selected channel as
+    float32 [T, Y, X]. All volumes go into ONE pooled list — SUPPORT's dataset treats each patch
+    independently, so mixing channels teaches the model a richer noise distribution. Measured on
+    fXgbTl 2026-09-05: a pooled model matched (visibly beat) a per-channel specialist on the
+    strongest channel and generalised across the pool."""
     vols = []
     for m in movies:
         im_path = m['imPath']
@@ -75,15 +85,16 @@ def _load_training_volumes(movies, value_name, channel, input_frames, mid_z_only
         if nt < input_frames:
             log.log(f'[WARN] {uid}: only {nt} timepoints, need {input_frames} — skipped')
             continue
-        if channel >= nc:
-            log.log(f'[WARN] {uid}: channel {channel} out of range ({nc} channels) — skipped')
-            continue
 
-        planes = [nz // 2] if mid_z_only else list(range(nz))
-        for z in planes:
-            v = _volume_for_zc(level, du, shape, c_idx, z_idx, channel, z)
-            vols.append(torch.from_numpy(v).float())
-        log.log(f'   pooled {len(planes)} Z plane(s) ({v.shape[0]} × {v.shape[1]} × {v.shape[2]})')
+        for c in channels:
+            if c >= nc:
+                log.log(f'[WARN] {uid}: channel {c} out of range ({nc} channels) — skipped')
+                continue
+            planes = [nz // 2] if mid_z_only else list(range(nz))
+            for z in planes:
+                v = _volume_for_zc(level, du, shape, c_idx, z_idx, c, z)
+                vols.append(torch.from_numpy(v).float())
+            log.log(f'   ch{c}: pooled {len(planes)} Z plane(s) ({v.shape[0]} × {v.shape[1]} × {v.shape[2]})')
     return vols
 
 
@@ -93,9 +104,9 @@ def run(params):
     movies         = list(params.get('movies') or [])
     model_path     = str(params['modelPath'])
     qc_out_path    = params.get('qcOutPath')
-    channel        = script_utils.channel_index(
-        params.get('trainChannel'), 'trainChannel', 'train_support_denoise.jl')
-    channel_name   = str(params.get('channelName', ''))
+    channels       = script_utils.channel_indices(
+        params.get('trainChannels'), 'trainChannels', 'train_support_denoise.jl')
+    channel_names  = list(params.get('channelNames') or [])
     input_frames   = int(params.get('inputFrames', 61))
     patch_xy       = int(params.get('patchXY', 128))
     epochs         = int(params.get('epochs', 20))
@@ -110,17 +121,31 @@ def run(params):
     blind_ch       = int(_blind_conv_hidden)
     mid_z_only     = bool(params.get('midZOnly', True))
     value_name     = str(params.get('valueName', ''))
+    unet_size      = str(params.get('unetSize', 'medium'))
 
     if not movies:
         log.log('[ERROR] no movies to train on')
         raise SystemExit(1)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    _, device = torch_device()
+    if device is None:
+        device = torch.device('cpu')
     log.log(f'>> device: {device}, arch UNet {mid_channels} depth {depth}, '
             f'inputFrames {input_frames}, patch {patch_xy}, epochs {epochs}, batch {batch_size}')
 
+    # Pre-flight: refuse cleanly if the picked size cannot fit in free VRAM. Cheaper than an opaque
+    # `CUDA out of memory` stack half-way through epoch 1, and points at the actionable fix (pick a
+    # smaller size). No-op on MPS/CPU because there's no queryable free/total pair there.
+    min_gb = _MIN_FREE_VRAM_GB.get(unet_size)
+    if min_gb is not None:
+        require_free_vram_gb(min_gb, f'Model size "{unet_size}"', log=log, device=device)
+
+    if not channels:
+        log.log('[ERROR] no channels selected — trainChannels was empty')
+        raise SystemExit(1)
+
     # ── data ────────────────────────────────────────────────────────────────
-    vols = _load_training_volumes(movies, value_name, channel, input_frames, mid_z_only, log)
+    vols = _load_training_volumes(movies, value_name, channels, input_frames, mid_z_only, log)
     if not vols:
         log.log('[ERROR] no usable volumes across the set')
         raise SystemExit(1)
@@ -202,12 +227,12 @@ def run(params):
 
     manifest = {
         'kind': 'denoise-support',
-        'channelName': channel_name,
+        'channels': channel_names,
         'arch': arch,
         'training': {
             'imageUids': [m['uID'] for m in movies],
             'valueName': value_name,
-            'channel': channel,
+            'channelIndices': channels,
             'epochs': epochs,
             'batchSize': batch_size,
             'learningRate': lr,
