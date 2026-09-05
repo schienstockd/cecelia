@@ -96,8 +96,10 @@ class SupportTrainerSmokeTest(unittest.TestCase):
             'modelPath': model_path,
             'qcOutPath': qc_path,
             'valueName': 'default',
-            'trainChannel': 0,
-            'channelName': 'CH1',
+            # Two channels pooled into one model — DENOISE_INTEGRATION_PLAN.md D3 amendment.
+            # Both go into a single training run; the manifest records the list.
+            'trainChannels': [0, 1],
+            'channelNames': ['CH1', 'CH2'],
             'inputFrames': 5,
             'patchXY': 16,
             'epochs': 1,
@@ -118,7 +120,8 @@ class SupportTrainerSmokeTest(unittest.TestCase):
         with open(manifest_path, encoding='utf-8') as f:
             manifest = json.load(f)
         self.assertEqual(manifest['kind'], 'denoise-support')
-        self.assertEqual(manifest['channelName'], 'CH1')
+        # The manifest carries the FULL pooled channel list — the vault label reads this.
+        self.assertEqual(manifest['channels'], ['CH1', 'CH2'])
         arch = manifest['arch']
         for k in ('inputFrames', 'patchXY', 'midChannels', 'depth', 'blindConvChannels',
                   'oneByOneChannels', 'lastLayerChannels', 'bsSize', 'bp'):
@@ -126,7 +129,7 @@ class SupportTrainerSmokeTest(unittest.TestCase):
         self.assertEqual(arch['inputFrames'], 5)
         self.assertEqual(arch['midChannels'], [8, 16, 32])
         self.assertEqual(manifest['training']['imageUids'], ['test'])
-        self.assertEqual(manifest['training']['channel'], 0)
+        self.assertEqual(manifest['training']['channelIndices'], [0, 1])
 
         # QC sidecar carries the loss curve for _support_train_qc_findings
         with open(qc_path, encoding='utf-8') as f:
@@ -149,8 +152,8 @@ class SupportTrainerSmokeTest(unittest.TestCase):
                 'modelPath': model_path,
                 'qcOutPath': None,
                 'valueName': 'default',
-                'trainChannel': 0,
-                'channelName': 'CH1',
+                'trainChannels': [0],
+                'channelNames': ['CH1'],
                 'inputFrames': 999,   # bigger than SHAPE.size_t
                 'patchXY': 16,
                 'epochs': 1,

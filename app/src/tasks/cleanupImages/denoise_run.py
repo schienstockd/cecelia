@@ -29,6 +29,7 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.gpu_utils import torch_device
 from cecelia.utils.atomic_io import write_json_atomic
 
 from cecelia.vendor.support import SUPPORT, DatasetSUPPORT_test_stitch
@@ -146,7 +147,9 @@ def run(params):
     patch_xy     = int(arch.get('patchXY', 128))
     pad_t = input_frames // 2
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    _, device = torch_device()
+    if device is None:
+        device = torch.device('cpu')
     log.log(f'>> device: {device}, input_frames={input_frames}, patch_xy={patch_xy}')
 
     log.log(f'>> open image: {im_path}')

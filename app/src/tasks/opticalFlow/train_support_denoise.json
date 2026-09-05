@@ -25,12 +25,12 @@
       "tip": "Saved to the denoise vault under this name"
     },
     {
-      "key": "trainChannel",
-      "label": "Channel",
+      "key": "trainChannels",
+      "label": "Channels",
       "type": "channelSelection",
-      "multiple": false,
+      "multiple": true,
       "default": [],
-      "tip": "SUPPORT is per-channel; train one model per reporter"
+      "tip": "Pool channels into one model — one training run per set"
     },
     {
       "key": "unetSize",
@@ -38,11 +38,11 @@
       "type": "select",
       "variant": "chips",
       "default": "medium",
-      "tip": "Bigger = more capacity but more VRAM and longer training",
+      "tip": "Bigger = better results but slower and more VRAM",
       "options": [
-        { "label": "Small",  "value": "small",  "help": "UNet [16,32,64,128], ~0.5M params — fits on 4 GB VRAM" },
-        { "label": "Medium", "value": "medium", "help": "UNet [32,64,128,256], ~1.5M params — 8 GB VRAM" },
-        { "label": "Large",  "value": "large",  "help": "UNet [64,128,256,512], ~4.2M params — the eval winner on 2h06xA" }
+        { "label": "Small",  "value": "small",  "help": "Fast; fits any GPU" },
+        { "label": "Medium", "value": "medium", "help": "Balanced quality; needs ~4 GB free VRAM" },
+        { "label": "Large",  "value": "large",  "help": "Best quality; needs ~5 GB free VRAM, slower to train" }
       ]
     },
     {
@@ -53,7 +53,7 @@
       "max": 121,
       "step": 2,
       "default": 61,
-      "tip": "Frames the model sees per prediction (odd; centre is the target)"
+      "tip": "How many frames of context (odd, ≤ movie length)"
     },
     {
       "key": "patchXY",
@@ -113,7 +113,7 @@
           "max": 0.01,
           "step": 0.0001,
           "default": 0.0005,
-          "tip": "Adam learning rate"
+          "tip": "How fast the model learns — lower is safer"
         },
         {
           "key": "blindConvChannels",
@@ -123,7 +123,7 @@
           "max": 128,
           "step": 16,
           "default": 64,
-          "tip": "Width of the blind-spot branch (v2 used 64)"
+          "tip": "Capacity of the denoising branch — leave at 64"
         }
       ]
     }

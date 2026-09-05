@@ -44,13 +44,13 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     # `TrainFlowModel` — a mixed set would silently train on a different reporter per movie.
     ch_names = ccid_channel_names(read_ccid_raw(state_file(imgs[1])))
 
-    local channel_idx, model_path, unet
+    local channel_indices_selected, channel_names_selected, model_path, unet, unet_size
     try
-        chan_sel = channel_indices(get(params, "trainChannel", []), ch_names;
-                                   what = "trainChannel")
-        isempty(chan_sel) && error("Select the channel to train on — SUPPORT is per-channel.")
-        length(chan_sel) > 1 && error("Pick exactly one channel — SUPPORT trains one model per reporter.")
-        channel_idx = first(chan_sel)
+        chan_sel = channel_indices(get(params, "trainChannels", []), ch_names;
+                                   what = "trainChannels")
+        isempty(chan_sel) && error("Select at least one channel to train on.")
+        channel_indices_selected = chan_sel
+        channel_names_selected   = String[String(ch_names[c + 1]) for c in chan_sel]
 
         unet_size = string(get(params, "unetSize", "medium"))
         haskey(_SUPPORT_UNET_SIZES, unet_size) ||
@@ -90,10 +90,12 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
     input_frames = Int(get(params, "inputFrames", 61))
     isodd(input_frames) || (on_log("[ERROR] inputFrames must be odd (centre is the target); got $input_frames"); return nothing)
 
+    joined_names = join(channel_names_selected, "+")
+    joined_idx   = join(channel_indices_selected, ",")
     on_log("[INFO] Training on $(length(movies)) image(s) of $(length(imgs)) selected")
-    on_log("[INFO] Model:   $model_path")
-    on_log("[INFO] Channel: $(ch_names[channel_idx + 1]) (index $channel_idx)")
-    on_log("[INFO] Arch:    UNet $(unet["midChannels"]) depth $(unet["depth"]) | " *
+    on_log("[INFO] Model:    $model_path")
+    on_log("[INFO] Channels: $joined_names (indices $joined_idx)")
+    on_log("[INFO] Arch:     UNet $(unet["midChannels"]) depth $(unet["depth"]) | " *
            "inputFrames $input_frames | patch $(Int(get(params, "patchXY", 128)))")
 
     task_dir = imgs[1]._dir
@@ -105,8 +107,8 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
            modelPath        = model_path,
            qcOutPath        = qc_out_path,
            valueName        = value_name,
-           trainChannel     = channel_idx,
-           channelName      = string(ch_names[channel_idx + 1]),
+           trainChannels    = channel_indices_selected,
+           channelNames     = channel_names_selected,
            inputFrames      = input_frames,
            patchXY          = Int(get(params, "patchXY", 128)),
            epochs           = Int(get(params, "epochs", 20)),
@@ -114,6 +116,7 @@ function _run_task(task::TrainSupportDenoise, imgs::Vector{CciaImage}, params::D
            learningRate     = Float64(get(params, "learningRate", 5e-4)),
            midChannels      = unet["midChannels"],
            depth            = unet["depth"],
+           unetSize         = unet_size,
            blindConvChannels = Int(get(params, "blindConvChannels", 64)),
            midZOnly         = Bool(get(params, "midZOnly", true))),
         task_run_dir(task_dir);

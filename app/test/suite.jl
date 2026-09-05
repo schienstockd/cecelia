@@ -433,11 +433,13 @@ end
     @test isempty(bare[1].manifest)
     @test isempty(Cecelia.denoise_model_manifest("supMemTom.pt", td))
 
-    # With a manifest, the picker label carries the acquisition it was trained on.
+    # With a manifest, the picker label carries the acquisition it was trained on. A denoise model
+    # pools N channels into one (DENOISE_INTEGRATION_PLAN.md D3 amendment, measured on fXgbTl
+    # 2026-09-05); the label joins them with "+".
     write(joinpath(dir, "supMemTom.json"),
-          """{"channelName":"mem-TOM","arch":{"inputFrames":61,"midChannels":[64,128,256,512],"depth":4}}""")
+          """{"channels":["mem-TOM","nuc-GFP"],"arch":{"inputFrames":61,"midChannels":[64,128,256,512],"depth":4}}""")
     with_manifest = Cecelia.list_denoise_models(td)
-    @test with_manifest[1].label == "supMemTom (mem-TOM)"
+    @test with_manifest[1].label == "supMemTom (mem-TOM+nuc-GFP)"
     @test with_manifest[1].manifest["arch"]["inputFrames"] == 61
     @test with_manifest[1].manifest["arch"]["midChannels"] == [64, 128, 256, 512]
 
@@ -470,9 +472,10 @@ end
     @test spec["resource_pool"] == "gpu"
 
     # unetSize accepts the three sizes and nothing else; picking any of them must validate.
+    # `trainChannels` is a multi-select — the pooled-channels amendment (D3, fXgbTl 2026-09-05).
     for size in ("small", "medium", "large")
         @test Cecelia.validate_params(task, Dict{String,Any}(
-            "modelName" => "x", "trainChannel" => ["c1"], "unetSize" => size)) === nothing
+            "modelName" => "x", "trainChannels" => ["c1", "c2"], "unetSize" => size)) === nothing
     end
 
     # inputFrames stays odd — the centre-frame contract of a temporal blind-spot model. Non-odd is

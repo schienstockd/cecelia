@@ -399,10 +399,18 @@ function list_denoise_models(dev_dir::Union{String,Nothing} = nothing)::Vector{N
         last(splitext(name)) == ".pt" || continue
         isfile(joinpath(dir, name)) || continue
         manifest = denoise_model_manifest(name, dev_dir)
-        # Prefer channelName; fall back to whatever training recorded, or just the stem.
-        ch = get(manifest, "channelName", nothing)
+        # A denoise model pools N channels into one (DENOISE_INTEGRATION_PLAN.md D3 amendment,
+        # measured on fXgbTl 2026-09-05). Label leads with the joined channel names so a user can
+        # tell at a glance whether a model was trained on the right reporters for the image they
+        # picked. Empty list → just the stem, so a manifest missing channels still renders.
+        chs = get(manifest, "channels", nothing)
         stem = first(splitext(name))
-        label = isnothing(ch) || isempty(string(ch)) ? stem : "$(stem) ($(ch))"
+        label = if chs isa AbstractVector && !isempty(chs)
+            joined = join((string(c) for c in chs), "+")
+            "$(stem) ($(joined))"
+        else
+            stem
+        end
         push!(out, (name = name, label = label, source = "user", manifest = manifest))
     end
     out
