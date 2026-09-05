@@ -1,10 +1,15 @@
 """Train a SUPPORT model on N images from an experimental set.
 
-Self-supervised temporal blind-spot training — predicts the centre frame of an `input_frames`
-window from the surrounding frames. The vault stores exactly what inference needs to reconstruct
-the network: `<name>.pt` (state_dict) + `<name>.json` (manifest with the `arch` block the
-denoise runner reads via `_build_model`). Reference training loop:
-`scratchpad/denoise/run_support_v2.py` from the 2026-09-05 evaluation.
+Thin caller — the training loop itself lives in `coastal.support.train_support` (algorithm), this
+file owns only the IO half: opening OME-ZARR volumes through `zarr_utils`, running the free-VRAM
+pre-flight, and writing the `.pt` + `.json` manifest atomically. Same split as `smooth_run.py`
+uses for `coastal.smooth`.
+
+The manifest schema is unchanged from Phase B/C — `arch` mirrors `SUPPORT(...)` kwargs so the
+inference runner (`denoise_run.py`) can rebuild the network via `coastal.support.build_model`.
+DENOISE_INTEGRATION_PLAN.md → D3 amendment (pool channels into one training run) applies here
+too: `trainChannels` is multi-select, patches from every channel pool into one training set,
+manifest records `channels: [...]`.
 
 Parameter contract (JSON written by Julia):
   movies              - [{uID, imPath}], set-scope
@@ -12,22 +17,21 @@ Parameter contract (JSON written by Julia):
   modelPath           - absolute `.pt` target in <config_dir>/models/denoiseModels/
   qcOutPath           - JSON with loss curve + arch, read by _support_train_qc_findings
   valueName           - versioned filepath key (usually driftCorrected)
-  trainChannel        - 0-based channel index (single channel — SUPPORT is per-channel)
-  channelName         - human name, stored in the manifest
+  trainChannels       - list of 0-based channel indices (pooled — see D3 amendment)
+  channelNames        - human names in the same order, stored in the manifest
   inputFrames         - temporal window (odd; centre is the target)
   patchXY             - spatial patch size
   epochs              - passes over the pooled patches
   batchSize           - patches per gradient step
   learningRate        - Adam lr
   midChannels/depth/blindConvChannels - UNet architecture
+  unetSize            - "small"/"medium"/"large" — drives the VRAM pre-flight only
   midZOnly            - True = middle Z per movie (matches per-Z inference); False = all Z
 """
-import time
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
@@ -36,12 +40,12 @@ import cecelia.utils.script_utils as script_utils
 from cecelia.utils.gpu_utils import torch_device, require_free_vram_gb
 from cecelia.utils.atomic_io import atomic_path, write_json_atomic
 
+from coastal.support import train_support
+
 # Free-VRAM budgets per UNet size, measured on RTX 2000 Ada Laptop 8 GB (~5 GB free after other
 # processes). These are the peak-training footprints — inference is much smaller and does not
 # need the pre-flight check. Keys mirror `_SUPPORT_UNET_SIZES` in train_support_denoise.jl.
 _MIN_FREE_VRAM_GB = {'small': 1.5, 'medium': 3.5, 'large': 5.0}
-
-from cecelia.vendor.support import SUPPORT, DatasetSUPPORT, random_transform
 
 
 def _axis_len(dim_utils, letter, shape):
@@ -61,10 +65,10 @@ def _volume_for_zc(level, dim_utils, shape, c_idx, z_idx, c, z):
 
 def _load_training_volumes(movies, value_name, channels, input_frames, mid_z_only, log):
     """Open each image via zarr_utils and pull one (or all) mid-Z volumes per selected channel as
-    float32 [T, Y, X]. All volumes go into ONE pooled list — SUPPORT's dataset treats each patch
-    independently, so mixing channels teaches the model a richer noise distribution. Measured on
-    fXgbTl 2026-09-05: a pooled model matched (visibly beat) a per-channel specialist on the
-    strongest channel and generalised across the pool."""
+    float32 [T, Y, X]. All volumes go into ONE pooled list — `coastal.support.train_support` treats
+    each patch independently, so mixing channels teaches the model a richer noise distribution.
+    Measured on fXgbTl 2026-09-05: a pooled model matched (visibly beat) a per-channel specialist
+    on the strongest channel and generalised across the pool."""
     vols = []
     for m in movies:
         im_path = m['imPath']
@@ -150,18 +154,9 @@ def run(params):
         log.log('[ERROR] no usable volumes across the set')
         raise SystemExit(1)
 
-    train_ds = DatasetSUPPORT(
-        vols,
-        patch_size=[input_frames, patch_xy, patch_xy],
-        patch_interval=[5, patch_xy // 2, patch_xy // 2],
-        load_to_memory=True,
-    )
-    train_ds.precompute_indices()
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=False,
-                          num_workers=0, pin_memory=(device.type == 'cuda'))
-    log.log(f'>> {len(train_ds)} patches per epoch')
-
-    # ── model ───────────────────────────────────────────────────────────────
+    # ── train (owned by coastal.support) ───────────────────────────────────
+    # The arch dict is the shipping contract with the inference runner (`denoise_run.py` reads
+    # these exact keys back via `coastal.support.build_model`); keep both in sync.
     arch = dict(
         inputFrames=input_frames,
         patchXY=patch_xy,
@@ -173,57 +168,16 @@ def run(params):
         bsSize=[3, 3],
         bp=False,
     )
-    model = SUPPORT(
-        in_channels=arch['inputFrames'],
-        mid_channels=arch['midChannels'],
-        depth=arch['depth'],
-        blind_conv_channels=arch['blindConvChannels'],
-        one_by_one_channels=arch['oneByOneChannels'],
-        last_layer_channels=arch['lastLayerChannels'],
-        bs_size=arch['bsSize'],
-        bp=arch['bp'],
-    ).to(device)
-    n_params = sum(p.numel() for p in model.parameters())
-    log.log(f'>> model params: {n_params / 1e6:.2f}M')
-
-    optim = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
-    L1 = torch.nn.L1Loss(); L2 = torch.nn.MSELoss()
-    rng = np.random.default_rng(0)
-
-    # ── train ───────────────────────────────────────────────────────────────
-    # One tick per BATCH — the operational unit and the same beat as smooth_run's per-z ticks.
-    total = epochs * max(1, len(train_dl))
-    done = 0
-    log.progress(done, total)
-
-    epoch_losses = []
-    t0 = time.time()
-    for ep in range(epochs):
-        model.train()
-        train_ds.precompute_indices()
-        losses = []
-        for noisy_image, _, _ in train_dl:
-            noisy_image = noisy_image.to(device)
-            noisy_image, _ = random_transform(noisy_image, None, rng, True)
-            T = noisy_image.size(1)
-            target = noisy_image[:, T // 2, :, :].unsqueeze(1)
-            optim.zero_grad()
-            out = model(noisy_image)
-            loss = 0.5 * L1(out, target) + 0.5 * L2(out, target)
-            loss.backward()
-            optim.step()
-            losses.append(loss.item())
-            done += 1
-            log.progress(done, total)
-        ep_loss = float(np.mean(losses))
-        epoch_losses.append(ep_loss)
-        log.log(f'   epoch {ep + 1}/{epochs}: loss {ep_loss:.4f}  wall {time.time() - t0:.0f}s')
+    state_dict, epoch_losses = train_support(
+        volumes=vols, arch=arch, epochs=epochs, batch_size=batch_size, lr=lr,
+        device=device, on_progress=log.progress, on_log=log.log,
+    )
 
     # ── save ────────────────────────────────────────────────────────────────
     # `.pt` and manifest are two files; both must land atomically so a picker never sees a half-pair
     # (a .pt without a manifest is a hard error for the denoise runner — see D7 rationale).
     with atomic_path(model_path) as tmp_pt:
-        torch.save(model.state_dict(), tmp_pt)
+        torch.save(state_dict, tmp_pt)
 
     manifest = {
         'kind': 'denoise-support',
@@ -261,7 +215,6 @@ def run(params):
         })
         log.log(f'>> saved QC stats: {qc_out_path}')
 
-    log.progress(total, total)
     log.log('>> done')
 
 

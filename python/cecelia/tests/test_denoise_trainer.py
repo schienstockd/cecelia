@@ -7,7 +7,7 @@ and asserts:
     `arch.midChannels`, etc.) and the ones the QC picks up (`kind`, `training`),
   * the QC sidecar carries the loss curve.
 
-Skipped when `app/` is absent or torch/vendored SUPPORT aren't importable.
+Skipped when `app/` is absent or torch/coastal.support aren't importable.
 """
 import importlib.util
 import json
@@ -54,14 +54,14 @@ def _ome_xml(size_t, size_z, size_c, size_y, size_x):
 
 try:
     import torch  # noqa: F401
-    from cecelia.vendor.support import SUPPORT  # noqa: F401
+    from coastal.support import train_support  # noqa: F401
     _HAS_TORCH = True
 except Exception:
     _HAS_TORCH = False
 
 
 @unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
-@unittest.skipUnless(_HAS_TORCH, 'torch + vendored SUPPORT required')
+@unittest.skipUnless(_HAS_TORCH, 'torch + coastal.support required')
 class SupportTrainerSmokeTest(unittest.TestCase):
     SHAPE = dict(size_t=12, size_z=1, size_c=2, size_y=32, size_x=32)
 
@@ -125,7 +125,7 @@ class SupportTrainerSmokeTest(unittest.TestCase):
         arch = manifest['arch']
         for k in ('inputFrames', 'patchXY', 'midChannels', 'depth', 'blindConvChannels',
                   'oneByOneChannels', 'lastLayerChannels', 'bsSize', 'bp'):
-            self.assertIn(k, arch, f'arch missing {k} — denoise_run._build_model reads it')
+            self.assertIn(k, arch, f'arch missing {k} — coastal.support.build_model reads it')
         self.assertEqual(arch['inputFrames'], 5)
         self.assertEqual(arch['midChannels'], [8, 16, 32])
         self.assertEqual(manifest['training']['imageUids'], ['test'])
