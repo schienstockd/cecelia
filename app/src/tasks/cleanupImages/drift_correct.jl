@@ -24,6 +24,7 @@ const DRIFT_RESIDUAL_WARN_PX = 2.0
 function _drift_qc_findings(meta)
     findings = Dict{String,Any}[]
     src = collect(Int, meta["sourceShape"]); out = collect(Int, meta["outputShape"])
+    per_plane = Bool(get(meta, "perPlane", false))
 
     rms = haskey(meta, "residualRms") ? Float64(meta["residualRms"]) : nothing
     if !isnothing(rms) && rms > DRIFT_RESIDUAL_WARN_PX
@@ -36,36 +37,63 @@ function _drift_qc_findings(meta)
                 "nRejected"   => get(meta, "nRejected", 0))))
     end
 
-    interp = collect(Int, get(meta, "interpolated", Int[]))
-    if !isempty(interp)
-        # A rigid run's `interpolated` frames are ones whose rotation exceeded the cap and were
-        # predicted from neighbours — a different action for the user ("did the stage really
-        # rotate more than 5°, or is something else going on?") than a lost-lock frame on a
-        # translation run ("try a better reference channel"). Same field, different code.
-        rigid = haskey(meta, "angles")
-        code  = rigid ? "drift.rotation.capped" : "drift.unregistered_frames"
-        detail = Dict{String,Any}("frames" => interp)
-        if rigid
-            detail["maxAngleDeg"] = round(Float64(get(meta, "maxAngleDeg", 0.0)), digits = 2)
-            detail["maxAngleCap"] = round(Float64(get(meta, "maxAngleCap", 0.0)), digits = 2)
+    if per_plane
+        # `interpolated` on a per-plane run is a dict {z: [t]}. Total count across every plane is the
+        # number of (z, t) fits that had to be predicted. A count of 12 across 32 planes and 71 frames
+        # is different in kind from 12 across 1 volume trajectory — record the split in `detail` so a
+        # reader can see whether one plane is dropping out or many.
+        interp_raw = get(meta, "interpolated", Dict{String,Any}())
+        per_plane_counts = Dict{Int,Int}()
+        total_interp = 0
+        for (z_key, ts) in interp_raw
+            z = tryparse(Int, string(z_key)); isnothing(z) && continue
+            per_plane_counts[z] = length(ts)
+            total_interp += length(ts)
         end
-        push!(findings, qc_finding("warn", code; value = length(interp), detail = detail))
+        if total_interp > 0
+            push!(findings, qc_finding("warn", "drift.unregistered_frames";
+                value = total_interp,
+                detail = Dict{String,Any}(
+                    "totalPlaneFrames" => total_interp,
+                    "nPlanesAffected"  => length(per_plane_counts),
+                    "worstPlaneCount"  => isempty(per_plane_counts) ? 0 : maximum(values(per_plane_counts)))))
+        end
+    else
+        interp = collect(Int, get(meta, "interpolated", Int[]))
+        if !isempty(interp)
+            # A rigid run's `interpolated` frames are ones whose rotation exceeded the cap and were
+            # predicted from neighbours — a different action for the user ("did the stage really
+            # rotate more than 5°, or is something else going on?") than a lost-lock frame on a
+            # translation run ("try a better reference channel"). Same field, different code.
+            rigid = haskey(meta, "angles")
+            code  = rigid ? "drift.rotation.capped" : "drift.unregistered_frames"
+            detail = Dict{String,Any}("frames" => interp)
+            if rigid
+                detail["maxAngleDeg"] = round(Float64(get(meta, "maxAngleDeg", 0.0)), digits = 2)
+                detail["maxAngleCap"] = round(Float64(get(meta, "maxAngleCap", 0.0)), digits = 2)
+            end
+            push!(findings, qc_finding("warn", code; value = length(interp), detail = detail))
+        end
     end
 
     ce = qc_canvas_expansion(src, out, String(meta["dimOrder"]); code = "drift.canvas_expansion")
     isnothing(ce) || push!(findings, ce)
 
-    shifts = meta["shifts"]                      # [T][ndim] per-frame deltas
-    if !isempty(shifts)
-        mags = [sqrt(sum(abs2, Float64.(row))) for row in shifts]
-        med  = median(mags); mx, ti = findmax(mags)
-        # relative (dwarfs the typical step) AND an absolute floor (px) so tiny, jittery trajectories
-        # don't trip it. ti is the 0-based frame index of the jump.
-        if med > 0 && mx > 4 * med && mx > 5
-            push!(findings, qc_finding("warn", "drift.jump";
-                value = ti - 1,
-                detail = Dict{String,Any}("atT" => ti - 1, "jumpPx" => round(mx, digits = 1),
-                                          "medianPx" => round(med, digits = 1))))
+    if !per_plane
+        # `drift.jump` looks for a single big per-frame delta relative to the trajectory's median
+        # step. On a per-plane run the shifts are [T-1][Z][2] — a "jump" is a per-plane concept and
+        # the pooled median hides it, so this finding is skipped there and left to the residual
+        # RMS / QC score, which already picks up broken per-plane fits.
+        shifts = meta["shifts"]                  # [T][ndim] per-frame deltas
+        if !isempty(shifts)
+            mags = [sqrt(sum(abs2, Float64.(row))) for row in shifts]
+            med  = median(mags); mx, ti = findmax(mags)
+            if med > 0 && mx > 4 * med && mx > 5
+                push!(findings, qc_finding("warn", "drift.jump";
+                    value = ti - 1,
+                    detail = Dict{String,Any}("atT" => ti - 1, "jumpPx" => round(mx, digits = 1),
+                                              "medianPx" => round(med, digits = 1))))
+            end
         end
     end
     findings, src, out
@@ -75,19 +103,38 @@ end
 # movies from one set should register comparably, and the image that did not is exactly what the
 # cohort check exists to surface.
 function _drift_qc_metrics(meta, src, out)
+    per_plane = Bool(get(meta, "perPlane", false))
     max_xy = 0.0
     shifts = meta["shifts"]
     if !isempty(shifts)
         # Cumulative excursion in XY — how far the field actually travelled, which is what the
         # canvas has to cover. The trailing two columns are Y,X in both the 2D and 3D layouts.
-        cum = cumsum(reduce(vcat, [reshape(Float64.(row), 1, :) for row in shifts]), dims = 1)
-        yx  = cum[:, end-1:end]
-        max_xy = sqrt(sum(abs2, maximum(yx, dims = 1) .- minimum(yx, dims = 1)))
+        if per_plane
+            # Per-plane shifts are [T-1][Z][2]. Excursion is per-plane; the WORST plane's excursion
+            # is the number that decides whether the canvas expansion is dominated by one plane or
+            # spread across the volume — that's what a cohort comparison wants to see.
+            per_plane_max = 0.0
+            n_z = length(first(shifts))
+            for z in 1:n_z
+                z_deltas = reduce(vcat, [reshape(Float64.(row[z]), 1, :) for row in shifts])
+                cum = cumsum(z_deltas, dims = 1)
+                excursion = sqrt(sum(abs2, maximum(cum, dims = 1) .- minimum(cum, dims = 1)))
+                per_plane_max = max(per_plane_max, excursion)
+            end
+            max_xy = per_plane_max
+        else
+            cum = cumsum(reduce(vcat, [reshape(Float64.(row), 1, :) for row in shifts]), dims = 1)
+            yx  = cum[:, end-1:end]
+            max_xy = sqrt(sum(abs2, maximum(yx, dims = 1) .- minimum(yx, dims = 1)))
+        end
     end
+    frames_interp = per_plane ?
+        sum(length(ts) for (_, ts) in get(meta, "interpolated", Dict{String,Any}()); init = 0) :
+        length(get(meta, "interpolated", []))
     m = Dict{String,Any}(
         "canvasExpansion"    => round(prod(Float64.(out)) / max(prod(Float64.(src)), 1.0), digits = 2),
         "maxDriftPx"         => round(max_xy, digits = 1),
-        "framesInterpolated" => length(get(meta, "interpolated", [])),
+        "framesInterpolated" => frames_interp,
     )
     # Absent on a sidecar written before the residual existed — leave it out rather than banking a
     # 0, which reads as a perfect registration and would drag a cohort median with it.
@@ -154,6 +201,20 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     # where estimated drift is at the PC noise floor (see `_smooth_positions` in correction_utils.py).
     # 0 = off. Default 6 chosen from the 2h06xA / ttRMjQ audit — see docs/todo/DRIFT_JITTER_PLAN.md.
     smooth_sigma  = Float64(get(params, "driftSmoothSigma", 6.0))
+    # Per-Z-plane correction: fit ONE (Y, X) shift per (t, z) instead of ONE per t. For movies whose
+    # motion depends on Z depth — the canonical case is breathing under a coverslip on intravital
+    # preps, where shallow and deep planes translate in OPPOSITE directions on a single breath and
+    # any whole-volume rigid fit averages them to zero, leaving the shear in the output. Only
+    # meaningful for multiLag/chain (sitkRigid keeps its own path). Ignored on 2D images.
+    # See docs/todo/DRIFT_PERPLANE_PLAN.md.
+    per_plane     = Bool(get(params, "driftPerPlane", false))
+    # Cross-Z smoothness prior for the per-plane joint solver — couples adjacent planes so a
+    # signal-poor plane borrows its bright neighbour's fit instead of noise-fitting on its own.
+    # Second-difference penalty, so a linear Z-ramp (the breathing shear shape) passes through
+    # unchanged; only Z-plane-to-Z-plane DISCONTINUITIES get penalised. 0 = independent per-plane
+    # solve (the P1 default). Ignored when driftPerPlane is off or estimator is chain.
+    # See docs/todo/DRIFT_PERPLANE_PLAN.md → Decision 3 / Phase 3.
+    z_smoothness  = Float64(get(params, "driftZSmoothness", 0.0))
 
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_correction_path")
@@ -162,6 +223,8 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            (estimator == "multiLag" ? " (max lag $max_lag)" :
             estimator == "sitkRigid" ? " (max angle $(max_angle_deg)°)" : "") *
            (estimator == "sitkRigid" ? "" : ", normalisation $normalisation") *
+           (per_plane ? ", per-plane 2D" : "") *
+           (per_plane && z_smoothness > 0 ? ", z-smoothness $z_smoothness" : "") *
            (smooth_sigma > 0 ? ", trajectory σ=$smooth_sigma" : ", no trajectory smoothing"))
 
     qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
@@ -175,6 +238,8 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            driftMaxLag        = max_lag,
            driftMaxAngle      = max_angle_deg,
            driftSmoothSigma   = smooth_sigma,
+           driftPerPlane      = per_plane,
+           driftZSmoothness   = z_smoothness,
            qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

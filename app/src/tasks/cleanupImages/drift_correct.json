@@ -81,6 +81,25 @@
       "step": 0.5,
       "figure": "driftSmoothing",
       "tip": "Trajectory low-pass — kills sub-pixel-noise jitter, transparent to real motion (0 = off)"
+    },
+    {
+      "key": "driftPerPlane",
+      "label": "Per Z-plane (breathing shear)",
+      "type": "bool",
+      "default": false,
+      "showIf": { "driftEstimator": ["multiLag", "chain"] },
+      "tip": "One shift per (t, Z) instead of one per frame — for breathing shear across depth"
+    },
+    {
+      "key": "driftZSmoothness",
+      "label": "Z-plane coupling",
+      "type": "float",
+      "default": 0.0,
+      "min": 0,
+      "max": 5,
+      "step": 0.1,
+      "showIf": { "driftPerPlane": [true] },
+      "tip": "Raise if some Z-planes still jump after correction (0 = off, try 0.3, then 0.5)"
     }
   ]
 }
