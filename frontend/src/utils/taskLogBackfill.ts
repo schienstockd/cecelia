@@ -6,9 +6,12 @@
 // `{img._dir}/logs/{fun_name}.log` (`_wrap_log_with_file`), and `GET /api/images/tasklog` serves it.
 //
 // **The file is cumulative** — one per (image, fun_name), appended by every run — so it must be sliced to
-// the run in question, which is what the route's `since` does with the task's `started_at`. The slice is
-// server-side on purpose: the file's stamps are LOCAL time, and the server is the process whose clock
-// wrote them (`_tasklog_since` in `api/src/routes.jl`).
+// the run in question. The fetch passes the run's `startedAt` as `since` AND, for a history row whose
+// same-`(image, fun)` was later re-run, the next run's start as `until`; the server slices half-open
+// (`since ≤ ts < until`). Without `until` the slice runs to EOF — fine for a live task and any run with
+// no successor; with it, an older history row shows its own output rather than dragging every later
+// run's output in too. Slicing is server-side because the file's stamps are LOCAL time and the server
+// is the process whose clock wrote them (`_tasklog_slice` in `api/src/routes.jl`).
 //
 // Fetched LAZILY, when a row's log is first opened — twenty adopted rows must not fire twenty requests on
 // connect for output nobody has asked to see.
@@ -28,6 +31,11 @@ export interface BackfillTarget {
   funName: string
   /** the task's start; without it the whole cumulative file would come back, previous runs included */
   startedAt?: Date
+  /** upper bound — the start of the NEXT same-`(image, fun)` run, when one exists. Without it the
+   *  slice runs to EOF, so a history row from before repeated runs pulled every later run's output
+   *  in too. Live rows leave it unset — nothing has started after them yet. Sourced from
+   *  `TaskEntry.logSliceUntil`, which is computed by `utils/taskHistoryRows.ts`. */
+  until?: Date
 }
 
 /**
@@ -47,6 +55,7 @@ export async function fetchLogBackfill(t: BackfillTarget): Promise<string[]> {
     fun:        t.funName,
     since:      t.startedAt.toISOString().replace(/(\.\d{3})Z$/, '$1Z'),
   })
+  if (t.until) qs.set('until', t.until.toISOString().replace(/(\.\d{3})Z$/, '$1Z'))
   try {
     const r = await fetch(`/api/images/tasklog?${qs.toString()}`)
     if (!r.ok) return []
