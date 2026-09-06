@@ -253,8 +253,74 @@ function cell(text: string, frames?: VisFrame[]): VisCell {
   return { value: 0, px: null, r: 0, at: 0, text, pxText: '', frames }
 }
 
-/** The two methods the figure compares. `mean` is deliberately absent — see `smoothVisColumns`. */
-export const SMOOTH_VIS_METHODS = ['median', 'gated'] as const
+/** The three methods the figure compares. `mean` is deliberately absent — see `smoothVisColumns`. */
+export const SMOOTH_VIS_METHODS = ['median', 'gated', 'farneback'] as const
+
+/**
+ * Flow-warped fusion, the schematic. NOT real Farneback (no pyramids, no polynomial expansion —
+ * cv2's construction does not fit at 16x16 and does not run in the browser). What we DO honestly
+ * carry is the shape of the choice: estimate WHERE the neighbour moved to relative to the centre,
+ * warp it back, then average. The estimate here is a single rigid translation per neighbour, found
+ * by integer cross-correlation against the guide within +-search — enough of a dense-flow analogue
+ * that the reader sees "the neighbour is put on top of the centre, then averaged" rather than
+ * being asked to imagine it.
+ *
+ * The clamp is `farnebackMaxShiftPx`, applied per-pixel like `_warp_by_flow`: pixels whose warp
+ * magnitude exceeds it fall back to the source. On the schematic this shows up as the knob doing
+ * what the task's knob does — dropping the clamp to 1 collapses the warp to the identity where
+ * the spot has moved further than that, which is exactly the failure mode a user tuning it needs
+ * to see.
+ *
+ * Compared to `gated`: gated weights by patch agreement so mismatches fall out of the average and
+ * the identity is the floor; farneback moves the frame first and then averages, so on smooth motion
+ * both keep the moving spot bright and either can top the other by a small margin depending on the
+ * clamp. What the figure argues is that BOTH keep what the median smears — which one to pick is a
+ * property of the data (smooth deformation vs. discrete cell motion, sparsity, noise), not of this
+ * schematic; the `Max shift` row shows the knob that can flip the picture between them.
+ */
+function bestShift(target: VisFrame, nb: VisFrame, maxShift: number): [number, number] {
+  const r = Math.max(1, Math.min(N - 1, Math.round(maxShift)))
+  let bestDy = 0, bestDx = 0, bestErr = Infinity
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      let err = 0, n = 0
+      // Compare only the overlapping region, so a shift is not penalised for the edge it exposes.
+      for (let y = Math.max(0, dy); y < Math.min(N, N + dy); y++) {
+        for (let x = Math.max(0, dx); x < Math.min(N, N + dx); x++) {
+          const d = nb[y - dy][x - dx] - target[y][x]
+          err += d * d; n++
+        }
+      }
+      err = n > 0 ? err / n : Infinity
+      if (err < bestErr) { bestErr = err; bestDy = dy; bestDx = dx }
+    }
+  }
+  return [bestDy, bestDx]
+}
+
+export function farnebackSequence(seq: VisFrame[], frames: number, maxShiftPx: number): VisFrame[] {
+  return seq.map((target, t) => {
+    const win = windowAt(t, frames).filter(i => i !== t)
+    const acc = target.map(r => r.slice())
+    let n = 1
+    for (const i of win) {
+      const nb = seq[i]
+      const [dy, dx] = bestShift(target, nb, maxShiftPx)
+      const shiftMag = Math.hypot(dy, dx)
+      // Per-pixel clamp is really uniform for a rigid translation: either the whole shift is within
+      // the clamp (use the warped frame) or it exceeds it (fall back to source per pixel — a no-op
+      // add). One rigid translation per neighbour so the fall-back is per-frame, not per-pixel,
+      // which is the honest schematic-level analogue of `_warp_by_flow`'s per-pixel clamp.
+      const warped = shiftMag <= maxShiftPx
+        ? Array.from({ length: N }, (_, y) => Array.from({ length: N }, (_, x) =>
+            nb[Math.min(N - 1, Math.max(0, y - dy))][Math.min(N - 1, Math.max(0, x - dx))]))
+        : nb  // clamp exceeded — identity fall-back (source), matches `_warp_by_flow`'s guard
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) acc[y][x] += warped[y][x]
+      n += 1
+    }
+    return acc.map(row => row.map(v => v / n))
+  })
+}
 
 // ─── spatial method figure ──────────────────────────────────────────────────
 //
@@ -452,14 +518,16 @@ export function smoothSpatialFigure(inp: SmoothSpatialVisInput): { vis: VisColum
 }
 
 export interface SmoothVisInput {
-  /** `temporalFrames` — the same window for both columns; the comparison is the method */
+  /** `temporalFrames` — the same window for every column; the comparison is the method */
   frames: number
   /** `spatialSigma`, applied before the temporal term because the task applies it before */
   sigma: number
   /** z-planes x timepoints across the selected images, or null when nothing is selected yet */
   planes: number | null
-  /** how many channels are selected — `gated`'s cost is per channel */
+  /** how many channels are selected — `gated`/`farneback`'s cost is per channel */
   channels: number
+  /** `farnebackMaxShiftPx` — per-pixel warp clamp; the knob the farneback column reflects */
+  farnebackMaxShiftPx: number
 }
 
 /**
@@ -528,10 +596,20 @@ export const GAP_WORTH_PAYING_FOR = 0.12
  * Deliberately silent about the cost — the cost row states it, and how many minutes are worth a
  * sharper cell is not a judgement this figure can make for someone. It says what the pictures show;
  * the price is beside it.
+ *
+ * Three-way now that farneback is a fourth column: pick the winner between the two motion-compensated
+ * methods (gated / farneback) and compare THAT peak against the median. When the winner and the
+ * median are close, the median is enough; otherwise, name which one keeps more. Reason for a
+ * winner-then-compare rather than a three-way ranking: the choice a user actually makes is "the free
+ * one or a compensated one", and if they are picking a compensated one the figure should say which
+ * kept more on this schematic — a ranked list would spend a line arguing about a difference that is
+ * usually small compared to the median gap.
  */
-export function smoothVerdict(gap: number): string {
-  return gap < GAP_WORTH_PAYING_FOR
-    ? 'Median is enough at this window'
+export function smoothVerdict(gapMedGate: number, gapMedFlow: number): string {
+  const gap = Math.max(gapMedGate, gapMedFlow)
+  if (gap < GAP_WORTH_PAYING_FOR) return 'Median is enough at this window'
+  return gapMedFlow > gapMedGate
+    ? 'Flow-warp keeps what the median smears at this window'
     : 'Gated keeps what the median smears at this window'
 }
 
@@ -551,46 +629,59 @@ function framesOf(vis: VisColumns, rowKey: string, column: string): VisFrame[] {
 /** The figure and the line under it — what a consumer mounts. */
 export function smoothFigure(inp: SmoothVisInput): { vis: VisColumns; note: string } {
   const vis = smoothVisColumns(inp)
-  const gap = amplitudeGap(framesOf(vis, 'result', 'median'), framesOf(vis, 'result', 'gated'))
-  return { vis, note: smoothVerdict(gap) }
+  const med = framesOf(vis, 'result', 'median')
+  const gapGate = amplitudeGap(med, framesOf(vis, 'result', 'gated'))
+  const gapFlow = amplitudeGap(med, framesOf(vis, 'result', 'farneback'))
+  return { vis, note: smoothVerdict(gapGate, gapFlow) }
 }
 
 /**
- * Build the figure. Two columns, and `mean` is not one of them: it is the option nobody should pick
- * (it averages the whole window regardless of motion), and a third column would spend a third of the
+ * Build the figure. `mean` is deliberately absent from the method columns: it is the option nobody
+ * should pick (it averages the whole window regardless of motion), and a column for it would spend
  * width arguing against a straw man instead of showing the choice that is actually being made.
  */
 export function smoothVisColumns(inp: SmoothVisInput): VisColumns {
   const frames = Math.max(1, inp.frames)
+  const clamp = Math.max(0, inp.farnebackMaxShiftPx)
   const raw = motionSequence()
   const spatial = raw.map(f => blur(f, inp.sigma))
-  const [input, med, gat] = normalise(spatial, medianSequence(spatial, frames),
-                                      gatedSequence(spatial, frames))
+  const [input, med, gat, fwarp] = normalise(spatial, medianSequence(spatial, frames),
+                                             gatedSequence(spatial, frames),
+                                             farnebackSequence(spatial, frames, clamp))
 
-  // The input is a COLUMN, not a row of its own. Spanning it above the two outputs was true — one
-  // sequence, shared — but it read as a third thing floating over them rather than as the frame they
-  // are both made from, and the eye cannot compare two pictures it has to travel between. Side by
-  // side, all three playing off the same index, the comparison is one glance along a row: this went
+  // The input is a COLUMN, not a row of its own. Spanning it above the outputs was true — one
+  // sequence, shared — but it read as a third thing floating over them rather than as the frame the
+  // others are made from, and the eye cannot compare pictures it has to travel between. Side by
+  // side, all playing off the same index, the comparison is one glance along a row: this went
   // in, these came out. It is still one sequence; it is now drawn where the comparison happens.
   //
   // `uniform` stays false throughout. In `paramVis` it marks the failure state — two segmentation
   // passes configured alike — and colours the label as a warning. Here an identical window across the
   // columns is the POINT, not a mistake, so the flag would be a red mark on the one row that must be
   // the same.
+  const blankDist = { value: 0, px: null, r: 0, at: 0, text: '', pxText: '' }
   const rows: VisRow[] = [
     { key: 'result', label: 'Simulated', role: 'grid', uniform: false,
-      cells: [cell('', input), cell('', med), cell('', gat)] },
+      cells: [cell('', input), cell('', med), cell('', gat), cell('', fwarp)] },
     { key: 'window', label: 'Window', role: 'distance', uniform: false,
       cells: [
-        // Nothing to say for the input — it is what the window is applied TO. The two that carry a
+        // Nothing to say for the input — it is what the window is applied TO. The three that carry a
         // value are equal by construction, and `paramVis` scales a row against its own columns, so
         // "full radius" is what that rule yields; spelled out because there is no peak to divide by.
-        { value: 0, px: null, r: 0, at: 0, text: '', pxText: '' },
+        blankDist,
+        { value: frames, px: null, r: MAX_R, at: 0, text: `${frames} frames`, pxText: '' },
         { value: frames, px: null, r: MAX_R, at: 0, text: `${frames} frames`, pxText: '' },
         { value: frames, px: null, r: MAX_R, at: 0, text: `${frames} frames`, pxText: '' },
       ] },
+    // The farneback-only knob. Follows the JSON's `showIf: temporalStat=farneback` — a value in the
+    // one column it applies to, blanks in the rest. The slider then has a home in the figure.
+    { key: 'clamp', label: 'Max shift', role: 'text', uniform: false,
+      cells: [cell(''), cell(''), cell(''), cell(`${clamp.toFixed(0)}px`)] },
+    // Extra time: `~gated` for the farneback column — both share the guide-once, apply-per-channel
+    // pattern with one heavy op per neighbour, so they are in the same league; we have not measured
+    // a s/plane rate for farneback yet, and inventing a number would be a memorised false claim.
     { key: 'cost', label: 'Extra time', role: 'text', uniform: false,
-      cells: [cell(''), cell('~free'), cell(gatedCost(inp.planes, inp.channels))] },
+      cells: [cell(''), cell('~free'), cell(gatedCost(inp.planes, inp.channels)), cell('~gated')] },
   ]
 
   return { columns: ['input', ...SMOOTH_VIS_METHODS], rows, pxSize: null, uniformKeys: [] }

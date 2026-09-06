@@ -85,10 +85,11 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       sigma: num(ctx.values?.spatialSigma, 1),
       planes: planeCount(ctx),
       channels: Math.max(1, (ctx.values?.channels as unknown[] | undefined)?.length ?? 1),
+      farnebackMaxShiftPx: num(ctx.values?.farnebackMaxShiftPx, 8),
     })
     return {
       vis,
-      // The whole point of the figure, said out loud. Two grids that agree ARE the answer at the
+      // The whole point of the figure, said out loud. Grids that agree ARE the answer at the
       // default window, but only to someone who knows that is what agreement means — so the figure
       // draws the conclusion rather than leaving it to be inferred. No severity: it is a
       // recommendation, not a finding about the user's data.
@@ -99,9 +100,9 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
     // this was a defect on screen.)
     title: 'Temporal statistic',
       tip: 'Show what each statistic does to a moving spot',
-      headings: ['Input', 'Median', 'Gated'],
+      headings: ['Input', 'Median', 'Gated', 'Flow-warp'],
       storageKey: 'smooth-method-figure',
-      defaultW: 340, defaultH: 300,
+      defaultW: 420, defaultH: 320,
     }
   },
 
