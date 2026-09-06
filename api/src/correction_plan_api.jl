@@ -1,18 +1,27 @@
-# ── /api/correction-plan/* — surface for slices 3a + 3b of docs/todo/CORRECTION_QC_PLAN.md ─────────
+# ── /api/correction-plan/* — surface for slices 3a + 3b + 3d of docs/todo/CORRECTION_QC_PLAN.md ────
 #
-# Four endpoints:
+# Five endpoints:
 #   GET  /api/correction-plan/presets                                → [{id,name,description,orderHints,validationStatus}, …]
 #   POST /api/correction-plan/recommend { projectUid, imageUid,
 #                                        cardId?, wizard? }          → plan dict (`_plan_to_dict`)
 #   GET  /api/correction-plan/get?projectUid=&imageUid=              → { plan | null, exists, stale }
 #   POST /api/correction-plan/save    { projectUid, imageUid,
 #                                        cardId?, wizard? }          → plan dict (side-effect: writes plan.json)
+#   POST /api/correction-plan/mount   { projectUid, imageUid,
+#                                        overwrite? }                → { ok, name, nodeCount, created }
 #
 # The recommend endpoint is pure (no disk write). Save runs recommend AND persists to plan.json so
 # the sidecar records the user's card choice + wizard answers atomically. Get returns whether the
 # sidecar exists and whether its `saturationFingerprint` still matches the image's current meta
 # (`stale = true` means the image was re-imported since the plan was saved). The frontend uses that
 # to decide "load saved" vs "recommend fresh" without a second round-trip.
+#
+# Mount converts the saved plan into a ChainTemplate and writes it into the project's chains dir. It
+# requires the plan to be on disk (mounting a fresh, unpersisted recommendation would create a chain
+# whose provenance can't be traced back to a card the user actually picked). Chain name is fixed by
+# `plan_to_chain_template` at `correction-plan-{imageUid}` — canonical per-image — so re-mounting the
+# same image's plan is the expected way to sync a chain to a changed card, gated by `overwrite: true`
+# to keep an accidental overwrite of a hand-edited chain from being silent.
 #
 # Every response uses the plan.json field-name convention (`funName`, `orderWeight`, …) so the
 # frontend types match plan.json 1:1 — the saved sidecar and the recommend response are one shape.
@@ -119,5 +128,53 @@ function api_correction_plan_get(req::HTTP.Request)
         "plan"   => Cecelia._plan_to_dict(plan),
         "exists" => true,
         "stale"  => stale,
+    ))
+end
+
+# Mount = load the saved plan → ChainTemplate → save_chain_template!. Returns 409 if a chain with
+# the target name already exists and `overwrite` was not sent — a re-mount overwrite is the expected
+# flow, so the client's confirm-then-retry is the safety net for the case where a user (or another
+# author) edited the chain by hand and would lose those edits.
+function api_correction_plan_mount(req::HTTP.Request, body_bytes::Vector{UInt8})
+    body, err = _parse_recommend_body(body_bytes)
+    body === nothing && return err
+    proj_uid = String(get(body, :projectUid, ""))
+    img, gerr = _gating_image(proj_uid, String(get(body, :imageUid, "")))
+    img === nothing && return gerr
+
+    plan = Cecelia.load_plan(img)
+    plan === nothing && return 409, JSON3.write((;
+        error="No saved plan for this image — Save the plan first"))
+    isempty(plan.included) && return 409, JSON3.write((;
+        error="Nothing to mount — the plan has no included steps"))
+
+    template = Cecelia.plan_to_chain_template(plan)
+    try
+        validate_chain_template(template)
+    catch e
+        e isa ChainTemplateError || rethrow()
+        return 400, JSON3.write((; error="Plan translated to an invalid chain: $(e.msg)"))
+    end
+
+    overwrite = get(body, :overwrite, false) === true
+    dir  = _chains_dir_for_project(proj_uid)
+    path = joinpath(dir, "$(template.name).json")
+    if isfile(path) && !overwrite
+        return 409, JSON3.write((;
+            error="Chain '$(template.name)' already exists — pass overwrite: true to replace it",
+            name = template.name,
+            existed = true,
+        ))
+    end
+
+    created = !isfile(path)
+    save_chain_template!(load_project(proj_uid), template)
+    @info "Mounted correction plan to chain" name=template.name project=proj_uid nodes=length(template.nodes) created=created
+    _broadcast_chains_updated(proj_uid)
+    return 200, JSON3.write((;
+        ok        = true,
+        name      = template.name,
+        nodeCount = length(template.nodes),
+        created   = created,
     ))
 end

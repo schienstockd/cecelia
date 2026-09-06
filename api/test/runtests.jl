@@ -4726,6 +4726,7 @@ end
         "/api/boards/add",   # create-only board authoring (MCP write 6/6); NOT /api/projects/boards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
+        "/api/correction-plan/mount",
         "/api/correction-plan/recommend",
         "/api/correction-plan/save",
         "/api/gating/copy", "/api/gating/pop/add",
@@ -4820,7 +4821,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 86 && length(POST_ROUTES) == 108
+    @test length(GET_ROUTES) == 86 && length(POST_ROUTES) == 109
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -7834,6 +7835,65 @@ end
             st, _ = api_correction_plan_save(
                 HTTP.Request("POST", "/api/correction-plan/save"), Vector{UInt8}("{nope"))
             @test st == 400
+
+            # ── slice 3d: /mount (plan.json → chain template on disk) ──────────────────
+            _mount(body) = api_correction_plan_mount(HTTP.Request("POST", "/api/correction-plan/mount"),
+                                                     Vector{UInt8}(JSON3.write(body)))
+
+            # KDIeEm has no SizeT in its shipped meta → axis.T_present = 0 → driftCorrect excluded →
+            # empty plan (nothing to mount). Bump SizeT on-disk so mount has real work to do; re-save
+            # the plan so the new fingerprint matches. This is scoped to the mount half of the
+            # testset — the /get/save assertions above already used the unmodified fixture.
+            ccid_path = joinpath(dir, "testpr", "1", "KDIeEm", "ccid.json")
+            let raw = JSON3.read(read(ccid_path, String), Dict{String,Any})
+                raw["meta"] = merge(get(raw, "meta", Dict{String,Any}()), Dict("SizeT" => 100))
+                open(io -> JSON3.pretty(io, raw), ccid_path, "w")
+            end
+            _save(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm", "cardId" => "resonance"))
+
+            # First mount → creates a new chain. Chain name is fixed per-image.
+            st, body = _mount(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
+            @test st == 200
+            mounted = JSON3.read(body)
+            @test mounted.ok === true
+            @test String(mounted.name) == "correction-plan-KDIeEm"
+            @test mounted.nodeCount >= 1                     # T-present → at least driftCorrect
+            @test mounted.created === true
+
+            # Chain landed on disk in the project's chains dir.
+            chains_dir = joinpath(dir, "testpr", "settings", "chains")
+            chain_path = joinpath(chains_dir, "correction-plan-KDIeEm.json")
+            @test isfile(chain_path)
+
+            # Second mount without overwrite → 409 conflict.
+            st, body = _mount(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
+            @test st == 409
+            conflict = JSON3.read(body)
+            @test conflict.existed === true
+            @test String(conflict.name) == "correction-plan-KDIeEm"
+
+            # With overwrite: true → replaces, created=false.
+            st, body = _mount(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "overwrite" => true))
+            @test st == 200
+            @test JSON3.read(body).created === false
+
+            # No saved plan → 409 with an actionable message (delete plan.json to prove it).
+            plan_path = joinpath(dir, "testpr", "1", "KDIeEm", "plan.json")
+            rm(plan_path)
+            rm(chain_path)                                   # so the conflict path can't mask the missing-plan error
+            st, body = _mount(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
+            @test st == 409
+            @test occursin("Save the plan first", String(JSON3.read(body).error))
+
+            # Bad JSON, missing project, unknown project → mirror /save wiring.
+            st, _ = api_correction_plan_mount(
+                HTTP.Request("POST", "/api/correction-plan/mount"), Vector{UInt8}("{nope"))
+            @test st == 400
+            st, _ = _mount(Dict("imageUid" => "x"))
+            @test st == 400
+            st, _ = _mount(Dict("projectUid" => "no-such", "imageUid" => "no-such"))
+            @test st == 404
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

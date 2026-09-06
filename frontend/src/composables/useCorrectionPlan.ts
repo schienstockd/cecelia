@@ -115,13 +115,36 @@ export function useCorrectionPlan(input: {
     await loadOrRecommend()
   }
 
+  // Mount the saved plan into a chain template on disk. Two-step outcome so the caller can prompt on
+  // conflict without a special error path: resolves `{status: 'created'|'overwrote'|'conflict', name,
+  // nodeCount?}`. The 409 conflict on second mount is expected, not an error — the caller decides.
+  interface MountResult {
+    status: 'created' | 'overwrote' | 'conflict'
+    name: string
+    nodeCount?: number
+  }
+  async function mount(overwrite: boolean = false): Promise<MountResult> {
+    const uid = input.imageUid.value
+    const proj = input.projectUid.value
+    if (!uid || !proj) throw new Error('No image selected')
+    const res = await _postJson('/api/correction-plan/mount', {
+      projectUid: proj, imageUid: uid, overwrite,
+    })
+    const j = await res.json() as { ok?: boolean; name?: string; nodeCount?: number; created?: boolean; error?: string; existed?: boolean }
+    if (res.status === 409 && j.existed) {
+      return { status: 'conflict', name: j.name ?? '' }
+    }
+    if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`)
+    return { status: j.created ? 'created' : 'overwrote', name: j.name ?? '', nodeCount: j.nodeCount }
+  }
+
   watch(
     () => [input.projectUid.value, input.imageUid.value],
     () => { void loadOrRecommend() },
     { immediate: true },
   )
 
-  return { plan, saved, stale, loading, error, save, refresh }
+  return { plan, saved, stale, loading, error, save, refresh, mount }
 }
 
 // Presets are a constant registry — one fetch per session is enough.
