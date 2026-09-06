@@ -4662,6 +4662,7 @@ end
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs",
+        "/api/correction-plan/presets",
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/meta",
         "/api/viewer/overlays",
@@ -4711,6 +4712,7 @@ end
         "/api/boards/add",   # create-only board authoring (MCP write 6/6); NOT /api/projects/boards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
+        "/api/correction-plan/recommend",
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
@@ -4803,7 +4805,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 106
+    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 107
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -7702,5 +7704,80 @@ end
         delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.echo", "x"))
         delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.echo_siblings", "x"))
         delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.throws", "x"))
+    end
+end
+
+# ── /api/correction-plan/* — slice 3a of docs/todo/CORRECTION_QC_PLAN.md ─────────────────────────
+#
+# Wiring only. `recommend_plan` / `_plan_to_dict` are pinned in the package suite; here we test that
+# the HTTP adapter (a) shapes errors correctly, (b) hands the wizard/card through as the right Julia
+# types, and (c) returns the plan dict shape the frontend types are built against.
+@testset "API: /api/correction-plan — wiring" begin
+    # GET presets is fixture-free: it enumerates a constant registry.
+    st, body = api_correction_plan_presets(HTTP.Request("GET", "/api/correction-plan/presets"))
+    @test st == 200
+    presets = JSON3.read(body)
+    ids = Set(String(p.id) for p in presets)
+    @test issubset(Set(["resonance", "galvo", "spinning_disk", "deep_3d", "custom"]), ids)
+    # each row has the frontend-facing keys
+    p1 = presets[1]
+    @test hasproperty(p1, :name) && hasproperty(p1, :description)
+    @test hasproperty(p1, :orderHints) && hasproperty(p1, :validationStatus)
+
+    _recpost(body) = api_correction_plan_recommend(
+        HTTP.Request("POST", "/api/correction-plan/recommend"), Vector{UInt8}(JSON3.write(body)))
+
+    # Bad JSON → 400.
+    st, _ = api_correction_plan_recommend(
+        HTTP.Request("POST", "/api/correction-plan/recommend"), Vector{UInt8}("{not json"))
+    @test st == 400
+    # Missing projectUid → 400 (from _gating_image).
+    st, _ = _recpost(Dict("imageUid" => "x"))
+    @test st == 400
+    # Unknown project → 404.
+    st, _ = _recpost(Dict("projectUid" => "no-such", "imageUid" => "no-such"))
+    @test st == 404
+
+    # Round-trip against the standard testpr fixture (KDIeEm has T axis → driftCorrect included).
+    proj_dir = api_fixture("testpr")
+    if !api_have_fixture(proj_dir)
+        @test_skip "testpr fixture missing"
+    else
+        dir = mktempdir()
+        cp(proj_dir, joinpath(dir, "testpr"))
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+
+            # Default: no cardId → auto-picked via recommend_card (empty wizard → :custom).
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
+            @test st == 200
+            plan = JSON3.read(body)
+            @test plan.planVersion == 1
+            @test String(plan.imageUid) == "KDIeEm"
+            @test String(plan.presetId) == "custom"
+            @test hasproperty(plan, :included) && hasproperty(plan, :excluded)
+            @test hasproperty(plan, :qcScores) && hasproperty(plan, :saturationFingerprint)
+            # Each step carries the plan.json field names, not the Julia struct names.
+            if !isempty(plan.included)
+                s = plan.included[1]
+                @test hasproperty(s, :funName) && hasproperty(s, :orderWeight)
+                @test hasproperty(s, :source) && hasproperty(s, :params)
+            end
+
+            # cardId explicit → wins over auto-pick.
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                     "cardId" => "resonance"))
+            @test st == 200
+            @test String(JSON3.read(body).presetId) == "resonance"
+
+            # Wizard W5=yes → recommend_card returns :deep_3d when no cardId.
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                     "wizard" => Dict("W5" => "yes")))
+            @test st == 200
+            @test String(JSON3.read(body).presetId) == "deep_3d"
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
     end
 end
