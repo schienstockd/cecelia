@@ -1689,6 +1689,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
           // Same cache-bust as the labels preview: identical (vn, t, z, preview_af=1) URL across
           // two runs would otherwise return the FIRST run's bytes from disk cache.
           previewAfId: afPrev?.updateId,
+          // Store-rewrite cache-buster for the underlying image store — a drift-correct re-run leaves
+          // slab URLs unchanged but the on-disk bytes and dims differ; `_r` invalidates the browser
+          // HTTP cache alongside the client-side atlas.
+          rev: cacheClearRev.value || undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
@@ -1716,6 +1720,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
           // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
           // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
           previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
+          // Same cache-buster for the durable labels store's own rewrites.
+          rev: cacheClearRev.value || undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
         if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
@@ -2026,6 +2032,8 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         sourceChannel: afPrev ? c : undefined,
         previewValueName: afPrev?.valueName,
         previewAfId: afPrev?.updateId,
+        // Same-store rewrite cache-buster for the tile atlas — see the fetchTimepoint call above.
+        rev: cacheClearRev.value || undefined,
       })
       const res = await fetch(url, { cache: 'default', signal: ac.signal })
       if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
@@ -2941,6 +2949,7 @@ async function loadOverviewThumbnail() {
         projectUid, imageUid, valueName: valueName.value, t: 0, c, enc, level: lvl.level,
         z: zPlane.value,
         x: 0, xTo: lvl.nX - 1, y: 0, yTo: lvl.nY - 1,
+        rev: cacheClearRev.value || undefined,
       })
       const res = await fetch(url, { cache: 'default' })
       if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
@@ -3933,7 +3942,7 @@ onMounted(() => {
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
-  stopCacheClearWatch = onViewerCacheClear((ev) => {
+  stopCacheClearWatch = onViewerCacheClear(async (ev) => {
     if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
     // us. Was the whole reason the labels-only `cc.viewerSlabsTick` existed alongside the rev —
@@ -3942,6 +3951,35 @@ onMounted(() => {
       imageUid, valueName: valueName.value, labelValueName: labelName.value,
     })) return
     cacheClearRev.value = ev.rev
+    // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
+    // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
+    // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard with
+    // "Slab is AxBxC but XxYxZ was asked for" (Dominik 2026-09-06, x4E5HU: drift correct rerun
+    // produced 34x296x296 while viewer meta still said 32x295x297). Same-shape rewrites (smooth,
+    // denoise) fall through unchanged. Channel state (lo/hi/lut) is preserved because a pixel-only
+    // task doesn't change channels, and losing an in-progress auto-contrast on every rerun would
+    // yank the view we're trying to keep stable.
+    try {
+      const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+      const m = await readJson<ViewerMeta>(res, 'Metadata')
+      const prev = meta.value
+      if (prev && prev.channels.length === m.channels.length) {
+        for (let i = 0; i < m.channels.length; i++) {
+          m.channels[i].lo = prev.channels[i].lo
+          m.channels[i].hi = prev.channels[i].hi
+          m.channels[i].lut = prev.channels[i].lut
+        }
+      }
+      meta.value = m
+      // Clamp any z-state that outran the new depth. A shrunk nZ leaves zPlane/zRange indexing
+      // past the end, which drives zDepth negative in `slabZ` and every request is rejected.
+      const maxZ = Math.max(m.nZ - 1, 0)
+      zPlane.value = Math.min(zPlane.value, maxZ)
+      zRange.value = [Math.min(zRange.value[0], maxZ), Math.min(zRange.value[1], maxZ)]
+    } catch (e) {
+      vlog('warn', 'Meta refresh on cache-clear failed: '
+        + (e instanceof Error ? e.message : String(e)))
+    }
     // Reallocate reads `cacheClearRev.value` fresh, so the new sourceId / rev flow through to the
     // tile atlas and the brick page table on this pass. `refit=false` keeps the camera put — the
     // point of this path is to swap pixels without yanking the view.
