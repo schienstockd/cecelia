@@ -15,17 +15,23 @@ axes, no double-count), and — on this branch — UI slice **3b** (card picker 
 now offers a `ChipSelect` of the five cards, picking one calls `POST /api/correction-plan/save`
 which computes + persists `plan.json` in one round-trip; `GET /api/correction-plan/get` is the
 load-first entrypoint that also returns `stale: true` when the saved fingerprint no longer matches
-the image's meta (a re-import happened), and — on this branch — UI slice **3d** (mount-to-chain):
-`POST /api/correction-plan/mount` reads the saved plan, converts it via `plan_to_chain_template`, and
-writes a `ChainTemplate` under the project's chains dir as `correction-plan-{imageUid}` (canonical
-per-image); the panel adds a "Mount to chain" button that is disabled until a plan is saved, and a
-409-on-conflict + inline Replace/Cancel guard so re-mounting never silently clobbers a hand-edited
-chain. The §8 provenance triple was reduced to a doubleton after review: `writer_versions` per step
-doesn't apply (cecelia ships as one package — a single `ceceliaVersion` covers cache invalidation);
-`upstream_value_names` per step stays deferred (the chain executor's own `execute_task` wiring knows
-which `value_name` each node reads — no second source of truth needed until a UI wants it without
-loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect composite retired); Q-C10 no longer
-applies. **What's left:** UI slice 3c (wizard W1–W6); and the remaining §Open questions.
+the image's meta (a re-import happened), UI slice **3d** (mount-to-chain, PR #831): `POST /api/correction-plan/mount`
+reads the saved plan, converts it via `plan_to_chain_template`, and writes a `ChainTemplate` under the
+project's chains dir as `correction-plan-{imageUid}` (canonical per-image); the panel adds a
+"Mount to chain" button that is disabled until a plan is saved, and a 409-on-conflict + inline
+Replace/Cancel guard so re-mounting never silently clobbers a hand-edited chain — and, on this branch,
+UI slice **3c** (wizard W2/W3/W5): a `CollapsibleSection` under the card row exposes the three enum
+questions from §4 that overlay a card independently (W2 stage rotated → `sitkRigid`; W3 frame-to-frame
+warp → include `flowRegister`; W5 intra-stack Z drift → include `stackAlign`); an answer immediately
+re-saves the plan via the same `/save` endpoint the card picker uses. W1 is intentionally omitted (the
+card picker IS W1); W4 (per-channel afCombinations) and W6 (cpCorrected trust/exclude) are conditional
+and deferred to a follow-up. The §8 provenance triple was reduced to a doubleton after review:
+`writer_versions` per step doesn't apply (cecelia ships as one package — a single `ceceliaVersion`
+covers cache invalidation); `upstream_value_names` per step stays deferred (the chain executor's own
+`execute_task` wiring knows which `value_name` each node reads — no second source of truth needed
+until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect composite
+retired); Q-C10 no longer applies. **What's left:** UI W4/W6 (conditional wizard questions); and the
+remaining §Open questions.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),

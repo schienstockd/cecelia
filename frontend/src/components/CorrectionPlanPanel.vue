@@ -1,5 +1,6 @@
 <!--
-  Correction-plan preview + card picker + mount — slices 3a + 3b + 3d of docs/todo/CORRECTION_QC_PLAN.md.
+  Correction-plan preview + card picker + wizard + mount — slices 3a + 3b + 3c + 3d of
+  docs/todo/CORRECTION_QC_PLAN.md.
 
   For one selected image: shows the currently-recommended (or saved) plan and lets the user pick a
   different acquisition card. Load-first behaviour: if plan.json exists on disk it's the source of
@@ -7,14 +8,18 @@
   "unsaved". Picking a card saves plan.json in one round-trip. A `stale` marker fires when the
   image's `saturationFingerprint` no longer matches the sidecar (a re-import happened).
 
+  Wizard section (slice 3c) exposes the three enum questions from §4 of the plan doc that overlay a
+  card independently — W2 (stage rotated → sitkRigid), W3 (frame-to-frame warp → include
+  flowRegister), W5 (intra-stack Z drift → include stackAlign). Each answer immediately re-saves the
+  plan the same way a card pick does. W1 is intentionally NOT here — the card picker IS W1. W4 (per-
+  channel afCombinations.exclusive) and W6 (cpCorrected trust/exclude) are conditional/rare and
+  deferred to a follow-up.
+
   Mount writes the saved plan as a ChainTemplate under the project's chains dir (name is fixed
   per-image, `correction-plan-{imageUid}`). It requires a saved plan first — mounting an unsaved
   recommendation would create a chain whose provenance can't be traced back to a card the user
   actually picked. Re-mounting overwrites, gated by a two-step confirm so accidentally clobbering a
   hand-edited chain never happens silently.
-
-  What this panel does NOT do — deferred to 3c:
-  - wizard W1–W6 (would let the user answer questions the card can't imply)
 
   Placement: sits above the TaskRunner in the cleanup module's right panel; multiple selection or
   no selection shows an empty state, so the panel is unobtrusive when the plan is not relevant.
@@ -103,6 +108,42 @@ async function pickCard(newId: string): Promise<void> {
   await save(newId, plan.value?.wizardAnswers ?? {})
 }
 
+// Wizard — §4 of the plan doc. Only the three enum questions that overlay a card independently are
+// exposed here; the picker is W1, and W4/W6 are conditional/rare (see the top-of-file comment).
+// Options end with `unknown` so the neutral state is the last chip (Fitts-friendly opt-out) and the
+// `custom` chip pattern in the card row reads the same way. Tooltips are one short line.
+interface WizardQ { key: string; label: string; tip: string; options: ChipOption[] }
+const YNU: ChipOption[] = [
+  { value: 'no',      label: 'no' },
+  { value: 'yes',     label: 'yes' },
+  { value: 'unknown', label: 'unknown' },
+]
+const WIZARD_QUESTIONS: WizardQ[] = [
+  { key: 'W2', label: 'Stage rotated?',    tip: 'Yes → drift uses rigid alignment (translation + rotation)', options: YNU },
+  { key: 'W3', label: 'Frame-to-frame warp?', tip: 'Yes → include flowRegister for non-rigid deformation',  options: YNU },
+  { key: 'W5', label: 'Z-plane breathing?', tip: 'Yes → include stackAlign for intra-stack sample motion',   options: YNU },
+]
+function wizardValue(key: string): string {
+  return String(plan.value?.wizardAnswers?.[key] ?? 'unknown')
+}
+async function pickWizard(key: string, value: string): Promise<void> {
+  const current = wizardValue(key)
+  if (value === current) return
+  // 'unknown' clears the answer so the plan behaves as if the question was never answered — the
+  // engine reads a missing key the same as :unknown, and dropping it keeps plan.json tidy.
+  const next: Record<string, string> = { ...(plan.value?.wizardAnswers ?? {}) }
+  if (value === 'unknown') delete next[key]
+  else                     next[key] = value
+  await save(plan.value?.presetId ?? 'custom', next)
+}
+const wizardAnswered = computed<number>(() => {
+  const w = plan.value?.wizardAnswers
+  if (!w) return 0
+  let n = 0
+  for (const q of WIZARD_QUESTIONS) if (w[q.key] && w[q.key] !== 'unknown') n++
+  return n
+})
+
 function shortFn(fn: string): string {
   const i = fn.lastIndexOf('.')
   return i === -1 ? fn : fn.slice(i + 1)
@@ -177,6 +218,25 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
           @update:model-value="v => pickCard(String(v ?? ''))"
         />
       </div>
+
+      <CollapsibleSection
+        :label="`Wizard${wizardAnswered ? ' (' + wizardAnswered + ')' : ''}`"
+        tip="Overlay a card with three yes/no specimen answers"
+        :default-open="wizardAnswered > 0"
+        max-height="240px">
+        <div class="wizard">
+          <div v-for="q in WIZARD_QUESTIONS" :key="q.key" class="wizard-row cc-fs-sm">
+            <span class="wizard-label cc-muted" v-tooltip.top="q.tip">{{ q.label }}</span>
+            <ChipSelect
+              variant="pill"
+              :options="q.options"
+              :model-value="wizardValue(q.key)"
+              @update:model-value="v => pickWizard(q.key, String(v ?? 'unknown'))"
+              :aria-label="q.label"
+            />
+          </div>
+        </div>
+      </CollapsibleSection>
 
       <div class="section-label cc-eyebrow cc-fs-2xs">Will run ({{ plan.included.length }})</div>
       <div v-if="!plan.included.length" class="empty cc-muted cc-fs-sm">No steps — image has no T axis and this card seeds none.</div>
@@ -357,5 +417,19 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
 }
 .mount-msg.warn {
   color: var(--cc-danger);
+}
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wizard-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wizard-label {
+  flex: 0 0 auto;
+  min-width: 130px;
 }
 </style>
