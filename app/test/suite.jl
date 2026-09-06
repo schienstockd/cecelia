@@ -12413,6 +12413,76 @@ end
         rm(proj.root; recursive = true)
     end
 
+    # Phase E of docs/todo/CORRECTION_QC_PLAN.md — chain mount + card recommender. The plan is now
+    # an execution surface: `plan_to_chain_template` yields a `ChainTemplate` the executor accepts
+    # (validate_chain_template passes). `recommend_card` picks a card from wizard+scores so callers
+    # of recommend_plan can leave `card_id` implicit.
+    @testset "correction_plan chain mount + recommender (§E)" begin
+        # ── recommend_card: wizard > everything, then W1 → card, else :custom ────────────────
+        empty_scores = Cecelia.QCResult[]
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}()) == :custom
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :resonance)) == :resonance
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :galvo))     == :galvo
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :spinning_disk)) == :spinning_disk
+        # W5 wins over W1 — an intra-stack shear is what defines Deep-3D
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :galvo, :W5 => :yes)) == :deep_3d
+        # unknown W1 or missing → fallback custom
+        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :other)) == :custom
+
+        # ── recommend_plan with no card_id auto-picks via recommend_card ─────────────────────
+        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 1)
+        p_auto = Cecelia.recommend_plan(meta; wizard = Dict{Symbol,Any}(:W1 => :resonance))
+        @test p_auto.preset_id == :resonance
+        p_custom = Cecelia.recommend_plan(meta)   # no card, no wizard → :custom
+        @test p_custom.preset_id == :custom
+
+        # ── plan_to_chain_template: shape + linear edges ─────────────────────────────────────
+        p = Cecelia.recommend_plan(meta; card_id = :resonance)
+        tmpl = Cecelia.plan_to_chain_template(p; name = "test-mount")
+        @test tmpl.name == "test-mount"
+        @test length(tmpl.nodes) == length(p.included)
+        @test [n.fn for n in tmpl.nodes] == [s.fun_name for s in p.included]
+        # Node ids are short-form fun_names — stable across re-plans
+        @test [n.id for n in tmpl.nodes] == ["driftCorrect", "smooth"]
+        # Linear edges chain the sorted order (drift → smooth for resonance on T-only image)
+        @test [(e.from, e.to) for e in tmpl.edges] == [("driftCorrect", "smooth")]
+        # Excluded steps are NOT in the template — the audit trail is a plan concept, not chain
+        @test !any(n -> n.fn == "cleanupImages.stackAlign", tmpl.nodes)   # Z-absent → excluded
+
+        # ── default name derives from image_uid; re-mount replaces canonically ───────────────
+        p2 = Cecelia.recommend_plan(meta; image_uid = "img-42", card_id = :resonance)
+        tmpl2 = Cecelia.plan_to_chain_template(p2)
+        @test tmpl2.name == "correction-plan-img-42"
+
+        # ── validate_chain_template accepts the mount (the executor would run it) ────────────
+        proj = create_project!(name = "mount-$(rand(1000:9999))")
+        s    = add_set!(proj; name = "set")
+        img  = add_image!(s; name = "im"); img.meta = meta; save!(img)
+        p_real = Cecelia.recommend_plan(img; card_id = :resonance)
+        tmpl_real = Cecelia.plan_to_chain_template(p_real)
+        Cecelia.validate_chain_template(tmpl_real)   # throws on failure — no @test needed
+        # Deep3D on a Z+T image — stackAlign shipped as card + card ships it before drift
+        img.meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30); save!(img)
+        p_d3 = Cecelia.recommend_plan(img; card_id = :deep_3d)
+        t_d3 = Cecelia.plan_to_chain_template(p_d3)
+        @test "cleanupImages.stackAlign" in [n.fn for n in t_d3.nodes]
+        @test "cleanupImages.driftCorrect" in [n.fn for n in t_d3.nodes]
+        # bucket order: stackAlign (100) before driftCorrect (200)
+        sa_i = findfirst(n -> n.fn == "cleanupImages.stackAlign", t_d3.nodes)
+        dr_i = findfirst(n -> n.fn == "cleanupImages.driftCorrect", t_d3.nodes)
+        @test sa_i < dr_i
+        Cecelia.validate_chain_template(t_d3)
+
+        # ── empty plan (nothing to run) → empty template, no edges ───────────────────────────
+        p_empty = Cecelia.recommend_plan(Dict{String,Any}(); card_id = :custom)
+        t_empty = Cecelia.plan_to_chain_template(p_empty)
+        @test isempty(t_empty.nodes) && isempty(t_empty.edges)
+
+        rm(proj.root; recursive = true)
+    end
+
+    # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
+
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
     # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than
     # a bf2raw wrapper, so the same test exercises `series_base`'s flat branch.

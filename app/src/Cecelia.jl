@@ -333,6 +333,7 @@ include("view_profiles.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
+include("correction_plan_chain.jl")   # plan → ChainTemplate; loads after chain.jl
 # Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
 # detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
 include("runner/execute.jl")

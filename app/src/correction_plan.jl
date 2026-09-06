@@ -403,14 +403,42 @@ truth — see the plan doc's Open questions).
 """
 function recommend_plan(meta::AbstractDict;
                         image_uid::AbstractString = "",
-                        card_id::Symbol = :custom,
+                        card_id::Union{Symbol,Nothing} = nothing,
                         wizard::AbstractDict = Dict{Symbol,Any}())::CorrectionPlan
     scores = compute_qc_scores(meta)
-    preset = preset_by_id(card_id)
+    card   = card_id === nothing ? recommend_card(scores, wizard) : card_id
+    preset = preset_by_id(card)
     res    = apply_rules(scores, preset, wizard)
-    CorrectionPlan(String(image_uid), card_id, wizard,
+    CorrectionPlan(String(image_uid), card, wizard,
                    res.included, res.excluded, scores;
                    saturation_fingerprint = saturation_fingerprint(meta))
+end
+
+
+"""
+    recommend_card(scores, wizard) -> Symbol
+
+The §2.1 `preset.card_confidence` picker, but hand-rolled from wizard answers rather than a
+trained classifier (there is no calibration ground truth — see the plan doc's Open questions).
+Wizard answer beats score, per §3 tie-break.
+
+Precedence:
+- `W5 = :yes` (intra-stack Z-plane offset) → `:deep_3d`
+- `W1 = :resonance` / `:galvo` / `:spinning_disk` → the corresponding card
+- else → `:custom` (empty starting point, everything user-pick)
+
+Not consulted: W2/W3 (they set params on `:custom`'s driftCorrect / flowRegister, not a card
+switch), W4/W6 (per-channel af / retired-store). The lack of a "photon-limited" wizard is
+deliberate — that lives in the resonance card's hard commitments (W1 = resonance).
+"""
+function recommend_card(scores::AbstractVector{QCResult},
+                        wizard::AbstractDict)::Symbol
+    get(wizard, :W5, :unknown) === :yes && return :deep_3d
+    w1 = get(wizard, :W1, :unknown)
+    w1 === :resonance     && return :resonance
+    w1 === :galvo         && return :galvo
+    w1 === :spinning_disk && return :spinning_disk
+    return :custom
 end
 
 function recommend_plan(img::CciaImage;
