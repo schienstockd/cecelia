@@ -1,6 +1,10 @@
 # Correction plan + QC — metadata-driven decision tree
 
-**Status:** **planning** (2026-09-06). No branch, no code. Design-only.
+**Status:** **in-progress** (2026-09-06). Phase A shipped (Q-M4 sparsity probes, PR #811 —
+combined `import.photon_limited` finding + `zeroFrac`/`signalFrac` on `meta.saturation.channels[i]`).
+Phase B in flight: §2.1 metadata-derived score layer in `app/src/correction_plan.jl` (this branch).
+Q-C1 resolved by PR #810 (afDriftCorrect composite retired). Every other §Open question is still
+maintainer-blocking.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
@@ -531,11 +535,13 @@ the two questions the prompt asks the plan itself to raise.
 
 ### From the rule table
 
-- **§Q-C1 — Pipeline order.** Is it `stackAlign → driftCorrect → flowRegister → smooth` per PR
+- **§Q-C1 — Pipeline order.** ~~Is it `stackAlign → driftCorrect → flowRegister → smooth` per PR
   #793 / `STACK_ALIGN_PLAN.md` L14, or `driftCorrect → stackAlign → flowRegister → smooth` per PR
-  #798 / PR #802? The plan needs the maintainer to pick a side; the order weights in §1 currently
-  encode the PR #793 form but leave stackAlign and driftCorrect both in bucket 200 pending the
-  answer. **Blocking implementation.**
+  #798 / PR #802?~~ **RESOLVED 2026-09-06 by PR #810** — the `afDriftCorrect` composite (the ONLY
+  hard-coded correction order in the codebase) was retired. Correction order is now the user's
+  chain-editor choice; the rule table's order weights become recommendation buckets, not code
+  enforcement. Neither PR-side is "picked" — the disputed pair is a user decision on the chain
+  whiteboard.
 - **§Q-C3 — `driftNormalisation` default.** Removed in PR #785 with "never materially changed the
   estimate" and restored the same day in PR #795 with unverified counter-examples. What is the
   shipped default and is it a card-level commitment? The plan currently defaults to `none`; if
@@ -588,9 +594,14 @@ card-classifier gets a structural signal.
   exists.
 - **§Q-M3 — Breathing / intra-stack Z offset flag** (1c §gap 3). Currently W5. Post-hoc
   `stackalign.applied_fraction` fires only after a run.
-- **§Q-M4 — Photon-limited plan-time probe** (1c §gap 4). Currently a computed post-hoc score
-  from `zeroFracIn`; a plan-time equivalent would be a `sparsity_run.py` mirror of
-  `saturation_run.py` at import (~3 s/GB). **Would-need-implementation, not just a field.**
+- **§Q-M4 — Photon-limited plan-time probe** ~~Currently a computed post-hoc score from
+  `zeroFracIn`; a plan-time equivalent would be a `sparsity_run.py` mirror of `saturation_run.py`
+  at import (~3 s/GB).~~ **RESOLVED 2026-09-06 by PR #811** — the sparsity fields
+  (`zeroFrac`, `signalFrac`) are added to `intensity_utils.saturation_stats` and computed on the
+  existing import histogram pass (free — same pass, one extra sum). A combined info-level
+  `import.photon_limited` finding fires at import (photon-limitation is a scanning-mode property, so
+  ONE finding per image, not per channel). Score-band consumer shipped 2026-09-06 in the same phase
+  as `qc_photon_limited_frac` in `app/src/correction_plan.jl`.
 - **§Q-M5 — Filter-set fingerprint** (1c §gap 5). Currently W4 per-channel bool. A set-level
   average of `af_bleedthrough_alphas` cached on the set would let new images pre-populate
   `afCombinations`. Sounds cheap; may deserve its own follow-up.

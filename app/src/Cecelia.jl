@@ -243,6 +243,7 @@ include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
 include("qc.jl")
+include("correction_plan.jl")   # after qc.jl — reuses `_saturation_channels` / `_cal_num` / `_cal_int`
 include("run_log.jl")
 include("label_props.jl")
 include("gating/transforms.jl")

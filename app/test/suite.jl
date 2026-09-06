@@ -12112,6 +12112,89 @@ end
         @test "minSignalFrac" in keys_declared
     end
 
+    # CORRECTION_QC_PLAN.md §2.1 — metadata-derived scores. The score-band layer that turns the
+    # import probes (Q-M4 shipped in #811) into 0-1 signals the rule engine will trigger on. Pure
+    # over meta; no engine yet.
+    @testset "correction_plan §2.1 scores" begin
+        # QCResult validates and carries the score sentinel `NaN` for "check didn't run"
+        r = Cecelia.QCResult("x", 0.5)
+        @test r.score == 0.5 && r.level == "info" && r.scope == :image
+        @test !Cecelia.qc_score_absent(r)
+        absent = Cecelia.QCResult("y", Cecelia.QC_SCORE_ABSENT)
+        @test Cecelia.qc_score_absent(absent)
+        @test_throws ErrorException Cecelia.QCResult("z", 1.5)   # out-of-range refused
+
+        # ── axis presence: structural, trivial, no cohort story ─────────────────────────────────
+        @test Cecelia.qc_axis_t_present(Dict{String,Any}("SizeT" => 100)).score == 1.0
+        @test Cecelia.qc_axis_t_present(Dict{String,Any}("SizeT" => 1)).score   == 0.0
+        @test Cecelia.qc_axis_t_present(Dict{String,Any}()).score               == 0.0    # missing = 1
+        @test Cecelia.qc_axis_z_present(Dict{String,Any}("SizeZ" => 40)).score  == 1.0
+        @test Cecelia.qc_axis_z_present(Dict{String,Any}("SizeZ" => 1)).score   == 0.0
+
+        # ── denoise gate: 1.0 = every channel saturated (no clean channel to learn from) ────────
+        # `NaN` when the check never ran — a caller must distinguish absent from "measured zero".
+        # This is the whole point of `QC_SCORE_ABSENT`: an engine treating absent as 0.0 would
+        # silently let denoise run on an image whose saturation state is unknown.
+        mk_sat(i, sat) = Dict{String,Any}("index" => i, "saturated" => sat, "topValue" => 1000,
+                                          "topCount" => 0, "topFrac" => 0.0,
+                                          "clippedSignalFrac" => 0.0)
+        all_sat = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                    [mk_sat(0, true), mk_sat(1, true)]))
+        s = Cecelia.qc_all_channels_saturated(all_sat)
+        @test s.score == 1.0 && s.level == "warn"                # gate signal — worth surfacing
+        @test s.subs[:nSaturated] == 2 && s.subs[:nChannels] == 2
+
+        mixed = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                  [mk_sat(0, true), mk_sat(1, false)]))
+        @test Cecelia.qc_all_channels_saturated(mixed).score == 0.5
+
+        clean = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                  [mk_sat(0, false), mk_sat(1, false)]))
+        cs = Cecelia.qc_all_channels_saturated(clean)
+        @test cs.score == 0.0 && cs.level == "info"              # measured zero, not absent
+
+        absent_sat = Cecelia.qc_all_channels_saturated(Dict{String,Any}())
+        @test Cecelia.qc_score_absent(absent_sat)                # NaN, not 0.0
+
+        # ── photon-limited: the worst channel's zeroFrac ────────────────────────────────────────
+        mk_zf(i, zf) = merge(mk_sat(i, false), Dict{String,Any}("zeroFrac" => zf,
+                                                                "signalFrac" => 1.0 - zf))
+        with_zf = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                    [mk_zf(0, 0.50), mk_zf(1, 0.94), mk_zf(2, 0.87)]))
+        pl = Cecelia.qc_photon_limited_frac(with_zf)
+        @test pl.score == 0.94                                   # the sparsest
+        @test pl.subs[:channel] == 1                             # ...its index
+
+        # a channel without zeroFrac is skipped (pre-#811 field-absent), not treated as 0
+        mixed_zf = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                     [mk_zf(0, 0.55), mk_sat(1, false), mk_zf(2, 0.93)]))
+        @test Cecelia.qc_photon_limited_frac(mixed_zf).score == 0.93
+
+        # no channel carries the field → absent (not zero)
+        old_meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
+                                     [mk_sat(0, false), mk_sat(1, false)]))
+        @test Cecelia.qc_score_absent(Cecelia.qc_photon_limited_frac(old_meta))
+
+        # ── the roll-up returns all four in stable order for downstream diff ────────────────────
+        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30,
+                                "saturation" => Dict{String,Any}("channels" =>
+                                                                  [mk_zf(0, 0.95)]))
+        rs = Cecelia.compute_qc_scores(meta)
+        @test length(rs) == 4
+        @test [r.metric for r in rs] == ["axis.T_present", "axis.Z_present",
+                                         "denoise.channel_saturated_frac",
+                                         "smooth.photon_limited_frac"]
+        @test rs[1].score == 1.0
+        @test rs[2].score == 1.0
+        @test rs[3].score == 0.0                                 # channel present, not saturated
+        @test rs[4].score == 0.95
+
+        # JSON3 round-trip on the meta — the real read path (persisted ccid comes back Symbol-keyed)
+        rt   = JSON3.read(JSON3.write(meta))
+        rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
+        @test Cecelia.qc_photon_limited_frac(rtm).score == 0.95
+    end
+
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
     # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than
     # a bf2raw wrapper, so the same test exercises `series_base`'s flat branch.
