@@ -467,7 +467,10 @@ function toggleTrackclust() {
 // The WebGPU viewer reads `settings.getColourBy(setUid)` and re-derives colours on the overlay
 // tick; the panel writes the setting and pings. Options are the open segmentation's obs columns.
 async function loadObsCols() {
-  const uid = projectStore.viewerImageUid
+  // `openImageUid` — same reason as `openedImage` / `recordTimelapse`: `viewerImageUid` was the napari
+  // WS `open` field, which nothing writes now that the browser viewer is the only viewer, so the
+  // colour-by dropdown stayed empty for every image opened via the eye click.
+  const uid = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   const vn = selectedValueName.value
   if (!uid || !projectUid || !vn) { obsCols.value = []; return }
