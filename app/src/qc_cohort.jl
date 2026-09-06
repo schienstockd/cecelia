@@ -100,6 +100,15 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # real gain/expression difference. See qc.jl saturation_metrics.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsSaturated",
                                          "maxClippedSignalFrac", "maxClippedFrac",
+                                         # Sparsity for the correction-plan photon-limited card
+                                         # (CORRECTION_QC_PLAN.md Q-M4). `maxZeroFrac` surfaces an
+                                         # image whose sparsest channel is far sparser than its
+                                         # peers — the cohort question the raw threshold cannot
+                                         # answer. `minSignalFrac` is the complement, so a
+                                         # cohort-outlier check can trigger from either direction.
+                                         # Both banked whether or not the photon-limited finding
+                                         # fired, matching the saturation split above.
+                                         "maxZeroFrac", "minSignalFrac",
                                          # `nPyramidLevels` catches a re-import of one image at a
                                          # different depth from its peers (usually a user leaving the
                                          # default in place). `deepestGridTiles` catches a chunk-shape

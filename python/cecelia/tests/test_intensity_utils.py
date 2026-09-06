@@ -179,6 +179,30 @@ class TestIntensityUtils(unittest.TestCase):
             s = iu.saturation_stats(h)
             self.assertEqual(s['clippedSignalFrac'], 0.0)
             self.assertFalse(s['saturated'])
+            self.assertEqual(s['zeroFrac'], 0.0)
+            self.assertEqual(s['signalFrac'], 0.0)
+
+    def test_saturation_stats_reports_sparsity_fields(self):
+        """The plan-time signal for the correction-plan photon-limited card (Q-M4). Two derived
+        fields on the same histogram pass: `zeroFrac` (exact-zero fraction, what SMOOTHING_PLAN
+        measured — 91-96% on the resonance-scanner channels that needed denoise) and `signalFrac`
+        (the complement of the derived-background fraction). Directionally: a mostly-zero channel
+        with a small signal population is what "photon-limited" looks like."""
+        # A dense tail: not sparse. zeroFrac low, signalFrac high.
+        dense = self._tail(2000)
+        s = iu.saturation_stats(dense)
+        self.assertLess(s['zeroFrac'], 0.5)
+        # A photon-limited channel: many zeros, small signal population.
+        h = np.zeros(4096, dtype=np.int64)
+        h[0] = 950_000                                         # 95% zeros
+        h[100:200] = 500                                       # sparse signal above background
+        s = iu.saturation_stats(h)
+        self.assertGreater(s['zeroFrac'], 0.9)
+        self.assertLess(s['signalFrac'], 0.1)
+        # Directional: zeroFrac + signalFrac + bg-fraction sums to ~1, with `signalFrac` = signal
+        # voxels above the derived background over total. Kept as a sanity — a Q-M4 score band
+        # that reads `signalFrac` as "the population that matters" collapses if this drifts.
+        self.assertLessEqual(s['zeroFrac'] + s['signalFrac'], 1.0 + 1e-9)
 
     def test_triangle_threshold_degenerate_histograms(self):
         self.assertEqual(iu.triangle_threshold(np.zeros(16, np.int64)), 0.0)

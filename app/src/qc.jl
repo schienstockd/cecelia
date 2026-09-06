@@ -92,6 +92,13 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
 
+    # photon-limited channels (import.photon_limited) — ONE finding per image, not per channel:
+    # photon-limitation is a scanning-mode property (laser/PMT settings shared across channels), so
+    # a per-channel finding would be N copies of the same acquisition observation.
+    "import.photon_limited" => (
+        short = "{n} photon-limited channel{s} (up to {pct}% zero voxels)",
+        long  = "Run Cleanup → Denoise before segmentation. Channels: {channels}."),
+
 
     # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)
     "hmm.no_states_decoded" => (
@@ -402,6 +409,25 @@ const _Z_RATIO_MAX = 50
 # clipping far more than its session peers without anyone choosing an absolute level.
 const _SATURATION_WARN_SIGNAL_FRAC = 1e-2
 
+# Level at which a channel is called PHOTON-LIMITED, expressed as the exact-zero fraction of its
+# voxels. Structural (needs no metadata), computed at import from the same histogram pass as
+# `saturation_stats`. Feeds the correction-plan photon-limited card (CORRECTION_QC_PLAN.md Q-M4).
+#
+# **Unvalidated placeholder — calibrated on the dev movies, not on a ground-truth cohort.** SMOOTHING_
+# PLAN.md measured `zeroFracIn` on `zolIMa/Dml3RG` — a resonance-scanner acquisition that needed
+# denoise — as 91-96% for the three fluorescent channels and untouched for SHG. 0.90 sits at the
+# lower end of that band and is deliberately CONSERVATIVE: it will fire on unmistakably sparse
+# channels and stay silent on marginal ones. The threshold is a smoke alarm, same posture as
+# `_SATURATION_WARN_SIGNAL_FRAC` above — it exists to catch clear photon-limitation, not to draw the
+# line between "photon-limited" and "just dim". The number a user can act on ("this channel needs
+# denoise") comes from the plan engine reading `zeroFrac` / `signalFrac` directly — this finding is
+# only the advisory nudge at import time.
+#
+# A channel that is BOTH saturated and photon-limited (high zeroFrac + a piled top bin) is rare in
+# practice but real (e.g. a dim channel with one hot pixel driven off scale) — the two findings can
+# coexist on the same channel, and the plan engine decides which correction dominates.
+const _PHOTON_LIMITED_ZERO_FRAC = 0.90
+
 _cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
 _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
 _cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
@@ -522,6 +548,47 @@ function saturation_qc_findings(meta::AbstractDict)
                                       "clippedSignalPct" => round(frac * 100, digits = 3))))
     end
     fs
+end
+
+"""
+    photon_limited_qc_findings(meta) -> Vector
+
+Zero or one `info` finding summarising every photon-limited channel — `zeroFrac >=
+_PHOTON_LIMITED_ZERO_FRAC` per the same `meta["saturation"]["channels"]` block the saturation
+finding reads. Photon-limitation is a **scanning-mode property** (laser power / PMT gain / dwell
+time are set once for the acquisition), so a per-channel finding would be N copies of the same
+observation — one combined finding matches the mental model and cuts the QC noise. Detail carries
+the per-channel breakdown so the plan engine has the raw scores.
+
+PURE → unit-tested. Empty when the check didn't run (an image imported before the sparsity fields
+existed, or a non-integer store where `saturation_stats` was never computed) OR when no channel is
+photon-limited.
+"""
+function photon_limited_qc_findings(meta::AbstractDict)
+    hits = Tuple{Int,Float64,Union{Float64,Nothing}}[]
+    for ch in _saturation_channels(meta)
+        zf = _cal_num(get(ch, "zeroFrac", nothing))
+        (isnothing(zf) || zf < _PHOTON_LIMITED_ZERO_FRAC) && continue
+        i  = _cal_int(get(ch, "index", nothing), 0)
+        sf = _cal_num(get(ch, "signalFrac", nothing))
+        push!(hits, (i, zf, sf))
+    end
+    isempty(hits) && return Dict{String,Any}[]
+    channels    = [h[1] for h in hits]
+    worst_zf    = maximum(h[2] for h in hits)
+    worst_pct   = round(worst_zf * 100, digits = 1)
+    n           = length(hits)
+    ch_list_str = join(channels, ", ")
+    per_ch      = [Dict{String,Any}("channel"    => h[1],
+                                    "zeroFrac"   => h[2],
+                                    "signalFrac" => h[3]) for h in hits]
+    [qc_finding("info", "import.photon_limited";
+                n = n, s = (n == 1 ? "" : "s"), pct = worst_pct, channels = ch_list_str,
+                detail = Dict{String,Any}("channels"      => channels,
+                                          "nChannels"     => n,
+                                          "worstZeroFrac" => worst_zf,
+                                          "worstPct"      => worst_pct,
+                                          "perChannel"    => per_ch))]
 end
 
 """
@@ -667,17 +734,36 @@ function saturation_metrics(meta::AbstractDict)
     chans = _saturation_channels(meta)
     isempty(chans) && return nothing
     n = 0; worst = 0.0; worst_sig = 0.0
+    # Sparsity across channels — for the correction-plan photon-limited card (Q-M4). `maxZeroFrac`
+    # surfaces the sparsest channel in the image (a cohort outlier is a channel that is much sparser
+    # than its peers — e.g. one acquired on the resonance scanner while the rest were galvo).
+    # `minSignalFrac` is the complement view — the channel with the least above-background
+    # population. Both zero when no channel has the sparsity fields (image imported before they
+    # existed) — a legitimate absent-signal case, same posture as `nChannelsSaturated == 0`.
+    max_zero = 0.0; min_sig = Inf; has_sparsity = false
     for ch in chans
         get(ch, "saturated", false) === true && (n += 1)
         v = _cal_num(get(ch, "topFrac", nothing))
         isnothing(v) || (worst = max(worst, v))
         vs = _cal_num(get(ch, "clippedSignalFrac", nothing))
         isnothing(vs) || (worst_sig = max(worst_sig, vs))
+        zf = _cal_num(get(ch, "zeroFrac", nothing))
+        if !isnothing(zf)
+            has_sparsity = true
+            max_zero = max(max_zero, zf)
+        end
+        sf = _cal_num(get(ch, "signalFrac", nothing))
+        isnothing(sf) || (min_sig = min(min_sig, sf))
     end
     # `maxClippedSignalFrac` is the cohort-interesting one — it does not move with how much empty frame
     # an acquisition happens to contain. `maxClippedFrac` stays because it is already banked.
-    Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst,
-                     "maxClippedSignalFrac" => worst_sig)
+    out = Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst,
+                           "maxClippedSignalFrac" => worst_sig)
+    if has_sparsity
+        out["maxZeroFrac"]   = max_zero
+        out["minSignalFrac"] = isfinite(min_sig) ? min_sig : 0.0
+    end
+    out
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale
@@ -695,6 +781,7 @@ function write_metadata_qc!(img::CciaImage)
     # findings and no metrics, same as saturation when the check didn't run.
     zp = img_filepath(img, VERSIONED_DEFAULT_VAL)
     findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta),
+                    photon_limited_qc_findings(meta),
                     isnothing(zp) ? Dict{String,Any}[] : pyramid_qc_findings(zp))
 
     metrics = import_metrics(meta)

@@ -11618,7 +11618,10 @@ end
         # Every placeholder the catalog uses must be one a caller actually passes; a typo'd
         # `{metrics}` would otherwise only surface when that finding fires in production.
         KNOWN = Set(["channel", "pct", "unit", "dims", "metric", "value", "dir", "median",
-                     "count", "min", "tiles", "suggest"])
+                     "count", "min", "tiles", "suggest",
+                     # combined findings (multi-channel roll-ups): `n` count, `s` plural suffix,
+                     # `channels` comma-joined list — see import.photon_limited
+                     "n", "s", "channels"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -11958,6 +11961,97 @@ end
 
         # the finding renders — a `{channel}` placeholder with no substitution throws (see qc_text)
         @test occursin("1", fs[1]["short"])
+    end
+
+    @testset "photon-limited findings + sparsity metrics" begin
+        # The correction-plan photon-limited card's QC signal (CORRECTION_QC_PLAN.md Q-M4). Feeds off
+        # the same meta.saturation.channels dict the clipping finding reads — extended in this change
+        # with `zeroFrac` / `signalFrac`. Threshold is a smoke alarm, unvalidated: `zeroFrac >= 0.90`
+        # per `_PHOTON_LIMITED_ZERO_FRAC`; below it, silent. Photon-limitation is a scanning-mode
+        # property (shared laser/PMT settings), so all sparse channels roll up into ONE finding.
+        mk(i; zf = nothing, sf = nothing, sat = false, top = 1000) = begin
+            d = Dict{String,Any}("index" => i, "saturated" => sat, "topValue" => top,
+                                 "topCount" => 0, "topFrac" => 0.0, "clippedSignalFrac" => 0.0)
+            isnothing(zf) || (d["zeroFrac"] = zf)
+            isnothing(sf) || (d["signalFrac"] = sf)
+            d
+        end
+        meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0; zf = 0.60, sf = 0.30),                        # dense — silent
+            mk(1; zf = 0.93, sf = 0.04),                        # photon-limited — folded in
+            mk(2; zf = 0.89, sf = 0.05),                        # just below the threshold — silent
+            mk(3; zf = 0.95, sf = 0.03),                        # photon-limited (worst) — folded in
+        ]))
+
+        fs = Cecelia.photon_limited_qc_findings(meta)
+        @test length(fs) == 1                                   # ONE combined finding, not N
+        @test fs[1]["code"] == "import.photon_limited"
+        @test fs[1]["level"] == "info"                          # advisory, denoise nudge — not damage
+        @test fs[1]["detail"]["channels"] == [1, 3]
+        @test fs[1]["detail"]["nChannels"] == 2
+        @test fs[1]["detail"]["worstZeroFrac"] == 0.95
+        @test fs[1]["detail"]["worstPct"] == 95.0
+        @test length(fs[1]["detail"]["perChannel"]) == 2
+        @test fs[1]["detail"]["perChannel"][2]["channel"] == 3
+        # the finding renders — `{n}`/`{s}`/`{pct}`/`{channels}` placeholders substituted
+        @test occursin("2 photon-limited channels", fs[1]["short"])
+        @test occursin("95", fs[1]["short"])
+        @test occursin("1, 3", fs[1]["long"])
+
+        m = Cecelia.saturation_metrics(meta)
+        @test m["maxZeroFrac"] == 0.95                          # the sparsest channel
+        @test m["minSignalFrac"] == 0.03                        # its complement view
+
+        # singular grammar when only ONE channel is photon-limited — `s = ""`, plain "channel"
+        singular = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0; zf = 0.60, sf = 0.30), mk(1; zf = 0.92, sf = 0.04),
+        ]))
+        sfs = Cecelia.photon_limited_qc_findings(singular)
+        @test length(sfs) == 1
+        @test occursin("1 photon-limited channel ", sfs[1]["short"])
+        @test !occursin("channels", sfs[1]["short"])
+
+        # zero photon-limited channels → no finding at all (not an empty one)
+        clean = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0; zf = 0.50, sf = 0.40), mk(1; zf = 0.30, sf = 0.60),
+        ]))
+        @test isempty(Cecelia.photon_limited_qc_findings(clean))
+
+        # the check didn't run: sparsity fields absent → sparsity metrics absent (not zero), but the
+        # saturation half still reports. Distinguishes "pre-existing image" from "measured zero".
+        pre = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            Dict{String,Any}("index" => 0, "saturated" => false, "topValue" => 1000,
+                             "topCount" => 0, "topFrac" => 0.0, "clippedSignalFrac" => 0.0),
+        ]))
+        @test isempty(Cecelia.photon_limited_qc_findings(pre))
+        pm = Cecelia.saturation_metrics(pre)
+        @test !haskey(pm, "maxZeroFrac")
+        @test !haskey(pm, "minSignalFrac")
+        @test pm["nChannelsSaturated"] == 0                     # saturation still banks
+
+        # a channel BOTH saturated AND photon-limited fires both findings (rare: dim channel with a
+        # hot pixel driven off-scale). Saturation stays per-channel (each channel has its own gain);
+        # photon-limitation is one combined finding.
+        both_meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            merge(mk(0; zf = 0.97, sf = 0.02),
+                  Dict{String,Any}("saturated" => true, "topCount" => 400, "topFrac" => 2.0e-4,
+                                   "clippedSignalFrac" => 2.0e-2)),
+        ]))
+        @test length(Cecelia.saturation_qc_findings(both_meta)) == 1
+        @test length(Cecelia.photon_limited_qc_findings(both_meta)) == 1
+
+        # JSON3 round-trip — the real path: persisted ccid meta comes back with Symbol keys
+        rt   = JSON3.read(JSON3.write(meta))
+        rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
+        rtfs = Cecelia.photon_limited_qc_findings(rtm)
+        @test length(rtfs) == 1
+        @test rtfs[1]["detail"]["nChannels"] == 2
+        @test Cecelia.saturation_metrics(rtm)["maxZeroFrac"] == 0.95
+
+        # cohort metric registration — the new keys are declared for importImages.omezarr
+        keys_declared = Cecelia.COHORT_METRICS["importImages.omezarr"]
+        @test "maxZeroFrac"   in keys_declared
+        @test "minSignalFrac" in keys_declared
     end
 
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
