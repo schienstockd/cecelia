@@ -442,10 +442,11 @@ function recommend_card(scores::AbstractVector{QCResult},
 end
 
 function recommend_plan(img::CciaImage;
-                        card_id::Symbol = :custom,
+                        card_id::Union{Symbol,Nothing} = nothing,
                         wizard::AbstractDict = Dict{Symbol,Any}())::CorrectionPlan
     ccid = state_file(img)
-    isfile(ccid) || return CorrectionPlan(String(img.uid), card_id, wizard,
+    isfile(ccid) || return CorrectionPlan(String(img.uid),
+                                          card_id === nothing ? :custom : card_id, wizard,
                                           CorrectionStep[], CorrectionStep[], QCResult[])
     raw  = read_ccid_raw(ccid)
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))

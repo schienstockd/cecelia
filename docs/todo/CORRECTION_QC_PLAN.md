@@ -2,17 +2,22 @@
 
 **Status:** **in-progress** (2026-09-06). Phases A–E shipped: Q-M4 sparsity probes (PR #811),
 §2.1 metadata-derived score layer (PR #813), §1 rule table + §3 tie-break + §5 seed cards
-(PR #815), plan.json persistence + provenance (PR #819), and chain mount + card recommender (this
-branch — `plan_to_chain_template` yields a `ChainTemplate` the executor accepts;
+(PR #815), plan.json persistence + provenance (PR #819), and chain mount + card recommender
+(PR #821 — `plan_to_chain_template` yields a `ChainTemplate` the executor accepts;
 `recommend_card(scores, wizard)` auto-picks a card so `recommend_plan` can leave `card_id`
-implicit). The §8 provenance triple was reduced to a doubleton after review: `writer_versions`
-per step doesn't apply (cecelia ships as one package — a single `ceceliaVersion` covers cache
-invalidation); `upstream_value_names` per step stays deferred (the chain executor's own
-`execute_task` wiring knows which `value_name` each node reads — no second source of truth needed
-until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect
-composite retired); Q-C10 no longer applies. **What's left:** wizard + plan UI (frontend), the
-C-Deep3D card update once the drift-vis-chain PR lands (add `driftPerPlane`+`driftZSmoothness`
-alongside stackAlign per the "they compose" finding), and the remaining §Open questions.
+implicit). Frontend slice **3a** shipped on this branch — `GET /api/correction-plan/presets` +
+`POST /api/correction-plan/recommend` and a read-only `CorrectionPlanPanel` above the TaskRunner in
+the cleanup module render the auto-recommended plan (card name, included steps with
+`orderWeight`/`source`, excluded rows with their `exclusionReason`, QC scores collapsed) for one
+selected image. The §8 provenance triple was reduced to a doubleton after review:
+`writer_versions` per step doesn't apply (cecelia ships as one package — a single `ceceliaVersion`
+covers cache invalidation); `upstream_value_names` per step stays deferred (the chain executor's
+own `execute_task` wiring knows which `value_name` each node reads — no second source of truth
+needed until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect
+composite retired); Q-C10 no longer applies. **What's left:** UI slice 3b (card picker + save/load
+plan.json), 3c (wizard W1–W6), 3d (mount-to-chain button); the C-Deep3D card update once the
+drift-vis-chain PR lands (add `driftPerPlane`+`driftZSmoothness` alongside stackAlign per the "they
+compose" finding); and the remaining §Open questions.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
