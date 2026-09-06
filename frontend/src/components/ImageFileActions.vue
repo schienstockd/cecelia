@@ -20,6 +20,7 @@ import DeleteImagesDialog, { type DeletePlan } from './DeleteImagesDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
+import { useSettingsStore } from '../stores/settings'
 import { isImported } from '../utils/inclusion'
 import { orderDefaultLast, resolveNewActive, DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 import { resolveSetDestination, destinationParams } from '../utils/setDestination'
@@ -31,6 +32,7 @@ const emit  = defineEmits<{ (e: 'done'): void }>()
 const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
+const settings    = useSettingsStore()
 const toast       = useToast()
 
 // Move and Delete are plain per-image HTTP loops, NOT task-rail jobs (Copy is — it dispatches
@@ -177,6 +179,8 @@ async function runPlan(plan: DeletePlan) {
     await runPerImage('Deleting', 'Deleted images and their analysis', async (img, projectUid) => {
       await post('/api/images/delete', { projectUid, setUid: props.setUid, imageUid: img.uid })
       project.deleteImage(props.setUid, img.uid)
+      // Clear the persisted viewer pick so a re-import doesn't reopen at a stale version name.
+      settings.setImageVersion(img.uid, '')
     })
     return
   }
@@ -198,6 +202,15 @@ async function runPlan(plan: DeletePlan) {
         const body = await post('/api/images/version/remove',
           { projectUid, imageUid: img.uid, valueName, newDefault })
         if (body.image) project.updateImageMeta(img.uid, body.image as Partial<CciaImage>)
+      }
+      // Prune the persisted viewer pick if it named a version we just deleted — otherwise the popup
+      // viewer's `getImageVersion` watch tries to `changeVersion` to a name the server no longer has,
+      // and the panel's dropdown (now down to one option) can't fire an onChange to correct it. Point
+      // it at the resolved new default so the viewer switches instead of hanging on stale pixels.
+      const remaining = Object.keys(project.imageByUid(img.uid)?.filepaths ?? {})
+      const picked = settings.getImageVersion(img.uid)
+      if (picked && !remaining.includes(picked)) {
+        settings.setImageVersion(img.uid, remaining.includes(newDefault) ? newDefault : '')
       }
     })
     return
