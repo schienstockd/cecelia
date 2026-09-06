@@ -15,6 +15,28 @@
     @test tasks_concurrent_limit() >= 1
 end
 
+# ── Version stamp is consistent across the three files that carry it ──────────
+# `cecelia_version()` (from Project.toml, via pkgversion) is the runtime reader; CITATION.cff is the
+# human-facing citation; frontend/package.json is what JS tooling sees. All three MUST agree — the
+# release-cutting checklist (docs/RELEASING.md step 4) bumps them together, and this testset is the
+# ratchet. A divergence here means either the bump was partial or one file was edited by hand.
+@testset "cecelia_version agrees with CITATION.cff and package.json" begin
+    ver = cecelia_version()
+    @test !isempty(ver) && ver != "0.0.0"
+
+    root = normpath(joinpath(@__DIR__, "..", ".."))
+
+    cff_ver = nothing
+    for line in eachline(joinpath(root, "CITATION.cff"))
+        m = match(r"^version:\s*(\S+)\s*$", line)
+        m === nothing || (cff_ver = String(m.captures[1]); break)
+    end
+    @test cff_ver == ver
+
+    pkg_ver = JSON3.read(read(joinpath(root, "frontend", "package.json"), String))[:version]
+    @test String(pkg_ver) == ver
+end
+
 # ── Fixture size ratchet ─────────────────────────────────────────────────────
 # Fixtures are committed now, and `.h5ad` is binary: git stores a WHOLE new copy per update and
 # history can't be pruned without a rewrite. "Keep fixtures small" was already the rule but nothing

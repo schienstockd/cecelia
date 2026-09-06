@@ -493,6 +493,16 @@ function cecelia_conf()::Dict{String,Any}
     _CONF[]
 end
 
+"""
+    cecelia_version() -> String
+
+The package version, from `app/Project.toml`. **The one runtime reader.** `CITATION.cff` and
+`frontend/package.json` carry the same string for user-facing tools that cannot see Julia; the
+release-cutting checklist (`docs/RELEASING.md`) bumps all three together, and a testset in
+`app/test/suite.jl` fails the suite if they diverge.
+"""
+cecelia_version()::String = string(pkgversion(@__MODULE__))
+
 function _cfg_dir(key::String, default::String)::String
     d = get(cecelia_conf(), "dirs", Dict{String,Any}())
     expand_user(string(get(d, key, default)))
