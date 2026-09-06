@@ -30,8 +30,12 @@ and deferred to a follow-up. The §8 provenance triple was reduced to a doubleto
 covers cache invalidation); `upstream_value_names` per step stays deferred (the chain executor's own
 `execute_task` wiring knows which `value_name` each node reads — no second source of truth needed
 until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect composite
-retired); Q-C10 no longer applies. **What's left:** UI W4/W6 (conditional wizard questions); and the
-remaining §Open questions.
+retired); Q-C10 no longer applies. Q-C3, Q-C6/C7, Q-C4, Q-C8 resolved 2026-09-06 (this branch) —
+default drift normalisation stays `none`; smooth = bucket 300 (before AF) per SMOOTHING_PLAN's
+measured evidence, no composite; AF ceiling is no longer a cohort metric; default `meta.saturation`
+is the honest signal for denoise since saturation is an acquisition property. **What's left:** UI
+W4/W6 (conditional wizard questions); and the remaining §Open questions (non-blocking / prompt
+confirmations only).
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
@@ -93,11 +97,11 @@ Columns:
 | `cleanupImages.stackAlign` | Image has a `Z` axis AND user chose a preset that says "breathing / intra-stack Z offset likely" (no metadata field exists — see §Q-M3) | `user-pick` (default off for a card that does not say so) | **100** — before `driftCorrect` per PR #793 / STACK_ALIGN_PLAN L14 (**OPEN — see §Q-C1**: PR #798/#802 restate order as `driftCorrect` first) | "No Z axis" / "Card does not indicate intra-stack breathing" |
 | `cleanupImages.driftCorrect` (any estimator) | Image has a `T` axis (structural, `requires.axes: ["T"]`) | `include` if `T` present | **200** | "No T axis — drift correction not applicable" (`TaskApplicabilityError` today) |
 | `cleanupImages.driftCorrect` — `driftEstimator = sitkRigid` | User pick from wizard/card; NEVER auto-promoted per 1b Rule 2 / PR #785 D2 | `user-pick` (default `multiLag`) | (same bucket 200) | "Default `multiLag`; opt into rigid only for known stage rotation" |
-| `cleanupImages.driftCorrect` — `driftNormalisation` | See **OPEN §Q-C3** — remove/restore ping-pong PR #785↔#795 | `user-pick` (default `none` per current shipped state) | (same bucket 200) | Per §Q-C3 the default is under review |
+| `cleanupImages.driftCorrect` — `driftNormalisation` | Resolved §Q-C3 — default stays `none`; per-image tunable, not a card commitment | `user-pick` (default `none`) | (same bucket 200) | Q-C3 resolved 2026-09-06 |
 | `cleanupImages.flowRegister` | User pick — no cheap plan-time probe; JSON has no `requires.axes` even though it needs `T` (1a inferred assumption 6) | `user-pick` (default off) | **300** — post-drift, per PR #798 | "Card does not indicate intra-frame non-rigid deformation" |
-| `cleanupImages.afCorrect` | User declared `afCombinations` OR card documents an AF-affected specimen (still user-pick — the combinations are a specimen question, PR #559 / §Q-M5 filter fingerprint) | `user-pick` (default off) | **400** — after drift per shipped composite `afDriftCorrect` array, contradicted by SMOOTHING_PLAN L379-394 which puts smooth first (**OPEN — see §Q-C6/C7**) | "No `afCombinations` declared" / "Card lists no AF interactions" |
+| `cleanupImages.afCorrect` | User declared `afCombinations` OR card documents an AF-affected specimen (still user-pick — the combinations are a specimen question, PR #559 / §Q-M5 filter fingerprint) | `user-pick` (default off) | **400** — after drift AND after smooth (Q-C6/C7 resolved 2026-09-06: smooth before AF, no composite) | "No `afCombinations` declared" / "Card lists no AF interactions" |
 | `cleanupImages.afDriftCorrect` (composite) | User picks the composite instead of the two tasks separately | `user-pick` (default on when both `afCorrect` and `driftCorrect` are in the plan) | **400** (its `afCorrect` step); composite writes `driftCorrected` as its final `outputValueName` | See §Q-C10 — composite writes intermediates that `funParamsByName` cannot distinguish per-step |
-| `cleanupImages.smooth` (spatial) | Photon-limited channel(s) present. **No plan-time probe today** (1c §gap 4). Preferred trigger = card "resonance / photon-limited" per 1b Rule 1. Fallback = post-hoc `zeroFracIn > 0.15` from a prior run | `user-pick` (default on for the photon-limited card, off otherwise) | **300** or **400** — pipeline order between smooth and AF is **OPEN §Q-C6/C7** | "Card is not photon-limited" / "No prior `zeroFracIn` above 0.05 for any selected channel" |
+| `cleanupImages.smooth` (spatial) | Photon-limited channel(s) present. **No plan-time probe today** (1c §gap 4). Preferred trigger = card "resonance / photon-limited" per 1b Rule 1. Fallback = post-hoc `zeroFracIn > 0.15` from a prior run | `user-pick` (default on for the photon-limited card, off otherwise) | **300** — before AF (Q-C6/C7 resolved 2026-09-06 per SMOOTHING_PLAN's measured evidence on `zolIMa/fXgbTl`) | "Card is not photon-limited" / "No prior `zeroFracIn` above 0.05 for any selected channel" |
 | `cleanupImages.smooth` (temporal) | Spatial trigger fires AND image has `T` axis AND upstream is drift-corrected (name heuristic — 1a inferred assumption 6, **OPEN §Q-C1**) | `user-pick` (default `median`) | (same bucket as spatial smooth) | "No T axis" / "Card excludes temporal averaging" |
 | `cleanupImages.denoise` (SUPPORT) | User has a trained denoise model in the vault AND at least one selected channel is NOT saturated (per PR #796 / DENOISE_INTEGRATION_PLAN D6) AND `SizeT ≥ inputFrames` (PR #805) | `user-pick` (default off — requires a trained model) | **400** — after drift correction per JSON tip; before/after smooth is **OPEN §Q-C6/C7** | "No denoise model in vault" / "All selected channels saturated (`meta.saturation`)" / "SizeT too short for model inputFrames" |
 | `cleanupImages.flip` | User selection only (mounted-on-the-wrong-side dataset) | `user-pick` (default off, QC-EXEMPT per 1a) | **100** (geometric, before drift so downstream tasks see the fixed geometry) | "User did not select a flip axis" |
@@ -263,7 +267,7 @@ to a different card) or a **starting point** (the user is expected to edit).
 
 | Card id | Name | One-line description | Recommended by (metadata + QC signals) | Parameter set (hard commitments in **bold**, starting points in italics) |
 |---|---|---|---|---|
-| `C-Resonance` | Resonance / photon-limited | Fast dwell, single-digit photon counts per pixel, needs smoothing before AF | W1 = `resonance` OR `preset.card_confidence` matches on prior `zeroFracIn ≥ 0.15` (per 1b Rule 1 / SMOOTHING_PLAN L111 / commit `95894bed`) | **`smooth` on, `spatialMethod = bilateral_vst`** (per PR #777); *`temporalStat = median`*, *`temporalFrames = 3`* (per SMOOTHING_PLAN median-for-time rule, commit `95cb553f`); **`smooth` sits before AF** (**OPEN §Q-C6/C7**); `driftEstimator = multiLag`; `denoise` off unless a resonance-trained SUPPORT model exists AND per-channel saturation is 0 |
+| `C-Resonance` | Resonance / photon-limited | Fast dwell, single-digit photon counts per pixel, needs smoothing before AF | W1 = `resonance` OR `preset.card_confidence` matches on prior `zeroFracIn ≥ 0.15` (per 1b Rule 1 / SMOOTHING_PLAN L111 / commit `95894bed`) | **`smooth` on, `spatialMethod = bilateral_vst`** (per PR #777); *`temporalStat = median`*, *`temporalFrames = 3`* (per SMOOTHING_PLAN median-for-time rule, commit `95cb553f`); **`smooth` sits before AF** (Q-C6/C7 resolved 2026-09-06); `driftEstimator = multiLag`; `denoise` off unless a resonance-trained SUPPORT model exists AND per-channel saturation is 0 |
 | `C-Galvo` | Galvo / clean signal | High-SNR, gaussian smoothing optional, AF via straightforward triangle background | W1 = `galvo` AND no prior `zeroFracIn ≥ 0.05` | `smooth` off; *`spatialMethod = gaussian`* if smooth is turned on later; `driftEstimator = multiLag`; **`afCorrect` on if `afCombinations` declared**; `denoise` user-pick |
 | `C-SpinningDisk` | Spinning-disk / live-cell / fast timelapse | Short frames, translation-only drift, minimal spatial noise, temporal median often over-smooths cell motion | W1 = `spinning_disk` | `smooth` off by default (**temporalMean inflates masks ~34%** per commit `95cb553f`); `driftEstimator = multiLag`; `flowRegister` off (rigid enough); `stackAlign` off (usually 2D); `denoise` user-pick |
 | `C-Deep3D` | Deep 3D / breathing-affected | Z-stacks with intra-stack offset AND depth-dependent inter-frame motion; stackAlign composes with `driftCorrect(driftPerPlane)` per the "they compose" finding | W1 = any AND W5 = `yes` OR `stackalign.applied_fraction ≥ 0.5` on a prior run | **`stackAlign` on** (`STACK_ALIGN_PLAN` L14, PR #793); *`alignReference = middle`*; *`minConfidence = 0.35`* (`STACK_ALIGN_APPLIED_FRAC_WARN`); `driftEstimator = multiLag`; **`driftPerPlane = true`** (PR #818 breathing-shear case — the reason this card exists); *`driftZSmoothness = 0.0`* (starting point; raise per `drift_correct.json` tip if planes still jump); `flowRegister` off |
@@ -569,16 +573,22 @@ the two questions the prompt asks the plan itself to raise.
   chain-editor choice; the rule table's order weights become recommendation buckets, not code
   enforcement. Neither PR-side is "picked" — the disputed pair is a user decision on the chain
   whiteboard.
-- **§Q-C3 — `driftNormalisation` default.** Removed in PR #785 with "never materially changed the
-  estimate" and restored the same day in PR #795 with unverified counter-examples. What is the
-  shipped default and is it a card-level commitment? The plan currently defaults to `none`; if
-  `phase` should be default for one card (e.g. C-Resonance's low-SNR reference frames) the maintainer
-  should say so. **Non-blocking for first plan; blocking for card param sets.**
+- **§Q-C3 — `driftNormalisation` default.** ~~Removed in PR #785 with "never materially changed
+  the estimate" and restored the same day in PR #795 with unverified counter-examples.~~ **RESOLVED
+  2026-09-06** — default stays `none` (matches shipped `drift_correct.json`). `phase` is NOT baked
+  into any card: PR #795's counter-examples were never measured, and the task tip already tells the
+  user "try it on low-SNR frames or large per-frame drift" — that's a per-image tunable, not a card
+  commitment. Follow-up (small): the `drift.unreliable` QC finding's `long` text can suggest "try
+  phase normalisation" so the hint lands at the point the user acts on it.
 - **§Q-C6 / §Q-C7 — `smooth`↔`afCorrect` order and the unbuilt `smoothAfDriftCorrect` composite.**
-  The shipped `afDriftCorrect` runs AF then drift. SMOOTHING_PLAN.md L379–394 proposes a
-  smooth-first composite that was never built. The rule table currently keeps smooth in bucket 300
-  (post-drift, pre-AF) but this depends on the answer to whether the SMOOTHING_PLAN design is still
-  the intent. **Blocking for the C-Resonance card param set.**
+  ~~The shipped `afDriftCorrect` runs AF then drift. SMOOTHING_PLAN.md L379–394 proposes a
+  smooth-first composite that was never built.~~ **RESOLVED 2026-09-06** — smooth stays in bucket
+  300 (pre-AF); no composite is built. Evidence: SMOOTHING_PLAN measured that on `zolIMa/fXgbTl`
+  AF's triangle-threshold background lands INSIDE the signal because 92–95 % of voxels are zeros;
+  smoothing first pushes the distribution into a shape the threshold can parse. The composite
+  proposal is architecturally superseded — Q-C1's PR #810 retired `afDriftCorrect`, and the chain
+  executor + whiteboard bucket ordering enforce the same sequence step-by-step, each with its own
+  params + QC. SMOOTHING_PLAN.md L379–394 is marked superseded; delete on next pass.
 - **§Q-C10 — Composite params attribution.** `funParamsByName` is keyed by output name so a
   composite's intermediate `afCorrected` and its final `driftCorrected` both carry the composite's
   params, not each step's. Is a Phase 2 plan-engine allowed to write **per-step** provenance to
@@ -593,17 +603,29 @@ the two questions the prompt asks the plan itself to raise.
   W4's answer doesn't fully resolve the choice. Is this a plan-doc TODO or something the audit
   should re-open? **Non-blocking for the plan; blocking for a claim that the plan makes correct
   bleedthrough recommendations.**
-- **§Q-C4 — AF ceiling as a cohort metric with no finding.** `qc_cohort.jl` bank it, no threshold.
-  The batch design (§6) needs to know whether ceiling outliers should surface in
-  `BatchCorrectionPlan.outlier_plans`. **Blocking for batch mode only.**
+- **§Q-C4 — AF ceiling as a cohort metric with no finding.** ~~`qc_cohort.jl` bank it, no
+  threshold. The batch design (§6) needs to know whether ceiling outliers should surface in
+  `BatchCorrectionPlan.outlier_plans`.~~ **RESOLVED 2026-09-06 — question is dead.** `qc_cohort.jl`
+  L123–127 documents that ceiling was deliberately removed as a cohort metric: AF output is now in
+  input counts, so there is no derived ceiling to drift across a set. Current AF cohort metrics
+  (line 128): `["saturatedFrac", "levelsUsedFrac", "maxBleedthrough"]`. Batch mode's
+  `BatchCorrectionPlan.outlier_plans` should surface `saturatedFrac` outliers instead — ceiling has
+  nothing to gate on.
 - **§Q-C5 — Temporal-mean rejection outliving its measurement.** `SMOOTHING_PLAN.md` L119–130
   reverses an earlier assumption. Does the C-SpinningDisk card's "smooth off by default" also carry
   a "temporalMean off if smooth is enabled" hard commitment? **Non-blocking; card param set
   detail.**
-- **§Q-C8 — Denoise saturation gate reads default meta regardless of input version.** Should the
-  plan gate `denoise` on the SATURATION of its chosen upstream `value_name`, or is fixing
-  `denoise.jl` to read the version-appropriate `meta.saturation` a prerequisite? **The plan
-  currently assumes the fix lands in `denoise.jl`; if not, the plan needs a workaround.**
+- **§Q-C8 — Denoise saturation gate reads default meta regardless of input version.** ~~Should
+  the plan gate `denoise` on the SATURATION of its chosen upstream `value_name`, or is fixing
+  `denoise.jl` to read the version-appropriate `meta.saturation` a prerequisite?~~ **RESOLVED
+  2026-09-06 — no fix needed.** Sensor saturation is a property of the ACQUISITION, not the
+  version: a voxel that clipped at the sensor ceiling on raw did not stop clipping when
+  `driftCorrect` wrote a shifted version. Every downstream store inherits the same ceiling-hits;
+  the shot-noise family (SUPPORT / DeepCAD-RT) does nothing on saturated data regardless of which
+  upstream you feed it. The plan gates `denoise` on default `meta.saturation` without hedging.
+  Edge case that does not currently exist: a task that RESCALES away from the ceiling (creating a
+  new intensity domain) would want a version-appropriate fingerprint — AF, drift, smooth, denoise
+  all preserve input counts, so this is future work, not a prerequisite.
 - **§Q-C9 — Saturation detection mechanism disagreement.** DENOISE_INTEGRATION_PLAN D6 vs
   `saturation_run.py`. Which is authoritative for a Phase 2 plan gate? **Non-blocking; the score
   formula in §2.1 uses whatever `meta.saturation.channels[i].saturated` is set to at import — same
