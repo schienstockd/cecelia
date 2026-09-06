@@ -337,10 +337,10 @@ export function baseOnlyWarning(params: Record<string, unknown> | null): { short
  *
  * A composite previews its FIRST previewable step and silently skips the rest — correct, since the
  * alternative is previewing nothing, but a skipped step can change what the previewed one means.
- * `afDriftCorrect` is the case that forced this: it previews AF and skips drift correction, which
- * expands the canvas and shifts every frame, so the geometry on screen is not the geometry the run
- * produces. Labels come from the backend (each step's own spec) rather than being mapped here, so the
- * message names steps the way the rest of the UI does and a new composite needs no frontend change.
+ * `segment.cellposeMeasure` is the canonical case: it previews the segmentation and skips
+ * `measureLabels`, so the preview shows masks but no per-object measurements the run would produce.
+ * Labels come from the backend (each step's own spec) rather than being mapped here, so the message
+ * names steps the way the rest of the UI does and a new composite needs no frontend change.
  */
 export function compositeWarning(
   notPreviewed: ReadonlyArray<{ label?: string; fun?: string }> | null | undefined,

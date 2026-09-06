@@ -182,12 +182,12 @@ Both were already named as unbuilt candidates in `GUIDE_SYSTEM_PLAN.md` ("still-
 built: spatial neighbour analysis…"). Two findings from this review recorded so they are not
 rediscovered the day someone writes them:
 
-- **AF correction is the bare half of a composite.** `cleanupImages.afCorrect` is a constituent of
-  `cleanupImages.afDriftCorrect` (`app/src/tasks/cleanupImages/af_drift_correct.json`), so teaching it
-  trips the Julia ratchet *a guide teaching a composite's bare half is declared* and needs an entry in
-  `bare_by_design` (`app/test/suite.jl`) with the reason. The reason is real and is the mirror image of
-  drift's: **a static multiplex slide has nothing to drift-correct**, so AF on its own is the whole
-  operation there, not half of one.
+- **AF correction stands alone.** `cleanupImages.afCorrect` is no longer wrapped by any composite
+  (the `afDriftCorrect` composite was retired — chain templates are the authoring surface for
+  correction sequences now), so a guide can teach it bare without tripping the Julia ratchet
+  *a guide teaching a composite's bare half is declared* (`bare_by_design` in `app/test/suite.jl`).
+  The scientific reason it makes sense on its own is unchanged: a static multiplex slide has nothing
+  to drift-correct, so AF on its own is the whole operation there.
 - **On `/spatial` the graph comes first.** The page's own header states the order: the squidpy
   neighbour graph (`cellNeighbours`) is the substrate persisted to `spatialGraph/{suffix}.h5ad`, and
   every readout — interaction matrix, contacts, aggregates — LOADS it rather than building its own

@@ -325,7 +325,7 @@ const liveNodes = computed<Node[]>(() => {
 })
 
 // Edges: each DAG edge replicated per image band, linking that band's task nodes. A fan-out node
-// (afDriftCorrect → two segmentations) has two outgoing edges to two lanes → a visible split.
+// (driftCorrect → two segmentations) has two outgoing edges to two lanes → a visible split.
 const liveEdges = computed<Edge[]>(() => {
   const { tasks, edges, imageIds } = liveLayout.value
   if (!edges.length || !tasks.length) return []

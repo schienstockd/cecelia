@@ -140,7 +140,7 @@ const previewParams = computed<Record<string, unknown> | null>(() =>
 // Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
 // stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
 // line beside its struct — no list here to go stale. Composites resolve through their own overload, so
-// `segment.cellposeMeasure` and `cleanupImages.afDriftCorrect` both report true.
+// `segment.cellposeMeasure` reports true from its first previewable step.
 //
 // One live condition on top of that: exactly one image selected, because the preview shows ONE region
 // of ONE image. Deliberately NOT "are the params ready" — that check used to be here as

@@ -391,8 +391,9 @@ signal, so the perceptual-denoising QC exemption does **not** apply here.
 }
 ```
 Register both in `task_registry.jl` (`_spec_path` + `_fun_name_map`). `task_previewable` for the
-composite should delegate to the **AF** step, as `afDriftCorrect` already does — that is the step whose
-params a user tunes, and the preview reads whichever store the viewer has open.
+composite should delegate to the **AF** step — that is the step whose params a user tunes, and the
+preview reads whichever store the viewer has open. (Historical note: the `afDriftCorrect` composite
+that demonstrated this pattern has since been retired.)
 
 ## What was built — and where it diverged from the design above
 

@@ -169,9 +169,6 @@ function _spec_path(::IncrementalPlotTask)
     joinpath(@__DIR__, "testTasks", "incremental_plot_task.json")
 end
 
-_COMPOSITE_SPEC_PATHS["cleanupImages.afDriftCorrect"] =
-    joinpath(@__DIR__, "cleanupImages", "af_drift_correct.json")
-
 _COMPOSITE_SPEC_PATHS["segment.cellposeMeasure"] =
     joinpath(@__DIR__, "segment", "cellpose_measure.json")
 
@@ -225,7 +222,6 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.denoise"             => Denoise(),
         "cleanupImages.flip"                => Flip(),
         "cleanupImages.dtype"               => DtypeConvert(),
-        "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),
         "editImages.zProject"               => ZProject(),

@@ -326,9 +326,9 @@ For a COMPOSITE, the steps a preview does not run — `[{fun, label}, …]`, emp
 
 `preview_params` delegates to the FIRST previewable step, so a composite previews one step and the
 others silently do not happen. That is correct (the alternative is previewing nothing) but it must be
-SAID, because a skipped step can change what the previewed one even means: `afDriftCorrect` previews AF
-and skips drift correction, which expands the canvas and shifts every frame — so the geometry on screen
-is not the geometry the run produces. Labels come from each step's own spec so the message names them
+SAID, because a skipped step can change what the previewed one even means: `segment.cellposeMeasure`
+previews the segmentation and skips `measureLabels`, so the preview shows masks but no per-object
+measurements the run would produce. Labels come from each step's own spec so the message names them
 the way the UI does, rather than showing a `fun_name`.
 """
 function preview_steps_not_previewed(task::CciaTask)::Vector{Dict{String,Any}}

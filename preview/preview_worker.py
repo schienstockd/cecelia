@@ -1189,7 +1189,6 @@ _BACKENDS = {
     'opticalFlow.inspect': _preview_flow_inspect,
     'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,
-    'cleanupImages.afDriftCorrect': _preview_af,
 }
 
 
