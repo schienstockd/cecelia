@@ -474,41 +474,46 @@ export function temporalSpanAdvisory(
 }
 
 /**
- * SUPPORT's temporal window. The runner refuses (`_support_short_movie_refusal` in
- * `train_support_denoise.jl`) a movie shorter than `inputFrames` — this is the same rule, live on
- * the slider, so the user sees it while dragging instead of at Run.
+ * Fetch a form-time advisory from the Julia backend. Use this INSTEAD of writing a client-side
+ * mirror of a rule the runner already enforces: the same helper the task's `_run_task` calls at Run
+ * time also serves this endpoint, so the two cannot drift. The rule lives in Julia
+ * (`app/src/tasks/param_validators.jl` + a `register_param_validator!` call in the task file); the
+ * frontend just picks a name and renders the reply.
  *
- * Anchors on min sizeT across the SELECTED images (set-scope task). Suggested value mirrors the
- * Julia helper: largest odd integer ≤ the shortest movie.
+ * See `POST /api/tasks/validate` (`api/src/task_validate_api.jl`).
  */
-export function supportTemporalWindowAdvisory(
-  value: unknown, images: readonly { sizeT?: number | null }[] | undefined,
-): ParamAdvisory | null {
-  const v = Math.trunc(Number(value))
-  if (!Number.isFinite(v) || v <= 0) return null
-  const ts = (images ?? []).map(i => i.sizeT ?? 0).filter(t => t > 0)
-  if (!ts.length) return null
-  const minT = Math.min(...ts)
-  const maxT = Math.max(...ts)
-  const n = ts.length
-  const nOver = ts.filter(t => t < v).length
-  const odd = (x: number) => (x % 2 === 1 ? x : Math.max(x - 1, 1))
-  const movies = `${n} movie${n === 1 ? '' : 's'}`
-  if (nOver === 0) {
-    return { severity: 'ok',
-             message: `${v}f on ${movies} (shortest ${minT}f)`,
-             tip: `Every selected movie has at least ${v} timepoints, so all of them will train.` }
+export function backendAdvisor(funName: string, paramKey: string): ParamAdvisor {
+  return {
+    // The set of images matters (min sizeT across the selection is what most validators look at) —
+    // re-run when the picked images change even if the value hasn't. `sizeT` is on the payload the
+    // form already has, so a change there tracks a re-import, not just a re-selection.
+    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.sizeT ?? ''}`).join(',')],
+    advise: async (value, ctx) => {
+      try {
+        const res = await fetch('/api/tasks/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            funName, paramKey, value,
+            projectUid:    ctx.projectUid ?? '',
+            imageUids:     (ctx.images ?? []).map(i => i.uid).filter(Boolean),
+            siblingValues: ctx.values ?? {},
+          }),
+        })
+        if (!res.ok) return null
+        const body = await res.json()
+        // The endpoint returns `null` (as JSON) when the validator had nothing useful to say. Fall
+        // through to `null` on any other shape — an advisory is never load-bearing.
+        if (!body || typeof body !== 'object') return null
+        const b = body as Partial<ParamAdvisory>
+        if (typeof b.severity !== 'string' || typeof b.message !== 'string' ||
+            typeof b.tip !== 'string') return null
+        return b as ParamAdvisory
+      } catch {
+        return null      // network failed / server down — silence beats an error banner
+      }
+    },
   }
-  if (nOver === n) {
-    return { severity: 'fail',
-             message: `over every movie (longest ${maxT}f) — nothing can train`,
-             tip: `The temporal window has to fit inside every selected movie. Longest is ${maxT}f — `
-                + `set it to ${odd(maxT)} (largest odd value ≤ ${maxT}) or pick longer movies.` }
-  }
-  return { severity: 'warn',
-           message: `${nOver} of ${n} too short (shortest ${minT}f)`,
-           tip: `Movies with fewer than ${v} timepoints are refused at Run. `
-              + `Set the window to ${odd(minT)} (largest odd value ≤ ${minT}) to train on all ${movies}.` }
 }
 
 export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
@@ -547,13 +552,10 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
 
   // Smoothing's Gaussian. Registered under the KEY: `float` is the widget type and would match every
   // slider in every task, and the judgement here is about what the SMOOTHING pipeline does with it.
-  // SUPPORT's temporal window. Registered under the KEY — no other task widget uses `inputFrames`.
-  // The judgement is per-selection (min sizeT across selected images) so it re-runs when the set
-  // changes, not just when the value does.
-  inputFrames: {
-    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.sizeT ?? ''}`).join(',')],
-    advise: async (value, ctx) => supportTemporalWindowAdvisory(value, ctx.images),
-  },
+  // SUPPORT's temporal window. Backend-served (`/api/tasks/validate`) — the rule lives in
+  // `app/src/tasks/opticalFlow/train_support_denoise.jl` next to the runner that enforces it, so
+  // the pre-run line and the post-Run refusal cannot drift.
+  inputFrames: backendAdvisor('opticalFlow.trainSupportDenoise', 'inputFrames'),
 
   spatialSigma: {
     // the verdict depends on the statistic beside it, so it has to re-run when that changes

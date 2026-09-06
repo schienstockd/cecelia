@@ -511,6 +511,70 @@ end
     @test occursin("Set Temporal window to 1", lines_one[2])
 end
 
+@testset "_support_temporal_window_advisory — form-time twin of the run-time refusal" begin
+    # The registered validator emits a structured advisory that the frontend's `backendAdvisor`
+    # fetches. Same rule as `_support_short_movie_refusal` above — pinned here so the two do not drift.
+    mk(uid, t) = (img = CciaImage(; uid=uid, name=uid, dir="");
+                  img.meta = Dict{String,Any}("SizeT" => t); img)
+    empty_siblings = Dict{String,Any}()
+
+    # Fits every movie → ok, message names the count + shortest.
+    a = Cecelia._support_temporal_window_advisory(21, [mk("a", 31), mk("b", 60), mk("c", 45)], empty_siblings)
+    @test a.severity == "ok"
+    @test occursin("21f", a.message)
+    @test occursin("3 movies", a.message)
+    @test occursin("shortest 31f", a.message)
+
+    # One movie too short → warn, tip suggests the odd cap = 31 (already odd).
+    b = Cecelia._support_temporal_window_advisory(41, [mk("a", 31), mk("b", 60), mk("c", 45)], empty_siblings)
+    @test b.severity == "warn"
+    @test occursin("1 of 3", b.message)
+    @test occursin("31", b.tip)
+
+    # None fit → fail, tip suggests odd cap = 39 (largest odd ≤ 40), matching the run-time refusal.
+    c = Cecelia._support_temporal_window_advisory(61, [mk("a", 31), mk("b", 40)], empty_siblings)
+    @test c.severity == "fail"
+    @test occursin("longest 40f", c.message)
+    @test occursin("39", c.tip)
+    @test occursin("largest odd", c.tip)
+
+    # No images / no sizeT / bad value → nothing (silence beats a wrong readout).
+    @test Cecelia._support_temporal_window_advisory(21, CciaImage[], empty_siblings) === nothing
+    no_t = CciaImage(; uid="x", name="x", dir=""); no_t.meta = Dict{String,Any}()
+    @test Cecelia._support_temporal_window_advisory(21, [no_t], empty_siblings) === nothing
+    @test Cecelia._support_temporal_window_advisory(0, [mk("a", 31)], empty_siblings) === nothing
+    @test Cecelia._support_temporal_window_advisory("nonsense", [mk("a", 31)], empty_siblings) === nothing
+end
+
+@testset "param validator registry — SUPPORT registers, the dispatcher rejects bad shapes" begin
+    # Registered on include of train_support_denoise.jl.
+    @test haskey(Cecelia.PARAM_VALIDATORS, ("opticalFlow.trainSupportDenoise", "inputFrames"))
+
+    # Dispatcher returns nothing when nothing is registered.
+    mk(uid, t) = (img = CciaImage(; uid=uid, name=uid, dir="");
+                  img.meta = Dict{String,Any}("SizeT" => t); img)
+    @test Cecelia.validate_param("nope.no_such_task", "someKey", 1, CciaImage[mk("a", 10)],
+                                 Dict{String,Any}()) === nothing
+
+    # Dispatcher round-trips a real validator.
+    r = Cecelia.validate_param("opticalFlow.trainSupportDenoise", "inputFrames", 21,
+                               CciaImage[mk("a", 31), mk("b", 60)], Dict{String,Any}())
+    @test r !== nothing
+    @test r.severity == "ok"
+
+    # A validator that throws is swallowed and returns nothing — an advisory is not load-bearing.
+    Cecelia.register_param_validator!("test.throws", "x", (_, _, _) -> error("oops"))
+    @test Cecelia.validate_param("test.throws", "x", 1, CciaImage[], Dict{String,Any}()) === nothing
+
+    # A validator that returns garbage is refused at the boundary (returns nothing, logs a warning).
+    Cecelia.register_param_validator!("test.garbage", "x", (_, _, _) -> (; wrong = 1))
+    @test Cecelia.validate_param("test.garbage", "x", 1, CciaImage[], Dict{String,Any}()) === nothing
+
+    # Cleanup so the registry doesn't leak the test fixtures.
+    delete!(Cecelia.PARAM_VALIDATORS, ("test.throws", "x"))
+    delete!(Cecelia.PARAM_VALIDATORS, ("test.garbage", "x"))
+end
+
 @testset "_support_train_qc_findings — pure catalog" begin
     # Loss came down — no findings.
     @test isempty(Cecelia._support_train_qc_findings(Dict{String,Any}("lossDrop" => 2.5)))

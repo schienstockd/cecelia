@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, supportTemporalWindowAdvisory,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -357,49 +357,71 @@ describe('spatialSigmaAdvisory', () => {
   })
 })
 
-// SUPPORT's temporal window. The runner refuses a movie shorter than `inputFrames`; the advisor
-// mirrors that rule live on the slider, mirrored suggested value included ("largest odd ≤ min T").
-describe('supportTemporalWindowAdvisory', () => {
-  it('ok — window fits every selected movie', () => {
-    const a = supportTemporalWindowAdvisory(21, [{ sizeT: 31 }, { sizeT: 60 }, { sizeT: 45 }])!
-    expect(a.severity).toBe('ok')
-    expect(a.message).toContain('21f')
-    expect(a.message).toContain('3 movies')
-    expect(a.message).toContain('shortest 31f')
+// The generic "ask the backend" advisor. What we test on the client is the CONTRACT with the
+// endpoint (URL, body shape, response handling) — the actual rule lives in Julia
+// (`app/src/tasks/param_validators.jl`) and is pinned by the Julia test suite. That split is the
+// whole point of migrating client-side mirrors: one source of truth, tested where it lives.
+describe('backendAdvisor', () => {
+  const CTX = { projectUid: 'p', images: [{ uid: 'a', sizeT: 31 }, { uid: 'b', sizeT: 60 }],
+                values: { learningRate: 0.0005 } } as unknown as Parameters<
+                  ReturnType<typeof backendAdvisor>['advise']>[1]
+
+  it('POSTs the funName + paramKey + form context, returns the parsed advisory', async () => {
+    const seen: { url?: string; init?: RequestInit } = {}
+    global.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      seen.url = url; seen.init = init
+      return { ok: true, json: async () => ({ severity: 'warn', message: '1 of 3 too short',
+                                              tip: 'Set the window to 31' }) } as unknown as Response
+    }) as unknown as typeof fetch
+
+    const advisor = backendAdvisor('opticalFlow.trainSupportDenoise', 'inputFrames')
+    const out = await advisor.advise(41, CTX)
+    expect(out?.severity).toBe('warn')
+    expect(out?.message).toContain('1 of 3')
+
+    expect(seen.url).toBe('/api/tasks/validate')
+    expect(seen.init?.method).toBe('POST')
+    const body = JSON.parse(String(seen.init?.body))
+    expect(body.funName).toBe('opticalFlow.trainSupportDenoise')
+    expect(body.paramKey).toBe('inputFrames')
+    expect(body.value).toBe(41)
+    expect(body.projectUid).toBe('p')
+    expect(body.imageUids).toEqual(['a', 'b'])
+    expect(body.siblingValues).toEqual({ learningRate: 0.0005 })
   })
 
-  it('warn — some movies too short, message names the count + shortest, tip suggests odd cap', () => {
-    // 41 does not fit a 31f movie; two of three do fit
-    const a = supportTemporalWindowAdvisory(41, [{ sizeT: 31 }, { sizeT: 60 }, { sizeT: 45 }])!
-    expect(a.severity).toBe('warn')
-    expect(a.message).toContain('1 of 3')
-    expect(a.message).toContain('shortest 31f')
-    // 31 is already odd, so the suggested cap is 31
-    expect(a.tip).toContain('31')
+  it('returns null when the endpoint returns null — the validator had nothing to say', async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => null }) as Response) as unknown as typeof fetch
+    const out = await backendAdvisor('t', 'k').advise(1, CTX)
+    expect(out).toBeNull()
   })
 
-  it('fail — every movie too short, tip mirrors the Julia refusal (odd ≤ longest)', () => {
-    // 61 does not fit any of them
-    const a = supportTemporalWindowAdvisory(61, [{ sizeT: 31 }, { sizeT: 40 }])!
-    expect(a.severity).toBe('fail')
-    expect(a.message).toContain('longest 40f')
-    // 40 is even → largest odd ≤ 40 is 39, matching `_support_short_movie_refusal`
-    expect(a.tip).toContain('39')
-    expect(a.tip).toContain('largest odd')
+  it('returns null on HTTP error — silence beats an error banner', async () => {
+    global.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
   })
 
-  it('returns null when there is nothing to say', () => {
-    expect(supportTemporalWindowAdvisory(21, [])).toBeNull()
-    expect(supportTemporalWindowAdvisory(21, undefined)).toBeNull()
-    // no images carry a sizeT — silence rather than a wrong readout
-    expect(supportTemporalWindowAdvisory(21, [{ sizeT: null }, {}])).toBeNull()
-    expect(supportTemporalWindowAdvisory(0, [{ sizeT: 31 }])).toBeNull()
-    expect(supportTemporalWindowAdvisory('nonsense', [{ sizeT: 31 }])).toBeNull()
+  it('returns null when the network throws — an advisory is not load-bearing', async () => {
+    global.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
   })
 
-  it('is registered on the KEY, so it fires only on SUPPORT training and not on every int', () => {
+  it('returns null on a garbage response — sanity-check before rendering', async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () =>
+      ({ severity: 'warn' }) }) as Response) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()   // missing message/tip
+  })
+
+  it('registers `inputFrames` on the SUPPORT training task by KEY', () => {
     expect(paramAdvisor({ key: 'inputFrames', type: 'int' })).toBeTruthy()
     expect(paramAdvisor({ key: 'someOtherInt', type: 'int' })).toBeUndefined()
+  })
+
+  it('re-runs when the SET of images changes, not just the value', () => {
+    const a = backendAdvisor('t', 'k')
+    const before = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }] }) ?? []
+    const after  = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }, { uid: 'y', sizeT: 40 }] }) ?? []
+    expect(before).not.toEqual(after)
   })
 })
 

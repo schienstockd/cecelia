@@ -4752,7 +4752,7 @@ end
         "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/profiles/save", "/api/profiles/delete",
-        "/api/tasks/custom-modules/reload",
+        "/api/tasks/custom-modules/reload", "/api/tasks/validate",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/update/apply",
         "/api/update/revert",
@@ -4803,7 +4803,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 105
+    @test length(GET_ROUTES) == 84 && length(POST_ROUTES) == 106
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -7641,5 +7641,66 @@ end
     @test Set(json_modes) == Set(TRACK_COLOR_MODES)
     for m in json_modes
         @test m in TRACK_COLOR_MODES
+    end
+end
+
+# ── POST /api/tasks/validate — the generic form-time advisory endpoint ─────────────────
+#
+# The handler resolves images and hands off to `Cecelia.validate_param`; the validator's own logic
+# is pinned in the PACKAGE suite (`_support_temporal_window_advisory`). Here we test the WIRING
+# only: bad shapes → 4xx, unknown validator → 200 null, a registered validator round-trips.
+@testset "API: /api/tasks/validate — wiring" begin
+    _valpost(body) = api_task_validate(HTTP.Request("POST", "/api/tasks/validate"),
+                                       Vector{UInt8}(JSON3.write(body)))
+
+    # Bad JSON → 400.
+    st, _ = api_task_validate(HTTP.Request("POST", "/api/tasks/validate"), Vector{UInt8}("{not json"))
+    @test st == 400
+
+    # Missing funName / paramKey → 400 each.
+    st, _ = _valpost(Dict("paramKey" => "x", "value" => 1))
+    @test st == 400
+    st, _ = _valpost(Dict("funName" => "t", "value" => 1))
+    @test st == 400
+
+    # Unknown validator → 200, body is literal "null" (frontend renders nothing).
+    st, body = _valpost(Dict("funName" => "no.such.task", "paramKey" => "no.such.key",
+                             "value" => 1, "projectUid" => "", "imageUids" => []))
+    @test st == 200
+    @test body == "null"
+
+    # Register a test validator that ignores images so we can round-trip without a project fixture,
+    # then clean up. Same shape a real task file would register.
+    Cecelia.register_param_validator!("test.validate.echo", "x",
+        (v, _imgs, _sibs) -> (severity = "ok", message = "value=$v", tip = "echoed"))
+    try
+        st, body = _valpost(Dict("funName" => "test.validate.echo", "paramKey" => "x",
+                                 "value" => 42, "projectUid" => "", "imageUids" => []))
+        @test st == 200
+        obj = JSON3.read(body)
+        @test String(obj.severity) == "ok"
+        @test occursin("42", String(obj.message))
+
+        # `siblingValues` reaches the validator as an AbstractDict (the shape validators receive).
+        Cecelia.register_param_validator!("test.validate.echo_siblings", "x",
+            (_, _, sibs) -> (severity = "ok", message = "sib=" * String(get(sibs, "lr", "?")),
+                             tip = "sib"))
+        st, body = _valpost(Dict("funName" => "test.validate.echo_siblings", "paramKey" => "x",
+                                 "value" => 1, "projectUid" => "", "imageUids" => [],
+                                 "siblingValues" => Dict("lr" => "0.001")))
+        @test st == 200
+        @test occursin("sib=0.001", String(JSON3.read(body).message))
+
+        # A throwing validator is swallowed by validate_param — 200 null, no 500.
+        Cecelia.register_param_validator!("test.validate.throws", "x",
+            (_, _, _) -> error("boom"))
+        st, body = _valpost(Dict("funName" => "test.validate.throws", "paramKey" => "x",
+                                 "value" => 1, "projectUid" => "", "imageUids" => []))
+        @test st == 200
+        @test body == "null"
+    finally
+        delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.echo", "x"))
+        delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.echo_siblings", "x"))
+        delete!(Cecelia.PARAM_VALIDATORS, ("test.validate.throws", "x"))
     end
 end

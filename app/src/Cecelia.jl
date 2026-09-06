@@ -144,6 +144,7 @@ export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
 export task_requires_axes, task_requires_scale, task_missing_scale, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
+export register_param_validator!, validate_param, param_validator_keys, PARAM_VALIDATORS
 export custom_task_clashes
 export plugins_dir, plugin_roots, plugin_name_of, read_plugin_manifest, plugin_version_warning
 export user_task_specs, user_plot_specs, plugins_report, tier_name, plugin_contributions, plugin_views, bundled_plugins, plugin_install_local!
@@ -270,6 +271,10 @@ include("analysis_boards.jl")
 # analysis_boards.jl for BoardsDoc; `_observer_each_population` (ai/) is resolved at call time.
 include("analysis_board_spec.jl")
 include("tasks/task.jl")
+# Form-time param advisories, single source of truth. After task.jl (uses no task types yet, but the
+# registration sites in tasks/**/ are all beneath the task registry) and before any task file that
+# registers a validator.
+include("tasks/param_validators.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
 include("segmentation.jl")
