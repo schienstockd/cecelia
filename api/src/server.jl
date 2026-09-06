@@ -265,6 +265,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
     "/api/correction-plan/recommend" => (req, body_bytes) -> (api_correction_plan_recommend(req, body_bytes)),
     "/api/correction-plan/save" => (req, body_bytes) -> (api_correction_plan_save(req, body_bytes)),
+    "/api/correction-plan/mount" => (req, body_bytes) -> (api_correction_plan_mount(req, body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
     "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),

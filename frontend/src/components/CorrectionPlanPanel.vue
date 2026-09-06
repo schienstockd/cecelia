@@ -1,5 +1,5 @@
 <!--
-  Correction-plan preview + card picker — slices 3a + 3b of docs/todo/CORRECTION_QC_PLAN.md.
+  Correction-plan preview + card picker + mount — slices 3a + 3b + 3d of docs/todo/CORRECTION_QC_PLAN.md.
 
   For one selected image: shows the currently-recommended (or saved) plan and lets the user pick a
   different acquisition card. Load-first behaviour: if plan.json exists on disk it's the source of
@@ -7,15 +7,20 @@
   "unsaved". Picking a card saves plan.json in one round-trip. A `stale` marker fires when the
   image's `saturationFingerprint` no longer matches the sidecar (a re-import happened).
 
-  What this slice does NOT do — deferred to 3c/d:
+  Mount writes the saved plan as a ChainTemplate under the project's chains dir (name is fixed
+  per-image, `correction-plan-{imageUid}`). It requires a saved plan first — mounting an unsaved
+  recommendation would create a chain whose provenance can't be traced back to a card the user
+  actually picked. Re-mounting overwrites, gated by a two-step confirm so accidentally clobbering a
+  hand-edited chain never happens silently.
+
+  What this panel does NOT do — deferred to 3c:
   - wizard W1–W6 (would let the user answer questions the card can't imply)
-  - "Mount to chain" button (write a ChainTemplate from the plan)
 
   Placement: sits above the TaskRunner in the cleanup module's right panel; multiple selection or
   no selection shows an empty state, so the panel is unobtrusive when the plan is not relevant.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import { useCorrectionPlan, fetchCorrectionPresets } from '../composables/useCorrectionPlan'
@@ -29,14 +34,56 @@ const props = defineProps<{
 const project = useProjectStore()
 const projectUid = computed(() => project.loadedProjectUid ?? '')
 
+// Collapsed / expanded — one panel-scoped preference, persisted so it survives a module switch. The
+// TaskRunner sits directly below and has its own two-half expand primitive; keeping this widget
+// collapsible in the same visual language (chevron in the header) means "give the runner all the
+// vertical space" is one click, not a layout change.
+const COLLAPSE_KEY = 'cc-correction-plan-panel-collapsed'
+const collapsed = ref<boolean>(false)
+try { collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1' } catch { /* first-run */ }
+function toggleCollapsed(): void {
+  collapsed.value = !collapsed.value
+  try { localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0') } catch { /* ignore */ }
+}
+
 // Slice 3a is per-image. Multi-select shows an empty-state row rather than fanning out — cohort
 // plans are §6 of the plan doc, deferred.
 const imageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : null)
 
-const { plan, saved, stale, loading, error, save, refresh } = useCorrectionPlan({
+const { plan, saved, stale, loading, error, save, refresh, mount } = useCorrectionPlan({
   projectUid,
   imageUid,
 })
+
+// Mount state: 'idle' → 'busy' → back to 'idle' with a status message; a 409 shifts to
+// 'confirmOverwrite' which shows Replace/Cancel inline (no modal). 'done' holds the last outcome
+// long enough to notice, cleared when the user picks a different card or navigates images.
+type MountState = 'idle' | 'busy' | 'confirmOverwrite' | 'done'
+const mountState = ref<MountState>('idle')
+const mountMsg = ref<string>('')
+async function attemptMount(overwrite: boolean): Promise<void> {
+  mountState.value = 'busy'
+  mountMsg.value = ''
+  try {
+    const r = await mount(overwrite)
+    if (r.status === 'conflict') {
+      mountState.value = 'confirmOverwrite'
+      mountMsg.value = `Chain '${r.name}' already exists`
+      return
+    }
+    mountState.value = 'done'
+    mountMsg.value = r.status === 'created'
+      ? `Mounted → ${r.name} (${r.nodeCount} node${r.nodeCount === 1 ? '' : 's'})`
+      : `Replaced → ${r.name} (${r.nodeCount} node${r.nodeCount === 1 ? '' : 's'})`
+  } catch (e) {
+    mountState.value = 'done'
+    mountMsg.value = e instanceof Error ? e.message : String(e)
+  }
+}
+function cancelMount(): void { mountState.value = 'idle'; mountMsg.value = '' }
+// Clear the outcome banner when the underlying plan changes — a stale message on the previous card
+// would misrepresent what the button will actually do next.
+watch([() => plan.value?.presetId, imageUid], () => { mountState.value = 'idle'; mountMsg.value = '' })
 
 const presets = ref<AcquisitionPresetSummary[]>([])
 fetchCorrectionPresets().then(rows => { presets.value = rows }).catch(() => { /* fall back to id */ })
@@ -88,12 +135,19 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
 <template>
   <div class="correction-plan-panel">
     <div class="header">
-      <span class="cc-eyebrow cc-fs-sm">Correction plan</span>
+      <button
+        class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro header-toggle"
+        @click="toggleCollapsed"
+        v-tooltip.right="collapsed ? 'Show correction plan' : 'Hide correction plan'">
+        <i :class="collapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
+      </button>
+      <span class="cc-eyebrow cc-fs-sm" @click="toggleCollapsed">Correction plan</span>
       <span class="header-right cc-fs-2xs">
         <span v-if="saved" class="status-tag saved" v-tooltip.left="'Loaded from plan.json — the executor runs this'">saved</span>
         <span v-else-if="plan" class="status-tag unsaved" v-tooltip.left="'Not saved yet — Select a card to persist'">unsaved</span>
         <span v-if="stale" class="status-tag stale" v-tooltip.left="'Meta changed since save — Select a card to re-save'">stale</span>
         <button
+          v-if="!collapsed"
           class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
           :disabled="loading || !imageUid"
           @click="refresh"
@@ -103,6 +157,7 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
       </span>
     </div>
 
+    <template v-if="!collapsed">
     <div v-if="!imageUid" class="empty cc-muted cc-fs-sm">
       {{ selectedUids.length === 0 ? 'Select one image to see its plan' : 'Select just one image' }}
     </div>
@@ -165,6 +220,35 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
           </li>
         </ul>
       </CollapsibleSection>
+
+      <div class="mount-row cc-row cc-fs-sm">
+        <template v-if="mountState !== 'confirmOverwrite'">
+          <button
+            class="cc-btn cc-btn-ghost cc-btn-sm"
+            :disabled="!saved || mountState === 'busy' || !plan.included.length"
+            @click="attemptMount(false)"
+            v-tooltip.top="!saved
+              ? 'Save the plan first — Select a card'
+              : (!plan.included.length ? 'Nothing to mount — the plan has no included steps' : 'Write this plan as a chain template')">
+            Mount to chain
+          </button>
+        </template>
+        <template v-else>
+          <button
+            class="cc-btn cc-btn-danger cc-btn-sm"
+            @click="attemptMount(true)"
+            v-tooltip.top="'Overwrite the existing chain'">
+            Replace
+          </button>
+          <button
+            class="cc-btn cc-btn-ghost cc-btn-sm"
+            @click="cancelMount">
+            Cancel
+          </button>
+        </template>
+        <span v-if="mountMsg" class="mount-msg cc-fs-2xs" :class="{ warn: mountState === 'confirmOverwrite' }">{{ mountMsg }}</span>
+      </div>
+    </template>
     </template>
   </div>
 </template>
@@ -183,6 +267,15 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
+}
+.header-toggle {
+  flex: 0 0 auto;
+}
+.header .cc-eyebrow {
+  flex: 1 1 auto;
+  cursor: pointer;
+  user-select: none;
 }
 .header-right {
   display: flex;
@@ -253,5 +346,16 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
 }
 .score-val {
   font-variant-numeric: tabular-nums;
+}
+.mount-row {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--cc-border);
+}
+.mount-msg {
+  color: var(--cc-text-dim);
+}
+.mount-msg.warn {
+  color: var(--cc-danger);
 }
 </style>
