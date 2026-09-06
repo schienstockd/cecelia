@@ -71,7 +71,7 @@ export function brickBounds(
  * which is the atlas's cue to write a shorter row and pad the rest with zeros.
  */
 export function brickSlabQuery(
-  base: { projectUid: string; imageUid: string; valueName?: string; enc?: 'identity' | 'zstd' },
+  base: { projectUid: string; imageUid: string; valueName?: string; enc?: 'identity' | 'zstd'; rev?: string },
   brick: VirtualBrick,
   nC: number,
   brickSizeVox: readonly [number, number, number],
@@ -97,11 +97,14 @@ export function brickSlabQuery(
     z: b.zLo + zOffset,
     zTo: b.zHi + zOffset,
     level: brick.level,
+    // `rev` is BrickSource.rev — bumped on a same-store rewrite. Threads into the slab URL as `_r`
+    // so the browser HTTP cache invalidates alongside the client-side atlas.
+    rev: base.rev,
   }
 }
 
 export function brickSlabUrl(
-  base: { projectUid: string; imageUid: string; valueName?: string; enc?: 'identity' | 'zstd' },
+  base: { projectUid: string; imageUid: string; valueName?: string; enc?: 'identity' | 'zstd'; rev?: string },
   brick: VirtualBrick,
   nC: number,
   brickSizeVox: readonly [number, number, number],
@@ -117,7 +120,7 @@ export function brickSlabUrl(
  * atlas slot — so the shader's page-table lookup works for both.
  */
 export function brickLabelSlabUrl(
-  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd' },
+  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string },
   labelName: string,
   brick: VirtualBrick,
   brickSizeVox: readonly [number, number, number],
@@ -138,6 +141,7 @@ export function brickLabelSlabUrl(
     z: b.zLo + zOffset,
     zTo: b.zHi + zOffset,
     level: brick.level,
+    rev: base.rev,
   })
 }
 

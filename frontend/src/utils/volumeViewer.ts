@@ -182,6 +182,15 @@ export interface SlabQuery {
    * zoom. `pickTileLevel` for the 2D pan/zoom view, `pickVolumeLevel` for the 3D raycaster.
    */
   level?: number
+  /**
+   * Opaque revision that busts the browser's HTTP cache for the SAME store rewritten in place. Slab
+   * responses are `Cache-Control: max-age=3600` and slab URLs are content-addressed by (t,c,z,...) —
+   * no store identity in the URL — so a task rerun that overwrites `ccidDriftCorrected.ome.zarr`
+   * with different DIMS leaves the browser serving stale bytes for an hour, and the client's shape
+   * guard trips on the old `X-Slab-Shape` header. Threaded from `cacheClearRev.value`; server
+   * ignores unknown params so this is a pure client-side concern. Same idiom as `previewId`.
+   */
+  rev?: string | number
 }
 
 export function slabUrl(q: SlabQuery): string {
@@ -217,6 +226,9 @@ export function slabUrl(q: SlabQuery): string {
   if (q.y !== undefined) p.set('y', String(q.y))
   if (q.y !== undefined && q.yTo !== undefined) p.set('yTo', String(q.yTo))
   if (q.level !== undefined && q.level !== 0) p.set('level', String(q.level))
+  // Store-rewrite cache-buster. Absent when the caller has no rev (no-op, pre-existing URLs unchanged);
+  // a non-zero rev appends `_r=<rev>` so a cache-clear signal invalidates the browser HTTP cache too.
+  if (q.rev !== undefined && q.rev !== '' && q.rev !== 0) p.set('_r', String(q.rev))
   return '/api/viewer/slab?' + p.toString()
 }
 
