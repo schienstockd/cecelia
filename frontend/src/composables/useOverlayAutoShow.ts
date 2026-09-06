@@ -7,9 +7,13 @@ import {
 } from '../utils/overlayAutoShow'
 
 // Turn REMEMBERED overlay state + live-write previews into VIEWER state — the app-level glue that
-// watches the project store's `viewerImageUid` (which changes when an image is opened, whatever the
-// trigger: route load, task:result, panel click) and wires WS events (`gating:popmap`, `task:status`,
-// `task:progress`, chain nodes) to the panel's overlay bag and the popup viewer.
+// watches the project store's `openImageUid` (which changes when an image is opened, whatever the
+// trigger: route load, task:result, panel click, popup focus) and wires WS events (`gating:popmap`,
+// `task:status`, `task:progress`, chain nodes) to the panel's overlay bag and the popup viewer.
+//
+// `openImageUid` (not `viewerImageUid`): the panel's `openedImage` is keyed off `openImageUid`, and
+// with napari being retired `viewerImageUid` is no longer written by any live path — which left
+// `livePreviews` permanently empty, so the `pi-bolt` live-preview row never appeared during a run.
 //
 // TWO RULES, both learned from real bugs — read before adding a fourth WS handler:
 //
@@ -54,7 +58,7 @@ const _lastRefreshAt: Record<string, number> = {}
 // it changed.
 export async function refreshLivePreviews(): Promise<void> {
   const project  = useProjectStore()
-  const imageUid = project.viewerImageUid
+  const imageUid = project.openImageUid
   if (!imageUid) { livePreviews.value = []; return }
   let tasks: TaskListEntry[] = []
   try {
@@ -106,12 +110,13 @@ export function useOverlayAutoShow() {
   // the backend's own `live_outputs` snapshot is what makes chain runs previewable at all.
   const onTaskLifecycle = () => { void refreshLivePreviews() }
   const onProgress = () => _onProgressTick()
-  // React to the project store's `viewerImageUid` (the image the user is looking at) — set from a
-  // route load / task result / panel click. Previously subscribed to `viewer:opened` for the same
-  // signal; the store ref is authoritative regardless of who opened the image.
+  // React to the project store's `openImageUid` (the image the user is looking at) — set by the
+  // ImageTable eye click and by the popup viewer's `cc.viewerFocus` bridge. Previously watched
+  // `viewerImageUid`, but with napari retired nothing writes that any more, so the previews list
+  // stayed empty for every run and the `pi-bolt` live-preview row never appeared.
   let stopWatch: (() => void) | null = null
   onMounted(() => {
-    stopWatch = watch(() => project.viewerImageUid, (uid) => {
+    stopWatch = watch(() => project.openImageUid, (uid) => {
       // previews belong to the image that was open; a different image's runs are a different set
       previewShown.value = {}
       void refreshLivePreviews()
