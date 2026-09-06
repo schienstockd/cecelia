@@ -8,8 +8,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  amplitudeGap, gatedCost, gatedSequence, medianSequence, motionSequence, noiseSigma, smoothFigure,
-  smoothVerdict, smoothVisColumns, GAP_WORTH_PAYING_FOR,
+  amplitudeGap, farnebackSequence, gatedCost, gatedSequence, medianSequence, motionSequence,
+  noiseSigma, smoothFigure, smoothVerdict, smoothVisColumns, GAP_WORTH_PAYING_FOR,
   bilateralPass, blur, sparseCellsFrame, smoothSpatialFigure, smoothSpatialVisColumns,
   SMOOTH_SPATIAL_METHODS,
 } from './smoothVis'
@@ -86,34 +86,45 @@ describe('median vs gated', () => {
 })
 
 describe('smoothVisColumns', () => {
-  const vis = smoothVisColumns({ frames: 5, sigma: 1, planes: 600, channels: 2 })
+  const vis = smoothVisColumns({ frames: 5, sigma: 1, planes: 600, channels: 2, farnebackMaxShiftPx: 8 })
 
-  it('shows the input BESIDE the two methods, not stranded above them', () => {
-    // Spanning it over the pair was true — one sequence, shared — but it read as a third thing
-    // floating over them, and the eye cannot compare two pictures it has to travel between.
-    expect(vis.columns).toEqual(['input', 'median', 'gated'])
+  it('shows the input BESIDE the three methods, not stranded above them', () => {
+    // Spanning it over the triple was true — one sequence, shared — but it read as a fourth thing
+    // floating over them, and the eye cannot compare pictures it has to travel between.
+    expect(vis.columns).toEqual(['input', 'median', 'gated', 'farneback'])
     expect(vis.rows.find(r => r.key === 'motion')).toBeUndefined()
-    expect(vis.rows.find(r => r.key === 'result')!.cells).toHaveLength(3)
+    expect(vis.rows.find(r => r.key === 'result')!.cells).toHaveLength(4)
   })
 
   it('still shows ONE input — the same sequence, drawn where the comparison happens', () => {
     const [input, med] = vis.rows.find(r => r.key === 'result')!.cells
     expect(input.frames).toHaveLength(med.frames!.length)
-    // it is the INPUT, so it is what the other two were made from, not a fourth thing
+    // it is the INPUT, so it is what the others were made from, not a fifth thing
     expect(input.frames![MID]).not.toEqual(med.frames![MID])
   })
 
-  it('gives both methods the same window, and does not flag it as a problem', () => {
+  it('gives every method the same window, and does not flag it as a problem', () => {
     const w = vis.rows.find(r => r.key === 'window')!
     expect(w.cells[0].text).toBe('')                 // the input is what the window is applied TO
     expect(w.cells[1].text).toBe(w.cells[2].text)
+    expect(w.cells[2].text).toBe(w.cells[3].text)
     // `uniform` colours a label as a warning. Identical windows are the POINT here, not the failure
     // it marks in the segmentation strip.
     expect(vis.rows.every(r => !r.uniform)).toBe(true)
     expect(vis.uniformKeys).toEqual([])
   })
 
-  it('animates both outputs off the same clock', () => {
+  it('shows the max-shift knob only in the farneback column', () => {
+    // Mirrors the JSON's `showIf: temporalStat=farneback`: the slider has a home in the figure, but
+    // it does not clutter the columns it does not apply to.
+    const c = vis.rows.find(r => r.key === 'clamp')!.cells
+    expect(c[0].text).toBe('')
+    expect(c[1].text).toBe('')
+    expect(c[2].text).toBe('')
+    expect(c[3].text).toBe('8px')
+  })
+
+  it('animates every output off the same clock', () => {
     const result = vis.rows.find(r => r.key === 'result')!
     expect(new Set(result.cells.map(c => c.frames!.length)).size).toBe(1)
     expect(result.cells[0].frames!.length).toBeGreaterThan(1)
@@ -137,17 +148,43 @@ describe('smoothVisColumns', () => {
   })
 })
 
-describe('the verdict under the figure', () => {
-  it('says the median is enough at the DEFAULT window, where the two agree', () => {
-    // The case a user must not misread: two near-identical grids are the answer, not a broken figure.
-    expect(smoothFigure({ frames: 3, sigma: 1, planes: 600, channels: 2 }).note)
-      .toBe('Median is enough at this window')
+describe('farneback (flow-warped) column', () => {
+  const seq = motionSequence()
+
+  it('keeps the moving spot bright — the argument for offering it', () => {
+    // Same claim shape as median-vs-gated: DIRECTION, not a tight bound.
+    const med = medianSequence(seq, 5)
+    const fw = farnebackSequence(seq, 5, 8)
+    expect(peak(fw[MID])).toBeGreaterThan(peak(med[MID]))
   })
 
-  it('says gated earns its time at the windows where the median smears', () => {
+  it('collapses to the identity per-neighbour when the clamp is tight', () => {
+    // A per-pixel clamp of 0 means any warp exceeds it; every neighbour falls back to source, and
+    // farneback becomes a plain mean over the window. Not identical to median — this is the failure
+    // mode the knob has to be able to expose in the figure.
+    const zero = farnebackSequence(seq, 5, 0)
+    // A plain window mean dims the moving spot MORE than the median does (the median rejects the
+    // off-centre frames as outliers; the mean averages them in).
+    expect(peak(zero[MID])).toBeLessThan(peak(medianSequence(seq, 5)[MID]))
+  })
+
+  it('window 1 is the identity — the temporal term is off', () => {
+    expect(farnebackSequence(seq, 1, 8)[MID]).toEqual(seq[MID])
+  })
+})
+
+describe('the verdict under the figure', () => {
+  const base = { sigma: 1, planes: 600, channels: 2, farnebackMaxShiftPx: 8 }
+
+  it('says the median is enough at the DEFAULT window, where the three agree', () => {
+    // The case a user must not misread: near-identical grids are the answer, not a broken figure.
+    expect(smoothFigure({ ...base, frames: 3 }).note).toBe('Median is enough at this window')
+  })
+
+  it('names a motion-compensated method at the windows where the median smears', () => {
     for (const frames of [5, 9]) {
-      expect(smoothFigure({ frames, sigma: 1, planes: 600, channels: 2 }).note)
-        .toBe('Gated keeps what the median smears at this window')
+      const note = smoothFigure({ ...base, frames }).note
+      expect(note).toMatch(/(Gated|Flow-warp) keeps what the median smears/)
     }
   })
 
@@ -162,17 +199,19 @@ describe('the verdict under the figure', () => {
   })
 
   it('is read off the FRAMES being drawn, so the line cannot contradict the picture', () => {
-    const fig = smoothFigure({ frames: 9, sigma: 1, planes: 600, channels: 2 })
+    const fig = smoothFigure({ ...base, frames: 9 })
     // by NAME: adding the input as a column once repointed this at input-vs-median, and the figure
     // said "median is enough" over a picture of the median smearing
     const at = (c: string) => fig.vis.rows.find(r => r.key === 'result')!
       .cells[fig.vis.columns.indexOf(c)].frames!
-    expect(fig.note).toBe(smoothVerdict(amplitudeGap(at('median'), at('gated'))))
+    const gapGate = amplitudeGap(at('median'), at('gated'))
+    const gapFlow = amplitudeGap(at('median'), at('farneback'))
+    expect(fig.note).toBe(smoothVerdict(gapGate, gapFlow))
   })
 
   it('narrows as the Gaussian widens — a blurred spot smears less visibly', () => {
     const gapAt = (sigma: number) => {
-      const fig = smoothFigure({ frames: 5, sigma, planes: 600, channels: 2 })
+      const fig = smoothFigure({ ...base, sigma, frames: 5 })
       const at = (c: string) => fig.vis.rows.find(r => r.key === 'result')!
         .cells[fig.vis.columns.indexOf(c)].frames!
       return amplitudeGap(at('median'), at('gated'))
@@ -182,8 +221,13 @@ describe('the verdict under the figure', () => {
   })
 
   it('turns over at the threshold, not somewhere near it', () => {
-    expect(smoothVerdict(GAP_WORTH_PAYING_FOR - 0.001)).toContain('Median is enough')
-    expect(smoothVerdict(GAP_WORTH_PAYING_FOR)).toContain('Gated keeps')
+    expect(smoothVerdict(GAP_WORTH_PAYING_FOR - 0.001, 0)).toContain('Median is enough')
+    expect(smoothVerdict(GAP_WORTH_PAYING_FOR, 0)).toContain('Gated keeps')
+  })
+
+  it('names flow-warp when it beats gated by amplitude', () => {
+    expect(smoothVerdict(GAP_WORTH_PAYING_FOR, GAP_WORTH_PAYING_FOR + 0.05)).toContain('Flow-warp')
+    expect(smoothVerdict(GAP_WORTH_PAYING_FOR + 0.05, GAP_WORTH_PAYING_FOR)).toContain('Gated')
   })
 })
 
