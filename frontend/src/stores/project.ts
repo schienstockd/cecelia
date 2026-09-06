@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
+import { useSettingsStore } from './settings'
+import { isStoredValueNameStale } from '../utils/staleImageVersion'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
 export interface ImageSort { key: string; dir: 'asc' | 'desc' }
@@ -277,7 +279,16 @@ export const useProjectStore = defineStore('project', () => {
         `/api/images/meta?projectUid=${encodeURIComponent(projectUid)}&imageUid=${encodeURIComponent(imageUid)}`)
       if (!res.ok) return
       const body = await res.json() as { image?: Partial<CciaImage> }
-      if (body.image) updateImageMeta(imageUid, body.image)
+      if (body.image) {
+        updateImageMeta(imageUid, body.image)
+        // Re-import wipes and re-registers valueNames; drop a stored version pick that no longer
+        // exists so the next viewer open doesn't 404 asking for it (falls back to server-active).
+        const settings = useSettingsStore()
+        const stored = settings.getImageVersion(imageUid)
+        if (isStoredValueNameStale(stored, body.image.filepaths)) {
+          settings.setImageVersion(imageUid, '')
+        }
+      }
     } catch { /* leave the store as-is on any error */ }
   }
 
