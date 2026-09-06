@@ -12228,6 +12228,11 @@ end
         @test res.validation_status == :unvalidated          # honest until a fixture exists
         @test ("cleanupImages.smooth", "spatialMethod") in res.hard_commitments
         @test res.params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
+        # C-Deep3D hard commitments (PR #818 compose): stackAlign + driftCorrect(driftPerPlane)
+        d3 = Cecelia.preset_by_id(:deep_3d)
+        @test ("cleanupImages.stackAlign",   "referenceMode") in d3.hard_commitments
+        @test ("cleanupImages.driftCorrect", "driftPerPlane") in d3.hard_commitments
+        @test d3.params_by_task["cleanupImages.driftCorrect"]["driftPerPlane"] === true
         # unknown card id → custom, keeps the engine total for stale plan.json refs
         @test Cecelia.preset_by_id(:not_a_card).id == :custom
 
@@ -12271,6 +12276,14 @@ end
         sa = only([s for s in r.included if s.fun_name == "cleanupImages.stackAlign"])
         @test sa.params["referenceMode"] == "middle"
         @test sa.source == :card
+        # driftCorrect also carries the card's per-plane opinion — PR #818 shipped `driftPerPlane` /
+        # `driftZSmoothness`, and the two compose with stackAlign per the peer session's finding
+        # (stackAlign = intra-stack per-frame anchor; driftPerPlane = inter-frame per-Z-plane rigid).
+        dc = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
+        @test dc.params["driftEstimator"]   == "multiLag"
+        @test dc.params["driftPerPlane"]    === true
+        @test dc.params["driftZSmoothness"] == 0.0
+        @test dc.source == :card
         # ...and Z-axis absent excludes it regardless
         r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:deep_3d))
         @test any(s -> s.fun_name == "cleanupImages.stackAlign" &&
