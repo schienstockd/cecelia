@@ -45,6 +45,8 @@ def run(params):
     max_angle_deg      = float(params.get('driftMaxAngle', correction_utils.DRIFT_DEFAULT_MAX_ANGLE))
     smooth_sigma       = float(params.get('driftSmoothSigma',
                                           correction_utils.DRIFT_TASK_SMOOTH_SIGMA))
+    per_plane          = bool(params.get('driftPerPlane', False))
+    z_smoothness       = float(params.get('driftZSmoothness', 0.0))
 
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
@@ -63,7 +65,12 @@ def run(params):
                   else '')
     _smooth_extra = f', trajectory σ={smooth_sigma}' if smooth_sigma > 0 else ', no trajectory smoothing'
     _norm_extra = '' if estimator == 'sitkRigid' else f', normalisation: {normalisation_raw}'
-    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}{_norm_extra}{_smooth_extra}')
+    _pp_extra = ', per-plane 2D' if per_plane else ''
+    _zs_extra = f', z-smoothness {z_smoothness}' if per_plane and z_smoothness > 0 else ''
+    log.log(f'>> drift channel: {drift_channel}, estimator: {estimator}{_est_extra}{_norm_extra}{_pp_extra}{_zs_extra}{_smooth_extra}')
+    if per_plane and estimator == 'sitkRigid':
+        log.log('[WARN] per_plane is ignored for sitkRigid — using whole-volume rigid fit')
+        per_plane = False
 
     # One progress scale across the whole run rather than a 4-step one, because both loops below
     # are minutes long on a real movie and the old scale stood still through each of them:
@@ -79,6 +86,7 @@ def run(params):
         estimator=estimator, max_lag=max_lag,
         max_angle_deg=max_angle_deg,
         trajectory_smooth_sigma=smooth_sigma,
+        per_plane=per_plane, z_smoothness=z_smoothness,
         on_progress=lambda n, _t: log.progress(n, total),
     )
     shifts = est.shifts
@@ -94,11 +102,28 @@ def run(params):
         log.log(f'>> rotation range {est.angles.min():.2f}°..{est.angles.max():.2f}° '
                 f'(cap {max_angle_deg}°)')
     if est.interpolated:
-        why = 'exceeded angle cap' if is_rigid else 'could not be registered'
-        log.log(f'[WARN] {len(est.interpolated)} frame(s) {why} — position '
-                f'predicted from neighbours: {est.interpolated[:12]}'
-                + ('…' if len(est.interpolated) > 12 else ''))
-    log.log(f'shifts: {shifts}')
+        if est.per_plane:
+            # `interpolated` is a dict {z: [t_frames]} — count both plane-frames and the number of
+            # distinct planes affected so a user can tell "one plane is dropping out" apart from
+            # "everything is dropping out".
+            total_pf = sum(len(v) for v in est.interpolated.values())
+            log.log(f'[WARN] per-plane: {total_pf} plane-frame(s) could not be registered across '
+                    f'{len(est.interpolated)} plane(s) — positions predicted from neighbours')
+        else:
+            why = 'exceeded angle cap' if is_rigid else 'could not be registered'
+            log.log(f'[WARN] {len(est.interpolated)} frame(s) {why} — position '
+                    f'predicted from neighbours: {est.interpolated[:12]}'
+                    + ('…' if len(est.interpolated) > 12 else ''))
+    # Per-plane shifts are (T-1, Z, 2) — printing the whole array explodes the log. Print a
+    # compact summary instead: cumulative XY excursion per plane, so the log still shows the shape
+    # of what got applied.
+    if est.per_plane:
+        import numpy as _np
+        cum = _np.cumsum(shifts, axis=0)                                      # (T-1, Z, 2)
+        per_plane_extent = cum.max(axis=0) - cum.min(axis=0)                  # (Z, 2)
+        log.log(f'>> per-plane cumulative excursion (Z x [Y,X]):\n{per_plane_extent}')
+    else:
+        log.log(f'shifts: {shifts}')
 
     log.log('>> apply shifts (streaming to disk)')
     # Stream each corrected timepoint straight into the on-disk output store — the expanded
@@ -109,6 +134,9 @@ def run(params):
     if is_rigid:
         out_shape, _, _ = correction_utils.rigid_correct_geometry(
             im_dat[0], dim_utils, est.positions, est.angles)
+    elif est.per_plane:
+        out_shape, _ = correction_utils.drift_correct_shape_per_plane(
+            im_dat[0], dim_utils, est.positions)
     else:
         out_shape, _ = correction_utils.drift_correct_shape(im_dat[0], dim_utils, shifts)
     out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
@@ -122,6 +150,10 @@ def run(params):
         if is_rigid:
             correction_utils.rigid_correct_im(
                 im_dat[0], dim_utils, est.positions, est.angles, out=level0,
+                on_progress=lambda n, _t: log.progress(n_t + n, total))
+        elif est.per_plane:
+            correction_utils.drift_correct_im_per_plane(
+                im_dat[0], dim_utils, est.positions, out=level0,
                 on_progress=lambda n, _t: log.progress(n_t + n, total))
         else:
             correction_utils.drift_correct_im(
@@ -154,6 +186,22 @@ def run(params):
                 staging, dim_utils.spatial_axis(),
                 correction_utils.rigid_frame_origins(
                     im_dat[0], dim_utils, est.positions, est.angles))
+        elif est.per_plane:
+            # Per-plane origins are {t: {z: {'Y': [y0, y1], 'X': [x0, x1]}}} — one axis-aligned box
+            # per (t, z). `write_valid_box` reads ONE box per t across every spatial axis, so we
+            # collapse the Z dim by taking the union over z on Y/X and include a full-Z span (per-
+            # plane never shifts Z; every source plane sits at its own Z index in the canvas).
+            per_plane_origins = correction_utils.drift_frame_origins_per_plane(
+                im_dat[0].shape, dim_utils, est.positions)
+            n_z_src = int(dim_utils.dim_val('Z'))
+            collapsed = {}
+            for t, by_z in per_plane_origins.items():
+                y0 = min(b['Y'][0] for b in by_z.values())
+                y1 = max(b['Y'][1] for b in by_z.values())
+                x0 = min(b['X'][0] for b in by_z.values())
+                x1 = max(b['X'][1] for b in by_z.values())
+                collapsed[t] = {'Z': [0, n_z_src], 'Y': [y0, y1], 'X': [x0, x1]}
+            zarr_utils.write_valid_box(staging, dim_utils.spatial_axis(), collapsed)
         else:
             zarr_utils.write_valid_box(
                 staging, dim_utils.spatial_axis(),
@@ -164,19 +212,34 @@ def run(params):
     # or Y,X (2D). See docs/todo/QC_PLAN.md.
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
+        if est.per_plane:
+            # Per-plane shifts are (T-1, Z, 2). Encoded as [T-1][Z][2] nested lists so downstream
+            # (Julia QC handler) can indexed-address the plane dimension without decoding a
+            # different shape than the whole-volume case. `interpolated` is a dict {z: [t_list]}
+            # for the same reason — the two branches of the QC handler map cleanly to the two
+            # encodings.
+            shifts_json = [[[float(v) for v in shifts[t, z, :]] for z in range(shifts.shape[1])]
+                           for t in range(shifts.shape[0])]
+            interp_json = {str(int(z)): [int(t) for t in ts]
+                           for z, ts in est.interpolated.items()}
+        else:
+            shifts_json = [[float(v) for v in row] for row in shifts]
+            interp_json = [int(t) for t in est.interpolated]
         doc = {
             'dimOrder':     ''.join(dim_utils.im_dim_order),
             'sourceShape':  [int(x) for x in im_dat[0].shape],
             'outputShape':  [int(x) for x in out_shape],
             'shiftAxes':    list(est.axes),
-            'shifts':       [[float(v) for v in row] for row in shifts],
+            'shifts':       shifts_json,
             'estimator':    est.estimator,
             'maxLag':       int(est.max_lag),
             'normalisation': normalisation_raw,
             'smoothSigma':  smooth_sigma,
+            'perPlane':     bool(est.per_plane),
+            'zSmoothness':  z_smoothness if est.per_plane else 0.0,
             'nPairs':       int(est.n_pairs),
             'nRejected':    int(est.n_rejected),
-            'interpolated': [int(t) for t in est.interpolated],
+            'interpolated': interp_json,
         }
         # How much the estimate can be trusted — see correction_utils.drift_residuals. OMITTED
         # rather than zeroed when the estimator had no redundancy to measure it from, so the

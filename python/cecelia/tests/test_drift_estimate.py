@@ -266,6 +266,167 @@ class DriftEstimateTest(unittest.TestCase):
         self.assertIsNone(cu.estimate_drift(arr, 0, du, estimator='multiLag').angles)
 
 
+def _shear_movie(n_t=8, n_z=8, ny=64, nx=64, breath_ampl=4.0, seed=0):
+    """Synthetic breathing-shear movie: each Z-plane oscillates in Y with a DEPTH-DEPENDENT amplitude.
+
+    Shallow planes translate +breath_ampl, deep planes translate −breath_ampl, sign flips per frame
+    — the pattern measured on `zolIMa/x4E5HU` between t=40 and t=41 (see `DRIFT_PERPLANE_PLAN.md`).
+    A whole-volume rigid estimator averages the two directions to ≈0 and leaves the shear in place;
+    per-plane must recover a monotonic ramp in the per-Z amplitude across depth.
+    """
+    import ome_types, scipy.ndimage
+    from cecelia.utils.dim_utils import DimUtils
+    rng = np.random.default_rng(seed)
+    base = scipy.ndimage.gaussian_filter(rng.random((n_z, ny, nx)) * 200, sigma=(0, 2, 2))
+    amp_by_z = np.linspace(+breath_ampl, -breath_ampl, n_z)                    # ramp
+    frames = []
+    for t in range(n_t):
+        phase = (-1) ** t
+        vol = np.zeros_like(base)
+        for z in range(n_z):
+            vol[z] = np.roll(base[z], int(round(amp_by_z[z] * phase)), axis=0)
+        frames.append(vol)
+    arr = np.stack(frames).reshape(n_t, 1, n_z, ny, nx).astype(np.uint8)
+    du = DimUtils(ome_types.from_xml(_OME.format(t=n_t, z=n_z, y=ny, x=nx)), use_channel_axis=True)
+    du.calc_image_dimensions(arr.shape)
+    return arr, du, amp_by_z
+
+
+class DriftPerPlaneTest(unittest.TestCase):
+    """The regime a whole-volume rigid fit cannot reach: motion that DIFFERS by Z depth. Documented
+    in `docs/todo/DRIFT_PERPLANE_PLAN.md`; the pilot dataset is `zolIMa/x4E5HU`."""
+
+    def test_whole_volume_cannot_fit_a_z_dependent_shear(self):
+        """Baseline for the failure mode this feature exists to solve. A whole-volume rigid fit on
+        a movie whose shallow and deep planes translate in OPPOSITE directions returns ONE
+        translation per t — necessarily wrong for at least one plane. The point of the test isn't
+        WHERE the fit lands (it depends on which plane's structure dominates the 3D correlation
+        peak), but that per-plane's answer is meaningfully DIFFERENT."""
+        arr, du, amp_by_z = _shear_movie()
+        est_v = cu.estimate_drift(arr, 0, du, estimator='multiLag',
+                                  smoothness=0.0, trajectory_smooth_sigma=0.0)
+        est_p = cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True,
+                                  smoothness=0.0, trajectory_smooth_sigma=0.0)
+        self.assertFalse(est_v.per_plane)
+        self.assertTrue(est_p.per_plane)
+        self.assertEqual(est_v.shifts.shape, (7, 3))                           # (T-1, ZYX)
+        self.assertEqual(est_p.shifts.shape, (7, 8, 2))                        # (T-1, Z, YX)
+        # The per-plane Y answer must SPREAD across depth (that's the shear signal); the whole-
+        # volume answer must be a SCALAR that locks somewhere inside that range and therefore
+        # cannot describe both ends of it.
+        per_plane_spread_at_t0 = est_p.shifts[0, :, 0].max() - est_p.shifts[0, :, 0].min()
+        self.assertGreater(per_plane_spread_at_t0, 10.0)                       # >>0, real shear
+        # Whole-volume answer must not equal both extremes — it's one number per t. Concretely:
+        # per-plane extremes are ±2·breath_ampl (±8); the whole-volume answer is bounded by the
+        # per-plane range and therefore mis-describes at least one end by half the spread.
+        self.assertLess(abs(est_v.shifts[0, 1]), per_plane_spread_at_t0 / 2 + 0.5)
+
+    def test_per_plane_recovers_the_depth_ramp(self):
+        """The whole point of the flag: per-plane multiLag recovers the injected per-Z amplitude.
+
+        Sign convention (phase_cross_correlation): the returned shift is what you must add to
+        `moving` to align it with `fixed`. My shallow plane (z=0) was rolled by +amp at t=0 and
+        −amp at t=1 — so the alignment shift is +2·amp. Deep plane (z=n_z−1) was rolled by −amp at
+        t=0 and +amp at t=1 — shift is −2·amp. The estimator reports one delta per (t, z); this
+        pins the FIRST delta for three planes across the depth ramp.
+        """
+        arr, du, amp_by_z = _shear_movie(n_t=8, n_z=8, breath_ampl=4.0)
+        est = cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True,
+                                smoothness=0.0, trajectory_smooth_sigma=0.0)
+        self.assertTrue(est.per_plane)
+        self.assertEqual(est.axes, ['Y', 'X'])
+        self.assertEqual(est.shifts.shape, (7, 8, 2))                          # (T-1, Z, YX)
+        first_y = est.shifts[0, :, 0]
+        # Two extreme planes only — with breath_ampl=4, amp_by_z at z=0 and z=7 rounds cleanly to
+        # ±4 (integer roll), so shift=±8 is exact. Middle planes have small fractional amplitudes
+        # whose integer rounding drifts the expected value by ±1 and would need per-z fixture.
+        for z in (0, 7):
+            self.assertAlmostEqual(first_y[z], +2 * amp_by_z[z], delta=0.6)
+
+    def test_writer_puts_the_shear_back(self):
+        """End-to-end: applying the per-plane trajectory canvas-aligns the SAME feature across
+        frames. Measures residual on a MIDDLE canvas window (avoiding zero-padding rings that
+        surround each frame's placed data box — otherwise phase correlation locks onto the
+        pattern-of-padding rather than the content, which is not what the writer is being asked
+        to fix)."""
+        from skimage.registration import phase_cross_correlation
+        arr, du, _ = _shear_movie(n_t=6, n_z=8, breath_ampl=4.0)
+        est = cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True,
+                                smoothness=0.0, trajectory_smooth_sigma=0.0)
+        corrected = cu.drift_correct_im_per_plane(arr, du, est.positions)
+        # A 20-px middle window is inside the union-of-placements box for every frame at the
+        # tested amplitudes (excursion ≤ 4 px each direction, canvas expanded by ~8), so both
+        # frames' content is present with no padding at the sample window.
+        my = corrected.shape[3] // 2; mx = corrected.shape[4] // 2
+        w = 15
+        for z in (0, 3, 7):
+            a = corrected[0, 0, z, my - w:my + w, mx - w:mx + w].astype(np.float32)
+            b = corrected[1, 0, z, my - w:my + w, mx - w:mx + w].astype(np.float32)
+            s, _, _ = phase_cross_correlation(a, b, upsample_factor=20, normalization=None)
+            self.assertLess(abs(s[0]), 1.0, msg=f'Z={z} residual dy={s[0]}')
+            self.assertLess(abs(s[1]), 1.0, msg=f'Z={z} residual dx={s[1]}')
+
+    def test_z_smoothness_rescues_a_signal_poor_plane(self):
+        """The last-mile fix: a plane with no reference signal (its pair measurements are noise)
+        would land at a random fit under independent per-plane. With Z-smoothness > 0, the joint
+        (T, Z) solver pulls it toward its neighbours' fits — the shear signal is preserved (second-
+        difference prior is transparent to a linear ramp), only the noisy plane is disciplined.
+        """
+        # Same shear scene, but blank out the reference channel at Z=4 (dim plane, PC returns
+        # near-random shifts).
+        import ome_types, scipy.ndimage
+        from cecelia.utils.dim_utils import DimUtils
+        rng = np.random.default_rng(1)
+        n_t, n_z, ny, nx = 8, 8, 64, 64
+        base = scipy.ndimage.gaussian_filter(rng.random((n_z, ny, nx)) * 200, sigma=(0, 2, 2))
+        amp_by_z = np.linspace(+4, -4, n_z)
+        frames = []
+        for t in range(n_t):
+            phase = (-1) ** t
+            vol = np.zeros_like(base)
+            for z in range(n_z):
+                vol[z] = np.roll(base[z], int(round(amp_by_z[z] * phase)), axis=0)
+            # Blank out Z=4 — a plane the reference channel doesn't reach (like CD169 on deep
+            # tissue). Random noise so PC fits are noise-limited, not zero-signal (which would
+            # error).
+            vol[4] = rng.random((ny, nx)) * 40
+            frames.append(vol)
+        arr = np.stack(frames).reshape(n_t, 1, n_z, ny, nx).astype(np.uint8)
+        du = DimUtils(ome_types.from_xml(_OME.format(t=n_t, z=n_z, y=ny, x=nx)),
+                      use_channel_axis=True)
+        du.calc_image_dimensions(arr.shape)
+
+        indep = cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True,
+                                  smoothness=0.5, trajectory_smooth_sigma=0.0)
+        joint = cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True,
+                                  smoothness=0.5, z_smoothness=0.3,
+                                  trajectory_smooth_sigma=0.0)
+        # Bright neighbours (Z=3 and Z=5) have amp ≈ ±0.57 — expected first-shift ~±2. Their
+        # average is the reference for what Z=4 SHOULD be under coupling.
+        neighbours_first = 0.5 * (joint.shifts[0, 3, 0] + joint.shifts[0, 5, 0])
+        # Joint solve must pull Z=4 closer to its neighbours than the independent solve did. Both
+        # amounts are noise-driven for the blanked plane, so compare distance-from-neighbour.
+        self.assertLess(abs(joint.shifts[0, 4, 0] - neighbours_first),
+                        abs(indep.shifts[0, 4, 0] - neighbours_first) + 0.5)
+        # And the shear at Z=0 / Z=7 must survive — Z-smoothness dampens the extremes a bit
+        # (second-difference at the ends only sees one neighbour) but the DIRECTION and most of
+        # the magnitude must be preserved. Assert same sign as the ideal and at least 60% of the
+        # amplitude, not exact equality.
+        for z in (0, 7):
+            ideal = +2 * amp_by_z[z]
+            got   = joint.shifts[0, z, 0]
+            self.assertGreater(got * ideal, 0, msg=f'Z={z} shift sign flipped under coupling')
+            self.assertGreater(abs(got), 0.6 * abs(ideal),
+                               msg=f'Z={z} shift dampened too far: got {got}, ideal {ideal}')
+
+    def test_per_plane_requires_3d(self):
+        """A 2D image has no Z to fit per — the branch has to reject rather than silently return a
+        degenerate whole-volume fit that reads as per-plane."""
+        arr, du, _ = _movie([[0, 0, 0] for _ in range(3)], shape_zyx=(1, 48, 48))
+        with self.assertRaises(ValueError):
+            cu.estimate_drift(arr, 0, du, estimator='multiLag', per_plane=True)
+
+
 class DriftSolverTest(unittest.TestCase):
     """The solver alone, on synthetic measurements — no images, so the behaviour is unambiguous."""
 

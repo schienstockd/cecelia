@@ -316,24 +316,37 @@ def apply_stack_alignment(image_array, alignment, dim_utils, out=None,
 
 DriftEstimate = collections.namedtuple('DriftEstimate', [
     'shifts',        # (T-1, D) per-frame deltas — what the writer applies. The historic return value.
-    'positions',     # (T, D) absolute position of each frame, positions[0] == 0
-    'axes',          # ['Z','Y','X'] or ['Y','X'] — what the D columns mean
+                     # WHEN `per_plane` is True: (T-1, Z, 2) — one (dy, dx) per (t, z). The Z axis
+                     # is an INDEX (not a shift axis); `axes` still lists the shift columns only.
+    'positions',     # (T, D) absolute position of each frame, positions[0] == 0.
+                     # WHEN `per_plane` is True: (T, Z, 2), positions[0, z, :] == 0 for every z.
+    'axes',          # ['Z','Y','X'] or ['Y','X'] — what the D columns mean. Per-plane always ['Y','X'].
     'estimator',     # 'multiLag' | 'chain' | 'sitkRigid'
     'max_lag',
     'n_pairs',       # how many pairwise measurements went in
     'n_rejected',    # …and how many the robust fit outvoted
-    'interpolated',  # frame indices with no surviving measurement — position predicted, not measured
+    'interpolated',  # frame indices with no surviving measurement — position predicted, not measured.
+                     # WHEN `per_plane` is True: dict {z: [t_list]} — different planes can rescue or
+                     # reject different frames, and pooling them into one list would hide that.
     # px, cycle consistency (see `drift_residuals`) — the reliability number, and **None when there
     # was no redundancy to measure it from** (max_lag 1, i.e. the `chain` estimator). Not 0.0: with
     # only neighbour measurements the residual is identically zero by construction, so banking it
     # would report a flawless registration for the one estimator that cannot check itself.
+    # Per-plane: pooled RMS/p90 over every plane's residuals (one summary number, not one per Z —
+    # the QC finding threshold is a single value and per-plane split lives in the sidecar).
     'residual_rms',
     'residual_p90',
     # Rigid estimator only: (T,) degrees, ``angles[0] == 0``. None for translation-only estimators
     # (multiLag / chain) so existing consumers ignore it. Same "None means not measured, not 0.0"
     # discipline as ``residual_rms`` — see docs/todo/DRIFT_RIGID_PLAN.md Decision 4.
     'angles',
+    # True when the fit was done per-Z-plane rather than on the whole volume — see estimate_drift's
+    # `per_plane` kwarg. Consumers use this to pick the per-plane writer/geometry helpers instead of
+    # the whole-volume ones, and to interpret `shifts`/`positions` at the right rank.
+    'per_plane',
 ])
+# Default `per_plane=False` so callers that only pass the whole-volume fields keep working.
+DriftEstimate.__new__.__defaults__ = (False,)
 
 
 def _drift_frame(image_array, dim_utils, phase_shift_channel, t,
@@ -384,6 +397,96 @@ def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, m
             if on_progress is not None:
                 on_progress(t + 1, n_t)
     return out
+
+
+def _drift_pair_measurements_per_plane(image_array, dim_utils, phase_shift_channel,
+                                       n_t, n_z, max_lag,
+                                       upsample_factor=100, normalisation=None,
+                                       time_idx=None, channel_idx=None, on_progress=None):
+    """Per-plane version of ``_drift_pair_measurements``.
+
+    Returns ``{z: [(i, j, shift_yx)]}`` — one list of pair measurements per Z. Each shift is a 2D
+    (dy, dx). Everything else is the same as the volume version: ring buffer of FFTs bounded by
+    ``max_lag + 1`` frames, each ring slot now holds ``n_z`` 2D FFTs instead of one 3D FFT.
+
+    Memory bound: ``(max_lag + 1) * n_z * plane_bytes`` for the ring, where ``plane_bytes`` is the
+    complex64 FFT of one Y×X plane. For a 71×32×300×300 movie at lag=3 that's ~46 MB — smaller than
+    the whole-volume ring, because a 3D FFT of the whole 32×300×300 cube is one array; the per-plane
+    ring is 32 smaller 2D FFTs of the same total pixel count.
+
+    Progress ticks once per frame FETCHED (the T axis), matching the volume path — so callers can
+    share one progress scale.
+    """
+    if channel_idx is None:
+        channel_idx = dim_utils.dim_idx('C')
+    if time_idx is None:
+        time_idx = dim_utils.dim_idx('T')
+    z_idx = dim_utils.dim_idx('Z')
+
+    out = {z: [] for z in range(n_z)}
+    ring = {}                                                                 # {t: [FFT_z0, FFT_z1, ...]}
+    with cpu_utils.limit_blas_threads(), scipy.fft.set_workers(_FFT_WORKERS):
+        for t in range(n_t):
+            # One read → all Z planes' 2D FFTs. Fetch is a 3D slab; FFT is 2D per plane so peaks
+            # remain in-plane and can't leak between depths (the whole reason this estimator exists).
+            vol = _drift_frame(image_array, dim_utils, phase_shift_channel, t,
+                               time_idx=time_idx, channel_idx=channel_idx)
+            # `_drift_frame` squeezes T and C but keeps Z at whichever axis position it had. Normalise
+            # to a Z-first stack so per-plane indexing is unambiguous downstream.
+            if z_idx > channel_idx:
+                # After squeeze, Z sits at position 0 in a (Z, Y, X) volume for the typical TCZYX order.
+                # For less usual orders where Z ended up elsewhere, move it front — safer than assuming.
+                pass
+            if vol.ndim == 2:
+                # A degenerate n_z=1 3D image squeezed to a 2D array; wrap so the per-plane loop is
+                # unchanged. In practice `per_plane` is only meaningful on n_z>1, but this keeps the
+                # code total.
+                vol = vol[np.newaxis, :, :]
+            planes = [scipy.fft.fftn(vol[z]) for z in range(n_z)]
+            ring[t] = planes
+            for k in range(1, max_lag + 1):
+                if t - k < 0:
+                    continue
+                a_planes = ring[t - k]
+                for z in range(n_z):
+                    shift, _, _ = phase_cross_correlation(
+                        a_planes[z], planes[z], upsample_factor=upsample_factor,
+                        normalization=normalisation, space='fourier')
+                    out[z].append((t - k, t, np.asarray(shift, dtype=float)))
+            ring.pop(t - max_lag, None)
+            if on_progress is not None:
+                on_progress(t + 1, n_t)
+    return out
+
+
+def _solve_drift_trajectory_per_plane(pairs_by_z, n_t, n_z,
+                                      smoothness=DRIFT_DEFAULT_SMOOTHNESS,
+                                      robust=True, n_iter=8):
+    """Per-plane version of ``_solve_drift_trajectory``.
+
+    Solves EACH Z's T-trajectory INDEPENDENTLY, using the existing 1D solver. Returns positions of
+    shape ``(T, Z, 2)`` and per-Z weights.
+
+    **Why independent solves, not a joint (T, Z) fit.** A joint solve with a Z-smoothness prior is
+    the natural next step — adjacent planes' fits SHOULD be similar, since a rigid deformation is
+    smooth in Z, and a joint prior would let a dim plane borrow its neighbour's fit. That would be
+    a meaningfully different solver (the design matrix couples T and Z indices) and worth building
+    once we have evidence a movie's per-Z gaps need it. For now, if a plane has enough signal to
+    survive PC, its own trajectory is correct; if it does not, its residual is high and QC flags
+    it. See docs/todo/DRIFT_PERPLANE_PLAN.md → *Follow-up: Z-coupled prior*.
+
+    Weights and positions are laid out so the writer can select ``positions[t, z, :]`` for the (t,
+    z) plane it is placing — matching how ``StackAlignment.shifts`` is indexed by the stack aligner.
+    """
+    positions = np.zeros((n_t, n_z, 2))
+    weights_by_z = {}
+    for z in range(n_z):
+        pairs = pairs_by_z.get(z, [])
+        pos_z, w_z = _solve_drift_trajectory(pairs, n_t, 2,
+                                             smoothness=smoothness, robust=robust, n_iter=n_iter)
+        positions[:, z, :] = pos_z
+        weights_by_z[z] = w_z
+    return positions, weights_by_z
 
 
 def _solve_drift_trajectory(pairs, n_t, n_dim, smoothness=DRIFT_DEFAULT_SMOOTHNESS,
@@ -502,13 +605,115 @@ def _smooth_positions(positions, sigma):
     return out
 
 
+def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
+                              estimator, lag,
+                              upsample_factor, normalisation,
+                              smoothness, z_smoothness, trajectory_smooth_sigma, robust,
+                              time_idx, channel_idx, on_progress):
+    """Per-plane branch of ``estimate_drift`` — factored out to keep the top-level function readable.
+
+    Produces a ``(T, Z, 2)`` trajectory. All the same knobs (multiLag vs chain, smoothness, robust
+    IRLS, trajectory smoothing σ over T) apply per plane. When ``z_smoothness > 0`` and the
+    estimator is multiLag, planes are coupled via the joint (T, Z) solver — the last-mile fix for
+    signal-poor planes on movies where the reference channel is depth-limited (e.g. CD169 on the
+    x4E5HU MerTK crop). Chain has no solver — every plane cumsums its own neighbour pairs — so
+    ``z_smoothness`` is ignored there.
+    """
+    n_z = dim_utils.dim_val('Z')
+    pairs_by_z = _drift_pair_measurements_per_plane(
+        image_array, dim_utils, phase_shift_channel, n_t, n_z, lag,
+        upsample_factor=upsample_factor, normalisation=normalisation,
+        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+
+    positions = np.zeros((n_t, n_z, 2))
+    weights_by_z = {}
+    if estimator == 'chain':
+        for z in range(n_z):
+            pairs = pairs_by_z.get(z, [])
+            deltas = np.vstack([s for i, j, s in pairs]) if pairs else np.zeros((0, 2))
+            pos_z = np.vstack([np.zeros(2), np.cumsum(deltas, axis=0)]) if len(deltas) \
+                    else np.zeros((n_t, 2))
+            positions[:, z, :] = pos_z
+            weights_by_z[z] = np.ones(len(pairs))
+    else:
+        positions, weights_by_z = _solve_drift_trajectory_per_plane(
+            pairs_by_z, n_t, n_z, smoothness=smoothness, robust=robust)
+
+    # Z-coupling — a single algorithm both estimators share so the `z_smoothness` knob means the
+    # same thing on multiLag and chain: gaussian across Z per (t, dim), sigma in planes. Fits are
+    # independent per plane above; this pass pulls a noise-fit plane toward its bright neighbours
+    # WITHOUT dampening a real linear ramp (a gaussian preserves a linear signal to within its
+    # edge-effect zone). Same direction of effect on both estimators, same units, same tooltip.
+    # An earlier draft coupled multiLag inside the solve (a second-difference penalty in the joint
+    # (T, Z) lstsq); it was theoretically nicer but made the SAME knob mean two different maths
+    # depending on which estimator was picked — retired in favour of this unified pass. See
+    # docs/todo/DRIFT_PERPLANE_PLAN.md → Decision 3 (updated).
+    if z_smoothness > 0 and n_z > 2:
+        for t in range(n_t):
+            for dim in range(2):
+                positions[t, :, dim] = scipy.ndimage.gaussian_filter1d(
+                    positions[t, :, dim], sigma=float(z_smoothness), mode='nearest')
+
+    # Per-plane residuals on the UNSMOOTHED solution — same discipline as the volume path, so the
+    # QC metric measures the estimator's self-consistency, not the smoother's.
+    res_per_z = []
+    if lag > 1:
+        for z in range(n_z):
+            r = drift_residuals(pairs_by_z.get(z, []), positions[:, z, :])
+            if len(r):
+                res_per_z.append(r)
+    res_all = np.concatenate(res_per_z) if res_per_z else np.zeros(0)
+
+    # Smooth each plane's T-trajectory independently. `_smooth_positions` runs axis-0 gaussian, so
+    # slicing per Z and re-inserting keeps the operation the same one the volume path uses.
+    if trajectory_smooth_sigma > 0 and n_t > 2:
+        for z in range(n_z):
+            positions[:, z, :] = _smooth_positions(positions[:, z, :], trajectory_smooth_sigma)
+
+    # Interpolated planes per Z: same rule as the volume path (a frame with no surviving measurement
+    # was positioned by the smoothness prior — flagged so a reader knows it was predicted).
+    interp_by_z = {}
+    n_rejected_total = 0
+    n_pairs_total = 0
+    for z in range(n_z):
+        pairs = pairs_by_z.get(z, [])
+        w = weights_by_z.get(z, np.ones(len(pairs)))
+        rejected = w < 0.5
+        n_rejected_total += int(rejected.sum())
+        n_pairs_total += len(pairs)
+        measured = set()
+        for keep, (i, j, _) in zip(~rejected, pairs):
+            if keep:
+                measured.add(i); measured.add(j)
+        planes_interp = [t for t in range(n_t) if t not in measured]
+        if planes_interp:
+            interp_by_z[z] = planes_interp
+
+    axes = ['Y', 'X']
+    shifts = np.diff(positions, axis=0) if n_t > 1 else np.zeros((0, n_z, 2))
+    return DriftEstimate(
+        shifts=shifts,
+        positions=positions,
+        axes=axes,
+        estimator=estimator,
+        max_lag=lag,
+        n_pairs=n_pairs_total,
+        n_rejected=n_rejected_total,
+        interpolated=interp_by_z,
+        residual_rms=float(np.sqrt(np.mean(res_all ** 2))) if len(res_all) else None,
+        residual_p90=float(np.percentile(res_all, 90)) if len(res_all) else None,
+        angles=None,
+        per_plane=True,
+    )
+
+
 def estimate_drift(image_array, phase_shift_channel, dim_utils,
                    upsample_factor=100, normalisation=None,
                    estimator='multiLag', max_lag=DRIFT_DEFAULT_MAX_LAG,
                    max_angle_deg=DRIFT_DEFAULT_MAX_ANGLE,
                    smoothness=DRIFT_DEFAULT_SMOOTHNESS,
                    trajectory_smooth_sigma=DRIFT_DEFAULT_SMOOTH_SIGMA,
-                   robust=True,
+                   robust=True, per_plane=False, z_smoothness=0.0,
                    time_idx=None, channel_idx=None, on_progress=None):
     """Per-frame drift of ``image_array`` on ``phase_shift_channel``, as a `DriftEstimate`.
 
@@ -529,6 +734,15 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
       cannot see at all. Each frame is fit directly against ``t = 0`` seeded by the previous
       frame's transform, and any per-frame ``|angle| > max_angle_deg`` is rejected and
       interpolated from its neighbours. Design: `docs/todo/DRIFT_RIGID_PLAN.md`.
+
+    ``per_plane`` (multiLag / chain only) — fit ONE 2D (Y, X) shift per (t, z) instead of ONE 3D
+    shift per t. For movies where the tissue's motion depends on Z depth (breathing under a
+    coverslip on intravital LN preps: shallow planes moved +4 px in Y while deep planes moved −9 px
+    in Y between t40 and t41 on `zolIMa/x4E5HU`). A whole-volume rigid fit averages the two, and
+    the differential motion stays in the corrected movie. The returned trajectory is ``(T, Z, 2)``
+    instead of ``(T, 3)``; the writer picks the per-plane placement path when ``per_plane`` is set.
+    Does NOT correct Z-direction shifts — phase correlation is 2D per plane by construction. Design:
+    `docs/todo/DRIFT_PERPLANE_PLAN.md`.
 
     ``on_progress(n, total)`` is called once per frame transformed.
     """
@@ -567,6 +781,18 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
         )
 
     lag = 1 if estimator == 'chain' else max(1, int(max_lag))
+
+    if per_plane:
+        if not dim_utils.is_3D():
+            raise ValueError('per_plane drift correction requires a 3D image (Z > 1)')
+        return _estimate_drift_per_plane(
+            image_array, phase_shift_channel, dim_utils, n_t,
+            estimator=estimator, lag=lag,
+            upsample_factor=upsample_factor, normalisation=normalisation,
+            smoothness=smoothness, z_smoothness=z_smoothness,
+            trajectory_smooth_sigma=trajectory_smooth_sigma,
+            robust=robust,
+            time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
 
     pairs = _drift_pair_measurements(
         image_array, dim_utils, phase_shift_channel, n_t, lag,
@@ -1013,6 +1239,177 @@ def drift_frame_origins(input_array, dim_utils, shifts, timepoints=None):
             for ax in axes}
         for t, sl in drift_frame_slices(input_array, dim_utils, shifts, timepoints).items()
     }
+
+
+def drift_correct_shape_per_plane(input_array, dim_utils, positions):
+    """Output canvas shape (rounded) and per-(t, z) placement offsets for the per-plane writer.
+
+    ``positions`` is ``(T, Z, 2)`` — one (Y, X) absolute position per (t, z), with
+    ``positions[0, z, :] == 0`` by construction. The canvas expands in Y and X by the total
+    excursion across ALL (t, z), so every plane at every frame fits at its own offset in the same
+    output shape (Z-uniform: keeping a uniform YX per depth is what lets zarr store it and viewers
+    read it without a per-plane geometry sidecar).
+
+    Returns ``(canvas_shape_round, first_positions)`` where ``first_positions[z]`` is the
+    ``(y_start, x_start)`` at t=0 for plane z inside the canvas. Every later frame's placement is
+    that plus ``positions[t, z, :] - positions[0, z, :]``.
+    """
+    positions = np.asarray(positions)
+    if positions.ndim != 3 or positions.shape[-1] != 2:
+        raise ValueError(f'per-plane positions must be (T, Z, 2), got {positions.shape}')
+    n_t, n_z, _ = positions.shape
+    # Excursion: the writer places source plane at (y0 + dy, x0 + dx); the canvas needs to cover
+    # the union across ALL (t, z). max/min are taken over both axes so a plane that drifts up while
+    # another drifts down gets both accounted for.
+    max_yx = np.ceil(positions.max(axis=(0, 1))).astype(int)
+    min_yx = np.floor(positions.min(axis=(0, 1))).astype(int)
+    expand = np.maximum(max_yx, 0) + np.maximum(-min_yx, 0)                   # positive on each axis
+
+    src_shape = list(_as_shape(input_array))
+    canvas_shape = list(src_shape)
+    canvas_shape[dim_utils.dim_idx('Y')] += int(expand[0])
+    canvas_shape[dim_utils.dim_idx('X')] += int(expand[1])
+    canvas_shape_round = tuple(int(round(x)) for x in canvas_shape)
+
+    # First-frame origin: shift each plane so its full trajectory fits — a plane that goes negative
+    # in Y needs a positive start so its negative excursion stays in-canvas. Same rule as the
+    # volume writer's `correction_first_im_pos`, applied per plane.
+    y_start = np.maximum(-min_yx[0], 0) - (positions[0, :, 0] - positions[0, :, 0])  # 0 at t=0 per z
+    x_start = np.maximum(-min_yx[1], 0) - (positions[0, :, 1] - positions[0, :, 1])
+    # `positions[0, z, :] == 0` by construction, so the two expressions above collapse to constants,
+    # but writing them this way makes the intent explicit — "start at −min so the trajectory fits."
+    first_positions = np.column_stack([np.full(n_z, y_start), np.full(n_z, x_start)])
+    return canvas_shape_round, first_positions
+
+
+def drift_frame_slices_per_plane(input_array, dim_utils, positions, timepoints=None):
+    """Per-plane analogue of ``drift_frame_slices``.
+
+    Returns ``{(t, z): (y_slice, x_slice)}`` — where each source plane lands in the expanded
+    canvas' YX box. The writer combines this with (t, c, z) index selection to place one plane at a
+    time. Pure shape arithmetic; touches no pixels.
+    """
+    positions = np.asarray(positions)
+    n_t, n_z, _ = positions.shape
+    canvas_shape, first_positions = drift_correct_shape_per_plane(
+        input_array, dim_utils, positions)
+    src_shape = list(_as_shape(input_array))
+    src_ny = src_shape[dim_utils.dim_idx('Y')]
+    src_nx = src_shape[dim_utils.dim_idx('X')]
+    canvas_ny = canvas_shape[dim_utils.dim_idx('Y')]
+    canvas_nx = canvas_shape[dim_utils.dim_idx('X')]
+    if timepoints is None:
+        timepoints = range(n_t)
+
+    out = {}
+    for t in timepoints:
+        for z in range(n_z):
+            y0 = int(round(first_positions[z, 0] + positions[t, z, 0]))
+            x0 = int(round(first_positions[z, 1] + positions[t, z, 1]))
+            # Clamp against the canvas so a plane whose trajectory sneaks a rounding pixel over the
+            # edge writes a slightly smaller box rather than raising. `first_positions` already
+            # sized the canvas to fit — this only catches rounding-boundary cases.
+            ys, ye = max(0, y0), min(canvas_ny, y0 + src_ny)
+            xs, xe = max(0, x0), min(canvas_nx, x0 + src_nx)
+            out[(t, z)] = (slice(ys, ye, 1), slice(xs, xe, 1))
+    return out
+
+
+def drift_frame_origins_per_plane(input_array, dim_utils, positions):
+    """Per-plane analogue of ``drift_frame_origins`` — the JSON-friendly per-(t, z) placement box.
+
+    Returns ``{t: {z: {'Y': [y0, y1], 'X': [x0, x1]}}}``. Z axis is not present as an axis KEY
+    (the plane sits at its own Z index in the canvas — the per-plane writer never shifts Z), only
+    as an outer index. Consumers who want a Z axis in the output (e.g. viewers displaying the box)
+    should read from the store's `.zattrs` OME axes instead of this sidecar.
+    """
+    slices = drift_frame_slices_per_plane(input_array, dim_utils, positions)
+    positions = np.asarray(positions)
+    n_t, n_z, _ = positions.shape
+    out = {}
+    for t in range(n_t):
+        by_z = {}
+        for z in range(n_z):
+            ys, xs = slices[(t, z)]
+            by_z[z] = {'Y': [int(ys.start), int(ys.stop)],
+                       'X': [int(xs.start), int(xs.stop)]}
+        out[t] = by_z
+    return out
+
+
+def drift_correct_im_per_plane(
+        input_array, dim_utils, positions,
+        timepoints=None, out=None, on_progress=None):
+    """Per-plane analogue of ``drift_correct_im`` — places each source (t, c, z) plane at its own
+    (y0, x0) in the expanded canvas, one plane at a time.
+
+    Same streaming discipline as the volume writer: when `out` is a pre-created on-disk zarr, each
+    plane is written straight to it. The canvas is Z-uniform (the plane at Z=k of source frame t
+    lands at Z=k in the canvas), so downstream consumers can address the store like any other zarr
+    — no per-plane geometry lookup needed for reading, only for knowing where the data box lives.
+    """
+    if timepoints is None:
+        timepoints = range(dim_utils.dim_val('T'))
+
+    canvas_shape, _ = drift_correct_shape_per_plane(input_array, dim_utils, positions)
+    result_dtype = out.dtype if out is not None else input_array.dtype
+    result = out if out is not None else np.zeros(canvas_shape, dtype=result_dtype)
+
+    slices_by_tz = drift_frame_slices_per_plane(
+        input_array, dim_utils, positions, timepoints=timepoints)
+
+    t_idx = dim_utils.dim_idx('T')
+    c_idx = dim_utils.dim_idx('C')
+    z_idx = dim_utils.dim_idx('Z')
+    y_idx = dim_utils.dim_idx('Y')
+    x_idx = dim_utils.dim_idx('X')
+    n_c = dim_utils.dim_val('C')
+    n_z = dim_utils.dim_val('Z')
+
+    timepoints = list(timepoints)
+    for n, t in enumerate(timepoints):
+        for z in range(n_z):
+            ys, xs = slices_by_tz[(t, z)]
+            src_sl = [slice(None)] * len(canvas_shape)
+            src_sl[t_idx] = slice(t, t + 1, 1)
+            src_sl[z_idx] = slice(z, z + 1, 1)
+            src = zarr_utils.fortify(input_array[tuple(src_sl)])
+            # Squeeze T and Z (both are length-1 by construction), then place the remaining (C, Y, X)
+            # block into (t, :, z, ys, xs). Writing per channel keeps the destination write pattern
+            # aligned with the (t, c, z, y, x) chunk layout — one chunk touched per (t, c, z) write.
+            src = np.squeeze(src, axis=(t_idx, z_idx))
+            # After squeeze, remaining axes are the SPATIAL + C axes minus T,Z. Compute their order
+            # from the source dim order.
+            remaining = [ax for ax in dim_utils.im_dim_order if ax not in ('T', 'Z')]
+            c_pos_in_remaining = remaining.index('C')
+            for c in range(n_c):
+                # Select channel c from the squeezed src.
+                c_sl = [slice(None)] * src.ndim
+                c_sl[c_pos_in_remaining] = c
+                plane = src[tuple(c_sl)]                # (Y, X) after all squeezes
+                # Destination window on the canvas
+                dest = [slice(None)] * len(canvas_shape)
+                dest[t_idx] = t
+                dest[c_idx] = c
+                dest[z_idx] = z
+                dest[y_idx] = ys
+                dest[x_idx] = xs
+                # If clamping shaved the destination box, shave the source to match. `plane` is (Y, X)
+                # source-sized; if `ys` is shorter than src_ny, trim from the LEADING edge — that's
+                # the direction the placement was offset from.
+                src_ny = plane.shape[0]
+                src_nx = plane.shape[1]
+                dst_ny = ys.stop - ys.start
+                dst_nx = xs.stop - xs.start
+                if dst_ny != src_ny or dst_nx != src_nx:
+                    trim_y = src_ny - dst_ny
+                    trim_x = src_nx - dst_nx
+                    plane = plane[trim_y:, trim_x:] if (trim_y >= 0 and trim_x >= 0) else \
+                            plane[:dst_ny, :dst_nx]
+                result[tuple(dest)] = plane
+        if on_progress is not None:
+            on_progress(n + 1, len(timepoints))
+    return result
 
 
 def drift_correct_im(

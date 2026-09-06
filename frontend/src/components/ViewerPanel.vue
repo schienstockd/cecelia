@@ -655,6 +655,17 @@ function reloadViewer() {
   else pingViewerOverlays()
 }
 
+// Manual escape hatch for the "stale slab in browser cache" case. Publishes a cache-clear on the
+// open image — same channel the task-done auto path uses — which bumps the rev to a fresh
+// Date.now() and every slab URL from ViewerWindow onwards carries `_r=<new>` so the browser HTTP
+// cache misses. Covers cases the auto path can't: a viewer window mounted before the #814 fix
+// shipped, or a task:status that raced the viewer's listener (multi-window edge case).
+function forceViewerResync() {
+  const uid = projectStore.openImageUid
+  if (!uid) return
+  publishViewerCacheClear({ imageUid: uid })
+}
+
 function onTaskResult(data: Record<string, unknown>) {
   const imageUid = String(data.imageUid ?? '')
   if (!imageUid || imageUid !== projectStore.openImageUid) return
@@ -736,6 +747,18 @@ onUnmounted(() => {
           @click="show3D = !show3D"
           v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
         ><span class="opt-text">3D</span></button>
+
+        <!-- Escape hatch for the "Slab is AxBxC but XxYxZ was asked for" case: republishes the
+             cache-clear signal for the open image AND bumps the local rev to a fresh value, so the
+             next slab URLs carry a new `_r=<rev>` and browser HTTP cache is bypassed. The auto path
+             (task-done → cache-clear) covers dim-changing rewrites once the fix from #814 shipped,
+             but a viewer window mounted before the fix landed OR a task-done that raced the
+             viewer's task:status listener leaves the user stuck. One click here rescues it. -->
+        <button
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="!openedImage"
+          @click="forceViewerResync"
+          v-tooltip.bottom="'Re-read pixels from disk (use if the viewer looks stale after a task rerun)'"
+        ><i class="pi pi-sync" /></button>
 
       </div>
     </div>
