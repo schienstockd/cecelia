@@ -21,13 +21,17 @@
   actually picked. Re-mounting overwrites, gated by a two-step confirm so accidentally clobbering a
   hand-edited chain never happens silently.
 
-  Placement: sits above the TaskRunner in the cleanup module's right panel; multiple selection or
-  no selection shows an empty state, so the panel is unobtrusive when the plan is not relevant.
+  Placement: opened as a FLOATING panel from the icon in the TaskRunner's pane bar (parallel to the
+  Viewer / Lab log launchers on the app header, but module-scoped). The parent owns `open`; this
+  panel emits `close`. When floating and unopened, the component renders nothing — no ghost row in
+  the sidebar layout. Multiple selection or no selection shows an empty state inside the float, so a
+  stale open panel doesn't fabricate a plan for the wrong image.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import FloatingPanel from './FloatingPanel.vue'
 import { useCorrectionPlan, fetchCorrectionPresets } from '../composables/useCorrectionPlan'
 import type { AcquisitionPresetSummary, CorrectionStep, QCScore } from '../types/correctionPlan'
 import { useProjectStore } from '../stores/project'
@@ -36,20 +40,10 @@ const props = defineProps<{
   selectedUids: string[]
 }>()
 
+const emit = defineEmits<{ close: [] }>()
+
 const project = useProjectStore()
 const projectUid = computed(() => project.loadedProjectUid ?? '')
-
-// Collapsed / expanded — one panel-scoped preference, persisted so it survives a module switch. The
-// TaskRunner sits directly below and has its own two-half expand primitive; keeping this widget
-// collapsible in the same visual language (chevron in the header) means "give the runner all the
-// vertical space" is one click, not a layout change.
-const COLLAPSE_KEY = 'cc-correction-plan-panel-collapsed'
-const collapsed = ref<boolean>(false)
-try { collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1' } catch { /* first-run */ }
-function toggleCollapsed(): void {
-  collapsed.value = !collapsed.value
-  try { localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0') } catch { /* ignore */ }
-}
 
 // Slice 3a is per-image. Multi-select shows an empty-state row rather than fanning out — cohort
 // plans are §6 of the plan doc, deferred.
@@ -174,31 +168,29 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
 </script>
 
 <template>
+  <FloatingPanel
+    title="Correction plan"
+    icon="pi-list-check"
+    storage-key="correction-plan"
+    :default-w="360"
+    :default-h="520"
+    @close="emit('close')"
+  >
   <div class="correction-plan-panel">
-    <div class="header">
+    <div class="status-row cc-row cc-fs-2xs">
+      <span v-if="saved" class="status-tag saved" v-tooltip.right="'Loaded from plan.json — the executor runs this'">saved</span>
+      <span v-else-if="plan" class="status-tag unsaved" v-tooltip.right="'Not saved yet — Select a card to persist'">unsaved</span>
+      <span v-if="stale" class="status-tag stale" v-tooltip.right="'Meta changed since save — Select a card to re-save'">stale</span>
+      <span class="status-spacer" />
       <button
-        class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro header-toggle"
-        @click="toggleCollapsed"
-        v-tooltip.right="collapsed ? 'Show correction plan' : 'Hide correction plan'">
-        <i :class="collapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
+        class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+        :disabled="loading || !imageUid"
+        @click="refresh"
+        v-tooltip.left="saved ? 'Reload plan.json' : 'Recompute the recommended plan'">
+        <i class="pi pi-refresh" />
       </button>
-      <span class="cc-eyebrow cc-fs-sm" @click="toggleCollapsed">Correction plan</span>
-      <span class="header-right cc-fs-2xs">
-        <span v-if="saved" class="status-tag saved" v-tooltip.left="'Loaded from plan.json — the executor runs this'">saved</span>
-        <span v-else-if="plan" class="status-tag unsaved" v-tooltip.left="'Not saved yet — Select a card to persist'">unsaved</span>
-        <span v-if="stale" class="status-tag stale" v-tooltip.left="'Meta changed since save — Select a card to re-save'">stale</span>
-        <button
-          v-if="!collapsed"
-          class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-          :disabled="loading || !imageUid"
-          @click="refresh"
-          v-tooltip.left="saved ? 'Reload plan.json' : 'Recompute the recommended plan'">
-          <i class="pi pi-refresh" />
-        </button>
-      </span>
     </div>
 
-    <template v-if="!collapsed">
     <div v-if="!imageUid" class="empty cc-muted cc-fs-sm">
       {{ selectedUids.length === 0 ? 'Select one image to see its plan' : 'Select just one image' }}
     </div>
@@ -309,8 +301,8 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
         <span v-if="mountMsg" class="mount-msg cc-fs-2xs" :class="{ warn: mountState === 'confirmOverwrite' }">{{ mountMsg }}</span>
       </div>
     </template>
-    </template>
   </div>
+  </FloatingPanel>
 </template>
 
 <style scoped>
@@ -319,28 +311,12 @@ function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? s }
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm);
-  background: var(--cc-surface-1);
 }
-.header {
-  display: flex;
+.status-row {
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
 }
-.header-toggle {
-  flex: 0 0 auto;
-}
-.header .cc-eyebrow {
+.status-spacer {
   flex: 1 1 auto;
-  cursor: pointer;
-  user-select: none;
-}
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 .status-tag {
   padding: 0 4px;

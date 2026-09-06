@@ -601,6 +601,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
             v-tooltip.right="'Tasks still running in this module — expand the task list to see them'">
         {{ hiddenTaskNote }}
       </span>
+      <template #actions><slot name="bar-actions" /></template>
     </PaneExpandBar>
 
     <!-- ── Empty state (server not ready / JSON parse error) ── -->

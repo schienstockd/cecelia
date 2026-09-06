@@ -10,6 +10,10 @@
   The default slot is a readout for the half that is currently HIDDEN — the row is already paid for, so a
   panel can keep a one-line summary of what you can no longer see (TaskRunner puts its running/queued
   counts there while the task list is collapsed). Left-aligned, opposite the toggles.
+
+  The `actions` slot renders sibling buttons IMMEDIATELY BEFORE the two pane toggles — right-anchored,
+  same visual language, for module-level widgets that live in the same row as the pane toggles (e.g.
+  a floating-panel launcher). No text content here; it is a button strip. Empty by default.
 -->
 <script setup lang="ts">
 import type { PaneExpand, PaneHalf } from '../utils/paneExpand'
@@ -34,6 +38,7 @@ const tip = (half: PaneHalf) => props.pane === half
 <template>
   <div class="pane-bar" data-guide="layout.paneBar">
     <span class="pane-note"><slot /></span>
+    <slot name="actions" />
     <button
       class="pane-btn cc-btn cc-btn-bare cc-btn-icon"
       :class="{ 'cc-btn-on': pane === 'top' }"
