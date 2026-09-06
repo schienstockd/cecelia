@@ -155,6 +155,7 @@ def saturation_stats(hist, background_method='triangle'):
     nz = np.nonzero(h)[0]
     top = int(nz[-1]) if nz.size else 0
     n_top = int(h[top]) if nz.size else 0
+    n_zero = int(h[0]) if h.size else 0
     signal = 0
     if nz.size > 1:
         bg = background_threshold(h, method=background_method)
@@ -167,6 +168,11 @@ def saturation_stats(hist, background_method='triangle'):
         'topFrac': (n_top / total) if total else 0.0,
         'signalVoxels': signal,
         'clippedSignalFrac': (n_top / signal) if signal else 0.0,
+        # Sparsity fields for the correction-plan photon-limited card (CORRECTION_QC_PLAN.md Q-M4).
+        # Free — same histogram pass, one extra sum. The plan engine reads these directly rather
+        # than a hardcoded verdict, so the threshold stays tunable there.
+        'zeroFrac': (n_zero / total) if total else 0.0,
+        'signalFrac': (signal / total) if total else 0.0,
     }
 
 
