@@ -73,7 +73,7 @@ import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
-  buildMultiTrackBuffer, tailRange, filterPayloadByLabels,
+  buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
   type OverlayPayload, type PointBuffer, type SegmentBuffer,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
@@ -1412,8 +1412,29 @@ function rebuildOverlays() {
   const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
+  // If a track highlight is set for THIS image + this vn, narrow the per-vn source to just those
+  // ids. Restores the pre-napari-retire behaviour (P9 slice 4 dropped `showTracksInNapari` without
+  // a browser-viewer equivalent). CRUCIAL fallback: when the filter matches zero cells (stale
+  // highlight, wrong vn/type, ids from a previous run), FALL BACK to the full payload rather than
+  // dropping the source — a stale highlight that blanks every ribbon looked to the user like
+  // "tracks are completely broken", which they weren't.
+  const hl = viewerStore.trackHighlight
+  const hlActive = hl && hl.imageUid === imageUid && hl.trackIds.length > 0
+  const hlSet = hlActive ? new Set(hl!.trackIds) : null
   for (const [vn, payload] of trackPayloads.value.entries()) {
-    sources.push({ vn, payload, colour: overrides[vn] })
+    let p = payload
+    if (hlSet && hl!.valueName === vn) {
+      const filtered = filterPayloadByTracks(payload, hlSet)
+      if (filtered.nCells > 0) {
+        p = filtered
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[trackHighlight] no cells matched — falling back to full payload', {
+          vn, trackIds: [...hlSet], sampleTrackIds: payload.cells.track?.slice(0, 5),
+        })
+      }
+    }
+    sources.push({ vn, payload: p, colour: overrides[vn] })
   }
   const popMgrPayload = overlays.value
   const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
@@ -3662,6 +3683,12 @@ onUnmounted(() => { publishResizeObs?.disconnect(); publishResizeObs = null })
 // (`pushChannels`, `frame.redraw`) handle the actual GPU update. Value is a signal, not a queue:
 // the publisher immediately re-emits from the applied state, which is exactly what the user
 // wants (the animation page's next capture would see the new state anyway).
+// Track highlight sync — a Show press on the timeline writes viewerStore.trackHighlight, and the
+// per-vn source in `rebuildOverlays` reads it. `updateId` is monotonic (see setTrackHighlight),
+// so two identical Shows still trigger the watcher. The rebuild is cheap (filterPayloadByTracks
+// on the cached payload, then buildMultiTrackBuffer), so no debounce needed.
+watch(() => viewerStore.trackHighlight?.updateId ?? null, () => rebuildOverlays())
+
 // Re-fires on updateId change (a fresh setPendingViewState arriving through the store setter or the
 // storage bridge) AND on meta/canvas becoming ready — the store may seed pendingViewState from
 // localStorage on init (an openViewerWindow handoff wrote it before the popup mounted), and the

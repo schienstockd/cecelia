@@ -39,6 +39,7 @@ const K_VIEW_STATE       = 'cc.viewer.viewState'
 const K_PENDING_VIEW     = 'cc.viewer.pendingViewState'
 const K_PREVIEW_LABELS   = 'cc.viewer.previewLabels'
 const K_PREVIEW_IMAGES   = 'cc.viewer.previewImages'
+const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -86,6 +87,27 @@ export interface PreviewImage {
   updateId: number
 }
 
+/**
+ * "Highlight ONLY these track ids on the viewer" — the browser-viewer replacement for
+ * `showTracksInNapari` (removed in P9 slice 4, commit 842d8d36, without a browser-viewer
+ * equivalent). Written by TrackSchemeView's **Show** button; the popup viewer subscribes and
+ * narrows the per-vn track source to just these ids for the named (imageUid, valueName).
+ *
+ * When `trackIds` is empty (or the whole record is null), highlight mode is OFF and ribbons render
+ * as usual. Scope is deliberately per (imageUid, valueName) — a highlight for image A's tracks
+ * must NOT survive an image swap in the viewer, and a highlight authored for vn `memTom` must not
+ * accidentally narrow vn `default` (different track_id namespaces).
+ *
+ * `updateId` is monotonic like the other viewer bag entries: two Show presses on the same track
+ * set produce identical `trackIds` and would otherwise emit no storage event.
+ */
+export interface TrackHighlight {
+  imageUid: string
+  valueName: string
+  trackIds: number[]
+  updateId: number
+}
+
 function _readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
   try {
@@ -117,6 +139,7 @@ export const useViewerStore = defineStore('viewer', () => {
   const pendingViewState = ref<PendingViewState | null>(_readJson<PendingViewState>(K_PENDING_VIEW))
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
+  const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
 
   /** ViewerWindow calls this when the image changes (route load, valueName picker). */
   function setOpenImage(next: OpenImage | null) {
@@ -187,6 +210,17 @@ export const useViewerStore = defineStore('viewer', () => {
     _writeJson(K_PREVIEW_IMAGES, stamped)
   }
 
+  /** TrackSchemeView calls this on **Show** to narrow the viewer's per-vn track source to just
+   *  these ids. `null` (or an empty `trackIds`) clears the highlight. Stamped monotonically for
+   *  the same reason as previewLabels — two identical Show presses would otherwise not wake the
+   *  popup's storage listener. */
+  function setTrackHighlight(next: Omit<TrackHighlight, 'updateId'> | null) {
+    const stamped: TrackHighlight | null = next && next.trackIds.length
+      ? { ...next, updateId: ++_updateIdSeq } : null
+    trackHighlight.value = stamped
+    _writeJson(K_TRACK_HIGHLIGHT, stamped)
+  }
+
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the
   // pattern is symmetric — every window listens, every window writes on its own change.
   if (typeof window !== 'undefined') {
@@ -203,13 +237,16 @@ export const useViewerStore = defineStore('viewer', () => {
         previewLabels.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_IMAGES) {
         previewImages.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_TRACK_HIGHLIGHT) {
+        trackHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
   return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
+           trackHighlight,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
-           consumePendingViewState, setPreviewLabels, setPreviewImages }
+           consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))

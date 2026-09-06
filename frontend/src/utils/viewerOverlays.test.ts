@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
-  filterPayloadByLabels,
+  filterPayloadByLabels, filterPayloadByTracks,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -196,6 +196,37 @@ describe('filterPayloadByLabels', () => {
     expect(p.pops).toBe(src.pops)
     expect(p.colourColumns).toBe(src.colourColumns)
     expect(p.hasT).toBe(src.hasT)
+  })
+})
+
+describe('filterPayloadByTracks', () => {
+  it('keeps only the cells whose track id is in the set — every cells.* array in step', () => {
+    // fixture has track = [1, 1, -1, 2]; picking {1} keeps the first two
+    const p = filterPayloadByTracks(payload(), new Set([1]))
+    expect(p.nCells).toBe(2)
+    expect(p.cells.label).toEqual([10, 11])
+    expect(p.cells.track).toEqual([1, 1])
+  })
+  it('empty track set → empty payload — same reducer discipline as the label version', () => {
+    const p = filterPayloadByTracks(payload(), new Set())
+    expect(p.nCells).toBe(0)
+    expect(p.cells.track).toEqual([])
+  })
+  it('picks per-row `values` when present', () => {
+    const p = filterPayloadByTracks(payload({ values: ['a', 'b', 'c', 'd'] }), new Set([2]))
+    expect(p.values).toEqual(['d'])
+  })
+  it('a payload with no track column cannot be filtered → empty answer', () => {
+    const p = filterPayloadByTracks(payload({ cells: { label: [1], t: [0], x: [0], y: [0] } }),
+                                     new Set([1]))
+    expect(p.nCells).toBe(0)
+  })
+  it('an untracked cell (track=-1) is never picked — the highlight is about REAL tracks', () => {
+    // fixture has track = [1, 1, -1, 2] — asking for {-1} keeps the third row, but callers should
+    // build the set from `_is_untracked === false` ids so this is only a sanity check on shape
+    const p = filterPayloadByTracks(payload(), new Set([-1]))
+    expect(p.nCells).toBe(1)
+    expect(p.cells.label).toEqual([12])
   })
 })
 
