@@ -15,6 +15,7 @@
 // reading one field, and a formatted string must never be the thing sorted: `elapsed` is `4m 12s`,
 // which sorts before `59s` as text. Hence `elapsedMs` alongside it, named by the column's `sortKey`.
 import type { TaskEntry, TaskStatus } from '../stores/tasks'
+import { formatWhen } from './formatWhen'
 import { taskElapsed } from './taskElapsed'
 import { canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
@@ -89,7 +90,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     chainTip:     t.chainRunId ? `Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}` : '',
     elapsed:      elapsed ?? '',
     elapsedMs:    elapsedMs(t, ctx.now),
-    startedAtLabel: formatStartedAt(t.startedAt, ctx.now),
+    startedAtLabel: formatWhen(t.startedAt, ctx.now),
     startedAtMs:  t.startedAt?.getTime(),
     progress:     t.progress,
     hasProgress:  t.status === 'running' && t.progress !== undefined,
@@ -116,20 +117,3 @@ function elapsedMs(t: TaskEntry, now: number): number | undefined {
   return (t.finishedAt?.getTime() ?? now) - t.startedAt.getTime()
 }
 
-/**
- * The Date column's label. Compact by scale: today shows time only (`14:32`), any earlier day shows
- * the date (`5 Sep 14:32`), and once the year differs it appears too (`5 Sep 2025`). Keeps the
- * common case narrow so a session-scoped task list stays readable if the column ever shows there.
- */
-function formatStartedAt(started: Date | undefined, now: number): string {
-  if (!started) return ''
-  const n = new Date(now)
-  const sameDay  = started.getFullYear() === n.getFullYear()
-                && started.getMonth()    === n.getMonth()
-                && started.getDate()     === n.getDate()
-  if (sameDay) return started.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  const sameYear = started.getFullYear() === n.getFullYear()
-  return started.toLocaleString(undefined, sameYear
-    ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
-    : { day: 'numeric', month: 'short', year: 'numeric' })
-}
