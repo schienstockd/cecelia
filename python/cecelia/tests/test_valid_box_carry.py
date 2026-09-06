@@ -1,9 +1,9 @@
 """`carry_valid_box` — propagating the valid box onto a derived store.
 
 The box only pays off if it SURVIVES the pipeline. Two ways it failed to: dropped silently
-(`af_correct`, `cellpose_correct`), and carried through `read_valid_box(path)` — which on a per-frame
-box returns the UNION over frames, nearly the whole canvas once the window drifts (`smooth`). Both
-left the store people actually segment reporting "all valid".
+(`af_correct`), and carried through `read_valid_box(path)` — which on a per-frame box returns the
+UNION over frames, nearly the whole canvas once the window drifts (`smooth`). Both left the store
+people actually segment reporting "all valid".
 
 Part of the Python (analysis-env) test suite — run with `pixi run test-py`.
 """

@@ -522,7 +522,7 @@ export function preferredValueName(
  * Has the user actually CHOSEN this value name, or is it just what the form started with?
  *
  * The distinction is the whole reason `preferredValueName` above reaches anything. Its caller keeps
- * an already-valid selection — right, for a chain-propagated name like `cpCorrected` — but every
+ * an already-valid selection — right, for a chain-propagated name like `driftCorrected` — but every
  * task JSON declares `"default": "default"`, and `"default"` is a valid version on essentially every
  * image. So the guard fired on first render for all of them and prefer-the-active-version never ran:
  * the docstring above described behaviour the app did not have, on every page, and the four tasks

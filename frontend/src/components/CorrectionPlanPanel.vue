@@ -11,9 +11,9 @@
   Wizard section (slice 3c) exposes the three enum questions from §4 of the plan doc that overlay a
   card independently — W2 (stage rotated → sitkRigid), W3 (frame-to-frame warp → include
   flowRegister), W5 (intra-stack Z drift → include stackAlign). Each answer immediately re-saves the
-  plan the same way a card pick does. W1 is intentionally NOT here — the card picker IS W1. W4 (per-
-  channel afCombinations.exclusive) and W6 (cpCorrected trust/exclude) are conditional/rare and
-  deferred to a follow-up.
+  plan the same way a card pick does. W1 is intentionally NOT here — the card picker IS W1. W4 and
+  W6 were retired (PR #835): the per-channel exclusive question already lives on the afCorrect task
+  widget, and cellpose denoising was dropped for SUPPORT.
 
   Mount writes the saved plan as a ChainTemplate under the project's chains dir (name is fixed
   per-image, `correction-plan-{imageUid}`). It requires a saved plan first — mounting an unsaved

@@ -161,9 +161,9 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
 class SourceHandleAgnosticTest(unittest.TestCase):
     """The streaming correction utils must not care whether they are handed a zarr or a dask array.
 
-    The four streaming runners (af / drift / cellpose_correct / measure_labels) used to open their
-    input with `as_dask=True` and then read every frame through `fortify(arr[slice])` anyway, so the
-    dask handle only added graph overhead. They now pass `as_dask=False`. Measured on a real store
+    The streaming runners (af / drift / measure_labels) used to open their input with `as_dask=True`
+    and then read every frame through `fortify(arr[slice])` anyway, so the dask handle only added
+    graph overhead. They now pass `as_dask=False`. Measured on a real store
     (zolIMa/ldYr8J): `af_correct_image` **278.7 s → 30.1 s** (9.3×, because AF re-reads each slab
     across three passes) and a per-timepoint `copy_stream` 4.07 s → 1.62 s (2.5×).
 

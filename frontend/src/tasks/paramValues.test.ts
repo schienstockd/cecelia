@@ -274,7 +274,7 @@ describe('isChosenValueName', () => {
   })
 
   it('counts anything else the user or a chain edge put there', () => {
-    expect(isChosenValueName('cpCorrected', 'default')).toBe(true)
+    expect(isChosenValueName('driftCorrected', 'default')).toBe(true)
     // a spec with no default at all: any value is a choice
     expect(isChosenValueName('default', undefined)).toBe(true)
   })
@@ -375,8 +375,8 @@ describe('valueNameOptions', () => {
   })
 
   it('unions extras (chain outputs, injected global options) without duplicating', () => {
-    expect(valueNameOptions([img()], undefined, ['cpCorrected', 'default']))
-      .toEqual(['default', 'corrected', 'cpCorrected'])
+    expect(valueNameOptions([img()], undefined, ['driftCorrected', 'default']))
+      .toEqual(['default', 'corrected', 'driftCorrected'])
     // extras still arrive when there is no image source — that is how a global namespace lists
     expect(valueNameOptions([img()], null, ['flow.cyto'])).toEqual(['flow.cyto'])
   })

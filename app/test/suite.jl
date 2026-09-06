@@ -5334,11 +5334,11 @@ end
 
     @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect") === nothing  # absent
 
-    p = Dict{String,Any}("valueName" => "cpCorrected", "driftChannel" => ["DAPI"])
+    p = Dict{String,Any}("valueName" => "driftCorrected", "driftChannel" => ["DAPI"])
     write_module_fun_params!(img._dir, "cleanupImages.driftCorrect", p)
     got = read_module_fun_params(img._dir, "cleanupImages.driftCorrect")
     @test !isnothing(got)
-    @test got["valueName"] == "cpCorrected"
+    @test got["valueName"] == "driftCorrected"
     @test got["driftChannel"] == ["DAPI"]
 
     # init_object loads funParams into the object's meta; a load-modify-save then preserves them
@@ -5348,12 +5348,12 @@ end
     r.status = "done"; save!(r)
     r2 = init_object(proj.uid, img.uid)
     @test r2.status == "done"
-    @test read_module_fun_params(r2._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
+    @test read_module_fun_params(r2._dir, "cleanupImages.driftCorrect")["valueName"] == "driftCorrected"
 
     # a second task's params coexist under its own key (no clobber)
     write_module_fun_params!(img._dir, "cleanupImages.smooth",
                              Dict{String,Any}("valueName" => "default"))
-    @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
+    @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect")["valueName"] == "driftCorrected"
     @test read_module_fun_params(img._dir, "cleanupImages.smooth")["valueName"] == "default"
 
     # set-level memory uses the same dir-based mechanism on the set's ccid.json
@@ -5697,7 +5697,7 @@ end
 
     # pure policy: everything except the active version
     @test Set(Cecelia.reclaimable_versions(Dict{String,Any}(
-        "default"=>"a", "afCorrected"=>"b", "cpCorrected"=>"c", "_active"=>"cpCorrected"))) ==
+        "default"=>"a", "afCorrected"=>"b", "driftCorrected"=>"c", "_active"=>"driftCorrected"))) ==
         Set(["default", "afCorrected"])
     @test isempty(Cecelia.reclaimable_versions(Dict{String,Any}(  # only the active version present
         "default"=>"a", "_active"=>"default")))
@@ -5711,11 +5711,11 @@ end
     proj = create_project!(name="stor-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
 
-    # imgA: original + af + cp, cp active → reclaim frees default AND af, keeps cp
+    # imgA: original + af + drift, drift active → reclaim frees default AND af, keeps drift
     a = add_image!(s; name="a")
-    _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "af.ome.zarr"); _mk_ver!(a, "cp.ome.zarr")
+    _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "af.ome.zarr"); _mk_ver!(a, "drift.ome.zarr")
     a.filepath = Dict("default"=>"import.ome.zarr", "afCorrected"=>"af.ome.zarr",
-                      "cpCorrected"=>"cp.ome.zarr", "_active"=>"cpCorrected")
+                      "driftCorrected"=>"drift.ome.zarr", "_active"=>"driftCorrected")
     a.im_channel_names = Dict{String,Any}("default"=>["ch0","ch1"], "_active"=>"default")
     a.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
     a.status = "done"; save!(a)
@@ -5727,25 +5727,25 @@ end
     b.status = "done"; save!(b)
 
     # safe-primary unit: removing default while other versions remain must NOT un-import
-    freed, cleared = remove_image_version!(a, "default", "cpCorrected")
+    freed, cleared = remove_image_version!(a, "default", "driftCorrected")
     @test freed > 0 && cleared == false
     # restore default for the batch reclaim below
     _mk_ver!(a, "import.ome.zarr")
     ra0 = init_object(proj.uid, a.uid); ra0.filepath["default"] = "import.ome.zarr"; save!(ra0)
 
-    # reclaim_inactive! frees ALL non-active (default + af), keeps cp; imgB skipped
+    # reclaim_inactive! frees ALL non-active (default + af), keeps drift; imgB skipped
     tot, reclaimed = reclaim_inactive!(proj.uid, [a.uid, b.uid])
     @test reclaimed == [a.uid]
     @test tot > 0
     @test !isdir(joinpath(img_zero_dir(a), "import.ome.zarr"))    # original gone
     @test !isdir(joinpath(img_zero_dir(a), "af.ome.zarr"))        # intermediate gone
-    @test  isdir(joinpath(img_zero_dir(a), "cp.ome.zarr"))        # active kept
+    @test  isdir(joinpath(img_zero_dir(a), "drift.ome.zarr"))     # active kept
     @test  isdir(joinpath(img_zero_dir(b), "import.ome.zarr"))    # b untouched
 
     ra = init_object(proj.uid, a.uid)
     @test ra.status == "done"                                     # NOT un-imported
-    @test ra.filepath["_active"] == "cpCorrected"
-    @test collect(keys(filter(kv -> kv.first != "_active", ra.filepath))) == ["cpCorrected"]
+    @test ra.filepath["_active"] == "driftCorrected"
+    @test collect(keys(filter(kv -> kv.first != "_active", ra.filepath))) == ["driftCorrected"]
     @test ra.meta["SizeC"] == 2                                   # dims kept
     @test Cecelia.versioned_get(ra.im_channel_names, "default") == ["ch0","ch1"]  # channel names kept
     rm(proj.root; recursive=true)
@@ -7549,18 +7549,6 @@ end
     rm(proj.root; recursive=true)
 end
 
-# ── fun_name dispatch ─────────────────────────────────────────────────────
-@testset "Retired fun_names carry a migration message" begin
-    # A saved param set or chain node naming a removed task must say it was REMOVED and what to use
-    # instead — not fall through to "Unknown fun_name" with a list of everything, which reads as a
-    # typo report. `cpCorrected` stores on disk are untouched by the removal.
-    e = try _task_from_fun_name("cleanupImages.cellposeCorrect"); nothing catch err; err end
-    @test e isa ErrorException
-    @test occursin("no longer exists", e.msg)
-    @test occursin("cleanupImages.smooth", e.msg)
-    @test occursin("cpCorrected", e.msg)
-end
-
 # QC helper for FlowRegister — the "aligner is chronically saturating" case is what a user needs to
 # know about (raise the clamp or accept the deformation is beyond dense flow) and the metrics are
 # cohort-comparable, so both branches deserve a pin.
@@ -7790,12 +7778,12 @@ end
     @test versioned_get_field(d, "filepath") == "ccidImage.ome.zarr"
     @test versioned_active(d["filepath"]) == "default"
 
-    versioned_set_field!(d, "filepath", "ccidCpCorrected.ome.zarr", "cpCorrected")
-    @test versioned_get_field(d, "filepath", "cpCorrected") == "ccidCpCorrected.ome.zarr"
-    @test versioned_get_field(d, "filepath") == "ccidCpCorrected.ome.zarr"  # active = cpCorrected
+    versioned_set_field!(d, "filepath", "ccidDriftCorrected.ome.zarr", "driftCorrected")
+    @test versioned_get_field(d, "filepath", "driftCorrected") == "ccidDriftCorrected.ome.zarr"
+    @test versioned_get_field(d, "filepath") == "ccidDriftCorrected.ome.zarr"  # active = driftCorrected
 
-    versioned_set_field!(d, "filepath", nothing, "cpCorrected")
-    @test isnothing(get(d["filepath"], "cpCorrected", nothing))
+    versioned_set_field!(d, "filepath", nothing, "driftCorrected")
+    @test isnothing(get(d["filepath"], "driftCorrected", nothing))
 end
 
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────

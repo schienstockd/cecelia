@@ -158,9 +158,9 @@ rename_set!(proj, other, "day 3"; force = true)   # deliberate duplicate
   "status": "done",
 
   "filepath": {
-    "default":     "ccidImage.ome.zarr",
-    "_active":     "default",
-    "cpCorrected": "ccidCpCorrected.ome.zarr"
+    "default":        "ccidImage.ome.zarr",
+    "_active":        "default",
+    "driftCorrected": "ccidDriftCorrected.ome.zarr"
   },
 
   "imChannelNames": {
@@ -258,8 +258,7 @@ Several fields (`filepath`, `imChannelNames`, `labels`, `label_props`) follow th
 
 - `_active` points to the name of the currently active entry.
 - `"default"` is always the raw/imported version.
-- Correction tasks add named entries (e.g. `"afCorrected"`, `"smoothed"`). `"cpCorrected"` also
-  appears on images processed before cellpose denoising was retired — the stores stay readable.
+- Correction tasks add named entries (e.g. `"driftCorrected"`, `"afCorrected"`, `"smoothed"`).
 - `_active` is updated to the new name after each correction.
 
 **Removing a version** — `remove_image_version!` (`storage.jl`) is the ONE path (used by the
@@ -311,16 +310,16 @@ Two details worth knowing:
 
 ```julia
 # Read (returns the active entry when value_name is nothing)
-versioned_get_field(raw_dict, "filepath", nothing)       # → active filename
-versioned_get_field(raw_dict, "filepath", "cpCorrected") # → specific filename
+versioned_get_field(raw_dict, "filepath", nothing)          # → active filename
+versioned_get_field(raw_dict, "filepath", "driftCorrected") # → specific filename
 
 # Write (sets value and updates _active)
-versioned_set_field!(raw_dict, "filepath", "ccidCpCorrected.ome.zarr", "cpCorrected")
+versioned_set_field!(raw_dict, "filepath", "ccidDriftCorrected.ome.zarr", "driftCorrected")
 
 # On the in-memory struct (filepath is Dict{String,String})
 active(img.filepath)                          # → active filename string
 set_active!(img.filepath, "file.zarr", "v1") # mutates in place
-versioned_keys(img.filepath)                  # → ["default", "cpCorrected"] (no "_active")
+versioned_keys(img.filepath)                  # → ["default", "driftCorrected"] (no "_active")
 ```
 
 ### JSON3 gotchas
@@ -392,7 +391,7 @@ Locate the file with `state_file` rather than building the path — `state_file(
 ```julia
 img_zero_dir(img)          # → "{proj}/0/{uid}/"   (image data root)
 img_filepath(img)          # → "{proj}/0/{uid}/{active_filename}"
-img_filepath(img, "cpCorrected")  # → "{proj}/0/{uid}/{filename_for_cpCorrected}"
+img_filepath(img, "driftCorrected")  # → "{proj}/0/{uid}/{filename_for_driftCorrected}"
 ```
 
 These derive the path from `img._dir` (`1/{uid}/`) by walking up two levels and crossing to `0/`. Never construct these paths manually.
