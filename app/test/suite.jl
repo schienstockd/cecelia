@@ -12321,6 +12321,98 @@ end
         @test "cleanupImages.driftCorrect" in fns
     end
 
+    # Phase D of docs/todo/CORRECTION_QC_PLAN.md — plan.json sidecar. Provenance is deliberate:
+    # `ceceliaVersion` invalidates every plan when the code that would run it changes; the
+    # `saturationFingerprint` catches a re-import that shifted per-channel saturation numbers
+    # (which a version stamp cannot). No per-step writer versions — cecelia ships as one package.
+    @testset "correction_plan persistence (§8 sidecar + provenance)" begin
+        # ── saturation_fingerprint: stable across a JSON3 round-trip, changes with content ───────
+        sat_chan(zf) = Dict{String,Any}("index" => 0, "saturated" => false, "topValue" => 500,
+                                        "topCount" => 0, "topFrac" => 0.0,
+                                        "clippedSignalFrac" => 0.0,
+                                        "zeroFrac" => zf, "signalFrac" => 1.0 - zf)
+        meta_a = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30,
+                                   "saturation" => Dict{String,Any}("channels" => [sat_chan(0.85)]))
+        fp_a   = Cecelia.saturation_fingerprint(meta_a)
+        @test !isempty(fp_a) && length(fp_a) == 64          # hex sha256
+
+        # round-trip through JSON3 — Int/Float coercion and Symbol-vs-String keys must not shift it
+        raw = JSON3.read(JSON3.write(meta_a))
+        rt  = Dict{String,Any}(String(k) => v for (k, v) in raw)
+        @test Cecelia.saturation_fingerprint(rt) == fp_a    # THE invariant this exists to enforce
+
+        # different content → different fingerprint
+        meta_b = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [sat_chan(0.50)]))
+        @test Cecelia.saturation_fingerprint(meta_b) != fp_a
+        # missing saturation → empty string sentinel (caller distinguishes "both unknown")
+        @test Cecelia.saturation_fingerprint(Dict{String,Any}()) == ""
+
+        # ── plan.json roundtrip on a real CciaImage ───────────────────────────────────────────
+        proj = create_project!(name = "plan-$(rand(1000:9999))")
+        s    = add_set!(proj; name = "set")
+        img  = add_image!(s; name = "im")
+        img.meta = meta_a
+        save!(img)                                          # writes ccid.json with meta
+
+        plan = Cecelia.recommend_plan(img; card_id = :resonance,
+                                            wizard = Dict{Symbol,Any}(:W2 => :yes))
+        @test plan.image_uid == img.uid
+        @test plan.preset_id == :resonance
+        @test plan.cecelia_version == cecelia_version()
+        @test plan.saturation_fingerprint == fp_a
+
+        path = Cecelia.save_plan(img, plan)
+        @test isfile(path)
+        @test basename(path) == "plan.json"
+
+        loaded = Cecelia.load_plan(img)
+        @test loaded !== nothing
+        @test loaded.image_uid == plan.image_uid
+        @test loaded.preset_id == plan.preset_id
+        @test loaded.wizard_answers == plan.wizard_answers    # Symbol values round-trip via _wizard_v_from_json
+        @test loaded.cecelia_version == plan.cecelia_version
+        @test loaded.saturation_fingerprint == plan.saturation_fingerprint
+        @test [s.fun_name for s in loaded.included] == [s.fun_name for s in plan.included]
+        @test [s.source   for s in loaded.included] == [s.source   for s in plan.included]
+        @test length(loaded.qc_scores) == length(plan.qc_scores)
+
+        # NaN score (QC_SCORE_ABSENT) survives the JSON null bridge — the case that isn't hit by
+        # `meta_a` (which has a saturation dict, so no absent scores) needs its own image:
+        img2 = add_image!(s; name = "im-no-sat")
+        img2.meta = Dict{String,Any}("SizeT" => 1, "SizeZ" => 1)
+        save!(img2)
+        p2 = Cecelia.recommend_plan(img2)
+        r  = only([x for x in p2.qc_scores if x.metric == "denoise.channel_saturated_frac"])
+        @test Cecelia.qc_score_absent(r)                      # no saturation field → absent
+        Cecelia.save_plan(img2, p2)
+        p2back = Cecelia.load_plan(img2)
+        r2 = only([x for x in p2back.qc_scores if x.metric == "denoise.channel_saturated_frac"])
+        @test Cecelia.qc_score_absent(r2)                     # absent survives roundtrip
+
+        # ── missing file → nothing ────────────────────────────────────────────────────────────
+        img3 = add_image!(s; name = "im-no-plan")
+        @test Cecelia.load_plan(img3) === nothing
+
+        # ── unknown planVersion → nothing (caller re-plans, never trusts a schema drift) ──────
+        path3 = joinpath(img3._dir, "plan.json")
+        open(path3, "w") do io
+            JSON3.pretty(io, Dict{String,Any}("planVersion" => 999,
+                                              "ceceliaVersion" => "9.9.9",
+                                              "imageUid" => img3.uid,
+                                              "presetId" => "custom",
+                                              "wizardAnswers" => Dict{String,Any}(),
+                                              "saturationFingerprint" => "",
+                                              "included" => [], "excluded" => [], "qcScores" => []))
+        end
+        @test Cecelia.load_plan(img3) === nothing
+
+        # ── malformed JSON → nothing (never throws to the caller) ──────────────────────────────
+        open(path3, "w") do io; write(io, "{not json"); end
+        @test Cecelia.load_plan(img3) === nothing
+
+        rm(proj.root; recursive = true)
+    end
+
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
     # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than
     # a bf2raw wrapper, so the same test exercises `series_base`'s flat branch.
