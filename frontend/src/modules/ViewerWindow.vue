@@ -3443,7 +3443,15 @@ const propsSink = debouncedSave(async () => {
  */
 async function loadVersion(refit: boolean) {
   starting.value = 'Reading image'
-  const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+  let res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+  // Self-heal a stale valueName pick that survived a re-import (which wipes and re-registers the
+  // zarr store, leaving the persisted `cc.viewerImageVersion` or the frozen URL query pointing at
+  // a name the server no longer knows). One retry with empty so the server resolves to active.
+  if (res.status === 404 && valueName.value) {
+    settings.setImageVersion(imageUid, '')
+    valueName.value = ''
+    res = await fetch(metaUrl({ projectUid, imageUid, valueName: '' }))
+  }
   const m = await readJson<ViewerMeta>(res, 'Metadata')
   meta.value = m
   // What the server RESOLVED, so the picker shows the active version rather than an empty box. Only
