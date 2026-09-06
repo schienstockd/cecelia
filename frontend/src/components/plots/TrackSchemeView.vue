@@ -60,6 +60,7 @@ import {
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { useTrackOpsQueueStore, trackOpsKey } from '../../stores/trackOpsQueue'
 import type { TrackPathMap } from '../../plots/trackPaths'
+import { keyToAction, KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 
 /** One entry of the grouped paths response — the timeline uses its own image's group. */
 interface PathsGroup {
@@ -491,6 +492,41 @@ function apply() {
   })) { pending.value = []; lastQueued.value = 'Applying — the timeline refreshes when it finishes' }
 }
 
+// ── keybindings (P6, docs/todo/TRACK_SCHEME_PLAN.md; utils/trackSchemeKeymap.ts) ─────────────────
+// Scoped to the panel — the listener sits on the .tsv root (tabindex=0), so a key only fires when
+// the panel or one of its children has focus. Nothing at page scope: `l` also means Q in the
+// animation timeline, and we do not want two panels racing for the same letter. `preventDefault`
+// only where the browser has its own binding for the key (Backspace on a page = navigate back on
+// old browsers, Enter = form submit if we ever land inside one) — plain letters we leave alone.
+function dispatchAction(a: TrackSchemeAction) {
+  const act = actions.value.find(x => x.key === a)
+  if (act && act.op) queue(act.op)
+  else if (a === 'undo' && pending.value.length) pending.value = undoLast(pending.value)
+  else if (a === 'apply' && pending.value.length) apply()
+  else if (a === 'clearSel' && selected.value.size) setSelected([])
+}
+function onKey(e: KeyboardEvent) {
+  const a = keyToAction(e)
+  if (!a) return
+  if (a === 'undo' || a === 'apply' || a === 'clearSel') e.preventDefault()
+  dispatchAction(a)
+}
+
+// Hover-to-focus: the panel under the cursor gets keys. Mirrors napari-vizsla's mental model
+// (`bind_key` on the layer that's active) and matches what the user already assumes when they
+// wheel-zoom over a panel — the mouse position IS the focus. Skipped if a text field is focused
+// (they're typing), so moving the mouse across a plot does not eat someone's typing in another
+// panel. `pointerenter` rather than `mouseenter` so a stylus/touch also focuses.
+function onPointerEnter() {
+  const el = tsvRoot.value
+  if (!el || el.contains(document.activeElement)) return
+  const active = document.activeElement as { tagName?: string; isContentEditable?: boolean } | null
+  const tag = active?.tagName?.toUpperCase()
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || active?.isContentEditable === true) return
+  el.focus({ preventScroll: true })
+}
+const tsvRoot = useTemplateRef<HTMLElement>('tsvRoot')
+
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
 const forceLight = ref(false)
@@ -783,7 +819,12 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 </script>
 
 <template>
-  <div class="tsv">
+  <!-- tabindex=0 so the panel can receive focus and @keydown fires. Focus is only visible in
+       the outline the browser draws for keyboard users (:focus-visible), never on mouse click,
+       so the panel does not gain a permanent ring when clicked. `@pointerenter` claims focus so
+       the panel under the cursor is the one that receives shortcuts — same mental model as
+       napari-vizsla and matches how wheel-zoom already scopes to the panel under the mouse. -->
+  <div ref="tsvRoot" class="tsv" tabindex="0" @keydown="onKey" @pointerenter="onPointerEnter">
     <div class="tsv-ctrl cc-panel-controls">
       <div class="cc-row">
         <ChipSelect :options="orderOptions" :model-value="order" variant="segmented" aria-label="Lane order"
@@ -848,7 +889,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
       <div class="cc-btn-group">
         <button v-for="a in actions" :key="a.key" class="cc-btn cc-btn-dense"
                 :class="a.blocked ? 'cc-btn-bare' : 'cc-btn-primary'" :disabled="!!a.blocked"
-                v-tooltip.top="a.blocked || opDescription(a.op!)" @click="queue(a.op)">{{ a.label }}</button>
+                v-tooltip.top="`${a.blocked || opDescription(a.op!)} (${KEY_HINT[a.key]})`"
+                @click="queue(a.op)">{{ a.label }}</button>
         <button class="cc-btn cc-btn-dense" :class="fixable.length ? 'cc-btn-primary' : 'cc-btn-bare'"
                 :disabled="!fixable.length"
                 v-tooltip.top="fixable.length ? 'Queue the suggested fix for the selected tracks'
@@ -869,7 +911,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                 v-tooltip.top="'Turn this segmentation\'s ribbons on in the viewer'"
                 @click="showInViewer"><i class="pi pi-eye" /> Show</button>
         <button class="cc-btn cc-btn-bare cc-btn-dense" :disabled="!selected.size"
-                v-tooltip.top="'Clear the selection'" @click="setSelected([])">
+                v-tooltip.top="`Clear the selection (${KEY_HINT.clearSel})`" @click="setSelected([])">
           <i class="pi pi-times" />
         </button>
       </div>
@@ -878,11 +920,12 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
       <span v-if="pending.length" class="tsv-queued cc-fs-xs"
             v-tooltip.top="'Queued edits — nothing changes until Apply'">{{ pending.length }} queued</span>
       <button v-if="pending.length" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
-              v-tooltip.top="'Undo the last queued edit'" @click="pending = undoLast(pending)">
+              v-tooltip.top="`Undo the last queued edit (${KEY_HINT.undo})`"
+              @click="pending = undoLast(pending)">
         <i class="pi pi-undo" />
       </button>
       <button v-if="pending.length" class="cc-btn cc-btn-primary cc-btn-dense"
-              v-tooltip.top="'Run all queued edits as one correction, then re-measure'"
+              v-tooltip.top="`Run all queued edits as one correction, then re-measure (${KEY_HINT.apply})`"
               @click="apply">Apply {{ pending.length }}</button>
     </div>
 
@@ -902,6 +945,11 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 <style scoped>
 /* position: relative so the overlaid .tsv-ctrl (.cc-panel-controls) anchors to the plot box */
 .tsv { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* tabindex=0 makes the panel focusable so @keydown can fire; the default browser :focus outline
+   would draw a permanent ring the moment the user clicked in — hide it for mouse users and only
+   show a keyboard-nav ring. */
+.tsv:focus { outline: none; }
+.tsv:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: -2px; }
 .tsv-ctrl { display: flex; flex-direction: column; gap: 0.3rem; padding: 4px 6px; }
 .tsv-spacer { flex: 1; }
 /* overflow:hidden so an svg sized to its own floor cannot GROW this box and re-trigger the resize

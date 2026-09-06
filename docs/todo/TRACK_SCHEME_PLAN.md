@@ -1,6 +1,6 @@
 # Track scheme — a timeline-first correction workspace
 
-**Status:** Phases 1–2 built (+ P2b, the rail audit); the worklist is deleted · branch `feat/track-scheme`
+**Status:** Phases 1–2 built (+ P2b, the rail audit); the worklist is deleted · branch `feat/track-scheme`. **P6 (keybindings) opens 2026-09-06** on `review/vizsla-track-editing`, inspired by `napari-vizsla` (see References); P5 retargeted from napari to the browser viewer at the same time.
 
 Successor to the correction UI that shipped in #590. The **engine** from that PR stands
 (`app/src/tracking/track_correction.jl`, `tracking.correct`, the detector, the journal, the QC); this
@@ -178,9 +178,47 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
 - **P4 — morphology-aware candidates.** Add appearance/size continuity to the gap score, borrowing
   coastal's cost terms. Changes the ranking; measure the effect on the reference image before and
   after (the detector already reports counts per kind, so this is checkable).
-- **P5 — napari round-trip for the hard cases.** Click a ribbon in the viewer → that lane is selected.
-  Needs a bridge event that does not exist today; `GET /api/tracking/selection` already covers the
-  other direction (draw a region → its tracks).
+- **P5 — viewer round-trip for the hard cases.** Click a cell in the browser viewer → its lane is
+  selected on the timeline. **Blocked on a prerequisite the viewer does not have yet**: a
+  segmentation-label pick at `(t, y, x)` — confirmed with Dominik 2026-09-06, and `grep pickLabel|
+  labelAt|hover.*label|getLabelAt` over `frontend/src/lib/webgpu` and `frontend/src/components`
+  returns nothing that reads a label id under the cursor. The forward direction already exists —
+  `GET /api/tracking/selection` covers the other direction (draw a
+  region → its tracks). Named "napari" in an earlier draft because napari was the viewer; retargeted
+  to the browser viewer since `project_napari_being_dropped`. **Prior art worth stealing** —
+  `napari-vizsla` (Tamas Nagy, MIT, https://github.com/tlnagy/napari-vizsla): a click on a
+  segmented cell draws the whole tracklet as an outlined polygon with the past leg in **white** and
+  the future leg in **gray**, and each successor tracklet as an orange stub at the branch point.
+  Time orientation the way the ground truth (2026-08-19) asks for, at the moment of curation. Our
+  ops vocabulary is richer than vizsla's (`join/split/remove/points.add/points.remove` vs `l/b`), so
+  what we take is the **highlighting model**, not the ops. Sits on top of the linked-brushing plan
+  (analytical brushing, XY → transient pop → plots) — curation brushing is the mutating flavour of
+  the same affordance and should share the viewer selection channel, not duplicate it.
+- **P6 — keybindings on the timeline.** No shortcuts today (grep: zero `keydown`/`bind_key` in
+  `TrackSchemeView.vue`). Every action is button-only, so curating a long image is mouse-only, and
+  every ambiguous rank has been "why isn't Join enabled?". `napari-vizsla` (see P5) is one letter per
+  op — `l` link, `b` break — and it is the plugin's whole hook. We add the same discipline over our
+  op vocabulary: `l` = Join (matches vizsla), `b` = Split at the current frame (matches vizsla's
+  semantic of cutting one track into two), `r` = Remove, `⌫` = undo last queued op, `⏎` = Apply
+  queue. Fires only while the panel has focus (no page-wide binding — the same letter is Q in the
+  animation timeline). Ships as its own PR: cheap, self-contained, adds no route, adds no state,
+  and does not touch the engine or the ops. Layer visibility (`h/t/s` in vizsla) is a viewer-side
+  hotkey, not a timeline one — deferred to whichever hotkey scheme the browser viewer picks.
+
+## References
+
+- **napari-vizsla** — Tamas Nagy, MIT · https://github.com/tlnagy/napari-vizsla · read in full for
+  P5 and P6. What we're taking: the click-a-cell-then-highlight-tracklet model (P5), the two-letter
+  op hotkeys (P6). What we're **not** taking: CTC-format load/save (we normalise every tracker
+  output through our h5ad path already, so the wire format buys nothing); autosave-per-edit to a
+  sidecar folder (fights our composite `tracking.correct_measures` design — one journalled run per
+  apply, deliberately); vizsla's permissive `l` that silently rewires an existing predecessor (our
+  join refusing frame-overlaps is stricter by design, per `app/src/tasks/tracking/correct.jl`).
+- **Cell Tracking Challenge** format — Ulman et al., *Nature Methods* 2017
+  (doi:10.1038/nmeth.4473); http://celltrackingchallenge.net. Called out for completeness — this
+  plan does **not** adopt it. Modern trackers (Trackastra, Ultrack) emit CTC, but converting on
+  import is not the interop story worth building until a user asks (their outputs land in our
+  h5ad regardless of intermediate format).
 
 ## Open questions
 
