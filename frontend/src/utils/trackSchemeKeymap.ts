@@ -11,6 +11,7 @@
 
 export type TrackSchemeAction =
   | 'join' | 'split' | 'remove'   // the op buttons
+  | 'add'                         // P3: attach the picked untracked cell to the selected track
   | 'undo' | 'apply'              // queue-level
   | 'clearSel'                    // Escape
 
@@ -68,6 +69,7 @@ export function keyToAction(e: KeyboardEvent): TrackSchemeAction | null {
     case 'l': return 'join'
     case 'b': return 'split'
     case 'r': return 'remove'
+    case 'a': return 'add'
     case 'backspace': return 'undo'
     case 'enter': return 'apply'
     case 'escape': return 'clearSel'
@@ -77,6 +79,6 @@ export function keyToAction(e: KeyboardEvent): TrackSchemeAction | null {
 
 /** The letter each action is bound to, for tooltip hints — `Join (l)`, `Split (b)`, … */
 export const KEY_HINT: Record<TrackSchemeAction, string> = {
-  join: 'l', split: 'b', remove: 'r',
+  join: 'l', split: 'b', remove: 'r', add: 'a',
   undo: '⌫', apply: '⏎', clearSel: 'Esc',
 }

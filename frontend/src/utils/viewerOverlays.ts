@@ -254,6 +254,41 @@ export function overlaySummary(p: OverlayPayload | null): {
 // A payload with no `cells.label` array cannot be filtered (nothing to match against). We return
 // an empty payload rather than the original — the pop's job here is to REDUCE, and if the reducer
 // cannot match rows the pop contributes nothing rather than everything.
+/**
+ * Same shape as `filterPayloadByLabels`, but keys off the `cells.track` column — for the
+ * "highlight ONLY these track ids on the viewer" primitive that restores the pre-napari-retire
+ * behaviour of `showTracksInNapari` (removed in P9 slice 4 without a browser-viewer replacement).
+ *
+ * A payload with no `cells.track` array cannot be filtered (nothing to match), so we return an
+ * empty payload — same reducer discipline as the label version. An empty `trackIds` set means "no
+ * highlight" and the caller should pass the ORIGINAL payload rather than call this; the check
+ * lives at the call site so this function's contract stays "reduce".
+ */
+export function filterPayloadByTracks(payload: OverlayPayload, trackIds: ReadonlySet<number>)
+  : OverlayPayload {
+  const tracks = payload.cells.track
+  if (!tracks || !trackIds.size) {
+    return { ...payload, nCells: 0, cells: { label: [], t: [], x: [], y: [], z: [], track: [] } }
+  }
+  const keep: number[] = []
+  for (let i = 0; i < tracks.length; i++) if (trackIds.has(tracks[i])) keep.push(i)
+  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
+    arr ? keep.map(i => arr[i]) : undefined
+  return {
+    ...payload,
+    nCells: keep.length,
+    cells: {
+      label: pick(payload.cells.label),
+      t:     pick(payload.cells.t),
+      x:     pick(payload.cells.x),
+      y:     pick(payload.cells.y),
+      z:     pick(payload.cells.z),
+      track: pick(payload.cells.track),
+    },
+    values: payload.values ? keep.map(i => payload.values![i]) : payload.values,
+  }
+}
+
 export function filterPayloadByLabels(payload: OverlayPayload, labels: ReadonlySet<number>)
   : OverlayPayload {
   const labs = payload.cells.label

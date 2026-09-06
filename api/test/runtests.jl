@@ -4715,7 +4715,7 @@ end
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
         "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
-        "/api/tracking/diagnostics", "/api/tracking/selection",
+        "/api/tracking/diagnostics", "/api/tracking/selection", "/api/tracking/detections",
         "/api/update/check",
         "/api/version",
     ]
@@ -4821,7 +4821,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 86 && length(POST_ROUTES) == 109
+    @test length(GET_ROUTES) == 87 && length(POST_ROUTES) == 109
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -6652,6 +6652,25 @@ end
             dg = diag.groups[1]
             @test !isempty(dg.msd.lag) && !isempty(dg.acor.lag) && dg.nTracks > 0
             @test haskey(dg, :findings) && haskey(dg, :summary)
+
+            # ── /api/tracking/detections — per-frame untracked cells (P3) ────────
+            # smoke test: shape correctness on a real fixture. The `_is_untracked` rule itself is
+            # pinned in the package suite; here we assert the route wires it into aligned per-frame
+            # arrays, and that a frame with zero untracked cells is OMITTED (a scheme draws no rect
+            # for zero, not one of zero height).
+            @test api_track_detections(HTTP.Request("GET",
+                "/api/tracking/detections?projectUid=testpr"))[1] == 400
+            st, body = api_track_detections(HTTP.Request("GET",
+                "/api/tracking/detections?projectUid=testpr&imageUid=KDIeEm&valueName=B"))
+            d = JSON3.read(body)
+            @test st == 200 && d.tracked == true
+            @test issorted([f.t for f in d.frames])
+            for f in d.frames
+                @test f.count > 0
+                @test f.count == length(f.labels)
+                @test length(f.x) == f.count && length(f.y) == f.count
+                @test all(l -> l isa Integer, f.labels)
+            end
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

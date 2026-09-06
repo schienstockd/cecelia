@@ -380,3 +380,100 @@ function api_track_selection(req::HTTP.Request)
         _gerr(500, "could not resolve the selection: " * sprint(showerror, e))
     end
 end
+
+# ── GET /api/tracking/detections — per-frame untracked cells (P3) ─────────────
+# For the "untracked lane" on the timeline (docs/todo/TRACK_SCHEME_PLAN.md → Decision 6, P3): every
+# frame's cells that carry no track_id, with their labels and centroids so the lane can be drawn
+# and a detection can be dragged onto a track bar. This is the FIRST UI for `points.add` — the op
+# has no other authoring surface, so without a lane that shows the never-linked detections the op
+# is invisible.
+#
+# Same `pops` scoping as `/api/tracking/issues`: an op naming a cell outside the picked population
+# would corrupt one that is inside it, so a POOLED group answers `tracked=false` + `pooled=true`
+# and empty frames rather than a wrong list. Cells come from `track_group_frame` (scoped path) or
+# `label_props` (whole segmentation), the same two-branch as the issues route.
+#
+# Response: `{ valueName, tracked, frames: [{ t, count, labels, x, y, [z] }] }`. Frames with no
+# untracked cells are omitted (a scheme draws NO rect for zero, not one of zero height). Labels are
+# integers — the vocabulary `points.add` takes; coordinates are µm via the shared
+# `scale_centroids!`, so the lane and the picker agree with the paths route.
+#
+# Read-only. Adding a detection to a track is `tracking.correct` with a `points.add` op — this
+# route does not mutate.
+function api_track_detections(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", ""))
+    props = img_label_props_path(img, vn)
+    isfile(props) || return _gerr(400, "no labelProps for valueName '$vn'")
+    pixel_res, _ = img_physical_sizes(img)
+
+    # Same shape as `api_track_issues`: `pops` scopes to a group frame, absent = whole segmentation
+    cells = nothing
+    if !isempty(get(q, "pops", ""))
+        groups, _, gvn, gerr = _track_plot_groups(q)
+        gerr === nothing || return gerr
+        isempty(groups) &&
+            return 200, JSON3.write((; valueName = gvn, tracked = false, frames = []))
+        scoped = first(groups)
+        f = track_group_frame(scoped)
+        f === nothing &&
+            return 200, JSON3.write((; valueName = vn, tracked = false, pooled = true, frames = []))
+        cells = (; df = f.df, spatial = f.spatial,
+                   value_name = isempty(f.value_name) ? vn : f.value_name)
+    else
+        lp = label_props(props)
+        ("track_id" in col_names(lp; data_type = :obs)) ||
+            return 200, JSON3.write((; valueName = vn, tracked = false, frames = []))
+        spatial  = centroid_columns(lp; order = [:x, :y, :z])
+        temporal = temporal_columns(lp)
+        isempty(temporal) &&
+            return 200, JSON3.write((; valueName = vn, tracked = false, frames = []))
+        select_cols(lp, vcat(spatial, temporal, ["track_id"]))
+        d = as_df(lp; include_x = false, include_obs = true)
+        scale_centroids!(d, pixel_res)          # µm, via the ONE shared conversion
+        t_col = first(temporal)
+        t_col == "centroid_t" || (d[!, :centroid_t] = d[!, Symbol(t_col)])
+        cells = (; df = d, spatial = spatial, value_name = vn)
+    end
+    df, spatial, vn = cells.df, cells.spatial, cells.value_name
+
+    try
+        # Same "is this untracked" rule as the engine — `Cecelia._is_untracked`
+        # (`app/src/tracking/track_correction.jl:53`). Reaching in on purpose: it is documented as
+        # the codebase's ONE answer to the question, and reproducing it here would drift.
+        has_x = "centroid_x" in spatial
+        has_y = "centroid_y" in spatial
+        has_z = "centroid_z" in spatial
+        buckets = Dict{Int,Vector{Tuple{Int,Float64,Float64,Float64}}}()
+        # `length(df.label)`, not `nrow` — `api/` does not `using DataFrames`; same as api_track_selection
+        for r in 1:length(df.label)
+            Cecelia._is_untracked(df[r, :track_id]) || continue
+            t = Int(round(Float64(df[r, :centroid_t])))
+            lab = Int(round(Float64(df[r, :label])))
+            x = has_x ? Float64(df[r, :centroid_x]) : 0.0
+            y = has_y ? Float64(df[r, :centroid_y]) : 0.0
+            z = has_z ? Float64(df[r, :centroid_z]) : 0.0
+            push!(get!(buckets, t, Tuple{Int,Float64,Float64,Float64}[]), (lab, x, y, z))
+        end
+        ts = sort!(collect(keys(buckets)))
+        frames = Any[]
+        for t in ts
+            rows = buckets[t]
+            labels = Int[r[1] for r in rows]
+            xs = Float64[r[2] for r in rows]
+            ys = Float64[r[3] for r in rows]
+            entry = if has_z
+                (; t = t, count = length(labels), labels = labels, x = xs, y = ys,
+                   z = Float64[r[4] for r in rows])
+            else
+                (; t = t, count = length(labels), labels = labels, x = xs, y = ys)
+            end
+            push!(frames, entry)
+        end
+        200, JSON3.write((; valueName = vn, tracked = true, frames = frames))
+    catch e
+        _gerr(500, "could not read detections: " * sprint(showerror, e))
+    end
+end

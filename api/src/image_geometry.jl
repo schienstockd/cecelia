@@ -450,13 +450,28 @@ end
 # the top of this file).
 function api_image_geometry(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
+    pu = get(q, "projectUid", "")
+    iu = get(q, "imageUid", "")
     vn = get(q, "valueName", "")
-    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""),
-                                       isempty(vn) ? nothing : vn)
+    zp, _, err = resolve_image_version(pu, iu, isempty(vn) ? nothing : vn)
     err === nothing || return 404, JSON3.write((; error = err))
     try
         g = image_geometry(zp)
-        200, JSON3.write((; g.sizeX, g.sizeY, g.sizeZ, g.sizeT, valueName = vn))
+        # voxelUm needed by the browser viewer's centre-camera helper (buildFocusViewState) —
+        # the tracks route sends centroids in µm and the viewer's camera.center is in L0 pixels,
+        # so a caller building a focus target needs the conversion factor from ONE canonical
+        # source rather than a duplicated `img_physical_sizes` port on the frontend.
+        # Order is [x, y, z] — same as the frontend's `voxelUm` (see utils/volumeViewer.ts) but
+        # img_physical_sizes returns skimage order [z, y, x]; we reverse. Missing axes fall back
+        # to 1.0 (pixel-space) inside `img_physical_sizes`.
+        voxel_um = try
+            img, ierr = _gating_image(pu, iu)
+            ierr === nothing ? reverse(first(img_physical_sizes(img))) : [1.0, 1.0, 1.0]
+        catch
+            [1.0, 1.0, 1.0]
+        end
+        200, JSON3.write((; g.sizeX, g.sizeY, g.sizeZ, g.sizeT, valueName = vn,
+                            voxelUm = voxel_um))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end

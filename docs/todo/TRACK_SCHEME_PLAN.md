@@ -1,6 +1,6 @@
 # Track scheme — a timeline-first correction workspace
 
-**Status:** Phases 1–2 built (+ P2b, the rail audit); the worklist is deleted · branch `feat/track-scheme`. **P6 (keybindings) opens 2026-09-06** on `review/vizsla-track-editing`, inspired by `napari-vizsla` (see References); P5 retargeted from napari to the browser viewer at the same time.
+**Status:** Phases 1–2 built (+ P2b, the rail audit); the worklist is deleted · branch `feat/track-scheme`. **P6 (keybindings) shipped 2026-09-06** on `review/vizsla-track-editing` (PR #830). **P3 (untracked lane + `points.add`) shipped 2026-09-06** on the same branch — click-based Add, not drag; multi-cell frames attach the first label only for now (engine safety). **P5 unblocked**, same day: earlier note claimed the viewer had no label-picking; wrong — `pickCellAt` in `ViewerWindow.vue` reads segmentation labels from `/api/viewer/pick-cell`, and the two-click Read gesture already works via `/api/tracking/selection`. P5 is now the auto-subscription pass.
 
 Successor to the correction UI that shipped in #590. The **engine** from that PR stands
 (`app/src/tracking/track_correction.jl`, `tracking.correct`, the detector, the journal, the QC); this
@@ -173,19 +173,48 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
     and any page hosting the panel would inherit the same bug. It is now keyed by what the ops edit —
     (project, image, segmentation) — on the same principle as `stores/taskDrafts.ts`. Two panels on one
     tracked label set therefore share ONE queue, which is what the engine already assumed.
-- **P3 — the untracked lane + `points.add`.** The new route, the lane, and drag-onto-a-bar. First UI
-  for the op that has never had one.
+- **P3 — the untracked lane + `points.add`.** ✅ Built 2026-09-06. `GET /api/tracking/detections`
+  returns per-frame untracked cells (labels + µm centroids), scoped by `pops` on the same
+  `track_group_frame` branch as `/api/tracking/issues`. The strip renders pinned above the
+  scrolling lane list — one rect per frame, opacity by count, orange to distinguish from tracked
+  bars — sized on the same `frameToX` a track run uses, so an untracked burst lines up with a
+  track's hole exactly. Toggled from the toolbar (**Untracked**, default on because `points.add`
+  has no other UI).
+  - **Authoring is CLICK, not drag.** The plan text originally said drag-onto-a-bar; the shipped
+    surface is click-a-frame → **Add** (or `a`) attaches to the selected track (or creates a new
+    one when nothing is selected). Reasons: (a) fits the existing action-row + keybinding pattern
+    the panel already leans on (matches napari-vizsla's click-plus-letter mental model, which we
+    already borrowed for P6); (b) no drag machinery to browser-verify; (c) works with the keyboard
+    out of the box.
+  - **Multi-cell frames attach the FIRST label only.** Engine constraint: the target track cannot
+    hold two cells at one timepoint, so bulk-attaching several untracked cells at one frame is
+    unsound — the composite `_add_points!` allows it, but the result gives that track two cells at
+    time T which makes `dt` in `track_measures` zero and its speeds infinite (called out in the
+    engine's own docstring). The tooltip is honest: "first of N at this frame". A multi-cell
+    picker is a follow-up.
+  - **Reservation, untested in a browser.** The strip renders and the tests pin the geometry
+    (buildDetectionsLane, detectionRects, detectionHit), but a live check on `zolIMa/fXgbTl`
+    (where the reference numbers were measured) is Dominik's — the picture-alignment claim above
+    is a shader-adjacent detail I can only assert, not verify.
 - **P4 — morphology-aware candidates.** Add appearance/size continuity to the gap score, borrowing
   coastal's cost terms. Changes the ranking; measure the effect on the reference image before and
   after (the detector already reports counts per kind, so this is checkable).
 - **P5 — viewer round-trip for the hard cases.** Click a cell in the browser viewer → its lane is
-  selected on the timeline. **Blocked on a prerequisite the viewer does not have yet**: a
-  segmentation-label pick at `(t, y, x)` — confirmed with Dominik 2026-09-06, and `grep pickLabel|
-  labelAt|hover.*label|getLabelAt` over `frontend/src/lib/webgpu` and `frontend/src/components`
-  returns nothing that reads a label id under the cursor. The forward direction already exists —
-  `GET /api/tracking/selection` covers the other direction (draw a
-  region → its tracks). Named "napari" in an earlier draft because napari was the viewer; retargeted
-  to the browser viewer since `project_napari_being_dropped`. **Prior art worth stealing** —
+  selected on the timeline. **Not blocked** (corrected 2026-09-06): a first grep for `pickLabel|
+  labelAt|getLabelAt` returned nothing and this plan quoted that as a blocker, but the function is
+  called `pickCellAt` in `frontend/src/modules/ViewerWindow.vue` and reads the segmentation label
+  itself (not a point cloud): it POSTs `/api/viewer/pick-cell` with `(t, z, x, y, level)` → the
+  server opens `label_store_path` and `read_slab` at that voxel → returns `{ label, nSelected }`
+  and writes the label into the server-side transient pop, broadcast over `gating:popmap`. Label 0
+  is background and leaves the selection alone. `pickRectAt` (rectangle drag) walks the same path
+  over an inclusive `(x1,y1)-(x2,y2)` box, optionally with a `zLo/zHi` slice. `GET
+  /api/tracking/selection` resolves the transient pick to tracks; the timeline already calls it in
+  `readSelection()` behind a **Read** button, so the round trip works today as a two-click
+  gesture. What P5 owes is **auto-subscription** — the timeline listens for the popmap change and
+  re-fetches selection on its own, so a single click in the viewer highlights the lane without
+  touching a button. Named "napari" in an earlier draft because napari was the viewer; retargeted
+  to the browser viewer since `project_napari_being_dropped`.
+  **Prior art worth stealing** —
   `napari-vizsla` (Tamas Nagy, MIT, https://github.com/tlnagy/napari-vizsla): a click on a
   segmented cell draws the whole tracklet as an outlined polygon with the past leg in **white** and
   the future leg in **gray**, and each successor tracklet as an orange stub at the branch point.

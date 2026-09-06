@@ -41,7 +41,9 @@ import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import { useProjectMetaStore } from '../../stores/projectMeta'
+import { useViewerStore } from '../../stores/viewer'
 import { openViewerWindow } from '../../utils/viewerWindow'
+import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
@@ -73,8 +75,9 @@ import {
   issueMarkers, laneSeverity, candidateTracks, selectionOverlaps,
   joinPairs, orderLanesByPair, joinLinks, sharedFrames,
   frameToX, laneY, runRects, hitTest, frameTicks, laneSummary, schemeCsvRows,
+  buildDetectionsLane, detectionRects, detectionHit,
   ORDER_LABEL, DEFAULT_LANE_H, DEFAULT_BAR_H,
-  type LaneOrder, type SchemeGeom,
+  type LaneOrder, type SchemeGeom, type DetectionsLane, type DetectionFrame,
 } from '../../plots/trackScheme'
 
 const props = defineProps<{
@@ -102,6 +105,12 @@ const props = defineProps<{
     // adopt what a canvas persisted mid-edit, then cleared. Do not write it.
     pending?: TrackOp[]; splitAt?: number | null
     thr?: TrackThresholds
+    // P3: show the untracked-detections strip at the top of the panel. On by default because the
+    // op it feeds (`points.add`) has no other UI — hiding it by default would hide the affordance.
+    showUntracked?: boolean
+    // P3: the untracked FRAME the user picked in the strip — the source of a queued `points.add`.
+    // Persisted for the same reason as `sel`: a canvas rebind must not discard an authoring gesture.
+    detSel?: { frame: number; labels: number[] } | null
   }
 }>()
 
@@ -144,11 +153,28 @@ function setSelected(ids: string[]) {
   // the scope travels WITH the ids — the receiving panel cannot reconstruct it
   if (props.setTrackSel) props.setTrackSel({ imageUid: imageUid.value, valueName: valueName.value, ids })
   else props.state.sel = ids
+  // Clearing the LANE selection releases the viewer highlight too. A user's mental model here is
+  // "these lanes ↔ what the viewer is showing" — leaving the highlight alone after Clear made the
+  // viewer keep narrowing to tracks that were no longer selected, and the ribbons never came back.
+  // The footer × still exists for the rare "keep highlight, clear lanes" case (users who want it
+  // will pick a different lane first; Show then replaces the highlight).
+  if (!ids.length && viewerStore.trackHighlight) viewerStore.setTrackHighlight(null)
 }
 
 const paths = ref<TrackPathMap>({})
 const meta = ref<{ tracked: boolean; total: number; shown: number; timeStep?: number | null } | null>(null)
 const issues = ref<TrackIssue[]>([])
+// The untracked-detections strip (P3). Empty lane while loading — the render draws nothing then, so
+// the strip only appears when there is something in it. Kept as its own ref because the wire is a
+// separate route (`/api/tracking/detections`) and a failure there must not blank the tracks below.
+const detFrames = ref<DetectionFrame[]>([])
+const detLane = computed<DetectionsLane>(() => buildDetectionsLane(detFrames.value))
+const showUntracked = computed(() => props.state.showUntracked !== false)
+const untrackedVisible = computed(() => showUntracked.value && detLane.value.frames.length > 0)
+const detSel = computed<{ frame: number; labels: number[] } | null>({
+  get: () => props.state.detSel ?? null,
+  set: v => (props.state.detSel = v),
+})
 const loading = ref(false)
 const error = ref('')
 
@@ -220,6 +246,7 @@ const summary = computed(() => {
   // the whole reason the untracked lane and `points.add` are Phase 3.
   const gappy = allLanes.value.filter(l => l.nGaps > 0).length
   if (gappy) parts.push(`${gappy} with gaps`)
+  if (detLane.value.nDetections) parts.push(`${detLane.value.nDetections} untracked`)
   return parts.join(' · ')
 })
 
@@ -304,6 +331,17 @@ async function load() {
     // the defaults, so the two can never drift apart
     if (r.ok && d.thresholds) serverThresholds.value = d.thresholds as TrackThresholds
   } catch { issues.value = [] }
+  // ── untracked lane (P3) ──
+  // Separate try: a detections failure MUST NOT blank the tracks below it (same discipline as the
+  // issues fetch — a degraded panel is more useful than a hidden one). Same `pops` scoping as
+  // issues, so the strip matches the lanes it sits above.
+  try {
+    const dq = new URLSearchParams(cp)
+    dq.set('imageUid', imageUid.value)
+    const rd = await fetch(`/api/tracking/detections?${dq}`)
+    const dd = await rd.json()
+    detFrames.value = rd.ok ? ((dd.frames ?? []) as DetectionFrame[]) : []
+  } catch { detFrames.value = [] }
   loading.value = false
   await nextTick(); plotBox.redraw()
 }
@@ -332,6 +370,7 @@ const log = useLogStore()
 const project = useProjectStore()
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
+const viewerStore = useViewerStore()
 const serverThresholds = ref<TrackThresholds>({})
 const thr = computed<TrackThresholds>({
   get: () => props.state.thr ?? {}, set: v => (props.state.thr = v),
@@ -357,6 +396,14 @@ const knobDrafts = Object.fromEntries(
 // /api/tracking/selection` resolves those to TRACKS, the vocabulary the ops speak.
 const viewerSel = ref<TrackSelection | null>(null)
 const viewerSummary = computed(() => selectionSummary(viewerSel.value))
+// What the viewer is currently narrowing to (independent of LANE selection). Scoped to this
+// panel's (imageUid, valueName) so a highlight authored elsewhere doesn't advertise here.
+const viewerHighlightSummary = computed(() => {
+  const hl = viewerStore.trackHighlight
+  if (!hl || !hl.trackIds.length) return ''
+  if (hl.imageUid !== imageUid.value || hl.valueName !== valueName.value) return ''
+  return `Viewer: ${hl.trackIds.length} highlighted`
+})
 
 async function enterSelectMode() {
   // Same reason as `showInViewer`: a region drawn on the image ON SCREEN would resolve against this
@@ -470,6 +517,7 @@ function queue(op: TrackOp | null) {
   lastQueued.value = opDescription(op)
   setSelected([])
   splitAt.value = null
+  detSel.value = null   // a queued points.add "uses up" the picked untracked cell — clear the strip
 }
 
 /** Queue the detector's own op for every selected track that has one — the one-click path. */
@@ -501,10 +549,41 @@ function apply() {
 function dispatchAction(a: TrackSchemeAction) {
   const act = actions.value.find(x => x.key === a)
   if (act && act.op) queue(act.op)
+  else if (a === 'add' && addAction.value.op) queue(addAction.value.op)
   else if (a === 'undo' && pending.value.length) pending.value = undoLast(pending.value)
   else if (a === 'apply' && pending.value.length) apply()
-  else if (a === 'clearSel' && selected.value.size) setSelected([])
+  else if (a === 'clearSel' && selected.value.size) { setSelected([]); detSel.value = null }
 }
+
+// ── the Add action (P3, points.add) ────────────────────────────────────────────
+//
+// Not part of `manualActions` in `lib/trackCorrection.ts` because it is driven by a DIFFERENT
+// selection (an untracked frame, not two track lanes). Its own tiny state machine, mirrored on the
+// Join/Split/Remove ones so the button behaves identically: `blocked` names why, `op` is the
+// submittable op, `label` is the button text.
+//
+// Multi-cell frames: attaches ONLY the first label. The engine `_add_points!` refuses more than
+// one cell at the target's existing time, but two untracked cells at the SAME frame going into a
+// track that has a HOLE there would succeed — and give the target two cells at one timepoint,
+// which makes `dt` in track_measures zero and its speeds infinite. So the safe rule is one-per-op,
+// and the multi-cell picker is a follow-up (called out in the tooltip so the choice is honest).
+const addAction = computed(() => {
+  const d = detSel.value
+  if (!d) return { blocked: 'Pick a frame in the Untracked strip first',
+                   op: null as TrackOp | null, label: 'Add' }
+  if (selected.value.size > 1)
+    return { blocked: 'Select at most one track to attach to (or none to create a new track)',
+             op: null as TrackOp | null, label: 'Add' }
+  if (!d.labels.length) return { blocked: 'This frame has no untracked cell',
+                                 op: null as TrackOp | null, label: 'Add' }
+  const trackId = selected.value.size === 1 ? Number([...selected.value][0]) : undefined
+  const op: TrackOp = trackId !== undefined && Number.isFinite(trackId)
+    ? { op: 'points.add', labels: [d.labels[0]], trackId }
+    : { op: 'points.add', labels: [d.labels[0]] }
+  const suffix = d.labels.length > 1 ? ` (first of ${d.labels.length} at this frame)` : ''
+  return { blocked: '', op,
+           label: trackId !== undefined ? `Add${suffix}` : `Add as new track${suffix}` }
+})
 function onKey(e: KeyboardEvent) {
   const a = keyToAction(e)
   if (!a) return
@@ -539,6 +618,11 @@ const GUTTER = 52          // track-id labels
 // which made the timeline unreadable. A time axis belongs at the bottom anyway.
 const AXIS_H = 18
 const PAD_R = 10
+// The untracked strip (P3) is pinned above the scrolling lanes. Same pitch as a lane so the
+// picture reads as "one extra row that doesn't scroll", but its own bar height so the rects can
+// carry an intensity (untracked count normalised) without confusing the eye with the tracked ones.
+const UNTRACKED_STRIP_H = DEFAULT_LANE_H
+const UNTRACKED_BAR_H = DEFAULT_BAR_H
 
 /** The geometry the render and the hit-test SHARE — one object, so a click cannot disagree with a bar. */
 let geom: SchemeGeom | null = null
@@ -554,23 +638,65 @@ function render() {
 
   const w = Math.max(240, el.clientWidth || 360)
   const h = Math.max(80, el.clientHeight || 200)
+  const stripH = untrackedVisible.value ? UNTRACKED_STRIP_H : 0
   // GUARDED: `render` runs inside the ResizeObserver's delivery, and an unconditional reactive write
   // here re-enters the whole chain (perPage → win → the watcher → redraw → render) on every single
   // delivery. The browser reports that as "ResizeObserver loop completed with undelivered
   // notifications" — the same warning `usePlotResize` was written for, arriving by a second route
   // that its size guard cannot see, because the state being changed is not the size.
-  const fit = Math.max(1, Math.floor((h - AXIS_H - 4) / DEFAULT_LANE_H))
+  const fit = Math.max(1, Math.floor((h - AXIS_H - 4 - stripH) / DEFAULT_LANE_H))
   if (fit !== perPage.value) perPage.value = fit
   const laneBottom = h - AXIS_H
 
   const lanes = win.value.lanes
-  const dom = frameDomain(allLanes.value)
-  if (!dom || !lanes.length) { el.innerHTML = ''; geom = null; return }
+  const dom = untrackedVisible.value
+    ? (frameDomain(allLanes.value) ?? [detLane.value.t0, detLane.value.t1])
+    : frameDomain(allLanes.value)
+  if (!dom || (!lanes.length && !untrackedVisible.value)) {
+    el.innerHTML = ''; geom = null; return
+  }
 
-  geom = { x0: GUTTER, x1: w - PAD_R, y0: 2, laneH: DEFAULT_LANE_H, barH: DEFAULT_BAR_H,
+  // Track lanes start below the untracked strip. The strip itself is drawn at `y = 2` with height
+  // UNTRACKED_STRIP_H; lanes start at `y = 2 + stripH` so a hit-test against `geom` never returns
+  // an "untracked" lane (Decision 6: the untracked lane is not a `Lane`).
+  const stripY = 2
+  geom = { x0: GUTTER, x1: w - PAD_R, y0: 2 + stripH, laneH: DEFAULT_LANE_H, barH: DEFAULT_BAR_H,
            t0: dom[0], t1: dom[1] }
   const g = geom
   const parts: string[] = []
+
+  // ── the untracked-detections strip, pinned above the lanes (P3) ──
+  //
+  // One rect per frame with any untracked cell, sized to that frame and shaded by count. Same
+  // frameToX as the track bars, so a busy untracked frame lines up EXACTLY with the tracks' hole
+  // that might absorb it — that visual alignment IS the affordance for `points.add`.
+  //
+  // Colour: `--cc-sev-warn` orange to say "this is unlinked", never blue (that reads as a tracked
+  // bar). Opacity carries the count so a lone stray reads as light and a burst reads as saturated.
+  if (untrackedVisible.value) {
+    parts.push(`<text x="${GUTTER - 6}" y="${stripY + UNTRACKED_BAR_H - 1}" text-anchor="end" ` +
+               `font-size="10" fill="${muted}"><title>Cells with no track_id, per frame — ` +
+               `drag onto a track bar to add (Phase 3)</title>Untracked</text>`)
+    // baseline, so an empty span reads as "no untracked cells" rather than as nothing
+    parts.push(`<line x1="${g.x0}" y1="${stripY + UNTRACKED_BAR_H / 2}" x2="${g.x1}" ` +
+               `y2="${stripY + UNTRACKED_BAR_H / 2}" stroke="${grid}" stroke-width="1" ` +
+               `stroke-dasharray="2,2"/>`)
+    const pickedFrame = detSel.value?.frame ?? null
+    for (const r of detectionRects(detLane.value, g, stripY, UNTRACKED_BAR_H)) {
+      // opacity floor of 0.35 so a single detection is still visible; ceiling implicit at 1
+      const op = 0.35 + 0.6 * r.intensity
+      const s = r.count === 1 ? `1 untracked at frame ${r.frame} — pick a track and Add`
+                              : `${r.count} untracked at frame ${r.frame} — Add attaches the first`
+      const picked = pickedFrame === r.frame
+      parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="1.5" ` +
+                 `fill="#e8a33d" fill-opacity="${op.toFixed(2)}"` +
+                 (picked ? ` stroke="${fg}" stroke-width="1.4"` : '') +
+                 `><title>${esc(s)}</title></rect>`)
+    }
+    // a thin separator between the strip and the scrolling lanes, so the pinning is visible
+    parts.push(`<line x1="0" y1="${stripY + UNTRACKED_STRIP_H - 1}" x2="${w}" ` +
+               `y2="${stripY + UNTRACKED_STRIP_H - 1}" stroke="${grid}" stroke-width="0.5"/>`)
+  }
 
   // ── frame ruler, along the bottom ──
   for (const t of frameTicks(g.t0, g.t1, Math.max(2, Math.round((g.x1 - g.x0) / 90)))) {
@@ -684,8 +810,16 @@ const esc = svgEsc
 // loops and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { if (host.value) host.value.innerHTML = '' })
-watch([win, markers, links, overlaps, selected, splitAt, pendingTracks],
+watch([win, markers, links, overlaps, selected, splitAt, pendingTracks, detLane, untrackedVisible, detSel],
       () => nextTick(() => plotBox.redraw()))
+// If a reload lost the frame the user had picked (a `points.add` was applied and that frame's
+// only untracked cell became tracked, or a `pops` change shrank the scope), clear the selection.
+// A ghost `detSel` naming a frame that no longer has an untracked cell would enable the Add
+// button against nothing, and the queued op would fail server-side.
+watch(detLane, l => {
+  if (!detSel.value) return
+  if (!l.frames.some(f => f.t === detSel.value!.frame)) detSel.value = null
+})
 
 // ── interaction ───────────────────────────────────────────────────────────────
 /**
@@ -699,7 +833,21 @@ watch([win, markers, links, overlaps, selected, splitAt, pendingTracks],
 function onClick(ev: MouseEvent) {
   if (!geom || !host.value) return
   const box = host.value.getBoundingClientRect()
-  const hit = hitTest(win.value.lanes, geom, ev.clientX - box.left, ev.clientY - box.top)
+  const px = ev.clientX - box.left, py = ev.clientY - box.top
+  // The untracked strip sits above `geom.y0`; test it first so a click there never falls through to
+  // the lane hit-tester (which would return `null` for that Y band and quietly do nothing).
+  if (untrackedVisible.value) {
+    const dh = detectionHit(detLane.value, geom, 2, UNTRACKED_BAR_H, px, py)
+    if (dh) {
+      // Toggle: click the same frame to clear the selection. Multi-select is deliberately NOT
+      // offered — one `points.add` op names one target track, so picking two source frames is
+      // ambiguous. A user who wants both queues one Add, then picks the second.
+      detSel.value = (detSel.value?.frame === dh.frame) ? null
+                                                        : { frame: dh.frame, labels: [...dh.labels] }
+      return
+    }
+  }
+  const hit = hitTest(win.value.lanes, geom, px, py)
   if (!hit) return
   const next = new Set(ev.shiftKey ? selected.value : [])
   if (selected.value.has(hit.track) && (!ev.shiftKey || selected.value.size === 1)) next.delete(hit.track)
@@ -733,18 +881,26 @@ async function ensureViewerImage(): Promise<boolean> {
 }
 
 /**
- * Point the viewer at the selected track's segmentation. The viewer-only path "show these track ids
- * as their own layer + centre the camera on the last detection" (`showTracksInViewer` +
- * `centreViewerOnTrack` via `/api/viewer/*`) went with P9; the browser viewer has no equivalent
- * "explicit track-id highlight" primitive today, so this narrows to what the popup already does:
- * make sure the right image is open on the right segmentation, and turn the segmentation's tracks
- * on via the shared bag. The user pans/zooms to the track themselves.
+ * Show the selected tracks in the viewer, and fly the camera to the first one.
+ *
+ * Restores the pre-napari-retire behaviour that regressed in P9 slice 4 (commit 842d8d36 dropped
+ * `showTracksInNapari` + `centreNapariOnTrack` without a browser-viewer equivalent). The two
+ * primitives that make this work here:
+ *   1. **Highlight** — `viewerStore.setTrackHighlight({imageUid, valueName, trackIds})` narrows
+ *      the viewer's per-vn track source to just these ids via `filterPayloadByTracks`.
+ *   2. **Focus**    — `buildFocusViewState(current, {t, cx, cy, cz})` + `setPendingViewState`
+ *      flies the camera to the first selected track's first detection.
+ *
+ * Uses ONE fetch (paths?ids=<first>) + ONE fetch (geometry, for voxelUm µm→L0 pixel). No
+ * timelines-side conversion of stepScale (it's a normalisation factor, not a voxel size).
  */
 async function showInViewer() {
-  if (!selected.value.size) return
+  const ids = [...selected.value]
+  if (!ids.length) return
   if (!(await ensureViewerImage())) return
-  // Turn this segmentation's ribbons on in the popup viewer. Same shape a `toggleTrack` in the
-  // panel would produce — the popup subscribes via the P2 storage bridge.
+
+  // Turn this segmentation's ribbons on first — the highlight NARROWS the source, but the source
+  // has to exist. Same shape a `toggleTrack` in the panel would produce.
   const uid = project.openImageUid
   if (uid) {
     const cur = settings.getTrackVisibility(uid, [valueName.value])
@@ -755,16 +911,99 @@ async function showInViewer() {
       localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
     }
   }
-  log.info('Ribbons for this segmentation are on — pan to the track in the viewer.',
+
+  // Publish the highlight so the viewer's per-vn source drops to just these ids.
+  viewerStore.setTrackHighlight({
+    imageUid: imageUid.value, valueName: valueName.value,
+    trackIds: ids.map(Number).filter(Number.isFinite),
+  })
+
+  // Camera focus: fetch ALL selected tracks' paths (occupancy=0 by default → carries x/y/z) plus
+  // the image's voxelUm, then fit a bbox across every point so a multi-track highlight lands the
+  // whole group in view. `t` goes to the MIDDLE of the union window — a point where every track
+  // in play tends to be alive rather than at the start (some may not have started yet) or the end
+  // (some may have ended). Silent failure here is fine: the highlight already narrowed the
+  // ribbons, and a missing focus just means the user pans themselves.
+  try {
+    const cp = new URLSearchParams({ projectUid: props.projectUid, imageUid: imageUid.value,
+                                     ids: ids.join(',') })
+    if (valueName.value) cp.set('valueName', valueName.value)
+    const [rPaths, rGeom] = await Promise.all([
+      fetch(`/api/tracking/paths?${cp}`),
+      fetch(`/api/images/geometry?projectUid=${encodeURIComponent(props.projectUid)}` +
+            `&imageUid=${encodeURIComponent(imageUid.value)}` +
+            (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')),
+    ])
+    if (!rPaths.ok || !rGeom.ok) return
+    const dPaths = await rPaths.json() as {
+      groups?: { imageUids?: string[]; paths?: Record<string, { t: number[]; x: number[]; y: number[]; z?: number[] }> }[]
+    }
+    const dGeom = await rGeom.json() as { voxelUm?: number[] }
+    const grp = (dPaths.groups ?? []).find(g => (g.imageUids ?? []).includes(imageUid.value))
+             ?? dPaths.groups?.[0]
+    const vu = dGeom.voxelUm
+    if (!grp?.paths || !vu || vu.length < 2) return
+    // Merge every requested track's points into ONE bbox. A track the server didn't send (id
+    // absent from the response) is silently dropped from the bbox — a missing id shouldn't fail
+    // the focus for the ones present.
+    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity
+    let zmin = Infinity, zmax = -Infinity, tmin = Infinity, tmax = -Infinity
+    let anyZ = false
+    for (const id of ids) {
+      const p = grp.paths[String(id)]
+      if (!p?.t?.length) continue
+      for (let i = 0; i < p.t.length; i++) {
+        const x = p.x[i], y = p.y[i], tt = p.t[i]
+        if (x < xmin) xmin = x; if (x > xmax) xmax = x
+        if (y < ymin) ymin = y; if (y > ymax) ymax = y
+        if (tt < tmin) tmin = tt; if (tt > tmax) tmax = tt
+        if (p.z) {
+          anyZ = true
+          const z = p.z[i]
+          if (z < zmin) zmin = z; if (z > zmax) zmax = z
+        }
+      }
+    }
+    if (!Number.isFinite(xmin)) return   // no points at all
+    const cxUm = (xmin + xmax) / 2, cyUm = (ymin + ymax) / 2
+    const cx = cxUm / (vu[0] || 1)
+    const cy = cyUm / (vu[1] || 1)
+    const cz = anyZ ? ((zmin + zmax) / 2) / (vu[2] || 1) : undefined
+    // Middle of the union window — where the most tracks tend to overlap. Round, since t is an
+    // integer frame index everywhere else in the viewer.
+    const t = Math.round((tmin + tmax) / 2)
+    // Half-widths in L0 pixels for the fit. A single-point degenerate track (halfWpx === 0) would
+    // divide by zero in buildFocusViewState; floor at 1 pixel so the fit stays finite (the padded
+    // fit then gives a reasonable ~50-pixel window around a stationary cell).
+    const halfWpx = Math.max(1, (xmax - xmin) / 2 / (vu[0] || 1))
+    const halfHpx = Math.max(1, (ymax - ymin) / 2 / (vu[1] || 1))
+    const focus = buildFocusViewState(viewerStore.viewState,
+                                       { t, cx, cy, cz, halfWpx, halfHpx })
+    if (focus) viewerStore.setPendingViewState(focus)
+  } catch { /* focus is best-effort; the highlight is the primary Show effect */ }
+
+  log.info(`Highlighting ${ids.length} track${ids.length === 1 ? '' : 's'} — camera moved to the first.`,
            { source: 'tracks' })
 }
+
 
 /** Hover readout — which track, which frame, and whether the cell is even there. */
 const hover = ref('')
 function onMove(ev: MouseEvent) {
   if (!geom || !host.value) { hover.value = ''; return }
   const box = host.value.getBoundingClientRect()
-  const hit = hitTest(win.value.lanes, geom, ev.clientX - box.left, ev.clientY - box.top)
+  const px = ev.clientX - box.left, py = ev.clientY - box.top
+  // Try the untracked strip first — it is drawn above the track lanes and its Y band is disjoint
+  // from `geom.y0`, so a hit there is unambiguous.
+  if (untrackedVisible.value) {
+    const dh = detectionHit(detLane.value, geom, 2, UNTRACKED_BAR_H, px, py)
+    if (dh) {
+      const n = dh.labels.length
+      hover.value = `Untracked · frame ${dh.frame} · ${n} cell${n === 1 ? '' : 's'}`
+      return
+    }
+  }
+  const hit = hitTest(win.value.lanes, geom, px, py)
   hover.value = hit
     ? `Track ${hit.track} · frame ${hit.frame}${hit.occupied ? '' : ' · no detection'}`
     : ''
@@ -839,6 +1078,13 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
         <button class="cc-btn cc-btn-bare cc-btn-dense" :class="{ 'cc-btn-on': gapsOnly }"
                 v-tooltip.top="'Tracks missing a detection in some frame'"
                 @click="state.gapsOnly = !gapsOnly">Gaps</button>
+        <!-- P3: the untracked-detections strip. On by default because its op (`points.add`) has
+             no other authoring surface; hiding it is a display-only choice, so the button is
+             `cc-btn-bare` and does not refetch. -->
+        <button class="cc-btn cc-btn-bare cc-btn-dense" :class="{ 'cc-btn-on': showUntracked }"
+                v-tooltip.top="'Show untracked detections along the top — the source for Add'"
+                :disabled="!detLane.frames.length"
+                @click="state.showUntracked = !showUntracked">Untracked</button>
         <PopFamilySelect :options="familyOptions" v-model="popType" />
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload the tracks'"
                 :disabled="loading" @click="load">
@@ -896,6 +1142,14 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
                 v-tooltip.top="fixable.length ? 'Queue the suggested fix for the selected tracks'
                                              : 'Select a flagged track to use its suggested fix'"
                 @click="fixSelected">Fix{{ fixable.length ? ` ${fixable.length}` : '' }}</button>
+        <!-- P3: Add — attach the picked untracked cell to the selected track, or start a new
+             track when none is selected. Hidden entirely unless the untracked strip has been
+             clicked, so the action row stays tidy when the affordance isn't in play. -->
+        <button v-if="detSel" class="cc-btn cc-btn-dense"
+                :class="addAction.blocked ? 'cc-btn-bare' : 'cc-btn-primary'"
+                :disabled="!!addAction.blocked"
+                v-tooltip.top="`${addAction.blocked || opDescription(addAction.op!)} (${KEY_HINT.add})`"
+                @click="queue(addAction.op)">{{ addAction.label }}</button>
       </div>
 
       <div class="cc-btn-group">
@@ -932,6 +1186,9 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
     <div class="tsv-foot cc-row">
       <span class="cc-muted cc-fs-2xs">{{ hover || lastQueued || selSummary }}</span>
       <span v-if="viewerSummary" class="cc-muted cc-fs-2xs">{{ viewerSummary }}</span>
+      <!-- When the viewer highlight is active, show it here — the release path is the Clear
+           Selection X in the action row above (which also clears the highlight). -->
+      <span v-if="viewerHighlightSummary" class="cc-muted cc-fs-2xs">{{ viewerHighlightSummary }}</span>
       <span class="tsv-spacer" />
       <span v-if="note" class="cc-muted cc-fs-2xs">{{ note }}</span>
       <button v-if="note" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense" :disabled="atStart"
