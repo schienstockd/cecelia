@@ -223,8 +223,8 @@ describe('hasAfCombination', () => {
 })
 
 describe('compositeWarning', () => {
-  // afDriftCorrect is the case that forced this: it previews AF and skips drift correction, which
-  // expands the canvas and shifts every frame — so the geometry on screen is not the run's.
+  // A composite previews its first previewable step and skips the rest — the message names the
+  // skipped ones so the user knows the picture is only part of the run.
   it('names the step the run does and the preview does not', () => {
     const w = compositeWarning([{ fun: 'cleanupImages.driftCorrect', label: 'Drift correction' }])
     expect(w.short).toBe('Drift correction not previewed')

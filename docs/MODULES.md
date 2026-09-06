@@ -1227,14 +1227,14 @@ A composite task chains two or more existing tasks in sequence, reusing their Py
 
 ```json
 {
-  "task":            "afDriftCorrect",
-  "fun_name":        "cleanupImages.afDriftCorrect",
-  "label":           "AF & drift correction",
-  "category":        "Cleanup",
-  "env":             ["local"],
-  "resource_pool":   "default",
-  "composite":       ["cleanupImages.afCorrect", "cleanupImages.driftCorrect"],
-  "outputValueName": "driftCorrected"
+  "task":          "hmm",
+  "fun_name":      "behaviour.hmm",
+  "label":         "HMM (states + transitions)",
+  "category":      "Behaviour",
+  "env":           ["local"],
+  "resource_pool": "cpu",
+  "scope":         "set",
+  "composite":     ["behaviour.hmm_states", "behaviour.hmm_transitions"]
 }
 ```
 

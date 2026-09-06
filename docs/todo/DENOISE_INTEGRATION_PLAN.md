@@ -19,7 +19,7 @@ via a **generalised Model Training page**. Verbatim third-party method — Domin
 
 ### D1 — Standalone cleanup task, NOT a replacement for median-of-3 smooth
 `cleanupImages.denoise` is a sibling to `cleanupImages.smooth` / `driftCorrect` / `stackAlign` /
-`afDriftCorrect`. Writes `ccidDenoised.ome.zarr`. The archive prompt's second framing (denoiser as
+`flowRegister`. Writes `ccidDenoised.ome.zarr`. The archive prompt's second framing (denoiser as
 fusion step replacing median-of-3) is **out of scope for this plan** — Dominik was clear the intent
 mirrors the old cellpose-denoise slot.
 

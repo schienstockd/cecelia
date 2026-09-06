@@ -718,10 +718,7 @@ end
         @test !isempty(taught)
 
         # fun_name => why teaching the bare task is right even though a composite wraps it
-        bare_by_design = Dict(
-            "cleanupImages.driftCorrect" =>
-                "its composite adds AF correction — a separate scientific step, not drift's missing half",
-        )
+        bare_by_design = Dict{String,String}()
 
         # every composite's constituent steps, from the registry
         wrapped_by = Dict{String,Vector{String}}()
@@ -6667,7 +6664,7 @@ end
 
 # ── Fault isolation is per-predecessor, not global (DAG fan-out) ─────────────
 # A failed branch must not skip a SIBLING branch that shares only an upstream ancestor
-# (e.g. afDriftCorrect → two independent segmentations). Regression guard for the
+# (e.g. driftCorrect → two independent segmentations). Regression guard for the
 # over-broad "any node failed → skip" check that skipped independent branches.
 @testset "Chain fault isolation — independent fan-out" begin
     proj = create_project!(name="chain-fanout-$(rand(1000:9999))")
@@ -7521,9 +7518,6 @@ end
     @test _task_from_fun_name("cleanupImages.smooth")          isa Smooth
     @test _task_from_fun_name("segment.cellpose")              isa CellposeSegment
     @test _task_from_fun_name("segment.measureLabels")         isa MeasureLabels
-    composite = _task_from_fun_name("cleanupImages.afDriftCorrect")
-    @test composite isa CompositeTask
-    @test composite.fun_name == "cleanupImages.afDriftCorrect"
     cp_measure = _task_from_fun_name("segment.cellposeMeasure")
     @test cp_measure isa CompositeTask
     @test cp_measure.fun_name == "segment.cellposeMeasure"
@@ -7593,13 +7587,13 @@ end
 
 # ── CompositeTask — spec loads and composite array is correct ─────────────
 @testset "CompositeTask spec" begin
-    task = CompositeTask("cleanupImages.afDriftCorrect")
+    task = CompositeTask("segment.cellposeMeasure")
     spec = Cecelia._task_spec(task)
     @test !isnothing(spec)
     @test haskey(spec, "composite")
     steps = [string(s) for s in spec["composite"]]
-    @test steps == ["cleanupImages.afCorrect", "cleanupImages.driftCorrect"]
-    @test get(spec, "fun_name", "") == "cleanupImages.afDriftCorrect"
+    @test steps == ["segment.cellpose", "segment.measureLabels"]
+    @test get(spec, "fun_name", "") == "segment.cellposeMeasure"
 end
 
 @testset "a composite does not validate the params it derives itself" begin
@@ -14131,11 +14125,6 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         for t in (Cecelia.MeasureLabels(), Cecelia.CellposeSegment(), Cecelia.ImportOmezarr())
             @test isnothing(Cecelia.task_output_effect(t))
         end
-        # Composite: fold across steps, "strongest" wins. afDriftCorrect = AF + drift, both
-        # new-version, so the composite is new-version.
-        af_drift = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
-        @test af_drift isa Cecelia.CompositeTask
-        @test Cecelia.task_output_effect(af_drift) == "new-version"
         # every registered task answers without throwing — same reason as previewable above; the
         # definitions route stamps this onto every spec.
         for (fun, task) in Cecelia._fun_name_map()
@@ -14205,7 +14194,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test lo[1] == (kind = "labels", value_name = "X", files = ["X.zarr.partial"])
 
         # a composite of non-streaming steps still declares nothing
-        @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("cleanupImages.afDriftCorrect"), params))
+        @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("tracking.correct_measures"), params))
         # unknown composite / no spec → empty, never a throw
         @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("not.a.composite"), params))
     end
@@ -14351,15 +14340,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # `preview_params` delegates to the FIRST previewable step, so a composite previews one step
         # and the others silently do not happen. Correct — the alternative is previewing nothing — but
         # it has to be said, because a skipped step can change what the previewed one means:
-        # afDriftCorrect previews AF and skips drift correction, which expands the canvas and shifts
-        # every frame, so the geometry on screen is not the geometry the run produces.
-        af_drift = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
-        skipped = Cecelia.preview_steps_not_previewed(af_drift)
-        @test length(skipped) == 1
-        @test skipped[1]["fun"] == "cleanupImages.driftCorrect"
-        @test skipped[1]["label"] == "Drift correction"      # the spec's own label, not a fun_name
-
-        # the segmentation composite likewise: measurement is not previewed
+        # cellposeMeasure previews cellpose and skips measureLabels, so the geometry on screen is
+        # not the geometry the run produces.
         seg = Cecelia._task_from_fun_name("segment.cellposeMeasure")
         @test [x["fun"] for x in Cecelia.preview_steps_not_previewed(seg)] == ["segment.measureLabels"]
 
@@ -14403,10 +14385,6 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # idempotent: already-translated indices survive a second pass (a chain or REPL caller)
             again = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), out, img)
             @test again["afCombinations"]["2"]["competingChannels"] == [3]
-
-            # and the composite delegates to AF, since that is the step it can preview
-            comp = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
-            @test Cecelia.preview_params_for_run(comp, params, img)["afCombinations"]["2"]["competingChannels"] == [3]
 
             # A target named inside its OWN competitor list is dropped, not squared into the denominator
             # a second time — that would quietly halve the channel's own output. Two separate widgets,

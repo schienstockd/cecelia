@@ -100,5 +100,7 @@ whole-timepoint drift is corrected across time).
   the stack-align form has no picture. Would fit `PARAM_FIGURES.stackAlignRef`
   showing what `middle` vs `sharpest` does on a synthetic stack. Deferred.
 - **CompositeTask "align → drift" not built.** The natural pipeline is
-  `stackAlign → driftCorrect`, similar to the existing `afDriftCorrect`
-  composite. Deferred — one thing at a time.
+  `stackAlign → driftCorrect`; the composite pattern is available
+  (see `docs/MODULES.md`). Deferred — one thing at a time. Note:
+  the historical `afDriftCorrect` composite has been retired; chain
+  templates are the authoring surface for correction sequences now.

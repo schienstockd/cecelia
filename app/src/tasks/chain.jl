@@ -591,7 +591,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
     incremental_ids = Set(n.id for n in ordered_nodes if n.scope == "incremental")
 
     # Direct predecessors per node — for predecessor-based fault isolation. In a fan-out
-    # (afDriftCorrect → two independent segmentations) a failed sibling must NOT skip the other
+    # (driftCorrect → two independent segmentations) a failed sibling must NOT skip the other
     # branch, so we gate on a node's OWN predecessors, not on "did any node anywhere fail".
     preds = Dict{String,Vector{String}}(n.id => String[] for n in ordered_nodes)
     for e in run.template_snapshot.edges

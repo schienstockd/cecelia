@@ -577,7 +577,7 @@ A processing task consumes an input image version (a `valueName`) and produces a
 `cleanupImages.smooth` reads `default` and writes `smoothed`. Because the output only
 exists on disk **after** the chain runs, a downstream node's `valueNameSelection` widget can't
 offer it from the image (the image still only has `default` at authoring time). Two pieces close
-this gap so a chain like `import → smooth → afDriftCorrect` can be wired before any image
+this gap so a chain like `import → smooth → driftCorrect` can be wired before any image
 is processed:
 
 1. **Declared output (introspectable).** Every producer declares its output value_name in the JSON
@@ -829,7 +829,7 @@ broadcasts each to every connected client, `chain:`-prefixed with camelCase keys
 
 **Fault isolation is per-predecessor, not global.** A node is skipped only when one of its *own*
 direct predecessors failed/was cancelled/was skipped — not when *any* node in the chain failed.
-This keeps independent branches of a fan-out independent: with `afDriftCorrect → {segA, segB}`, a
+This keeps independent branches of a fan-out independent: with `driftCorrect → {segA, segB}`, a
 failure in `segA` does not skip `segB` (they share only the upstream ancestor). `:skipped` is in
 the trigger set so a failure propagates transitively down a branch (pred failed → node skipped →
 its successor sees a skipped pred → also skipped). Topo order guarantees every predecessor's status
