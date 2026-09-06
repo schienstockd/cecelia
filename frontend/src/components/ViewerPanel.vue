@@ -310,6 +310,25 @@ watch(openedImage, (img) => {
   loadObsCols()                       // colour-by options for the selected segmentation
 }, { immediate: true })
 
+// Follow the server's active version into the popup viewer when a TASK swaps `_active` for the image
+// on screen (e.g. a denoise run produces "smoothed" and marks it active). The dropdown already re-seeds
+// via the watch above, but the viewer only reacts to `cc.viewerImageVersion`. Without a mirror the user
+// has to toggle the dropdown back and forth to force a switch. Guard with `lastServerActive` so we only
+// follow when the persisted pick was tracking the OLD active (empty or equal to it) — never override a
+// user pick that intentionally names a different version.
+const lastServerActive = ref<Record<string, string>>({})
+watch(openedImage, (img) => {
+  if (!img) return
+  const uid = img.uid
+  const active = img.activeValueName ?? ''
+  const prev = lastServerActive.value[uid]
+  const picked = settings.getImageVersion(uid)
+  if (prev && active && prev !== active && (picked === '' || picked === prev)) {
+    settings.setImageVersion(uid, active)
+  }
+  lastServerActive.value[uid] = active
+}, { immediate: true })
+
 function openInViewer(valueName: string) {
   const uid        = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
