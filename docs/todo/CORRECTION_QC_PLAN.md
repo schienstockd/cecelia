@@ -2,22 +2,23 @@
 
 **Status:** **in-progress** (2026-09-06). Phases A–E shipped: Q-M4 sparsity probes (PR #811),
 §2.1 metadata-derived score layer (PR #813), §1 rule table + §3 tie-break + §5 seed cards
-(PR #815), plan.json persistence + provenance (PR #819), and chain mount + card recommender
-(PR #821 — `plan_to_chain_template` yields a `ChainTemplate` the executor accepts;
-`recommend_card(scores, wizard)` auto-picks a card so `recommend_plan` can leave `card_id`
-implicit). Frontend slice **3a** shipped on this branch — `GET /api/correction-plan/presets` +
-`POST /api/correction-plan/recommend` and a read-only `CorrectionPlanPanel` above the TaskRunner in
-the cleanup module render the auto-recommended plan (card name, included steps with
-`orderWeight`/`source`, excluded rows with their `exclusionReason`, QC scores collapsed) for one
-selected image. The §8 provenance triple was reduced to a doubleton after review:
-`writer_versions` per step doesn't apply (cecelia ships as one package — a single `ceceliaVersion`
-covers cache invalidation); `upstream_value_names` per step stays deferred (the chain executor's
-own `execute_task` wiring knows which `value_name` each node reads — no second source of truth
-needed until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDriftCorrect
-composite retired); Q-C10 no longer applies. **What's left:** UI slice 3b (card picker + save/load
-plan.json), 3c (wizard W1–W6), 3d (mount-to-chain button); the C-Deep3D card update once the
-drift-vis-chain PR lands (add `driftPerPlane`+`driftZSmoothness` alongside stackAlign per the "they
-compose" finding); and the remaining §Open questions.
+(PR #815), plan.json persistence + provenance (PR #819), chain mount + card recommender (PR #821 —
+`plan_to_chain_template` yields a `ChainTemplate` the executor accepts; `recommend_card(scores,
+wizard)` auto-picks a card so `recommend_plan` can leave `card_id` implicit), UI slice **3a**
+(PR #824 — `GET /api/correction-plan/presets` + `POST /api/correction-plan/recommend` and a
+read-only `CorrectionPlanPanel` above the TaskRunner in the cleanup module: card name, included
+steps with `orderWeight`/`source`, excluded rows with their `exclusionReason`, QC scores collapsed,
+for one selected image), and — on this branch — the **C-Deep3D card update** for PR #818:
+`driftPerPlane = true` + `driftZSmoothness = 0.0` starting point alongside stackAlign, per the peer
+session's "they compose" finding (stackAlign = intra-stack per-frame anchor; driftPerPlane =
+inter-frame per-Z-plane rigid — different axes, no double-count). The §8 provenance triple was
+reduced to a doubleton after review: `writer_versions` per step doesn't apply (cecelia ships as one
+package — a single `ceceliaVersion` covers cache invalidation); `upstream_value_names` per step
+stays deferred (the chain executor's own `execute_task` wiring knows which `value_name` each node
+reads — no second source of truth needed until a UI wants it without loading chain state). Q-C1
+resolved by PR #810 (afDriftCorrect composite retired); Q-C10 no longer applies. **What's left:**
+UI slice 3b (card picker + save/load plan.json), 3c (wizard W1–W6), 3d (mount-to-chain button);
+and the remaining §Open questions.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
@@ -252,7 +253,7 @@ to a different card) or a **starting point** (the user is expected to edit).
 | `C-Resonance` | Resonance / photon-limited | Fast dwell, single-digit photon counts per pixel, needs smoothing before AF | W1 = `resonance` OR `preset.card_confidence` matches on prior `zeroFracIn ≥ 0.15` (per 1b Rule 1 / SMOOTHING_PLAN L111 / commit `95894bed`) | **`smooth` on, `spatialMethod = bilateral_vst`** (per PR #777); *`temporalStat = median`*, *`temporalFrames = 3`* (per SMOOTHING_PLAN median-for-time rule, commit `95cb553f`); **`smooth` sits before AF** (**OPEN §Q-C6/C7**); `driftEstimator = multiLag`; `denoise` off unless a resonance-trained SUPPORT model exists AND per-channel saturation is 0 |
 | `C-Galvo` | Galvo / clean signal | High-SNR, gaussian smoothing optional, AF via straightforward triangle background | W1 = `galvo` AND no prior `zeroFracIn ≥ 0.05` | `smooth` off; *`spatialMethod = gaussian`* if smooth is turned on later; `driftEstimator = multiLag`; **`afCorrect` on if `afCombinations` declared**; `denoise` user-pick |
 | `C-SpinningDisk` | Spinning-disk / live-cell / fast timelapse | Short frames, translation-only drift, minimal spatial noise, temporal median often over-smooths cell motion | W1 = `spinning_disk` | `smooth` off by default (**temporalMean inflates masks ~34%** per commit `95cb553f`); `driftEstimator = multiLag`; `flowRegister` off (rigid enough); `stackAlign` off (usually 2D); `denoise` user-pick |
-| `C-Deep3D` | Deep 3D / breathing-affected | Z-stacks with intra-stack offset; needs stackAlign before drift | W1 = any AND W5 = `yes` OR `stackalign.applied_fraction ≥ 0.5` on a prior run | **`stackAlign` on** (`STACK_ALIGN_PLAN` L14, PR #793); *`alignReference = middle`*; *`minConfidence = 0.35`* (`STACK_ALIGN_APPLIED_FRAC_WARN`); `driftEstimator = multiLag`; `flowRegister` off |
+| `C-Deep3D` | Deep 3D / breathing-affected | Z-stacks with intra-stack offset AND depth-dependent inter-frame motion; stackAlign composes with `driftCorrect(driftPerPlane)` per the "they compose" finding | W1 = any AND W5 = `yes` OR `stackalign.applied_fraction ≥ 0.5` on a prior run | **`stackAlign` on** (`STACK_ALIGN_PLAN` L14, PR #793); *`alignReference = middle`*; *`minConfidence = 0.35`* (`STACK_ALIGN_APPLIED_FRAC_WARN`); `driftEstimator = multiLag`; **`driftPerPlane = true`** (PR #818 breathing-shear case — the reason this card exists); *`driftZSmoothness = 0.0`* (starting point; raise per `drift_correct.json` tip if planes still jump); `flowRegister` off |
 | `C-Custom` | Custom / no preset | Empty plan; user builds a chain by hand | Fallback when `preset.card_confidence < 0.4` for every other card | Only structural rules (`T`/`Z` gates); everything else user-pick |
 
 ### Card semantics

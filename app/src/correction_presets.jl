@@ -91,20 +91,26 @@ _spinning_disk_preset() = AcquisitionPreset(
 _deep_3d_preset() = AcquisitionPreset(
     :deep_3d,
     "Deep 3D / breathing-affected",
-    "Z-stacks with intra-stack offset. stackAlign runs before drift correction (STACK_ALIGN_PLAN " *
-    "L14 / PR #793; ordering contradicted by PR #798/#802 — see §Q-C1).",
+    "Z-stacks with intra-stack offset AND depth-dependent inter-frame motion (breathing shear). " *
+    "stackAlign (intra-stack per-frame anchor) composes with driftCorrect(driftPerPlane) " *
+    "(inter-frame per-Z-plane rigid): the two target different axes and do not double-count. " *
+    "Pilot zolIMa/x4E5HU (PR #818) — per-plane σ=0 dropped deep-plane residuals from ±8–10 px to " *
+    "<3 px on the same overlay; raise driftZSmoothness only if planes still jump.",
     Dict{String,Dict{String,Any}}(
         "cleanupImages.stackAlign" => Dict{String,Any}(
             "referenceMode" => "middle",   # matches stack_align.json default
             "minConfidence" => 0.35,        # STACK_ALIGN_APPLIED_FRAC_WARN
         ),
         "cleanupImages.driftCorrect" => Dict{String,Any}(
-            "driftEstimator" => "multiLag",
+            "driftEstimator"    => "multiLag",
+            "driftPerPlane"     => true,   # PR #818 — the breathing-shear case is why the card exists
+            "driftZSmoothness"  => 0.0,     # starting point per drift_correct.json tip (raise if jump)
         ),
     ),
     ["cleanupImages.stackAlign", "cleanupImages.driftCorrect"],
     Set{Tuple{String,String}}([
-        ("cleanupImages.stackAlign", "referenceMode"),  # stackAlign presence defines the card
+        ("cleanupImages.stackAlign", "referenceMode"),   # stackAlign presence defines the card
+        ("cleanupImages.driftCorrect", "driftPerPlane"), # per-plane defines the breathing regime
     ]),
     :unvalidated,
 )
