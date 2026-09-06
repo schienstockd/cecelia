@@ -322,8 +322,8 @@ export function imageVersionAdvisory(
   if (!chosen || !images?.length) return null
 
   // Only images that HAVE this version can be judged against it. A name on NONE of them is an
-  // upstream chain node's future output ("cpCorrected" — `ParamContext.extraValueNames`), which does
-  // not exist yet and is not a mistake. Nothing to compare, so say nothing.
+  // upstream chain node's future output ("driftCorrected" — `ParamContext.extraValueNames`), which
+  // does not exist yet and is not a mistake. Nothing to compare, so say nothing.
   const known = images.filter(i => chosen in (i.filepaths ?? {}))
   if (!known.length) return null
 

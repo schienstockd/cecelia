@@ -2,10 +2,10 @@
 
 The box records which part of a canvas is data (`docs/ARCHITECTURE.md` → *The valid box*). Drift
 correction writes it; everything downstream inherits a canvas that is 3–56% padding on real movies
-here. But a box only helps if it SURVIVES the pipeline, and it did not: `af_correct` and
-`cellpose_correct` dropped it silently, and `smooth` carried it through `read_valid_box(path)`, which
-on a per-frame box returns the UNION over frames — nearly the whole canvas once the window drifts.
-So the store people actually segment reported "all valid" and there was nothing to skip.
+here. But a box only helps if it SURVIVES the pipeline, and it did not: `af_correct` dropped it
+silently, and `smooth` carried it through `read_valid_box(path)`, which on a per-frame box returns
+the UNION over frames — nearly the whole canvas once the window drifts. So the store people actually
+segment reported "all valid" and there was nothing to skip.
 
 Silence is the failure mode, so silence is what this forbids: a runner that creates a derived store
 either calls `carry_valid_box`/`write_valid_box`, or carries a `VALID-BOX-EXEMPT:` note saying why

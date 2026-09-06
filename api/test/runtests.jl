@@ -1711,7 +1711,7 @@ end
         write(state_file(joinpath(tmp, puid), iuid), JSON3.write(Dict{String,Any}(
             "class"    => "CciaImage",
             "filepath" => Dict{String,Any}("default" => "live.ome.zarr",
-                                           "cpCorrected" => "gone.ome.zarr",
+                                           "driftCorrected" => "gone.ome.zarr",
                                            "_active" => "default"),
             "labels"   => Dict{String,Any}("A" => ["A.zarr", "A.nuc.zarr"]))))
 
@@ -1723,8 +1723,8 @@ end
         @test d.versions.default.label == "zstd + shuffle"
         @test d.versions.default.bytes >= 20_000
         # the store that doesn't: row kept, size 0, codec fields absent (the modal shows "—")
-        @test d.versions.cpCorrected.bytes == 0
-        @test !haskey(d.versions.cpCorrected, :label)
+        @test d.versions.driftCorrected.bytes == 0
+        @test !haskey(d.versions.driftCorrected, :label)
         # label sets are sized too, summed across the value_name's files
         @test d.labels.A.bytes >= 12_000
 
@@ -1742,7 +1742,7 @@ end
         @test haskey(d.versions.default, :chunks)
         # the unreadable store carries none of them, same as its codec fields
         for k in (:zarrFormat, :ngffVersion, :chunks, :shard)
-            @test !haskey(d.versions.cpCorrected, k)
+            @test !haskey(d.versions.driftCorrected, k)
         end
 
         @test api_image_stores(HTTP.Request("GET", "/api/images/stores"))[1] == 400

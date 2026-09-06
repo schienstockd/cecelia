@@ -4,14 +4,14 @@ import { useFieldDraft } from './useFieldDraft'
 
 describe('useFieldDraft', () => {
   it('seeds from the committed value', () => {
-    const src = ref('cpCorrected')
-    expect(useFieldDraft(() => src.value).value).toBe('cpCorrected')
+    const src = ref('driftCorrected')
+    expect(useFieldDraft(() => src.value).value).toBe('driftCorrected')
   })
 
   it('typing is not undone by the committed value staying put', async () => {
     // the reported bug: the field commits on blur, so while typing the draft and the source disagree.
     // A re-render must not resolve that disagreement in the source's favour.
-    const src = ref('cpCorrected')
+    const src = ref('driftCorrected')
     const draft = useFieldDraft(() => src.value)
     draft.value = 'my movie'          // user types
     await nextTick()                  // …and the panel re-renders (poll, task frame, whatever)
@@ -19,7 +19,7 @@ describe('useFieldDraft', () => {
   })
 
   it('re-seeds when the committed value genuinely changes', async () => {
-    const src = ref('cpCorrected')
+    const src = ref('driftCorrected')
     const draft = useFieldDraft(() => src.value)
     draft.value = 'half typed'
     src.value = 'AF'                  // e.g. the prefill follows the version now shown

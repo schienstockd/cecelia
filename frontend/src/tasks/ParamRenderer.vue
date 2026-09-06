@@ -39,7 +39,7 @@ export interface ParamContext {
                              // than by a hardcoded key. See `scopeValueName` in paramValues.ts —
                              // resolving by name silently scoped two specs to the wrong segmentation.
   extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
-                             // of an upstream whiteboard node ("cpCorrected") that only exists once
+                             // of an upstream whiteboard node ("driftCorrected") that only exists once
                              // the chain runs. Merged into the option list so it can be selected.
 }
 
@@ -139,7 +139,7 @@ watch(() => props.context?.images, (images) => {
   if (props.param.type !== 'valueNameSelection') return
   if (!images || images.length === 0) return
   // Keep an already-valid selection — notably an edge-propagated chain value like
-  // "cpCorrected" — rather than resetting it to the active/first name on every image change.
+  // "driftCorrected" — rather than resetting it to the active/first name on every image change.
   // `isChosenValueName` excludes the spec's OWN default: it is what the form started with, not a
   // pick, and since every task JSON declares `"default": "default"` this guard used to fire on
   // first render everywhere and the prefer-the-active-version line below never ran at all.

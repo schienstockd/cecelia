@@ -12,15 +12,15 @@ const IMG = (versions: string[], labels: string[] = []) => ({
 
 describe('versionCounts', () => {
   it('is the UNION, with how many images carry each name', () => {
-    // the case that drove this: an intersection would hide cpCorrected entirely, so it could not be
+    // the case that drove this: an intersection would hide driftCorrected entirely, so it could not be
     // deleted at all until the selection was narrowed
-    expect(versionCounts([IMG(['default', 'cpCorrected']), IMG(['default'])]))
-      .toEqual([{ name: 'default', count: 2 }, { name: 'cpCorrected', count: 1 }])
+    expect(versionCounts([IMG(['default', 'driftCorrected']), IMG(['default'])]))
+      .toEqual([{ name: 'default', count: 2 }, { name: 'driftCorrected', count: 1 }])
   })
 
   it('puts default first', () => {
-    expect(versionCounts([IMG(['cpCorrected', 'default'])]).map(c => c.name))
-      .toEqual(['default', 'cpCorrected'])
+    expect(versionCounts([IMG(['driftCorrected', 'default'])]).map(c => c.name))
+      .toEqual(['default', 'driftCorrected'])
   })
 
   it('offers names the selection does not share', () => {

@@ -301,7 +301,7 @@ class StreamingWritersTest(unittest.TestCase):
         return du
 
     def test_per_plane_write_into_block_via_reshape(self):
-        # cellpose_correct writes a 2-D (Y,X) plane into a (1,1,1,Y,X) block of an on-disk store.
+        # A per-plane writer stages a 2-D (Y,X) plane into a (1,1,1,Y,X) block of an on-disk store.
         # zarr's orthogonal write does NOT broadcast a lower-rank value into the selection the way
         # numpy assignment does (that was the IndexError), so the value must be reshaped to the block.
         d = tempfile.mkdtemp()

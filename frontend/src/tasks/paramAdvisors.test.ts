@@ -226,9 +226,9 @@ describe('imageVersionAdvisory', () => {
   })
 
   it('says nothing about a name no selected image has — an upstream chain output, not a mistake', () => {
-    // `ParamContext.extraValueNames`: a whiteboard node's output ("cpCorrected") is selectable
+    // `ParamContext.extraValueNames`: a whiteboard node's output ("smoothed") is selectable
     // before it exists on disk. There is nothing to compare it to, so silence is the honest answer.
-    expect(imageVersionAdvisory('cpCorrected', [P6T4MC])).toBeNull()
+    expect(imageVersionAdvisory('smoothed', [P6T4MC])).toBeNull()
   })
 
   it('counts the images that are off, rather than judging the selection by its first image', () => {
