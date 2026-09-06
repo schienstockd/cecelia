@@ -24,7 +24,7 @@ UI slice **3c** (wizard W2/W3/W5): a `CollapsibleSection` under the card row exp
 questions from §4 that overlay a card independently (W2 stage rotated → `sitkRigid`; W3 frame-to-frame
 warp → include `flowRegister`; W5 intra-stack Z drift → include `stackAlign`); an answer immediately
 re-saves the plan via the same `/save` endpoint the card picker uses. W1 is intentionally omitted (the
-card picker IS W1); W4 (per-channel afCombinations) and W6 (cpCorrected trust/exclude) are conditional
+card picker IS W1); W4 (per-channel afCombinations) and W6 (cpCorrected trust/exclude) are retired 2026-09-06 (W4 is already exposed as the per-combination `exclusive: bool` field on `af_correct.json`; W6 is a retired writer, project switched to SUPPORT), earlier believed conditional
 and deferred to a follow-up. The §8 provenance triple was reduced to a doubleton after review:
 `writer_versions` per step doesn't apply (cecelia ships as one package — a single `ceceliaVersion`
 covers cache invalidation); `upstream_value_names` per step stays deferred (the chain executor's own
@@ -33,9 +33,9 @@ until a UI wants it without loading chain state). Q-C1 resolved by PR #810 (afDr
 retired); Q-C10 no longer applies. Q-C3, Q-C6/C7, Q-C4, Q-C8 resolved 2026-09-06 (this branch) —
 default drift normalisation stays `none`; smooth = bucket 300 (before AF) per SMOOTHING_PLAN's
 measured evidence, no composite; AF ceiling is no longer a cohort metric; default `meta.saturation`
-is the honest signal for denoise since saturation is an acquisition property. **What's left:** UI
-W4/W6 (conditional wizard questions); and the remaining §Open questions (non-blocking / prompt
-confirmations only).
+is the honest signal for denoise since saturation is an acquisition property. **What's left:** the
+remaining §Open questions (non-blocking / prompt confirmations only). UI is complete: W1 = the card
+picker, W2/W3/W5 = the wizard section, W4/W6 retired as unnecessary.
 **Origin:** [`docs/archive/correction-qc-audit-prompt.md`](../archive/correction-qc-audit-prompt.md).
 Grounded in the three-part audit produced alongside this plan:
 [`docs/archive/audit_phase1a_catalog.md`](../archive/audit_phase1a_catalog.md) (catalog),
@@ -230,9 +230,9 @@ card and edits the chain directly.
 | **W1** | "What kind of scanner produced this movie?" | Enum `{resonance, galvo, spinning_disk, widefield, other/unknown}` | Card recommendation (§5); `smooth` prerequisite for AF (1b Rule 1) |
 | **W2** | "Was the stage rotated or bumped during acquisition?" | Enum `{no (translation only), yes (rotation), unknown}` | `driftCorrect.driftEstimator = sitkRigid` when `yes` (1b Rule 2 / PR #785 D2) |
 | **W3** | "During this movie, did the sample deform between frames beyond a simple shift? (e.g. resonant-scan flexing, respiration warp)" | Enum `{no, yes, unknown}` | `flowRegister` include when `yes` (1c gap 2 — no metadata field) |
-| **W4** | "For each channel, does it primarily image cells that are different from the other channels' cells, or does it label cells that also express other channels?" (per-channel, only when the user has declared any `afCombinations`) | Per-channel bool: `different (exclusive)` / `co-labelled` | `afCombinations[i].exclusive` (PR #559 canonical specimen question). Default `exclusive = true` |
+| ~~**W4**~~ | ~~per-channel `afCombinations[i].exclusive`~~ | ~~Per-channel bool~~ | **RETIRED 2026-09-06** — the specimen question is already exposed as the per-combination `exclusive: bool` field in `af_correct.json` (label "Different cell types", tip "Turn off if cells can carry both markers"). The user answers it right where they declare the combination; a plan wizard entry would duplicate the task-param widget. |
 | **W5** | "Is any Z-plane offset from its neighbours because the sample moved during Z acquisition (breathing, drift within a stack)?" | Enum `{no, yes, unknown}` | `stackAlign` include when `yes` (1c gap 3 — no `meta.breathing`) |
-| **W6** | "This image was corrected with `cellposeCorrect`, which was retired. Trust the existing store, or exclude it from re-plans?" (only surfaces when `_active` or a referenced `value_name` equals `cpCorrected`) | Enum `{trust, exclude}` | Legacy retired-writer store, per 1a `cellposeCorrect` row + §Q-P3 |
+| ~~**W6**~~ | ~~`cellposeCorrect` retired-store trust/exclude~~ | ~~Enum `{trust, exclude}`~~ | **RETIRED 2026-09-06** — `cellposeCorrect` is a retired writer; the project has switched to SUPPORT for denoise. No `cpCorrected` stores get created going forward, so the wizard has nothing to gate on. Q-P3 closes with the same reasoning. |
 
 ### Why the wizard is small
 
@@ -666,10 +666,11 @@ card-classifier gets a structural signal.
   design's answer is `plan.json` + `saturation_fingerprint`. Is that enough, or should the plan
   also trigger a "your default's `meta.saturation` changed since this plan was written" warning
   on re-open? **Non-blocking; UI detail.**
-- **§Q-P3 — Retired-writer stores** (`cpCorrected`). Wizard question W6 offers `trust` /
+- **§Q-P3 — Retired-writer stores** (`cpCorrected`). ~~Wizard question W6 offers `trust` /
   `exclude`. Is `trust` allowed given `SMOOTHING_PLAN.md:228` warns SHG in `2h06xA/cpCorrected` is
-  a flat constant? A safer default might be `exclude`, with `trust` requiring a re-confirmation.
-  **Non-blocking; W6 default detail.**
+  a flat constant?~~ **RESOLVED 2026-09-06 — retired.** `cellposeCorrect` was retired with the
+  cellpose 4 migration; the project switched to SUPPORT for denoise. No `cpCorrected` stores are
+  produced going forward, so trust/exclude has nothing to gate on. W6 retired (see §4).
 
 ### Prompt-mandated confirmations
 
