@@ -86,6 +86,37 @@ describe('taskRow — elapsed and its sort key', () => {
   })
 })
 
+describe('taskRow — startedAt label', () => {
+  it('is blank for an unstarted task, and reports no sort key', () => {
+    const r = taskRow(entry({ status: 'queued' }), ctx())
+    expect(r.startedAtLabel).toBe('')
+    expect(r.startedAtMs).toBeUndefined()
+  })
+
+  it("carries a same-day start as time only, so today's rows stay narrow", () => {
+    const startedToday = new Date(NOW - 3 * 60 * 60 * 1000)   // 3h ago, same UTC day as NOW
+    const r = taskRow(entry({ startedAt: startedToday }), ctx())
+    // formatting is locale-dependent — assert the SHAPE (no month, no year), not exact text
+    expect(r.startedAtLabel).not.toMatch(/\d{4}/)             // no year
+    expect(r.startedAtLabel.length).toBeLessThanOrEqual(8)    // "14:32" / "2:32 PM"
+    expect(r.startedAtMs).toBe(startedToday.getTime())
+  })
+
+  it('adds the day+month once the start is on an earlier day', () => {
+    const startedAWeekAgo = new Date(NOW - 7 * 24 * 60 * 60 * 1000)
+    const r = taskRow(entry({ startedAt: startedAWeekAgo }), ctx())
+    // a same-year older row: has a month token but not the year
+    expect(r.startedAtLabel).toMatch(/[A-Za-z]/)
+    expect(r.startedAtLabel).not.toMatch(/202[0-9]/)
+  })
+
+  it('shows the year once a start crosses into a different year', () => {
+    const lastYear = new Date(NOW - 400 * 24 * 60 * 60 * 1000)  // > 1y ago
+    const r = taskRow(entry({ startedAt: lastYear }), ctx())
+    expect(r.startedAtLabel).toMatch(/202[0-9]/)
+  })
+})
+
 describe('taskRow — progress and re-run', () => {
   it('flags a bar only when the task is running AND reports a fraction', () => {
     expect(taskRow(entry({ status: 'running', progress: 0.4 }), ctx()).hasProgress).toBe(true)

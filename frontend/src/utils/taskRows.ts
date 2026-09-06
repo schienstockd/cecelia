@@ -43,6 +43,14 @@ export interface TaskRow {
    * claim they finished instantly and sort them to the front.
    */
   elapsedMs: number | undefined
+  /**
+   * When the task started, formatted for the Date column. `''` when unknown — a history row from
+   * `runLog` whose `at` didn't parse (`utils/taskHistoryRows.ts`). Only meaningful once the History
+   * toggle is on: a session-only list is already in start order, so a per-row date is noise there.
+   */
+  startedAtLabel: string
+  /** Sort key for `startedAtLabel` — same blanks-last rule as `elapsedMs`. */
+  startedAtMs: number | undefined
   /** 0–1, or `undefined` when the task reports no fraction. `CcProgressBar` handles both. */
   progress: number | undefined
   /** running AND reporting a fraction — i.e. there is a bar to draw */
@@ -81,6 +89,8 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     chainTip:     t.chainRunId ? `Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}` : '',
     elapsed:      elapsed ?? '',
     elapsedMs:    elapsedMs(t, ctx.now),
+    startedAtLabel: formatStartedAt(t.startedAt, ctx.now),
+    startedAtMs:  t.startedAt?.getTime(),
     progress:     t.progress,
     hasProgress:  t.status === 'running' && t.progress !== undefined,
     canRerun:     canRerunTask(t),
@@ -104,4 +114,22 @@ export function taskRows(tasks: TaskEntry[], ctx: TaskRowContext): TaskRow[] {
 function elapsedMs(t: TaskEntry, now: number): number | undefined {
   if (!t.startedAt) return undefined
   return (t.finishedAt?.getTime() ?? now) - t.startedAt.getTime()
+}
+
+/**
+ * The Date column's label. Compact by scale: today shows time only (`14:32`), any earlier day shows
+ * the date (`5 Sep 14:32`), and once the year differs it appears too (`5 Sep 2025`). Keeps the
+ * common case narrow so a session-scoped task list stays readable if the column ever shows there.
+ */
+function formatStartedAt(started: Date | undefined, now: number): string {
+  if (!started) return ''
+  const n = new Date(now)
+  const sameDay  = started.getFullYear() === n.getFullYear()
+                && started.getMonth()    === n.getMonth()
+                && started.getDate()     === n.getDate()
+  if (sameDay) return started.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const sameYear = started.getFullYear() === n.getFullYear()
+  return started.toLocaleString(undefined, sameYear
+    ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+    : { day: 'numeric', month: 'short', year: 'numeric' })
 }

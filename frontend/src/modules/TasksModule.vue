@@ -114,7 +114,10 @@ const rows = computed(() => taskRows(filtered.value, {
 const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } =
   usePanelResize({ min: 280, max: 760, default: 440, storageKey: 'cc-tasks-list-width', edge: 'right' })
 
-const TM_COLUMNS: SelectionColumn[] = [
+// The Date column only appears with History on: a session-only list is already in start order, and
+// its rows are seconds apart — a per-row timestamp is noise. Once history is folded in, the same
+// list spans weeks and the run's date IS the thing you want to see, hence conditional.
+const TM_COLUMNS = computed<SelectionColumn[]>(() => [
   // no label, and out of the resize path: an icon and a bar are their own width
   { key: 'status',   label: '',       fixed: true, width: 24 },
   { key: 'module',   label: 'Module', sortable: true, ellipsis: true, width: 70 },
@@ -123,7 +126,11 @@ const TM_COLUMNS: SelectionColumn[] = [
   { key: 'progress', label: '',       fixed: true, width: 36 },
   // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
   { key: 'elapsed',  label: 'Time',   sortable: true, sortKey: 'elapsedMs', width: 44 },
-]
+  ...(settings.tasksShowHistory
+    ? [{ key: 'startedAtLabel', label: 'Date', sortable: true, sortKey: 'startedAtMs',
+         ellipsis: true, width: 92 } as SelectionColumn]
+    : []),
+])
 
 // A row that has just gone out of scope must not stay open in the detail pane — the log below would
 // then belong to a task the list no longer shows.
@@ -338,6 +345,11 @@ const FILTERS: ChipOption[] = [
             <span class="row-elapsed cc-muted cc-fs-2xs">{{ r.elapsed }}</span>
           </template>
 
+          <template #cell-startedAtLabel="{ row: r }">
+            <span class="row-when cc-muted cc-fs-2xs"
+              v-tooltip.left="r.entry.startedAt ? r.entry.startedAt.toLocaleString() : ''">{{ r.startedAtLabel }}</span>
+          </template>
+
           <template #actions="{ row: r }">
             <button v-if="r.status === 'running' || r.status === 'queued'"
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(r.entry)"
@@ -520,6 +532,7 @@ const FILTERS: ChipOption[] = [
 .chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
+.row-when    { font-family: var(--cc-mono); flex-shrink: 0; white-space: nowrap; }
 
 /* the image cell: uid chip then name, the name taking the leftover */
 .tm-image { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
