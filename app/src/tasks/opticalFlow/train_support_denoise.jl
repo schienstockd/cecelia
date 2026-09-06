@@ -28,6 +28,47 @@ function _support_short_movie_refusal(short_ts::Vector{Tuple{String,Int}}, input
      "[ERROR] Set Temporal window to $max_odd (largest odd value ≤ $min_t) or pick longer movies."]
 end
 
+# Form-time advisory (served by /api/tasks/validate, rendered under the Temporal window slider).
+# Same rule as the run-time refusal above, banked here rather than in `paramAdvisors.ts` so both
+# sides read the same source of truth. Pure, tested — the "largest odd ≤ min T" suggestion mirrors
+# `_support_short_movie_refusal` above by construction.
+function _support_temporal_window_advisory(value, imgs::Vector{CciaImage}, _siblings::AbstractDict)
+    v = value isa Integer ? Int(value) :
+        value isa Real    ? (isfinite(value) ? Int(trunc(value)) : 0) :
+        value isa AbstractString ? something(tryparse(Int, value), 0) : 0
+    v > 0 || return nothing
+    ts = Int[]
+    for img in imgs
+        t = something(tryparse_i(get(img.meta, "SizeT", nothing)), 0)
+        t > 0 && push!(ts, t)
+    end
+    isempty(ts) && return nothing
+    min_t, max_t = extrema(ts)
+    n_over = count(t -> t < v, ts)
+    n = length(ts)
+    odd(x) = isodd(x) ? x : max(x - 1, 1)
+    movies = n == 1 ? "1 movie" : "$n movies"
+    if n_over == 0
+        return (severity = "ok",
+                message  = "$(v)f on $movies (shortest $(min_t)f)",
+                tip      = "Every selected movie has at least $v timepoints, so all of them will train.")
+    elseif n_over == n
+        return (severity = "fail",
+                message  = "over every movie (longest $(max_t)f) — nothing can train",
+                tip      = "The temporal window has to fit inside every selected movie. Longest is " *
+                           "$(max_t)f — set it to $(odd(max_t)) (largest odd value ≤ $max_t) or pick " *
+                           "longer movies.")
+    else
+        return (severity = "warn",
+                message  = "$n_over of $n too short (shortest $(min_t)f)",
+                tip      = "Movies with fewer than $v timepoints are refused at Run. Set the window " *
+                           "to $(odd(min_t)) (largest odd value ≤ $min_t) to train on all $movies.")
+    end
+end
+
+register_param_validator!("opticalFlow.trainSupportDenoise", "inputFrames",
+                          _support_temporal_window_advisory)
+
 # Two unambiguous bad cases, pure so a test can exercise them without a GPU. Both about the LOSS —
 # training's one objective signal until inference runs on real data.
 function _support_train_qc_findings(metrics::AbstractDict)

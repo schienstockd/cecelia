@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, ANISO_BYTES_PER_BOX_PER_FRAME,
-  ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor,
+  ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
 
@@ -354,6 +354,74 @@ describe('spatialSigmaAdvisory', () => {
   it('is registered on the KEY, so it does not fire on every float in the app', () => {
     expect(paramAdvisor({ key: 'spatialSigma', type: 'float' })).toBeTruthy()
     expect(paramAdvisor({ key: 'someOtherSlider', type: 'float' })).toBeUndefined()
+  })
+})
+
+// The generic "ask the backend" advisor. What we test on the client is the CONTRACT with the
+// endpoint (URL, body shape, response handling) — the actual rule lives in Julia
+// (`app/src/tasks/param_validators.jl`) and is pinned by the Julia test suite. That split is the
+// whole point of migrating client-side mirrors: one source of truth, tested where it lives.
+describe('backendAdvisor', () => {
+  const CTX = { projectUid: 'p', images: [{ uid: 'a', sizeT: 31 }, { uid: 'b', sizeT: 60 }],
+                values: { learningRate: 0.0005 } } as unknown as Parameters<
+                  ReturnType<typeof backendAdvisor>['advise']>[1]
+
+  it('POSTs the funName + paramKey + form context, returns the parsed advisory', async () => {
+    const seen: { url?: string; init?: RequestInit } = {}
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      seen.url = url; seen.init = init
+      return { ok: true, json: async () => ({ severity: 'warn', message: '1 of 3 too short',
+                                              tip: 'Set the window to 31' }) } as unknown as Response
+    }) as unknown as typeof fetch
+
+    const advisor = backendAdvisor('opticalFlow.trainSupportDenoise', 'inputFrames')
+    const out = await advisor.advise(41, CTX)
+    expect(out?.severity).toBe('warn')
+    expect(out?.message).toContain('1 of 3')
+
+    expect(seen.url).toBe('/api/tasks/validate')
+    expect(seen.init?.method).toBe('POST')
+    const body = JSON.parse(String(seen.init?.body))
+    expect(body.funName).toBe('opticalFlow.trainSupportDenoise')
+    expect(body.paramKey).toBe('inputFrames')
+    expect(body.value).toBe(41)
+    expect(body.projectUid).toBe('p')
+    expect(body.imageUids).toEqual(['a', 'b'])
+    expect(body.siblingValues).toEqual({ learningRate: 0.0005 })
+  })
+
+  it('returns null when the endpoint returns null — the validator had nothing to say', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => null }) as Response) as unknown as typeof fetch
+    const out = await backendAdvisor('t', 'k').advise(1, CTX)
+    expect(out).toBeNull()
+  })
+
+  it('returns null on HTTP error — silence beats an error banner', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
+  })
+
+  it('returns null when the network throws — an advisory is not load-bearing', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
+  })
+
+  it('returns null on a garbage response — sanity-check before rendering', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () =>
+      ({ severity: 'warn' }) }) as Response) as unknown as typeof fetch
+    expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()   // missing message/tip
+  })
+
+  it('registers `inputFrames` on the SUPPORT training task by KEY', () => {
+    expect(paramAdvisor({ key: 'inputFrames', type: 'int' })).toBeTruthy()
+    expect(paramAdvisor({ key: 'someOtherInt', type: 'int' })).toBeUndefined()
+  })
+
+  it('re-runs when the SET of images changes, not just the value', () => {
+    const a = backendAdvisor('t', 'k')
+    const before = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }] }) ?? []
+    const after  = a.reloadOn?.({ images: [{ uid: 'x', sizeT: 20 }, { uid: 'y', sizeT: 40 }] }) ?? []
+    expect(before).not.toEqual(after)
   })
 })
 

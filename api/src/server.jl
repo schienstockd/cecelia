@@ -20,6 +20,7 @@ include("observer_api.jl")
 include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
+include("task_validate_api.jl")     # POST /api/tasks/validate — uses _gating_image (gating_api.jl)
 include("update_api.jl")
 include("plugins_api.jl")   # plugin install/remove; uses update_api.jl's Downloads + routes.jl's payload
 include("maintenance_api.jl")
@@ -258,6 +259,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
+    "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
     "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),
