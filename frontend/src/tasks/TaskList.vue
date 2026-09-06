@@ -72,7 +72,8 @@ async function toggleLog(t: TaskEntry) {
   // first open, not on adoption — twenty rows must not fire twenty requests for output nobody opened.
   if (t.adopted && !t.log.length && expanded.value.has(id)) {
     const lines = await fetchLogBackfill({
-      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
+      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName,
+      startedAt: t.startedAt, until: t.logSliceUntil,
     })
     if (lines.length) tasks.setLog(id, lines)
   }

@@ -11,6 +11,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
 import { formatBytes } from '../utils/storage'
+import { formatWhen } from '../utils/formatWhen'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
          movieChannelCells, movieChannelCount, nextMovieName,
@@ -223,8 +224,10 @@ const finishedMovieCount = computed(() => {
 })
 watch(finishedMovieCount, (n, prev) => { if (n > prev) refresh() })
 
+// One rule across the app for a moment in a narrow table cell — same compact-by-scale format the
+// Tasks history Date column uses (`utils/formatWhen.ts`). Full timestamp still lives on the tooltip.
 function movieTime(mtime: number): string {
-  return new Date(mtime * 1000).toLocaleString()
+  return formatWhen(new Date(mtime * 1000))
 }
 
 // ── The list ──────────────────────────────────────────────────────────────────
@@ -659,6 +662,13 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
               <template v-for="k in attrKeys" :key="'attr-' + k" #[`cell-attr:${k}`]="{ row }">
                 <span class="mov-dim" :title="row.attr?.[k] ? `${k}: ${row.attr[k]}` : ''">{{
                   row.attr?.[k] || '—' }}</span>
+              </template>
+
+              <!-- Recorded — compact by scale; tooltip carries the full timestamp so the seconds
+                   and (in same-year rows) the year are still reachable on hover. Same pattern as
+                   the Tasks history Date column. -->
+              <template #cell-timeText="{ row }">
+                <span v-tooltip.left="new Date(row.mtime * 1000).toLocaleString()">{{ row.timeText }}</span>
               </template>
 
               <!-- Tags in the row too, for the same reason -->

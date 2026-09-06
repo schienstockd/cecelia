@@ -72,6 +72,33 @@ function runLogDate(s?: string): Date | undefined {
 const funFallback = (fun: string) => fun.split('.').pop() ?? fun
 
 /**
+ * For each entry index in a single image's run log, the `startedAt` of the next entry with the same
+ * `fun` (ordered by `at` ascending). Entries with an unparseable / missing `at` are ignored — they
+ * can neither be positioned nor serve as a bound. Absent from the map when no successor exists.
+ */
+export function computeNextSameFunStart(log: RunLogEntry[]): Map<number, Date> {
+  type Row = { i: number; fun: string; at: Date }
+  const rows: Row[] = []
+  for (let i = 0; i < log.length; i++) {
+    const e = log[i]
+    const fun = String(e?.fun ?? '')
+    if (!fun) continue
+    const at = runLogDate(e?.at)
+    if (!at) continue
+    rows.push({ i, fun, at })
+  }
+  rows.sort((a, b) => a.at.getTime() - b.at.getTime())
+  const out = new Map<number, Date>()
+  const lastIdxByFun = new Map<string, number>()  // fun → index of the most recent row seen
+  for (const r of rows) {
+    const prev = lastIdxByFun.get(r.fun)
+    if (prev !== undefined) out.set(prev, r.at)
+    lastIdxByFun.set(r.fun, r.i)
+  }
+  return out
+}
+
+/**
  * Every image's run log → task rows, newest first.
  *
  * Skipped, each for a reason:
@@ -84,6 +111,14 @@ export function taskHistoryEntries(images: HistoryImage[], ctx: HistoryContext):
   const out: TaskEntry[] = []
   for (const img of images) {
     const log = img.runLog ?? []
+    // `nextByIndex[i]` = the `startedAt` of the NEXT same-fun run after entry `i` in this image's
+    // log, if one exists. Sent to the backend as `until=` when the row's log is fetched, so an older
+    // history row is clipped at the next run's start instead of running through to EOF and dragging
+    // every subsequent run's output into it (`{img}/logs/{fun}.log` is cumulative — appended by every
+    // run of `fun` on this image). Computed over ALL entries, including ones about to be skipped
+    // below (a live row is skipped for dedup, but its `startedAt` is still the correct upper bound
+    // for the older history row of the same fun).
+    const nextByIndex = computeNextSameFunStart(log)
     for (let i = 0; i < log.length; i++) {
       const e = log[i]
       const fun = String(e?.fun ?? '')
@@ -108,10 +143,11 @@ export function taskHistoryEntries(images: HistoryImage[], ctx: HistoryContext):
         params:      e.params ?? {},
         projectUid:  ctx.projectUid,
         // `adopted` is what makes clicking the row fetch its real output from `{img}/logs/{fun}.log`
-        // (TasksModule.select → fetchLogBackfill, sliced server-side by `startedAt`). That machinery
-        // is the whole reason a history row is worth having, and it already exists.
-        adopted:     true,
-        history:     true,
+        // (TasksModule.select → fetchLogBackfill, sliced server-side by `startedAt`..`logSliceUntil`).
+        // That machinery is the whole reason a history row is worth having, and it already exists.
+        adopted:       true,
+        history:       true,
+        logSliceUntil: nextByIndex.get(i),
       })
     }
   }

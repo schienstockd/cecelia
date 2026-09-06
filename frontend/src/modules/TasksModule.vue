@@ -172,7 +172,8 @@ async function syncLogFromDisk(t: TaskEntry) {
   syncingId.value = t.id
   try {
     const lines = await fetchLogBackfill({
-      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
+      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName,
+      startedAt: t.startedAt, until: t.logSliceUntil,
     })
     if (lines.length) tasks.setLog(t.id, lines)
   } finally { if (syncingId.value === t.id) syncingId.value = null }

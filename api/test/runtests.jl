@@ -2879,10 +2879,11 @@ end
 
 # ── One run's slice of a cumulative task log ───────────────────────────────────
 # `logs/{fun}.log` is appended to by EVERY run of that fun on that image, and its lines are stamped in
-# LOCAL time. The GUI backfills the log of a task that was already running when the tab connected, and it
-# knows only that task's UTC `started_at` — so the slice happens server-side, where the clock that wrote
-# the stamps lives. Without it a backfilled row would show output from previous runs as its own.
-@testset "API: task log sliced from a run's start" begin
+# LOCAL time. The GUI backfills a live task's log by that task's UTC `started_at` (`since`), and a
+# history row for a past run additionally passes the NEXT same-fun run's start as `until` — otherwise
+# an older row's slice runs to EOF and shows every subsequent run's output as its own. The slice
+# happens server-side, where the clock that wrote the stamps lives.
+@testset "API: task log sliced between two runs' bounds" begin
     off  = _tasklog_local_offset()                       # what the writer's stamps are offset by
     # a stamp N seconds ago, written the way `_wrap_log_with_file` writes them
     stamp(secs) = Dates.format(Dates.now(UTC) + off - Dates.Second(secs), "yyyy-mm-dd HH:MM:SS")
@@ -2897,20 +2898,32 @@ end
     """
     log = join(lstrip.(split(strip(log), '\n')), '\n') * '\n'
 
-    kept = _tasklog_since(log, iso(120))                 # this run started 2 minutes ago
+    # `since` only — the live-row / newest-history-row case: no next run, keep to EOF
+    kept = _tasklog_slice(log, iso(120))
     @test occursin("this run: starting", kept)
     @test occursin("this run: 5/20", kept)
-    @test !occursin("old run", kept)                     # ← the whole point
+    @test !occursin("old run", kept)
     # an unstamped line belongs to the line above it, so a multi-line message isn't torn apart
     @test occursin("a bare continuation line", kept)
 
-    # a start BEFORE everything keeps everything; one after everything keeps nothing
-    @test occursin("old run: starting", _tasklog_since(log, iso(9999)))
-    @test strip(_tasklog_since(log, iso(-60))) == ""
+    # `since` + `until` — the older-history-row case: the OLD run must not drag the newer one in.
+    # Half-open bound: a line stamped exactly at `until` belongs to the next run, not this one.
+    old = _tasklog_slice(log, iso(700), iso(120))
+    @test occursin("old run: starting", old)
+    @test occursin("old run: done", old)
+    @test !occursin("this run", old)                     # ← the whole point
 
-    # garbage `since` degrades to the whole file — showing too much beats showing nothing
-    @test _tasklog_since(log, "not a timestamp") == log
-    @test _tasklog_since("", iso(120)) == ""
+    # a start BEFORE everything keeps everything; one after everything keeps nothing
+    @test occursin("old run: starting", _tasklog_slice(log, iso(9999)))
+    @test strip(_tasklog_slice(log, iso(-60))) == ""
+
+    # `until` on its own — no lower bound, keep the preamble too
+    @test occursin("old run: starting", _tasklog_slice(log, "", iso(120)))
+    @test !occursin("this run", _tasklog_slice(log, "", iso(120)))
+
+    # garbage `since` degrades to no lower bound — showing too much beats showing nothing
+    @test _tasklog_slice(log, "not a timestamp") == log
+    @test _tasklog_slice("", iso(120)) == ""
 end
 
 @testset "API: custom modules status/reload" begin

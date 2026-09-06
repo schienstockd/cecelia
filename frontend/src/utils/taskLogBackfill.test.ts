@@ -39,6 +39,23 @@ describe('fetchLogBackfill', () => {
     expect(url).toContain('since=2026-08-04T05%3A00%3A04.000Z')
   })
 
+  it("adds `until` when a next same-fun run's start is known — the slice is half-open", async () => {
+    // a history row for a task re-run on the same image: without `until` the slice from that run's
+    // start would run to EOF and pull every later run's output into it too
+    const f = ok({ exists: true, content: 'a\nb\n' })
+    vi.stubGlobal('fetch', f)
+    await fetchLogBackfill({ ...target, until: new Date('2026-08-05T05:00:04.000Z') })
+    const url = String(f.mock.calls[0][0])
+    expect(url).toContain('until=2026-08-05T05%3A00%3A04.000Z')
+  })
+
+  it('omits `until` when there is no next run — a live row or a fun-on-image only ever run once', async () => {
+    const f = ok({ exists: true, content: 'a\n' })
+    vi.stubGlobal('fetch', f)
+    await fetchLogBackfill(target)
+    expect(String(f.mock.calls[0][0])).not.toContain('until=')
+  })
+
   it('does not ask at all when the start is unknown', async () => {
     // a queued task, or a backend too old to report one: fetching would show a PREVIOUS run's output as
     // this row's, which is worse than showing none

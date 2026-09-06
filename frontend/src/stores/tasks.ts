@@ -50,6 +50,12 @@ export interface TaskEntry {
   // this session's work, and neither should suddenly inherit a project's whole history), `canRerunTask`
   // withholds Re-run, and the manager hides Dismiss (the row is on disk; it would come straight back).
   history?: boolean
+  // The `startedAt` of the NEXT same-`(image, fun)` run, if one exists in the run log. Only set on
+  // history rows for tasks re-run on the same image — a run that only ever ran once has no successor.
+  // Passed as `until=` to `fetchLogBackfill` so an older row's log is clipped at the next run's start
+  // instead of running through to EOF and pulling every subsequent run's output with it. Computed in
+  // `utils/taskHistoryRows.ts`.
+  logSliceUntil?: Date
 }
 
 export const useTaskStore = defineStore('tasks', () => {

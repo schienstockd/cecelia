@@ -76,4 +76,55 @@ describe('taskHistoryEntries', () => {
   it('is empty for an image with no run log at all', () => {
     expect(taskHistoryEntries([img('i1', 'A', undefined), img('i2', 'B', [])], CTX)).toEqual([])
   })
+
+  // Log files are cumulative on disk (one per image+fun, appended per run), so a history row for an
+  // older run has to know when the NEXT run started — the server slices half-open on the pair. The
+  // rule is per (image, fun); a different fun on the same image is not a bound.
+  describe('logSliceUntil', () => {
+    it('is undefined for the newest run of its (image, fun) — nothing came after it', () => {
+      const [r] = taskHistoryEntries([img('i1', 'A', [
+        { fun: 'segment.cellpose', at: '2026-08-20T10:00:00' },
+      ])], CTX)
+      expect(r.logSliceUntil).toBeUndefined()
+    })
+
+    it("bounds an older row at the next same-fun run's start", () => {
+      const rows = taskHistoryEntries([img('i1', 'A', [
+        { fun: 'segment.cellpose', at: '2026-08-20T10:00:00' },     // old
+        { fun: 'segment.cellpose', at: '2026-08-21T10:00:00' },     // new
+      ])], CTX)
+      // newest first
+      expect(rows[0].logSliceUntil).toBeUndefined()
+      expect(rows[1].logSliceUntil?.toISOString()).toBe(new Date('2026-08-21T10:00:00').toISOString())
+    })
+
+    it('scopes the bound to the same fun — a different task is not a boundary', () => {
+      const rows = taskHistoryEntries([img('i1', 'A', [
+        { fun: 'segment.cellpose', at: '2026-08-20T10:00:00' },
+        { fun: 'track.bayesian',   at: '2026-08-21T10:00:00' },     // different fun, ignored
+        { fun: 'segment.cellpose', at: '2026-08-22T10:00:00' },
+      ])], CTX)
+      const cell = rows.find(r => r.funName === 'segment.cellpose' && r.startedAt?.toISOString() === new Date('2026-08-20T10:00:00').toISOString())!
+      expect(cell.logSliceUntil?.toISOString()).toBe(new Date('2026-08-22T10:00:00').toISOString())
+    })
+
+    it("still sees a next run that is skipped as a live-row dedup — a live run's start is the bound", () => {
+      const rows = taskHistoryEntries([img('i1', 'A', [
+        { fun: 'segment.cellpose', at: '2026-08-20T10:00:00', taskId: 'OLD' },
+        { fun: 'segment.cellpose', at: '2026-08-21T10:00:00', taskId: 'LIVE' },
+      ])], { ...CTX, hasId: id => id === 'LIVE' })
+      // Only OLD is emitted; its bound is still the LIVE run's start
+      expect(rows.map(r => r.id)).toEqual(['OLD'])
+      expect(rows[0].logSliceUntil?.toISOString()).toBe(new Date('2026-08-21T10:00:00').toISOString())
+    })
+
+    it('is scoped to the image — the same fun on another image is not a bound', () => {
+      const rows = taskHistoryEntries([
+        img('i1', 'A', [{ fun: 'segment.cellpose', at: '2026-08-20T10:00:00' }]),
+        img('i2', 'B', [{ fun: 'segment.cellpose', at: '2026-08-21T10:00:00' }]),
+      ], CTX)
+      // both are "newest of their image+fun" → no bound on either
+      for (const r of rows) expect(r.logSliceUntil).toBeUndefined()
+    })
+  })
 })

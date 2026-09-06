@@ -2195,11 +2195,15 @@ by the scheduler's own id.
 - **The log backfills from disk on first open** (`utils/taskLogBackfill.ts`). The scheduler tees every line
   to `{img._dir}/logs/{fun_name}.log`, so the output from before this tab connected is not lost — but that
   file is CUMULATIVE (one per image+fun, appended by every run), so the fetch passes the task's
-  `started_at` as `since` and the server slices it. Slicing is server-side because the file's stamps are
-  local time and the server is the process whose clock wrote them (`_tasklog_since`). Fetched lazily, on
-  the click that opens the log — twenty adopted rows must not fire twenty requests for output nobody
-  asked to see. No `started_at` (a queued task, an older backend) → no fetch, because the unsliced file
-  would show a previous run's output as this row's.
+  `started_at` as `since` AND the NEXT same-fun run's start as `until` (when one exists — history rows
+  compute it in `utils/taskHistoryRows.ts` as `TaskEntry.logSliceUntil`); the server slices half-open
+  `since ≤ ts < until`. Without `until` the slice runs to EOF, which is correct for a live task and any
+  run with no successor; with it, an older history row shows only its own run rather than dragging every
+  later run's output in too. Slicing is server-side because the file's stamps are local time and the
+  server is the process whose clock wrote them (`_tasklog_slice`). Fetched lazily, on the click that
+  opens the log — twenty adopted rows must not fire twenty requests for output nobody asked to see.
+  No `started_at` (a queued task, an older backend) → no fetch, because the unsliced file would show a
+  previous run's output as this row's.
   **Gated on `logSynced`, never on "the log looks empty".** The empty test was the original gate and it
   silently stopped working: a backend restart adopts rows that are *already producing output*, live lines
   land within the second, and by the time the user clicked the row it was non-empty — so opening a
