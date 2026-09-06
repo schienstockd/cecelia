@@ -623,6 +623,11 @@ end
     # One entry per real model, plus "None". No duplicates.
     @test length(values) == length(unique(values))
     @test length(values) == 1 + length(Cecelia.list_denoise_models())
+    # Option `value` is the bare stem (no `.pt`), matching `flowModels`. The training task strips
+    # the extension when it writes, so a resolved `modelName` that carries `.pt` round-trips into
+    # the picker's currently-selected label instead of matching an option.
+    @test all(!endswith(v, ".pt") for v in values)
+    @test values[2:end] == Cecelia.denoise_model_names()
 end
 
 # The coastal picker is ENTIRELY runtime-enumerated — coastal ships no built-in models, so on a
