@@ -4662,6 +4662,7 @@ end
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs",
+        "/api/correction-plan/get",
         "/api/correction-plan/presets",
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/meta",
@@ -4713,6 +4714,7 @@ end
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
         "/api/correction-plan/recommend",
+        "/api/correction-plan/save",
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
@@ -4805,7 +4807,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 85 && length(POST_ROUTES) == 107
+    @test length(GET_ROUTES) == 86 && length(POST_ROUTES) == 108
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -7776,6 +7778,49 @@ end
                                      "wizard" => Dict("W5" => "yes")))
             @test st == 200
             @test String(JSON3.read(body).presetId) == "deep_3d"
+
+            # ── slice 3b: /get and /save (round-trip through plan.json on disk) ─────────
+            _get(qs) = api_correction_plan_get(HTTP.Request("GET", "/api/correction-plan/get?$qs"))
+            _save(body) = api_correction_plan_save(HTTP.Request("POST", "/api/correction-plan/save"),
+                                                   Vector{UInt8}(JSON3.write(body)))
+
+            # Fresh fixture — no plan.json yet.
+            st, body = _get("projectUid=testpr&imageUid=KDIeEm")
+            @test st == 200
+            got = JSON3.read(body)
+            @test got.exists === false
+            @test got.plan === nothing
+            @test got.stale === false
+
+            # Save with a card, then GET reads it back.
+            st, saved_body = _save(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                         "cardId" => "resonance"))
+            @test st == 200
+            saved = JSON3.read(saved_body)
+            @test String(saved.presetId) == "resonance"
+
+            st, body = _get("projectUid=testpr&imageUid=KDIeEm")
+            @test st == 200
+            got = JSON3.read(body)
+            @test got.exists === true
+            @test got.stale === false                                     # same meta ⇒ fingerprint matches
+            @test String(got.plan.presetId) == "resonance"
+
+            # Save with a different card overwrites plan.json.
+            _save(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm", "cardId" => "custom"))
+            st, body = _get("projectUid=testpr&imageUid=KDIeEm")
+            @test String(JSON3.read(body).plan.presetId) == "custom"
+
+            # /get errors mirror /recommend errors (missing / unknown project).
+            st, _ = _get("imageUid=x")
+            @test st == 400
+            st, _ = _get("projectUid=no-such&imageUid=no-such")
+            @test st == 404
+
+            # Bad JSON on /save → 400 (mirrors /recommend).
+            st, _ = api_correction_plan_save(
+                HTTP.Request("POST", "/api/correction-plan/save"), Vector{UInt8}("{nope"))
+            @test st == 400
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
