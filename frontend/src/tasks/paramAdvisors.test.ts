@@ -368,7 +368,7 @@ describe('backendAdvisor', () => {
 
   it('POSTs the funName + paramKey + form context, returns the parsed advisory', async () => {
     const seen: { url?: string; init?: RequestInit } = {}
-    global.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
       seen.url = url; seen.init = init
       return { ok: true, json: async () => ({ severity: 'warn', message: '1 of 3 too short',
                                               tip: 'Set the window to 31' }) } as unknown as Response
@@ -391,23 +391,23 @@ describe('backendAdvisor', () => {
   })
 
   it('returns null when the endpoint returns null — the validator had nothing to say', async () => {
-    global.fetch = vi.fn(async () => ({ ok: true, json: async () => null }) as Response) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => null }) as Response) as unknown as typeof fetch
     const out = await backendAdvisor('t', 'k').advise(1, CTX)
     expect(out).toBeNull()
   })
 
   it('returns null on HTTP error — silence beats an error banner', async () => {
-    global.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch
     expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
   })
 
   it('returns null when the network throws — an advisory is not load-bearing', async () => {
-    global.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
     expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
   })
 
   it('returns null on a garbage response — sanity-check before rendering', async () => {
-    global.fetch = vi.fn(async () => ({ ok: true, json: async () =>
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () =>
       ({ severity: 'warn' }) }) as Response) as unknown as typeof fetch
     expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()   // missing message/tip
   })
